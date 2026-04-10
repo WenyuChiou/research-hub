@@ -1,0 +1,10 @@
+{
+  "knowledge_base": {
+    "root": "~/knowledge-base",
+    "raw": "~/knowledge-base/raw",
+    "hub": "~/knowledge-base/hub",
+    "projects": "~/knowledge-base/projects",
+    "logs": "~/knowledge-base/logs",
+    "obsidian_graph": "~/knowledge-base/.obsidian/graph.json"
+  }
+}
