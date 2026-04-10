@@ -1,14 +1,12 @@
 import json
-import requests
 import os
 import re
-import sys
 from collections import defaultdict
-from pathlib import Path
+
+import requests
 
 BASE = "http://localhost:23119/api/users/14772686"
-sys.path.insert(0, str(Path(__file__).parent))
-from hub_config import get_config
+from research_hub.config import get_config
 
 _cfg = get_config()
 KB = str(_cfg.root)

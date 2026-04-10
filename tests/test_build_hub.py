@@ -1,12 +1,8 @@
 """Tests for build_hub.py logic - YAML parsing, WIKI_MERGE, topic matching."""
 
 import re
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from build_hub import WIKI_MERGE, normalize_collections
+from research_hub.vault.builder import WIKI_MERGE, normalize_collections
 
 
 def test_wiki_merge_normalizes_known_aliases():

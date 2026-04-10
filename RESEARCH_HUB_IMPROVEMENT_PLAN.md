@@ -45,7 +45,7 @@ The Research Hub is a 7-step pipeline (~3,000 LOC Python) that ingests academic 
 - API key migration: read `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID` from OS env first, then `~/.claude/.env`, then config.json (with deprecation warning), never delete Eric's config.json
 - Per-paper error logs: each pipeline run writes `pipeline_errors_<timestamp>.jsonl` to `logs/` sub-dir
 - `graph.json` backup: before any script touches `.obsidian/graph.json`, `cp graph.json graph.json.bak.<epoch>`
-- `--dry-run` flag on `run_pipeline.py`: validates config + input, no writes
+- `--dry-run` flag on `research-hub run`: validates config + input, no writes
 - Classification audit log: `classification_log.jsonl` appended per classify call
 - `config.json.example` created at `~/.claude/skills/knowledge-base/`
 - `setup_hub.py --init` wizard: prompts for paths, writes config, validates
@@ -82,7 +82,7 @@ The Research Hub is a 7-step pipeline (~3,000 LOC Python) that ingests academic 
 | `build_hub.py` | Replace 4 hardcoded path vars with `get_config()` call |
 | `categorize_graph.py` | Replace `raw_dir`, `hub_dir` with config; add graph backup before write |
 | `fix_orphans.py` | Replace `raw_dir`, `hub_dir` with config |
-| `run_pipeline.py` | Replace `LOG`, `OUT`, `PAPERS_JSON`, `KB` with config; add `--dry-run` flag; add per-paper error logging to `logs/` dir |
+| `src/research_hub/pipeline.py` | Replace `LOG`, `OUT`, `PAPERS_JSON`, `KB` with config; add `--dry-run` flag; add per-paper error logging to `logs/` dir |
 | `fetch_zotero.py` | Replace `KB` with config |
 | `add_theory_links.py` | Scan + replace any hardcoded paths |
 | `reorganize_subcategories.py` | Scan + replace any hardcoded paths |
@@ -161,7 +161,7 @@ if os.path.exists(graph_path):
     shutil.copy2(graph_path, f"{graph_path}.bak.{int(time.time())}")
 ```
 
-**`run_pipeline.py`** — replace top-level consts; add argparse `--dry-run`; wrap each paper's try/except to also write to `logs/pipeline_errors_<timestamp>.jsonl`.
+**`research_hub.pipeline`** — replace top-level consts; add argparse `--dry-run`; wrap each paper's try/except to also write to `logs/pipeline_errors_<timestamp>.jsonl`.
 
 **`zotero_client.py`** — in `get_client()`, before reading `config.json`:
 ```python
@@ -208,7 +208,7 @@ All tests: `pytest -q`. No real file I/O except via `tmp_path` fixture.
 ## 6. Phase 1 Success Criteria
 
 - [ ] `pytest -q` exits 0 (all 4 test files pass)
-- [ ] `python run_pipeline.py --dry-run` succeeds on current `~/knowledge-base/`
+- [ ] `research-hub run --dry-run` succeeds on current `~/knowledge-base/`
 - [ ] No hardcoded absolute paths remain in `*.py` (verify with grep for platform-specific path prefixes)
 - [ ] `~/.claude/skills/knowledge-base/config.json` exists with correct paths for Eric
 - [ ] `~/.claude/skills/knowledge-base/config.json.example` exists

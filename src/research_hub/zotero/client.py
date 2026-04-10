@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-_CONFIG_PATH = Path(__file__).parent / "config.json"
+_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config.json"
 
 # Local API settings
 LOCAL_API_BASE = "http://localhost:23119/api"

@@ -19,7 +19,7 @@ One-command knowledge management: search → save → organize → upload. Indiv
 # 1. Clone and install
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-pip install -r requirements.txt
+pip install -e .
 
 # 2. Configure paths
 cp config.json.example config.json
@@ -44,7 +44,7 @@ User trigger + topic + category
   → 3. Select     (present results table, user picks)
   → 4. Save       (Zotero item + Obsidian .md note + hub page update)
   → 5. Upload     (validate DOIs → NotebookLM via Chrome)
-  → 6. Build      (run build_hub.py, categorize_graph.py, fix_orphans.py)
+  → 6. Build      (run `python -m research_hub.vault.builder`, `python -m research_hub.vault.categorize`, `python -m research_hub.vault.repair`)
   → 7. Explore    (citation graph, offer to add related papers)
 ```
 
@@ -154,9 +154,9 @@ Upload via Chrome: navigate → Add Source → Website → paste URL → submit.
 
 Run in sequence from the repo root (cross-platform):
 ```bash
-python build_hub.py
-python categorize_graph.py
-python fix_orphans.py
+python -m research_hub.vault.builder
+python -m research_hub.vault.categorize
+python -m research_hub.vault.repair
 ```
 
 ---
@@ -200,7 +200,7 @@ Look up on Semantic Scholar → present top 5 citing + cited papers → offer to
 
 **3. Organize Zotero** — Inspect collections/tags via MCP, identify problems, apply WIKI_MERGE normalization (see `references/categories.md`), batch-update.
 
-**4. Sync Obsidian** — Run build_hub.py → categorize_graph.py → fix_orphans.py (Step 6).
+**4. Sync Obsidian** — Run `python -m research_hub.vault.builder` → `python -m research_hub.vault.categorize` → `python -m research_hub.vault.repair` (Step 6).
 
 **5. Upload to NotebookLM** — Validate DOIs → get best URL → Chrome upload (Step 5).
 
@@ -222,8 +222,8 @@ Look up on Semantic Scholar → present top 5 citing + cited papers → offer to
 | Zotero MCP can't create items | Use pyzotero via zotero-skills. MCP is read-only |
 | Item not in collection | Set `template["collections"]` before `create_items()` |
 | Invalid DOI uploaded | Always validate with `get_crossref_paper_by_doi` first |
-| PYTHONPATH not set | Run from repo root; `hub_config.py` uses `Path(__file__).parent` |
-| build_hub.py merge issues | Add aliases to WIKI_MERGE in `references/categories.md` |
+| PYTHONPATH not set | Install with `pip install -e .` and run via `python -m research_hub` |
+| builder merge issues | Add aliases to WIKI_MERGE in `references/categories.md` |
 | Graph colors wrong | Check `.obsidian/graph.json`, restart Obsidian |
 
 ---
