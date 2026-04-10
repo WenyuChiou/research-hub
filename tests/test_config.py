@@ -1,15 +1,11 @@
 """Tests for hub_config.py - path loading, env var override, defaults."""
 
 import json
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def test_config_loads_from_file(tmp_path, monkeypatch):
     """get_config() reads knowledge_base.root from config.json."""
-    import hub_config
+    from research_hub import config as hub_config
 
     hub_config._config = None
 
@@ -40,7 +36,7 @@ def test_config_loads_from_file(tmp_path, monkeypatch):
 
 def test_config_env_var_override(tmp_path, monkeypatch):
     """RESEARCH_HUB_ROOT env var overrides config file."""
-    import hub_config
+    from research_hub import config as hub_config
 
     hub_config._config = None
 
@@ -59,7 +55,7 @@ def test_config_env_var_override(tmp_path, monkeypatch):
 
 def test_config_tilde_expansion(tmp_path, monkeypatch):
     """Paths with ~ are expanded to absolute paths."""
-    import hub_config
+    from research_hub import config as hub_config
 
     hub_config._config = None
 
@@ -78,7 +74,7 @@ def test_config_tilde_expansion(tmp_path, monkeypatch):
 
 def test_config_logs_dir_created(tmp_path, monkeypatch):
     """logs directory is auto-created on config load."""
-    import hub_config
+    from research_hub import config as hub_config
 
     hub_config._config = None
 

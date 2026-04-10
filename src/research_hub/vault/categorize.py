@@ -6,13 +6,10 @@ v2 - Expanded keywords, collection mapping, title scanning, and fallback logic.
 """
 import os, re
 import shutil
-import sys as _sys
 import time
 from pathlib import Path
-from pathlib import Path as _Path
 
-_sys.path.insert(0, str(_Path(__file__).parent))
-from hub_config import get_config as _get_config
+from research_hub.config import get_config as _get_config
 
 _cfg = _get_config()
 raw_dir = str(_cfg.raw)

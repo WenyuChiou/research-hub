@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 # Config search order: (1) repo-local config.json, (2) ~/.claude skill config, (3) env vars, (4) HOME defaults
-_REPO_CONFIG = Path(__file__).parent / "config.json"
+_REPO_CONFIG = Path(__file__).resolve().parents[2] / "config.json"
 # CONFIG_PATH kept for backward-compat (tests monkeypatch this attribute directly)
 CONFIG_PATH = Path.home() / ".claude" / "skills" / "knowledge-base" / "config.json"
 

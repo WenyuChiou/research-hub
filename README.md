@@ -40,7 +40,7 @@ One-command knowledge management pipeline for academic research. Search papers, 
 ### Prerequisites
 
 - **Python 3.10+**
-- **pyzotero**: `pip install pyzotero`
+- Install the package: `pip install -e .`
 - **Zotero desktop** running (for local API reads)
 - **[zotero-skills](https://github.com/WenyuChiou/zotero-skills)** installed in `~/.claude/skills/`
 

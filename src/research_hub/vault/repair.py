@@ -4,11 +4,8 @@ to the closest topic based on title/abstract keyword matching.
 Also ensure every paper has at least one [[hub link]].
 """
 import os, re
-import sys as _sys
-from pathlib import Path as _Path
 
-_sys.path.insert(0, str(_Path(__file__).parent))
-from hub_config import get_config as _get_config
+from research_hub.config import get_config as _get_config
 
 _cfg = _get_config()
 raw_dir = str(_cfg.raw)
