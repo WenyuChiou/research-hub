@@ -1,0 +1,22 @@
+{
+  "name": "research-hub",
+  "version": "0.1.0",
+  "description": "Research Hub: AI-powered academic literature pipeline — fetch from Zotero, build knowledge graphs, generate synthesis reports.",
+  "skills": [
+    "skills/knowledge-base/SKILL.md",
+    "skills/zotero-skills/SKILL.md"
+  ],
+  "entry_point": "SKILL.md",
+  "python_modules": [
+    "hub_config.py",
+    "build_hub.py",
+    "run_pipeline.py",
+    "fetch_zotero.py",
+    "fix_orphans.py",
+    "categorize_graph.py",
+    "zotero_client.py"
+  ],
+  "requires": "requirements.txt",
+  "config_template": "config.json.example",
+  "TODO": "Convert to full Cowork plugin manifest when plugin schema is finalized."
+}

@@ -1,4 +1,39 @@
+# User data / vault output
+raw/
+hub/
+logs/
+*.log
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+pytest-cache-files-*/
+.venv/
+venv/
+
+# User config
+config.json
+.env
+
+# Claude local config
 .claude/
+
+# Test artifacts
+tests_tmp/
+test_artifacts/
+pytest_tmp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Skill backup
 SKILL.md.bak
