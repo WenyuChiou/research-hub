@@ -46,12 +46,37 @@ def _clusters_list() -> int:
 
 
 def _clusters_show(slug: str) -> int:
+    from research_hub.vault.sync import compute_sync_status
+
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.get(slug)
     if cluster is None:
         raise ValueError(f"Cluster not found: {slug}")
-    print(json.dumps(cluster.__dict__, ensure_ascii=False, indent=2))
+    status = compute_sync_status(
+        cluster,
+        _load_zotero_if_configured(),
+        cfg.raw,
+        nlm_cache_path=cfg.research_hub_dir / "notebooklm_cache.json",
+    )
+    print(f"Cluster: {cluster.name} ({cluster.slug})")
+    print(f"  Zotero collection:   {cluster.zotero_collection_key or '(unset)'}")
+    print(f"  Obsidian folder:     {cluster.obsidian_subfolder or '(unset)'}")
+    print(f"  NotebookLM notebook: {cluster.notebooklm_notebook or '(unset)'}")
+    print(f"  NotebookLM URL:      {status.notebook_url or '(unset)'}")
+    print(
+        "  Sync counts: "
+        f"Zotero={status.zotero_count}, "
+        f"Obsidian={status.obsidian_count}, "
+        f"NotebookLM-cache={status.nlm_cached_count}, "
+        f"in-both={status.in_both}"
+    )
+    if status.zotero_only:
+        print(f"  Zotero-only keys:    {', '.join(status.zotero_only)}")
+    if status.obsidian_only:
+        print("  Obsidian-only notes:")
+        for note_path in status.obsidian_only:
+            print(f"    {note_path}")
     return 0
 
 
@@ -60,6 +85,22 @@ def _clusters_new(query: str, name: str | None, slug: str | None) -> int:
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.create(query=query, name=name, slug=slug)
     print(cluster.slug)
+    return 0
+
+
+def _clusters_bind(slug: str, zotero_key, obsidian_folder, notebooklm_notebook) -> int:
+    cfg = get_config()
+    reg = ClusterRegistry(cfg.clusters_file)
+    cluster = reg.bind(
+        slug=slug,
+        zotero_collection_key=zotero_key,
+        obsidian_subfolder=obsidian_folder,
+        notebooklm_notebook=notebooklm_notebook,
+    )
+    print(f"Bound {cluster.slug}:")
+    print(f"  Zotero collection:   {cluster.zotero_collection_key or '(unset)'}")
+    print(f"  Obsidian folder:     {cluster.obsidian_subfolder or '(unset)'}")
+    print(f"  NotebookLM notebook: {cluster.notebooklm_notebook or '(unset)'}")
     return 0
 
 
@@ -132,6 +173,85 @@ def _status(cluster: str | None = None) -> int:
     return 0
 
 
+def _load_zotero_if_configured():
+    try:
+        from research_hub.zotero.client import get_client
+
+        return get_client()
+    except Exception:
+        return None
+
+
+def _sync_status(cluster_slug: str | None = None) -> int:
+    from research_hub.vault.sync import compute_sync_status
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    zot = _load_zotero_if_configured()
+    cache_path = cfg.research_hub_dir / "notebooklm_cache.json"
+    clusters = registry.list()
+    if cluster_slug is not None:
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            raise ValueError(f"Cluster not found: {cluster_slug}")
+        clusters = [cluster]
+
+    print("slug\tzotero\tobsidian\tnlm_cache\tin_both\tzotero_only\tobsidian_only")
+    for cluster in clusters:
+        status = compute_sync_status(cluster, zot, cfg.raw, nlm_cache_path=cache_path)
+        print(
+            f"{cluster.slug}\t{status.zotero_count}\t{status.obsidian_count}\t"
+            f"{status.nlm_cached_count}\t{status.in_both}\t"
+            f"{len(status.zotero_only)}\t{len(status.obsidian_only)}"
+        )
+    return 0
+
+
+def _sync_reconcile(cluster_slug: str, execute: bool) -> int:
+    from research_hub.vault.sync import reconcile_zotero_to_obsidian
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {cluster_slug}")
+
+    zot = _load_zotero_if_configured()
+    if zot is None:
+        raise RuntimeError("Zotero client not configured")
+
+    report = reconcile_zotero_to_obsidian(cluster, zot, cfg, dry_run=not execute)
+    mode = "Planned" if report.dry_run else "Created"
+    print(f"{mode} {len(report.created_notes)} notes for {cluster.slug}")
+    print(f"Skipped existing: {report.skipped_existing}")
+    if report.created_notes:
+        for note_path in report.created_notes:
+            print(note_path)
+    if report.errors:
+        print(f"Errors: {len(report.errors)}")
+        for error in report.errors:
+            print(json.dumps(error, ensure_ascii=False))
+    return 0
+
+
+def _notebooklm_bundle(cluster_slug: str) -> int:
+    from research_hub.notebooklm.bundle import bundle_cluster
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {cluster_slug}")
+
+    report = bundle_cluster(cluster, cfg)
+    print(f"Bundle written to {report.bundle_dir}")
+    print(
+        f"Papers: {len(report.entries)} total "
+        f"({report.pdf_count} PDFs, {report.url_count} URLs, {report.skip_count} skipped)"
+    )
+    return 0
+
+
 def _migrate_yaml(
     assign_cluster: str | None = None,
     folder: str | None = None,
@@ -188,6 +308,22 @@ def build_parser() -> argparse.ArgumentParser:
     new_parser.add_argument("--query", required=True)
     new_parser.add_argument("--name", default=None)
     new_parser.add_argument("--slug", default=None)
+    bind_parser = clusters_subparsers.add_parser(
+        "bind", help="Link a cluster to Zotero/Obsidian/NotebookLM"
+    )
+    bind_parser.add_argument("slug")
+    bind_parser.add_argument(
+        "--zotero", dest="zotero_key", default=None, help="Zotero collection key"
+    )
+    bind_parser.add_argument(
+        "--obsidian", dest="obsidian_folder", default=None, help="Obsidian sub-folder"
+    )
+    bind_parser.add_argument(
+        "--notebooklm",
+        dest="notebooklm_notebook",
+        default=None,
+        help="NotebookLM notebook name",
+    )
 
     search_parser = subparsers.add_parser("search", help="Search Semantic Scholar")
     search_parser.add_argument("query")
@@ -239,6 +375,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also update .obsidian/graph.json cluster colors",
     )
 
+    sync_parser = subparsers.add_parser("sync", help="Cross-system sync status and reconcile")
+    sync_sub = sync_parser.add_subparsers(dest="sync_command", required=True)
+    sync_status = sync_sub.add_parser("status", help="Show drift across Zotero/Obsidian/NotebookLM")
+    sync_status.add_argument("--cluster", default=None)
+    sync_reconcile = sync_sub.add_parser("reconcile", help="Fix Zotero-to-Obsidian drift")
+    sync_reconcile.add_argument("--cluster", required=True)
+    sync_reconcile.add_argument("--dry-run", action="store_true")
+    sync_reconcile.add_argument("--execute", action="store_true")
+
+    nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
+    nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
+    nlm_bundle = nlm_sub.add_parser("bundle", help="Export a drag-drop folder for NotebookLM")
+    nlm_bundle.add_argument("--cluster", required=True)
+
     return parser
 
 
@@ -263,10 +413,22 @@ def main(argv: list[str] | None = None) -> int:
             return _clusters_show(args.slug)
         if args.clusters_command == "new":
             return _clusters_new(args.query, args.name, args.slug)
+        if args.clusters_command == "bind":
+            return _clusters_bind(
+                args.slug,
+                args.zotero_key,
+                args.obsidian_folder,
+                args.notebooklm_notebook,
+            )
     if args.command == "search":
         return _search(args.query, args.limit)
     if args.command == "status":
         return _status(cluster=args.cluster)
+    if args.command == "sync":
+        if args.sync_command == "status":
+            return _sync_status(cluster_slug=args.cluster)
+        if args.sync_command == "reconcile":
+            return _sync_reconcile(cluster_slug=args.cluster, execute=args.execute)
     if args.command == "migrate-yaml":
         return _migrate_yaml(
             assign_cluster=args.assign_cluster,
@@ -280,6 +442,9 @@ def main(argv: list[str] | None = None) -> int:
         return _cleanup_hub(dry_run=args.dry_run)
     if args.command == "synthesize":
         return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
+    if args.command == "notebooklm":
+        if args.notebooklm_command == "bundle":
+            return _notebooklm_bundle(args.cluster)
 
     parser.error(f"Unknown command: {args.command}")
     return 2
