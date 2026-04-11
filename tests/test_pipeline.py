@@ -210,7 +210,7 @@ def test_run_pipeline_skips_duplicate(tmp_path, monkeypatch):
     result = pipeline.run_pipeline()
 
     assert result == 0
-    output = json.loads((cfg.root / "pipeline_test_output.json").read_text(encoding="utf-8"))
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
     assert output["zotero_results"] == [
         {"title": "Existing Paper", "status": "SKIPPED_DUPLICATE", "key": ""}
     ]
