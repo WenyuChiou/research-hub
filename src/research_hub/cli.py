@@ -452,6 +452,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Launch the installed Chrome binary (channel=chrome) instead of bundled Chromium",
     )
     nlm_login.add_argument(
+        "--from-chrome-profile",
+        action="store_true",
+        help="Clone your existing Chrome profile (with Google auth cookies already present) into "
+             "the session dir so Google does not trigger bot detection. Chrome MUST be closed first.",
+    )
+    nlm_login.add_argument(
+        "--chrome-profile-path",
+        default=None,
+        help="Override the auto-detected Chrome user data dir (the folder containing 'Default')",
+    )
+    nlm_login.add_argument(
+        "--chrome-profile-name",
+        default="Default",
+        help="Which Chrome profile to clone (default: Default; try 'Profile 1' etc.)",
+    )
+    nlm_login.add_argument(
         "--timeout",
         type=int,
         default=300,
@@ -529,13 +545,19 @@ def main(argv: list[str] | None = None) -> int:
         return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
     if args.command == "notebooklm":
         if args.notebooklm_command == "login":
+            from pathlib import Path as _Path
+
             from research_hub.notebooklm.session import login_interactive
 
             cfg = get_config()
+            chrome_path = _Path(args.chrome_profile_path) if args.chrome_profile_path else None
             return login_interactive(
                 cfg.research_hub_dir / "nlm_sessions" / "default",
                 use_system_chrome=args.use_system_chrome,
                 timeout_sec=args.timeout,
+                from_chrome_profile=args.from_chrome_profile,
+                chrome_profile_path=chrome_path,
+                chrome_profile_name=args.chrome_profile_name,
             )
         if args.notebooklm_command == "bundle":
             return _notebooklm_bundle(args.cluster)

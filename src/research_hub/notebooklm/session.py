@@ -74,6 +74,9 @@ def login_interactive(
     use_system_chrome: bool = False,
     timeout_sec: int = 300,
     stable_hold_sec: int = 5,
+    from_chrome_profile: bool = False,
+    chrome_profile_path: Path | None = None,
+    chrome_profile_name: str = "Default",
 ) -> int:
     """Open NotebookLM in a visible browser and auto-detect login completion.
 
@@ -83,19 +86,56 @@ def login_interactive(
     ``oauth`` redirect), the session is considered saved and the
     browser closes automatically.
 
-    ``use_system_chrome=True`` launches Playwright with ``channel="chrome"``
-    so it uses the installed Chrome binary (better Google login UX than
-    bare Chromium). The user data directory is still isolated under
-    ``<vault>/.research_hub/nlm_sessions/`` — Chrome profile reuse is
-    NOT enabled here, which keeps it from conflicting with a running
-    Chrome or corrupting the user's real profile. Full profile reuse is
-    deferred to a later release.
+    Three modes:
 
-    Returns 0 on success, 1 on timeout.
+    - ``from_chrome_profile=True`` (recommended when Google blocks
+      Playwright with "browser may have security concerns"). Clones
+      the user's real Chrome profile from
+      ``<LOCALAPPDATA>/Google/Chrome/User Data`` into
+      ``user_data_dir`` and launches Playwright with it. Google sees
+      the same auth cookies it issued to the real Chrome session and
+      does not block. Chrome MUST be closed before running. Forces
+      ``channel="chrome"``.
+
+    - ``use_system_chrome=True`` launches Playwright with
+      ``channel="chrome"`` (installed Chrome binary) but an isolated
+      profile. Works if Google is not currently blocking Playwright;
+      no profile mutation risk. First-run requires manual sign-in.
+
+    - Default: launches bundled Chromium with isolated profile.
+      Lightest-weight but most likely to hit Google's bot check on
+      fresh logins.
+
+    Returns 0 on success, 1 on timeout or setup failure.
     """
+    if from_chrome_profile:
+        from research_hub.notebooklm.chrome_clone import (
+            clone_chrome_profile,
+            default_chrome_user_data_dir,
+        )
+
+        src = chrome_profile_path or default_chrome_user_data_dir()
+        if src is None:
+            print("  [ERR] Could not find Chrome user data dir.")
+            print("  [ERR] Set --chrome-profile-path to the directory containing 'Default'.")
+            return 1
+        print(f"  Cloning Chrome profile from: {src}")
+        print(f"  (profile: {chrome_profile_name} — Chrome must be fully closed)")
+        try:
+            clone_chrome_profile(src, user_data_dir, profile_name=chrome_profile_name)
+        except RuntimeError as exc:
+            print(f"  [ERR] {exc}")
+            return 1
+        except FileNotFoundError as exc:
+            print(f"  [ERR] {exc}")
+            return 1
+        print(f"  [OK] Profile cloned to {user_data_dir}")
+        use_system_chrome = True  # clone requires real Chrome binary
+
     print("Opening NotebookLM in a visible browser window...")
     print(f"  Session dir:  {user_data_dir}")
     print(f"  Chrome channel: {'system-chrome' if use_system_chrome else 'bundled-chromium'}")
+    print(f"  Mode:         {'cloned-chrome-profile' if from_chrome_profile else 'isolated-profile'}")
     print(f"  Timeout:      {timeout_sec}s  (will auto-close {stable_hold_sec}s after login)")
     print()
     print(">>> Sign in with your Google account in the opened browser.")
