@@ -57,7 +57,7 @@ def _clusters_show(slug: str) -> int:
         cluster,
         _load_zotero_if_configured(),
         cfg.raw,
-        nlm_cache_path=cfg.research_hub_dir / "notebooklm_cache.json",
+        nlm_cache_path=cfg.research_hub_dir / "nlm_cache.json",
     )
     print(f"Cluster: {cluster.name} ({cluster.slug})")
     print(f"  Zotero collection:   {cluster.zotero_collection_key or '(unset)'}")
@@ -188,7 +188,7 @@ def _sync_status(cluster_slug: str | None = None) -> int:
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
     zot = _load_zotero_if_configured()
-    cache_path = cfg.research_hub_dir / "notebooklm_cache.json"
+    cache_path = cfg.research_hub_dir / "nlm_cache.json"
     clusters = registry.list()
     if cluster_slug is not None:
         cluster = registry.get(cluster_slug)
@@ -249,6 +249,65 @@ def _notebooklm_bundle(cluster_slug: str) -> int:
         f"Papers: {len(report.entries)} total "
         f"({report.pdf_count} PDFs, {report.url_count} URLs, {report.skip_count} skipped)"
     )
+    return 0
+
+
+def _nlm_upload(
+    cluster_slug: str,
+    dry_run: bool,
+    headless: bool,
+    create_if_missing: bool,
+) -> int:
+    from research_hub.notebooklm.upload import upload_cluster
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {cluster_slug}")
+
+    report = upload_cluster(
+        cluster,
+        cfg,
+        dry_run=dry_run,
+        headless=headless,
+        create_if_missing=create_if_missing,
+    )
+    print(f"Notebook: {report.notebook_name or '(planned)'}")
+    if report.notebook_url:
+        print(f"Notebook URL: {report.notebook_url}")
+    print(
+        f"Uploads: {report.success_count} succeeded, "
+        f"{report.fail_count} failed, "
+        f"{report.skipped_already_uploaded} skipped from cache"
+    )
+    for result in report.uploaded:
+        status = "OK" if result.success else "FAIL"
+        print(f"  [{status}] {result.source_kind}: {result.path_or_url}")
+        if result.error:
+            print(f"       {result.error}")
+    return 0 if report.fail_count == 0 else 1
+
+
+def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
+    from research_hub.notebooklm.upload import generate_artifact
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {cluster_slug}")
+
+    if artifact_type == "all":
+        kinds = ["brief", "audio", "mind_map", "video"]
+    elif artifact_type == "mind-map":
+        kinds = ["mind_map"]
+    else:
+        kinds = [artifact_type]
+
+    for kind in kinds:
+        url = generate_artifact(cluster, cfg, kind=kind, headless=headless)
+        print(f"{kind}: {url}")
     return 0
 
 
@@ -386,8 +445,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
+    nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
     nlm_bundle = nlm_sub.add_parser("bundle", help="Export a drag-drop folder for NotebookLM")
     nlm_bundle.add_argument("--cluster", required=True)
+    nlm_upload = nlm_sub.add_parser("upload", help="Auto-upload bundle to NotebookLM")
+    nlm_upload.add_argument("--cluster", required=True)
+    nlm_upload.add_argument("--dry-run", action="store_true")
+    nlm_upload.add_argument("--headless", action="store_true", default=True)
+    nlm_upload.add_argument("--visible", dest="headless", action="store_false")
+    nlm_upload.add_argument("--create-if-missing", action="store_true", default=True)
+    nlm_generate = nlm_sub.add_parser("generate", help="Trigger NotebookLM artifact generation")
+    nlm_generate.add_argument("--cluster", required=True)
+    nlm_generate.add_argument(
+        "--type",
+        choices=["brief", "audio", "mind-map", "video", "all"],
+        default="brief",
+    )
+    nlm_generate.add_argument("--visible", dest="headless", action="store_false", default=True)
 
     return parser
 
@@ -443,8 +517,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "synthesize":
         return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
     if args.command == "notebooklm":
+        if args.notebooklm_command == "login":
+            from research_hub.notebooklm.session import login_interactive
+
+            cfg = get_config()
+            return login_interactive(cfg.research_hub_dir / "nlm_sessions" / "default")
         if args.notebooklm_command == "bundle":
             return _notebooklm_bundle(args.cluster)
+        if args.notebooklm_command == "upload":
+            return _nlm_upload(args.cluster, args.dry_run, args.headless, args.create_if_missing)
+        if args.notebooklm_command == "generate":
+            return _nlm_generate(args.cluster, args.type, args.headless)
 
     parser.error(f"Unknown command: {args.command}")
     return 2
