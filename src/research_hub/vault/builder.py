@@ -1,6 +1,7 @@
 import os
 import re
 
+from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config as _get_config
 
 # Merge mapping: normalize duplicate/typo Zotero collection names to canonical wiki names
@@ -163,6 +164,32 @@ papers: {len(matched)}
         with open(hub_path, "w", encoding="utf-8") as fh:
             fh.write(content)
         print(f"  Hub: {topic}.md ({len(matched)} papers)")
+
+    clusters = ClusterRegistry(cfg.clusters_file)
+    if clusters.list():
+        clusters_dir = os.path.join(hub_dir, "clusters")
+        os.makedirs(clusters_dir, exist_ok=True)
+        for cluster in clusters.list():
+            matched = [paper for paper in papers if paper.get("topic_cluster") == cluster.slug]
+            content = f"""---
+type: hub-cluster
+cluster: {cluster.slug}
+papers: {len(matched)}
+---
+
+# {cluster.name}
+
+First query: {cluster.first_query}
+
+## Papers ({len(matched)})
+
+"""
+            for paper in sorted(matched, key=lambda item: item.get("year", "0"), reverse=True):
+                content += f"- [[{paper['filename']}|{paper['title_line'][:80]}]] ({paper.get('year', 'n.d.')})\n"
+            cluster_path = os.path.join(clusters_dir, f"{cluster.slug}.md")
+            with open(cluster_path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            print(f"  Cluster: {cluster.slug}.md ({len(matched)} papers)")
 
     projects = {
         "ABM-Paper": {
