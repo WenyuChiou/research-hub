@@ -77,6 +77,42 @@ def _cleanup_hub(dry_run: bool = False) -> int:
     return 0
 
 
+def _synthesize(cluster: str | None, graph_colors: bool) -> int:
+    from research_hub.vault.graph_config import update_from_clusters_file
+    from research_hub.vault.synthesis import synthesize_all_clusters, synthesize_cluster
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+
+    if cluster:
+        cluster_obj = registry.get(cluster)
+        if cluster_obj is None:
+            raise ValueError(f"Cluster not found: {cluster}")
+        try:
+            out = synthesize_cluster(
+                cluster_obj.slug,
+                cluster_obj.name,
+                cluster_obj.first_query,
+                cfg.raw,
+                cfg.hub,
+            )
+            print(f"Wrote {out}")
+        except FileNotFoundError as exc:
+            print(f"Skipped: {exc}")
+    else:
+        outs = synthesize_all_clusters(cfg.raw, cfg.hub, cfg.clusters_file)
+        print(f"Wrote {len(outs)} synthesis pages")
+
+    if graph_colors:
+        report = update_from_clusters_file(cfg.root, cfg.clusters_file)
+        if report.updated:
+            print(f"Updated graph.json with {report.color_groups_written} color groups")
+        else:
+            print(f"graph.json skipped: {report.skipped_reason}")
+
+    return 0
+
+
 def _search(query: str, limit: int) -> int:
     cfg = get_config()
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
@@ -128,6 +164,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Report without writing"
     )
 
+    synth_parser = subparsers.add_parser(
+        "synthesize", help="Generate cluster synthesis pages"
+    )
+    synth_parser.add_argument(
+        "--cluster", default=None, help="Only synthesize this cluster slug"
+    )
+    synth_parser.add_argument(
+        "--graph-colors",
+        action="store_true",
+        help="Also update .obsidian/graph.json cluster colors",
+    )
+
     return parser
 
 
@@ -158,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         return _verify()
     if args.command == "cleanup":
         return _cleanup_hub(dry_run=args.dry_run)
+    if args.command == "synthesize":
+        return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
 
     parser.error(f"Unknown command: {args.command}")
     return 2

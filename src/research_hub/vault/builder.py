@@ -186,6 +186,30 @@ First query: {cluster.first_query}
 """
             for paper in sorted(matched, key=lambda item: item.get("year", "0"), reverse=True):
                 content += f"- [[{paper['filename']}|{paper['title_line'][:80]}]] ({paper.get('year', 'n.d.')})\n"
+            content += (
+                "\n## Reading Queue\n\n"
+                "```dataview\n"
+                "TABLE year, authors, status, citation-count\n"
+                'FROM "raw"\n'
+                f'WHERE topic_cluster = "{cluster.slug}" AND status = "unread"\n'
+                "SORT year DESC\n"
+                "LIMIT 15\n"
+                "```\n"
+                "\n## Deep-read\n\n"
+                "```dataview\n"
+                "TABLE year, authors, verified\n"
+                'FROM "raw"\n'
+                f'WHERE topic_cluster = "{cluster.slug}" AND (status = "deep-read" OR status = "cited")\n'
+                "SORT year DESC\n"
+                "```\n"
+                "\n## All Papers (by year)\n\n"
+                "```dataview\n"
+                "TABLE year, status, citation-count\n"
+                'FROM "raw"\n'
+                f'WHERE topic_cluster = "{cluster.slug}"\n'
+                "SORT year DESC\n"
+                "```\n"
+            )
             cluster_path = os.path.join(clusters_dir, f"{cluster.slug}.md")
             with open(cluster_path, "w", encoding="utf-8") as fh:
                 fh.write(content)
