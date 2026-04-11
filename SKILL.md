@@ -120,7 +120,7 @@ if not check_duplicate(zot, title, doi):
 
 ### 4b: Obsidian Note
 
-Write `.md` to `C:\Users\wenyu\knowledge-base\raw\{sub-category}\{slugified-title}.md`.
+Write `.md` to `<vault-root>/raw/{sub-category}/{slugified-title}.md` (where `<vault-root>` is `cfg.raw` from `research_hub.config.get_config()`).
 
 Use template from `references/paper-template.md`. Auto-generate: Summary (2-3 sentences), Key Findings (3-5 bullets), Methodology, Relevance. Follow conventions in `references/obsidian-conventions.md`.
 

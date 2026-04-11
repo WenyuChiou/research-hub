@@ -89,6 +89,20 @@ def test_run_pipeline_missing_default_collection(tmp_path, monkeypatch):
     hub_config._config = None
 
 
+def test_run_pipeline_dry_run_allows_missing_default_collection(tmp_path, monkeypatch):
+    """dry_run=True must work without a configured default_collection so
+    verify_setup.py succeeds on a fresh install before config.json is edited."""
+    from research_hub import config as hub_config
+    from research_hub.pipeline import run_pipeline
+
+    _configure(monkeypatch, tmp_path, default_collection=None)
+
+    result = run_pipeline(dry_run=True)
+    assert result == 0
+
+    hub_config._config = None
+
+
 def test_run_pipeline_dry_run_no_papers_json(tmp_path, monkeypatch):
     from research_hub import config as hub_config
     from research_hub.pipeline import run_pipeline

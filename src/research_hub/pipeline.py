@@ -34,7 +34,7 @@ def run_pipeline(dry_run: bool = False) -> int:
     cfg = get_config()
     kb = str(cfg.root)
     collection_key = cfg.zotero_default_collection
-    if collection_key is None:
+    if collection_key is None and not dry_run:
         raise RuntimeError(
             "Set zotero.default_collection in config.json or "
             "RESEARCH_HUB_DEFAULT_COLLECTION env var"
@@ -43,7 +43,11 @@ def run_pipeline(dry_run: bool = False) -> int:
     log_path = _resolve_log_path(cfg.logs)
     out_path = cfg.root / "pipeline_test_output.json"
     papers_json = cfg.root / "papers_input.json"
-    collection_name = cfg.zotero_collections.get(collection_key, {}).get("name", collection_key)
+    collection_name = (
+        cfg.zotero_collections.get(collection_key, {}).get("name", collection_key)
+        if collection_key is not None
+        else "<unconfigured>"
+    )
     frontmatter_collections = json.dumps([collection_name])
 
     with log_path.open("w", encoding="utf-8") as log:
