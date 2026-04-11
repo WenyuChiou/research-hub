@@ -10,7 +10,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = [
+    "pytest>=7",
+    "pytest-mock>=3.10",
+    "responses>=0.23",
+    "coverage[toml]>=7",
+    "pytest-cov>=4",
+]
 
 [project.scripts]
 research-hub = "research_hub.cli:main"
