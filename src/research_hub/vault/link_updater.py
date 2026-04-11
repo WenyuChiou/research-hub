@@ -64,18 +64,29 @@ def find_related_in_cluster(
     all_notes: list[NoteMeta],
     min_tag_overlap: int = 1,
 ) -> list[NoteMeta]:
-    """Find same-cluster notes ordered by descending tag overlap."""
+    """Find same-cluster notes ordered by descending tag overlap.
+
+    When ``new_note`` has a ``topic_cluster`` set, cluster membership
+    alone is sufficient — notes in the same cluster are included even
+    when tag overlap is zero. Tag overlap only affects ranking so the
+    most topically-similar papers appear first. When ``new_note`` has
+    no cluster, fall back to the tag-overlap threshold.
+    """
     related: list[tuple[int, NoteMeta]] = []
     new_tag_set = set(new_note.tags)
+    in_cluster = bool(new_note.topic_cluster)
     for other in all_notes:
         if other.path == new_note.path:
             continue
-        if new_note.topic_cluster:
+        if in_cluster:
             if other.topic_cluster != new_note.topic_cluster:
                 continue
-        overlap = len(new_tag_set & set(other.tags))
-        if overlap >= min_tag_overlap:
+            overlap = len(new_tag_set & set(other.tags))
             related.append((overlap, other))
+        else:
+            overlap = len(new_tag_set & set(other.tags))
+            if overlap >= min_tag_overlap:
+                related.append((overlap, other))
     related.sort(key=lambda item: (-item[0], item[1].slug))
     return [item[1] for item in related]
 

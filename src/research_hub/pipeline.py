@@ -36,8 +36,18 @@ def _resolve_log_path(preferred_logs_dir: Path) -> Path:
         return fallback_logs_dir / "pipeline_log.txt"
 
 
-def append_cluster_query_to_existing(note_path: Path, query: str) -> bool:
-    """Append query to cluster_queries in a note frontmatter, idempotently."""
+def append_cluster_query_to_existing(
+    note_path: Path,
+    query: str,
+    *,
+    topic_cluster: str = "",
+) -> bool:
+    """Append query to cluster_queries in a note frontmatter, idempotently.
+
+    If the note pre-dates v0.3.0 and lacks the ``cluster_queries`` field,
+    the missing v0.3.0 fields (``cluster_queries``, ``topic_cluster``,
+    ``verified``, ``status``) are inserted before the closing ``---``.
+    """
     if not note_path.exists():
         return False
     text = note_path.read_text(encoding="utf-8", errors="ignore")
@@ -49,18 +59,28 @@ def append_cluster_query_to_existing(note_path: Path, query: str) -> bool:
     frontmatter = text[3:end]
     pattern = re.compile(r"^cluster_queries:\s*\[(.*?)\]$", re.MULTILINE)
     match = pattern.search(frontmatter)
-    if not match:
-        return False
-    current = [
-        value.strip().strip('"').strip("'")
-        for value in match.group(1).split(",")
-        if value.strip()
-    ]
-    if query in current:
-        return False
-    updated = current + [query]
-    replacement = "cluster_queries: [" + ", ".join(f'"{value}"' for value in updated) + "]"
-    updated_frontmatter = pattern.sub(replacement, frontmatter, count=1)
+    if match:
+        current = [
+            value.strip().strip('"').strip("'")
+            for value in match.group(1).split(",")
+            if value.strip()
+        ]
+        if query in current:
+            return False
+        updated = current + [query]
+        replacement = "cluster_queries: [" + ", ".join(f'"{value}"' for value in updated) + "]"
+        updated_frontmatter = pattern.sub(replacement, frontmatter, count=1)
+    else:
+        # Legacy note (pre-v0.3.0): append the new v0.3.0 fields.
+        new_fields_lines = [""]
+        if not re.search(r"^topic_cluster:", frontmatter, re.MULTILINE):
+            new_fields_lines.append(f'topic_cluster: "{topic_cluster}"')
+        new_fields_lines.append(f'cluster_queries: ["{query}"]')
+        if not re.search(r"^verified:", frontmatter, re.MULTILINE):
+            new_fields_lines.append("verified: false")
+        if not re.search(r"^status:", frontmatter, re.MULTILINE):
+            new_fields_lines.append("status: unread")
+        updated_frontmatter = frontmatter.rstrip() + "\n".join(new_fields_lines)
     note_path.write_text(text[:3] + updated_frontmatter + text[end:], encoding="utf-8")
     return True
 
@@ -151,6 +171,10 @@ def run_pipeline(
     clusters = ClusterRegistry(cfg.clusters_file)
     if cluster_slug is not None and clusters.get(cluster_slug) is None:
         raise ValueError("Cluster not found - use 'research-hub clusters new' first")
+    if query is None and cluster_slug is not None:
+        cluster_obj = clusters.get(cluster_slug)
+        if cluster_obj is not None and cluster_obj.first_query:
+            query = cluster_obj.first_query
     manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
     dedup_path = cfg.research_hub_dir / "dedup_index.json"
 
@@ -208,7 +232,17 @@ def run_pipeline(
                     obsidian_hit = next((hit for hit in dedup_hits if hit.source == "obsidian"), None)
                     zotero_hit = next((hit for hit in dedup_hits if hit.source == "zotero"), None)
                     if obsidian_hit and obsidian_hit.obsidian_path:
-                        append_cluster_query_to_existing(Path(obsidian_hit.obsidian_path), query_text)
+                        append_cluster_query_to_existing(
+                            Path(obsidian_hit.obsidian_path),
+                            query_text,
+                            topic_cluster=cluster_slug or "",
+                        )
+                        if cluster_slug:
+                            update_cluster_links(
+                                Path(obsidian_hit.obsidian_path),
+                                cfg.raw,
+                                cluster_slug,
+                            )
                         manifest.append(
                             new_entry(
                                 cluster=cluster_slug or "",
