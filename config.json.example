@@ -7,6 +7,7 @@
     "logs": "~/knowledge-base/logs",
     "obsidian_graph": "~/knowledge-base/.obsidian/graph.json"
   },
+  "clusters_file": "~/knowledge-base/.research_hub/clusters.yaml",
   "zotero": {
     "library_id": "YOUR_ZOTERO_USER_ID",
     "library_type": "user",
