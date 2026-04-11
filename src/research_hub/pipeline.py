@@ -8,8 +8,6 @@ from pathlib import Path
 from research_hub.config import get_config
 from research_hub.zotero.client import add_note, check_duplicate, get_client
 
-COLL = "XZ22GHJA"
-
 
 def _write_error_log(logs_dir: Path, errors: list[dict]) -> Path:
     log_path = logs_dir / f"pipeline_errors_{int(time.time())}.jsonl"
@@ -35,9 +33,18 @@ def _resolve_log_path(preferred_logs_dir: Path) -> Path:
 def run_pipeline(dry_run: bool = False) -> int:
     cfg = get_config()
     kb = str(cfg.root)
+    collection_key = cfg.zotero_default_collection
+    if collection_key is None:
+        raise RuntimeError(
+            "Set zotero.default_collection in config.json or "
+            "RESEARCH_HUB_DEFAULT_COLLECTION env var"
+        )
+
     log_path = _resolve_log_path(cfg.logs)
     out_path = cfg.root / "pipeline_test_output.json"
     papers_json = cfg.root / "papers_input.json"
+    collection_name = cfg.zotero_collections.get(collection_key, {}).get("name", collection_key)
+    frontmatter_collections = json.dumps([collection_name])
 
     with log_path.open("w", encoding="utf-8") as log:
         def p(message: str) -> None:
@@ -87,7 +94,7 @@ def run_pipeline(dry_run: bool = False) -> int:
             t["publicationTitle"] = pp["journal"]
             t["abstractNote"] = pp["abstract"]
             t["tags"] = [{"tag": x} for x in pp["tags"]]
-            t["collections"] = [COLL]
+            t["collections"] = [collection_key]
             try:
                 resp = zot.create_items([t])
                 if resp.get("successful"):
@@ -141,7 +148,7 @@ def run_pipeline(dry_run: bool = False) -> int:
             md += 'journal: "' + pp["journal"] + '"\n'
             md += 'doi: "' + pp["doi"] + '"\n'
             md += 'zotero-key: "' + zk + '"\n'
-            md += 'collections: ["LLM AI agent","Paper3-WRR-LLM-Flood-ABM"]\n'
+            md += "collections: " + frontmatter_collections + "\n"
             md += "tags: " + json.dumps(pp["tags"]) + "\n"
             md += 'category: "' + pp["category"] + '"\n'
             md += 'method-type: "' + pp["method_type"] + '"\n'

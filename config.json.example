@@ -6,5 +6,27 @@
     "projects": "~/knowledge-base/projects",
     "logs": "~/knowledge-base/logs",
     "obsidian_graph": "~/knowledge-base/.obsidian/graph.json"
+  },
+  "zotero": {
+    "library_id": "YOUR_ZOTERO_USER_ID",
+    "library_type": "user",
+    "default_collection": "ABCD1234",
+    "collections": {
+      "ABCD1234": {
+        "name": "Survey Papers",
+        "parent": null,
+        "section": "survey"
+      },
+      "EFGH5678": {
+        "name": "ABM Modeling",
+        "parent": null,
+        "section": "abm"
+      },
+      "IJKL9012": {
+        "name": "LLM Agents",
+        "parent": "EFGH5678",
+        "section": "abm"
+      }
+    }
   }
 }
