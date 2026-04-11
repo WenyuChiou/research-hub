@@ -445,7 +445,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
-    nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
+    nlm_login = nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
+    nlm_login.add_argument(
+        "--use-system-chrome",
+        action="store_true",
+        help="Launch the installed Chrome binary (channel=chrome) instead of bundled Chromium",
+    )
+    nlm_login.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Max seconds to wait for login (default: 300)",
+    )
     nlm_bundle = nlm_sub.add_parser("bundle", help="Export a drag-drop folder for NotebookLM")
     nlm_bundle.add_argument("--cluster", required=True)
     nlm_upload = nlm_sub.add_parser("upload", help="Auto-upload bundle to NotebookLM")
@@ -521,7 +532,11 @@ def main(argv: list[str] | None = None) -> int:
             from research_hub.notebooklm.session import login_interactive
 
             cfg = get_config()
-            return login_interactive(cfg.research_hub_dir / "nlm_sessions" / "default")
+            return login_interactive(
+                cfg.research_hub_dir / "nlm_sessions" / "default",
+                use_system_chrome=args.use_system_chrome,
+                timeout_sec=args.timeout,
+            )
         if args.notebooklm_command == "bundle":
             return _notebooklm_bundle(args.cluster)
         if args.notebooklm_command == "upload":
