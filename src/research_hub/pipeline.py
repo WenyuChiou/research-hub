@@ -161,7 +161,7 @@ def run_pipeline(
         )
 
     log_path = _resolve_log_path(cfg.logs)
-    out_path = cfg.root / "pipeline_test_output.json"
+    out_path = cfg.logs / "pipeline_output.json"
     papers_json = cfg.root / "papers_input.json"
     collection_name = (
         cfg.zotero_collections.get(collection_key, {}).get("name", collection_key)
