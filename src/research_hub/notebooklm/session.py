@@ -68,6 +68,120 @@ class PlaywrightSession:
                     pass
 
 
+def login_interactive_cdp(
+    user_data_dir: Path,
+    *,
+    timeout_sec: int = 300,
+    stable_hold_sec: int = 5,
+    chrome_binary: str | None = None,
+) -> int:
+    """CDP-attach login flow that bypasses Google's Playwright bot detection.
+
+    Instead of letting Playwright launch Chrome (which sets
+    ``navigator.webdriver = true`` and similar automation fingerprints
+    that Google's sign-in flow detects), we launch Chrome ourselves as
+    a normal subprocess with ``--remote-debugging-port`` and have
+    Playwright ``connect_over_cdp`` to the running instance. Chrome
+    itself never knows it is being automated — it is just a regular
+    Chrome window that happens to have a DevTools endpoint open — so
+    Google's bot check never fires.
+
+    The isolated ``user_data_dir`` persists cookies across runs, so
+    after the one-time interactive sign-in here, subsequent
+    ``research-hub notebooklm upload`` runs can attach headless and
+    reuse the session.
+    """
+    from research_hub.notebooklm.cdp_launcher import (
+        find_chrome_binary,
+        launch_chrome_with_cdp,
+        stop_cdp,
+    )
+
+    binary = chrome_binary or find_chrome_binary()
+    if binary is None:
+        print("  [ERR] Could not find Chrome binary on this system.")
+        print("  [ERR] Install Chrome, or pass --chrome-binary <path>.")
+        return 1
+
+    print("Launching Chrome with CDP remote debugging enabled...")
+    print(f"  Chrome binary: {binary}")
+    print(f"  Session dir:   {user_data_dir}")
+    print(f"  Mode:          cdp-attach (no Playwright automation fingerprint)")
+    print(f"  Timeout:       {timeout_sec}s  (will auto-close {stable_hold_sec}s after login)")
+    print()
+    print(">>> Sign in with your Google account in the opened Chrome.")
+    print(">>> The window will close AUTOMATICALLY when login is detected.")
+    print(">>> (Press Ctrl+C in this terminal if you need to abort.)")
+    print()
+
+    endpoint = launch_chrome_with_cdp(
+        user_data_dir=user_data_dir,
+        chrome_binary=binary,
+        headless=False,
+        startup_url=NOTEBOOKLM_HOME,
+    )
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(endpoint.cdp_url)
+            try:
+                contexts = browser.contexts
+                if not contexts:
+                    print("  [ERR] CDP-attached Chrome has no browser context yet.")
+                    return 1
+                context = contexts[0]
+                pages = context.pages
+                page = pages[0] if pages else context.new_page()
+
+                start = time.time()
+                stable_since: float | None = None
+                last_status_url = ""
+                while time.time() - start < timeout_sec:
+                    try:
+                        current_url = page.url
+                    except Exception:
+                        current_url = ""
+
+                    on_notebooklm = (
+                        "notebooklm.google.com" in current_url
+                        and "accounts.google.com" not in current_url
+                        and "oauth" not in current_url.lower()
+                        and "signin" not in current_url.lower()
+                    )
+
+                    if on_notebooklm:
+                        if stable_since is None:
+                            stable_since = time.time()
+                            print(
+                                f"  [{_tstamp()}] On notebooklm.google.com — "
+                                f"waiting {stable_hold_sec}s for session to stabilize..."
+                            )
+                            sys.stdout.flush()
+                        elif time.time() - stable_since >= stable_hold_sec:
+                            print(f"  [{_tstamp()}] Login detected. Session saved.")
+                            return 0
+                    else:
+                        if current_url and current_url != last_status_url:
+                            last_status_url = current_url
+                            short = current_url[:80] + ("..." if len(current_url) > 80 else "")
+                            print(f"  [{_tstamp()}] On {short}")
+                            sys.stdout.flush()
+                        stable_since = None
+
+                    time.sleep(1)
+
+                print(f"  [{_tstamp()}] Login not detected after {timeout_sec}s.")
+                return 1
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+    finally:
+        stop_cdp(endpoint)
+
+
 def login_interactive(
     user_data_dir: Path,
     *,

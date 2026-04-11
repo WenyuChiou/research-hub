@@ -447,6 +447,19 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
     nlm_login = nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
     nlm_login.add_argument(
+        "--cdp",
+        action="store_true",
+        help="CDP attach mode (RECOMMENDED): launches real Chrome as a subprocess with "
+             "--remote-debugging-port and has Playwright connect over CDP. Chrome never knows "
+             "it is being automated, so Google's bot check does not fire. Fixes the "
+             "'This browser or app may have security concerns' block.",
+    )
+    nlm_login.add_argument(
+        "--chrome-binary",
+        default=None,
+        help="Path to chrome.exe (CDP mode). Auto-detected if omitted.",
+    )
+    nlm_login.add_argument(
         "--use-system-chrome",
         action="store_true",
         help="Launch the installed Chrome binary (channel=chrome) instead of bundled Chromium",
@@ -547,12 +560,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.notebooklm_command == "login":
             from pathlib import Path as _Path
 
-            from research_hub.notebooklm.session import login_interactive
+            from research_hub.notebooklm.session import (
+                login_interactive,
+                login_interactive_cdp,
+            )
 
             cfg = get_config()
+            session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
+            if args.cdp:
+                return login_interactive_cdp(
+                    session_dir,
+                    timeout_sec=args.timeout,
+                    chrome_binary=args.chrome_binary,
+                )
             chrome_path = _Path(args.chrome_profile_path) if args.chrome_profile_path else None
             return login_interactive(
-                cfg.research_hub_dir / "nlm_sessions" / "default",
+                session_dir,
                 use_system_chrome=args.use_system_chrome,
                 timeout_sec=args.timeout,
                 from_chrome_profile=args.from_chrome_profile,
