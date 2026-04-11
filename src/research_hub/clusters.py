@@ -19,6 +19,8 @@ class Cluster:
     zotero_collection_key: str | None = None
     obsidian_subfolder: str = ""
     notebooklm_notebook: str = ""
+    notebooklm_notebook_url: str = ""
+    notebooklm_notebook_id: str = ""
     created_at: str = ""
     first_query: str = ""
     description: str = ""
@@ -132,6 +134,33 @@ class ClusterRegistry:
             **kwargs,
         )
         self.clusters[final_slug] = cluster
+        self.save()
+        return cluster
+
+    def bind(
+        self,
+        slug: str,
+        *,
+        zotero_collection_key: str | None = None,
+        obsidian_subfolder: str | None = None,
+        notebooklm_notebook: str | None = None,
+        notebooklm_notebook_url: str | None = None,
+        notebooklm_notebook_id: str | None = None,
+    ) -> Cluster:
+        """Update the cluster's system bindings. Only non-None params are changed."""
+        cluster = self.clusters.get(slug)
+        if cluster is None:
+            raise ValueError(f"Cluster not found: {slug}")
+        if zotero_collection_key is not None:
+            cluster.zotero_collection_key = zotero_collection_key
+        if obsidian_subfolder is not None:
+            cluster.obsidian_subfolder = obsidian_subfolder
+        if notebooklm_notebook is not None:
+            cluster.notebooklm_notebook = notebooklm_notebook
+        if notebooklm_notebook_url is not None:
+            cluster.notebooklm_notebook_url = notebooklm_notebook_url
+        if notebooklm_notebook_id is not None:
+            cluster.notebooklm_notebook_id = notebooklm_notebook_id
         self.save()
         return cluster
 
