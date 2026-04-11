@@ -198,6 +198,7 @@ ingestion_source: "{ingestion_source}"
 topic_cluster: "{topic_cluster}"
 cluster_queries: {cluster_queries_yaml}
 verified: false
+status: unread
 ---
 
 # {title}
