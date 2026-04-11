@@ -124,6 +124,10 @@ Write `.md` to `<vault-root>/raw/{sub-category}/{slugified-title}.md` (where `<v
 
 Use template from `references/paper-template.md`. Auto-generate: Summary (2-3 sentences), Key Findings (3-5 bullets), Methodology, Relevance. Follow conventions in `references/obsidian-conventions.md`.
 
+**Language rule — strict English default.** All auto-generated sections (Summary, Key Findings, Methodology, Relevance, any Obsidian section headers) MUST be written in English, regardless of the user's trigger-phrase language. The original paper's title, abstract, and Zotero annotation excerpts stay in their source language (do not translate). This rule applies to v0.3.0+ and overrides the global Language Policy for content inside Obsidian notes. Only deviate if the user explicitly says "在筆記裡用中文" or similar.
+
+**Default reading status.** New notes get `status: unread` in YAML frontmatter. The reading workflow progresses `unread → skimming → deep-read → cited → archived`. Hub pages filter by status to keep the vault scannable at scale.
+
 ### 4c: Update Hub Page
 
 Append entry to `hub/methods/{parent}/{sub-category}.md`:

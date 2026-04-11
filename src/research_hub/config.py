@@ -31,6 +31,7 @@ class HubConfig:
         config_projects: str | None = None
         config_logs: str | None = None
         config_graph: str | None = None
+        config_clusters_file: str | None = None
         config_zotero_library_id: str | None = None
         config_zotero_library_type: str | None = None
         config_zotero_default_collection: str | None = None
@@ -47,6 +48,7 @@ class HubConfig:
             config_projects = knowledge_base.get("projects")
             config_logs = knowledge_base.get("logs")
             config_graph = knowledge_base.get("obsidian_graph")
+            config_clusters_file = data.get("clusters_file")
             zotero = data.get("zotero", {})
             config_zotero_library_id = zotero.get("library_id")
             config_zotero_library_type = zotero.get("library_type")
@@ -79,6 +81,12 @@ class HubConfig:
             if graph_path
             else self.root / ".obsidian" / "graph.json"
         )
+        self.research_hub_dir = self.root / ".research_hub"
+        self.clusters_file = (
+            Path(config_clusters_file).expanduser()
+            if config_clusters_file
+            else self.research_hub_dir / "clusters.yaml"
+        )
         self.zotero_library_id = zotero_library_id
         self.zotero_library_type = config_zotero_library_type or os.environ.get(
             "ZOTERO_LIBRARY_TYPE", "user"
@@ -89,6 +97,10 @@ class HubConfig:
         ) else {}
 
         self.logs.mkdir(parents=True, exist_ok=True)
+        try:
+            self.research_hub_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            pass
 
 
 _config: HubConfig | None = None

@@ -2,6 +2,7 @@ import json
 import os
 import re
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import requests
 
@@ -141,7 +142,15 @@ def tags_to_wiki_links(tags):
                 links.add(link)
     return sorted(links)
 
-def make_raw_md(item_data, collections_list, notes):
+def make_raw_md(
+    item_data,
+    collections_list,
+    notes,
+    *,
+    topic_cluster: str = "",
+    cluster_queries: list[str] | None = None,
+    ingestion_source: str = "research-hub-v0.3.0",
+):
     title = item_data['title'].replace('"', "'")
     authors = item_data['authors']
     year = item_data['year']
@@ -154,6 +163,10 @@ def make_raw_md(item_data, collections_list, notes):
     author_str = '; '.join(authors) if authors else 'Unknown'
     tags_yaml = '[' + ', '.join(f'"{t}"' for t in tags) + ']' if tags else '[]'
     collections_yaml = '[' + ', '.join(f'"{c}"' for c in collections_list) + ']'
+    cluster_queries_yaml = '[' + ', '.join(
+        f'"{query}"' for query in (cluster_queries or [])
+    ) + ']'
+    ingested_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     wiki_links = tags_to_wiki_links(tags)
 
@@ -180,6 +193,12 @@ journal: "{journal}"
 zotero-key: {key}
 collections: {collections_yaml}
 tags: {tags_yaml}
+ingested_at: "{ingested_at}"
+ingestion_source: "{ingestion_source}"
+topic_cluster: "{topic_cluster}"
+cluster_queries: {cluster_queries_yaml}
+verified: false
+status: unread
 ---
 
 # {title}
