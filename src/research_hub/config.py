@@ -31,6 +31,10 @@ class HubConfig:
         config_projects: str | None = None
         config_logs: str | None = None
         config_graph: str | None = None
+        config_zotero_library_id: str | None = None
+        config_zotero_library_type: str | None = None
+        config_zotero_default_collection: str | None = None
+        config_zotero_collections: dict[str, dict] = {}
 
         config_path = _resolve_config_path()
         if config_path is not None:
@@ -43,6 +47,11 @@ class HubConfig:
             config_projects = knowledge_base.get("projects")
             config_logs = knowledge_base.get("logs")
             config_graph = knowledge_base.get("obsidian_graph")
+            zotero = data.get("zotero", {})
+            config_zotero_library_id = zotero.get("library_id")
+            config_zotero_library_type = zotero.get("library_type")
+            config_zotero_default_collection = zotero.get("default_collection")
+            config_zotero_collections = zotero.get("collections", {})
 
         raw_root = config_root or os.environ.get("RESEARCH_HUB_ROOT")
         raw_path = config_raw or os.environ.get("RESEARCH_HUB_RAW")
@@ -50,6 +59,10 @@ class HubConfig:
         projects_path = config_projects or os.environ.get("RESEARCH_HUB_PROJECTS")
         logs_path = config_logs or os.environ.get("RESEARCH_HUB_LOGS")
         graph_path = config_graph or os.environ.get("RESEARCH_HUB_GRAPH")
+        zotero_library_id = config_zotero_library_id or os.environ.get("ZOTERO_LIBRARY_ID")
+        zotero_default_collection = config_zotero_default_collection or os.environ.get(
+            "RESEARCH_HUB_DEFAULT_COLLECTION"
+        )
 
         if not raw_root:
             raw_root = str(Path.home() / "knowledge-base")
@@ -66,6 +79,14 @@ class HubConfig:
             if graph_path
             else self.root / ".obsidian" / "graph.json"
         )
+        self.zotero_library_id = zotero_library_id
+        self.zotero_library_type = config_zotero_library_type or os.environ.get(
+            "ZOTERO_LIBRARY_TYPE", "user"
+        )
+        self.zotero_default_collection = zotero_default_collection
+        self.zotero_collections = config_zotero_collections if isinstance(
+            config_zotero_collections, dict
+        ) else {}
 
         self.logs.mkdir(parents=True, exist_ok=True)
 

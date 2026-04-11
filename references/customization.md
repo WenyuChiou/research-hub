@@ -66,16 +66,16 @@ Edit the **Configuration** section: `PYTHON_PATH`, `KNOWLEDGE_BASE`, `RAW_PAPERS
 ```yaml
 # Paths
 PYTHON_PATH: "C:\\Python314\\python.exe"
-KNOWLEDGE_BASE: "C:\\Users\\wenyu\\knowledge-base"
-RAW_PAPERS: "C:\\Users\\wenyu\\knowledge-base\\raw"
-HUB_DIR: "C:\\Users\\wenyu\\knowledge-base\\wiki"
-HUB_METHODS: "C:\\Users\\wenyu\\knowledge-base\\hub\\methods"
-PROJECTS_DIR: "C:\\Users\\wenyu\\knowledge-base\\projects"
+KNOWLEDGE_BASE: "<vault-root>"
+RAW_PAPERS: "<vault-root>\\raw"
+HUB_DIR: "<vault-root>\\wiki"
+HUB_METHODS: "<vault-root>\\hub\\methods"
+PROJECTS_DIR: "<vault-root>\\projects"
 
 # Zotero
 ZOTERO_LOCAL_API: "http://localhost:23119"
-ZOTERO_USER_ID: "14772686"
-ZOTERO_API_BASE: "http://localhost:23119/api/users/14772686"
+ZOTERO_USER_ID: "YOUR_ZOTERO_USER_ID"
+ZOTERO_API_BASE: "http://localhost:23119/api/users/YOUR_ZOTERO_USER_ID"
 
 # Helper scripts (relative to KNOWLEDGE_BASE)
 ADD_TO_ZOTERO: "add_to_zotero.py"

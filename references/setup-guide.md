@@ -71,13 +71,13 @@ Located at: `.claude/skills/knowledge-base/SKILL.md`, under the `## Configuratio
 | Parameter | Example Value | Description |
 |-----------|--------------|-------------|
 | `PYTHON_PATH` | `C:\Python314\python.exe` | Full path to your Python executable |
-| `KNOWLEDGE_BASE` | `C:\Users\wenyu\knowledge-base` | Root folder of your knowledge base |
-| `RAW_PAPERS` | `C:\Users\wenyu\knowledge-base\raw` | Where individual paper .md files live |
-| `HUB_DIR` | `C:\Users\wenyu\knowledge-base\hub` | Where hub topic pages are generated |
-| `HUB_METHODS` | `C:\Users\wenyu\knowledge-base\hub\methods` | Sub-category hub pages |
-| `PROJECTS_DIR` | `C:\Users\wenyu\knowledge-base\projects` | Project pages |
+| `KNOWLEDGE_BASE` | `<vault-root>` | Root folder of your knowledge base |
+| `RAW_PAPERS` | `<vault-root>\raw` | Where individual paper .md files live |
+| `HUB_DIR` | `<vault-root>\hub` | Where hub topic pages are generated |
+| `HUB_METHODS` | `<vault-root>\hub\methods` | Sub-category hub pages |
+| `PROJECTS_DIR` | `<vault-root>\projects` | Project pages |
 | `ZOTERO_LOCAL_API` | `http://localhost:23119` | Zotero local API base URL (usually unchanged) |
-| `ZOTERO_USER_ID` | `14772686` | Your Zotero user ID (see Section 4) |
+| `ZOTERO_USER_ID` | `YOUR_ZOTERO_USER_ID` | Your Zotero user ID (see Section 4) |
 | `SHELL` | `cmd` | `cmd` on Windows, `bash` on macOS/Linux |
 
 ### 2.2 Python Script Hardcoded Paths
@@ -85,12 +85,12 @@ Located at: `.claude/skills/knowledge-base/SKILL.md`, under the `## Configuratio
 Each Python script has hardcoded paths near the top of the file. You must update these to match your machine.
 | Script | Variables to Change | Example |
 |--------|-------------------|---------|
-| `build_hub.py` | `raw_dir`, `hub_dir`, `proj_dir`, `root` | `r'C:\Users\wenyu\knowledge-base\raw'` etc. |
-| `categorize_graph.py` | `raw_dir`, `hub_dir` | `r'C:\Users\wenyu\knowledge-base\raw'` etc. |
-| `fix_orphans.py` | `raw_dir`, `hub_dir` | `r'C:\Users\wenyu\knowledge-base\raw'` etc. |
-| `classify_method_type.py` | `raw_dir` | `r'C:\Users\wenyu\knowledge-base\raw'` |
-| `reorganize_subcategories.py` | `ROOT` | `r'C:\Users\wenyu\knowledge-base'` |
-| `add_to_zotero.py` | `USER_ID` | `"14772686"` |
+| `build_hub.py` | `raw_dir`, `hub_dir`, `proj_dir`, `root` | `r'<vault-root>\raw'` etc. |
+| `categorize_graph.py` | `raw_dir`, `hub_dir` | `r'<vault-root>\raw'` etc. |
+| `fix_orphans.py` | `raw_dir`, `hub_dir` | `r'<vault-root>\raw'` etc. |
+| `classify_method_type.py` | `raw_dir` | `r'<vault-root>\raw'` |
+| `reorganize_subcategories.py` | `ROOT` | `r'<vault-root>'` |
+| `add_to_zotero.py` | `USER_ID` | `"YOUR_ZOTERO_USER_ID"` |
 
 ### 2.3 NotebookLM Notebook Mapping
 
@@ -222,7 +222,7 @@ The local API allows Claude (via Python scripts) to create new items in your Zot
 ### 4.3 Find Your Zotero User ID
 
 1. Log in to https://www.zotero.org/settings/keys in your browser.
-2. Your numeric user ID is displayed on this page (e.g., `14772686`).
+2. Your numeric user ID is displayed on this page (e.g., `YOUR_ZOTERO_USER_ID`).
 3. Note this number — you will need it for `ZOTERO_USER_ID` in SKILL.md and `USER_ID` in `add_to_zotero.py`.
 
 ### 4.4 Verify the API is Working
@@ -236,7 +236,7 @@ curl http://localhost:23119/api/users/YOUR_USER_ID/items?limit=1
 On Windows (cmd or PowerShell):
 
 ```cmd
-curl http://localhost:23119/api/users/14772686/items?limit=1
+curl http://localhost:23119/api/users/YOUR_ZOTERO_USER_ID/items?limit=1
 ```
 
 If you get a JSON response (even an empty array `[]`), the API is working. If you get a connection refused error, ensure Zotero is running and the checkbox from Step 4.2 is enabled.
@@ -273,7 +273,7 @@ The **Zotero MCP connector** (used by Claude) is **read-only** — it can search
 
 1. Install Obsidian from https://obsidian.md/.
 2. Launch Obsidian and choose **"Open folder as vault"**.
-3. Select your knowledge base root folder (e.g., `C:\Users\wenyu\knowledge-base`).
+3. Select your knowledge base root folder (e.g., `<vault-root>`).
 4. Obsidian will create a `.obsidian/` configuration folder inside it.
 
 ### 5.2 Configure Graph View Colors
@@ -388,7 +388,7 @@ When selecting which URL to provide to NotebookLM, the pipeline uses this priori
 The pipeline uses six Python scripts. They are run from the knowledge base root directory. On Windows, the typical invocation pattern is:
 
 ```cmd
-cd /d C:\Users\wenyu\knowledge-base && set PYTHONPATH=C:\Users\wenyu\knowledge-base && C:\Python314\python.exe <script_name>.py
+cd /d <vault-root> && set PYTHONPATH=<vault-root> && C:\Python314\python.exe <script_name>.py
 ```
 
 On macOS/Linux:
@@ -756,7 +756,7 @@ Follow this numbered checklist to verify everything works after initial setup.
 **Symptom:** Python scripts fail with `ImportError` or `ModuleNotFoundError` when run via Desktop Commander.
 
 **Solution:** Always prepend the PYTHONPATH setting before running scripts:
-- Windows: `set PYTHONPATH=C:\Users\wenyu\knowledge-base && C:\Python314\python.exe script.py`
+- Windows: `set PYTHONPATH=<vault-root> && C:\Python314\python.exe script.py`
 - macOS/Linux: `export PYTHONPATH=/home/user/knowledge-base && python3 script.py`
 
 ### Method-Type Misclassification
@@ -837,13 +837,13 @@ sub-category: "Risk-Perception"
 
 ```cmd
 :: Run a single script
-cd /d C:\Users\wenyu\knowledge-base && set PYTHONPATH=C:\Users\wenyu\knowledge-base && C:\Python314\python.exe build_hub.py
+cd /d <vault-root> && set PYTHONPATH=<vault-root> && C:\Python314\python.exe build_hub.py
 
 :: Run all scripts in sequence
-cd /d C:\Users\wenyu\knowledge-base && set PYTHONPATH=C:\Users\wenyu\knowledge-base && C:\Python314\python.exe classify_method_type.py && C:\Python314\python.exe reorganize_subcategories.py && C:\Python314\python.exe build_hub.py && C:\Python314\python.exe categorize_graph.py && C:\Python314\python.exe fix_orphans.py
+cd /d <vault-root> && set PYTHONPATH=<vault-root> && C:\Python314\python.exe classify_method_type.py && C:\Python314\python.exe reorganize_subcategories.py && C:\Python314\python.exe build_hub.py && C:\Python314\python.exe categorize_graph.py && C:\Python314\python.exe fix_orphans.py
 
 :: Test Zotero API
-curl http://localhost:23119/api/users/14772686/collections
+curl http://localhost:23119/api/users/YOUR_ZOTERO_USER_ID/collections
 ```
 
 ### macOS / Linux (bash)

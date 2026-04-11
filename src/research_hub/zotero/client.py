@@ -90,9 +90,15 @@ def check_local_api(timeout=2) -> bool:
 
     Returns True if localhost:23119 responds, False otherwise.
     """
+    from research_hub.config import get_config
+
+    library_id = get_config().zotero_library_id
+    if library_id is None:
+        return False
+
     try:
         req = urllib.request.Request(
-            f"{LOCAL_API_BASE}/users/14772686/items?limit=1",
+            f"{LOCAL_API_BASE}/users/{library_id}/items?limit=1",
             headers=LOCAL_API_HEADERS,
         )
         urllib.request.urlopen(req, timeout=timeout)
