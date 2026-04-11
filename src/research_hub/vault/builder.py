@@ -3,6 +3,7 @@ import re
 
 from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config as _get_config
+from research_hub.vault.progress import count_status_by_cluster
 
 # Merge mapping: normalize duplicate/typo Zotero collection names to canonical wiki names
 WIKI_MERGE = {
@@ -35,6 +36,12 @@ def normalize_collections(collections):
             seen.add(canonical.lower())
             normalized.append(canonical)
     return normalized
+
+
+def _ingested_sort_key(value: str) -> tuple[int, str]:
+    """Sort ingest timestamps with blank values last."""
+
+    return (1, value) if value else (0, "")
 
 
 def main() -> int:
@@ -263,6 +270,35 @@ papers: {len(matched)}
             fh.write(content)
         print(f"  Project: {proj_name}.md ({len(matched)} papers)")
 
+    status_counts = count_status_by_cluster(cfg.raw)
+    cluster_rows = []
+    for cluster in clusters.list():
+        matched = [paper for paper in papers if paper.get("topic_cluster") == cluster.slug]
+        last_ingest = "?"
+        ingested_values = [
+            str(paper.get("ingested_at", "")).strip()
+            for paper in matched
+            if str(paper.get("ingested_at", "")).strip()
+        ]
+        if ingested_values:
+            last_ingest = max(ingested_values, key=_ingested_sort_key)[:10]
+        counter = status_counts.get(cluster.slug, {})
+        cluster_rows.append(
+            {
+                "slug": cluster.slug,
+                "name": cluster.name,
+                "total": sum(counter.values()),
+                "unread": counter.get("unread", 0),
+                "skim": counter.get("skim", 0),
+                "deep": counter.get("deep-read", 0),
+                "cited": counter.get("cited", 0),
+                "last_ingest": last_ingest,
+            }
+        )
+
+    cluster_rows.sort(key=lambda row: (-row["unread"], -row["total"], row["slug"]))
+    unassigned_count = sum(status_counts.get("__unassigned__", {}).values())
+
     index_content = f"""---
 type: index
 total_papers: {len(papers)}
@@ -271,6 +307,23 @@ total_papers: {len(papers)}
 # Knowledge Base Index
 
 Total papers: **{len(papers)}**
+
+## Clusters Overview
+
+| Cluster | Total | Unread | Skim | Deep | Cited | Last Ingest |
+|---|---:|---:|---:|---:|---:|---|
+"""
+    for row in cluster_rows:
+        index_content += (
+            f"| [[clusters/{row['slug']}|{row['name']}]] | {row['total']} | "
+            f"{row['unread']} | {row['skim']} | {row['deep']} | {row['cited']} | "
+            f"{row['last_ingest']} |\n"
+        )
+
+    if unassigned_count:
+        index_content += f"\n**Unassigned notes:** {unassigned_count}\n"
+
+    index_content += """
 
 ## Research Projects
 
@@ -285,6 +338,16 @@ Total papers: **{len(papers)}**
         index_content += f"- {topic.replace('-', ' ')}\n"
 
     index_content += """
+## Global Unread Queue (top 20)
+
+```dataview
+TABLE year, authors, topic_cluster, status
+FROM "raw"
+WHERE status = "unread"
+SORT year DESC
+LIMIT 20
+```
+
 ## All Papers by Year
 
 """
@@ -299,10 +362,10 @@ Total papers: **{len(papers)}**
             index_content += f"- {paper['title_line'][:80]} ({paper.get('year', 'n.d.')})\n"
         index_content += "\n"
 
-    index_path = os.path.join(root, "index.md")
+    index_path = os.path.join(hub_dir, "index.md")
     with open(index_path, "w", encoding="utf-8") as fh:
         fh.write(index_content)
-    print("  Index: index.md")
+    print("  Index: hub/index.md")
     print("DONE")
     return 0
 

@@ -123,6 +123,44 @@ def _search(query: str, limit: int) -> int:
     return 0
 
 
+def _status(cluster: str | None = None) -> int:
+    from research_hub.vault.progress import print_status_table
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    print_status_table(cfg.raw, registry, one_cluster=cluster)
+    return 0
+
+
+def _migrate_yaml(
+    assign_cluster: str | None = None,
+    folder: str | None = None,
+    force: bool = False,
+    dry_run: bool = False,
+) -> int:
+    from research_hub.vault.migrate import migrate_vault
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    if assign_cluster is not None and registry.get(assign_cluster) is None:
+        raise ValueError(f"Cluster not found: {assign_cluster}")
+
+    folder_path = Path(folder) if folder else None
+    report = migrate_vault(
+        cfg.raw,
+        cluster_override=assign_cluster,
+        folder=folder_path,
+        force=force,
+        dry_run=dry_run,
+    )
+    mode = "Would patch" if dry_run else "Patched"
+    print(
+        f"{mode} {report['changed']} notes "
+        f"(scanned {report['scanned']}, skipped {report['skipped']})"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="research-hub")
     subparsers = parser.add_subparsers(dest="command")
@@ -154,6 +192,31 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser = subparsers.add_parser("search", help="Search Semantic Scholar")
     search_parser.add_argument("query")
     search_parser.add_argument("--limit", type=int, default=20)
+
+    status_parser = subparsers.add_parser("status", help="Show per-cluster reading progress")
+    status_parser.add_argument("--cluster", default=None, help="Show only this cluster")
+
+    migrate_parser = subparsers.add_parser(
+        "migrate-yaml", help="Patch legacy notes to v0.3.x YAML spec"
+    )
+    migrate_parser.add_argument(
+        "--assign-cluster",
+        default=None,
+        help="Bulk-assign all matched notes to this cluster slug",
+    )
+    migrate_parser.add_argument(
+        "--folder",
+        default=None,
+        help="Restrict to this subfolder under raw/",
+    )
+    migrate_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing topic_cluster values",
+    )
+    migrate_parser.add_argument(
+        "--dry-run", action="store_true", help="Report without writing"
+    )
 
     subparsers.add_parser("verify", help="Run repository verification checks")
 
@@ -202,6 +265,15 @@ def main(argv: list[str] | None = None) -> int:
             return _clusters_new(args.query, args.name, args.slug)
     if args.command == "search":
         return _search(args.query, args.limit)
+    if args.command == "status":
+        return _status(cluster=args.cluster)
+    if args.command == "migrate-yaml":
+        return _migrate_yaml(
+            assign_cluster=args.assign_cluster,
+            folder=args.folder,
+            force=args.force,
+            dry_run=args.dry_run,
+        )
     if args.command == "verify":
         return _verify()
     if args.command == "cleanup":
