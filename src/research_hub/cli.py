@@ -63,6 +63,20 @@ def _clusters_new(query: str, name: str | None, slug: str | None) -> int:
     return 0
 
 
+def _cleanup_hub(dry_run: bool = False) -> int:
+    from research_hub.vault.cleanup import dedup_hub_pages
+
+    cfg = get_config()
+    report = dedup_hub_pages(cfg.hub, dry_run=dry_run)
+    prefix = "Would remove" if dry_run else "Removed"
+    print(f"{prefix} {report.wikilinks_removed} duplicate wikilinks in {report.files_modified} files")
+    print(f"(scanned {report.files_scanned} files under {cfg.hub})")
+    if report.per_file:
+        for rel, count in sorted(report.per_file.items(), key=lambda kv: -kv[1])[:15]:
+            print(f"  {count:4d}  {rel}")
+    return 0
+
+
 def _search(query: str, limit: int) -> int:
     cfg = get_config()
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
@@ -106,6 +120,14 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--limit", type=int, default=20)
 
     subparsers.add_parser("verify", help="Run repository verification checks")
+
+    cleanup_parser = subparsers.add_parser(
+        "cleanup", help="Deduplicate wikilinks across hub pages"
+    )
+    cleanup_parser.add_argument(
+        "--dry-run", action="store_true", help="Report without writing"
+    )
+
     return parser
 
 
@@ -134,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
         return _search(args.query, args.limit)
     if args.command == "verify":
         return _verify()
+    if args.command == "cleanup":
+        return _cleanup_hub(dry_run=args.dry_run)
 
     parser.error(f"Unknown command: {args.command}")
     return 2
