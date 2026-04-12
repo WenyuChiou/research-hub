@@ -300,3 +300,17 @@ def test_show_cluster_includes_sync_status(tmp_path, monkeypatch):
     assert result["slug"] == "flood-agents"
     assert "sync_status" in result
     assert result["sync_status"]["cluster_slug"] == "flood-agents"
+
+
+def test_new_operation_tools_are_registered():
+    from research_hub.mcp_server import mcp
+
+    for tool_name in [
+        "remove_paper",
+        "mark_paper",
+        "move_paper",
+        "search_vault",
+        "merge_clusters",
+        "split_cluster",
+    ]:
+        assert tool_name in mcp._tool_manager._tools

@@ -8,6 +8,9 @@ import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from research_hub.config import get_config
+from research_hub.operations import _update_frontmatter_field, move_paper, note_matches_query
+
 
 @dataclass
 class Cluster:
@@ -168,6 +171,74 @@ class ClusterRegistry:
             cluster.notebooklm_notebook_id = notebooklm_notebook_id
         self.save()
         return cluster
+
+    def rename(self, slug: str, new_name: str) -> Cluster:
+        """Rename a cluster display name without changing its slug."""
+        cluster = self.clusters.get(slug)
+        if cluster is None:
+            raise ValueError(f"Cluster not found: {slug}")
+        cluster.name = new_name
+        self.save()
+        return cluster
+
+    def delete(self, slug: str, dry_run: bool = False) -> dict[str, str | int | bool]:
+        """Delete a cluster registry entry and unbind its notes."""
+        if slug not in self.clusters:
+            raise ValueError(f"Cluster not found: {slug}")
+        cfg = get_config()
+        note_paths = sorted((cfg.raw / slug).glob("*.md"))
+        if not dry_run:
+            self.clusters.pop(slug)
+            for note_path in note_paths:
+                _update_frontmatter_field(note_path, "topic_cluster", "")
+            self.save()
+        return {"slug": slug, "notes_unbound": len(note_paths), "dry_run": dry_run}
+
+    def merge(self, source_slug: str, target_slug: str, vault_raw: Path | None = None) -> dict[str, str | int]:
+        """Move all notes from one cluster into another and delete the source."""
+        source = self.clusters.get(source_slug)
+        target = self.clusters.get(target_slug)
+        if source is None:
+            raise ValueError(f"Cluster not found: {source_slug}")
+        if target is None:
+            raise ValueError(f"Cluster not found: {target_slug}")
+        raw_dir = vault_raw or get_config().raw
+        moved = 0
+        for note_path in sorted((raw_dir / source_slug).glob("*.md")):
+            move_paper(note_path.stem, target_slug)
+            moved += 1
+        self.clusters.pop(source.slug)
+        self.save()
+        return {"source": source_slug, "target": target_slug, "moved": moved}
+
+    def split(
+        self,
+        source_slug: str,
+        query: str,
+        new_name: str,
+        seed_keywords: list[str] | None = None,
+        vault_raw: Path | None = None,
+    ) -> dict[str, str | int]:
+        """Create a new cluster and move matching notes from the source cluster."""
+        source = self.clusters.get(source_slug)
+        if source is None:
+            raise ValueError(f"Cluster not found: {source_slug}")
+        raw_dir = vault_raw or get_config().raw
+        new_cluster = self.create(query, name=new_name, seed_keywords=seed_keywords)
+        moved = 0
+        remaining = 0
+        for note_path in sorted((raw_dir / source_slug).glob("*.md")):
+            if note_matches_query(note_path, query):
+                move_paper(note_path.stem, new_cluster.slug)
+                moved += 1
+            else:
+                remaining += 1
+        return {
+            "source": source_slug,
+            "new_cluster": new_cluster.slug,
+            "moved": moved,
+            "remaining": remaining,
+        }
 
     def match_by_query(self, query: str, min_overlap: int = 2) -> Cluster | None:
         """Match the best existing cluster by keyword overlap."""

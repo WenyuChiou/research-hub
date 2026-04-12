@@ -283,6 +283,77 @@ def get_config_info() -> dict[str, Any]:
         return _tool_error(exc)
 
 
+def remove_paper(identifier: str, include_zotero: bool = False, dry_run: bool = False) -> dict[str, Any]:
+    """Remove a paper from the vault, optionally deleting its Zotero item too."""
+    try:
+        from research_hub.operations import remove_paper as _remove
+
+        return _remove(identifier, include_zotero=include_zotero, dry_run=dry_run)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def mark_paper(slug: str, status: str) -> dict[str, Any]:
+    """Update reading status for a note."""
+    try:
+        from research_hub.operations import mark_paper as _mark
+
+        return _mark(slug, status)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def move_paper(slug: str, to_cluster: str) -> dict[str, Any]:
+    """Move a note to a different cluster."""
+    try:
+        from research_hub.operations import move_paper as _move
+
+        return _move(slug, to_cluster)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def search_vault(
+    query: str,
+    cluster: str | None = None,
+    status: str | None = None,
+    full_text: bool = False,
+) -> list[dict[str, Any]] | dict[str, str]:
+    """Search local vault notes by title or full text."""
+    try:
+        from research_hub.vault_search import search_vault as _search
+
+        return _search(query, cluster=cluster, status=status, full_text=full_text)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def merge_clusters(source: str, into: str) -> dict[str, Any]:
+    """Merge one cluster into another."""
+    try:
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        return registry.merge(source, into, vault_raw=cfg.raw)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def split_cluster(source: str, query: str, new_name: str) -> dict[str, Any]:
+    """Split a source cluster into a new cluster based on title keyword overlap."""
+    try:
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        return registry.split(source, query, new_name, vault_raw=cfg.raw)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 def main() -> None:
     """Entry point for `research-hub serve`."""
     if FastMCP is None:
@@ -300,6 +371,12 @@ mcp.tool()(show_cluster)
 mcp.tool()(export_citation)
 mcp.tool()(run_doctor)
 mcp.tool()(get_config_info)
+mcp.tool()(remove_paper)
+mcp.tool()(mark_paper)
+mcp.tool()(move_paper)
+mcp.tool()(search_vault)
+mcp.tool()(merge_clusters)
+mcp.tool()(split_cluster)
 
 
 if __name__ == "__main__":

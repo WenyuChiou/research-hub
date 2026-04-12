@@ -13,10 +13,12 @@ from pathlib import Path
 from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config
 from research_hub.dedup import DedupIndex, build_from_obsidian, build_from_zotero
+from research_hub.operations import mark_paper, move_paper, remove_paper
 from research_hub.pipeline import run_pipeline
 from research_hub.search import SemanticScholarClient, iter_new_results
 from research_hub.suggest import PaperInput, suggest_cluster_for_paper, suggest_related_papers
 from research_hub.verify import verify_arxiv, verify_doi, verify_paper
+from research_hub.vault_search import search_vault
 
 
 def _verify(args) -> int:
@@ -122,6 +124,66 @@ def _clusters_bind(slug: str, zotero_key, obsidian_folder, notebooklm_notebook) 
     print(f"  Zotero collection:   {cluster.zotero_collection_key or '(unset)'}")
     print(f"  Obsidian folder:     {cluster.obsidian_subfolder or '(unset)'}")
     print(f"  NotebookLM notebook: {cluster.notebooklm_notebook or '(unset)'}")
+    return 0
+
+
+def _clusters_rename(slug: str, name: str) -> int:
+    cfg = get_config()
+    cluster = ClusterRegistry(cfg.clusters_file).rename(slug, name)
+    print(f"{cluster.slug}\t{cluster.name}")
+    return 0
+
+
+def _clusters_delete(slug: str, dry_run: bool) -> int:
+    cfg = get_config()
+    result = ClusterRegistry(cfg.clusters_file).delete(slug, dry_run=dry_run)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _clusters_merge(source: str, target: str) -> int:
+    cfg = get_config()
+    result = ClusterRegistry(cfg.clusters_file).merge(source, target, vault_raw=cfg.raw)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _clusters_split(source: str, query: str, new_name: str) -> int:
+    cfg = get_config()
+    result = ClusterRegistry(cfg.clusters_file).split(source, query, new_name, vault_raw=cfg.raw)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _remove(identifier: str, include_zotero: bool, dry_run: bool) -> int:
+    print(json.dumps(remove_paper(identifier, include_zotero=include_zotero, dry_run=dry_run)))
+    return 0
+
+
+def _mark(slug: str | None, status: str, cluster: str | None) -> int:
+    print(json.dumps(mark_paper(slug, status, cluster=cluster)))
+    return 0
+
+
+def _move(slug: str, to_cluster: str) -> int:
+    print(json.dumps(move_paper(slug, to_cluster)))
+    return 0
+
+
+def _find(
+    query: str,
+    cluster: str | None,
+    status: str | None,
+    full_text: bool,
+    emit_json: bool,
+    limit: int,
+) -> int:
+    results = search_vault(query, cluster=cluster, status=status, full_text=full_text, limit=limit)
+    if emit_json:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        return 0
+    for item in results:
+        print(f"{item['slug']}\t{item['title']}\t{item['cluster']}\t{item['status']}")
     return 0
 
 
@@ -596,6 +658,45 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="NotebookLM notebook name",
     )
+    rename_parser = clusters_subparsers.add_parser("rename", help="Rename a cluster")
+    rename_parser.add_argument("slug")
+    rename_parser.add_argument("--name", required=True)
+    delete_parser = clusters_subparsers.add_parser("delete", help="Delete a cluster")
+    delete_parser.add_argument("slug")
+    delete_parser.add_argument("--dry-run", action="store_true")
+    merge_parser = clusters_subparsers.add_parser("merge", help="Merge two clusters")
+    merge_parser.add_argument("source", help="Source cluster slug (will be removed)")
+    merge_parser.add_argument("--into", required=True, dest="target", help="Target cluster slug")
+    split_parser = clusters_subparsers.add_parser("split", help="Split a cluster")
+    split_parser.add_argument("source", help="Source cluster slug")
+    split_parser.add_argument("--query", required=True, help="Keywords for the new sub-cluster")
+    split_parser.add_argument("--new-name", required=True, help="Display name for new cluster")
+
+    remove_parser = subparsers.add_parser("remove", help="Remove a paper from the vault")
+    remove_parser.add_argument("identifier", help="DOI or note filename slug")
+    remove_parser.add_argument("--zotero", action="store_true", help="Also delete from Zotero")
+    remove_parser.add_argument("--dry-run", action="store_true")
+
+    mark_parser = subparsers.add_parser("mark", help="Update reading status of a paper")
+    mark_parser.add_argument("slug", nargs="?", default=None, help="Note filename slug")
+    mark_parser.add_argument(
+        "--status", required=True, choices=["unread", "reading", "deep-read", "cited"]
+    )
+    mark_parser.add_argument("--cluster", default=None, help="Bulk-mark all notes in cluster")
+
+    move_parser = subparsers.add_parser("move", help="Move a paper to a different cluster")
+    move_parser.add_argument("slug", help="Note filename slug")
+    move_parser.add_argument("--to", required=True, dest="to_cluster", help="Target cluster slug")
+
+    find_parser = subparsers.add_parser("find", help="Search within vault notes")
+    find_parser.add_argument("query", help="Search query")
+    find_parser.add_argument("--cluster", default=None)
+    find_parser.add_argument(
+        "--status", default=None, choices=["unread", "reading", "deep-read", "cited"]
+    )
+    find_parser.add_argument("--full", action="store_true", help="Full-text search (slower)")
+    find_parser.add_argument("--json", action="store_true")
+    find_parser.add_argument("--limit", type=int, default=20)
 
     search_parser = subparsers.add_parser("search", help="Search Semantic Scholar")
     search_parser.add_argument("query")
@@ -864,6 +965,22 @@ def main(argv: list[str] | None = None) -> int:
                 args.obsidian_folder,
                 args.notebooklm_notebook,
             )
+        if args.clusters_command == "rename":
+            return _clusters_rename(args.slug, args.name)
+        if args.clusters_command == "delete":
+            return _clusters_delete(args.slug, args.dry_run)
+        if args.clusters_command == "merge":
+            return _clusters_merge(args.source, args.target)
+        if args.clusters_command == "split":
+            return _clusters_split(args.source, args.query, args.new_name)
+    if args.command == "remove":
+        return _remove(args.identifier, args.zotero, args.dry_run)
+    if args.command == "mark":
+        return _mark(args.slug, args.status, args.cluster)
+    if args.command == "move":
+        return _move(args.slug, args.to_cluster)
+    if args.command == "find":
+        return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
         return _search(args.query, args.limit, verify=args.verify)
     if args.command == "suggest":
