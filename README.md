@@ -15,6 +15,24 @@ playwright install chromium
 `research-hub` requires Python 3.10 or newer. Install the `playwright`
 extra only if you plan to use NotebookLM login, upload, or generation.
 
+## Screenshots
+
+### First-time setup
+
+![init](docs/screenshots/init.svg)
+
+### Health check
+
+![doctor](docs/screenshots/doctor.svg)
+
+### Proactive integration suggestions
+
+![suggest](docs/screenshots/suggest.svg)
+
+### Install AI assistant skill
+
+![install](docs/screenshots/install.svg)
+
 ## Quick start
 
 1. Run the first-time setup wizard:

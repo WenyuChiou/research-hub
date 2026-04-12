@@ -1,0 +1,104 @@
+<svg class="rich-terminal" viewBox="0 0 1092 342.79999999999995" xmlns="http://www.w3.org/2000/svg">
+    <!-- Generated with Rich https://www.textualize.io -->
+    <style>
+
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Regular"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Regular.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Regular.woff") format("woff");
+        font-style: normal;
+        font-weight: 400;
+    }
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Bold"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Bold.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Bold.woff") format("woff");
+        font-style: bold;
+        font-weight: 700;
+    }
+
+    .terminal-3391175495-matrix {
+        font-family: Fira Code, monospace;
+        font-size: 20px;
+        line-height: 24.4px;
+        font-variant-east-asian: full-width;
+    }
+
+    .terminal-3391175495-title {
+        font-size: 18px;
+        font-weight: bold;
+        font-family: arial;
+    }
+
+    .terminal-3391175495-r1 { fill: #68a0b3;font-weight: bold }
+.terminal-3391175495-r2 { fill: #c5c8c6 }
+.terminal-3391175495-r3 { fill: #c5c8c6;font-weight: bold }
+    </style>
+
+    <defs>
+    <clipPath id="terminal-3391175495-clip-terminal">
+      <rect x="0" y="0" width="1072.6" height="291.79999999999995" />
+    </clipPath>
+    <clipPath id="terminal-3391175495-line-0">
+    <rect x="0" y="1.5" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-1">
+    <rect x="0" y="25.9" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-2">
+    <rect x="0" y="50.3" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-3">
+    <rect x="0" y="74.7" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-4">
+    <rect x="0" y="99.1" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-5">
+    <rect x="0" y="123.5" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-6">
+    <rect x="0" y="147.9" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-7">
+    <rect x="0" y="172.3" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-8">
+    <rect x="0" y="196.7" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-9">
+    <rect x="0" y="221.1" width="1073.6" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-3391175495-line-10">
+    <rect x="0" y="245.5" width="1073.6" height="24.65"/>
+            </clipPath>
+    </defs>
+
+    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1090" height="340.8" rx="8"/><text class="terminal-3391175495-title" fill="#c5c8c6" text-anchor="middle" x="545" y="27">research-hub&#160;doctor</text>
+            <g transform="translate(26,22)">
+            <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
+            <circle cx="22" cy="0" r="7" fill="#febc2e"/>
+            <circle cx="44" cy="0" r="7" fill="#28c840"/>
+            </g>
+        
+    <g transform="translate(9, 41)" clip-path="url(#terminal-3391175495-clip-terminal)">
+    
+    <g class="terminal-3391175495-matrix">
+    <text class="terminal-3391175495-r1" x="0" y="20" textLength="256.2" clip-path="url(#terminal-3391175495-line-0)">$&#160;research-hub&#160;doctor</text><text class="terminal-3391175495-r2" x="1073.6" y="20" textLength="12.2" clip-path="url(#terminal-3391175495-line-0)">
+</text><text class="terminal-3391175495-r2" x="1073.6" y="44.4" textLength="12.2" clip-path="url(#terminal-3391175495-line-1)">
+</text><text class="terminal-3391175495-r3" x="24.4" y="68.8" textLength="12.2" clip-path="url(#terminal-3391175495-line-2)">[</text><text class="terminal-3391175495-r2" x="36.6" y="68.8" textLength="24.4" clip-path="url(#terminal-3391175495-line-2)">OK</text><text class="terminal-3391175495-r3" x="61" y="68.8" textLength="12.2" clip-path="url(#terminal-3391175495-line-2)">]</text><text class="terminal-3391175495-r2" x="73.2" y="68.8" textLength="219.6" clip-path="url(#terminal-3391175495-line-2)">&#160;config:&#160;Found&#160;at&#160;</text><text class="terminal-3391175495-r2" x="1073.6" y="68.8" textLength="12.2" clip-path="url(#terminal-3391175495-line-2)">
+</text><text class="terminal-3391175495-r2" x="0" y="93.2" textLength="805.2" clip-path="url(#terminal-3391175495-line-3)">C:\Users\wenyu\AppData\Local\research-hub\research-hub\config.json</text><text class="terminal-3391175495-r2" x="1073.6" y="93.2" textLength="12.2" clip-path="url(#terminal-3391175495-line-3)">
+</text><text class="terminal-3391175495-r3" x="24.4" y="117.6" textLength="12.2" clip-path="url(#terminal-3391175495-line-4)">[</text><text class="terminal-3391175495-r2" x="36.6" y="117.6" textLength="24.4" clip-path="url(#terminal-3391175495-line-4)">OK</text><text class="terminal-3391175495-r3" x="61" y="117.6" textLength="12.2" clip-path="url(#terminal-3391175495-line-4)">]</text><text class="terminal-3391175495-r2" x="73.2" y="117.6" textLength="854" clip-path="url(#terminal-3391175495-line-4)">&#160;vault:&#160;C:\Users\wenyu\AppData\Local\Temp\rh-screenshot-vault-v4q8s_uk</text><text class="terminal-3391175495-r2" x="1073.6" y="117.6" textLength="12.2" clip-path="url(#terminal-3391175495-line-4)">
+</text><text class="terminal-3391175495-r3" x="24.4" y="142" textLength="12.2" clip-path="url(#terminal-3391175495-line-5)">[</text><text class="terminal-3391175495-r2" x="36.6" y="142" textLength="24.4" clip-path="url(#terminal-3391175495-line-5)">OK</text><text class="terminal-3391175495-r3" x="61" y="142" textLength="12.2" clip-path="url(#terminal-3391175495-line-5)">]</text><text class="terminal-3391175495-r2" x="73.2" y="142" textLength="378.2" clip-path="url(#terminal-3391175495-line-5)">&#160;zotero_key:&#160;API&#160;key&#160;configured</text><text class="terminal-3391175495-r2" x="1073.6" y="142" textLength="12.2" clip-path="url(#terminal-3391175495-line-5)">
+</text><text class="terminal-3391175495-r3" x="24.4" y="166.4" textLength="12.2" clip-path="url(#terminal-3391175495-line-6)">[</text><text class="terminal-3391175495-r2" x="36.6" y="166.4" textLength="24.4" clip-path="url(#terminal-3391175495-line-6)">!!</text><text class="terminal-3391175495-r3" x="61" y="166.4" textLength="12.2" clip-path="url(#terminal-3391175495-line-6)">]</text><text class="terminal-3391175495-r2" x="73.2" y="166.4" textLength="317.2" clip-path="url(#terminal-3391175495-line-6)">&#160;zotero_api:&#160;API&#160;returned&#160;</text><text class="terminal-3391175495-r1" x="390.4" y="166.4" textLength="36.6" clip-path="url(#terminal-3391175495-line-6)">403</text><text class="terminal-3391175495-r2" x="1073.6" y="166.4" textLength="12.2" clip-path="url(#terminal-3391175495-line-6)">
+</text><text class="terminal-3391175495-r3" x="24.4" y="190.8" textLength="12.2" clip-path="url(#terminal-3391175495-line-7)">[</text><text class="terminal-3391175495-r2" x="36.6" y="190.8" textLength="24.4" clip-path="url(#terminal-3391175495-line-7)">!!</text><text class="terminal-3391175495-r3" x="61" y="190.8" textLength="12.2" clip-path="url(#terminal-3391175495-line-7)">]</text><text class="terminal-3391175495-r2" x="73.2" y="190.8" textLength="329.4" clip-path="url(#terminal-3391175495-line-7)">&#160;dedup_index:&#160;Not&#160;built&#160;yet</text><text class="terminal-3391175495-r2" x="1073.6" y="190.8" textLength="12.2" clip-path="url(#terminal-3391175495-line-7)">
+</text><text class="terminal-3391175495-r2" x="0" y="215.2" textLength="414.8" clip-path="url(#terminal-3391175495-line-8)">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;-&gt;&#160;Run:&#160;research-hub&#160;index</text><text class="terminal-3391175495-r2" x="1073.6" y="215.2" textLength="12.2" clip-path="url(#terminal-3391175495-line-8)">
+</text><text class="terminal-3391175495-r3" x="24.4" y="239.6" textLength="12.2" clip-path="url(#terminal-3391175495-line-9)">[</text><text class="terminal-3391175495-r2" x="36.6" y="239.6" textLength="24.4" clip-path="url(#terminal-3391175495-line-9)">OK</text><text class="terminal-3391175495-r3" x="61" y="239.6" textLength="12.2" clip-path="url(#terminal-3391175495-line-9)">]</text><text class="terminal-3391175495-r2" x="73.2" y="239.6" textLength="756.4" clip-path="url(#terminal-3391175495-line-9)">&#160;chrome:&#160;C:\Program&#160;Files\Google\Chrome\Application\chrome.exe</text><text class="terminal-3391175495-r2" x="1073.6" y="239.6" textLength="12.2" clip-path="url(#terminal-3391175495-line-9)">
+</text><text class="terminal-3391175495-r3" x="24.4" y="264" textLength="12.2" clip-path="url(#terminal-3391175495-line-10)">[</text><text class="terminal-3391175495-r2" x="36.6" y="264" textLength="24.4" clip-path="url(#terminal-3391175495-line-10)">!!</text><text class="terminal-3391175495-r3" x="61" y="264" textLength="12.2" clip-path="url(#terminal-3391175495-line-10)">]</text><text class="terminal-3391175495-r2" x="73.2" y="264" textLength="366" clip-path="url(#terminal-3391175495-line-10)">&#160;nlm_session:&#160;No&#160;saved&#160;session</text><text class="terminal-3391175495-r2" x="1073.6" y="264" textLength="12.2" clip-path="url(#terminal-3391175495-line-10)">
+</text><text class="terminal-3391175495-r2" x="0" y="288.4" textLength="622.2" clip-path="url(#terminal-3391175495-line-11)">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;-&gt;&#160;Run:&#160;research-hub&#160;notebooklm&#160;login&#160;--cdp</text><text class="terminal-3391175495-r2" x="1073.6" y="288.4" textLength="12.2" clip-path="url(#terminal-3391175495-line-11)">
+</text>
+    </g>
+    </g>
+</svg>
