@@ -15,6 +15,37 @@ playwright install chromium
 `research-hub` requires Python 3.10 or newer. Install the `playwright`
 extra only if you plan to use NotebookLM login, upload, or generation.
 
+## Two personas, one tool
+
+`research-hub` supports two workflows out of the box:
+
+### Researcher (default)
+
+```bash
+pip install research-hub-pipeline[playwright]
+research-hub init                  # interactive: vault + Zotero + library id
+research-hub doctor                # 7-check health diagnostic
+research-hub add 10.1234/example   # one-shot fetch + ingest
+research-hub notebooklm upload --cluster my-topic
+```
+
+You get: Zotero items with full citation metadata + Obsidian research
+notes + NotebookLM upload + AI suggestions + BibTeX export.
+
+### Data analyst (no Zotero)
+
+```bash
+pip install research-hub-pipeline[playwright]
+research-hub init --persona analyst   # skips Zotero prompts
+research-hub doctor                    # Zotero checks marked "skipped"
+research-hub add 10.1234/example       # writes to Obsidian only
+research-hub notebooklm upload --cluster my-topic
+```
+
+You get: Obsidian-only knowledge base + NotebookLM upload + AI
+suggestions. No Zotero account required. Perfect for industry research,
+white papers, and technical documentation.
+
 ## Quick start
 
 1. Run the first-time setup wizard:

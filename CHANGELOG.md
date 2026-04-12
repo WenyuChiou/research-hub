@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.9.0 (2026-04-12)
+
+**System integration audit + UX hardening + personal HTML dashboard.**
+
+### Added
+- `research-hub dashboard [--open]` — personal HTML dashboard at `<vault>/.research_hub/dashboard.html`. Single self-contained file with stat cards, cluster table, status badges, and NotebookLM links. Hero artifact for the project.
+- `research-hub add <doi-or-arxiv-id> [--cluster X]` — one-shot Search → Save replaces hand-writing `papers_input.json`. Fetches metadata via Semantic Scholar with CrossRef enrichment.
+- `research-hub init --persona researcher|analyst` — analyst persona skips Zotero entirely (Obsidian + NotebookLM only).
+- `research-hub dedup invalidate --doi/--path` and `dedup rebuild [--obsidian-only]` — surgical dedup management without re-scanning Zotero.
+- `papers_input.json` validator: pipeline catches missing `creatorType`, malformed authors, missing fields BEFORE hitting Zotero API. Clear error messages instead of cryptic 400 crashes.
+- 2 new MCP tools: `add_paper`, `generate_dashboard` (19 total).
+- New docs: `docs/cli-reference.md`, `docs/papers_input_schema.md`.
+
+### Changed
+- `doctor` now persona-aware: when `no_zotero: true` is set in config or `RESEARCH_HUB_NO_ZOTERO=1` env var, Zotero checks report "Skipped (analyst mode)" instead of FAIL.
+- `doctor` correctly counts dedup index entries (was reporting 0 when index had thousands).
+
+### Fixed
+- Pipeline silently dropped dict-format authors `[{firstName, lastName}]` → `authors: "Unknown"` in Obsidian YAML.
+- Pipeline never wrote `volume`, `issue`, `pages` to Zotero or Obsidian even when input had them.
+- `clusters rename` updates display name without orphaning notes.
+- 12 new regression tests for pipeline metadata and dedup invalidation.
+
+Suite: 274 → 314 passing.
+
+## v0.8.2 (2026-04-12)
+
+### Added
+- New MCP tool `propose_research_setup(topic)` — AI agents propose cluster/collection/notebook names BEFORE creating, ask user to confirm.
+- `RESEARCH_HUB_NO_ZOTERO=1` env var enables data analyst persona (Obsidian + NotebookLM only, no Zotero).
+- SKILL.md documents both personas + the "always confirm names" protocol.
+
+## v0.8.1 (2026-04-12)
+
+### Fixed
+- `_render_obsidian_note` now handles dict-format authors (was producing `authors: "Unknown"`).
+- Pipeline + `make_raw_md` now emit `volume`, `issue`, `pages` fields to both Zotero items and Obsidian YAML.
+- New `**Citation:** Journal, Vol(Issue), Pages` line in note body.
+
+## v0.8.0 (2026-04-12)
+
+### Added
+- Citation graph exploration via Semantic Scholar API.
+- `research-hub references <doi>` — list papers cited by this paper.
+- `research-hub cited-by <doi>` — list papers that cite this paper.
+- 2 new MCP tools: `get_references`, `get_citations` (16 total).
+
+## v0.7.0 (2026-04-12)
+
+### Added
+- Daily research operations: `remove`, `mark`, `move`, `find`.
+- Cluster CRUD: `clusters rename`, `clusters delete`, `clusters merge`, `clusters split`.
+- Vault search: `research-hub find "query" [--full] [--cluster X] [--status Y]`.
+- 6 new MCP tools (14 total): `remove_paper`, `mark_paper`, `move_paper`, `search_vault`, `merge_clusters`, `split_cluster`.
+
+## v0.6.0 (2026-04-12)
+
+### Added
+- MCP stdio server for AI assistant integration. 8 tools exposed via `research-hub serve`.
+- Tools: `search_papers`, `verify_paper`, `suggest_integration`, `list_clusters`, `show_cluster`, `export_citation`, `run_doctor`, `get_config_info`.
+- Optional dependency `[mcp]` extra installs `fastmcp>=2.0`.
+
 ## v0.5.0 (2026-04-12)
 
 **First public PyPI release.** `pip install research-hub-pipeline[playwright]`
