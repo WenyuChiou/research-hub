@@ -255,6 +255,28 @@ def export_citation(
         return _tool_error(exc)
 
 
+def get_references(identifier: str, limit: int = 20) -> list[dict[str, Any]] | dict[str, str]:
+    """List papers cited by the given paper (its bibliography)."""
+    try:
+        from research_hub.citation_graph import CitationGraphClient
+
+        client = CitationGraphClient()
+        return [asdict(node) for node in client.get_references(identifier, limit=limit)]
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def get_citations(identifier: str, limit: int = 20) -> list[dict[str, Any]] | dict[str, str]:
+    """List papers that cite the given paper."""
+    try:
+        from research_hub.citation_graph import CitationGraphClient
+
+        client = CitationGraphClient()
+        return [asdict(node) for node in client.get_citations(identifier, limit=limit)]
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 def run_doctor() -> list[dict[str, Any]] | dict[str, str]:
     """Run health checks on the research-hub installation."""
     try:
@@ -369,6 +391,8 @@ mcp.tool()(suggest_integration)
 mcp.tool()(list_clusters)
 mcp.tool()(show_cluster)
 mcp.tool()(export_citation)
+mcp.tool()(get_references)
+mcp.tool()(get_citations)
 mcp.tool()(run_doctor)
 mcp.tool()(get_config_info)
 mcp.tool()(remove_paper)

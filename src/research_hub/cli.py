@@ -335,6 +335,42 @@ def _search(query: str, limit: int, verify: bool = False) -> int:
     return 0
 
 
+def _references(identifier: str, limit: int, emit_json: bool) -> int:
+    from research_hub.citation_graph import CitationGraphClient
+
+    client = CitationGraphClient()
+    nodes = client.get_references(identifier, limit=limit)
+    if emit_json:
+        print(json.dumps([asdict(node) for node in nodes], indent=2, ensure_ascii=False))
+        return 0
+    print(f"References of {identifier} ({len(nodes)} returned):")
+    for node in nodes:
+        year = node.year if node.year else "????"
+        first_author = (node.authors[0] if node.authors else "Unknown").split()[-1]
+        print(f"  [{year}] {first_author:15s} {node.title[:70]}")
+        if node.doi:
+            print(f"             DOI: {node.doi}")
+    return 0
+
+
+def _cited_by(identifier: str, limit: int, emit_json: bool) -> int:
+    from research_hub.citation_graph import CitationGraphClient
+
+    client = CitationGraphClient()
+    nodes = client.get_citations(identifier, limit=limit)
+    if emit_json:
+        print(json.dumps([asdict(node) for node in nodes], indent=2, ensure_ascii=False))
+        return 0
+    print(f"Citations of {identifier} ({len(nodes)} returned):")
+    for node in nodes:
+        year = node.year if node.year else "????"
+        first_author = (node.authors[0] if node.authors else "Unknown").split()[-1]
+        print(f"  [{year}] {first_author:15s} {node.title[:70]}")
+        if node.doi:
+            print(f"             DOI: {node.doi}")
+    return 0
+
+
 def _suggest(identifier: str, top: int, emit_json: bool) -> int:
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
@@ -707,6 +743,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify each DOI against doi.org before printing (adds 1-2s per result)",
     )
 
+    references_parser = subparsers.add_parser(
+        "references",
+        help="List papers cited by the given paper (its bibliography)",
+    )
+    references_parser.add_argument("identifier", help="DOI, arXiv ID, or S2 paper ID")
+    references_parser.add_argument("--limit", type=int, default=20)
+    references_parser.add_argument("--json", action="store_true")
+
+    citations_parser = subparsers.add_parser(
+        "cited-by",
+        help="List papers that cite the given paper",
+    )
+    citations_parser.add_argument("identifier", help="DOI, arXiv ID, or S2 paper ID")
+    citations_parser.add_argument("--limit", type=int, default=20)
+    citations_parser.add_argument("--json", action="store_true")
+
     suggest_parser = subparsers.add_parser(
         "suggest",
         help="Suggest which cluster a new paper belongs to and related existing notes",
@@ -983,6 +1035,10 @@ def main(argv: list[str] | None = None) -> int:
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
         return _search(args.query, args.limit, verify=args.verify)
+    if args.command == "references":
+        return _references(args.identifier, args.limit, args.json)
+    if args.command == "cited-by":
+        return _cited_by(args.identifier, args.limit, args.json)
     if args.command == "suggest":
         return _suggest(args.identifier, args.top, args.json)
     if args.command == "cite":
