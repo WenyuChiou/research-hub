@@ -16,6 +16,8 @@ from research_hub.notebooklm.selectors import (
     CREATE_NEW_BUTTON_TEXTS,
     CREATE_NEW_GRID_CARD_CSS,
     CREATE_NEW_TOOLBAR_BUTTON_CSS,
+    DROP_ZONE_ICON_BUTTON_CSS,
+    DROP_ZONE_LINK_ICON_NAME,
     GENERATE_AUDIO_BUTTON_TEXTS,
     GENERATE_BRIEFING_BUTTON_TEXTS,
     GENERATE_MIND_MAP_BUTTON_TEXTS,
@@ -26,10 +28,13 @@ from research_hub.notebooklm.selectors import (
     NOTEBOOK_TILE_LINK_CSS,
     NOTEBOOK_TITLE_EDITABLE_CSS,
     NOTEBOOK_TITLE_SPAN_CSS,
+    SOURCE_PANEL_CSS,
     SOURCE_UPLOAD_FILE_INPUT_CSS,
     SOURCE_WEBSITE_INSERT_BUTTON_TEXTS,
     SOURCE_WEBSITE_TAB_TEXTS,
     SOURCE_WEBSITE_URL_INPUT_PLACEHOLDERS,
+    URL_DIALOG_SUBMIT_BUTTON_CSS,
+    URL_INPUT_TEXTAREA_CSS,
     notebook_tile_xpath_by_name,
 )
 
@@ -95,7 +100,16 @@ class NotebookLMClient:
                 page_url=self.page.url,
             )
         locator.click()
-        self.page.wait_for_load_state("networkidle")
+        # Angular SPA: networkidle is unreliable because the app keeps
+        # polling. Wait for the add-source button directly — it is the
+        # element we need next, and it only appears after the notebook
+        # view has fully mounted.
+        try:
+            self.page.locator(ADD_SOURCE_BUTTON_CSS).first.wait_for(
+                state="attached", timeout=20_000
+            )
+        except Exception:
+            pass
         return NotebookHandle(name=name, url=self.page.url, notebook_id=_parse_notebook_id(self.page.url))
 
     def create_notebook(self, name: str) -> NotebookHandle:
@@ -128,17 +142,28 @@ class NotebookLMClient:
             return self.create_notebook(name)
 
     def _click_add_source(self) -> None:
-        """Click the Add-source stretched button inside the Source panel."""
+        """Click the Add-source button inside the Source panel.
+
+        Waits up to 15s because NotebookLM is an Angular SPA that loads
+        the notebook view asynchronously after tile click, so the button
+        may not exist at the moment we enter this method. If the primary
+        CSS selector does not resolve, fall back to a localized aria-
+        label regex before raising NotebookLMError.
+        """
         button = self.page.locator(ADD_SOURCE_BUTTON_CSS).first
-        if button.count() == 0:
+        try:
+            button.wait_for(state="visible", timeout=15_000)
+        except Exception:
             label_regex = re.compile("|".join(re.escape(t) for t in ADD_SOURCE_BUTTON_TEXTS))
             button = self.page.get_by_role("button", name=label_regex).first
-        if button.count() == 0:
-            raise NotebookLMError(
-                "Add-source button not found",
-                selector=ADD_SOURCE_BUTTON_CSS,
-                page_url=self.page.url,
-            )
+            try:
+                button.wait_for(state="visible", timeout=5_000)
+            except Exception as exc:
+                raise NotebookLMError(
+                    f"Add-source button not found: {exc}",
+                    selector=ADD_SOURCE_BUTTON_CSS,
+                    page_url=self.page.url,
+                )
         button.click()
 
     def upload_pdf(self, pdf_path: Path) -> UploadResult:
@@ -157,17 +182,62 @@ class NotebookLMClient:
             )
 
     def upload_url(self, url: str) -> UploadResult:
-        """Insert a website source using the Website tab."""
+        """Insert a website source through the Add-source dialog.
+
+        Flow (verified against 2026-04-11 zh-TW DOM):
+          1. Click the Add-source button (left source panel)
+          2. Click the drop-zone icon button whose mat-icon is "link"
+          3. Fill the urls textarea via formcontrolname selector
+          4. Click the primary submit button (labeled 插入/Insert)
+          5. Wait for the dialog to close, indicating the source landed
+
+        Falls back to aria-label / tab-role heuristics if the primary
+        CSS selectors do not resolve, so locale variations still work.
+        """
         try:
             self._click_add_source()
-            tab_regex = re.compile("|".join(re.escape(t) for t in SOURCE_WEBSITE_TAB_TEXTS))
-            self.page.get_by_role("tab", name=tab_regex).first.click()
-            placeholder_regex = re.compile(
-                "|".join(re.escape(t) for t in SOURCE_WEBSITE_URL_INPUT_PLACEHOLDERS)
+
+            link_button = (
+                self.page.locator(DROP_ZONE_ICON_BUTTON_CSS)
+                .filter(has=self.page.locator("mat-icon", has_text=DROP_ZONE_LINK_ICON_NAME))
+                .first
             )
-            self.page.get_by_placeholder(placeholder_regex).first.fill(url)
-            insert_regex = re.compile("|".join(re.escape(t) for t in SOURCE_WEBSITE_INSERT_BUTTON_TEXTS))
-            self.page.get_by_role("button", name=insert_regex).first.click()
+            try:
+                link_button.wait_for(state="visible", timeout=10_000)
+                link_button.click()
+            except Exception:
+                tab_regex = re.compile("|".join(re.escape(t) for t in SOURCE_WEBSITE_TAB_TEXTS))
+                self.page.get_by_role("tab", name=tab_regex).first.click()
+
+            url_input = self.page.locator(URL_INPUT_TEXTAREA_CSS).first
+            try:
+                url_input.wait_for(state="visible", timeout=10_000)
+            except Exception:
+                placeholder_regex = re.compile(
+                    "|".join(re.escape(t) for t in SOURCE_WEBSITE_URL_INPUT_PLACEHOLDERS)
+                )
+                url_input = self.page.get_by_placeholder(placeholder_regex).first
+            url_input.fill(url)
+
+            submit_button = self.page.locator(URL_DIALOG_SUBMIT_BUTTON_CSS).first
+            try:
+                submit_button.wait_for(state="visible", timeout=5_000)
+                submit_button.click()
+            except Exception:
+                insert_regex = re.compile(
+                    "|".join(re.escape(t) for t in SOURCE_WEBSITE_INSERT_BUTTON_TEXTS)
+                )
+                self.page.get_by_role("button", name=insert_regex).first.click()
+
+            # Wait for the dialog to close so the next source upload
+            # does not race against the overlay.
+            try:
+                self.page.locator(URL_INPUT_TEXTAREA_CSS).first.wait_for(
+                    state="detached", timeout=15_000
+                )
+            except Exception:
+                pass
+
             self.page.wait_for_timeout(BETWEEN_UPLOADS_MS)
             return UploadResult(source_kind="url", path_or_url=url, success=True)
         except Exception as exc:

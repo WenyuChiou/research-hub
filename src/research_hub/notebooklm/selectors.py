@@ -184,21 +184,31 @@ NOTEBOOK_TITLE_EDITABLE_CSS = "[contenteditable='true']"
 
 
 # --- Inside a notebook: source panel -----------------------------------
-# Verified against 2026-04-11 live DOM (zh-TW locale). The left-hand
-# Source panel is a `<source-panel>` custom element. Its add-source
-# control is a stretched button with class `source-stretched-button`
-# carrying an `aria-label` of the localized "Add source" text.
-#   <source-panel>
-#     <div class="source-panel-content">
-#       <div class="source-panel-view-content">
-#         <button class="source-stretched-button" aria-label="新增來源">
-SOURCE_PANEL_CSS = "source-panel"
-SOURCE_PANEL_CONTENT_CSS = ".source-panel-content"
-ADD_SOURCE_BUTTON_CSS = "button.source-stretched-button"
+# Verified against 2026-04-11 live DOM dump from "Behavioral Science &
+# Decision Theory" notebook (zh-TW locale). The add-source control is a
+# Material `mat-stroked-button` sitting inside the left source panel:
+#   <button mat-stroked-button mattooltip="新增來源" aria-label="新增來源"
+#           class="mdc-button ... add-source-button ...">
+# The stable anchors are the semantic class `add-source-button` and the
+# localized aria-label. `source-stretched-button` was an earlier name
+# that no longer exists in the live DOM and is intentionally not listed.
+SOURCE_PANEL_CSS = "source-picker"
+SOURCE_PANEL_CONTENT_CSS = "source-picker .contents"
+ADD_SOURCE_BUTTON_CSS = "button.add-source-button"
 ADD_SOURCE_BUTTON_TEXTS = _localized_text("add_source")
 
-# The upload dialog opens a Material dialog with a hidden file input.
+# The upload dialog opens a Material dialog with a hidden file input
+# and a grid of `drop-zone-icon-button` controls, one per source type.
+# The Website / URL one is identified by a child `<mat-icon>link</mat-icon>`
+# (the Material icon name, not the visible text). After clicking it the
+# dialog transitions to a URL-input view with a textarea whose form
+# control name is `urls`, and a primary submit button labeled
+# "插入" / "Insert".
 SOURCE_UPLOAD_FILE_INPUT_CSS = "input[type='file']"
+DROP_ZONE_ICON_BUTTON_CSS = "button.drop-zone-icon-button"
+DROP_ZONE_LINK_ICON_NAME = "link"
+URL_INPUT_TEXTAREA_CSS = 'textarea[formcontrolname="urls"]'
+URL_DIALOG_SUBMIT_BUTTON_CSS = "button[mat-flat-button][color='primary']"
 SOURCE_WEBSITE_TAB_TEXTS = _localized_text("website_tab")
 SOURCE_WEBSITE_URL_INPUT_PLACEHOLDERS = _localized_text("url_input_placeholder")
 SOURCE_WEBSITE_INSERT_BUTTON_TEXTS = _localized_text("insert_source_button")

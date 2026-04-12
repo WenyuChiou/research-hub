@@ -87,6 +87,16 @@ class StubLocator:
             return self._ancestor
         return StubLocator(count=1)
 
+    def filter(self, has=None, has_text=None, has_not=None, has_not_text=None):
+        # Preserve count so fallbacks still trigger when the primary
+        # locator resolves to zero elements.
+        return self
+
+    def wait_for(self, state=None, timeout=None):
+        if self._count == 0:
+            raise RuntimeError(f"wait_for timeout: count=0 state={state}")
+        return None
+
 
 class StubPage:
     def __init__(self):
@@ -112,7 +122,7 @@ class StubPage:
         self.wait_for_function_calls.append((fn, timeout))
         return None
 
-    def locator(self, sel):
+    def locator(self, sel, **kwargs):
         return self.locators.get(sel, StubLocator(count=0))
 
     def set_role(self, role: str, text: str, locator: StubLocator) -> None:
@@ -234,7 +244,7 @@ def test_upload_pdf_success_records_result(tmp_path):
     page = StubPage()
     add_source = StubLocator()
     file_input = StubLocator()
-    page.locators["button.source-stretched-button"] = add_source
+    page.locators["button.add-source-button"] = add_source
     page.locators["input[type='file']"] = file_input
 
     result = NotebookLMClient(page).upload_pdf(tmp_path / "paper.pdf")
@@ -246,7 +256,7 @@ def test_upload_pdf_success_records_result(tmp_path):
 
 def test_upload_pdf_failure_wraps_exception_in_result(tmp_path):
     page = StubPage()
-    page.locators["button.source-stretched-button"] = StubLocator(click_raises=RuntimeError("boom"))
+    page.locators["button.add-source-button"] = StubLocator(click_raises=RuntimeError("boom"))
 
     result = NotebookLMClient(page).upload_pdf(tmp_path / "paper.pdf")
 
@@ -260,7 +270,7 @@ def test_upload_url_clicks_website_tab_then_insert():
     website_tab = StubLocator()
     insert_button = StubLocator()
     url_input = StubLocator()
-    page.locators["button.source-stretched-button"] = add_source
+    page.locators["button.add-source-button"] = add_source
     page.set_role("tab", "Website", website_tab)
     page.set_role("button", "Insert", insert_button)
     page.set_placeholder("Paste URL", url_input)
@@ -276,7 +286,7 @@ def test_upload_url_clicks_website_tab_then_insert():
 
 def test_upload_url_failure_wraps_exception():
     page = StubPage()
-    page.locators["button.source-stretched-button"] = StubLocator(click_raises=RuntimeError("broken"))
+    page.locators["button.add-source-button"] = StubLocator(click_raises=RuntimeError("broken"))
 
     result = NotebookLMClient(page).upload_url("https://example.com")
 
