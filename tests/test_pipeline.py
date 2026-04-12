@@ -216,3 +216,27 @@ def test_run_pipeline_skips_duplicate(tmp_path, monkeypatch):
     ]
 
     hub_config._config = None
+
+
+def test_run_pipeline_fails_fast_on_invalid_paper_input(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+    from research_hub import pipeline
+
+    cfg = _configure(monkeypatch, tmp_path, default_collection="ABCD1234")
+    invalid = _paper("Bad Paper", "bad-paper", "10.1000/bad")
+    invalid["authors"] = [{"firstName": "Jane", "lastName": "Doe"}]
+    (cfg.root / "papers_input.json").write_text(json.dumps([invalid]), encoding="utf-8")
+
+    def fail_get_client():
+        raise AssertionError("Zotero client should not be created for invalid input")
+
+    monkeypatch.setattr(pipeline, "get_client", fail_get_client)
+
+    result = pipeline.run_pipeline()
+
+    assert result == 1
+    log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
+    assert "INPUT VALIDATION FAILED" in log_text
+    assert "creatorType" in log_text
+
+    hub_config._config = None

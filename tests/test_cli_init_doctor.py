@@ -32,6 +32,20 @@ def test_build_parser_accepts_doctor_command():
     assert args.command == "doctor"
 
 
+def test_build_parser_accepts_dedup_commands():
+    from research_hub.cli import build_parser
+
+    args = build_parser().parse_args(["dedup", "invalidate", "--doi", "10.1/x"])
+    assert args.command == "dedup"
+    assert args.dedup_command == "invalidate"
+    assert args.doi == "10.1/x"
+
+    args = build_parser().parse_args(["dedup", "rebuild", "--obsidian-only"])
+    assert args.command == "dedup"
+    assert args.dedup_command == "rebuild"
+    assert args.obsidian_only is True
+
+
 def test_main_routes_init_and_doctor(monkeypatch):
     from research_hub import cli
 

@@ -111,19 +111,36 @@ def run_doctor() -> list[CheckResult]:
             dedup_path = cfg.research_hub_dir / "dedup_index.json"
             if dedup_path.exists():
                 data = json.loads(dedup_path.read_text(encoding="utf-8"))
-                entries = data.get("doi_entries", data.get("entries", []))
-                results.append(CheckResult("dedup_index", "OK", f"{len(entries)} entries"))
+                doi_count = len(data.get("doi_to_hits", {}))
+                title_count = len(data.get("title_to_hits", {}))
+                if doi_count or title_count:
+                    results.append(
+                        CheckResult(
+                            "dedup_index",
+                            "OK",
+                            f"{doi_count} DOIs, {title_count} titles",
+                        )
+                    )
+                else:
+                    results.append(
+                        CheckResult(
+                            "dedup_index",
+                            "WARN",
+                            "Empty",
+                            remedy="Run: research-hub dedup rebuild",
+                        )
+                    )
             else:
                 results.append(
                     CheckResult(
                         "dedup_index",
                         "WARN",
                         "Not built yet",
-                        remedy="Run: research-hub index",
+                        remedy="Run: research-hub dedup rebuild",
                     )
                 )
-        except Exception:
-            results.append(CheckResult("dedup_index", "WARN", "Could not read"))
+        except Exception as exc:
+            results.append(CheckResult("dedup_index", "WARN", f"Could not read: {exc}"))
     else:
         results.append(CheckResult("dedup_index", "WARN", "Could not read"))
 

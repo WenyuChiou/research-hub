@@ -66,7 +66,10 @@ def test_doctor_all_green(tmp_path, monkeypatch, capsys):
 
     root, _ = _write_config(tmp_path, monkeypatch)
     dedup = root / ".research_hub" / "dedup_index.json"
-    dedup.write_text(json.dumps({"doi_entries": {"a": {}, "b": {}}}), encoding="utf-8")
+    dedup.write_text(
+        json.dumps({"doi_to_hits": {"a": [{}], "b": [{}]}, "title_to_hits": {"t": [{}]}}),
+        encoding="utf-8",
+    )
     session_dir = root / ".research_hub" / "nlm_sessions" / "default"
     session_dir.mkdir(parents=True)
     (session_dir / "state.json").write_text("{}", encoding="utf-8")
@@ -80,6 +83,9 @@ def test_doctor_all_green(tmp_path, monkeypatch, capsys):
     results = run_doctor()
 
     assert all(result.status == "OK" for result in results)
+    assert any(
+        result.name == "dedup_index" and result.message == "2 DOIs, 1 titles" for result in results
+    )
     assert print_doctor_report(results) == 0
     assert "[OK] config:" in capsys.readouterr().out
 

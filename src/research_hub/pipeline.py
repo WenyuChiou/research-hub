@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -14,6 +16,37 @@ from research_hub.verify import VerificationResult, VerifyCache, verify_arxiv, v
 from research_hub.vault.link_updater import update_cluster_links
 from research_hub.zotero.client import add_note, check_duplicate, get_client
 from research_hub.zotero.fetch import make_raw_md
+
+
+def _validate_paper_input(pp: dict, idx: int) -> list[str]:
+    """Validate one paper entry before any Zotero writes."""
+    errors: list[str] = []
+    required = ["title", "doi", "authors", "year"]
+    for field in required:
+        if field not in pp:
+            errors.append(f"Paper {idx}: missing required field '{field}'")
+    if "authors" in pp:
+        if not isinstance(pp["authors"], list):
+            errors.append(f"Paper {idx}: 'authors' must be a list")
+        else:
+            for author_index, author in enumerate(pp["authors"]):
+                if isinstance(author, dict):
+                    if "creatorType" not in author:
+                        errors.append(
+                            f"Paper {idx}, author {author_index}: dict authors must have "
+                            f"'creatorType' (use 'author', 'editor', etc. - required by Zotero API)"
+                        )
+                    if not (author.get("name") or author.get("lastName")):
+                        errors.append(
+                            f"Paper {idx}, author {author_index}: dict authors need 'name' "
+                            f"or 'lastName'"
+                        )
+                elif not isinstance(author, str):
+                    errors.append(
+                        f"Paper {idx}, author {author_index}: must be string or dict, got "
+                        f"{type(author).__name__}"
+                    )
+    return errors
 
 
 def _write_error_log(logs_dir: Path, errors: list[dict]) -> Path:
@@ -227,6 +260,17 @@ def run_pipeline(
         with papers_json.open("r", encoding="utf-8") as file_obj:
             papers = json.load(file_obj)
         p(f"Loaded {len(papers)} papers")
+
+        if not no_zotero:
+            all_errors: list[str] = []
+            for idx, paper in enumerate(papers):
+                all_errors.extend(_validate_paper_input(paper, idx))
+            if all_errors:
+                p("\n=== INPUT VALIDATION FAILED ===")
+                for err in all_errors:
+                    p(f"  !!{err}")
+                p(f"\nFix papers_input.json and re-run. {len(all_errors)} errors total.")
+                return 1
 
         dedup = _load_or_build_dedup(cfg, dry_run=dry_run)
 

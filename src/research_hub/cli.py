@@ -60,6 +60,48 @@ def _rebuild_index() -> int:
     return 0
 
 
+def _dedup(args) -> int:
+    cfg = get_config()
+    path = cfg.research_hub_dir / "dedup_index.json"
+    index = DedupIndex.load(path)
+
+    if args.dedup_command == "invalidate":
+        if not args.doi and not args.path:
+            print("Provide --doi or --path")
+            return 1
+        removed = 0
+        if args.doi:
+            removed += index.invalidate_doi(args.doi)
+        if args.path:
+            removed += index.invalidate_obsidian_path(args.path)
+        index.save(path)
+        print(f"Removed {removed} entries")
+        return 0
+
+    if args.dedup_command == "rebuild":
+        if args.obsidian_only:
+            index.rebuild_from_obsidian(cfg.raw)
+        else:
+            from research_hub.zotero.client import get_client
+
+            new = DedupIndex.empty()
+            for hit in build_from_obsidian(cfg.raw):
+                new.add(hit)
+            try:
+                zot = get_client()
+                for hit in build_from_zotero(zot, cfg.zotero_library_id):
+                    new.add(hit)
+            except Exception as exc:
+                print(f"  [warn] Zotero rebuild failed: {exc}")
+                print("  Use --obsidian-only to skip Zotero")
+            index = new
+        index.save(path)
+        print(f"Index rebuilt: {len(index.doi_to_hits)} DOIs, {len(index.title_to_hits)} titles")
+        return 0
+
+    return 1
+
+
 def _clusters_list() -> int:
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
@@ -669,6 +711,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("index", help="Rebuild dedup_index.json from Zotero and Obsidian")
 
+    dedup_parser = subparsers.add_parser(
+        "dedup",
+        help="Manage the dedup index (invalidate stale entries, rebuild)",
+    )
+    dedup_subparsers = dedup_parser.add_subparsers(dest="dedup_command", required=True)
+    invalidate_parser = dedup_subparsers.add_parser(
+        "invalidate",
+        help="Remove a DOI or path from the dedup index",
+    )
+    invalidate_parser.add_argument("--doi", default=None)
+    invalidate_parser.add_argument("--path", default=None, help="Obsidian path to invalidate")
+    rebuild_parser = dedup_subparsers.add_parser(
+        "rebuild",
+        help="Rebuild the dedup index",
+    )
+    rebuild_parser.add_argument(
+        "--obsidian-only",
+        action="store_true",
+        help="Only rescan Obsidian (skip Zotero - useful when API is down)",
+    )
+
     clusters_parser = subparsers.add_parser("clusters", help="Manage topic clusters")
     clusters_subparsers = clusters_parser.add_subparsers(dest="clusters_command", required=True)
     clusters_subparsers.add_parser("list", help="List clusters")
@@ -1003,6 +1066,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "index":
         return _rebuild_index()
+    if args.command == "dedup":
+        return _dedup(args)
     if args.command == "clusters":
         if args.clusters_command == "list":
             return _clusters_list()

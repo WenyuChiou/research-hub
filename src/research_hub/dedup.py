@@ -103,6 +103,57 @@ class DedupIndex:
         hits = self.lookup(doi=paper.get("doi", ""), title=paper.get("title", ""))
         return bool(hits), hits
 
+    @classmethod
+    def empty(cls) -> "DedupIndex":
+        """Create an empty index."""
+        return cls()
+
+    def invalidate_doi(self, doi: str) -> int:
+        """Remove all hits for a normalized DOI. Returns count removed."""
+        normalized = normalize_doi(doi)
+        if normalized not in self.doi_to_hits:
+            return 0
+        removed = len(self.doi_to_hits[normalized])
+        del self.doi_to_hits[normalized]
+        return removed
+
+    def invalidate_obsidian_path(self, path: str) -> int:
+        """Remove dedup entries pointing at a specific obsidian_path."""
+        removed = 0
+        for key in list(self.title_to_hits.keys()):
+            new_hits = [hit for hit in self.title_to_hits[key] if hit.obsidian_path != path]
+            if len(new_hits) != len(self.title_to_hits[key]):
+                removed += len(self.title_to_hits[key]) - len(new_hits)
+                if new_hits:
+                    self.title_to_hits[key] = new_hits
+                else:
+                    del self.title_to_hits[key]
+        for key in list(self.doi_to_hits.keys()):
+            new_hits = [hit for hit in self.doi_to_hits[key] if hit.obsidian_path != path]
+            if len(new_hits) != len(self.doi_to_hits[key]):
+                removed += len(self.doi_to_hits[key]) - len(new_hits)
+                if new_hits:
+                    self.doi_to_hits[key] = new_hits
+                else:
+                    del self.doi_to_hits[key]
+        return removed
+
+    def rebuild_from_obsidian(self, raw_root: Path) -> "DedupIndex":
+        """Rescan vault notes and rebuild only the Obsidian side of the index."""
+        for key in list(self.title_to_hits.keys()):
+            self.title_to_hits[key] = [
+                hit for hit in self.title_to_hits[key] if hit.source != "obsidian"
+            ]
+            if not self.title_to_hits[key]:
+                del self.title_to_hits[key]
+        for key in list(self.doi_to_hits.keys()):
+            self.doi_to_hits[key] = [hit for hit in self.doi_to_hits[key] if hit.source != "obsidian"]
+            if not self.doi_to_hits[key]:
+                del self.doi_to_hits[key]
+        for hit in build_from_obsidian(raw_root):
+            self.add(hit)
+        return self
+
     @staticmethod
     def _append_unique(hits: list[DedupHit], new_hit: DedupHit) -> None:
         marker = (
