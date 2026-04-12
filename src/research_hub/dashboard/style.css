@@ -284,5 +284,276 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   .app, .header-bar { width: min(1120px, calc(100vw - var(--space-md))); }
   section, #vault-header { padding: var(--space-lg); }
   .cluster-card summary, .header-bar { flex-direction: column; align-items: start; }
-  .cluster-summary-meta { justify-items: start; text-align: left; }
 }
+
+/* ============================================================
+   v0.10.0-C — Tabs, treemap, storage map, manage forms
+   ============================================================ */
+
+/* Hide all radio inputs that drive tabs */
+.dash-tab-radio { position: absolute; opacity: 0; pointer-events: none; }
+
+.dash-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-xs);
+}
+
+.dash-tab-label {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 14px 14px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--fg-mute);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.dash-tab-label:hover { color: var(--fg-strong); }
+
+/* Hide every panel by default; the matching :checked radio reveals one. */
+.dash-panel { display: none; }
+
+.dash-tab-radio-overview:checked    ~ main #tab-overview,
+.dash-tab-radio-library:checked     ~ main #tab-library,
+.dash-tab-radio-briefings:checked   ~ main #tab-briefings,
+.dash-tab-radio-diagnostics:checked ~ main #tab-diagnostics,
+.dash-tab-radio-manage:checked      ~ main #tab-manage { display: block; }
+
+.dash-tab-radio-overview:checked    ~ .app-header .dash-tabs .dash-tab-label-overview,
+.dash-tab-radio-library:checked     ~ .app-header .dash-tabs .dash-tab-label-library,
+.dash-tab-radio-briefings:checked   ~ .app-header .dash-tabs .dash-tab-label-briefings,
+.dash-tab-radio-diagnostics:checked ~ .app-header .dash-tabs .dash-tab-label-diagnostics,
+.dash-tab-radio-manage:checked      ~ .app-header .dash-tabs .dash-tab-label-manage {
+  background: var(--surface);
+  color: var(--fg-strong);
+  border-color: var(--border);
+}
+
+/* Card primitive (used by overview + diagnostics) */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: var(--space-lg);
+  display: grid;
+  gap: var(--space-md);
+}
+
+.card-heading h2 { font-size: var(--text-md); margin: 0; }
+.card-heading .card-meta { margin: var(--space-2xs) 0 0; color: var(--fg-mute); font-size: var(--text-xs); }
+
+.overview-grid {
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: 1fr;
+}
+
+@container (min-width: 900px) {
+  .overview-grid { grid-template-columns: 1fr 1fr; }
+  .card-recent { grid-column: 1 / -1; }
+}
+
+/* Treemap: flex children with proportional flex-grow */
+.treemap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  min-height: 200px;
+  align-items: stretch;
+}
+
+.treemap-cell {
+  flex: 1 1 0;
+  min-width: 80px;
+  padding: var(--space-md);
+  border-radius: 12px;
+  background: var(--brand-strong);
+  color: var(--bg);
+  display: grid;
+  align-content: end;
+  gap: var(--space-2xs);
+  text-decoration: none;
+  transition: filter 120ms ease;
+  border: 1px solid transparent;
+}
+
+.treemap-cell:hover { filter: brightness(1.1); border-color: var(--fg-strong); }
+
+.treemap-name { font-weight: 600; font-size: var(--text-sm); }
+.treemap-count { font-size: var(--text-lg); font-family: "Literata", "Source Serif 4", Georgia, serif; }
+.treemap-share { font-size: var(--text-xs); opacity: 0.75; }
+
+/* Storage map table */
+.storage-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-sm);
+}
+
+.storage-table thead th {
+  text-align: left;
+  padding: var(--space-sm) var(--space-md);
+  font-weight: 500;
+  font-size: var(--text-xs);
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+}
+
+.storage-table tbody th,
+.storage-table tbody td {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.storage-cluster { text-align: left; }
+.storage-cluster-name { display: block; font-weight: 600; color: var(--fg-strong); }
+.storage-cluster-count { display: block; color: var(--fg-mute); font-size: var(--text-xs); }
+.storage-name { display: block; color: var(--fg); }
+.storage-link {
+  display: inline-block;
+  margin-top: var(--space-2xs);
+  font-size: var(--text-xs);
+  color: var(--brand);
+  text-decoration: none;
+}
+.storage-link:hover { text-decoration: underline; }
+.storage-empty { color: var(--fg-mute); }
+
+/* Recent additions feed */
+.recent-feed { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm); }
+
+.recent-item {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+
+.recent-item:last-child { border-bottom: none; }
+.recent-meta { display: grid; gap: var(--space-2xs); }
+.recent-time { color: var(--fg-mute); font-size: var(--text-xs); font-family: "Geist Mono", monospace; }
+.recent-cluster { color: var(--fg); font-size: var(--text-xs); font-weight: 500; }
+.recent-body { min-width: 0; }
+.recent-title { margin: 0; color: var(--fg-strong); font-weight: 500; }
+.recent-author { margin: var(--space-2xs) 0 0; color: var(--fg-mute); font-size: var(--text-xs); }
+
+/* Library cluster bindings line (replaces Z/O/N badges) */
+.cluster-bindings { color: var(--fg-mute); font-size: var(--text-xs); margin: 0 0 var(--space-md); }
+.binding-link { color: var(--brand); text-decoration: none; }
+.binding-link:hover { text-decoration: underline; }
+
+/* Diagnostics tab grid */
+.diag-grid { grid-template-columns: 1fr; gap: var(--space-lg); }
+@container (min-width: 900px) { .diag-grid { grid-template-columns: 1fr 1fr; } }
+
+.health-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-xs); }
+
+.health-row {
+  display: grid;
+  grid-template-columns: 110px 70px 1fr;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.health-row .health-name { font-weight: 600; text-transform: capitalize; }
+.health-row .health-status {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  align-self: center;
+}
+.health-row .health-summary { color: var(--fg-mute); font-size: var(--text-xs); align-self: center; }
+.health-row.health-ok    .health-status { color: var(--ok); }
+.health-row.health-warn  .health-status { color: var(--warn); }
+.health-row.health-fail  .health-status { color: var(--fail); }
+
+.diag-empty { color: var(--fg-mute); font-style: italic; margin: 0; }
+
+/* Manage tab */
+.manage-intro h2 { font-size: var(--text-md); margin: 0; }
+.manage-intro p { margin: var(--space-2xs) 0 0; color: var(--fg-mute); font-size: var(--text-sm); }
+
+.manage-grid {
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-top: var(--space-lg);
+}
+
+.manage-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: var(--space-lg);
+  display: grid;
+  gap: var(--space-md);
+}
+
+.manage-card header h3 { font-size: var(--text-sm); margin: 0; color: var(--fg-strong); }
+.manage-card header code { display: block; color: var(--fg-mute); font-size: var(--text-xs); margin-top: var(--space-2xs); }
+
+.manage-form {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--border);
+}
+
+.manage-form label {
+  display: grid;
+  gap: var(--space-2xs);
+  font-size: var(--text-xs);
+  color: var(--fg-mute);
+}
+
+.manage-form input,
+.manage-form select {
+  width: 100%;
+  padding: var(--space-2xs) var(--space-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg);
+  font: inherit;
+}
+
+.manage-build-btn {
+  align-self: start;
+  padding: var(--space-2xs) var(--space-md);
+  border-radius: 999px;
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: var(--bg);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.manage-build-btn:hover { filter: brightness(1.1); }
+.manage-build-btn.copied { background: var(--ok); border-color: var(--ok); }
+
+.manage-build-btn.manage-danger { background: var(--surface); color: var(--fail); border-color: var(--fail); }
+.manage-build-btn.manage-danger:hover { background: var(--fail); color: var(--bg); }
+
+/* Hide bad legacy artifacts */
+.status-badge { display: none; }
+.reading-status { display: none; }
+.cluster-progress { display: none; }
+.cluster-summary-meta { display: none; }

@@ -222,4 +222,112 @@
       });
     });
   });
+
+  // Generic copy-cmd buttons (drift fix commands etc.)
+  doc.querySelectorAll(".copy-cmd-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const original = btn.textContent;
+      copyText(btn.dataset.text || "", function () {
+        btn.textContent = "Copied!";
+        setTimeout(function () {
+          btn.textContent = original;
+        }, 1500);
+      });
+    });
+  });
+
+  // Manage tab — command builder forms
+  function shellQuote(value) {
+    if (value === undefined || value === null) {
+      return '""';
+    }
+    const text = String(value);
+    if (/^[A-Za-z0-9_./-]+$/.test(text)) {
+      return text;
+    }
+    return '"' + text.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+  }
+
+  function buildManageCommand(form) {
+    const action = form.dataset.action;
+    const slug = form.dataset.slug || "";
+    const data = new FormData(form);
+    switch (action) {
+      case "rename": {
+        const newName = (data.get("new_name") || "").trim();
+        if (!newName) {
+          return null;
+        }
+        return `research-hub clusters rename ${shellQuote(slug)} --name ${shellQuote(newName)}`;
+      }
+      case "merge": {
+        const target = (data.get("target") || "").trim();
+        if (!target || target === slug) {
+          return null;
+        }
+        return `research-hub clusters merge ${shellQuote(slug)} --into ${shellQuote(target)}`;
+      }
+      case "split": {
+        const query = (data.get("query") || "").trim();
+        const newName = (data.get("new_name") || "").trim();
+        if (!query || !newName) {
+          return null;
+        }
+        return `research-hub clusters split ${shellQuote(slug)} --query ${shellQuote(query)} --new-name ${shellQuote(newName)}`;
+      }
+      case "bind-zotero": {
+        const zk = (data.get("zotero") || "").trim();
+        if (!zk) {
+          return null;
+        }
+        return `research-hub clusters bind ${shellQuote(slug)} --zotero ${shellQuote(zk)}`;
+      }
+      case "bind-nlm": {
+        const nb = (data.get("notebooklm") || "").trim();
+        if (!nb) {
+          return null;
+        }
+        return `research-hub clusters bind ${shellQuote(slug)} --notebooklm ${shellQuote(nb)}`;
+      }
+      case "delete":
+        return `research-hub clusters delete ${shellQuote(slug)} --dry-run`;
+      default:
+        return null;
+    }
+  }
+
+  doc.querySelectorAll(".manage-form").forEach(function (form) {
+    const button = form.querySelector(".manage-build-btn");
+    if (!button) {
+      return;
+    }
+    button.addEventListener("click", function () {
+      const command = buildManageCommand(form);
+      if (!command) {
+        button.textContent = "Fill the fields first";
+        setTimeout(function () {
+          // Restore original label by reading the inverse of "Copy …"
+          const labels = {
+            rename: "Copy rename command",
+            merge: "Copy merge command",
+            split: "Copy split command",
+            "bind-zotero": "Copy bind command",
+            "bind-nlm": "Copy bind command",
+            delete: "Copy delete dry-run command"
+          };
+          button.textContent = labels[form.dataset.action] || "Copy command";
+        }, 1500);
+        return;
+      }
+      const original = button.textContent;
+      copyText(command, function () {
+        button.textContent = "Copied!";
+        button.classList.add("copied");
+        setTimeout(function () {
+          button.textContent = original;
+          button.classList.remove("copied");
+        }, 1500);
+      });
+    });
+  });
 })();
