@@ -447,8 +447,11 @@ def download_artifacts(
         return _tool_error(exc)
 
 
+_BRIEFING_MAX_CHARS = 100_000
+
+
 @mcp.tool()
-def read_briefing(cluster_slug: str) -> dict:
+def read_briefing(cluster_slug: str, max_chars: int = _BRIEFING_MAX_CHARS) -> dict:
     """Return the most recently downloaded briefing text for a cluster.
 
     Reads the latest `brief-*.txt` from
@@ -460,9 +463,14 @@ def read_briefing(cluster_slug: str) -> dict:
 
     Args:
         cluster_slug: The cluster identifier.
+        max_chars: Truncate the returned text to this many characters
+            so an unbounded briefing cannot blow up the agent context
+            window. Default 100_000.
 
     Returns:
-        dict with status and either `text` or `error`.
+        dict with status and either `text` or `error`. When the briefing
+        exceeds ``max_chars`` the response also carries `truncated=True`
+        and the original `full_chars` count.
     """
     try:
         from research_hub.config import get_config
@@ -481,6 +489,15 @@ def read_briefing(cluster_slug: str) -> dict:
                 "status": "error",
                 "error": str(exc),
                 "remedy": f"Call download_artifacts(cluster_slug='{cluster_slug}') first.",
+            }
+        full_chars = len(text)
+        if full_chars > max_chars:
+            return {
+                "status": "ok",
+                "cluster_slug": cluster_slug,
+                "text": text[:max_chars],
+                "truncated": True,
+                "full_chars": full_chars,
             }
         return {"status": "ok", "cluster_slug": cluster_slug, "text": text}
     except Exception as exc:  # pragma: no cover

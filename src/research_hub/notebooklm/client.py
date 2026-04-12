@@ -440,19 +440,14 @@ class NotebookLMClient:
 
         Raises NotebookLMError if no summary content is found, which
         means the notebook has no generated briefings yet.
-        """
-        # The notebook must already be open. The Add-source button is a
-        # reliable signal that the notebook view has fully mounted.
-        try:
-            self.page.locator(ADD_SOURCE_BUTTON_CSS).first.wait_for(
-                state="attached", timeout=15_000
-            )
-        except Exception:
-            pass
 
+        Caller contract: the notebook page must already be open. Use
+        ``open_notebook_by_name`` (which waits for the notebook view to
+        mount) before calling this method.
+        """
         summary = self.page.locator(NOTEBOOK_SUMMARY_CONTENT_CSS).first
         try:
-            summary.wait_for(state="attached", timeout=10_000)
+            summary.wait_for(state="attached", timeout=15_000)
         except Exception as exc:
             raise NotebookLMError(
                 "No briefing summary found on notebook page. "
