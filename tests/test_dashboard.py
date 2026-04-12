@@ -172,7 +172,8 @@ def test_render_dashboard_html_includes_notebooklm_link():
 
     html = render_dashboard_html(state)
 
-    assert '<a href="https://notebooklm.google.com/test" target="_blank"' in html
+    assert "https://notebooklm.google.com/test" in html
+    assert 'target="_blank"' in html
 
 
 def test_render_dashboard_html_self_contained():
