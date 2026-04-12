@@ -121,12 +121,31 @@ def _render_obsidian_note(
     cluster_slug: str | None,
     query: str | None,
 ) -> str:
+    # Build authors_str from either authors_str field, list of strings,
+    # or list of {creatorType, firstName, lastName} dicts (Zotero format).
+    authors_strs: list[str] = []
+    if pp.get("authors_str"):
+        authors_strs = [pp["authors_str"]]
+    elif pp.get("authors"):
+        for a in pp["authors"]:
+            if isinstance(a, str):
+                authors_strs.append(a)
+            elif isinstance(a, dict):
+                last = a.get("lastName", "")
+                first = a.get("firstName", "")
+                if last:
+                    authors_strs.append(f"{last}, {first}" if first else last)
+                elif a.get("name"):
+                    authors_strs.append(a["name"])
     item_data = {
         "key": pp.get("zotero_key", ""),
         "title": pp["title"],
-        "authors": [pp["authors_str"]] if pp.get("authors_str") else [],
+        "authors": authors_strs,
         "year": pp["year"],
         "journal": pp["journal"],
+        "volume": pp.get("volume", ""),
+        "issue": pp.get("issue", ""),
+        "pages": pp.get("pages", ""),
         "doi": pp["doi"],
         "abstract": pp["abstract"],
         "tags": pp["tags"],
@@ -312,7 +331,10 @@ def run_pipeline(
             t["date"] = pp["year"]
             t["DOI"] = pp["doi"]
             t["url"] = pp["url"]
-            t["publicationTitle"] = pp["journal"]
+            t["publicationTitle"] = pp.get("journal", "")
+            t["volume"] = pp.get("volume", "")
+            t["issue"] = pp.get("issue", "")
+            t["pages"] = pp.get("pages", "")
             t["abstractNote"] = pp["abstract"]
             t["tags"] = [{"tag": x} for x in pp["tags"]]
             t["collections"] = [collection_key]

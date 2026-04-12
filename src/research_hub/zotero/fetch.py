@@ -157,6 +157,9 @@ def make_raw_md(
     authors = item_data['authors']
     year = item_data['year']
     journal = item_data['journal']
+    volume = item_data.get('volume', '')
+    issue = item_data.get('issue', '')
+    pages = item_data.get('pages', '')
     doi = item_data['doi']
     abstract = item_data['abstract']
     tags = item_data['tags']
@@ -186,11 +189,19 @@ def make_raw_md(
     abstract_section = f"\n## Abstract\n\n{abstract}\n" if abstract else ""
     doi_line = f'doi: "{doi}"' if doi else 'doi: ""'
 
+    citation_line = journal
+    if volume: citation_line += f", {volume}"
+    if issue: citation_line += f"({issue})"
+    if pages: citation_line += f", {pages}"
+
     content = f"""---
 title: "{title}"
 authors: "{author_str}"
 year: {year if year else 'null'}
 journal: "{journal}"
+volume: "{volume}"
+issue: "{issue}"
+pages: "{pages}"
 {doi_line}
 zotero-key: {key}
 collections: {collections_yaml}
@@ -208,7 +219,7 @@ status: unread
 
 **Authors:** {author_str}
 **Year:** {year}
-**Journal/Source:** {journal}
+**Citation:** {citation_line}
 {"**DOI:** " + doi if doi else ""}
 {abstract_section}{related_section}{notes_section}
 ---
