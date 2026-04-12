@@ -473,6 +473,40 @@ def run_pipeline(
         p(
             f"\n=== SUMMARY ===\nPapers: {len(papers)}\nZotero created: {cr}\nZotero skipped: {sk}\nZotero failed: {fl}\nObsidian created: {oc}\nDOIs accessible: {da}"
         )
+        if not dry_run:
+            p("\n=== INTEGRATION SUGGESTIONS ===")
+            try:
+                from research_hub.suggest import (
+                    PaperInput,
+                    suggest_cluster_for_paper,
+                    suggest_related_papers,
+                )
+
+                registry = clusters
+                for pp in papers:
+                    if pp.get("_status") == "SKIPPED_DUPLICATE":
+                        continue
+                    paper_in = PaperInput(
+                        title=pp["title"],
+                        doi=pp.get("doi", ""),
+                        authors=[
+                            f"{a.get('firstName', '')} {a.get('lastName', '')}".strip()
+                            or a.get("name", "")
+                            for a in pp.get("authors", [])
+                        ],
+                        year=pp.get("year"),
+                        venue=pp.get("journal", ""),
+                        tags=pp.get("tags", []),
+                    )
+                    cluster_hits = suggest_cluster_for_paper(paper_in, registry, dedup)
+                    related = suggest_related_papers(paper_in, dedup, registry, top_n=3)
+                    p(f"\n  Paper: {pp['title'][:60]}")
+                    for cs in cluster_hits[:2]:
+                        p(f"    ->cluster: {cs.cluster_slug} (score {cs.score:.1f})")
+                    for rp in related:
+                        p(f"    ->related: {rp.title[:50]} (score {rp.score:.1f})")
+            except Exception as exc:
+                p(f"  [warn] suggestion failed: {exc}")
         out = {
             "zotero_results": zr,
             "obsidian_results": obr,

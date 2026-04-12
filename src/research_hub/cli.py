@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 from research_hub.clusters import ClusterRegistry
@@ -13,6 +15,7 @@ from research_hub.config import get_config
 from research_hub.dedup import DedupIndex, build_from_obsidian, build_from_zotero
 from research_hub.pipeline import run_pipeline
 from research_hub.search import SemanticScholarClient, iter_new_results
+from research_hub.suggest import PaperInput, suggest_cluster_for_paper, suggest_related_papers
 from research_hub.verify import verify_arxiv, verify_doi, verify_paper
 
 
@@ -179,6 +182,60 @@ def _search(query: str, limit: int, verify: bool = False) -> int:
             verified = bool(result.doi) and verify_doi(result.doi).ok
             line += "\tVERIFIED" if verified else "\tUNVERIFIED"
         print(line)
+    return 0
+
+
+def _suggest(identifier: str, top: int, emit_json: bool) -> int:
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    dedup = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
+
+    paper = PaperInput(title=identifier)
+    if re.search(r"10\.\S+", identifier):
+        fetched = SemanticScholarClient().get_paper(identifier)
+        if fetched is not None:
+            paper = PaperInput(
+                title=fetched.title,
+                doi=fetched.doi,
+                authors=fetched.authors,
+                year=fetched.year,
+                venue=fetched.venue,
+                abstract=fetched.abstract,
+            )
+    elif re.fullmatch(r"\d{4}\.\d{4,5}(?:v\d+)?", identifier):
+        fetched = SemanticScholarClient().get_paper(identifier)
+        if fetched is not None:
+            paper = PaperInput(
+                title=fetched.title,
+                doi=fetched.doi,
+                authors=fetched.authors,
+                year=fetched.year,
+                venue=fetched.venue,
+                abstract=fetched.abstract,
+            )
+
+    cluster_suggestions = suggest_cluster_for_paper(paper, registry, dedup, top_n=3)
+    related_papers = suggest_related_papers(paper, dedup, registry, top_n=top)
+
+    if emit_json:
+        payload = {
+            "identifier": identifier,
+            "paper": asdict(paper),
+            "cluster_suggestions": [asdict(item) for item in cluster_suggestions],
+            "related_papers": [asdict(item) for item in related_papers],
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print("Cluster suggestions (top 3):")
+    for item in cluster_suggestions:
+        print(f"  [{item.score:.1f}] {item.cluster_slug}")
+        print(f"         {', '.join(item.reasons)}")
+
+    print(f"\nRelated papers (top {top}):")
+    for item in related_papers:
+        print(f"  [{item.score:.1f}] {item.title}  ({item.source})")
+        print(f"         {', '.join(item.reasons)}")
     return 0
 
 
@@ -420,6 +477,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify each DOI against doi.org before printing (adds 1-2s per result)",
     )
 
+    suggest_parser = subparsers.add_parser(
+        "suggest",
+        help="Suggest which cluster a new paper belongs to and related existing notes",
+    )
+    suggest_parser.add_argument(
+        "identifier",
+        help="DOI, arxiv ID, or quoted paper title",
+    )
+    suggest_parser.add_argument(
+        "--top", type=int, default=5,
+        help="Maximum number of related-paper suggestions (default 5)",
+    )
+    suggest_parser.add_argument(
+        "--json", action="store_true",
+        help="Emit machine-readable JSON instead of human output",
+    )
+
     status_parser = subparsers.add_parser("status", help="Show per-cluster reading progress")
     status_parser.add_argument("--cluster", default=None, help="Show only this cluster")
 
@@ -604,6 +678,8 @@ def main(argv: list[str] | None = None) -> int:
             )
     if args.command == "search":
         return _search(args.query, args.limit, verify=args.verify)
+    if args.command == "suggest":
+        return _suggest(args.identifier, args.top, args.json)
     if args.command == "status":
         return _status(cluster=args.cluster)
     if args.command == "sync":

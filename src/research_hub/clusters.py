@@ -26,6 +26,11 @@ class Cluster:
     description: str = ""
 
 
+def score_cluster_match(query_tokens: set[str], cluster: "Cluster") -> int:
+    """Count how many slugified query tokens overlap with cluster seed keywords."""
+    return len(query_tokens & set(cluster.seed_keywords))
+
+
 def slugify(text: str) -> str:
     """Turn free text into a cluster slug."""
     normalized = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
@@ -166,12 +171,10 @@ class ClusterRegistry:
 
     def match_by_query(self, query: str, min_overlap: int = 2) -> Cluster | None:
         """Match the best existing cluster by keyword overlap."""
-        query_words = set(slugify(query).split("-"))
-        best_overlap = 0
-        best_cluster: Cluster | None = None
+        query_tokens = set(slugify(query).split("-"))
+        best: tuple[int, Cluster | None] = (0, None)
         for cluster in self.clusters.values():
-            overlap = len(query_words & set(cluster.seed_keywords))
-            if overlap > best_overlap and overlap >= min_overlap:
-                best_overlap = overlap
-                best_cluster = cluster
-        return best_cluster
+            overlap = score_cluster_match(query_tokens, cluster)
+            if overlap > best[0] and overlap >= min_overlap:
+                best = (overlap, cluster)
+        return best[1]
