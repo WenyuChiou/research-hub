@@ -12,6 +12,7 @@ from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config
 from research_hub.dedup import DedupHit, DedupIndex, build_from_obsidian, build_from_zotero
 from research_hub.manifest import Manifest, new_entry
+from research_hub.utils.doi import extract_arxiv_id
 from research_hub.verify import VerificationResult, VerifyCache, verify_arxiv, verify_doi, verify_paper
 from research_hub.vault.link_updater import update_cluster_links
 from research_hub.zotero.client import add_note, check_duplicate, get_client
@@ -124,9 +125,7 @@ def _query_for_paper(paper: dict, query: str | None = None) -> str:
 
 
 def _extract_arxiv_id_from_url_or_doi(url: str, doi: str) -> str:
-    text = f"{url or ''} {doi or ''}"
-    match = re.search(r"(?:arxiv(?:\.org/abs/|[.:/])|/abs/)(\d{4}\.\d{4,5}(?:v\d+)?)", text, re.IGNORECASE)
-    return match.group(1) if match else ""
+    return extract_arxiv_id(f"{url or ''} {doi or ''}")
 
 
 def _folder_for_paper(cfg, paper: dict, cluster_slug: str | None) -> Path:

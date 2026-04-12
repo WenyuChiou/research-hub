@@ -11,16 +11,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
-def normalize_doi(doi: str | None) -> str:
-    """Lowercase, strip whitespace, remove common DOI prefixes."""
-    if not doi:
-        return ""
-    normalized = doi.strip().lower()
-    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix):]
-    return normalized.strip()
+from research_hub.utils.doi import normalize_doi  # re-export
 
 
 def normalize_title(title: str | None) -> str:

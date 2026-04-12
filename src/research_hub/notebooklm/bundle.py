@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from research_hub.utils.doi import normalize_doi as _normalize_doi
 
 @dataclass
 class BundleEntry:
@@ -52,16 +53,6 @@ def _read_frontmatter(md_path: Path) -> str:
     if end < 0:
         return ""
     return text[3:end]
-
-
-def _normalize_doi(doi: str) -> str:
-    if not doi:
-        return ""
-    normalized = doi.strip().lower()
-    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix):]
-    return normalized.strip()
 
 
 def _parse_note_metadata(md_path: Path) -> dict[str, str]:

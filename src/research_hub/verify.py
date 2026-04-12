@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from research_hub.utils.doi import normalize_doi as _normalize_doi
 try:
     from rapidfuzz import fuzz
 except ImportError:  # pragma: no cover - fallback for environments missing the optional wheel
@@ -301,14 +302,6 @@ def _head_exists(
 
 def _cache_key(kind: str, identifier: str) -> str:
     return hashlib.sha1(f"{kind}:{identifier}".encode("utf-8")).hexdigest()
-
-
-def _normalize_doi(doi: str) -> str:
-    normalized = (doi or "").strip().lower()
-    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix):]
-    return normalized.strip()
 
 
 def _normalize_arxiv_id(arxiv_id: str) -> str:

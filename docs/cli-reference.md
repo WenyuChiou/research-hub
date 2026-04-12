@@ -41,6 +41,21 @@ research-hub install --platform claude-code|codex|cursor|gemini
 research-hub install --list
 ```
 
+### `dashboard`
+Generate a personal HTML dashboard for the vault.
+
+```bash
+research-hub dashboard [--open]
+```
+
+| Flag | Description |
+|---|---|
+| `--open` | Open the dashboard in your default browser after generation |
+
+Output: `<vault>/.research_hub/dashboard.html` — single self-contained
+file with stat cards, cluster table, status badges, and NotebookLM
+links. Works offline.
+
 ## Search & verification
 
 ### `search`

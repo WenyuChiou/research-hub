@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
+
+import requests
 
 
 @dataclass
@@ -148,6 +151,98 @@ def run_doctor() -> list[CheckResult]:
             results.append(CheckResult("dedup_index", "WARN", f"Could not read: {exc}"))
     else:
         results.append(CheckResult("dedup_index", "WARN", "Could not read"))
+
+    if cfg is not None:
+        if no_zotero or not zotero_key or not library_id:
+            results.append(CheckResult("vault_invariant", "OK", "Skipped (no Zotero probing)"))
+        else:
+            try:
+                bad_keys: list[tuple[Path, str]] = []
+                for md_path in cfg.raw.rglob("*.md"):
+                    try:
+                        text = md_path.read_text(encoding="utf-8", errors="ignore")
+                    except OSError:
+                        continue
+                    match = re.search(r"^zotero-key:\s*(\S+)", text, re.MULTILINE)
+                    if match and match.group(1):
+                        bad_keys.append(
+                            (md_path, match.group(1).strip().strip('"').strip("'"))
+                        )
+                if len(bad_keys) > 50:
+                    results.append(
+                        CheckResult(
+                            "vault_invariant",
+                            "WARN",
+                            f"{len(bad_keys)} notes have zotero-key (probe skipped for >50)",
+                        )
+                    )
+                else:
+                    sample = bad_keys[:5]
+                    stale: list[tuple[str, str]] = []
+                    for md_path, key in sample:
+                        try:
+                            response = requests.head(
+                                f"https://api.zotero.org/users/{library_id}/items/{key}",
+                                headers={"Zotero-API-Key": zotero_key},
+                                timeout=3,
+                            )
+                            if response.status_code == 404:
+                                stale.append((md_path.name, key))
+                        except Exception:
+                            break
+                    if stale:
+                        results.append(
+                            CheckResult(
+                                "vault_invariant",
+                                "WARN",
+                                f"{len(stale)} sample notes reference deleted Zotero items",
+                                remedy="Run: research-hub dedup invalidate --path <path>",
+                            )
+                        )
+                    else:
+                        results.append(
+                            CheckResult(
+                                "vault_invariant",
+                                "OK",
+                                f"Sampled {len(sample)} of {len(bad_keys)} notes - all Zotero keys valid",
+                            )
+                        )
+            except Exception as exc:
+                results.append(CheckResult("vault_invariant", "WARN", f"Could not check: {exc}"))
+
+        try:
+            dedup_path = cfg.research_hub_dir / "dedup_index.json"
+            if dedup_path.exists():
+                data = json.loads(dedup_path.read_text(encoding="utf-8"))
+                stale_paths = 0
+                sample_count = 0
+                for hits in list(data.get("title_to_hits", {}).values())[:100]:
+                    for hit in hits:
+                        if hit.get("obsidian_path"):
+                            sample_count += 1
+                            if not Path(hit["obsidian_path"]).exists():
+                                stale_paths += 1
+                if stale_paths > 0:
+                    results.append(
+                        CheckResult(
+                            "dedup_consistency",
+                            "WARN",
+                            f"{stale_paths}/{sample_count} sampled obsidian paths are stale",
+                            remedy="Run: research-hub dedup rebuild --obsidian-only",
+                        )
+                    )
+                else:
+                    results.append(
+                        CheckResult(
+                            "dedup_consistency",
+                            "OK",
+                            f"Sampled {sample_count} obsidian paths - all valid",
+                        )
+                    )
+            else:
+                results.append(CheckResult("dedup_consistency", "OK", "Skipped (no dedup index yet)"))
+        except Exception:
+            pass
 
     try:
         from research_hub.notebooklm.cdp_launcher import find_chrome_binary
