@@ -1,22 +1,9 @@
-"""Dashboard sections — one class per visual block.
-
-Each section is a small, pure render function that takes a
-``DashboardContext`` and returns an HTML fragment. ``render.py``
-composes them into the final document. Adding a new section means
-writing one class and appending it to ``DEFAULT_SECTIONS``.
-"""
+"""Dashboard sections for the v0.10 personal knowledge garden layout."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-from research_hub.dashboard.context import (
-    ActivityEvent,
-    ClusterRow,
-    DashboardContext,
-    NLMArtifact,
-    PaperRow,
-)
+from datetime import datetime, timezone
 
 
 def html_escape(value: object) -> str:
@@ -33,63 +20,113 @@ def html_escape(value: object) -> str:
     )
 
 
+def _attr(obj: object, name: str, default: object = "") -> object:
+    return getattr(obj, name, default)
+
+
+def _bool_status(value: bool) -> str:
+    return "status-yes" if value else "status-no"
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].strip()
+    return (cut or text[:limit]).rstrip(" .,;:") + "..."
+
+
+def _relative_time(value: str) -> str:
+    if not value:
+        return "unknown"
+    try:
+        ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - ts
+    seconds = max(int(delta.total_seconds()), 0)
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86400:
+        return f"{seconds // 3600}h ago"
+    days = seconds // 86400
+    if days < 30:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    months = days // 30
+    if months < 12:
+        return f"{months} month{'s' if months != 1 else ''} ago"
+    years = days // 365
+    return f"{years} year{'s' if years != 1 else ''} ago"
+
+
+def _paper_count(cluster: object) -> int:
+    papers = _attr(cluster, "papers", None)
+    if isinstance(papers, list):
+        return len(papers)
+    return int(_attr(cluster, "paper_count", 0) or 0)
+
+
+def _cluster_new_this_week(cluster: object) -> int:
+    if hasattr(cluster, "new_this_week"):
+        return int(_attr(cluster, "new_this_week", 0) or 0)
+    return 0
+
+
+def _cluster_last_activity(cluster: object) -> str:
+    return str(_attr(cluster, "last_activity", "") or _attr(cluster, "latest_ingested_at", ""))
+
+
+def _cluster_notebook_url(cluster: object) -> str:
+    return str(_attr(cluster, "notebooklm_notebook_url", "") or "")
+
+
 @dataclass
 class DashboardSection:
-    """Base class. Subclasses override ``render``."""
+    """Base class for all dashboard sections."""
 
     id: str = ""
     title: str = ""
     order: int = 0
 
-    def render(self, ctx: DashboardContext) -> str:  # pragma: no cover - abstract
+    def render(self, data) -> str:  # pragma: no cover - abstract
         raise NotImplementedError
 
 
-# --- Section 1: Overview (stat cards) -----------------------------------
-
-
-class OverviewSection(DashboardSection):
-    id = "overview"
-    title = "Overview"
+class HeaderSection(DashboardSection):
+    id = "header"
+    title = "Header"
     order = 10
 
     def __init__(self) -> None:
-        self.id = "overview"
-        self.title = "Overview"
+        self.id = "header"
+        self.title = "Header"
         self.order = 10
 
-    def render(self, ctx: DashboardContext) -> str:
-        cards = [
-            ("📄", ctx.total_papers, "Papers"),
-            ("📂", ctx.total_clusters, "Clusters"),
-            ("⏳", ctx.total_unread, "Unread"),
-            ("🆕", f"+{ctx.papers_this_week}", "This week"),
-            ("🔁", ctx.dedup_doi_count, "DOIs indexed"),
-        ]
-        if ctx.persona != "analyst":
-            cards.append(("📓", ctx.nlm_cached_clusters, "NotebookLM linked"))
-        items = "".join(
-            f"""
-            <div class="stat-card">
-              <dt class="stat-icon" aria-hidden="true">{html_escape(icon)}</dt>
-              <dd class="stat-value">{html_escape(value)}</dd>
-              <dd class="stat-label">{html_escape(label)}</dd>
-            </div>
-            """
-            for icon, value, label in cards
+    def render(self, data) -> str:
+        stat_strip = (
+            f"{int(_attr(data, 'total_papers', 0) or 0)} papers "
+            f"· {int(_attr(data, 'total_clusters', 0) or 0)} clusters "
+            f"· +{int(_attr(data, 'papers_this_week', 0) or 0)} this week"
         )
         return f"""
-        <section id="overview" aria-labelledby="overview-heading">
-          <h2 id="overview-heading" class="visually-hidden">Overview</h2>
-          <dl class="stats-grid">{items}</dl>
+        <section id="vault-header" aria-labelledby="vault-title">
+          <div class="hero-copy">
+            <p class="eyebrow">Personal knowledge garden</p>
+            <h1 id="vault-title">research-hub vault</h1>
+            <p class="stat-strip">{html_escape(stat_strip)}</p>
+          </div>
+          <label class="search-label" for="vault-search">Search the vault</label>
+          <input type="search" id="vault-search" class="vault-search"
+                 placeholder="Search clusters, titles, or tags"
+                 aria-label="Search clusters, titles, or tags">
         </section>
         """
 
 
-# --- Section 2: Clusters (expandable list) ------------------------------
-
-
-class ClustersSection(DashboardSection):
+class ClusterListSection(DashboardSection):
     id = "clusters"
     title = "Clusters"
     order = 20
@@ -99,235 +136,295 @@ class ClustersSection(DashboardSection):
         self.title = "Clusters"
         self.order = 20
 
-    def render(self, ctx: DashboardContext) -> str:
-        if not ctx.clusters:
-            return f"""
-        <section id="clusters" aria-labelledby="clusters-heading">
-          <h2 id="clusters-heading">Clusters</h2>
-          <p class="empty-state">No clusters yet. Run
-            <code>research-hub clusters new --query "topic"</code>
-            to create one.</p>
-        </section>
-        """
-        rows = "".join(self._row(c, ctx) for c in ctx.clusters)
+    def render(self, data) -> str:
+        clusters = list(_attr(data, "clusters", []) or [])
+        clusters.sort(key=lambda item: _cluster_last_activity(item), reverse=True)
+        first_open_slug = ""
+        for cluster in clusters:
+            if _cluster_new_this_week(cluster) > 0:
+                first_open_slug = str(_attr(cluster, "slug", ""))
+                break
+        cards = "".join(self._render_cluster(cluster, data, first_open_slug) for cluster in clusters)
+        empty = ""
+        if not clusters:
+            empty = (
+                '<p class="empty-state">No clusters yet. '
+                'Run <code>research-hub clusters new --query &quot;topic&quot;</code> to create one.</p>'
+            )
         return f"""
-        <section id="clusters" aria-labelledby="clusters-heading">
-          <h2 id="clusters-heading">Clusters</h2>
-          <div class="cluster-list">{rows}</div>
+        <section id="cluster-list" aria-labelledby="cluster-list-heading">
+          <div class="section-heading">
+            <h2 id="cluster-list-heading">Clusters</h2>
+            <p class="section-meta">Browse active topics and inspect paper-level coverage.</p>
+          </div>
+          <div class="cluster-stack">{cards or empty}</div>
         </section>
         """
 
-    def _row(self, c: ClusterRow, ctx: DashboardContext) -> str:
-        progress_max = max(c.paper_count, 1)
-        progress_value = c.paper_count - c.unread_count
-        nlm_chip = ""
-        if ctx.persona != "analyst":
-            if c.notebooklm_notebook_url:
-                nlm_chip = (
-                    f'<a class="chip chip-link" '
-                    f'href="{html_escape(c.notebooklm_notebook_url)}" '
-                    f'target="_blank" rel="noreferrer noopener">NLM ✓</a>'
-                )
-            elif c.notebooklm_notebook:
-                nlm_chip = '<span class="chip chip-muted">NLM —</span>'
-        zotero_chip = (
-            f'<span class="chip chip-muted">Zotero {html_escape(c.zotero_collection_key)}</span>'
-            if c.zotero_collection_key
-            else '<span class="chip chip-muted">unbound</span>'
+    def _render_cluster(self, cluster, data, first_open_slug: str) -> str:
+        slug = str(_attr(cluster, "slug", ""))
+        name = str(_attr(cluster, "name", slug))
+        paper_count = _paper_count(cluster)
+        new_this_week = _cluster_new_this_week(cluster)
+        open_attr = " open" if slug and slug == first_open_slug else ""
+        summary_suffix = f" +{new_this_week} new" if new_this_week > 0 else ""
+        last_activity = _relative_time(_cluster_last_activity(cluster))
+        status_parts = []
+        if bool(_attr(data, "show_zotero_column", False)):
+            status_parts.append(f"Z {int(_attr(cluster, 'zotero_count', 0) or 0)}")
+        status_parts.extend(
+            [
+                f"O {int(_attr(cluster, 'obsidian_count', 0) or 0)}",
+                f"N {int(_attr(cluster, 'nlm_count', 0) or 0)}",
+            ]
         )
-        last_added = c.latest_ingested_at[:10] if c.latest_ingested_at else "—"
+        notebook_link = ""
+        notebook_url = _cluster_notebook_url(cluster)
+        if notebook_url:
+            notebook_link = (
+                f'<a class="cluster-link" href="{html_escape(notebook_url)}" '
+                'target="_blank" rel="noreferrer noopener">Open notebook</a>'
+            )
+        cluster_cite = ""
+        if bool(_attr(data, "show_cite_buttons", False)):
+            cluster_cite = (
+                f'<button class="cluster-cite-btn" data-cluster="{html_escape(slug)}" '
+                f'data-bibtex="{html_escape(_attr(cluster, "cluster_bibtex", ""))}">'
+                "Download cluster .bib</button>"
+            )
+        papers = list(_attr(cluster, "papers", []) or [])
+        if not papers:
+            empty_line = (
+                "Run <code>research-hub add &lt;doi&gt;</code> to populate this cluster"
+                if hasattr(cluster, "papers")
+                else "No papers in this legacy snapshot."
+            )
+            return f"""
+            <details class="cluster-card" data-cluster="{html_escape(slug)}"{open_attr}>
+              <summary>
+                <div class="cluster-summary">
+                  <h3>{html_escape(name)}</h3>
+                  <p>{paper_count} papers{html_escape(summary_suffix)}</p>
+                </div>
+                <div class="cluster-summary-meta">
+                  <code>{html_escape(' · '.join(status_parts))}</code>
+                  <span class="cluster-last-activity">{html_escape(last_activity)}</span>
+                </div>
+              </summary>
+              <div class="cluster-body">
+                <div class="cluster-toolbar">{cluster_cite}{notebook_link}</div>
+                <p class="cluster-empty">{empty_line}</p>
+              </div>
+            </details>
+            """
+        items = "".join(
+            self._render_paper(paper, slug, notebook_url, bool(_attr(data, "show_cite_buttons", False)))
+            for paper in papers
+        )
         return f"""
-        <details class="cluster-card" data-cluster="{html_escape(c.slug)}">
+        <details class="cluster-card" data-cluster="{html_escape(slug)}"{open_attr}>
           <summary>
-            <span class="cluster-name">{html_escape(c.name)}</span>
-            <span class="cluster-meta">
-              {c.paper_count} papers · {c.unread_count} unread · last {html_escape(last_added)}
-            </span>
-            <progress class="cluster-progress" value="{progress_value}" max="{progress_max}"
-                      aria-label="Reading progress for {html_escape(c.name)}"></progress>
+            <div class="cluster-summary">
+              <h3>{html_escape(name)}</h3>
+              <p>{paper_count} papers{html_escape(summary_suffix)}</p>
+            </div>
+            <div class="cluster-summary-meta">
+              <code>{html_escape(' · '.join(status_parts))}</code>
+              <span class="cluster-last-activity">{html_escape(last_activity)}</span>
+            </div>
           </summary>
           <div class="cluster-body">
-            <div class="cluster-chips">
-              {zotero_chip}
-              {nlm_chip}
-              <span class="chip chip-muted">slug: <code>{html_escape(c.slug)}</code></span>
-            </div>
-            <div class="cluster-counts">
-              <span class="status-pill status-unread">unread {c.unread_count}</span>
-              <span class="status-pill status-reading">reading {c.reading_count}</span>
-              <span class="status-pill status-deep-read">deep-read {c.deep_read_count}</span>
-              <span class="status-pill status-cited">cited {c.cited_count}</span>
-            </div>
+            <div class="cluster-toolbar">{cluster_cite}{notebook_link}</div>
+            <ol class="paper-list">{items}</ol>
           </div>
         </details>
         """
 
-
-# --- Section 3: Reading Queue (filterable paper list) -------------------
-
-
-class ReadingQueueSection(DashboardSection):
-    id = "reading-queue"
-    title = "Reading queue"
-    order = 30
-
-    def __init__(self) -> None:
-        self.id = "reading-queue"
-        self.title = "Reading queue"
-        self.order = 30
-
-    def render(self, ctx: DashboardContext) -> str:
-        if not ctx.papers:
-            return f"""
-        <section id="reading-queue" aria-labelledby="reading-queue-heading">
-          <h2 id="reading-queue-heading">Reading queue</h2>
-          <p class="empty-state">Add papers via
-            <code>research-hub add &lt;doi&gt;</code>.</p>
-        </section>
-        """
-        rows = "".join(self._row(p) for p in ctx.papers)
-        chips = "".join(
-            f'<button type="button" class="filter-chip" data-status="{html_escape(s)}">{label}</button>'
-            for s, label in [
-                ("all", "All"),
-                ("unread", "Unread"),
-                ("reading", "Reading"),
-                ("deep-read", "Deep-read"),
-                ("cited", "Cited"),
-            ]
-        )
+    def _render_paper(self, paper, cluster_slug: str, notebook_url: str, show_cite: bool) -> str:
+        tags = [str(tag) for tag in (_attr(paper, "tags", []) or [])]
+        abstract = _truncate(str(_attr(paper, "abstract", "") or ""), 240)
+        cite_button = ""
+        if show_cite:
+            cite_button = (
+                f'<button class="cite-btn" data-bibtex="{html_escape(_attr(paper, "bibtex", ""))}" '
+                f'data-slug="{html_escape(_attr(paper, "slug", "paper"))}" '
+                f'aria-label="Cite {html_escape(_attr(paper, "title", ""))}">Cite</button>'
+            )
+        zotero_badge = ""
+        if show_cite:
+            zotero_badge = (
+                f'<span class="status-badge {_bool_status(bool(_attr(paper, "in_zotero", False)))}" title="Zotero">Z</span>'
+            )
         return f"""
-        <section id="reading-queue" aria-labelledby="reading-queue-heading">
-          <h2 id="reading-queue-heading">Reading queue</h2>
-          <div class="filter-bar" role="group" aria-label="Filter by status">{chips}</div>
-          <div class="reading-queue-wrap">
-            <table class="reading-queue">
-              <thead>
-                <tr>
-                  <th data-sort="title" tabindex="0" role="columnheader" aria-sort="none">Title <span class="sort-arrow"></span></th>
-                  <th data-sort="cluster" tabindex="0" role="columnheader" aria-sort="none">Cluster <span class="sort-arrow"></span></th>
-                  <th data-sort="year" tabindex="0" role="columnheader" aria-sort="none">Year <span class="sort-arrow"></span></th>
-                  <th data-sort="status" tabindex="0" role="columnheader" aria-sort="none">Status <span class="sort-arrow"></span></th>
-                  <th>Mark</th>
-                </tr>
-              </thead>
-              <tbody id="paper-rows">{rows}</tbody>
-            </table>
+        <li class="paper-row" data-cluster="{html_escape(cluster_slug)}"
+            data-title="{html_escape(str(_attr(paper, 'title', '')).lower())}"
+            data-tags="{html_escape(' '.join(tags).lower())}">
+          <div class="paper-content">
+            <div class="paper-meta">
+              <strong class="paper-authors">{html_escape(_attr(paper, "authors", ""))}</strong>
+              <span class="paper-year">{html_escape(_attr(paper, "year", ""))}</span>
+            </div>
+            <h3 class="paper-title">{html_escape(_attr(paper, "title", ""))}</h3>
+            <p class="paper-abstract">{html_escape(abstract)}</p>
+            <div class="paper-status-row">
+              {zotero_badge}
+              <span class="status-badge {_bool_status(bool(_attr(paper, "in_obsidian", False)))}" title="Obsidian">O</span>
+              <span class="status-badge {_bool_status(bool(_attr(paper, "in_nlm", False)))}" title="NotebookLM">N</span>
+              <span class="reading-status status-{html_escape(_attr(paper, "status", "unread"))}">{html_escape(_attr(paper, "status", "unread"))}</span>
+            </div>
           </div>
-          <button type="button" id="show-more" class="show-more" hidden>Show more</button>
-        </section>
-        """
-
-    def _row(self, p: PaperRow) -> str:
-        copy_cmd = f"research-hub mark {p.slug} --status deep-read"
-        return f"""
-        <tr class="paper-row" tabindex="0"
-            data-title="{html_escape(p.title.lower())}"
-            data-cluster="{html_escape(p.cluster_slug)}"
-            data-year="{html_escape(p.year)}"
-            data-status="{html_escape(p.status)}">
-          <td><span class="paper-title">{html_escape(p.title)}</span>
-              <code class="paper-slug">{html_escape(p.slug)}</code></td>
-          <td><span class="cluster-tag">{html_escape(p.cluster_name)}</span></td>
-          <td>{html_escape(p.year)}</td>
-          <td><span class="status-pill status-{html_escape(p.status)}">{html_escape(p.status)}</span></td>
-          <td><button type="button" class="copy-button"
-                      data-copy="{html_escape(copy_cmd)}"
-                      aria-label="Copy mark command for {html_escape(p.title)}">Copy ⧉</button></td>
-        </tr>
-        """
-
-
-# --- Section 4: Activity feed -------------------------------------------
-
-
-class ActivitySection(DashboardSection):
-    id = "activity"
-    title = "Recent activity"
-    order = 40
-
-    def __init__(self) -> None:
-        self.id = "activity"
-        self.title = "Recent activity"
-        self.order = 40
-
-    def render(self, ctx: DashboardContext) -> str:
-        if not ctx.activity:
-            return f"""
-        <section id="activity" aria-labelledby="activity-heading">
-          <h2 id="activity-heading">Recent activity</h2>
-          <p class="empty-state">No pipeline runs recorded yet.</p>
-        </section>
-        """
-        items = "".join(self._row(e) for e in ctx.activity)
-        return f"""
-        <section id="activity" aria-labelledby="activity-heading">
-          <h2 id="activity-heading">Recent activity</h2>
-          <ol class="activity-feed">{items}</ol>
-        </section>
-        """
-
-    def _row(self, e: ActivityEvent) -> str:
-        ts = (e.timestamp or "")[:16].replace("T", " ")
-        action_class = "activity-error" if e.error else f"activity-{html_escape(e.action)}"
-        return f"""
-        <li class="activity-item {action_class}">
-          <span class="activity-ts">{html_escape(ts)}</span>
-          <span class="activity-action">{html_escape(e.action or 'event')}</span>
-          <span class="activity-cluster">{html_escape(e.cluster)}</span>
-          <span class="activity-title">{html_escape(e.title)}</span>
+          <div class="paper-actions">
+            {cite_button}
+            <button class="open-btn" data-doi="{html_escape(_attr(paper, 'doi', ''))}"
+                    data-zotero-key="{html_escape(_attr(paper, 'zotero_key', ''))}"
+                    data-obsidian-path="{html_escape(_attr(paper, 'obsidian_path', ''))}"
+                    data-nlm-url="{html_escape(notebook_url)}"
+                    aria-label="Open {html_escape(_attr(paper, 'title', ''))}">Open</button>
+          </div>
         </li>
         """
 
 
-# --- Section 5: NotebookLM artifacts ------------------------------------
-
-
-class NotebookLMSection(DashboardSection):
-    id = "notebooklm"
-    title = "NotebookLM artifacts"
-    order = 50
+class BriefingShelfSection(DashboardSection):
+    id = "briefings"
+    title = "AI Briefings"
+    order = 30
 
     def __init__(self) -> None:
-        self.id = "notebooklm"
-        self.title = "NotebookLM artifacts"
-        self.order = 50
+        self.id = "briefings"
+        self.title = "AI Briefings"
+        self.order = 30
 
-    def render(self, ctx: DashboardContext) -> str:
-        if not ctx.show_nlm_section:
-            return ""
-        cards = "".join(self._card(a) for a in ctx.nlm_artifacts)
+    def render(self, data) -> str:
+        briefings = list(_attr(data, "briefings", []) or [])
+        if not briefings and hasattr(data, "nlm_artifacts"):
+            for artifact in list(_attr(data, "nlm_artifacts", []) or []):
+                briefings.append(
+                    type(
+                        "LegacyBriefing",
+                        (),
+                        {
+                            "cluster_name": _attr(artifact, "cluster_name", ""),
+                            "char_count": int(_attr(artifact, "char_count", 0) or 0),
+                            "downloaded_at": _attr(artifact, "downloaded_at", ""),
+                            "preview_text": "",
+                            "notebook_url": _attr(artifact, "notebook_url", ""),
+                            "full_text": "",
+                        },
+                    )()
+                )
+        if not briefings:
+            cards = """
+            <article class="briefing-card briefing-empty">
+              <p>No briefings downloaded yet. Run <code>research-hub notebooklm download --cluster &lt;slug&gt;</code> to fetch one.</p>
+            </article>
+            """
+        else:
+            cards = "".join(self._render_briefing(briefing) for briefing in briefings)
         return f"""
-        <section id="notebooklm" aria-labelledby="notebooklm-heading">
-          <h2 id="notebooklm-heading">NotebookLM artifacts</h2>
-          <div class="nlm-grid">{cards}</div>
+        <section id="briefings" aria-labelledby="briefings-heading">
+          <div class="section-heading">
+            <h2 id="briefings-heading">AI Briefings</h2>
+            <p class="section-meta">NotebookLM outputs kept close to the source clusters.</p>
+          </div>
+          <div class="briefing-grid">{cards}</div>
         </section>
         """
 
-    def _card(self, a: NLMArtifact) -> str:
-        downloaded = (a.downloaded_at or "")[:16].replace("T", " ")
-        link_html = ""
-        if a.notebook_url:
-            link_html = (
-                f'<a class="nlm-link" href="{html_escape(a.notebook_url)}" '
-                'target="_blank" rel="noreferrer noopener">Open notebook</a>'
-            )
+    def _render_briefing(self, briefing) -> str:
+        preview_text = str(_attr(briefing, "preview_text", "") or "")
         return f"""
-        <article class="nlm-card" data-cluster="{html_escape(a.cluster_slug)}">
+        <article class="briefing-card">
           <header>
-            <h3>{html_escape(a.cluster_name)}</h3>
-            <span class="nlm-meta">briefing · {a.char_count} chars · {html_escape(downloaded)}</span>
+            <h3>{html_escape(_attr(briefing, "cluster_name", ""))}</h3>
+            <span class="briefing-meta">{int(_attr(briefing, "char_count", 0) or 0)} chars · {html_escape(_relative_time(str(_attr(briefing, "downloaded_at", "") or '')))}</span>
           </header>
-          <code class="nlm-path">{html_escape(a.brief_path)}</code>
-          <div class="nlm-actions">{link_html}</div>
+          <details>
+            <summary>Show preview</summary>
+            <p class="briefing-preview">{html_escape(preview_text)}</p>
+            <div class="briefing-actions">
+              <a class="btn-primary" href="{html_escape(_attr(briefing, 'notebook_url', ''))}" target="_blank"
+                 rel="noreferrer noopener">Open in NotebookLM</a>
+              <button class="copy-brief-btn"
+                      data-text="{html_escape(_attr(briefing, 'full_text', ''))}">Copy full text</button>
+            </div>
+          </details>
+        </article>
+        """
+
+
+class DiagnosticsSection(DashboardSection):
+    id = "diagnostics"
+    title = "Diagnostics"
+    order = 90
+
+    def __init__(self) -> None:
+        self.id = "diagnostics"
+        self.title = "Diagnostics"
+        self.order = 90
+
+    def render(self, data) -> str:
+        badges = list(_attr(data, "health_badges", []) or [])
+        alerts = list(_attr(data, "drift_alerts", []) or [])
+        badge_items = "".join(
+            f'<li class="health-{str(_attr(badge, "status", "WARN")).lower()}">'
+            f'{html_escape(_attr(badge, "subsystem", ""))} '
+            f'{html_escape(_attr(badge, "status", ""))} '
+            f'{html_escape(_attr(badge, "summary", ""))}</li>'
+            for badge in badges
+        )
+        if not badge_items:
+            badge_items = '<li class="health-warn">No health badges reported.</li>'
+        if alerts:
+            drift_html = "".join(self._render_alert(alert) for alert in alerts)
+        else:
+            drift_html = '<p class="diag-empty">No drift detected.</p>'
+        return f"""
+        <section id="diagnostics">
+          <details>
+            <summary>Diagnostics - health, drift, and pending actions</summary>
+            <div class="diag-grid">
+              <div class="diag-health">
+                <h3>System health</h3>
+                <ul>{badge_items}</ul>
+              </div>
+              <div class="diag-drift">
+                <h3>Drift alerts</h3>
+                {drift_html}
+              </div>
+            </div>
+          </details>
+        </section>
+        """
+
+    def _render_alert(self, alert) -> str:
+        samples = "".join(f"<li>{html_escape(path)}</li>" for path in list(_attr(alert, "sample_paths", []) or []))
+        fix_command = str(_attr(alert, "fix_command", "") or "")
+        copy_button = ""
+        if fix_command:
+            copy_button = f'<button class="copy-brief-btn" data-text="{html_escape(fix_command)}">Copy fix command</button>'
+        return f"""
+        <article class="drift-card drift-{str(_attr(alert, "severity", "WARN")).lower()}">
+          <h4>{html_escape(_attr(alert, "title", ""))}</h4>
+          <p>{html_escape(_attr(alert, "description", ""))}</p>
+          <ul class="sample-paths">{samples}</ul>
+          <div class="drift-actions">
+            <code>{html_escape(fix_command)}</code>
+            {copy_button}
+          </div>
         </article>
         """
 
 
 DEFAULT_SECTIONS: list[DashboardSection] = [
-    OverviewSection(),
-    ClustersSection(),
-    ReadingQueueSection(),
-    ActivitySection(),
-    NotebookLMSection(),
+    HeaderSection(),
+    ClusterListSection(),
+    BriefingShelfSection(),
+    DiagnosticsSection(),
 ]
+
+OverviewSection = HeaderSection
+ClustersSection = ClusterListSection
+ReadingQueueSection = BriefingShelfSection
+ActivitySection = DiagnosticsSection
+NotebookLMSection = BriefingShelfSection
