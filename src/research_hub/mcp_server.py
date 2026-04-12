@@ -398,6 +398,23 @@ def split_cluster(source: str, query: str, new_name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def generate_dashboard() -> dict[str, str]:
+    """Generate a personal HTML dashboard for the vault.
+
+    Returns the path to the generated file. Open it in a browser to
+    see cluster overview, paper counts, reading status breakdown, and
+    NotebookLM links.
+    """
+    try:
+        from research_hub.dashboard import generate_dashboard as _generate
+
+        path = _generate(open_browser=False)
+        return {"status": "ok", "path": str(path)}
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
 def propose_research_setup(topic: str) -> dict:
     """Propose names for a new research collection without creating anything.
 

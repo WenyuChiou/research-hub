@@ -12,6 +12,7 @@ from research_hub.cli import build_parser
         ["mark", "--help"],
         ["move", "--help"],
         ["find", "--help"],
+        ["dashboard", "--help"],
         ["references", "--help"],
         ["cited-by", "--help"],
         ["clusters", "rename", "--help"],

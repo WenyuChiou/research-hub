@@ -492,6 +492,16 @@ def _status(cluster: str | None = None) -> int:
     return 0
 
 
+def _dashboard(open_browser: bool) -> int:
+    from research_hub.dashboard import generate_dashboard
+
+    out_path = generate_dashboard(open_browser=open_browser)
+    print(f"Dashboard written to {out_path}")
+    if open_browser:
+        print("Opening in browser...")
+    return 0
+
+
 def _load_zotero_if_configured():
     try:
         from research_hub.zotero.client import get_client
@@ -908,6 +918,17 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = subparsers.add_parser("status", help="Show per-cluster reading progress")
     status_parser.add_argument("--cluster", default=None, help="Show only this cluster")
 
+    dashboard_parser = subparsers.add_parser(
+        "dashboard",
+        help="Generate a personal HTML dashboard for the vault",
+    )
+    dashboard_parser.add_argument(
+        "--open",
+        dest="open_browser",
+        action="store_true",
+        help="Open the dashboard in your default browser after generation",
+    )
+
     migrate_parser = subparsers.add_parser(
         "migrate-yaml", help="Patch legacy notes to v0.3.x YAML spec"
     )
@@ -1152,6 +1173,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cite(args.identifier, args.cluster, args.content_format, args.out)
     if args.command == "status":
         return _status(cluster=args.cluster)
+    if args.command == "dashboard":
+        return _dashboard(args.open_browser)
     if args.command == "sync":
         if args.sync_command == "status":
             return _sync_status(cluster_slug=args.cluster)

@@ -119,6 +119,7 @@ from research_hub.dedup import DedupHit, DedupIndex
 from research_hub.doctor import CheckResult
 from research_hub.mcp_server import (
     export_citation,
+    generate_dashboard,
     get_config_info,
     list_clusters,
     run_doctor,
@@ -307,6 +308,7 @@ def test_new_operation_tools_are_registered():
 
     for tool_name in [
         "add_paper",
+        "generate_dashboard",
         "remove_paper",
         "mark_paper",
         "move_paper",
@@ -315,3 +317,13 @@ def test_new_operation_tools_are_registered():
         "split_cluster",
     ]:
         assert tool_name in mcp._tool_manager._tools
+
+
+def test_generate_dashboard_tool_returns_path(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    monkeypatch.setattr("research_hub.dashboard.get_config", lambda: cfg)
+
+    result = generate_dashboard.fn()
+
+    assert result["status"] == "ok"
+    assert result["path"].endswith("dashboard.html")
