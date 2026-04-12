@@ -12,7 +12,10 @@ from research_hub.notebooklm.selectors import (
     ARTIFACT_BUTTON_CONTAINER_CSS,
     ARTIFACT_BUTTON_CREATING_CSS,
     ARTIFACT_BUTTON_CSS,
+    ARTIFACT_LIBRARY_EMPTY_STATE_CSS,
+    AUDIO_PRESETS,
     BETWEEN_UPLOADS_MS,
+    BRIEFING_PRESETS,
     CREATE_NEW_BUTTON_TEXTS,
     CREATE_NEW_GRID_CARD_CSS,
     CREATE_NEW_TOOLBAR_BUTTON_CSS,
@@ -24,6 +27,7 @@ from research_hub.notebooklm.selectors import (
     GENERATE_VIDEO_BUTTON_TEXTS,
     GENERATION_ARTIFACT_LINK_CSS,
     GENERATION_TIMEOUT_MS,
+    MIND_MAP_PRESETS,
     NOTEBOOK_LIST_URL,
     NOTEBOOK_TILE_LINK_CSS,
     NOTEBOOK_TITLE_EDITABLE_CSS,
@@ -36,6 +40,7 @@ from research_hub.notebooklm.selectors import (
     SOURCE_WEBSITE_URL_INPUT_PLACEHOLDERS,
     URL_DIALOG_SUBMIT_BUTTON_CSS,
     URL_INPUT_TEXTAREA_CSS,
+    VIDEO_PRESETS,
     notebook_tile_xpath_by_name,
 )
 
@@ -339,8 +344,59 @@ class NotebookLMClient:
                 continue
         return None
 
-    def _trigger_and_wait(self, label_texts: tuple[str, ...], kind_label: str) -> str:
-        """Click an artifact-create tile and wait for the creating class to clear."""
+    def _click_preset_if_present(self, preset_texts: tuple[str, ...]) -> bool:
+        """After clicking an artifact tile, try to click the default preset.
+
+        Some artifact types (Report, Audio) open a sub-dialog with
+        preset options (e.g., 簡介文件 / 研讀指南 / 網誌文章 for
+        Report). Click the first one found. Returns True if a preset
+        was clicked, False if the sub-dialog was not detected (meaning
+        generation started directly).
+        """
+        for text in preset_texts:
+            try:
+                preset = self.page.locator(f'[aria-label="{text}"]').first
+                preset.wait_for(state="visible", timeout=3_000)
+                preset.click()
+                return True
+            except Exception:
+                continue
+        return False
+
+    def _wait_for_generation(self, timeout_ms: int = 45_000) -> None:
+        """Wait for the artifact library to gain content.
+
+        If the library shows the empty-state placeholder, wait for it
+        to detach. Otherwise, wait for the child count of
+        `<artifact-library>` to increase (handles notebooks that
+        already have generated artifacts). Falls back to a fixed sleep
+        when detection fails.
+        """
+        empty = self.page.locator(ARTIFACT_LIBRARY_EMPTY_STATE_CSS).first
+        try:
+            empty.wait_for(state="attached", timeout=2_000)
+            empty.wait_for(state="detached", timeout=timeout_ms)
+            return
+        except Exception:
+            pass
+        try:
+            baseline = self.page.evaluate(
+                "() => document.querySelector('artifact-library')?.children.length ?? 0"
+            )
+            self.page.wait_for_function(
+                f"() => (document.querySelector('artifact-library')?.children.length ?? 0) > {baseline}",
+                timeout=timeout_ms,
+            )
+        except Exception:
+            self.page.wait_for_timeout(5_000)
+
+    def _trigger_and_wait(
+        self,
+        label_texts: tuple[str, ...],
+        kind_label: str,
+        preset_texts: tuple[str, ...] = (),
+    ) -> str:
+        """Click an artifact tile, optionally pick a preset, and wait for completion."""
         container = self._find_artifact_container(label_texts)
         if container is None:
             raise NotebookLMError(
@@ -349,29 +405,22 @@ class NotebookLMClient:
                 page_url=self.page.url,
             )
         container.click()
-        try:
-            self.page.wait_for_function(
-                f"""() => !document.querySelector({ARTIFACT_BUTTON_CREATING_CSS!r})""",
-                timeout=GENERATION_TIMEOUT_MS,
-            )
-        except Exception:
-            pass
-        links = self.page.locator(GENERATION_ARTIFACT_LINK_CSS).all()
-        if not links:
-            return self.page.url
-        return links[-1].get_attribute("href") or self.page.url
+        if preset_texts:
+            self._click_preset_if_present(preset_texts)
+        self._wait_for_generation(timeout_ms=30_000)
+        return self.page.url
 
     def trigger_briefing(self) -> str:
-        return self._trigger_and_wait(GENERATE_BRIEFING_BUTTON_TEXTS, "briefing")
+        return self._trigger_and_wait(GENERATE_BRIEFING_BUTTON_TEXTS, "briefing", BRIEFING_PRESETS)
 
     def trigger_audio_overview(self) -> str:
-        return self._trigger_and_wait(GENERATE_AUDIO_BUTTON_TEXTS, "audio")
+        return self._trigger_and_wait(GENERATE_AUDIO_BUTTON_TEXTS, "audio", AUDIO_PRESETS)
 
     def trigger_mind_map(self) -> str:
-        return self._trigger_and_wait(GENERATE_MIND_MAP_BUTTON_TEXTS, "mind_map")
+        return self._trigger_and_wait(GENERATE_MIND_MAP_BUTTON_TEXTS, "mind_map", MIND_MAP_PRESETS)
 
     def trigger_video_overview(self) -> str:
-        return self._trigger_and_wait(GENERATE_VIDEO_BUTTON_TEXTS, "video")
+        return self._trigger_and_wait(GENERATE_VIDEO_BUTTON_TEXTS, "video", VIDEO_PRESETS)
 
 
 def _parse_notebook_id(url: str) -> str:

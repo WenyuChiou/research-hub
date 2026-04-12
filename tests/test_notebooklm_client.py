@@ -322,16 +322,14 @@ def test_upload_url_failure_wraps_exception():
     assert "broken" in result.error
 
 
-def test_trigger_briefing_returns_link():
+def test_trigger_briefing_returns_page_url():
     page = StubPage()
+    page.url = "https://notebooklm.google.com/notebook/abc"
     page.locators['.create-artifact-button-container[aria-label="報告"]'] = StubLocator()
-    page.locators["a[href*='/notebook/']"] = StubLocator(
-        attr="https://notebooklm.google.com/notebook/briefing"
-    )
 
     url = NotebookLMClient(page).trigger_briefing()
 
-    assert url.endswith("/briefing")
+    assert url == "https://notebooklm.google.com/notebook/abc"
 
 
 def test_trigger_briefing_raises_on_no_button():
@@ -341,16 +339,14 @@ def test_trigger_briefing_raises_on_no_button():
         NotebookLMClient(page).trigger_briefing()
 
 
-def test_trigger_audio_returns_link():
+def test_trigger_audio_returns_page_url():
     page = StubPage()
+    page.url = "https://notebooklm.google.com/notebook/xyz"
     page.locators['.create-artifact-button-container[aria-label="語音摘要"]'] = StubLocator()
-    page.locators["a[href*='/notebook/']"] = StubLocator(
-        attr="https://notebooklm.google.com/notebook/audio"
-    )
 
     url = NotebookLMClient(page).trigger_audio_overview()
 
-    assert url.endswith("/audio")
+    assert url == "https://notebooklm.google.com/notebook/xyz"
 
 
 def test_upload_cluster_dry_run_skips_browser(tmp_path, monkeypatch):

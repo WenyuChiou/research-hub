@@ -149,6 +149,30 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "en": ("Infographic",),
             "ja": ("インフォグラフィック",),
         },
+        "briefing_preset": {
+            "zh-TW": ("簡介文件", "研讀指南", "網誌文章"),
+            "zh-CN": ("简介文件",),
+            "en": ("Brief", "Study guide", "Blog post"),
+            "ja": ("概要",),
+        },
+        "audio_preset": {
+            "zh-TW": ("語音摘要",),
+            "zh-CN": ("语音摘要",),
+            "en": ("Audio Overview",),
+            "ja": ("音声概要",),
+        },
+        "mind_map_preset": {
+            "zh-TW": ("心智圖",),
+            "zh-CN": ("思维导图",),
+            "en": ("Mind map",),
+            "ja": ("マインドマップ",),
+        },
+        "video_preset": {
+            "zh-TW": ("影片摘要",),
+            "zh-CN": ("视频概览",),
+            "en": ("Video Overview",),
+            "ja": ("動画概要",),
+        },
     }
     primary = table.get(key, {}).get(_LOCALE, ())
     english = table.get(key, {}).get("en", ())
@@ -288,6 +312,15 @@ GENERATE_VIDEO_BUTTON_TEXTS = _localized_text("video_button")
 # the text-based chip is a fallback for locales not yet mapped.
 GENERATION_PROGRESS_CHIP_TEXTS = ("產生中", "Generating", "生成中", "生成")
 GENERATION_ARTIFACT_LINK_CSS = "a[href*='/notebook/']"
+ARTIFACT_LIBRARY_EMPTY_STATE_CSS = ".artifact-library-empty-state"
+
+# Preset sub-dialog aria-labels. After clicking a parent artifact tile,
+# NotebookLM opens a sub-dialog with localized preset options. The
+# first entry in each tuple is the default preset to click.
+BRIEFING_PRESETS = _localized_text("briefing_preset")
+AUDIO_PRESETS = _localized_text("audio_preset")
+MIND_MAP_PRESETS = _localized_text("mind_map_preset")
+VIDEO_PRESETS = _localized_text("video_preset")
 
 
 # --- Timeouts (ms) ------------------------------------------------------
