@@ -176,11 +176,15 @@ CREATE_NEW_BUTTON_TEXTS = _localized_text("create_new_notebook")
 
 
 # --- Notebook title textbox (shown after creating a new notebook) -----
-# On entering a fresh notebook the title row has a contenteditable
-# element or a Material textbox. Not observed yet in the live DOM
-# snapshot — update after the first `create_notebook` flow runs.
-NOTEBOOK_TITLE_TEXTBOX_ROLE = ("textbox", None)
-NOTEBOOK_TITLE_EDITABLE_CSS = "[contenteditable='true']"
+# Verified 2026-04-11: the rename element is a regular `<input>` with
+# class `title-input mat-title-large`, wrapped by a custom element
+# `<editable-project-title>`. The sibling `.title-label-inner` shows
+# the current title when the input is blurred, but it is not the
+# editable element. Fill the `input.title-input` directly and press
+# Enter to commit.
+NOTEBOOK_TITLE_INPUT_CSS = "input.title-input"
+NOTEBOOK_TITLE_EDITABLE_CSS = "input.title-input"  # legacy alias
+NOTEBOOK_TITLE_TEXTBOX_ROLE = ("textbox", None)  # legacy alias
 
 
 # --- Inside a notebook: source panel -----------------------------------

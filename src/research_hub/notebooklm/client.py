@@ -27,6 +27,7 @@ from research_hub.notebooklm.selectors import (
     NOTEBOOK_LIST_URL,
     NOTEBOOK_TILE_LINK_CSS,
     NOTEBOOK_TITLE_EDITABLE_CSS,
+    NOTEBOOK_TITLE_INPUT_CSS,
     NOTEBOOK_TITLE_SPAN_CSS,
     SOURCE_PANEL_CSS,
     SOURCE_UPLOAD_FILE_INPUT_CSS,
@@ -113,7 +114,14 @@ class NotebookLMClient:
         return NotebookHandle(name=name, url=self.page.url, notebook_id=_parse_notebook_id(self.page.url))
 
     def create_notebook(self, name: str) -> NotebookHandle:
-        """Create a notebook. Prefer the grid card, fall back to toolbar button."""
+        """Create a fresh notebook and rename it via the title input.
+
+        NotebookLM commits a new notebook as soon as you click the
+        create grid card. It lands on
+        `/notebook/<uuid>?addSource=true` with the upload dialog open.
+        The rename element is `<input class="title-input">` inside
+        `<editable-project-title>`; fill it directly and press Enter.
+        """
         self.goto_notebook_list()
         grid_card = self.page.locator(CREATE_NEW_GRID_CARD_CSS).first
         if grid_card.count() > 0:
@@ -125,15 +133,27 @@ class NotebookLMClient:
             else:
                 label_regex = re.compile("|".join(re.escape(t) for t in CREATE_NEW_BUTTON_TEXTS))
                 self.page.get_by_role("button", name=label_regex).first.click()
-        self.page.wait_for_load_state("networkidle")
+
+        # Wait for the notebook to actually commit (URL leaves
+        # /notebook/creating once Angular assigns a real UUID).
+        for _ in range(20):
+            if "/notebook/creating" not in (self.page.url or ""):
+                break
+            self.page.wait_for_timeout(500)
+
         try:
-            editable = self.page.locator(NOTEBOOK_TITLE_EDITABLE_CSS).first
-            if editable.count() > 0:
-                editable.fill(name)
-                editable.press("Enter")
+            title_input = self.page.locator(NOTEBOOK_TITLE_INPUT_CSS).first
+            title_input.wait_for(state="attached", timeout=10_000)
+            title_input.fill(name)
+            title_input.press("Enter")
+            self.page.wait_for_timeout(500)
         except Exception:
             pass
-        return NotebookHandle(name=name, url=self.page.url, notebook_id=_parse_notebook_id(self.page.url))
+        return NotebookHandle(
+            name=name,
+            url=self.page.url,
+            notebook_id=_parse_notebook_id(self.page.url),
+        )
 
     def open_or_create_notebook(self, name: str) -> NotebookHandle:
         try:
@@ -167,10 +187,57 @@ class NotebookLMClient:
         button.click()
 
     def upload_pdf(self, pdf_path: Path) -> UploadResult:
-        """Attach a PDF via NotebookLM's source upload flow."""
+        """Attach a PDF via NotebookLM's source upload flow.
+
+        NotebookLM does not expose a visible `<input type="file">`; the
+        Upload drop-zone button spawns a native OS file chooser. Use
+        Playwright's `expect_file_chooser` to intercept the chooser
+        and drive it programmatically with `set_files`.
+
+        The Add-source button is only clicked if the upload dialog is
+        not already open (for example, the staging view after
+        `create_notebook` lands on `?addSource=true` with the dialog
+        pre-opened).
+        """
         try:
-            self._click_add_source()
-            self.page.locator(SOURCE_UPLOAD_FILE_INPUT_CSS).first.set_input_files(str(pdf_path))
+            drop_zone = self.page.locator(DROP_ZONE_ICON_BUTTON_CSS).first
+            dialog_open = False
+            try:
+                drop_zone.wait_for(state="visible", timeout=2_000)
+                dialog_open = True
+            except Exception:
+                pass
+            if not dialog_open:
+                self._click_add_source()
+                drop_zone.wait_for(state="visible", timeout=10_000)
+
+            upload_button = (
+                self.page.locator(DROP_ZONE_ICON_BUTTON_CSS)
+                .filter(has=self.page.locator("mat-icon", has_text="upload"))
+                .first
+            )
+            try:
+                upload_button.wait_for(state="visible", timeout=5_000)
+            except Exception:
+                upload_button = self.page.locator(SOURCE_UPLOAD_FILE_INPUT_CSS).first
+                upload_button.set_input_files(str(pdf_path))
+                self.page.wait_for_timeout(BETWEEN_UPLOADS_MS)
+                return UploadResult(source_kind="pdf", path_or_url=str(pdf_path), success=True)
+
+            with self.page.expect_file_chooser() as fc_info:
+                upload_button.click()
+            chooser = fc_info.value
+            chooser.set_files(str(pdf_path))
+
+            # Wait for the drop-zone button to disappear, signalling
+            # the dialog closed and the source landed.
+            try:
+                self.page.locator(DROP_ZONE_ICON_BUTTON_CSS).first.wait_for(
+                    state="detached", timeout=30_000
+                )
+            except Exception:
+                pass
+
             self.page.wait_for_timeout(BETWEEN_UPLOADS_MS)
             return UploadResult(source_kind="pdf", path_or_url=str(pdf_path), success=True)
         except Exception as exc:
@@ -195,7 +262,15 @@ class NotebookLMClient:
         CSS selectors do not resolve, so locale variations still work.
         """
         try:
-            self._click_add_source()
+            drop_zone = self.page.locator(DROP_ZONE_ICON_BUTTON_CSS).first
+            dialog_open = False
+            try:
+                drop_zone.wait_for(state="visible", timeout=2_000)
+                dialog_open = True
+            except Exception:
+                pass
+            if not dialog_open:
+                self._click_add_source()
 
             link_button = (
                 self.page.locator(DROP_ZONE_ICON_BUTTON_CSS)

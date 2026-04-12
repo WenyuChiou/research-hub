@@ -143,6 +143,34 @@ class StubPage:
                 return loc
         return StubLocator(count=0)
 
+    def expect_file_chooser(self):
+        class _FCInfo:
+            def __init__(self, page):
+                self._page = page
+                self.value = _FakeFileChooser(page)
+
+        class _CM:
+            def __init__(self, page):
+                self._info = _FCInfo(page)
+
+            def __enter__(self):
+                return self._info
+
+            def __exit__(self, *a):
+                return False
+
+        return _CM(self)
+
+
+class _FakeFileChooser:
+    def __init__(self, page):
+        self._page = page
+        self.files = None
+
+    def set_files(self, path):
+        self.files = path
+        self._page.file_chooser_files = path
+
 
 class StubCfg:
     def __init__(self, root: Path) -> None:
@@ -221,7 +249,7 @@ def test_create_notebook_happy_path():
     )
     title_box = StubLocator()
     page.locators["mat-card.create-new-action-button"] = create_button
-    page.locators["[contenteditable='true']"] = title_box
+    page.locators["input.title-input"] = title_box
 
     client = NotebookLMClient(page)
     handle = client.create_notebook("Alpha")
@@ -242,16 +270,16 @@ def test_open_notebook_by_name_raises_on_missing():
 
 def test_upload_pdf_success_records_result(tmp_path):
     page = StubPage()
+    drop_zone = StubLocator()
     add_source = StubLocator()
-    file_input = StubLocator()
+    page.locators["button.drop-zone-icon-button"] = drop_zone
     page.locators["button.add-source-button"] = add_source
-    page.locators["input[type='file']"] = file_input
 
     result = NotebookLMClient(page).upload_pdf(tmp_path / "paper.pdf")
 
     assert result.success is True
-    assert add_source.clicked is True
-    assert str(tmp_path / "paper.pdf") == file_input.set_files
+    assert drop_zone.clicked is True
+    assert getattr(page, "file_chooser_files", None) == str(tmp_path / "paper.pdf")
 
 
 def test_upload_pdf_failure_wraps_exception_in_result(tmp_path):
