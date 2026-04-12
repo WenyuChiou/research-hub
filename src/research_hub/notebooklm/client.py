@@ -319,26 +319,36 @@ class NotebookLMClient:
             return UploadResult(source_kind="url", path_or_url=url, success=False, error=str(exc))
 
     def _find_artifact_container(self, label_texts: tuple[str, ...]):
-        """Find the `.create-artifact-button-container` whose inner button matches any label."""
-        label_regex = re.compile("|".join(re.escape(t) for t in label_texts))
-        button = self.page.get_by_role("button", name=label_regex).first
-        if button.count() == 0:
-            return None
-        container = button.locator(f"xpath=ancestor::*[contains(concat(' ', @class, ' '), ' create-artifact-button-container ')][1]")
-        if container.count() == 0:
-            return None
-        return {"button": button, "container": container}
+        """Find the artifact tile whose aria-label matches any localized name.
+
+        Studio-panel artifact tiles are `<div role="button">` elements
+        with class `create-artifact-button-container` and an
+        `aria-label` containing the localized artifact name (e.g.
+        "報告" for Briefing doc, "語音摘要" for Audio Overview).
+        Playwright's `get_by_role` accessible-name computation does
+        not always align with the raw aria-label, so we target the
+        attribute directly via CSS.
+        """
+        for text in label_texts:
+            selector = f'.create-artifact-button-container[aria-label="{text}"]'
+            container = self.page.locator(selector).first
+            try:
+                container.wait_for(state="attached", timeout=5_000)
+                return container
+            except Exception:
+                continue
+        return None
 
     def _trigger_and_wait(self, label_texts: tuple[str, ...], kind_label: str) -> str:
-        """Click an artifact-create button and wait for the creating class to clear."""
-        found = self._find_artifact_container(label_texts)
-        if found is None:
+        """Click an artifact-create tile and wait for the creating class to clear."""
+        container = self._find_artifact_container(label_texts)
+        if container is None:
             raise NotebookLMError(
                 f"Generation button not found: {kind_label}",
-                selector=f"aria-label~={label_texts}",
+                selector=f"aria-label in {label_texts}",
                 page_url=self.page.url,
             )
-        found["button"].click()
+        container.click()
         try:
             self.page.wait_for_function(
                 f"""() => !document.querySelector({ARTIFACT_BUTTON_CREATING_CSS!r})""",

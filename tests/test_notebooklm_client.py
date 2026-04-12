@@ -324,9 +324,7 @@ def test_upload_url_failure_wraps_exception():
 
 def test_trigger_briefing_returns_link():
     page = StubPage()
-    container = StubLocator()
-    briefing = StubLocator(ancestor=container)
-    page.set_role("button", "Briefing doc", briefing)
+    page.locators['.create-artifact-button-container[aria-label="報告"]'] = StubLocator()
     page.locators["a[href*='/notebook/']"] = StubLocator(
         attr="https://notebooklm.google.com/notebook/briefing"
     )
@@ -338,16 +336,14 @@ def test_trigger_briefing_returns_link():
 
 def test_trigger_briefing_raises_on_no_button():
     page = StubPage()
-    # No role rules registered — all role lookups return count=0.
+    # No matching locators registered — all variants return count=0.
     with pytest.raises(NotebookLMError):
         NotebookLMClient(page).trigger_briefing()
 
 
 def test_trigger_audio_returns_link():
     page = StubPage()
-    container = StubLocator()
-    audio = StubLocator(ancestor=container)
-    page.set_role("button", "Audio Overview", audio)
+    page.locators['.create-artifact-button-container[aria-label="語音摘要"]'] = StubLocator()
     page.locators["a[href*='/notebook/']"] = StubLocator(
         attr="https://notebooklm.google.com/notebook/audio"
     )

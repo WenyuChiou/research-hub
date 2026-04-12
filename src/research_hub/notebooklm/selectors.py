@@ -92,14 +92,18 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "ja": ("Studio",),
         },
         "briefing_button": {
-            "zh-TW": ("簡報文件", "大綱"),
-            "zh-CN": ("摘要文档",),
-            "en": ("Briefing doc", "Briefing document"),
-            "ja": ("概要ドキュメント",),
+            # NotebookLM renamed "Briefing doc" to "Report" in the UI.
+            # The zh-TW aria-label is now "報告", not the legacy
+            # "簡報文件" / "大綱". Keep legacy strings in the tuple so
+            # older instances of the UI still match via regex fallback.
+            "zh-TW": ("報告", "簡報文件", "大綱"),
+            "zh-CN": ("报告", "摘要文档"),
+            "en": ("Report", "Briefing doc", "Briefing document"),
+            "ja": ("レポート", "概要ドキュメント"),
         },
         "audio_button": {
-            "zh-TW": ("音訊總覽", "音訊摘要"),
-            "zh-CN": ("音频概览",),
+            "zh-TW": ("語音摘要", "音訊總覽", "音訊摘要"),
+            "zh-CN": ("语音摘要", "音频概览"),
             "en": ("Audio Overview", "Audio overview"),
             "ja": ("音声概要",),
         },
@@ -110,10 +114,40 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "ja": ("マインドマップ",),
         },
         "video_button": {
-            "zh-TW": ("影片總覽", "影片摘要"),
+            "zh-TW": ("影片摘要", "影片總覽"),
             "zh-CN": ("视频概览",),
             "en": ("Video Overview", "Video overview"),
             "ja": ("動画概要",),
+        },
+        "slides_button": {
+            "zh-TW": ("簡報",),
+            "zh-CN": ("幻灯片",),
+            "en": ("Slides",),
+            "ja": ("スライド",),
+        },
+        "quiz_button": {
+            "zh-TW": ("測驗",),
+            "zh-CN": ("测验",),
+            "en": ("Quiz",),
+            "ja": ("クイズ",),
+        },
+        "flashcards_button": {
+            "zh-TW": ("學習卡",),
+            "zh-CN": ("学习卡",),
+            "en": ("Flashcards",),
+            "ja": ("フラッシュカード",),
+        },
+        "data_table_button": {
+            "zh-TW": ("資料表",),
+            "zh-CN": ("数据表",),
+            "en": ("Data Table", "Data table"),
+            "ja": ("データテーブル",),
+        },
+        "infographic_button": {
+            "zh-TW": ("資訊圖表",),
+            "zh-CN": ("信息图",),
+            "en": ("Infographic",),
+            "ja": ("インフォグラフィック",),
         },
     }
     primary = table.get(key, {}).get(_LOCALE, ())
