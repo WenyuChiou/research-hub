@@ -13,7 +13,7 @@ from pathlib import Path
 from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config
 from research_hub.dedup import DedupIndex, build_from_obsidian, build_from_zotero
-from research_hub.operations import mark_paper, move_paper, remove_paper
+from research_hub.operations import add_paper, mark_paper, move_paper, remove_paper
 from research_hub.pipeline import run_pipeline
 from research_hub.search import SemanticScholarClient, iter_new_results
 from research_hub.suggest import PaperInput, suggest_cluster_for_paper, suggest_related_papers
@@ -210,6 +210,22 @@ def _mark(slug: str | None, status: str, cluster: str | None) -> int:
 def _move(slug: str, to_cluster: str) -> int:
     print(json.dumps(move_paper(slug, to_cluster)))
     return 0
+
+
+def _add(identifier: str, cluster: str | None, no_zotero: bool, skip_verify: bool) -> int:
+    result = add_paper(
+        identifier,
+        cluster=cluster,
+        no_zotero=no_zotero,
+        skip_verify=skip_verify,
+    )
+    if result["status"] == "ok":
+        print(f"Added: {result['title'][:70]}")
+        print(f"  DOI:  {result['doi']}")
+        print(f"  Slug: {result['slug']}")
+        return 0
+    print(f"Failed: {result.get('reason', 'unknown error')}")
+    return 1
 
 
 def _find(
@@ -663,6 +679,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip prompts; require all values via flags",
     )
+    init_parser.add_argument(
+        "--persona",
+        choices=["researcher", "analyst"],
+        default="researcher",
+        help="researcher = with Zotero (default), analyst = no Zotero",
+    )
 
     subparsers.add_parser("doctor", help="Health check for research-hub installation")
 
@@ -786,6 +808,23 @@ def build_parser() -> argparse.ArgumentParser:
     move_parser = subparsers.add_parser("move", help="Move a paper to a different cluster")
     move_parser.add_argument("slug", help="Note filename slug")
     move_parser.add_argument("--to", required=True, dest="to_cluster", help="Target cluster slug")
+
+    add_parser = subparsers.add_parser(
+        "add",
+        help="Fetch a paper by DOI/arXiv ID and ingest it (one-shot)",
+    )
+    add_parser.add_argument("identifier", help="DOI or arXiv ID")
+    add_parser.add_argument("--cluster", default=None, help="Target cluster slug")
+    add_parser.add_argument(
+        "--no-zotero",
+        action="store_true",
+        help="Data analyst mode: skip Zotero, Obsidian only",
+    )
+    add_parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Skip DOI verification",
+    )
 
     find_parser = subparsers.add_parser("find", help="Search within vault notes")
     find_parser.add_argument("query", help="Search query")
@@ -1033,6 +1072,7 @@ def main(argv: list[str] | None = None) -> int:
             zotero_key=args.zotero_key,
             zotero_library_id=args.zotero_library_id,
             non_interactive=args.non_interactive,
+            persona=args.persona,
         )
     if args.command == "doctor":
         from research_hub.doctor import print_doctor_report, run_doctor
@@ -1096,6 +1136,8 @@ def main(argv: list[str] | None = None) -> int:
         return _mark(args.slug, args.status, args.cluster)
     if args.command == "move":
         return _move(args.slug, args.to_cluster)
+    if args.command == "add":
+        return _add(args.identifier, args.cluster, args.no_zotero, args.no_verify)
     if args.command == "find":
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":

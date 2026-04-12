@@ -16,6 +16,8 @@ def test_build_parser_accepts_init_flags():
             "--zotero-library-id",
             "123",
             "--non-interactive",
+            "--persona",
+            "analyst",
         ]
     )
     assert args.command == "init"
@@ -23,6 +25,17 @@ def test_build_parser_accepts_init_flags():
     assert args.zotero_key == "secret"
     assert args.zotero_library_id == "123"
     assert args.non_interactive is True
+    assert args.persona == "analyst"
+
+
+def test_build_parser_accepts_add_command():
+    from research_hub.cli import build_parser
+
+    args = build_parser().parse_args(["add", "10.1000/example", "--cluster", "topic", "--no-zotero"])
+    assert args.command == "add"
+    assert args.identifier == "10.1000/example"
+    assert args.cluster == "topic"
+    assert args.no_zotero is True
 
 
 def test_build_parser_accepts_doctor_command():
@@ -51,7 +64,14 @@ def test_main_routes_init_and_doctor(monkeypatch):
 
     calls: list[tuple[str, tuple, dict]] = []
 
-    def fake_run_init(*, vault_root=None, zotero_key=None, zotero_library_id=None, non_interactive=False):
+    def fake_run_init(
+        *,
+        vault_root=None,
+        zotero_key=None,
+        zotero_library_id=None,
+        non_interactive=False,
+        persona="researcher",
+    ):
         calls.append(
             (
                 "init",
@@ -61,6 +81,7 @@ def test_main_routes_init_and_doctor(monkeypatch):
                     "zotero_key": zotero_key,
                     "zotero_library_id": zotero_library_id,
                     "non_interactive": non_interactive,
+                    "persona": persona,
                 },
             )
         )
@@ -89,6 +110,8 @@ def test_main_routes_init_and_doctor(monkeypatch):
                 "--zotero-library-id",
                 "123",
                 "--non-interactive",
+                "--persona",
+                "analyst",
             ]
         )
         == 0
@@ -103,6 +126,7 @@ def test_main_routes_init_and_doctor(monkeypatch):
                 "zotero_key": "secret",
                 "zotero_library_id": "123",
                 "non_interactive": True,
+                "persona": "analyst",
             },
         ),
         ("doctor.run", tuple(), {}),

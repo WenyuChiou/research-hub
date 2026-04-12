@@ -23,9 +23,11 @@ def run_init(
     zotero_key: str | None = None,
     zotero_library_id: str | None = None,
     non_interactive: bool = False,
+    persona: str = "researcher",
 ) -> int:
     """Run the init wizard. Returns 0 on success, 1 on error."""
     interactive = sys.stdin.isatty() and not non_interactive
+    is_analyst = persona == "analyst"
 
     if vault_root:
         vault = Path(vault_root).expanduser().resolve()
@@ -41,15 +43,20 @@ def run_init(
         (vault / subdir).mkdir(parents=True, exist_ok=True)
     print(f"  Vault root: {vault}")
 
-    if not zotero_key and interactive:
+    if not is_analyst and not zotero_key and interactive:
         print("\n  Zotero API key is needed to sync papers.")
         print("  Get one at: https://www.zotero.org/settings/keys")
         zotero_key = input("  Zotero API key: ").strip() or None
-    if not zotero_library_id and interactive:
+    if not is_analyst and not zotero_library_id and interactive:
         print("  Your Zotero library ID (numeric, from the same settings page):")
         zotero_library_id = input("  Zotero library ID: ").strip() or None
 
-    if zotero_key and zotero_library_id:
+    if is_analyst:
+        print("  Persona: analyst -> skipping Zotero (Obsidian + NotebookLM only)")
+        zotero_key = None
+        zotero_library_id = None
+
+    if not is_analyst and zotero_key and zotero_library_id:
         import requests
 
         try:
@@ -81,14 +88,18 @@ def run_init(
     if isinstance(knowledge_base, dict):
         knowledge_base["root"] = str(vault)
 
-    if zotero_key:
-        zotero = config.setdefault("zotero", {})
-        if isinstance(zotero, dict):
-            zotero["api_key"] = zotero_key
-    if zotero_library_id:
-        zotero = config.setdefault("zotero", {})
-        if isinstance(zotero, dict):
-            zotero["library_id"] = zotero_library_id
+    if is_analyst:
+        config["no_zotero"] = True
+    else:
+        config.pop("no_zotero", None)
+        if zotero_key:
+            zotero = config.setdefault("zotero", {})
+            if isinstance(zotero, dict):
+                zotero["api_key"] = zotero_key
+        if zotero_library_id:
+            zotero = config.setdefault("zotero", {})
+            if isinstance(zotero, dict):
+                zotero["library_id"] = zotero_library_id
 
     config_path.write_text(
         json.dumps(config, indent=2, ensure_ascii=False) + "\n",
@@ -111,8 +122,14 @@ def run_init(
     except ImportError:
         print("  Chrome check: skipped (playwright not installed)")
 
-    print("\n  Setup complete!")
-    print("  Next steps:")
-    print("    research-hub doctor           # verify everything is green")
-    print("    research-hub search 'topic'   # find papers")
+    if is_analyst:
+        print("\n  Setup complete (analyst mode)!")
+        print("  Next steps:")
+        print("    research-hub doctor")
+        print("    research-hub add 10.1234/example  # add by DOI")
+    else:
+        print("\n  Setup complete!")
+        print("  Next steps:")
+        print("    research-hub doctor           # verify everything is green")
+        print("    research-hub search 'topic'   # find papers")
     return 0

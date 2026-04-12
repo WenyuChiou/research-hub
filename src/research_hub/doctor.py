@@ -72,8 +72,13 @@ def run_doctor() -> list[CheckResult]:
     except Exception as exc:
         results.append(CheckResult("vault", "FAIL", str(exc)))
 
+    no_zotero_config = bool(config_data.get("no_zotero", False))
+    no_zotero_env = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in ("1", "true", "yes")
+    no_zotero = no_zotero_config or no_zotero_env
     zotero_key = os.environ.get("ZOTERO_API_KEY") or config_data.get("zotero", {}).get("api_key")
-    if zotero_key:
+    if no_zotero:
+        results.append(CheckResult("zotero_key", "OK", "Skipped (analyst mode)"))
+    elif zotero_key:
         results.append(CheckResult("zotero_key", "OK", "API key configured"))
     else:
         results.append(
@@ -88,7 +93,7 @@ def run_doctor() -> list[CheckResult]:
     library_id = os.environ.get("ZOTERO_LIBRARY_ID") or config_data.get("zotero", {}).get(
         "library_id", ""
     )
-    if zotero_key and library_id:
+    if not no_zotero and zotero_key and library_id:
         import requests
 
         try:

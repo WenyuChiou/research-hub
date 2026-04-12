@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+import json
 import re
 from pathlib import Path
 
@@ -156,3 +158,138 @@ def note_matches_query(md_path: Path, query: str) -> bool:
     query_tokens = [token for token in slugify(query).split("-") if token]
     overlap = sum(1 for token in query_tokens if token in title_tokens)
     return overlap >= 2
+
+
+def add_paper(
+    identifier: str,
+    cluster: str | None = None,
+    *,
+    no_zotero: bool = False,
+    skip_verify: bool = False,
+) -> dict:
+    """Fetch a single paper by DOI/arXiv ID and ingest it."""
+    import os
+
+    import requests
+
+    from research_hub.pipeline import run_pipeline
+    from research_hub.search import SemanticScholarClient
+
+    cfg = get_config()
+    s2 = SemanticScholarClient()
+    resolved_identifier = (
+        f"ArXiv:{identifier}"
+        if re.fullmatch(r"\d{4}\.\d{4,5}(?:v\d+)?", identifier)
+        else identifier
+    )
+    paper = s2.get_paper(resolved_identifier)
+    if paper is None:
+        return {
+            "status": "error",
+            "reason": f"Could not resolve {identifier} via Semantic Scholar",
+        }
+
+    cr_data: dict = {}
+    if paper.doi and paper.doi.startswith("10."):
+        try:
+            response = requests.get(
+                f"https://api.crossref.org/works/{paper.doi}",
+                timeout=10,
+                headers={"User-Agent": "research-hub/0.9.0"},
+            )
+            if response.status_code == 200:
+                cr_data = response.json().get("message", {}) or {}
+        except Exception:
+            cr_data = {}
+
+    authors: list[dict[str, str]] = []
+    if cr_data.get("author"):
+        for author in cr_data["author"]:
+            authors.append(
+                {
+                    "creatorType": "author",
+                    "firstName": author.get("given", ""),
+                    "lastName": author.get("family", ""),
+                }
+            )
+    else:
+        for name in paper.authors:
+            parts = name.split()
+            if len(parts) >= 2:
+                authors.append(
+                    {
+                        "creatorType": "author",
+                        "firstName": " ".join(parts[:-1]),
+                        "lastName": parts[-1],
+                    }
+                )
+            else:
+                authors.append({"creatorType": "author", "name": name})
+
+    container_titles = cr_data.get("container-title") or []
+    journal = html.unescape(container_titles[0] if container_titles else (paper.venue or ""))
+    volume = str(cr_data.get("volume", "") or "")
+    issue = str(cr_data.get("issue", "") or "")
+    pages = str(cr_data.get("page", "") or "")
+
+    last_name = authors[0].get("lastName", "unknown") if authors else "unknown"
+    last_clean = re.sub(r"[^a-zA-Z]", "", last_name).lower() or "unknown"
+    title_slug = re.sub(r"[^a-z0-9]+", "-", paper.title.lower()).strip("-")[:60]
+    slug = f"{last_clean}{paper.year}-{title_slug}"
+    abstract = paper.abstract or ""
+    doi = paper.doi or identifier
+    url = paper.url or (f"https://doi.org/{paper.doi}" if paper.doi else "")
+    entry = {
+        "title": html.unescape(paper.title),
+        "doi": doi,
+        "authors": authors,
+        "year": paper.year,
+        "journal": journal,
+        "volume": volume,
+        "issue": issue,
+        "pages": pages,
+        "abstract": abstract,
+        "pdf_url": paper.pdf_url or "",
+        "url": url,
+        "tags": [],
+        "slug": slug,
+        "sub_category": cluster or "",
+        "summary": abstract[:600],
+        "key_findings": [],
+        "methodology": "",
+        "relevance": "",
+    }
+
+    papers_path = cfg.root / "papers_input.json"
+    backup_text = papers_path.read_text(encoding="utf-8") if papers_path.exists() else None
+    papers_path.write_text(json.dumps([entry], indent=2, ensure_ascii=False), encoding="utf-8")
+
+    previous_no_zotero = os.environ.get("RESEARCH_HUB_NO_ZOTERO")
+    try:
+        if no_zotero:
+            os.environ["RESEARCH_HUB_NO_ZOTERO"] = "1"
+        rc = run_pipeline(cluster_slug=cluster, verify=not skip_verify)
+    finally:
+        if backup_text is None:
+            if papers_path.exists():
+                papers_path.unlink()
+        else:
+            papers_path.write_text(backup_text, encoding="utf-8")
+        if no_zotero:
+            if previous_no_zotero is None:
+                os.environ.pop("RESEARCH_HUB_NO_ZOTERO", None)
+            else:
+                os.environ["RESEARCH_HUB_NO_ZOTERO"] = previous_no_zotero
+
+    obsidian_path = (
+        cfg.raw / cluster / f"{slug}.md" if cluster else cfg.root / "raw" / f"{slug}.md"
+    )
+    return {
+        "status": "ok" if rc == 0 else "error",
+        "title": entry["title"],
+        "doi": entry["doi"],
+        "slug": slug,
+        "cluster": cluster,
+        "zotero_key": "",
+        "obsidian_path": str(obsidian_path),
+    }

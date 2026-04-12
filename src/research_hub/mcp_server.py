@@ -335,6 +335,27 @@ def move_paper(slug: str, to_cluster: str) -> dict[str, Any]:
         return _tool_error(exc)
 
 
+@mcp.tool()
+def add_paper(
+    identifier: str,
+    cluster: str | None = None,
+    no_zotero: bool = False,
+    skip_verify: bool = False,
+) -> dict:
+    """Fetch a paper by DOI/arXiv ID and ingest it (one-shot)."""
+    try:
+        from research_hub.operations import add_paper as _add
+
+        return _add(
+            identifier,
+            cluster=cluster,
+            no_zotero=no_zotero,
+            skip_verify=skip_verify,
+        )
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 def search_vault(
     query: str,
     cluster: str | None = None,

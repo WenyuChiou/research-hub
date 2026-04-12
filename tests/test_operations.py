@@ -190,6 +190,17 @@ def test_cluster_rename_updates_registry(tmp_path, monkeypatch):
     assert ClusterRegistry(cfg.clusters_file).get("flood-risk").name == "Flood Perception"
 
 
+def test_cluster_rename_updates_display_name_only(tmp_path, monkeypatch):
+    cfg = _make_config(tmp_path, monkeypatch)
+    registry = ClusterRegistry(cfg.clusters_file)
+    registry.create("my-query", name="Old Name", slug="my-slug")
+
+    registry.rename("my-slug", "New Name")
+
+    fresh = ClusterRegistry(cfg.clusters_file)
+    assert fresh.clusters["my-slug"].name == "New Name"
+
+
 def test_cluster_delete_removes_registry_entry_and_unbinds_notes(tmp_path, monkeypatch):
     cfg = _make_config(tmp_path, monkeypatch)
     registry = ClusterRegistry(cfg.clusters_file)

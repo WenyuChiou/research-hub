@@ -306,6 +306,7 @@ def test_new_operation_tools_are_registered():
     from research_hub.mcp_server import mcp
 
     for tool_name in [
+        "add_paper",
         "remove_paper",
         "mark_paper",
         "move_paper",
