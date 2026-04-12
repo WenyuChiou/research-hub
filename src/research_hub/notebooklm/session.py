@@ -12,6 +12,69 @@ from typing import Iterator
 from research_hub.notebooklm.selectors import NAV_TIMEOUT_MS, NOTEBOOKLM_HOME
 
 
+@contextmanager
+def open_cdp_session(
+    user_data_dir: Path,
+    *,
+    headless: bool = True,
+    chrome_binary: str | None = None,
+) -> Iterator[tuple[object, object]]:
+    """Yield `(context, page)` via CDP-attach so Google's bot check never fires.
+
+    Launches Chrome as a normal subprocess with ``--remote-debugging-port``
+    and connects Playwright to it. Chrome itself is never marked as
+    automated, so Google's sign-in / session validation flows treat the
+    attached Playwright client like a regular Chrome window.
+
+    The ``user_data_dir`` must be the same directory used by
+    ``login_interactive_cdp`` — it holds the Google auth cookies.
+    """
+    from research_hub.notebooklm.cdp_launcher import (
+        find_chrome_binary,
+        launch_chrome_with_cdp,
+        stop_cdp,
+    )
+    from playwright.sync_api import sync_playwright
+
+    binary = chrome_binary or find_chrome_binary()
+    if binary is None:
+        raise FileNotFoundError(
+            "Could not find Chrome binary. Install Chrome or pass chrome_binary=."
+        )
+
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+    endpoint = launch_chrome_with_cdp(
+        user_data_dir=user_data_dir,
+        chrome_binary=binary,
+        headless=headless,
+        startup_url=NOTEBOOKLM_HOME,
+    )
+    playwright = sync_playwright().start()
+    browser = None
+    try:
+        browser = playwright.chromium.connect_over_cdp(endpoint.cdp_url)
+        contexts = browser.contexts
+        if not contexts:
+            raise RuntimeError("CDP-attached Chrome exposed no browser context.")
+        context = contexts[0]
+        context.set_default_navigation_timeout(NAV_TIMEOUT_MS)
+        context.set_default_timeout(NAV_TIMEOUT_MS)
+        pages = context.pages
+        page = pages[0] if pages else context.new_page()
+        yield context, page
+    finally:
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
+        try:
+            playwright.stop()
+        except Exception:
+            pass
+        stop_cdp(endpoint)
+
+
 @dataclass
 class SessionConfig:
     user_data_dir: Path
@@ -74,6 +137,7 @@ def login_interactive_cdp(
     timeout_sec: int = 300,
     stable_hold_sec: int = 5,
     chrome_binary: str | None = None,
+    keep_open: bool = False,
 ) -> int:
     """CDP-attach login flow that bypasses Google's Playwright bot detection.
 
@@ -107,11 +171,20 @@ def login_interactive_cdp(
     print(f"  Chrome binary: {binary}")
     print(f"  Session dir:   {user_data_dir}")
     print(f"  Mode:          cdp-attach (no Playwright automation fingerprint)")
-    print(f"  Timeout:       {timeout_sec}s  (will auto-close {stable_hold_sec}s after login)")
+    if keep_open:
+        print(f"  Keep-open:     YES — will NOT auto-close on login detection.")
+        print(f"  Timeout:       {timeout_sec}s (wall-clock max, press Enter to close sooner)")
+    else:
+        print(f"  Timeout:       {timeout_sec}s  (will auto-close {stable_hold_sec}s after login)")
     print()
-    print(">>> Sign in with your Google account in the opened Chrome.")
-    print(">>> The window will close AUTOMATICALLY when login is detected.")
-    print(">>> (Press Ctrl+C in this terminal if you need to abort.)")
+    if keep_open:
+        print(">>> Chrome is open for manual inspection / F12 DevTools work.")
+        print(">>> Press ENTER in this terminal when you are done — window will close.")
+        print(">>> (Or press Ctrl+C to abort.)")
+    else:
+        print(">>> Sign in with your Google account in the opened Chrome.")
+        print(">>> The window will close AUTOMATICALLY when login is detected.")
+        print(">>> (Press Ctrl+C in this terminal if you need to abort.)")
     print()
 
     endpoint = launch_chrome_with_cdp(
@@ -133,6 +206,17 @@ def login_interactive_cdp(
                 context = contexts[0]
                 pages = context.pages
                 page = pages[0] if pages else context.new_page()
+
+                if keep_open:
+                    # Wait-for-user-Enter mode. Don't auto-close on login.
+                    print(f"  [{_tstamp()}] Chrome is ready. Press Enter here when finished.")
+                    sys.stdout.flush()
+                    try:
+                        input()
+                    except KeyboardInterrupt:
+                        pass
+                    print(f"  [{_tstamp()}] Closing Chrome.")
+                    return 0
 
                 start = time.time()
                 stable_since: float | None = None

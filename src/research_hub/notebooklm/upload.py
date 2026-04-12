@@ -8,9 +8,36 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from research_hub.notebooklm.client import NotebookLMClient, UploadResult
-from research_hub.notebooklm.selectors import BETWEEN_UPLOADS_MS
-from research_hub.notebooklm.session import PlaywrightSession, SessionConfig
+from research_hub.notebooklm.client import NotebookLMClient, NotebookLMError, UploadResult
+from research_hub.notebooklm.selectors import BETWEEN_UPLOADS_MS, NOTEBOOKLM_HOME
+from research_hub.notebooklm.session import (
+    PlaywrightSession,
+    SessionConfig,
+    open_cdp_session,
+)
+
+
+def _check_session_health(page) -> tuple[bool, str]:
+    """Return (ok, message). Probe NotebookLM home; detect expired sessions."""
+    try:
+        page.goto(NOTEBOOKLM_HOME)
+        page.wait_for_load_state("networkidle")
+    except Exception as exc:
+        return False, f"Could not reach NotebookLM home: {exc}"
+
+    url = page.url or ""
+    lowered = url.lower()
+    if (
+        "notebooklm.google.com" in lowered
+        and "accounts.google.com" not in lowered
+        and "signin" not in lowered
+        and "oauth" not in lowered
+    ):
+        return True, url
+    return False, (
+        "Saved Google session appears to be expired (landed on "
+        f"{url}). Run `research-hub notebooklm login --cdp` to re-auth."
+    )
 
 
 @dataclass
@@ -65,7 +92,7 @@ def upload_cluster(
     *,
     dry_run: bool = False,
     create_if_missing: bool = True,
-    headless: bool = True,
+    headless: bool = False,
     rate_limit_cap: int = 50,
 ) -> UploadReport:
     """Upload a cluster bundle to NotebookLM, resuming from `nlm_cache.json`."""
@@ -111,9 +138,15 @@ def upload_cluster(
         return report
 
     session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
-    session = PlaywrightSession(SessionConfig(user_data_dir=session_dir, headless=headless))
-    with session.open() as (_, page):
+    with open_cdp_session(session_dir, headless=headless) as (_, page):
         client = NotebookLMClient(page)
+        ok, detail = _check_session_health(page)
+        if not ok:
+            raise NotebookLMError(
+                detail,
+                selector="session-health",
+                page_url=page.url,
+            )
         handle = (
             client.open_or_create_notebook(notebook_name)
             if create_if_missing
@@ -175,7 +208,7 @@ def generate_artifact(
     cfg,
     *,
     kind: str,
-    headless: bool = True,
+    headless: bool = False,
 ) -> str:
     """Trigger a NotebookLM generation and return the artifact URL."""
     cache_path = cfg.research_hub_dir / "nlm_cache.json"
@@ -184,9 +217,15 @@ def generate_artifact(
     notebook_name = cluster.notebooklm_notebook or cluster.name
 
     session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
-    session = PlaywrightSession(SessionConfig(user_data_dir=session_dir, headless=headless))
-    with session.open() as (_, page):
+    with open_cdp_session(session_dir, headless=headless) as (_, page):
         client = NotebookLMClient(page)
+        ok, detail = _check_session_health(page)
+        if not ok:
+            raise NotebookLMError(
+                detail,
+                selector="session-health",
+                page_url=page.url,
+            )
         client.open_or_create_notebook(notebook_name)
 
         if kind == "brief":

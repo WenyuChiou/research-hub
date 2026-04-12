@@ -17,6 +17,17 @@ from research_hub.notebooklm.client import (
 from research_hub.notebooklm.upload import upload_cluster
 
 
+import re
+
+
+def _matches(pattern, sample: str) -> bool:
+    if pattern is None:
+        return True
+    if hasattr(pattern, "search"):
+        return bool(pattern.search(sample))
+    return pattern == sample
+
+
 class StubLocator:
     def __init__(
         self,
@@ -26,12 +37,14 @@ class StubLocator:
         text: str = "",
         attr: str = "https://notebooklm.google.com/notebook/xyz",
         on_click=None,
+        ancestor: "StubLocator | None" = None,
     ) -> None:
         self._count = count
         self._click_raises = click_raises
         self._text = text
         self._attr = attr
         self._on_click = on_click
+        self._ancestor = ancestor
         self.clicked = False
         self.filled_with = None
         self.set_files = None
@@ -69,14 +82,20 @@ class StubLocator:
     def get_attribute(self, name):
         return self._attr
 
+    def locator(self, selector):
+        if self._ancestor is not None:
+            return self._ancestor
+        return StubLocator(count=1)
+
 
 class StubPage:
     def __init__(self):
         self.url = "https://notebooklm.google.com/"
         self.goto_calls = []
         self.locators = {}
-        self.role_locators = {}
-        self.placeholder_locators = {}
+        # role_locators: list of (role, name_pattern_or_str, locator)
+        self.role_rules: list = []
+        self.placeholder_rules: list = []
         self.wait_for_function_calls = []
 
     def goto(self, url):
@@ -94,13 +113,25 @@ class StubPage:
         return None
 
     def locator(self, sel):
-        return self.locators.get(sel, StubLocator())
+        return self.locators.get(sel, StubLocator(count=0))
+
+    def set_role(self, role: str, text: str, locator: StubLocator) -> None:
+        self.role_rules.append((role, text, locator))
+
+    def set_placeholder(self, text: str, locator: StubLocator) -> None:
+        self.placeholder_rules.append((text, locator))
 
     def get_by_role(self, role, name=None):
-        return self.role_locators.get((role, str(name)), StubLocator())
+        for r, text, loc in self.role_rules:
+            if r == role and _matches(name, text):
+                return loc
+        return StubLocator(count=0)
 
     def get_by_placeholder(self, text):
-        return self.placeholder_locators.get(text, StubLocator())
+        for sample, loc in self.placeholder_rules:
+            if _matches(text, sample):
+                return loc
+        return StubLocator(count=0)
 
 
 class StubCfg:
@@ -118,16 +149,69 @@ def _write_cluster(cfg: StubCfg, cluster: Cluster) -> None:
     registry.save()
 
 
+def test_upload_cluster_fail_fast_on_expired_session(tmp_path, monkeypatch):
+    """Test that upload_cluster fails fast if the Google session is expired."""
+    cfg = StubCfg(tmp_path)
+    cfg.research_hub_dir.mkdir(parents=True)
+    bundle_dir = cfg.research_hub_dir / "bundles" / "alpha-20260411T000000Z"
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {"action": "url", "url": "https://example.com"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    cluster = Cluster(slug="alpha", name="Alpha", notebooklm_notebook="Alpha Notebook")
+    _write_cluster(cfg, cluster)
+
+    # Mock open_cdp_session to return a page that simulates an expired session after goto
+    @contextmanager
+    def fake_open_cdp_session(session_dir, headless):
+        page = StubPage()
+        # Ensure headless is passed correctly
+        assert headless is True
+
+        # Store original goto to call it
+        original_goto = page.goto
+
+        def mock_goto(url):
+            original_goto(url) # Simulate navigation to the target URL
+            # Simulate redirection to Google sign-in page
+            page.url = "https://accounts.google.com/signin/expired"
+            page.wait_for_load_state("networkidle")
+
+        page.goto = mock_goto
+        yield None, page # Yield a dummy session and the mock page
+
+    monkeypatch.setattr("research_hub.notebooklm.upload.open_cdp_session", fake_open_cdp_session)
+    monkeypatch.setattr("research_hub.notebooklm.upload.time.sleep", lambda _: None) # Prevent unnecessary sleeps
+
+    # Assert that NotebookLMError is raised and contains "expired" in the message
+    with pytest.raises(NotebookLMError) as excinfo:
+        upload_cluster(cluster, cfg, dry_run=False, headless=True)
+
+    assert "expired" in str(excinfo.value)
+    assert "https://accounts.google.com/signin/expired" in str(excinfo.value)
+    assert excinfo.value.selector == "session-health"
+
+
+# Existing tests follow...
 def test_parse_notebook_id_extracts_uuid():
     assert _parse_notebook_id("https://notebooklm.google.com/notebook/abc-123?x=1") == "abc-123"
 
 
 def test_create_notebook_happy_path():
     page = StubPage()
-    create_button = StubLocator(on_click=lambda: setattr(page, "url", "https://notebooklm.google.com/notebook/new-id"))
+    create_button = StubLocator(
+        on_click=lambda: setattr(page, "url", "https://notebooklm.google.com/notebook/new-id")
+    )
     title_box = StubLocator()
-    page.role_locators[("button", "Create new notebook")] = create_button
-    page.role_locators[("textbox", "re.compile('title', re.IGNORECASE)")] = title_box
+    page.locators["mat-card.create-new-action-button"] = create_button
+    page.locators["[contenteditable='true']"] = title_box
 
     client = NotebookLMClient(page)
     handle = client.create_notebook("Alpha")
@@ -137,11 +221,11 @@ def test_create_notebook_happy_path():
     assert handle.notebook_id == "new-id"
 
 
+
 def test_open_notebook_by_name_raises_on_missing():
     page = StubPage()
-    page.locators["xpath=//h2[contains(., 'Missing')]/ancestor::*[@role='button'][1]"] = StubLocator(count=0)
+    # Any xpath lookup returns an empty locator by default.
     client = NotebookLMClient(page)
-
     with pytest.raises(NotebookLMError):
         client.open_notebook_by_name("Missing")
 
@@ -150,7 +234,7 @@ def test_upload_pdf_success_records_result(tmp_path):
     page = StubPage()
     add_source = StubLocator()
     file_input = StubLocator()
-    page.role_locators[("button", "Add source")] = add_source
+    page.locators["button.source-stretched-button"] = add_source
     page.locators["input[type='file']"] = file_input
 
     result = NotebookLMClient(page).upload_pdf(tmp_path / "paper.pdf")
@@ -162,7 +246,7 @@ def test_upload_pdf_success_records_result(tmp_path):
 
 def test_upload_pdf_failure_wraps_exception_in_result(tmp_path):
     page = StubPage()
-    page.role_locators[("button", "Add source")] = StubLocator(click_raises=RuntimeError("boom"))
+    page.locators["button.source-stretched-button"] = StubLocator(click_raises=RuntimeError("boom"))
 
     result = NotebookLMClient(page).upload_pdf(tmp_path / "paper.pdf")
 
@@ -176,10 +260,10 @@ def test_upload_url_clicks_website_tab_then_insert():
     website_tab = StubLocator()
     insert_button = StubLocator()
     url_input = StubLocator()
-    page.role_locators[("button", "Add source")] = add_source
-    page.role_locators[("tab", "Website")] = website_tab
-    page.role_locators[("button", "Insert")] = insert_button
-    page.placeholder_locators["Paste URL"] = url_input
+    page.locators["button.source-stretched-button"] = add_source
+    page.set_role("tab", "Website", website_tab)
+    page.set_role("button", "Insert", insert_button)
+    page.set_placeholder("Paste URL", url_input)
 
     result = NotebookLMClient(page).upload_url("https://example.com")
 
@@ -192,7 +276,7 @@ def test_upload_url_clicks_website_tab_then_insert():
 
 def test_upload_url_failure_wraps_exception():
     page = StubPage()
-    page.role_locators[("button", "Add source")] = StubLocator(click_raises=RuntimeError("broken"))
+    page.locators["button.source-stretched-button"] = StubLocator(click_raises=RuntimeError("broken"))
 
     result = NotebookLMClient(page).upload_url("https://example.com")
 
@@ -202,8 +286,12 @@ def test_upload_url_failure_wraps_exception():
 
 def test_trigger_briefing_returns_link():
     page = StubPage()
-    page.role_locators[("button", "Briefing doc")] = StubLocator()
-    page.locators["a[href*='/notebook/']"] = StubLocator(attr="https://notebooklm.google.com/notebook/briefing")
+    container = StubLocator()
+    briefing = StubLocator(ancestor=container)
+    page.set_role("button", "Briefing doc", briefing)
+    page.locators["a[href*='/notebook/']"] = StubLocator(
+        attr="https://notebooklm.google.com/notebook/briefing"
+    )
 
     url = NotebookLMClient(page).trigger_briefing()
 
@@ -212,16 +300,19 @@ def test_trigger_briefing_returns_link():
 
 def test_trigger_briefing_raises_on_no_button():
     page = StubPage()
-    page.role_locators[("button", "Briefing doc")] = StubLocator(count=0)
-
+    # No role rules registered — all role lookups return count=0.
     with pytest.raises(NotebookLMError):
         NotebookLMClient(page).trigger_briefing()
 
 
 def test_trigger_audio_returns_link():
     page = StubPage()
-    page.role_locators[("button", "Audio Overview")] = StubLocator()
-    page.locators["a[href*='/notebook/']"] = StubLocator(attr="https://notebooklm.google.com/notebook/audio")
+    container = StubLocator()
+    audio = StubLocator(ancestor=container)
+    page.set_role("button", "Audio Overview", audio)
+    page.locators["a[href*='/notebook/']"] = StubLocator(
+        attr="https://notebooklm.google.com/notebook/audio"
+    )
 
     url = NotebookLMClient(page).trigger_audio_overview()
 
@@ -250,11 +341,11 @@ def test_upload_cluster_dry_run_skips_browser(tmp_path, monkeypatch):
     called = {"open": False}
 
     @contextmanager
-    def fake_open(self):
+    def fake_open(*args, **kwargs):
         called["open"] = True
         yield None, None
 
-    monkeypatch.setattr("research_hub.notebooklm.upload.PlaywrightSession.open", fake_open)
+    monkeypatch.setattr("research_hub.notebooklm.upload.open_cdp_session", fake_open)
 
     report = upload_cluster(cluster, cfg, dry_run=True)
 
@@ -303,10 +394,10 @@ def test_upload_cluster_dedup_against_cache(tmp_path, monkeypatch):
             return UploadResult(source_kind="url", path_or_url=url, success=True)
 
     @contextmanager
-    def fake_open(self):
+    def fake_open(*args, **kwargs):
         yield object(), StubPage()
 
-    monkeypatch.setattr("research_hub.notebooklm.upload.PlaywrightSession.open", fake_open)
+    monkeypatch.setattr("research_hub.notebooklm.upload.open_cdp_session", fake_open)
     monkeypatch.setattr("research_hub.notebooklm.upload.NotebookLMClient", FakeClient)
     monkeypatch.setattr("research_hub.notebooklm.upload.time.sleep", lambda _: None)
 

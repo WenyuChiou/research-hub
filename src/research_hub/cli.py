@@ -486,12 +486,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=300,
         help="Max seconds to wait for login (default: 300)",
     )
+    nlm_login.add_argument(
+        "--keep-open",
+        action="store_true",
+        help="(CDP mode) Do NOT auto-close on login detection. Keeps Chrome open "
+             "so you can inspect the DOM with F12 DevTools. Press Enter in the "
+             "terminal when finished.",
+    )
     nlm_bundle = nlm_sub.add_parser("bundle", help="Export a drag-drop folder for NotebookLM")
     nlm_bundle.add_argument("--cluster", required=True)
     nlm_upload = nlm_sub.add_parser("upload", help="Auto-upload bundle to NotebookLM")
     nlm_upload.add_argument("--cluster", required=True)
     nlm_upload.add_argument("--dry-run", action="store_true")
-    nlm_upload.add_argument("--headless", action="store_true", default=True)
+    nlm_upload.add_argument("--headless", action="store_true", default=False)
     nlm_upload.add_argument("--visible", dest="headless", action="store_false")
     nlm_upload.add_argument("--create-if-missing", action="store_true", default=True)
     nlm_generate = nlm_sub.add_parser("generate", help="Trigger NotebookLM artifact generation")
@@ -501,7 +508,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["brief", "audio", "mind-map", "video", "all"],
         default="brief",
     )
-    nlm_generate.add_argument("--visible", dest="headless", action="store_false", default=True)
+    nlm_generate.add_argument("--headless", action="store_true", default=False)
+    nlm_generate.add_argument("--visible", dest="headless", action="store_false")
 
     return parser
 
@@ -572,6 +580,7 @@ def main(argv: list[str] | None = None) -> int:
                     session_dir,
                     timeout_sec=args.timeout,
                     chrome_binary=args.chrome_binary,
+                    keep_open=args.keep_open,
                 )
             chrome_path = _Path(args.chrome_profile_path) if args.chrome_profile_path else None
             return login_interactive(

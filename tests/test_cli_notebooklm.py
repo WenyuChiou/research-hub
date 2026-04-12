@@ -30,6 +30,6 @@ def test_main_routes_notebooklm_upload_and_generate(monkeypatch):
     assert cli.main(["notebooklm", "upload", "--cluster", "alpha", "--dry-run"]) == 0
     assert cli.main(["notebooklm", "generate", "--cluster", "alpha", "--type", "mind-map"]) == 0
     assert calls == [
-        ("upload", "alpha", True, True, True),
-        ("generate", "alpha", "mind-map", True),
+        ("upload", "alpha", True, False, True),
+        ("generate", "alpha", "mind-map", False),
     ]
