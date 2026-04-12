@@ -150,6 +150,8 @@ def make_raw_md(
     topic_cluster: str = "",
     cluster_queries: list[str] | None = None,
     ingestion_source: str = "research-hub-v0.3.0",
+    verified: bool | None = None,
+    verified_at: str = "",
 ):
     title = item_data['title'].replace('"', "'")
     authors = item_data['authors']
@@ -197,7 +199,8 @@ ingested_at: "{ingested_at}"
 ingestion_source: "{ingestion_source}"
 topic_cluster: "{topic_cluster}"
 cluster_queries: {cluster_queries_yaml}
-verified: false
+verified: {"null" if verified is None else ("true" if verified else "false")}
+verified_at: "{verified_at}"
 status: unread
 ---
 

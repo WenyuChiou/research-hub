@@ -13,9 +13,23 @@ from research_hub.config import get_config
 from research_hub.dedup import DedupIndex, build_from_obsidian, build_from_zotero
 from research_hub.pipeline import run_pipeline
 from research_hub.search import SemanticScholarClient, iter_new_results
+from research_hub.verify import verify_arxiv, verify_doi, verify_paper
 
 
-def _verify() -> int:
+def _verify(args) -> int:
+    if args.doi:
+        result = verify_doi(args.doi)
+        print(f"ok={result.ok} source={result.source} reason={result.reason}")
+        return 0 if result.ok else 1
+    if args.arxiv:
+        result = verify_arxiv(args.arxiv)
+        print(f"ok={result.ok} source={result.source} reason={result.reason}")
+        return 0 if result.ok else 1
+    if args.paper:
+        result = verify_paper(args.paper, authors=args.paper_author, year=args.paper_year)
+        print(f"ok={result.ok} source={result.source} reason={result.reason}")
+        return 0 if result.ok else 1
+
     repo_root = Path(__file__).resolve().parents[2]
     script_path = repo_root / "scripts" / "verify_setup.py"
     completed = subprocess.run([sys.executable, str(script_path)], cwd=str(repo_root))
@@ -154,13 +168,17 @@ def _synthesize(cluster: str | None, graph_colors: bool) -> int:
     return 0
 
 
-def _search(query: str, limit: int) -> int:
+def _search(query: str, limit: int, verify: bool = False) -> int:
     cfg = get_config()
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
     client = SemanticScholarClient()
     results = iter_new_results(client, query, index.doi_to_hits.keys(), limit=limit)
     for result in results:
-        print(f"{result.title}\t{result.doi}")
+        line = f"{result.title}\t{result.doi}"
+        if verify:
+            verified = bool(result.doi) and verify_doi(result.doi).ok
+            line += "\tVERIFIED" if verified else "\tUNVERIFIED"
+        print(line)
     return 0
 
 
@@ -356,6 +374,15 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("--query", default=None, help="Query text")
     ingest_parser.add_argument("--dry-run", action="store_true", help="Validate config and inputs only")
 
+    for parser_with_verify in (run_parser, ingest_parser):
+        parser_with_verify.add_argument(
+            "--no-verify",
+            dest="verify",
+            action="store_false",
+            default=True,
+            help="Skip DOI/arxiv HTTP verification (default: verify on)",
+        )
+
     subparsers.add_parser("index", help="Rebuild dedup_index.json from Zotero and Obsidian")
 
     clusters_parser = subparsers.add_parser("clusters", help="Manage topic clusters")
@@ -387,6 +414,11 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser = subparsers.add_parser("search", help="Search Semantic Scholar")
     search_parser.add_argument("query")
     search_parser.add_argument("--limit", type=int, default=20)
+    search_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify each DOI against doi.org before printing (adds 1-2s per result)",
+    )
 
     status_parser = subparsers.add_parser("status", help="Show per-cluster reading progress")
     status_parser.add_argument("--cluster", default=None, help="Show only this cluster")
@@ -413,7 +445,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Report without writing"
     )
 
-    subparsers.add_parser("verify", help="Run repository verification checks")
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Run verification checks (repo integrity or paper identifier)",
+    )
+    verify_parser.add_argument("--doi", default=None, help="Verify a single DOI")
+    verify_parser.add_argument("--arxiv", default=None, help="Verify a single arXiv ID")
+    verify_parser.add_argument(
+        "--paper",
+        default=None,
+        help="Verify by fuzzy title match against Semantic Scholar",
+    )
+    verify_parser.add_argument(
+        "--paper-year",
+        type=int,
+        default=None,
+        help="Optional year constraint when --paper is used",
+    )
+    verify_parser.add_argument(
+        "--paper-author",
+        action="append",
+        default=None,
+        help="Optional author surname(s) when --paper is used (can repeat)",
+    )
 
     cleanup_parser = subparsers.add_parser(
         "cleanup", help="Deduplicate wikilinks across hub pages"
@@ -523,9 +577,15 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=getattr(args, "dry_run", False),
             cluster_slug=getattr(args, "cluster", None),
             query=getattr(args, "query", None),
+            verify=getattr(args, "verify", True),
         )
     if args.command == "ingest":
-        return run_pipeline(dry_run=args.dry_run, cluster_slug=args.cluster, query=args.query)
+        return run_pipeline(
+            dry_run=args.dry_run,
+            cluster_slug=args.cluster,
+            query=args.query,
+            verify=args.verify,
+        )
     if args.command == "index":
         return _rebuild_index()
     if args.command == "clusters":
@@ -543,7 +603,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.notebooklm_notebook,
             )
     if args.command == "search":
-        return _search(args.query, args.limit)
+        return _search(args.query, args.limit, verify=args.verify)
     if args.command == "status":
         return _status(cluster=args.cluster)
     if args.command == "sync":
@@ -559,7 +619,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
         )
     if args.command == "verify":
-        return _verify()
+        return _verify(args)
     if args.command == "cleanup":
         return _cleanup_hub(dry_run=args.dry_run)
     if args.command == "synthesize":

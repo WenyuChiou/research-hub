@@ -10,6 +10,7 @@ from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config
 from research_hub.dedup import DedupHit, DedupIndex, build_from_obsidian, build_from_zotero
 from research_hub.manifest import Manifest, new_entry
+from research_hub.verify import VerificationResult, VerifyCache, verify_arxiv, verify_doi, verify_paper
 from research_hub.vault.link_updater import update_cluster_links
 from research_hub.zotero.client import add_note, check_duplicate, get_client
 from research_hub.zotero.fetch import make_raw_md
@@ -89,6 +90,12 @@ def _query_for_paper(paper: dict, query: str | None = None) -> str:
     return query or paper.get("query") or paper.get("search_query") or paper["title"]
 
 
+def _extract_arxiv_id_from_url_or_doi(url: str, doi: str) -> str:
+    text = f"{url or ''} {doi or ''}"
+    match = re.search(r"(?:arxiv(?:\.org/abs/|[.:/])|/abs/)(\d{4}\.\d{4,5}(?:v\d+)?)", text, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
 def _folder_for_paper(cfg, paper: dict, cluster_slug: str | None) -> Path:
     if cluster_slug:
         return cfg.raw / cluster_slug
@@ -130,6 +137,8 @@ def _render_obsidian_note(
         [],
         topic_cluster=cluster_slug or "",
         cluster_queries=[_query_for_paper(pp, query)] if cluster_slug else [],
+        verified=pp.get("verified"),
+        verified_at=pp.get("verified_at", ""),
     )
     content += (
         "\n## Summary\n\n"
@@ -150,6 +159,7 @@ def run_pipeline(
     *,
     cluster_slug: str | None = None,
     query: str | None = None,
+    verify: bool = False,
 ) -> int:
     cfg = get_config()
     kb = str(cfg.root)
@@ -338,6 +348,64 @@ def run_pipeline(
                 )
             time.sleep(1)
 
+        p("\n=== DOI VALIDATION ===")
+        verify_cache = VerifyCache(cfg.research_hub_dir / "verify_cache.json") if verify else None
+        for pp in papers:
+            title = pp["title"]
+            doi = pp["doi"]
+            url = pp.get("url", "")
+            authors = [
+                f"{author.get('firstName', '')} {author.get('lastName', '')}".strip()
+                or author.get("name", "")
+                for author in pp.get("authors", [])
+            ]
+            year_value = pp.get("year")
+            try:
+                year = int(year_value) if year_value not in (None, "") else None
+            except (TypeError, ValueError):
+                year = None
+            arxiv_id = _extract_arxiv_id_from_url_or_doi(url, doi)
+
+            if not verify:
+                result = VerificationResult(
+                    ok=False,
+                    source="unresolved",
+                    reason="verification skipped",
+                )
+                pp["verified"] = None
+                pp["verified_at"] = ""
+            else:
+                result: VerificationResult | None = None
+                if arxiv_id:
+                    result = verify_arxiv(arxiv_id, cache=verify_cache)
+                if (not result or not result.ok) and doi:
+                    result = verify_doi(doi, cache=verify_cache)
+                if (not result or not result.ok) and title:
+                    result = verify_paper(title, authors=authors, year=year, cache=verify_cache)
+                if result is None:
+                    result = VerificationResult(ok=False, source="unresolved", reason="no identifier")
+                pp["verified"] = result.ok
+                pp["verified_at"] = result.cached_at
+
+            best = result.resolved_url or (f"https://doi.org/{doi}" if doi else "")
+            typ = {
+                "doi.org": "DOI",
+                "arxiv.org": "arXiv",
+                "semantic-scholar": "S2",
+                "unresolved": "NONE",
+            }[result.source]
+            ok = result.ok
+            dr.append(
+                {
+                    "title": title[:50],
+                    "best_url": best,
+                    "type": typ,
+                    "accessible": ok,
+                    "verification_reason": result.reason,
+                }
+            )
+            p(f"  [{'OK' if ok else 'WALL'}] {title[:50]}... -> {typ} ({result.reason})")
+
         p("\n=== OBSIDIAN NOTES ===")
         for pp in papers_for_notes:
             folder = _folder_for_paper(cfg, pp, cluster_slug)
@@ -396,23 +464,6 @@ def run_pipeline(
                         "traceback": traceback.format_exc(),
                     }
                 )
-
-        p("\n=== DOI VALIDATION ===")
-        for pp in papers:
-            doi = pp["doi"]
-            url = pp.get("url", "")
-            if "arxiv.org" in url:
-                best, typ, ok = url, "arXiv", True
-            elif pp.get("pdf_url") and "doi.org" not in pp.get("pdf_url", ""):
-                best, typ, ok = pp["pdf_url"], "Direct", True
-            elif doi:
-                best, typ, ok = "https://doi.org/" + doi, "DOI", "48550" in doi
-            else:
-                best, typ, ok = "", "NONE", False
-            dr.append(
-                {"title": pp["title"][:50], "best_url": best, "type": typ, "accessible": ok}
-            )
-            p(f"  [{'OK' if ok else 'WALL'}] {pp['title'][:50]}... -> {typ}")
 
         cr = sum(1 for r in zr if r["status"] == "CREATED")
         sk = sum(1 for r in zr if r["status"] == "SKIPPED_DUPLICATE")
