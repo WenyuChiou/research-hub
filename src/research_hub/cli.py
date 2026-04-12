@@ -543,6 +543,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="List supported platforms and install status",
     )
 
+    subparsers.add_parser(
+        "serve",
+        help="Start MCP stdio server for AI assistant integration",
+    )
+
     run_parser = subparsers.add_parser("run", help="Run the research pipeline")
     run_parser.add_argument("--topic", default=None, help="Pipeline topic context")
     run_parser.add_argument("--max-papers", type=int, default=None, help="Maximum papers to process")
@@ -830,6 +835,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         path = install_skill(args.platform)
         print(f"Installed SKILL.md to {path}")
+        return 0
+    if args.command == "serve":
+        from research_hub.mcp_server import main as serve_main
+
+        serve_main()
         return 0
     if args.command == "ingest":
         return run_pipeline(

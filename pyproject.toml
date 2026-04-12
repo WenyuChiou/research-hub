@@ -31,6 +31,7 @@ Repository = "https://github.com/WenyuChiou/research-hub"
 Issues = "https://github.com/WenyuChiou/research-hub/issues"
 
 [project.optional-dependencies]
+mcp = ["fastmcp>=2.0"]
 playwright = ["playwright>=1.40"]
 dev = [
     "pytest>=7",
@@ -41,6 +42,7 @@ dev = [
 
 [project.scripts]
 research-hub = "research_hub.cli:main"
+research-hub-mcp = "research_hub.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
