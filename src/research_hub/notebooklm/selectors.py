@@ -314,6 +314,32 @@ GENERATION_PROGRESS_CHIP_TEXTS = ("產生中", "Generating", "生成中", "生�
 GENERATION_ARTIFACT_LINK_CSS = "a[href*='/notebook/']"
 ARTIFACT_LIBRARY_EMPTY_STATE_CSS = ".artifact-library-empty-state"
 
+# --- Generated artifact extraction --------------------------------------
+# When a notebook has at least one generated briefing, the chat-panel
+# empty state shows the latest briefing summary inline. The summary text
+# lives in `<div class="summary-content is-rich-chat-ui">` inside
+# `<span class="notebook-summary">`. The accompanying action bar has a
+# Material icon button with the stable class `xap-copy-to-clipboard`
+# (aria-label "複製摘要" / "Copy summary") which fires the same
+# clipboard copy that the user gets in the UI. We prefer reading the
+# DOM directly because it does not need clipboard permission and is
+# locale-independent.
+NOTEBOOK_SUMMARY_CSS = "span.notebook-summary"
+NOTEBOOK_SUMMARY_CONTENT_CSS = "span.notebook-summary .summary-content"
+NOTEBOOK_TITLE_H1_CSS = "h1.notebook-title"
+COPY_SUMMARY_BUTTON_CSS = "button.xap-copy-to-clipboard"
+
+# Each generated artifact is wrapped in `<artifact-library-item>` inside
+# the studio panel. The clickable button has class
+# `artifact-stretched-button` and an `aria-description` matching the
+# localized artifact-type label (e.g. "報告" for Report/Briefing).
+# The visible title sits in `span.artifact-title`. The "更多" overflow
+# menu button is `button.artifact-more-button`.
+ARTIFACT_LIBRARY_ITEM_CSS = "artifact-library-item"
+ARTIFACT_STRETCHED_BUTTON_CSS = "button.artifact-stretched-button"
+ARTIFACT_TITLE_SPAN_CSS = "span.artifact-title"
+ARTIFACT_MORE_BUTTON_CSS = "button.artifact-more-button"
+
 # Preset sub-dialog aria-labels. After clicking a parent artifact tile,
 # NotebookLM opens a sub-dialog with localized preset options. The
 # first entry in each tuple is the default preset to click.

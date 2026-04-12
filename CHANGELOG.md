@@ -2,28 +2,33 @@
 
 ## v0.9.0 (2026-04-12)
 
-**System integration audit + UX hardening + personal HTML dashboard.**
+**System integration audit + UX hardening + personal HTML dashboard + closes the AI loop with NotebookLM artifact download.**
 
 ### Added
+- `research-hub notebooklm download --cluster X --type brief` — downloads the latest generated briefing from NotebookLM back to `<vault>/.research_hub/artifacts/<cluster>/brief-<UTC>.txt`. Reads `span.notebook-summary .summary-content` from the DOM directly (no clipboard juggling, locale-independent). **Closes the AI loop**: search → save → upload → generate → **download** → AI analysis.
+- `research-hub notebooklm read-briefing --cluster X` — prints the most recently downloaded briefing for inline AI analysis.
+- 2 new MCP tools: `download_artifacts(cluster_slug, artifact_type)`, `read_briefing(cluster_slug)` — let AI agents pull briefings into context without re-running NotebookLM.
 - `research-hub dashboard [--open]` — personal HTML dashboard at `<vault>/.research_hub/dashboard.html`. Single self-contained file with stat cards, cluster table, status badges, and NotebookLM links. Hero artifact for the project.
 - `research-hub add <doi-or-arxiv-id> [--cluster X]` — one-shot Search → Save replaces hand-writing `papers_input.json`. Fetches metadata via Semantic Scholar with CrossRef enrichment.
 - `research-hub init --persona researcher|analyst` — analyst persona skips Zotero entirely (Obsidian + NotebookLM only).
 - `research-hub dedup invalidate --doi/--path` and `dedup rebuild [--obsidian-only]` — surgical dedup management without re-scanning Zotero.
 - `papers_input.json` validator: pipeline catches missing `creatorType`, malformed authors, missing fields BEFORE hitting Zotero API. Clear error messages instead of cryptic 400 crashes.
-- 2 new MCP tools: `add_paper`, `generate_dashboard` (19 total).
+- 4 new MCP tools total: `add_paper`, `generate_dashboard`, `download_artifacts`, `read_briefing` (21 total).
 - New docs: `docs/cli-reference.md`, `docs/papers_input_schema.md`.
 
 ### Changed
 - `doctor` now persona-aware: when `no_zotero: true` is set in config or `RESEARCH_HUB_NO_ZOTERO=1` env var, Zotero checks report "Skipped (analyst mode)" instead of FAIL.
 - `doctor` correctly counts dedup index entries (was reporting 0 when index had thousands).
+- `nlm_cache.json` now records `artifacts.brief = {path, downloaded_at, char_count, titles}` per cluster after a successful download.
 
 ### Fixed
 - Pipeline silently dropped dict-format authors `[{firstName, lastName}]` → `authors: "Unknown"` in Obsidian YAML.
 - Pipeline never wrote `volume`, `issue`, `pages` to Zotero or Obsidian even when input had them.
 - `clusters rename` updates display name without orphaning notes.
 - 12 new regression tests for pipeline metadata and dedup invalidation.
+- 4 new tests for the briefing download / read flow (mocked CDP session).
 
-Suite: 274 → 314 passing.
+Suite: 274 → 338 passing.
 
 ## v0.8.2 (2026-04-12)
 

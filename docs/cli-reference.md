@@ -256,6 +256,26 @@ research-hub notebooklm generate --cluster SLUG --type brief|audio|mind-map|vide
                                   [--headless] [--visible]
 ```
 
+### `notebooklm download`
+Pull a generated briefing back to the vault as plain text. v0.9.0
+supports `--type brief`; audio/mind-map/video downloads land in
+v0.9.1.
+
+```bash
+research-hub notebooklm download --cluster SLUG [--type brief] [--visible]
+```
+
+Output: `<vault>/.research_hub/artifacts/<cluster_slug>/brief-<UTC>.txt`
+with a small header (notebook name, source URL, timestamp, saved
+briefing titles) followed by the briefing body.
+
+### `notebooklm read-briefing`
+Print the most recently downloaded briefing for a cluster.
+
+```bash
+research-hub notebooklm read-briefing --cluster SLUG
+```
+
 ## AI integration
 
 ### `serve`
@@ -278,5 +298,5 @@ Add this to your Claude Desktop config:
 }
 ```
 
-18 MCP tools exposed. See [docs/mcp-tools.md](mcp-tools.md) for the
+21 MCP tools exposed. See [docs/mcp-tools.md](mcp-tools.md) for the
 full list.

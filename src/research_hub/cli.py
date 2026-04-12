@@ -618,6 +618,43 @@ def _nlm_upload(
     return 0 if report.fail_count == 0 else 1
 
 
+def _nlm_download(cluster_slug: str, artifact_type: str, headless: bool) -> int:
+    from research_hub.notebooklm.upload import download_briefing_for_cluster
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {cluster_slug}")
+
+    report = download_briefing_for_cluster(cluster, cfg, headless=headless)
+    print(f"Saved: {report.artifact_path}")
+    print(f"  notebook: {report.notebook_name}")
+    print(f"  characters: {report.char_count}")
+    if report.titles:
+        print(f"  saved briefings: {len(report.titles)}")
+        for title in report.titles[:5]:
+            print(f"    - {title}")
+    return 0
+
+
+def _nlm_read_briefing(cluster_slug: str) -> int:
+    from research_hub.notebooklm.upload import read_latest_briefing
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {cluster_slug}")
+    try:
+        text = read_latest_briefing(cluster, cfg)
+    except FileNotFoundError as exc:
+        print(str(exc))
+        return 1
+    print(text)
+    return 0
+
+
 def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
     from research_hub.notebooklm.upload import generate_artifact
 
@@ -1061,6 +1098,24 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_upload.add_argument("--headless", action="store_true", default=False)
     nlm_upload.add_argument("--visible", dest="headless", action="store_false")
     nlm_upload.add_argument("--create-if-missing", action="store_true", default=True)
+    nlm_download = nlm_sub.add_parser(
+        "download",
+        help="Download a generated NotebookLM artifact (briefing) back to the vault",
+    )
+    nlm_download.add_argument("--cluster", required=True)
+    nlm_download.add_argument(
+        "--type",
+        choices=["brief"],
+        default="brief",
+        help="Artifact type to download (v0.9.0: brief only; audio/mind-map/video land in v0.9.1)",
+    )
+    nlm_download.add_argument("--headless", action="store_true", default=False)
+    nlm_download.add_argument("--visible", dest="headless", action="store_false")
+    nlm_read_brief = nlm_sub.add_parser(
+        "read-briefing",
+        help="Print the most recently downloaded briefing for a cluster",
+    )
+    nlm_read_brief.add_argument("--cluster", required=True)
     nlm_generate = nlm_sub.add_parser("generate", help="Trigger NotebookLM artifact generation")
     nlm_generate.add_argument("--cluster", required=True)
     nlm_generate.add_argument(
@@ -1224,6 +1279,10 @@ def main(argv: list[str] | None = None) -> int:
             return _notebooklm_bundle(args.cluster)
         if args.notebooklm_command == "upload":
             return _nlm_upload(args.cluster, args.dry_run, args.headless, args.create_if_missing)
+        if args.notebooklm_command == "download":
+            return _nlm_download(args.cluster, args.type, args.headless)
+        if args.notebooklm_command == "read-briefing":
+            return _nlm_read_briefing(args.cluster)
         if args.notebooklm_command == "generate":
             return _nlm_generate(args.cluster, args.type, args.headless)
 

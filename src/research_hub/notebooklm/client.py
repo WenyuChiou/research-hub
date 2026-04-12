@@ -13,6 +13,9 @@ from research_hub.notebooklm.selectors import (
     ARTIFACT_BUTTON_CREATING_CSS,
     ARTIFACT_BUTTON_CSS,
     ARTIFACT_LIBRARY_EMPTY_STATE_CSS,
+    ARTIFACT_LIBRARY_ITEM_CSS,
+    ARTIFACT_STRETCHED_BUTTON_CSS,
+    ARTIFACT_TITLE_SPAN_CSS,
     AUDIO_PRESETS,
     BETWEEN_UPLOADS_MS,
     BRIEFING_PRESETS,
@@ -29,6 +32,7 @@ from research_hub.notebooklm.selectors import (
     GENERATION_TIMEOUT_MS,
     MIND_MAP_PRESETS,
     NOTEBOOK_LIST_URL,
+    NOTEBOOK_SUMMARY_CONTENT_CSS,
     NOTEBOOK_TILE_LINK_CSS,
     NOTEBOOK_TITLE_EDITABLE_CSS,
     NOTEBOOK_TITLE_INPUT_CSS,
@@ -73,6 +77,18 @@ class NotebookHandle:
     name: str
     url: str
     notebook_id: str = ""
+
+
+@dataclass
+class BriefingArtifact:
+    """Plain-text briefing extracted from a notebook's summary panel."""
+
+    notebook_name: str
+    notebook_url: str
+    notebook_id: str
+    text: str
+    titles: list[str]  # titles of saved briefings in the studio panel
+    source_count: int = 0
 
 
 class NotebookLMClient:
@@ -412,6 +428,84 @@ class NotebookLMClient:
 
     def trigger_briefing(self) -> str:
         return self._trigger_and_wait(GENERATE_BRIEFING_BUTTON_TEXTS, "briefing", BRIEFING_PRESETS)
+
+    def download_briefing(self, handle: NotebookHandle) -> BriefingArtifact:
+        """Read the latest briefing summary text from an open notebook.
+
+        NotebookLM auto-renders the most recent briefing into the chat
+        panel empty state at `span.notebook-summary .summary-content`.
+        We read it directly from the DOM (no clipboard juggling, no
+        locale dependence). The studio-panel artifact tile titles are
+        also collected so the caller can show what was generated.
+
+        Raises NotebookLMError if no summary content is found, which
+        means the notebook has no generated briefings yet.
+        """
+        # The notebook must already be open. The Add-source button is a
+        # reliable signal that the notebook view has fully mounted.
+        try:
+            self.page.locator(ADD_SOURCE_BUTTON_CSS).first.wait_for(
+                state="attached", timeout=15_000
+            )
+        except Exception:
+            pass
+
+        summary = self.page.locator(NOTEBOOK_SUMMARY_CONTENT_CSS).first
+        try:
+            summary.wait_for(state="attached", timeout=10_000)
+        except Exception as exc:
+            raise NotebookLMError(
+                "No briefing summary found on notebook page. "
+                "Generate one first via `notebooklm generate --type brief`.",
+                selector=NOTEBOOK_SUMMARY_CONTENT_CSS,
+                page_url=self.page.url,
+            ) from exc
+
+        try:
+            text = summary.inner_text().strip()
+        except Exception as exc:
+            raise NotebookLMError(
+                f"Briefing summary element present but unreadable: {exc}",
+                selector=NOTEBOOK_SUMMARY_CONTENT_CSS,
+                page_url=self.page.url,
+            ) from exc
+
+        if not text:
+            raise NotebookLMError(
+                "Briefing summary element is empty.",
+                selector=NOTEBOOK_SUMMARY_CONTENT_CSS,
+                page_url=self.page.url,
+            )
+
+        titles: list[str] = []
+        try:
+            for title_el in self.page.locator(ARTIFACT_TITLE_SPAN_CSS).all():
+                try:
+                    value = title_el.inner_text().strip()
+                except Exception:
+                    continue
+                if value and value not in titles:
+                    titles.append(value)
+        except Exception:
+            pass
+
+        source_count = 0
+        try:
+            source_count = self.page.evaluate(
+                "() => document.querySelectorAll('source-list-item, "
+                "[role=\"listitem\"][data-source-id]').length"
+            )
+        except Exception:
+            pass
+
+        return BriefingArtifact(
+            notebook_name=handle.name,
+            notebook_url=handle.url,
+            notebook_id=handle.notebook_id,
+            text=text,
+            titles=titles,
+            source_count=int(source_count or 0),
+        )
 
     def trigger_audio_overview(self) -> str:
         return self._trigger_and_wait(GENERATE_AUDIO_BUTTON_TEXTS, "audio", AUDIO_PRESETS)

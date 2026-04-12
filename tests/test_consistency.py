@@ -28,6 +28,8 @@ EXPECTED_MAPPINGS = {
     "propose_research_setup": "mcp-only",
     "add_paper": "add",
     "generate_dashboard": "dashboard",
+    "download_artifacts": "notebooklm download",
+    "read_briefing": "notebooklm read-briefing",
 }
 
 
@@ -50,4 +52,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(mcp._tool_manager._tools) >= 18
+    assert len(mcp._tool_manager._tools) >= 20

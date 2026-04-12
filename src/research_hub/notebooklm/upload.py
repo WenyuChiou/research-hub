@@ -8,7 +8,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from research_hub.notebooklm.client import NotebookLMClient, NotebookLMError, UploadResult
+from research_hub.notebooklm.client import (
+    BriefingArtifact,
+    NotebookLMClient,
+    NotebookLMError,
+    UploadResult,
+)
 from research_hub.notebooklm.selectors import BETWEEN_UPLOADS_MS, NOTEBOOKLM_HOME
 from research_hub.notebooklm.session import (
     PlaywrightSession,
@@ -201,6 +206,106 @@ def upload_cluster(
         )
 
     return report
+
+
+@dataclass
+class DownloadReport:
+    cluster_slug: str
+    notebook_name: str
+    artifact_path: Path
+    char_count: int
+    titles: list[str] = field(default_factory=list)
+
+
+def download_briefing_for_cluster(
+    cluster,
+    cfg,
+    *,
+    headless: bool = False,
+) -> DownloadReport:
+    """Open a cluster's notebook, extract the latest briefing text, save it.
+
+    Writes to ``<vault>/.research_hub/artifacts/<cluster_slug>/brief-<UTC>.txt``
+    and updates the cluster's ``nlm_cache.json`` entry with the latest
+    artifact path so future calls (and the dashboard) can find it.
+    """
+    cache_path = cfg.research_hub_dir / "nlm_cache.json"
+    cache = _load_nlm_cache(cache_path)
+    cluster_cache = cache.setdefault(cluster.slug, {})
+    notebook_name = cluster.notebooklm_notebook or cluster.name
+    safe_slug = Path(cluster.slug).name
+
+    session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
+    with open_cdp_session(session_dir, headless=headless) as (_, page):
+        client = NotebookLMClient(page)
+        ok, detail = _check_session_health(page)
+        if not ok:
+            raise NotebookLMError(
+                detail,
+                selector="session-health",
+                page_url=page.url,
+            )
+        handle = client.open_notebook_by_name(notebook_name)
+        artifact: BriefingArtifact = client.download_briefing(handle)
+
+    artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y%m%dT%H%M%SZ")
+    out_path = artifacts_dir / f"brief-{timestamp}.txt"
+    header = (
+        f"# {artifact.notebook_name}\n\n"
+        f"Source: {artifact.notebook_url}\n"
+        f"Downloaded: {timestamp}\n"
+        f"Sources: {artifact.source_count}\n"
+    )
+    if artifact.titles:
+        header += "Saved briefings: " + "; ".join(artifact.titles) + "\n"
+    out_path.write_text(header + "\n" + artifact.text + "\n", encoding="utf-8")
+
+    cluster_cache.setdefault("artifacts", {})
+    cluster_cache["artifacts"]["brief"] = {
+        "path": str(out_path),
+        "downloaded_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "char_count": len(artifact.text),
+        "titles": artifact.titles,
+    }
+    _save_nlm_cache(cache_path, cache)
+
+    return DownloadReport(
+        cluster_slug=cluster.slug,
+        notebook_name=artifact.notebook_name,
+        artifact_path=out_path,
+        char_count=len(artifact.text),
+        titles=artifact.titles,
+    )
+
+
+def read_latest_briefing(cluster, cfg) -> str:
+    """Return the most recently downloaded briefing text for a cluster.
+
+    Reads from ``<vault>/.research_hub/artifacts/<cluster_slug>/`` and
+    picks the newest ``brief-*.txt``. Raises FileNotFoundError if no
+    briefing has been downloaded yet.
+    """
+    safe_slug = Path(cluster.slug).name
+    artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
+    if not artifacts_dir.exists():
+        raise FileNotFoundError(
+            f"No artifacts directory for cluster '{cluster.slug}'. "
+            f"Run `research-hub notebooklm download --cluster {cluster.slug}` first."
+        )
+    candidates = sorted(
+        artifacts_dir.glob("brief-*.txt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise FileNotFoundError(
+            f"No brief-*.txt files in {artifacts_dir}. "
+            f"Run `research-hub notebooklm download --cluster {cluster.slug}` first."
+        )
+    return candidates[0].read_text(encoding="utf-8")
 
 
 def generate_artifact(

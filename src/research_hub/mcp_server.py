@@ -398,6 +398,96 @@ def split_cluster(source: str, query: str, new_name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def download_artifacts(
+    cluster_slug: str,
+    artifact_type: str = "brief",
+    headless: bool = True,
+) -> dict:
+    """Download a generated NotebookLM briefing back to the vault.
+
+    Opens the cluster's NotebookLM notebook over CDP, extracts the
+    latest briefing summary text, and saves it under
+    `<vault>/.research_hub/artifacts/<cluster_slug>/brief-<UTC>.txt`.
+    The cluster's `nlm_cache.json` entry is updated with the new path.
+
+    Args:
+        cluster_slug: The cluster identifier.
+        artifact_type: Only "brief" is supported in v0.9.0; audio,
+            mind-map, and video downloads land in v0.9.1.
+        headless: If True (default), drive Chrome headlessly so this
+            tool can run inside an MCP server with no display.
+
+    Returns:
+        dict with status, path, char_count, notebook_name, and titles.
+    """
+    try:
+        from research_hub.config import get_config
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.notebooklm.upload import download_briefing_for_cluster
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            return {"status": "error", "error": f"Cluster not found: {cluster_slug}"}
+        if artifact_type != "brief":
+            return {
+                "status": "error",
+                "error": f"Only artifact_type='brief' is supported in v0.9.0 (got {artifact_type!r}).",
+            }
+        report = download_briefing_for_cluster(cluster, cfg, headless=headless)
+        return {
+            "status": "ok",
+            "path": str(report.artifact_path),
+            "notebook_name": report.notebook_name,
+            "char_count": report.char_count,
+            "titles": report.titles,
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def read_briefing(cluster_slug: str) -> dict:
+    """Return the most recently downloaded briefing text for a cluster.
+
+    Reads the latest `brief-*.txt` from
+    `<vault>/.research_hub/artifacts/<cluster_slug>/`. If no briefing
+    has been downloaded yet, the response includes a remedy hint to
+    call `download_artifacts` first. Use this tool when an AI agent
+    needs to summarize, translate, or quote the briefing without
+    re-running NotebookLM.
+
+    Args:
+        cluster_slug: The cluster identifier.
+
+    Returns:
+        dict with status and either `text` or `error`.
+    """
+    try:
+        from research_hub.config import get_config
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.notebooklm.upload import read_latest_briefing
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            return {"status": "error", "error": f"Cluster not found: {cluster_slug}"}
+        try:
+            text = read_latest_briefing(cluster, cfg)
+        except FileNotFoundError as exc:
+            return {
+                "status": "error",
+                "error": str(exc),
+                "remedy": f"Call download_artifacts(cluster_slug='{cluster_slug}') first.",
+            }
+        return {"status": "ok", "cluster_slug": cluster_slug, "text": text}
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
 def generate_dashboard() -> dict[str, str]:
     """Generate a personal HTML dashboard for the vault.
 

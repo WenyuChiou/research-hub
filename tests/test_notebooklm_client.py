@@ -435,3 +435,143 @@ def test_upload_cluster_dedup_against_cache(tmp_path, monkeypatch):
 
     assert report.skipped_already_uploaded == 1
     assert report.success_count == 1
+
+
+def test_download_briefing_for_cluster_writes_artifact(tmp_path, monkeypatch):
+    from research_hub.notebooklm.client import BriefingArtifact
+    from research_hub.notebooklm.upload import download_briefing_for_cluster
+
+    cfg = StubCfg(tmp_path)
+    cfg.research_hub_dir.mkdir(parents=True)
+    cluster = Cluster(
+        slug="alpha",
+        name="Alpha",
+        notebooklm_notebook="Alpha Notebook",
+    )
+    _write_cluster(cfg, cluster)
+
+    class FakeClient:
+        def __init__(self, page):
+            self.page = page
+
+        def open_notebook_by_name(self, name):
+            return type(
+                "Handle",
+                (),
+                {
+                    "url": "https://notebooklm.google.com/notebook/abc",
+                    "notebook_id": "abc",
+                    "name": name,
+                },
+            )()
+
+        def download_briefing(self, handle):
+            return BriefingArtifact(
+                notebook_name=handle.name,
+                notebook_url=handle.url,
+                notebook_id=handle.notebook_id,
+                text="Hello briefing body.",
+                titles=["Title One"],
+                source_count=3,
+            )
+
+    @contextmanager
+    def fake_open(*args, **kwargs):
+        yield object(), StubPage()
+
+    monkeypatch.setattr(
+        "research_hub.notebooklm.upload._check_session_health",
+        lambda page: (True, "ok"),
+    )
+    monkeypatch.setattr("research_hub.notebooklm.upload.open_cdp_session", fake_open)
+    monkeypatch.setattr("research_hub.notebooklm.upload.NotebookLMClient", FakeClient)
+
+    report = download_briefing_for_cluster(cluster, cfg, headless=True)
+
+    assert report.cluster_slug == "alpha"
+    assert report.notebook_name == "Alpha Notebook"
+    assert report.char_count == len("Hello briefing body.")
+    assert report.titles == ["Title One"]
+    assert report.artifact_path.exists()
+
+    saved = report.artifact_path.read_text(encoding="utf-8")
+    assert "Hello briefing body." in saved
+    assert "Alpha Notebook" in saved
+    assert "Sources: 3" in saved
+    assert "Saved briefings: Title One" in saved
+
+    cache = json.loads((cfg.research_hub_dir / "nlm_cache.json").read_text(encoding="utf-8"))
+    artifact_meta = cache["alpha"]["artifacts"]["brief"]
+    assert artifact_meta["char_count"] == len("Hello briefing body.")
+    assert artifact_meta["titles"] == ["Title One"]
+    assert artifact_meta["path"] == str(report.artifact_path)
+
+
+def test_read_latest_briefing_returns_newest_file(tmp_path):
+    from research_hub.notebooklm.upload import read_latest_briefing
+
+    cfg = StubCfg(tmp_path)
+    artifacts = cfg.research_hub_dir / "artifacts" / "alpha"
+    artifacts.mkdir(parents=True)
+    older = artifacts / "brief-20260101T000000Z.txt"
+    newer = artifacts / "brief-20260201T000000Z.txt"
+    older.write_text("OLD", encoding="utf-8")
+    newer.write_text("NEW", encoding="utf-8")
+    import os, time
+    now = time.time()
+    os.utime(older, (now - 1000, now - 1000))
+    os.utime(newer, (now, now))
+
+    cluster = Cluster(slug="alpha", name="Alpha")
+    text = read_latest_briefing(cluster, cfg)
+    assert text == "NEW"
+
+
+def test_read_latest_briefing_missing_dir_raises(tmp_path):
+    from research_hub.notebooklm.upload import read_latest_briefing
+
+    cfg = StubCfg(tmp_path)
+    cluster = Cluster(slug="alpha", name="Alpha")
+    with pytest.raises(FileNotFoundError):
+        read_latest_briefing(cluster, cfg)
+
+
+def test_client_download_briefing_returns_dom_text(monkeypatch):
+    from research_hub.notebooklm.client import (
+        BriefingArtifact,
+        NotebookHandle,
+        NotebookLMClient,
+    )
+
+    summary_locator = StubLocator(text=" Summary body. ")
+    add_source_locator = StubLocator()
+    title_locator = StubLocator(text="Briefing One")
+
+    class _AllList:
+        def __init__(self, items):
+            self._items = items
+
+        def all(self):
+            return self._items
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.url = "https://notebooklm.google.com/notebook/xyz"
+
+        def locator(self, selector):
+            if "summary-content" in selector:
+                return summary_locator
+            if "artifact-title" in selector:
+                return _AllList([title_locator])
+            return add_source_locator
+
+        def evaluate(self, expression):
+            return 4
+
+    client = NotebookLMClient(FakePage())
+    handle = NotebookHandle(name="N", url="u", notebook_id="id")
+    artifact = client.download_briefing(handle)
+    assert isinstance(artifact, BriefingArtifact)
+    assert artifact.text == "Summary body."
+    assert artifact.titles == ["Briefing One"]
+    assert artifact.source_count == 4
