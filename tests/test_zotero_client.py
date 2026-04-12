@@ -113,3 +113,57 @@ def test_load_credentials_from_env_file(tmp_path, monkeypatch):
     monkeypatch.setattr("research_hub.zotero.client.Path.home", lambda: home)
 
     assert _load_credentials() == ("file-key", "file-lib", "group")
+
+
+def test_get_formatted_rejects_unknown_format():
+    from research_hub.zotero.client import ZoteroDualClient
+
+    dual = ZoteroDualClient.__new__(ZoteroDualClient)  # skip __init__
+
+    import pytest
+
+    with pytest.raises(ValueError, match="Unsupported content format"):
+        dual.get_formatted("ABC123", content_format="yaml")
+
+
+def test_get_formatted_joins_list_from_read():
+    from research_hub.zotero.client import ZoteroDualClient
+
+    dual = ZoteroDualClient.__new__(ZoteroDualClient)
+
+    captured = {}
+
+    def fake_read(method_name, *args, **kwargs):
+        captured["method"] = method_name
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return ["@article{first}", "@article{second}"]
+
+    dual._read = fake_read
+    result = dual.get_formatted("ABC123", content_format="bibtex")
+
+    assert captured["method"] == "item"
+    assert captured["args"] == ("ABC123",)
+    assert captured["kwargs"] == {"content": "bibtex"}
+    assert "@article{first}" in result
+    assert "@article{second}" in result
+
+
+def test_read_zotero_key_from_frontmatter(tmp_path):
+    from research_hub.cli import _read_zotero_key_from_frontmatter
+
+    md = tmp_path / "paper.md"
+    md.write_text(
+        "---\n"
+        'title: "Example"\n'
+        "year: 2025\n"
+        "zotero-key: ABCD1234\n"
+        "---\n"
+        "\n# body\n",
+        encoding="utf-8",
+    )
+    assert _read_zotero_key_from_frontmatter(md) == "ABCD1234"
+
+    empty = tmp_path / "empty.md"
+    empty.write_text("no frontmatter here\n", encoding="utf-8")
+    assert _read_zotero_key_from_frontmatter(empty) is None

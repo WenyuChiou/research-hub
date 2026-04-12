@@ -171,6 +171,90 @@ def _synthesize(cluster: str | None, graph_colors: bool) -> int:
     return 0
 
 
+def _cite(
+    identifier: str | None,
+    cluster: str | None,
+    content_format: str,
+    out_path: str | None,
+) -> int:
+    """Export BibTeX / BibLaTeX / RIS / CSL-JSON for a paper or cluster.
+
+    Resolves the identifier (DOI, slug, or raw title) to one or more
+    Zotero item keys via the dedup index and vault frontmatter, then
+    calls ZoteroDualClient.get_formatted to fetch each entry. Concatenates
+    results and writes to stdout or --out file.
+    """
+    from research_hub.zotero.client import ZoteroDualClient
+    from research_hub.dedup import normalize_doi
+
+    cfg = get_config()
+    index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
+
+    keys: list[str] = []
+    if cluster:
+        cluster_dir = cfg.raw / cluster
+        if not cluster_dir.exists():
+            print(f"Cluster folder not found: {cluster_dir}")
+            return 1
+        for md_path in sorted(cluster_dir.glob("*.md")):
+            key = _read_zotero_key_from_frontmatter(md_path)
+            if key:
+                keys.append(key)
+        if not keys:
+            print(f"No zotero-key entries found in {cluster_dir}")
+            return 1
+    elif identifier:
+        normalized = normalize_doi(identifier)
+        hits = index.doi_to_hits.get(normalized, [])
+        for hit in hits:
+            if hit.zotero_key and hit.zotero_key not in keys:
+                keys.append(hit.zotero_key)
+        if not keys:
+            # Fall back: treat identifier as a filename stem in raw/
+            for md_path in cfg.raw.rglob(f"{identifier}.md"):
+                key = _read_zotero_key_from_frontmatter(md_path)
+                if key:
+                    keys.append(key)
+        if not keys:
+            print(f"Could not resolve identifier '{identifier}' to a Zotero key")
+            return 1
+    else:
+        print("Either a positional <identifier> or --cluster <slug> is required")
+        return 2
+
+    dual = ZoteroDualClient()
+    entries: list[str] = []
+    for key in keys:
+        try:
+            entries.append(dual.get_formatted(key, content_format=content_format))
+        except Exception as exc:
+            print(f"  [warn] {key}: {exc}")
+    body = "\n\n".join(e for e in entries if e)
+    if out_path:
+        Path(out_path).write_text(body + "\n", encoding="utf-8")
+        print(f"Wrote {len(entries)} {content_format} entries to {out_path}")
+    else:
+        print(body)
+    return 0 if entries else 1
+
+
+def _read_zotero_key_from_frontmatter(md_path: Path) -> str | None:
+    """Pull the `zotero-key: XXXX` line out of an Obsidian raw note."""
+    try:
+        text = md_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end < 0:
+        return None
+    frontmatter = text[3:end]
+    import re as _re
+    match = _re.search(r"^zotero-key:\s*([A-Z0-9]+)", frontmatter, _re.MULTILINE)
+    return match.group(1) if match else None
+
+
 def _search(query: str, limit: int, verify: bool = False) -> int:
     cfg = get_config()
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
@@ -494,6 +578,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Emit machine-readable JSON instead of human output",
     )
 
+    cite_parser = subparsers.add_parser(
+        "cite",
+        help="Export BibTeX / BibLaTeX / RIS / CSL-JSON for a paper or cluster",
+    )
+    cite_parser.add_argument(
+        "identifier",
+        nargs="?",
+        default=None,
+        help="DOI or raw-note filename stem (omit when using --cluster)",
+    )
+    cite_parser.add_argument(
+        "--cluster",
+        default=None,
+        help="Export every paper in this cluster folder",
+    )
+    cite_parser.add_argument(
+        "--format",
+        dest="content_format",
+        choices=["bibtex", "biblatex", "ris", "csljson"],
+        default="bibtex",
+    )
+    cite_parser.add_argument(
+        "--out",
+        default=None,
+        help="Write to this file instead of stdout",
+    )
+
     status_parser = subparsers.add_parser("status", help="Show per-cluster reading progress")
     status_parser.add_argument("--cluster", default=None, help="Show only this cluster")
 
@@ -680,6 +791,8 @@ def main(argv: list[str] | None = None) -> int:
         return _search(args.query, args.limit, verify=args.verify)
     if args.command == "suggest":
         return _suggest(args.identifier, args.top, args.json)
+    if args.command == "cite":
+        return _cite(args.identifier, args.cluster, args.content_format, args.out)
     if args.command == "status":
         return _status(cluster=args.cluster)
     if args.command == "sync":

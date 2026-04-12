@@ -271,6 +271,26 @@ class ZoteroDualClient:
     def search_by_tag(self, tag, limit=50):
         return self._read("items", tag=tag, limit=limit)
 
+    def get_formatted(self, item_key: str, content_format: str = "bibtex") -> str:
+        """Export an item in a Zotero content format (bibtex/biblatex/ris/csljson).
+
+        Wraps pyzotero's `zot.item(key, content=format)`. The result is the
+        raw body returned by the Zotero API — typically a single record for
+        bibtex/biblatex/ris or a JSON object for csljson. The caller is
+        responsible for concatenating multiple items into a single file.
+        """
+        valid = {"bibtex", "biblatex", "ris", "csljson", "citation"}
+        if content_format not in valid:
+            raise ValueError(
+                f"Unsupported content format '{content_format}'. "
+                f"Expected one of: {sorted(valid)}"
+            )
+        raw = self._read("item", item_key, content=content_format)
+        if isinstance(raw, (list, tuple)):
+            parts = [str(entry).strip() for entry in raw if entry]
+            return "\n\n".join(parts)
+        return str(raw or "").strip()
+
     # --- WRITE (web API only — local API does not support writes) ---
     def create_item(self, item_data):
         self._require_web()
