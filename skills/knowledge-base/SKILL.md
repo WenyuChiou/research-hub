@@ -1,21 +1,45 @@
 ---
 name: research-hub
-description: "Academic literature pipeline: search -> verify -> save -> organize -> upload -> generate -> cite. Manages Zotero, Obsidian, and NotebookLM from the terminal. Use when the user mentions finding papers, literature search, Zotero, Obsidian, NotebookLM, knowledge base, or paper management."
+description: "Knowledge management pipeline for research and analysis: search literature, verify sources, organize into Zotero/Obsidian/NotebookLM, upload PDFs, generate AI artifacts. Works for academic researchers AND data analysts. Use when the user mentions finding papers, building a knowledge base, organizing references, NotebookLM, citation management, or literature review."
 ---
 
-# research-hub - Academic Literature Pipeline
+# research-hub — Knowledge Pipeline
 
-Search, verify, save, organize, and upload academic papers, all from the terminal.
+Search, verify, organize, and upload research material from the terminal.
 
-**Trigger phrases:** "find papers about X", "add to Research Hub", "upload to NotebookLM", "suggest related papers", "verify this DOI"
+**Two personas supported:**
+
+- **Academic researcher** (default) — uses Zotero + Obsidian + NotebookLM. Citation-heavy. Needs DOI/volume/pages.
+- **Data analyst** — skips Zotero (set `RESEARCH_HUB_NO_ZOTERO=1`), uses Obsidian + NotebookLM only. Works with URLs, PDFs, technical reports, white papers.
+
+**Trigger phrases (any language):** "find papers about X", "build a knowledge base on Y", "add to Research Hub", "upload to NotebookLM", "verify this DOI", "幫我找文獻", "幫我整理資料"
+
+---
+
+## CRITICAL: Always confirm names before creating
+
+**Before creating any cluster, Zotero collection, or NotebookLM notebook, you MUST:**
+
+1. Call `propose_research_setup(topic)` to get suggested names
+2. Show the suggestions to the user (cluster_slug, cluster_name, zotero_collection_name, notebooklm_notebook_name)
+3. Ask the user to confirm or override each name
+4. Only after user approval, call `clusters_new`, `create_zotero_collection`, and `clusters_bind`
+
+Do NOT auto-create with AI-generated names. Researchers and analysts have strong preferences about how their work is labeled.
 
 ---
 
 ## Setup (one-time)
 
 ```bash
-pip install research-hub-pipeline[playwright]
-research-hub init
+# Researcher (with Zotero):
+pip install research-hub-pipeline[playwright,mcp]
+research-hub init                    # interactive: vault + Zotero key + library id
+research-hub doctor                  # 7-check health diagnostic
+
+# Data analyst (no Zotero):
+pip install research-hub-pipeline[playwright,mcp]
+RESEARCH_HUB_NO_ZOTERO=1 research-hub init   # skip Zotero prompts
 research-hub doctor
 ```
 

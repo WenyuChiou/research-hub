@@ -183,10 +183,13 @@ def run_pipeline(
     cfg = get_config()
     kb = str(cfg.root)
     collection_key = cfg.zotero_default_collection
-    if collection_key is None and not dry_run:
+    no_zotero = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in ("1", "true", "yes")
+    if collection_key is None and not dry_run and not no_zotero:
         raise RuntimeError(
             "Set zotero.default_collection in config.json or "
-            "RESEARCH_HUB_DEFAULT_COLLECTION env var"
+            "RESEARCH_HUB_DEFAULT_COLLECTION env var. "
+            "Or set RESEARCH_HUB_NO_ZOTERO=1 to skip Zotero entirely "
+            "(data analyst mode: Obsidian + NotebookLM only)."
         )
 
     log_path = _resolve_log_path(cfg.logs)
@@ -242,9 +245,14 @@ def run_pipeline(
             p(f"DRY RUN: would process {len(papers)} papers. Config OK. Exiting.")
             return 0
 
-        zot = get_client()
-        dedup = _load_or_build_dedup(cfg, zot, dry_run=False)
-        p("Zotero client ready")
+        if no_zotero:
+            zot = None
+            dedup = _load_or_build_dedup(cfg, None, dry_run=False)
+            p("RESEARCH_HUB_NO_ZOTERO=1 — skipping Zotero, using Obsidian-only mode")
+        else:
+            zot = get_client()
+            dedup = _load_or_build_dedup(cfg, zot, dry_run=False)
+            p("Zotero client ready")
 
         zr = []
         obr = []
@@ -317,12 +325,23 @@ def run_pipeline(
                             }
                         )
                         continue
-                dup = check_duplicate(zot, pp["title"], pp["doi"])
+                if no_zotero:
+                    dup = False
+                else:
+                    dup = check_duplicate(zot, pp["title"], pp["doi"])
             except Exception:
                 dup = False
             if dup:
                 p("  SKIPPED dup")
                 zr.append({"title": pp["title"], "status": "SKIPPED_DUPLICATE", "key": ""})
+                continue
+
+            if no_zotero:
+                p("  SKIPPED Zotero (no-zotero mode)")
+                pp["zotero_key"] = ""
+                zr.append({"title": pp["title"], "status": "SKIPPED_NO_ZOTERO", "key": ""})
+                papers_for_notes.append(pp)
+                time.sleep(0.1)
                 continue
 
             t = zot.item_template("journalArticle")

@@ -376,6 +376,60 @@ def split_cluster(source: str, query: str, new_name: str) -> dict[str, Any]:
         return _tool_error(exc)
 
 
+@mcp.tool()
+def propose_research_setup(topic: str) -> dict:
+    """Propose names for a new research collection without creating anything.
+
+    Use this BEFORE creating clusters/collections/notebooks. Show the
+    suggestions to the user and ask them to confirm or override each
+    name. Only after the user agrees should you call the create tools.
+
+    Args:
+        topic: The research topic in any language (e.g.,
+               "AI agents in geopolitics" or "LLM 在地緣政治的應用")
+
+    Returns:
+        dict with proposed cluster_slug, cluster_name,
+        zotero_collection_name, notebooklm_notebook_name,
+        obsidian_folder, plus a `prompt_user` instruction string.
+    """
+    import re
+    import unicodedata
+
+    cleaned = unicodedata.normalize("NFKC", topic.strip())
+    ascii_only = cleaned.encode("ascii", "ignore").decode("ascii")
+    slug_source = ascii_only if ascii_only.strip() else cleaned
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", slug_source.lower()).strip("-")[:60]
+    if not slug:
+        slug = "untitled-cluster"
+
+    title_case = " ".join(w.capitalize() for w in slug.split("-") if len(w) > 1)
+    if not title_case:
+        title_case = topic[:60]
+
+    return {
+        "topic": topic,
+        "suggestions": {
+            "cluster_slug": slug,
+            "cluster_name": title_case,
+            "zotero_collection_name": title_case,
+            "notebooklm_notebook_name": title_case,
+            "obsidian_folder": f"raw/{slug}/",
+        },
+        "prompt_user": (
+            "I propose the names above. Please confirm or suggest "
+            "alternatives for any of: cluster_slug, cluster_name, "
+            "zotero_collection_name, notebooklm_notebook_name. "
+            "I will only create them after you approve."
+        ),
+        "next_steps": [
+            "Show the user the suggestions table",
+            "Ask which they want to keep or change",
+            "After user confirms, call clusters_new + bind_cluster + (optionally) create_zotero_collection",
+        ],
+    }
+
+
 def main() -> None:
     """Entry point for `research-hub serve`."""
     if FastMCP is None:
