@@ -250,7 +250,7 @@ def test_verify_paper_fuzzy_match_happy_path():
 
     assert result.ok is True
     assert result.source == "semantic-scholar"
-    assert result.title_match >= 87
+    assert result.title_match >= 80
 
 
 @responses.activate

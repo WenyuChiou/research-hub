@@ -65,12 +65,12 @@ def _normalize_doi(doi: str) -> str:
 
 
 def _parse_note_metadata(md_path: Path) -> dict[str, str]:
-    """Extract title, doi, url from note YAML frontmatter."""
-    meta = {"title": "", "doi": "", "url": ""}
+    """Extract title, doi, url, authors, year from note YAML frontmatter."""
+    meta = {"title": "", "doi": "", "url": "", "authors": "", "year": ""}
     frontmatter = _read_frontmatter(md_path)
     if not frontmatter:
         return meta
-    for key in ("title", "doi", "url"):
+    for key in ("title", "doi", "url", "authors", "year"):
         pattern = rf'^{key}:\s*[\'"]?([^\'"\n]*)[\'"]?'
         match = re.search(pattern, frontmatter, re.MULTILINE)
         if match:
@@ -99,6 +99,44 @@ def _find_pdf_for_doi(pdfs_dir: Path, doi: str) -> Path | None:
     for candidate in sorted(pdfs_dir.rglob("*.pdf")):
         if doi_without_prefix.lower() in candidate.name.lower():
             return candidate
+    return None
+
+
+def _extract_first_author_surname(authors_str: str) -> str:
+    """Extract the first author's last name from a semicolon-separated string.
+
+    Handles "Last, First; Last2, First2; ..." format (Zotero standard)
+    and "First Last; First2 Last2; ..." format.
+    """
+    if not authors_str:
+        return ""
+    first_author = authors_str.split(";")[0].strip()
+    if "," in first_author:
+        return first_author.split(",")[0].strip()
+    parts = first_author.split()
+    return parts[-1] if parts else ""
+
+
+def _find_pdf_by_author_year(pdfs_dir: Path, authors: str, year: str) -> Path | None:
+    """Match a PDF by Author_Year naming convention (e.g., Ben-Zion_2025.pdf).
+
+    The surname must appear at the START of the filename (case-insensitive)
+    followed by a non-alphabetic separator (`_`, `-`, space, digit).
+    This prevents false positives like "Li" matching "Liu" or "Ma"
+    matching "Mao".
+    """
+    if not pdfs_dir.exists():
+        return None
+    surname = _extract_first_author_surname(authors)
+    if not surname or len(surname) < 2:
+        return None
+    escaped = re.escape(surname.lower())
+    pattern = re.compile(rf"^{escaped}(?:[_\-\s\d]|$)", re.IGNORECASE)
+    year_str = str(year).strip() if year else ""
+    for candidate in sorted(pdfs_dir.rglob("*.pdf")):
+        if pattern.match(candidate.stem):
+            if not year_str or year_str in candidate.stem:
+                return candidate
     return None
 
 
@@ -149,6 +187,8 @@ def bundle_cluster(
         )
 
         pdf = _find_pdf_for_doi(pdfs_dir, entry.doi)
+        if pdf is None:
+            pdf = _find_pdf_by_author_year(pdfs_dir, meta.get("authors", ""), meta.get("year", ""))
         if pdf is not None:
             destination = bundle_pdfs / pdf.name
             shutil.copy2(pdf, destination)
