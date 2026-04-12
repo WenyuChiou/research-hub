@@ -26,15 +26,20 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config.json"
-
 # Local API settings
 LOCAL_API_BASE = "http://localhost:23119/api"
 LOCAL_API_HEADERS = {"Zotero-Allowed-Request": "true"}
 
 
-def _load_config():
-    with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+def _load_config() -> dict:
+    """Load config.json using the same resolution as research_hub.config."""
+
+    from research_hub.config import _resolve_config_path
+
+    path = _resolve_config_path()
+    if path is None or not path.exists():
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 

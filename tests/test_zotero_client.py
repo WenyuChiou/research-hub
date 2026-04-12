@@ -76,19 +76,15 @@ def test_load_credentials_env_vars_win_over_config(tmp_path, monkeypatch):
     from research_hub.zotero.client import _load_credentials
     import research_hub.zotero.client as zotero_client
 
-    config_path = tmp_path / "config.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "zotero_api_key": "config-key",
-                "zotero_library_id": "config-lib",
-                "zotero_library_type": "group",
-            }
-        ),
-        encoding="utf-8",
+    monkeypatch.setattr(
+        zotero_client,
+        "_load_config",
+        lambda: {
+            "zotero_api_key": "config-key",
+            "zotero_library_id": "config-lib",
+            "zotero_library_type": "group",
+        },
     )
-
-    monkeypatch.setattr(zotero_client, "_CONFIG_PATH", config_path)
     monkeypatch.setenv("ZOTERO_API_KEY", "env-key")
     monkeypatch.setenv("ZOTERO_LIBRARY_ID", "env-lib")
     monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "user")

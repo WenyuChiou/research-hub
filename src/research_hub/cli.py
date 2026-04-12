@@ -35,6 +35,10 @@ def _verify(args) -> int:
 
     repo_root = Path(__file__).resolve().parents[2]
     script_path = repo_root / "scripts" / "verify_setup.py"
+    if not script_path.exists():
+        print("Repo-integrity script not found (this is normal for pip-installed packages).")
+        print("Use --doi, --arxiv, or --paper to verify a specific paper.")
+        return 0
     completed = subprocess.run([sys.executable, str(script_path)], cwd=str(repo_root))
     return completed.returncode
 

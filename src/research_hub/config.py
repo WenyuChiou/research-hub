@@ -5,19 +5,34 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import platformdirs
 
-# Config search order: (1) repo-local config.json, (2) ~/.claude skill config, (3) env vars, (4) HOME defaults
-_REPO_CONFIG = Path(__file__).resolve().parents[2] / "config.json"
-# CONFIG_PATH kept for backward-compat (tests monkeypatch this attribute directly)
 CONFIG_PATH = Path.home() / ".claude" / "skills" / "knowledge-base" / "config.json"
 
 
 def _resolve_config_path() -> Path | None:
-    """Return the first config.json that exists: repo-local first, then skill config."""
-    if _REPO_CONFIG.exists():
-        return _REPO_CONFIG
-    if CONFIG_PATH.exists():
-        return CONFIG_PATH
+    """Find the config file in priority order."""
+
+    env = os.environ.get("RESEARCH_HUB_CONFIG")
+    if env:
+        env_path = Path(env).expanduser()
+        if env_path.exists():
+            return env_path
+
+    platformdirs_path = (
+        Path(platformdirs.user_config_dir("research-hub", ensure_exists=False)) / "config.json"
+    )
+    if platformdirs_path.exists():
+        return platformdirs_path
+
+    legacy_path = CONFIG_PATH
+    if legacy_path.exists():
+        return legacy_path
+
+    repo_candidate = Path(__file__).resolve().parents[2] / "config.json"
+    if repo_candidate.exists() and (repo_candidate.parent / "pyproject.toml").exists():
+        return repo_candidate
+
     return None
 
 
@@ -104,12 +119,15 @@ class HubConfig:
 
 
 _config: HubConfig | None = None
+_config_path: Path | None = None
 
 
 def get_config() -> HubConfig:
     """Return a cached HubConfig instance."""
 
-    global _config
-    if _config is None:
+    global _config, _config_path
+    resolved_path = _resolve_config_path()
+    if _config is None or _config_path != resolved_path:
         _config = HubConfig()
+        _config_path = resolved_path
     return _config

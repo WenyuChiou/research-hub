@@ -1,6 +1,31 @@
 """Tests for hub_config.py - path loading, env var override, defaults."""
 
+from __future__ import annotations
+
 import json
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_config_resolution(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+
+    hub_config._config = None
+    hub_config._config_path = None
+    monkeypatch.delenv("RESEARCH_HUB_CONFIG", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_ROOT", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_RAW", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_HUB", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_PROJECTS", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_LOGS", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_GRAPH", raising=False)
+    monkeypatch.delenv("ZOTERO_LIBRARY_ID", raising=False)
+    monkeypatch.delenv("ZOTERO_LIBRARY_TYPE", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_DEFAULT_COLLECTION", raising=False)
+    monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "missing-legacy-config.json")
+    monkeypatch.setattr(hub_config.platformdirs, "user_config_dir", lambda *args, **kwargs: str(tmp_path / "missing-platformdirs"))
 
 
 def test_config_loads_from_file(tmp_path, monkeypatch):
@@ -38,15 +63,7 @@ def test_config_env_var_override(tmp_path, monkeypatch):
     """RESEARCH_HUB_ROOT env var overrides config file."""
     from research_hub import config as hub_config
 
-    hub_config._config = None
-
-    monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "nonexistent.json")
     monkeypatch.setenv("RESEARCH_HUB_ROOT", str(tmp_path / "env-kb"))
-    monkeypatch.delenv("RESEARCH_HUB_RAW", raising=False)
-    monkeypatch.delenv("RESEARCH_HUB_HUB", raising=False)
-    monkeypatch.delenv("RESEARCH_HUB_PROJECTS", raising=False)
-    monkeypatch.delenv("RESEARCH_HUB_LOGS", raising=False)
-    monkeypatch.delenv("RESEARCH_HUB_GRAPH", raising=False)
 
     cfg = hub_config.get_config()
     assert cfg.root == tmp_path / "env-kb"
@@ -56,8 +73,6 @@ def test_config_env_var_override(tmp_path, monkeypatch):
 def test_config_tilde_expansion(tmp_path, monkeypatch):
     """Paths with ~ are expanded to absolute paths."""
     from research_hub import config as hub_config
-
-    hub_config._config = None
 
     cfg_file = tmp_path / "config.json"
     cfg_file.write_text(
@@ -75,8 +90,6 @@ def test_config_tilde_expansion(tmp_path, monkeypatch):
 def test_config_logs_dir_created(tmp_path, monkeypatch):
     """logs directory is auto-created on config load."""
     from research_hub import config as hub_config
-
-    hub_config._config = None
 
     cfg_file = tmp_path / "config.json"
     logs_dir = tmp_path / "mylogs"
@@ -103,8 +116,6 @@ def test_zotero_config_from_json(tmp_path, monkeypatch):
     """Zotero settings load from config.json."""
     from research_hub import config as hub_config
 
-    hub_config._config = None
-
     cfg_file = tmp_path / "config.json"
     cfg_file.write_text(
         json.dumps(
@@ -128,9 +139,6 @@ def test_zotero_config_from_json(tmp_path, monkeypatch):
     )
 
     monkeypatch.setattr(hub_config, "CONFIG_PATH", cfg_file)
-    monkeypatch.delenv("ZOTERO_LIBRARY_ID", raising=False)
-    monkeypatch.delenv("RESEARCH_HUB_DEFAULT_COLLECTION", raising=False)
-
     cfg = hub_config.get_config()
 
     assert cfg.zotero_library_id == "12345678"
@@ -148,8 +156,6 @@ def test_zotero_library_id_from_env(tmp_path, monkeypatch):
     """ZOTERO_LIBRARY_ID env var is used when config.json has no zotero section."""
     from research_hub import config as hub_config
 
-    hub_config._config = None
-
     cfg_file = tmp_path / "config.json"
     cfg_file.write_text(
         json.dumps({"knowledge_base": {"root": str(tmp_path / "kb")}}),
@@ -158,8 +164,6 @@ def test_zotero_library_id_from_env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(hub_config, "CONFIG_PATH", cfg_file)
     monkeypatch.setenv("ZOTERO_LIBRARY_ID", "env-library-id")
-    monkeypatch.delenv("RESEARCH_HUB_DEFAULT_COLLECTION", raising=False)
-
     cfg = hub_config.get_config()
 
     assert cfg.zotero_library_id == "env-library-id"
@@ -169,13 +173,68 @@ def test_zotero_collections_default_empty(tmp_path, monkeypatch):
     """Zotero config defaults to empty collections and no library ID."""
     from research_hub import config as hub_config
 
-    hub_config._config = None
-
     monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "nonexistent.json")
-    monkeypatch.delenv("ZOTERO_LIBRARY_ID", raising=False)
-    monkeypatch.delenv("RESEARCH_HUB_DEFAULT_COLLECTION", raising=False)
 
     cfg = hub_config.get_config()
 
     assert cfg.zotero_collections == {}
     assert cfg.zotero_library_id is None
+
+
+def test_resolve_config_path_env_override(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+
+    cfg_file = tmp_path / "env-config.json"
+    cfg_file.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setenv("RESEARCH_HUB_CONFIG", str(cfg_file))
+
+    assert hub_config._resolve_config_path() == cfg_file
+
+
+def test_resolve_config_path_platformdirs_fallback(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+
+    cfg_file = tmp_path / "config.json"
+    cfg_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(hub_config.platformdirs, "user_config_dir", lambda *args, **kwargs: str(tmp_path))
+
+    assert hub_config._resolve_config_path() == cfg_file
+
+
+def test_resolve_config_path_legacy_claude_path(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+
+    legacy_home = tmp_path / "home"
+    legacy_config = legacy_home / ".claude" / "skills" / "knowledge-base" / "config.json"
+    legacy_config.parent.mkdir(parents=True)
+    legacy_config.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: legacy_home))
+    monkeypatch.setattr(
+        hub_config,
+        "CONFIG_PATH",
+        Path.home() / ".claude" / "skills" / "knowledge-base" / "config.json",
+    )
+
+    assert hub_config._resolve_config_path() == legacy_config
+
+
+def test_resolve_config_path_returns_none_when_nothing_exists(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+
+    monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "missing.json")
+
+    assert hub_config._resolve_config_path() is None
+
+
+def test_get_config_works_with_no_config_file(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+
+    monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "missing.json")
+
+    cfg = hub_config.get_config()
+
+    assert cfg.root == Path.home() / "knowledge-base"
+    assert cfg.raw == cfg.root / "raw"
+    assert cfg.hub == cfg.root / "hub"
