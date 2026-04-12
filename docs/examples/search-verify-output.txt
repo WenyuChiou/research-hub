@@ -1,0 +1,3 @@
+LLM-Enhanced Rapid-Reflex Agent for Real-Time Decision	10.48550/arXiv.2506.07223	VERIFIED
+RESPOND: Realistic Environment Simulation	10.1609/aaai.v40i48.42384	VERIFIED
+Agentic Knowledgeable Self-awareness	10.48550/arXiv.2504.03553	VERIFIED

@@ -1,0 +1,24 @@
+{
+  "identifier": "10.1038/s44168-025-00254-1",
+  "paper": {
+    "title": "MARSHA: multi-agent RAG system for hazard adaptation",
+    "authors": ["Yangxinyu Xie", "Bowen Jiang", "..."],
+    "year": 2025,
+    "venue": "npj Climate Action"
+  },
+  "cluster_suggestions": [
+    {
+      "cluster_slug": "llm-agents-behavioral-science",
+      "score": 42.5,
+      "reasons": ["venue match", "title overlap: 4"]
+    }
+  ],
+  "related_papers": [
+    {
+      "doi": "10.1057/s41599-024-03611-3",
+      "title": "Large language models empowered agent-based modeling",
+      "score": 31.7,
+      "reasons": ["same cluster", "title overlap: 1"]
+    }
+  ]
+}

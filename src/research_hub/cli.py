@@ -526,6 +526,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("doctor", help="Health check for research-hub installation")
 
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Install research-hub skill for AI coding assistants",
+    )
+    install_parser.add_argument(
+        "--platform",
+        choices=["claude-code", "codex", "cursor", "gemini"],
+        default=None,
+        help="Target platform",
+    )
+    install_parser.add_argument(
+        "--list",
+        dest="list_platforms",
+        action="store_true",
+        help="List supported platforms and install status",
+    )
+
     run_parser = subparsers.add_parser("run", help="Run the research pipeline")
     run_parser.add_argument("--topic", default=None, help="Pipeline topic context")
     run_parser.add_argument("--max-papers", type=int, default=None, help="Maximum papers to process")
@@ -800,6 +817,20 @@ def main(argv: list[str] | None = None) -> int:
         from research_hub.doctor import print_doctor_report, run_doctor
 
         return print_doctor_report(run_doctor())
+    if args.command == "install":
+        from research_hub.skill_installer import install_skill, list_platforms
+
+        if args.list_platforms:
+            for key, name, installed in list_platforms():
+                status = "installed" if installed else "not installed"
+                print(f"  {key:15s} {name:20s} [{status}]")
+            return 0
+        if not args.platform:
+            print("Specify --platform or use --list to see options.")
+            return 1
+        path = install_skill(args.platform)
+        print(f"Installed SKILL.md to {path}")
+        return 0
     if args.command == "ingest":
         return run_pipeline(
             dry_run=args.dry_run,
