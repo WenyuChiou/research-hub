@@ -28,8 +28,14 @@ logger = logging.getLogger(__name__)
 
 
 def _detect_persona(cfg, zot) -> str:
+    """Persona is set at init; zot=None alone does not imply analyst.
+
+    The render path can call us without a live Zotero client (the
+    bibtex column gracefully degrades to the frontmatter fallback).
+    Only an explicit env var or config flag flips us to analyst.
+    """
     env_no_zotero = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in {"1", "true", "yes"}
-    if env_no_zotero or getattr(cfg, "no_zotero", False) or zot is None:
+    if env_no_zotero or getattr(cfg, "no_zotero", False):
         return "analyst"
     return "researcher"
 

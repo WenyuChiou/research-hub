@@ -145,7 +145,15 @@ def render_dashboard_html(state: dict) -> str:
 def generate_dashboard(open_browser: bool = False) -> Path:
     """Generate dashboard HTML and optionally open it in the browser."""
     cfg = get_config()
-    html = render_dashboard_from_config(cfg)
+    zot = None
+    if not getattr(cfg, "no_zotero", False):
+        try:
+            from research_hub.zotero.client import get_client
+
+            zot = get_client()
+        except Exception:
+            zot = None
+    html = render_dashboard_from_config(cfg, zot=zot)
     out_path = cfg.research_hub_dir / "dashboard.html"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
