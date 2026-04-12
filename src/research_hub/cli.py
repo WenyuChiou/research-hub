@@ -507,6 +507,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="research-hub")
     subparsers = parser.add_subparsers(dest="command")
 
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Interactive setup wizard for first-time users",
+    )
+    init_parser.add_argument("--vault", default=None, help="Vault root directory")
+    init_parser.add_argument("--zotero-key", default=None, help="Zotero API key")
+    init_parser.add_argument(
+        "--zotero-library-id",
+        default=None,
+        help="Zotero library ID",
+    )
+    init_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Skip prompts; require all values via flags",
+    )
+
+    subparsers.add_parser("doctor", help="Health check for research-hub installation")
+
     run_parser = subparsers.add_parser("run", help="Run the research pipeline")
     run_parser.add_argument("--topic", default=None, help="Pipeline topic context")
     run_parser.add_argument("--max-papers", type=int, default=None, help="Maximum papers to process")
@@ -768,6 +787,19 @@ def main(argv: list[str] | None = None) -> int:
             query=getattr(args, "query", None),
             verify=getattr(args, "verify", True),
         )
+    if args.command == "init":
+        from research_hub.init_wizard import run_init
+
+        return run_init(
+            vault_root=args.vault,
+            zotero_key=args.zotero_key,
+            zotero_library_id=args.zotero_library_id,
+            non_interactive=args.non_interactive,
+        )
+    if args.command == "doctor":
+        from research_hub.doctor import print_doctor_report, run_doctor
+
+        return print_doctor_report(run_doctor())
     if args.command == "ingest":
         return run_pipeline(
             dry_run=args.dry_run,
