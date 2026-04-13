@@ -541,7 +541,8 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .writing-column,
 .writing-group,
 .writing-quote-card,
-.writing-cited-card {
+.writing-cited-card,
+.writing-cited-block {
   display: grid;
   gap: var(--space-sm);
 }
@@ -812,4 +813,93 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 @container (min-width: 900px) {
   .writing-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Writing tab composer panel (v0.12.0) */
+@container (min-width: 900px) {
+  .dash-panel-writing .writing-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.composer-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: var(--space-lg);
+  display: grid;
+  gap: var(--space-md);
+}
+
+.composer-form {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.composer-form label {
+  display: grid;
+  gap: var(--space-2xs);
+  font-size: var(--text-xs);
+  color: var(--fg-mute);
+}
+
+.composer-form textarea,
+.composer-form select {
+  width: 100%;
+  padding: var(--space-2xs) var(--space-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.composer-style {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--space-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.composer-style legend {
+  font-size: var(--text-xs);
+  color: var(--fg-mute);
+  padding: 0 var(--space-2xs);
+}
+
+.composer-quote-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.composer-quote-list label {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: start;
+}
+
+.composer-quote-option {
+  padding: var(--space-2xs);
+  border-radius: 8px;
+}
+
+.composer-cmd-preview {
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: "Geist Mono", "JetBrains Mono", monospace;
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
 }

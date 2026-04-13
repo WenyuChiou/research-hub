@@ -319,6 +319,41 @@ def capture_quote(slug: str, page: str, text: str, context: str = "") -> dict:
         return _tool_error(exc)
 
 
+@mcp.tool()
+def compose_draft(
+    cluster_slug: str,
+    outline: list[str] | None = None,
+    quote_slugs: list[str] | None = None,
+    style: str = "apa",
+    include_bibliography: bool = True,
+) -> dict:
+    """Assemble captured quotes into a markdown draft."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.drafting import DraftRequest, compose_draft as _compose_draft
+
+        cfg = get_config()
+        request = DraftRequest(
+            cluster_slug=cluster_slug,
+            outline=list(outline or []),
+            quote_slugs=list(quote_slugs or []),
+            style=style,
+            include_bibliography=include_bibliography,
+        )
+        result = _compose_draft(cfg, request)
+        return {
+            "status": "ok",
+            "path": str(result.path),
+            "cluster_slug": result.cluster_slug,
+            "quote_count": result.quote_count,
+            "cited_paper_count": result.cited_paper_count,
+            "section_count": result.section_count,
+            "markdown_preview": result.markdown[:600],
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 def get_references(identifier: str, limit: int = 20) -> list[dict[str, Any]] | dict[str, str]:
     """List papers cited by the given paper (its bibliography)."""
     try:

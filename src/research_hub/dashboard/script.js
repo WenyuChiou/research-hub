@@ -439,4 +439,67 @@
       });
     });
   });
+
+  // Writing tab - draft composer form
+  doc.querySelectorAll(".composer-form").forEach(function (form) {
+    const buildBtn = form.querySelector(".composer-build-btn");
+    const preview = form.parentElement.querySelector(".composer-cmd-preview");
+    if (!buildBtn) {
+      return;
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      buildBtn.click();
+      return false;
+    });
+
+    buildBtn.addEventListener("click", function () {
+      const cluster = (form.querySelector('[name="cluster"]').value || "").trim();
+      const outline = (form.querySelector('[name="outline"]').value || "")
+        .split(/\r?\n/)
+        .map(function (s) { return s.trim(); })
+        .filter(Boolean)
+        .join(";");
+      const style = (form.querySelector('[name="style"]:checked') || {}).value || "apa";
+      const includeBib = !!form.querySelector('[name="include_bibliography"]:checked');
+      const selectedSlugs = Array.from(
+        form.querySelectorAll('.composer-quote-list input[type="checkbox"]:checked')
+      )
+        .filter(function (el) { return (el.dataset.cluster || "") === cluster; })
+        .map(function (el) { return el.dataset.slug || ""; })
+        .filter(Boolean);
+
+      if (!cluster) {
+        preview.hidden = false;
+        preview.textContent = "Pick a cluster first.";
+        return;
+      }
+
+      const parts = ["research-hub compose-draft", "--cluster", shellQuote(cluster)];
+      if (outline) {
+        parts.push("--outline", shellQuote(outline));
+      }
+      if (selectedSlugs.length) {
+        parts.push("--quotes", shellQuote(selectedSlugs.join(",")));
+      }
+      parts.push("--style", style);
+      if (!includeBib) {
+        parts.push("--no-bibliography");
+      }
+      const command = parts.join(" ");
+      preview.hidden = false;
+      preview.textContent = command;
+
+      const original = buildBtn.textContent;
+      copyText(command, function () {
+        buildBtn.textContent = "Copied!";
+        buildBtn.classList.add("copied");
+        setTimeout(function () {
+          buildBtn.textContent = original;
+          buildBtn.classList.remove("copied");
+        }, 1500);
+      });
+    });
+  });
 })();

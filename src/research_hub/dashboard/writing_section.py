@@ -33,6 +33,7 @@ class WritingSection(DashboardSection):
 
         quote_groups = self._group_quotes(quotes)
         cited_groups = self._group_cited(cited)
+        composer = self._composer_panel(data, quotes)
         quote_html = (
             "".join(self._quote_group(name, items) for name, items in quote_groups.items())
             if quote_groups
@@ -52,14 +53,15 @@ class WritingSection(DashboardSection):
                 <p class="card-meta">Saved excerpts ready to copy into a draft.</p>
               </header>
               <div class="writing-stack">{quote_html}</div>
+              <div class="writing-cited-block">
+                <header class="card-heading">
+                  <h2>Cited papers</h2>
+                  <p class="card-meta">Notes already marked <code>cited</code> in frontmatter.</p>
+                </header>
+                <div class="writing-stack">{cited_html}</div>
+              </div>
             </article>
-            <article class="card writing-column">
-              <header class="card-heading">
-                <h2>Cited papers</h2>
-                <p class="card-meta">Notes already marked <code>cited</code> in frontmatter.</p>
-              </header>
-              <div class="writing-stack">{cited_html}</div>
-            </article>
+            {composer}
           </div>
         </section>
         """
@@ -130,7 +132,7 @@ class WritingSection(DashboardSection):
         note = str(_attr(quote, "context_note", "") or "").strip()
         note_html = f'<p class="writing-quote-note">{html_escape(note)}</p>' if note else ""
         return f"""
-        <article class="writing-quote-card">
+        <article class="writing-quote-card" data-select-id="{html_escape(_attr(quote, "slug", ""))}">
           <header class="writing-quote-header">
             <div>
               <h3>{html_escape(title)}</h3>
@@ -180,3 +182,83 @@ class WritingSection(DashboardSection):
           </p>
         </article>
         """
+
+    def _composer_panel(self, data, quotes: list) -> str:
+        clusters = list(_attr(data, "clusters", []) or [])
+        cluster_options = "".join(
+            (
+                f'<option value="{html_escape(_attr(cluster, "slug", ""))}">'
+                f'{html_escape(_attr(cluster, "name", _attr(cluster, "slug", "")))}'
+                "</option>"
+            )
+            for cluster in clusters
+        )
+        quote_options = self._composer_quote_options(clusters, quotes)
+        return f"""
+        <article class="composer-panel">
+          <h3>Compose draft</h3>
+          <form class="composer-form" action="javascript:void(0)">
+            <label>Cluster
+              <select name="cluster">
+                {cluster_options}
+              </select>
+            </label>
+            <label>Outline (one section per line, leave blank for single "Notes" section)
+              <textarea name="outline" rows="4" placeholder="Introduction&#10;Methods&#10;Findings"></textarea>
+            </label>
+            <fieldset class="composer-style">
+              <legend>Citation style</legend>
+              <label><input type="radio" name="style" value="apa" checked> APA</label>
+              <label><input type="radio" name="style" value="chicago"> Chicago</label>
+              <label><input type="radio" name="style" value="mla"> MLA</label>
+              <label><input type="radio" name="style" value="latex"> LaTeX</label>
+            </fieldset>
+            <label>
+              <input type="checkbox" name="include_bibliography" checked> Include bibliography
+            </label>
+            <div class="composer-quote-list">
+              {quote_options}
+            </div>
+            <button type="button" class="composer-build-btn manage-build-btn">Build draft command</button>
+          </form>
+          <pre class="composer-cmd-preview" hidden></pre>
+        </article>
+        """
+
+    def _composer_quote_options(self, clusters: list, quotes: list) -> str:
+        cluster_name_by_slug = {
+            str(_attr(cluster, "slug", "") or ""): str(_attr(cluster, "name", "") or "")
+            for cluster in clusters
+        }
+        grouped: dict[str, dict[str, object]] = {}
+        for quote in quotes:
+            slug = str(_attr(quote, "slug", "") or "").strip()
+            if not slug:
+                continue
+            if slug in grouped:
+                continue
+            cluster_slug = str(_attr(quote, "cluster_slug", "") or "").strip()
+            grouped[slug] = {
+                "cluster_slug": cluster_slug,
+                "cluster_name": cluster_name_by_slug.get(
+                    cluster_slug,
+                    str(_attr(quote, "cluster_name", "") or cluster_slug or "Unassigned"),
+                ),
+                "title": str(_attr(quote, "title", slug) or slug),
+                "authors": str(_attr(quote, "authors", "") or ""),
+            }
+        if not grouped:
+            return '<p class="empty-state">No captured quotes available for draft composition yet.</p>'
+
+        rows = []
+        for slug, item in sorted(grouped.items(), key=lambda pair: str(pair[1]["title"]).lower()):
+            meta = html_escape(str(item["authors"] or item["cluster_name"]))
+            rows.append(
+                f"""
+                <label class="composer-quote-option" data-select-id="{html_escape(slug)}" data-cluster="{html_escape(str(item["cluster_slug"]))}">
+                  <input type="checkbox" checked data-slug="{html_escape(slug)}" data-cluster="{html_escape(str(item["cluster_slug"]))}">
+                  <span><strong>{html_escape(str(item["title"]))}</strong><br>{meta}</span>
+                </label>
+                """
+            )
+        return "".join(rows)

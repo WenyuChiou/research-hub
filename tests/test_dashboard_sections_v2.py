@@ -398,6 +398,52 @@ def test_writing_section_hides_cited_when_none():
     assert "No papers are marked" in html
 
 
+def test_writing_section_renders_composer_panel():
+    html = WritingSection().render(
+        _data(
+            clusters=[_cluster()],
+            quotes=[_quote()],
+            total_clusters=1,
+            total_papers=1,
+        )
+    )
+    assert 'class="composer-panel"' in html
+    assert 'name="cluster"' in html
+    assert 'name="outline"' in html
+    assert "Build draft command" in html
+
+
+def test_writing_section_composer_has_style_radios():
+    html = WritingSection().render(
+        _data(
+            clusters=[_cluster()],
+            quotes=[_quote()],
+            total_clusters=1,
+            total_papers=1,
+        )
+    )
+    assert 'type="radio" name="style" value="apa" checked' in html
+    assert 'type="radio" name="style" value="chicago"' in html
+    assert 'type="radio" name="style" value="mla"' in html
+    assert 'type="radio" name="style" value="latex"' in html
+
+
+def test_writing_section_composer_lists_all_quotes_as_checkboxes():
+    html = WritingSection().render(
+        _data(
+            clusters=[_cluster()],
+            quotes=[_quote(), _quote(slug="paper-two", title="Paper Two")],
+            total_clusters=1,
+            total_papers=2,
+        )
+    )
+    assert html.count('class="composer-quote-option"') == 2
+    assert 'data-select-id="paper-one"' in html
+    assert 'data-select-id="paper-two"' in html
+    assert 'data-slug="paper-one"' in html
+    assert 'data-slug="paper-two"' in html
+
+
 def test_header_section_includes_writing_tab_radio():
     html = HeaderSection().render(_data())
     assert 'class="dash-tab-radio dash-tab-radio-writing"' in html

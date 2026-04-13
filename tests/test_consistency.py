@@ -33,6 +33,7 @@ EXPECTED_MAPPINGS = {
     "read_briefing": "notebooklm read-briefing",
     "list_quotes": "quote list",
     "capture_quote": "quote",
+    "compose_draft": "compose-draft",
 }
 
 
@@ -55,4 +56,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(mcp._tool_manager._tools) >= 20
+    assert len(mcp._tool_manager._tools) >= 21

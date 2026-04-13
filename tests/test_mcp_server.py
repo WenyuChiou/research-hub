@@ -120,6 +120,7 @@ from research_hub.doctor import CheckResult
 from research_hub.mcp_server import (
     build_citation,
     capture_quote,
+    compose_draft,
     export_citation,
     generate_dashboard,
     get_config_info,
@@ -313,6 +314,7 @@ def test_new_operation_tools_are_registered():
         "add_paper",
         "build_citation",
         "capture_quote",
+        "compose_draft",
         "generate_dashboard",
         "list_quotes",
         "remove_paper",
@@ -368,3 +370,31 @@ def test_capture_quote_and_list_quotes(tmp_path, monkeypatch):
     assert saved["status"] == "ok"
     assert listed["count"] == 1
     assert listed["quotes"][0]["slug"] == "paper-one"
+
+
+def test_mcp_compose_draft_returns_ok_with_path_and_preview(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    note_dir = cfg.raw / "agents"
+    note_dir.mkdir(parents=True)
+    (note_dir / "paper-one.md").write_text(
+        (
+            '---\n'
+            'title: "Paper One"\n'
+            'authors: "Doe, Jane"\n'
+            'year: "2025"\n'
+            'doi: "10.1000/one"\n'
+            'topic_cluster: "agents"\n'
+            '---\n'
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+    capture_quote.fn("paper-one", "12", "hello", "Introduction")
+
+    result = compose_draft.fn("agents", outline=["Introduction"], style="apa")
+
+    assert result["status"] == "ok"
+    assert result["path"].endswith("-agents-draft.md")
+    assert result["quote_count"] == 1
+    assert result["section_count"] == 1
+    assert "## Introduction" in result["markdown_preview"]
