@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.12.0 (2026-04-13)
+
+**Pipeline hardening + PDF-first NotebookLM bundling + Draft composer — the "vault → draft" transition release.**
+
+Three tracks shipped together, driven by real user-pain caught during a live 22-paper ingest of an LLM harness engineering cluster.
+
+### Added — Track A: Pipeline hardening
+
+- **Full schema validator** — `_validate_paper_input` now checks all 12 required fields upfront (was 4 in v0.11.0). Missing fields are reported with the exact text to paste into `papers_input.json`. Prevents the "KeyError mid-ingest → orphaned Zotero item" failure mode.
+- **`slug` + `sub_category` auto-generation** — minimal papers_input.json entries (4 fields) now work out of the box. Slug is derived from `{firstauthor_lastname}{year}-{slugified_title}`; `sub_category` defaults to the cluster slug.
+- **Collection-scoped `check_duplicate`** — `zotero/client.py::check_duplicate` gains optional `collection_key` kwarg. Library-wide search was producing false-positive skips when a paper existed in a different cluster's collection. New CLI flag `research-hub ingest --allow-library-duplicates` explicitly bypasses the dedup check.
+- **`research-hub pipeline repair --cluster X`** — new subcommand that reconciles Zotero collection ⇄ Obsidian notes ⇄ dedup_index for a given cluster. Finds orphaned Zotero items (no Obsidian note), orphaned notes (no Zotero item), and stale dedup entries. Default dry-run; requires `--execute` to actually write.
+- **`docs/papers_input_schema.md`** — rewritten with the full field reference, minimal + complete examples, and common-errors section.
+
+### Added — Track B: PDF-first NotebookLM bundling
+
+- **`research-hub notebooklm bundle --download-pdfs`** — new flag that tries to acquire a local PDF before falling back to URL upload. NotebookLM ingests local PDFs ~6× faster than URLs (it has to fetch + parse URLs server-side at 15-30s each).
+- **`notebooklm/pdf_fetcher.py`** — new module with a 4-step fallback chain:
+  1. Local cache by DOI (`<pdfs_dir>/<normalized_doi>.pdf`)
+  2. Local cache by slug (`<pdfs_dir>/<slug>.pdf`)
+  3. arXiv (`https://arxiv.org/pdf/<arxiv_id>.pdf` when the DOI is arxiv)
+  4. Unpaywall API (free tier, OA-only papers)
+- **Graceful handling of non-downloadable papers** — paywalled without OA, reports, timeouts, and oversized (>50 MB) PDFs all fall through to URL upload without erroring out. `BundleEntry.pdf_source` records provenance for the summary (`local-doi`, `arxiv`, `unpaywall`, etc).
+- **Bundle summary** now breaks down by PDF source: `pdf: 22 (arxiv: 19, local-doi: 3, unpaywall: 0)`.
+
+### Added — Track C: Draft composer
+
+- **`research-hub compose-draft --cluster X --outline "Intro;Methods;Results" --style apa`** — new CLI that assembles captured quotes into a markdown draft. Supports APA / Chicago / MLA / LaTeX citation styles. Quotes are assigned to sections by matching `quote.context_note` against outline entries (case-insensitive substring); unmatched quotes land in the first section. Default output path: `<vault>/drafts/<YYYYMMDD>-<cluster>-draft.md`.
+- **`src/research_hub/drafting.py`** — new module with `DraftRequest`, `DraftResult`, `compose_draft()`, `compose_draft_from_cli()`, and `DraftingError`. Reuses existing `writing.py` functions (`load_all_quotes`, `build_inline_citation`, `build_markdown_citation`, `resolve_paper_meta`) — no duplication.
+- **MCP tool `compose_draft(cluster_slug, outline, quote_slugs, style, include_bibliography)`** — lets AI agents assemble drafts programmatically. Returns `{status, path, cluster_slug, quote_count, cited_paper_count, section_count, markdown_preview}`. **25 MCP tools total** (was 24).
+- **Dashboard Writing tab composer panel** — new right column at >=900px: cluster picker, outline textarea, style radios, include-bibliography checkbox, quote multi-select (tied to left-column cards), and a `[Build draft command]` button that emits the exact `research-hub compose-draft ...` invocation and copies it to clipboard (same pattern as Manage tab).
+
+### Changed
+
+- NotebookLM briefing language note: briefings are generated in the language of the Google account's UI locale. To get English briefings for English users, set the Google account language to English before generating. A dedicated `research-hub briefings translate` feature is deferred to v0.13.
+
+### Tests
+
+- **417 → 465 passing** + 5 skipped. 48 new tests across the three tracks:
+  - 30+ in `test_pipeline_schema_v012.py`, `test_pipeline_repair.py`, and updated `test_pipeline_metadata.py` / `test_pipeline.py`
+  - 21 in `test_pdf_fetcher.py` + updated `test_notebooklm_bundle.py`
+  - 22 in `test_drafting.py`, `test_dashboard_sections_v2.py`, `test_mcp_server.py`, `test_consistency.py`
+
 ## v0.11.0 (2026-04-12)
 
 **Writing helpers — inline citations, quote capture, and a Writing tab to close the loop from "found it" to "used it in a draft".**
