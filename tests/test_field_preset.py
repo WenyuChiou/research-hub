@@ -33,7 +33,19 @@ def test_resolve_field_econ_includes_repec():
     assert "repec" in resolve_backends_for_field("econ")
 
 
-def test_resolve_field_general_returns_all_8_backends():
+def test_resolve_field_chem_includes_chemrxiv():
+    assert "chemrxiv" in resolve_backends_for_field("chem")
+
+
+def test_resolve_field_astro_includes_nasa_ads():
+    assert "nasa-ads" in resolve_backends_for_field("astro")
+
+
+def test_resolve_field_edu_includes_eric():
+    assert "eric" in resolve_backends_for_field("edu")
+
+
+def test_resolve_field_general_returns_all_11_backends():
     assert resolve_backends_for_field("general") == (
         "openalex",
         "arxiv",
@@ -43,11 +55,17 @@ def test_resolve_field_general_returns_all_8_backends():
         "pubmed",
         "biorxiv",
         "repec",
+        "chemrxiv",
+        "nasa-ads",
+        "eric",
     )
 
 
 def test_resolve_field_unknown_raises_valueerror_with_valid_list():
-    with pytest.raises(ValueError, match="valid: bio, cs, econ, general, math, med, physics, social"):
+    with pytest.raises(
+        ValueError,
+        match="valid: astro, bio, chem, cs, econ, edu, general, math, med, physics, social",
+    ):
         resolve_backends_for_field("unknown")
 
 

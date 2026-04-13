@@ -1,5 +1,87 @@
 # Changelog
 
+## v0.18.0 (2026-04-13)
+
+**Three more domain backends — chemistry, astronomy/astrophysics, education now first-class.**
+
+v0.17.0 covered CS, biomedicine, social science, economics. v0.18.0 fills in the remaining major fields a research university actually has: chemistry (ChemRxiv), astronomy/astrophysics/geophysics (NASA ADS), and education (ERIC). After this release, the workflow generalizes from "STEM + biomedicine + social science" to "STEM + biomedicine + social science + chemistry + astronomy + education" — most disciplines covered.
+
+### Added — Three more backends
+
+- **`ChemrxivBackend`** (`src/research_hub/search/chemrxiv.py`, ~110 LOC) — ChemRxiv runs on Figshare's infrastructure. Uses the public Figshare API at `https://api.figshare.com/v2/articles/search` with `group_id=13652` to filter to ChemRxiv-hosted content. Free, no key. Returns title, authors, year, DOI, abstract, doc_type=`preprint`. The de-facto chemistry preprint server, same role as bioRxiv for biology.
+
+- **`NasaAdsBackend`** (`src/research_hub/search/nasa_ads.py`, ~150 LOC) — NASA Astrophysics Data System REST API at `https://api.adsabs.harvard.edu/v1/search/query`. Reads API key from `ADS_DEV_KEY` environment variable; without a key the backend returns `[]` and logs a one-time WARNING (graceful degradation, never crashes). Get a free key at https://ui.adsabs.harvard.edu/user/settings/token. Covers ~16M records: astronomy, astrophysics, solar physics, planetary science, geophysics, Earth science. ADS query syntax (`year:[2024 TO 2025]`, `doi:"..."`, `bibcode:"..."`) is used for filters and lookups.
+
+- **`EricBackend`** (`src/research_hub/search/eric.py`, ~120 LOC) — ERIC (Education Resources Information Center), run by the U.S. Institute of Education Sciences. Public REST API at `https://api.ies.ed.gov/eric/`. Free, no key. ~2M records covering education research papers, theses, and ED reports. Maps ERIC IDs to doc types (`EJ`-prefixed = `journal-article`, `ED`-prefixed = `report`).
+
+### Added — Three new field presets
+
+| Preset | Backends |
+|---|---|
+| `chem` | openalex + chemrxiv + crossref + semantic-scholar |
+| `astro` | openalex + arxiv + nasa-ads + crossref + semantic-scholar |
+| `edu` | openalex + eric + crossref + semantic-scholar |
+
+The `general` preset now expands to **11 backends** (was 8 in v0.17): the v0.16 + v0.17 + v0.18 set combined.
+
+### Backend registry
+
+`_BACKEND_REGISTRY` now has **12 entries (11 unique classes + `medrxiv` alias for `BiorxivBackend`)**:
+
+```python
+_BACKEND_REGISTRY = {
+    "openalex": OpenAlexBackend,
+    "arxiv": ArxivBackend,
+    "semantic-scholar": SemanticScholarClient,
+    "crossref": CrossrefBackend,
+    "dblp": DblpBackend,
+    "pubmed": PubMedBackend,
+    "biorxiv": BiorxivBackend,
+    "medrxiv": BiorxivBackend,    # alias
+    "repec": RepecBackend,
+    "chemrxiv": ChemrxivBackend,    # NEW
+    "nasa-ads": NasaAdsBackend,     # NEW
+    "eric": EricBackend,            # NEW
+}
+```
+
+`DEFAULT_BACKENDS` stays at the v0.16.0 5-backend list — the new domain backends are still opt-in.
+
+### CLI / MCP — no signature changes
+
+The `--field` flag's `choices=sorted(FIELD_PRESETS.keys())` is computed dynamically, so adding new presets to `FIELD_PRESETS` automatically extends the CLI. The `discover_new` and `search_papers` MCP tools accept the new preset names without any signature changes. **No CLI parser modifications, no MCP tool count change (42 stays).**
+
+### Tests
+
+- **652 → 680 passing** (+28 tests, 5 skipped unchanged).
+- `tests/test_chemrxiv_backend.py`: 8 tests (POST + JSON body, `group_id=13652` assertion, year filter, doc_type=preprint).
+- `tests/test_nasa_ads_backend.py`: 8 tests (graceful degradation without API key, Bearer auth header, year range query, DOI/bibcode lookup).
+- `tests/test_eric_backend.py`: 8 tests (year filter via `publicationdateyear`, EJ vs ED doc_type mapping, authors as string or list).
+- `tests/test_field_preset.py`: 3 new tests for chem/astro/edu presets.
+- `tests/test_search_fallback.py`: registry assertion test for the 3 new backends.
+
+### Field coverage matrix after v0.18.0
+
+| Domain | Backends | Preset |
+|---|---|---|
+| CS / SE / AI | openalex + arxiv + s2 + dblp + crossref | `--field cs` |
+| Math / theoretical physics | openalex + arxiv + crossref + s2 | `--field math` |
+| Applied physics / astronomy | openalex + arxiv + nasa-ads + crossref + s2 | `--field astro` |
+| Biology | openalex + pubmed + biorxiv + crossref + s2 | `--field bio` |
+| Medicine | openalex + pubmed + biorxiv + crossref + s2 | `--field med` |
+| Chemistry | openalex + chemrxiv + crossref + s2 | `--field chem` |
+| Civil / environmental engineering | openalex + crossref + s2 (general STEM) | `--field general` (no specialty backend) |
+| Economics / social science | openalex + crossref + s2 + repec | `--field social` / `--field econ` |
+| Education | openalex + eric + crossref + s2 | `--field edu` |
+| Humanities | openalex + crossref + s2 (general) | `--field general` (no specialty backend) |
+
+### Deferred to v0.19+
+
+- **CJK literature backends** (CiNii Japan, KCI Korea) — non-trivial encoding + API access challenges
+- **JSTOR / PsycINFO** for humanities + psychology — paid databases, lower priority
+- **IEEE Xplore** for EE/CE — paid API
+- **Bilingual docs + onboarding wizard** — `research-hub init --field bio` walkthrough, EN/ZH per-field quickstarts
+
 ## v0.17.0 (2026-04-13)
 
 **Domain backends + field preset — biology, medicine, economics, social sciences now first-class.**

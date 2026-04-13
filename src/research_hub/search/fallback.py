@@ -7,9 +7,12 @@ from collections.abc import Iterable, Sequence
 
 from research_hub.search.arxiv_backend import ArxivBackend
 from research_hub.search.biorxiv import BiorxivBackend
+from research_hub.search.chemrxiv import ChemrxivBackend
 from research_hub.search.crossref import CrossrefBackend
 from research_hub.search.dblp import DblpBackend
 from research_hub.search.base import SearchBackend, SearchResult
+from research_hub.search.eric import EricBackend
+from research_hub.search.nasa_ads import NasaAdsBackend
 from research_hub.search.openalex import OpenAlexBackend
 from research_hub.search.pubmed import PubMedBackend
 from research_hub.search.repec import RepecBackend
@@ -28,6 +31,9 @@ _BACKEND_REGISTRY: dict[str, type[SearchBackend]] = {
     "biorxiv": BiorxivBackend,
     "medrxiv": BiorxivBackend,
     "repec": RepecBackend,
+    "chemrxiv": ChemrxivBackend,
+    "nasa-ads": NasaAdsBackend,
+    "eric": EricBackend,
 }
 
 DEFAULT_BACKENDS = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
@@ -40,6 +46,9 @@ FIELD_PRESETS: dict[str, tuple[str, ...]] = {
     "math": ("openalex", "arxiv", "crossref", "semantic-scholar"),
     "social": ("openalex", "crossref", "semantic-scholar", "repec"),
     "econ": ("openalex", "crossref", "semantic-scholar", "repec"),
+    "chem": ("openalex", "chemrxiv", "crossref", "semantic-scholar"),
+    "astro": ("openalex", "arxiv", "nasa-ads", "crossref", "semantic-scholar"),
+    "edu": ("openalex", "eric", "crossref", "semantic-scholar"),
     "general": (
         "openalex",
         "arxiv",
@@ -49,6 +58,9 @@ FIELD_PRESETS: dict[str, tuple[str, ...]] = {
         "pubmed",
         "biorxiv",
         "repec",
+        "chemrxiv",
+        "nasa-ads",
+        "eric",
     ),
 }
 

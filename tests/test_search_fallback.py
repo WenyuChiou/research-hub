@@ -157,3 +157,9 @@ def test_fallback_registers_pubmed_biorxiv_repec_backends():
     assert _BACKEND_REGISTRY["biorxiv"].__name__ == "BiorxivBackend"
     assert _BACKEND_REGISTRY["medrxiv"] is _BACKEND_REGISTRY["biorxiv"]
     assert _BACKEND_REGISTRY["repec"].__name__ == "RepecBackend"
+
+
+def test_fallback_registers_chemrxiv_nasa_ads_eric_backends():
+    assert _BACKEND_REGISTRY["chemrxiv"].__name__ == "ChemrxivBackend"
+    assert _BACKEND_REGISTRY["nasa-ads"].__name__ == "NasaAdsBackend"
+    assert _BACKEND_REGISTRY["eric"].__name__ == "EricBackend"

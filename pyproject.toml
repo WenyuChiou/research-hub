@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.17.0"
+version = "0.18.0"
 description = "Zotero -> Obsidian -> NotebookLM research pipeline"
 readme = "README.md"
 license = {text = "MIT"}
