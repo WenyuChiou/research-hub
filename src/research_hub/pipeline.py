@@ -19,13 +19,44 @@ from research_hub.zotero.client import add_note, check_duplicate, get_client
 from research_hub.zotero.fetch import make_raw_md
 
 
+REQUIRED_FIELDS_CORE = ["title", "doi", "authors", "year"]
+REQUIRED_FIELDS_ZOTERO = ["abstract", "journal"]
+REQUIRED_FIELDS_NOTE = ["summary", "key_findings", "methodology", "relevance"]
+
+
+def _slugify(text: str) -> str:
+    from research_hub.clusters import slugify
+
+    return slugify(text)
+
+
+def _auto_generate_missing_fields(pp: dict, cluster_slug: str | None) -> None:
+    """Fill ingest fields that can be derived from existing metadata."""
+    if "slug" not in pp or not pp.get("slug"):
+        first_author = ""
+        authors = pp.get("authors") or []
+        if authors and isinstance(authors[0], dict):
+            first_author = authors[0].get("lastName", "") or authors[0].get("name", "")
+        elif authors and isinstance(authors[0], str):
+            first_author = authors[0].split(",")[0].strip().split(" ")[-1]
+        year = str(pp.get("year", ""))
+        title = pp.get("title", "")
+        generated = f"{_slugify(first_author)}{year}-{_slugify(title)[:60]}".strip("-")
+        pp["slug"] = generated or f"paper-{year}".strip("-")
+
+    if "sub_category" not in pp or not pp.get("sub_category"):
+        pp["sub_category"] = cluster_slug or "uncategorized"
+
+
 def _validate_paper_input(pp: dict, idx: int) -> list[str]:
     """Validate one paper entry before any Zotero writes."""
     errors: list[str] = []
-    required = ["title", "doi", "authors", "year"]
-    for field in required:
-        if field not in pp:
-            errors.append(f"Paper {idx}: missing required field '{field}'")
+    for field in REQUIRED_FIELDS_CORE:
+        if field not in pp or pp.get(field) in (None, "", []):
+            errors.append(
+                f"Paper {idx}: missing required field '{field}' - add "
+                f"'{field}: <value>' to the paper entry in papers_input.json"
+            )
     if "authors" in pp:
         if not isinstance(pp["authors"], list):
             errors.append(f"Paper {idx}: 'authors' must be a list")
@@ -47,6 +78,17 @@ def _validate_paper_input(pp: dict, idx: int) -> list[str]:
                         f"Paper {idx}, author {author_index}: must be string or dict, got "
                         f"{type(author).__name__}"
                     )
+    for field in REQUIRED_FIELDS_ZOTERO + REQUIRED_FIELDS_NOTE:
+        if field not in pp or pp.get(field) in (None, "", []):
+            errors.append(
+                f"Paper {idx}: missing field '{field}' - pipeline will KeyError "
+                f"during Zotero/Obsidian write. Add '{field}: <value>' or a sensible placeholder."
+            )
+    if "key_findings" in pp and not isinstance(pp["key_findings"], list):
+        errors.append(
+            f"Paper {idx}: 'key_findings' must be a list of strings "
+            f"(got {type(pp['key_findings']).__name__})"
+        )
     return errors
 
 
@@ -180,7 +222,7 @@ def _render_obsidian_note(
         "pages": pp.get("pages", ""),
         "doi": pp["doi"],
         "abstract": pp["abstract"],
-        "tags": pp["tags"],
+        "tags": pp.get("tags", []),
     }
     content = make_raw_md(
         item_data,
@@ -211,6 +253,7 @@ def run_pipeline(
     cluster_slug: str | None = None,
     query: str | None = None,
     verify: bool = False,
+    allow_library_duplicates: bool = False,
 ) -> int:
     cfg = get_config()
     kb = str(cfg.root)
@@ -262,14 +305,32 @@ def run_pipeline(
 
         if not no_zotero:
             all_errors: list[str] = []
+            nonfatal_errors: list[str] = []
             for idx, paper in enumerate(papers):
-                all_errors.extend(_validate_paper_input(paper, idx))
+                _auto_generate_missing_fields(paper, cluster_slug)
+                paper_errors = _validate_paper_input(paper, idx)
+                if dry_run:
+                    for err in paper_errors:
+                        if "missing field '" in err and "pipeline will KeyError" in err:
+                            nonfatal_errors.append(err)
+                        else:
+                            all_errors.append(err)
+                else:
+                    all_errors.extend(paper_errors)
             if all_errors:
                 p("\n=== INPUT VALIDATION FAILED ===")
                 for err in all_errors:
                     p(f"  !!{err}")
                 p(f"\nFix papers_input.json and re-run. {len(all_errors)} errors total.")
                 return 1
+            if nonfatal_errors:
+                p("\n=== INPUT VALIDATION WARNINGS ===")
+                for err in nonfatal_errors:
+                    p(f"  !!{err}")
+                p(
+                    f"\nContinuing dry-run with {len(nonfatal_errors)} non-fatal warnings. "
+                    "A real ingest would fail before any writes."
+                )
 
         dedup = _load_or_build_dedup(cfg, dry_run=dry_run)
 
@@ -371,7 +432,15 @@ def run_pipeline(
                 if no_zotero:
                     dup = False
                 else:
-                    dup = check_duplicate(zot, pp["title"], pp["doi"])
+                    cluster_obj = clusters.get(cluster_slug) if cluster_slug else None
+                    cluster_coll = cluster_obj.zotero_collection_key if cluster_obj else None
+                    dup = check_duplicate(
+                        zot,
+                        pp["title"],
+                        pp["doi"],
+                        collection_key=cluster_coll,
+                        allow_library_duplicates=allow_library_duplicates,
+                    )
             except Exception:
                 dup = False
             if dup:
@@ -392,13 +461,13 @@ def run_pipeline(
             t["creators"] = pp["authors"]
             t["date"] = pp["year"]
             t["DOI"] = pp["doi"]
-            t["url"] = pp["url"]
+            t["url"] = pp.get("url", "")
             t["publicationTitle"] = pp.get("journal", "")
             t["volume"] = pp.get("volume", "")
             t["issue"] = pp.get("issue", "")
             t["pages"] = pp.get("pages", "")
             t["abstractNote"] = pp["abstract"]
-            t["tags"] = [{"tag": x} for x in pp["tags"]]
+            t["tags"] = [{"tag": x} for x in pp.get("tags", [])]
             t["collections"] = [collection_key]
             try:
                 resp = zot.create_items([t])

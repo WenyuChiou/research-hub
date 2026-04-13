@@ -124,6 +124,12 @@ def test_validate_passes_correct_input():
             "doi": "10.1/x",
             "year": 2025,
             "authors": [{"creatorType": "author", "firstName": "F", "lastName": "L"}],
+            "abstract": "A",
+            "journal": "J",
+            "summary": "S",
+            "key_findings": ["F1"],
+            "methodology": "M",
+            "relevance": "R",
         },
         0,
     )

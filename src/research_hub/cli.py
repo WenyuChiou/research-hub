@@ -15,6 +15,7 @@ from research_hub.config import get_config
 from research_hub.dedup import DedupIndex, build_from_obsidian, build_from_zotero
 from research_hub.operations import add_paper, mark_paper, move_paper, remove_paper
 from research_hub.pipeline import run_pipeline
+from research_hub.pipeline_repair import repair_cluster
 from research_hub.search import SemanticScholarClient, iter_new_results
 from research_hub.suggest import PaperInput, suggest_cluster_for_paper, suggest_related_papers
 from research_hub.verify import verify_arxiv, verify_doi, verify_paper
@@ -480,6 +481,38 @@ def _quote_remove(slug: str, at: str) -> int:
     return 0
 
 
+def _compose_draft(
+    cluster_slug: str,
+    outline: str | None,
+    quotes: str | None,
+    style: str,
+    include_bibliography: bool,
+    out: str | None,
+) -> int:
+    from research_hub.drafting import DraftingError, compose_draft_from_cli
+
+    cfg = get_config()
+    try:
+        result = compose_draft_from_cli(
+            cfg,
+            cluster_slug,
+            outline=outline,
+            quote_slugs=quotes,
+            style=style,
+            include_bibliography=include_bibliography,
+            out=out,
+        )
+    except DraftingError as exc:
+        print(f"Draft composition failed: {exc}")
+        return 1
+    print(f"Draft written to {result.path}")
+    print(
+        f"  {result.quote_count} quotes, {result.cited_paper_count} cited papers, "
+        f"{result.section_count} sections"
+    )
+    return 0
+
+
 def _read_zotero_key_from_frontmatter(md_path: Path) -> str | None:
     """Pull the `zotero-key: XXXX` line out of an Obsidian raw note."""
     try:
@@ -696,7 +729,30 @@ def _sync_reconcile(cluster_slug: str, execute: bool) -> int:
     return 0
 
 
-def _notebooklm_bundle(cluster_slug: str) -> int:
+def _pipeline_repair(cluster_slug: str, execute: bool) -> int:
+    cfg = get_config()
+    report = repair_cluster(cfg, cluster_slug, dry_run=not execute)
+    print(report.summary())
+    if report.zotero_orphans:
+        print("Zotero orphan items:")
+        for item in report.zotero_orphans:
+            print(json.dumps(item, ensure_ascii=False))
+    if report.obsidian_orphans:
+        print("Obsidian orphan notes:")
+        for note_path in report.obsidian_orphans:
+            print(note_path)
+    if report.stale_dedup:
+        print("Stale dedup DOIs:")
+        for doi in report.stale_dedup:
+            print(doi)
+    if report.created_notes:
+        print("Created notes:")
+        for note_path in report.created_notes:
+            print(note_path)
+    return 0
+
+
+def _notebooklm_bundle(cluster_slug: str, download_pdfs: bool = False) -> int:
     from research_hub.notebooklm.bundle import bundle_cluster
 
     cfg = get_config()
@@ -705,7 +761,7 @@ def _notebooklm_bundle(cluster_slug: str) -> int:
     if cluster is None:
         raise ValueError(f"Cluster not found: {cluster_slug}")
 
-    report = bundle_cluster(cluster, cfg)
+    report = bundle_cluster(cluster, cfg, download_pdfs=download_pdfs)
     print(f"Bundle written to {report.bundle_dir}")
     print(
         f"Papers: {len(report.entries)} total "
@@ -896,11 +952,21 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--dry-run", action="store_true", help="Validate config and inputs only")
     run_parser.add_argument("--cluster", default=None, help="Cluster slug for ingestion")
     run_parser.add_argument("--query", default=None, help="Query text")
+    run_parser.add_argument(
+        "--allow-library-duplicates",
+        action="store_true",
+        help="Bypass Zotero library duplicate blocking and allow re-ingest",
+    )
 
     ingest_parser = subparsers.add_parser("ingest", help="Run ingestion")
     ingest_parser.add_argument("--cluster", default=None, help="Cluster slug for ingestion")
     ingest_parser.add_argument("--query", default=None, help="Query text")
     ingest_parser.add_argument("--dry-run", action="store_true", help="Validate config and inputs only")
+    ingest_parser.add_argument(
+        "--allow-library-duplicates",
+        action="store_true",
+        help="Bypass Zotero library duplicate blocking and allow re-ingest",
+    )
 
     for parser_with_verify in (run_parser, ingest_parser):
         parser_with_verify.add_argument(
@@ -1109,6 +1175,40 @@ def build_parser() -> argparse.ArgumentParser:
     quote_parser.add_argument("--cluster", default=None, help="Filter list output to one cluster slug")
     quote_parser.add_argument("--at", default=None, help="Quote captured_at timestamp to remove")
 
+    compose_parser = subparsers.add_parser(
+        "compose-draft",
+        help="Assemble captured quotes into a markdown draft",
+    )
+    compose_parser.add_argument("--cluster", required=True, help="Cluster slug")
+    compose_parser.add_argument(
+        "--outline",
+        default=None,
+        help='Semicolon-separated section headings, e.g. "Intro;Methods;Results"',
+    )
+    compose_parser.add_argument(
+        "--quotes",
+        default=None,
+        help="Comma-separated paper slugs to restrict which quotes are included",
+    )
+    compose_parser.add_argument(
+        "--style",
+        choices=("apa", "chicago", "mla", "latex"),
+        default="apa",
+        help="Citation style (default: apa)",
+    )
+    compose_parser.add_argument(
+        "--no-bibliography",
+        dest="include_bibliography",
+        action="store_false",
+        default=True,
+        help="Omit the References section at the end",
+    )
+    compose_parser.add_argument(
+        "--out",
+        default=None,
+        help="Output path (default: <vault>/drafts/...)",
+    )
+
     status_parser = subparsers.add_parser("status", help="Show per-cluster reading progress")
     status_parser.add_argument("--cluster", default=None, help="Show only this cluster")
 
@@ -1217,6 +1317,13 @@ def build_parser() -> argparse.ArgumentParser:
     sync_reconcile.add_argument("--dry-run", action="store_true")
     sync_reconcile.add_argument("--execute", action="store_true")
 
+    pipeline_parser = subparsers.add_parser("pipeline", help="Pipeline maintenance commands")
+    pipeline_sub = pipeline_parser.add_subparsers(dest="pipeline_command", required=True)
+    pipeline_repair = pipeline_sub.add_parser("repair", help="Repair pipeline orphans for a cluster")
+    pipeline_repair.add_argument("--cluster", required=True)
+    pipeline_repair.add_argument("--dry-run", action="store_true", default=True)
+    pipeline_repair.add_argument("--execute", action="store_true")
+
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
     nlm_login = nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
@@ -1269,6 +1376,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     nlm_bundle = nlm_sub.add_parser("bundle", help="Export a drag-drop folder for NotebookLM")
     nlm_bundle.add_argument("--cluster", required=True)
+    nlm_bundle.add_argument(
+        "--download-pdfs",
+        action="store_true",
+        help="Fetch missing PDFs from arxiv/Unpaywall before falling back to URL",
+    )
     nlm_upload = nlm_sub.add_parser("upload", help="Auto-upload bundle to NotebookLM")
     nlm_upload.add_argument("--cluster", required=True)
     nlm_upload.add_argument("--dry-run", action="store_true")
@@ -1316,6 +1428,7 @@ def main(argv: list[str] | None = None) -> int:
             cluster_slug=getattr(args, "cluster", None),
             query=getattr(args, "query", None),
             verify=getattr(args, "verify", True),
+            allow_library_duplicates=getattr(args, "allow_library_duplicates", False),
         )
     if args.command == "init":
         from research_hub.init_wizard import run_init
@@ -1356,6 +1469,7 @@ def main(argv: list[str] | None = None) -> int:
             cluster_slug=args.cluster,
             query=args.query,
             verify=args.verify,
+            allow_library_duplicates=args.allow_library_duplicates,
         )
     if args.command == "index":
         return _rebuild_index()
@@ -1404,6 +1518,15 @@ def main(argv: list[str] | None = None) -> int:
             print("Usage: research-hub quote <slug> --page 12 --text \"...\" [--context \"...\"]")
             return 2
         return _quote_add(target[0], args.page, args.text, args.context)
+    if args.command == "compose-draft":
+        return _compose_draft(
+            args.cluster,
+            args.outline,
+            args.quotes,
+            args.style,
+            args.include_bibliography,
+            args.out,
+        )
     if args.command == "find":
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
@@ -1438,6 +1561,9 @@ def main(argv: list[str] | None = None) -> int:
             return _sync_status(cluster_slug=args.cluster)
         if args.sync_command == "reconcile":
             return _sync_reconcile(cluster_slug=args.cluster, execute=args.execute)
+    if args.command == "pipeline":
+        if args.pipeline_command == "repair":
+            return _pipeline_repair(cluster_slug=args.cluster, execute=args.execute)
     if args.command == "migrate-yaml":
         return _migrate_yaml(
             assign_cluster=args.assign_cluster,
@@ -1479,7 +1605,7 @@ def main(argv: list[str] | None = None) -> int:
                 chrome_profile_name=args.chrome_profile_name,
             )
         if args.notebooklm_command == "bundle":
-            return _notebooklm_bundle(args.cluster)
+            return _notebooklm_bundle(args.cluster, download_pdfs=args.download_pdfs)
         if args.notebooklm_command == "upload":
             return _nlm_upload(args.cluster, args.dry_run, args.headless, args.create_if_missing)
         if args.notebooklm_command == "download":

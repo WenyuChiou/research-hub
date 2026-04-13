@@ -169,7 +169,7 @@ def test_run_pipeline_writes_error_log_on_zotero_failure(tmp_path, monkeypatch):
             raise RuntimeError("create failed")
 
     monkeypatch.setattr(pipeline, "get_client", lambda: StubClient())
-    monkeypatch.setattr(pipeline, "check_duplicate", lambda zot, title, doi="": False)
+    monkeypatch.setattr(pipeline, "check_duplicate", lambda zot, title, doi="", **kwargs: False)
     monkeypatch.setattr(pipeline, "add_note", lambda zot, key, content: True)
     monkeypatch.setattr(pipeline.time, "sleep", lambda seconds: None)
 
@@ -203,7 +203,7 @@ def test_run_pipeline_skips_duplicate(tmp_path, monkeypatch):
             raise AssertionError("Duplicate papers should not be created in Zotero")
 
     monkeypatch.setattr(pipeline, "get_client", lambda: StubClient())
-    monkeypatch.setattr(pipeline, "check_duplicate", lambda zot, title, doi="": True)
+    monkeypatch.setattr(pipeline, "check_duplicate", lambda zot, title, doi="", **kwargs: True)
     monkeypatch.setattr(pipeline, "add_note", lambda zot, key, content: True)
     monkeypatch.setattr(pipeline.time, "sleep", lambda seconds: None)
 
@@ -238,5 +238,34 @@ def test_run_pipeline_fails_fast_on_invalid_paper_input(tmp_path, monkeypatch):
     log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
     assert "INPUT VALIDATION FAILED" in log_text
     assert "creatorType" in log_text
+
+    hub_config._config = None
+
+
+def test_run_pipeline_dry_run_warns_for_minimal_input_and_autogenerates_fields(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+    from research_hub import pipeline
+
+    cfg = _configure(monkeypatch, tmp_path, default_collection="ABCD1234")
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            [
+                {
+                    "title": "Minimal Paper",
+                    "doi": "10.1000/minimal",
+                    "authors": ["Jane Doe"],
+                    "year": 2024,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = pipeline.run_pipeline(dry_run=True)
+
+    assert result == 0
+    log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
+    assert "INPUT VALIDATION WARNINGS" in log_text
+    assert "would process 1 papers" in log_text
 
     hub_config._config = None

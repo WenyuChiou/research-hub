@@ -1,69 +1,54 @@
 # papers_input.json schema
 
-This is the file the `research-hub run` and `research-hub ingest`
-commands read to know what papers to process. The `research-hub add`
-command builds it for you automatically — you only need to author it
-manually if you have a batch of papers from another source.
+`research-hub run` and `research-hub ingest` read `<vault>/papers_input.json`.
+If you have a DOI, `research-hub add <doi>` is usually easier, but manual batch
+files should follow this schema.
 
 ## Location
 
 `<vault>/papers_input.json`
 
 The vault root is whatever `research-hub doctor` reports for `vault:`.
-Default: `~/knowledge-base/papers_input.json`.
 
-## Format
+## Shape
 
-A JSON array of paper objects. One entry per paper.
+The file must be a JSON array of paper objects.
 
-## Required fields
+## Field reference
 
-| Field | Type | Notes |
-|---|---|---|
-| `title` | string | Paper title (no quotes inside) |
-| `doi` | string | DOI without `https://doi.org/` prefix |
-| `authors` | array | See "Authors" section below |
-| `year` | int | Publication year |
-
-## Recommended fields (for full citation)
-
-| Field | Type | Notes |
-|---|---|---|
-| `journal` | string | Journal or venue name |
-| `volume` | string | Journal volume |
-| `issue` | string | Journal issue |
-| `pages` | string | "100-120" or "100, 200" |
-| `abstract` | string | Full abstract text |
-| `url` | string | Canonical URL |
-| `pdf_url` | string | Direct PDF download URL (arXiv-style) |
-| `tags` | array of strings | Tags applied to both Zotero + Obsidian |
-
-## Pipeline-specific fields
-
-| Field | Type | Notes |
-|---|---|---|
-| `slug` | string | Filename stem (e.g., `smith2025-paper-title`) |
-| `sub_category` | string | Cluster slug for routing |
-| `summary` | string | Goes into Obsidian `## Summary` section |
-| `key_findings` | array of strings | Goes into Obsidian `## Key Findings` |
-| `methodology` | string | Goes into Obsidian `## Methodology` |
-| `relevance` | string | Goes into Obsidian `## Relevance` |
+| Field | Required | Type | Example | Used by | Auto-generated |
+|---|---|---|---|---|---|
+| `title` | Yes | string | `"Escalation Risks from Language Models..."` | Validation, Zotero, note title | No |
+| `doi` | Yes | string | `"10.1145/3630106.3658942"` | Dedup, Zotero, note frontmatter | No |
+| `authors` | Yes | array of strings or creator dicts | `[{"creatorType":"author","firstName":"Juan","lastName":"Rivera"}]` | Zotero creators, slug generation | No |
+| `year` | Yes | int or string | `2024` | Zotero date, slug generation, note frontmatter | No |
+| `abstract` | Full ingest | string | `"We evaluate..."` | Zotero abstract, note abstract | No |
+| `journal` | Full ingest | string | `"FAccT 2024"` | Zotero publication title, note citation | No |
+| `summary` | Full ingest | string | `"The paper benchmarks..."` | Obsidian `## Summary` | No |
+| `key_findings` | Full ingest | array of strings | `["Models escalated more than humans."]` | Obsidian `## Key Findings` | No |
+| `methodology` | Full ingest | string | `"Scenario-based wargame benchmark."` | Obsidian `## Methodology` | No |
+| `relevance` | Full ingest | string | `"Useful evidence for agent risk work."` | Obsidian `## Relevance` | No |
+| `slug` | Optional | string | `"rivera2024-escalation-risks-from-language-models"` | Obsidian filename | Yes |
+| `sub_category` | Optional | string | `"ai-agent-geopolitics"` | Obsidian folder routing | Yes |
+| `url` | Optional | string | `"https://doi.org/10.1145/3630106.3658942"` | Zotero URL | No |
+| `tags` | Optional | array of strings | `["llm-agent", "geopolitics"]` | Zotero tags, note tags | No |
+| `volume` | Optional | string | `"12"` | Citation metadata | No |
+| `issue` | Optional | string | `"3"` | Citation metadata | No |
+| `pages` | Optional | string | `"836-898"` | Citation metadata | No |
+| `pdf_url` | Optional | string | `"https://arxiv.org/pdf/2502.10978.pdf"` | Upstream tooling | No |
+| `query` / `search_query` | Optional | string | `"llm diplomacy escalation"` | Cluster query tracking | No |
 
 ## Authors
 
-The `authors` array can contain either strings OR Zotero creator dicts.
-**Zotero creator dicts MUST include `creatorType`.**
+`authors` may be either plain strings or Zotero creator dictionaries.
 
-### String format (simple)
+String form:
 
 ```json
 "authors": ["Wen-Yu Chang", "Ethan Yang"]
 ```
 
-The pipeline parses these by splitting on whitespace: last token is
-the surname.
-
-### Zotero creator format (full)
+Creator-dict form:
 
 ```json
 "authors": [
@@ -72,10 +57,24 @@ the surname.
 ]
 ```
 
-`creatorType` accepts: `"author"`, `"editor"`, `"translator"`, etc.
-**Missing `creatorType` causes a Zotero API 400 error.** The pipeline
-validates this BEFORE calling Zotero, so you'll get a clear error
-message instead of a cryptic crash.
+If you use creator dicts, `creatorType` is required.
+
+## Minimal example
+
+This is enough for `research-hub ingest --dry-run` to validate and auto-fill
+`slug` and `sub_category`. The pipeline will warn that the note and Zotero body
+fields are still missing.
+
+```json
+[
+  {
+    "title": "A Minimal Paper",
+    "doi": "10.1000/minimal",
+    "authors": ["Jane Doe"],
+    "year": 2024
+  }
+]
+```
 
 ## Complete example
 
@@ -93,25 +92,37 @@ message instead of a cryptic crash.
     "volume": "",
     "issue": "",
     "pages": "836-898",
-    "abstract": "...",
+    "abstract": "The paper evaluates LLM behaviour in simulated decision scenarios.",
+    "url": "https://doi.org/10.1145/3630106.3658942",
     "tags": ["llm-agent", "geopolitics", "deterrence"],
     "slug": "rivera2024-escalation-risks-from-language-models",
     "sub_category": "ai-agent-geopolitics",
-    "summary": "Authors test 5 LLMs in 8 wargame scenarios...",
-    "key_findings": ["Models escalated more than human experts.", "GPT-3.5 was the most aggressive."],
+    "summary": "Authors test five LLMs in eight wargame scenarios.",
+    "key_findings": [
+      "Models escalated more than human experts.",
+      "GPT-3.5 was the most aggressive."
+    ],
     "methodology": "Wargame benchmark.",
-    "relevance": "Direct evidence that LLMs introduce escalation bias when used as policy advisors."
+    "relevance": "Direct evidence that LLMs can introduce escalation bias in policy support workflows."
   }
 ]
 ```
 
-## Easier path: just use `add`
+## Common errors
 
-If you have a DOI, you don't need to write any of this. Run:
+- `KeyError: 'methodology'`
+  Add a `methodology` field before running a real ingest.
+- `Paper N: 'key_findings' must be a list of strings`
+  Use `["finding one", "finding two"]`, not one string.
+- `dict authors must have 'creatorType'`
+  Add `"creatorType": "author"` to every author dict.
+
+## Recovery
+
+If a partial ingest created Zotero items but failed before writing notes or
+updating the dedup index, inspect and repair the cluster with:
 
 ```bash
-research-hub add 10.1145/3630106.3658942 --cluster ai-agent-geopolitics
+research-hub pipeline repair --cluster <slug> --dry-run
+research-hub pipeline repair --cluster <slug> --execute
 ```
-
-This fetches all the metadata via Semantic Scholar + CrossRef and
-builds the entry for you.

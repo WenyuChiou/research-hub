@@ -202,10 +202,25 @@ def add_note(zot, item_key: str, content: str) -> bool:
         return False
 
 
-def check_duplicate(zot, title: str, doi: str = "") -> bool:
-    """Check if item already exists in Zotero by DOI or title."""
+def check_duplicate(
+    zot,
+    title: str,
+    doi: str = "",
+    *,
+    collection_key: str | None = None,
+    allow_library_duplicates: bool = False,
+) -> bool:
+    """Check if an item already exists in Zotero by DOI or title."""
+    if allow_library_duplicates:
+        return False
     query = doi or title[:50]
-    existing = zot.items(q=query, limit=5)
+    try:
+        if collection_key:
+            existing = zot.collection_items(collection_key, q=query, limit=5)
+        else:
+            existing = zot.items(q=query, limit=5)
+    except Exception:
+        return False
     return any(
         e["data"]["title"].lower() == title.lower()
         or (doi and e["data"].get("DOI", "") == doi)
