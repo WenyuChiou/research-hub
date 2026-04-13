@@ -72,9 +72,13 @@ def discover_new(
     year_from: int | None = None,
     year_to: int | None = None,
     min_citations: int = 0,
-    backends: tuple[str, ...] = ("openalex", "arxiv", "semantic-scholar"),
+    backends: tuple[str, ...] = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp"),
     limit: int = 25,
     definition: str | None = None,
+    exclude_types: tuple[str, ...] = (),
+    exclude_terms: tuple[str, ...] = (),
+    min_confidence: float = 0.0,
+    rank_by: str = "smart",
 ) -> tuple[DiscoverState, str]:
     """Run search, stash candidates, and build a fit-check prompt."""
     from research_hub.fit_check import emit_prompt
@@ -90,6 +94,10 @@ def discover_new(
         year_to=year_to,
         min_citations=min_citations,
         backends=backends,
+        exclude_types=exclude_types,
+        exclude_terms=exclude_terms,
+        min_confidence=min_confidence,
+        rank_by=rank_by,
     )
     candidates = [asdict(result) for result in results]
     (dest / CANDIDATES_FILENAME).write_text(

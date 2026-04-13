@@ -21,6 +21,9 @@ class SearchResult:
     citation_count: int = 0
     pdf_url: str = ""
     source: str = ""
+    confidence: float = 0.5
+    found_in: list[str] = field(default_factory=list)
+    doc_type: str = ""
 
     @classmethod
     def from_s2_json(cls, item: dict) -> "SearchResult":
@@ -49,6 +52,7 @@ class SearchResult:
             citation_count=item.get("citationCount", 0) or 0,
             pdf_url=pdf.get("url", "") or "",
             source="semantic-scholar",
+            doc_type=item.get("publicationTypes", [""])[0] if item.get("publicationTypes") else "",
         )
 
     @property

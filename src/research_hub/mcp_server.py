@@ -73,6 +73,10 @@ def search_papers(
     year_to: int | None = None,
     min_citations: int = 0,
     backends: list[str] | None = None,
+    exclude_types: list[str] | None = None,
+    exclude_terms: list[str] | None = None,
+    min_confidence: float = 0.0,
+    rank_by: str = "smart",
 ) -> list[dict[str, Any]] | dict[str, str]:
     """Search for academic papers across multiple backends."""
     try:
@@ -84,7 +88,11 @@ def search_papers(
         index_path = cfg.research_hub_dir / "dedup_index.json"
         index = DedupIndex.load(index_path) if index_path.exists() else DedupIndex()
 
-        backend_list = tuple(backends) if backends else ("openalex", "arxiv", "semantic-scholar")
+        backend_list = (
+            tuple(backends)
+            if backends
+            else ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
+        )
         results = _search_papers(
             query,
             limit=min(limit, 100),
@@ -92,6 +100,10 @@ def search_papers(
             year_to=year_to,
             min_citations=min_citations,
             backends=backend_list,
+            exclude_types=tuple(exclude_types or []),
+            exclude_terms=tuple(exclude_terms or []),
+            min_confidence=min_confidence,
+            rank_by=rank_by,
         )
         ingested = {normalize_doi(doi) for doi in index.doi_to_hits.keys() if doi}
 
@@ -110,6 +122,9 @@ def search_papers(
                 "pdf_url": result.pdf_url,
                 "abstract": result.abstract,
                 "source": result.source,
+                "confidence": result.confidence,
+                "found_in": result.found_in,
+                "doc_type": result.doc_type,
                 "already_in_vault": already,
             }
             if verify and result.doi:
@@ -755,6 +770,10 @@ def discover_new(
     backends: list[str] | None = None,
     limit: int = 25,
     definition: str | None = None,
+    exclude_types: list[str] | None = None,
+    exclude_terms: list[str] | None = None,
+    min_confidence: float = 0.0,
+    rank_by: str = "smart",
 ) -> dict:
     """Run search + emit fit-check prompt, stashing state for discover_continue."""
     try:
@@ -762,7 +781,11 @@ def discover_new(
         from research_hub.discover import discover_new as _discover_new
 
         cfg = get_config()
-        backend_list = tuple(backends) if backends else ("openalex", "arxiv", "semantic-scholar")
+        backend_list = (
+            tuple(backends)
+            if backends
+            else ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
+        )
         state, prompt = _discover_new(
             cfg,
             cluster_slug,
@@ -773,6 +796,10 @@ def discover_new(
             backends=backend_list,
             limit=limit,
             definition=definition,
+            exclude_types=tuple(exclude_types or []),
+            exclude_terms=tuple(exclude_terms or []),
+            min_confidence=min_confidence,
+            rank_by=rank_by,
         )
         return {
             "ok": True,

@@ -1,5 +1,72 @@
 # Changelog
 
+## v0.16.0 (2026-04-13)
+
+**Multi-backend that actually works + filters + smart ranking — fixes the gaps live tests #2 and #3 surfaced.**
+
+v0.13.0 promised a three-backend fallback chain but live tests revealed it was functionally single-backend: 29/29 candidates across both test runs came from OpenAlex; arXiv and Semantic Scholar contributed zero hits. Root cause: arXiv preprints have zero citations by definition, so the global `min_citations` filter dropped all of them. Test #3 also showed citation-count sort actively hurting noisy queries — IPCC/Lancet reports with 2000+ citations dominated the top 5 positions while the actually-relevant migration papers (with <50 cits) ranked lower. This release fixes the multi-backend chain, adds two new specialized backends, and replaces the citation sort with a smart ranking heuristic.
+
+### Added — Two new backends
+
+- **`CrossrefBackend`** (`src/research_hub/search/crossref.py`, ~140 LOC) — Crossref REST API, free, no key required. Cross-publisher DOI metadata via `https://api.crossref.org/works`. Filters by `type:journal-article` to bias toward primary research. Returns title, authors, year, journal, doc_type, citation count. Does NOT return abstracts (Crossref doesn't store them) — used as a confidence-booster + type-filter source, not a primary search.
+- **`DblpBackend`** (`src/research_hub/search/dblp.py`, ~140 LOC) — DBLP computer science bibliography, free, no key. 100% coverage of CS/SE publications including workshop papers and preprints OpenAlex misses. JSON API at `https://dblp.org/search/publ/api`. Returns title, authors, year, venue, doc_type. No abstracts, no citation counts (DBLP doesn't expose them) — used as a recall-boost for SE/CS topics.
+
+### Added — Confidence merging + smart ranking
+
+- **`SearchResult` gains three fields:**
+  - `confidence: float` (0.5–1.0) — `0.5 + 0.25 * (n_backends_found - 1)` clamped to 1.0
+  - `found_in: list[str]` — which backends saw this paper
+  - `doc_type: str` — OpenAlex-style document type (journal-article, book-chapter, report, preprint, etc)
+- **`search/_rank.py`** (new module, ~80 LOC) — `merge_results()`, `confidence_from_backends()`, `rank()`, `apply_filters()`, `_term_overlap()`.
+- **Smart ranking** (default): `2 * confidence + recency + relevance` where recency is `max(0, 1 - 0.2 * (current_year - paper_year))` and relevance is the fraction of query terms present in the paper's title+abstract. Replaces the legacy citation-count-descending sort, which biased toward popular-but-irrelevant survey papers on polysemous queries.
+- **Legacy ranking preserved:** `--rank-by citation` restores v0.15.0 behavior; `--rank-by year` sorts by recency only; default `--rank-by smart` is the new heuristic.
+
+### Added — Filter flags on `research-hub search` and `research-hub discover new`
+
+- **`--exclude-type "book-chapter,report,paratext"`** — drops results whose `doc_type` matches any of the listed types. Useful for filtering out IPCC synthesis docs, Lancet review reports, etc.
+- **`--exclude "ipcc lancet burden plastic"`** — negative keywords. Drops results whose title or abstract contains any listed term (case-insensitive substring match).
+- **`--min-confidence 0.75`** — requires the paper to be found by at least 2 backends (confidence 0.5 = single backend, 0.75 = two, 1.0 = three or more).
+- **`--backend-trace`** — logs per-backend hit counts before merge so you can see exactly why a backend returned nothing.
+- **`--rank-by {smart,citation,year}`** — pick ranking strategy.
+
+### Fixed — multi-backend now actually multi-backend
+
+- **`search/fallback.py::search_papers` reworked** to call each backend with appropriate filters:
+  - **arXiv** ignores `min_citations` (preprints have zero citations by definition — root cause of v0.13.0 gap #6)
+  - **Other backends** apply `min_citations` as before
+  - All backends still respect the `year_from`/`year_to` filter
+- Per-backend over-fetch (`per_backend_limit = max(limit*2, 20)`) so the merge step still has enough candidates after dedup.
+- Backend trace mode logs hit counts at WARNING level when enabled.
+
+### Default backend list
+
+`DEFAULT_BACKENDS` is now `("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")` — 5 backends instead of 3. Existing `--backend openalex,arxiv,semantic-scholar` still works (explicit list overrides the default).
+
+### MCP surface
+
+- `search_papers` and `discover_new` MCP tool signatures gain optional `exclude_types`, `exclude_terms`, `min_confidence`, `rank_by` parameters. Backwards compatible: omitting them restores v0.15.0 behavior.
+- **No new MCP tools** — 42 tools total.
+
+### Tests
+
+- **581 → 618 passing** (+37 tests, 5 skipped unchanged).
+- `tests/test_crossref_backend.py`: 6 tests for the Crossref backend (mocked HTTP).
+- `tests/test_dblp_backend.py`: 6 tests for the DBLP backend (mocked HTTP, fixture JSON).
+- `tests/test_search_confidence.py`: 8 tests for confidence merging across backends.
+- `tests/test_search_filters.py`: 10 tests for filter flags and ranking modes.
+- Existing fallback / CLI / MCP / discover tests updated for new fields and signatures.
+
+### Non-breaking changes only
+
+All existing CLI commands, MCP tool signatures, and import paths continue to work unchanged. The new ranking is the new default but legacy citation sort is one flag away.
+
+### Deferred to v0.17+
+
+- **PubMed / bioRxiv / medRxiv backends** for biology/medicine — v0.17
+- **RePEc backend** for economics/social science — v0.17
+- **`--field bio|med|cs|social|...` preset** for newcomers — v0.17
+- **NASA ADS / ChemRxiv / ERIC backends** — v0.18+
+
 ## v0.15.0 (2026-04-13)
 
 **Discovery workflow glue — the "one wrapper, not six commands" release.**

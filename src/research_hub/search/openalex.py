@@ -110,6 +110,7 @@ class OpenAlexBackend:
                 else ""
             ),
             source=self.name,
+            doc_type=work.get("type", "") or "",
         )
 
     def search(
@@ -125,7 +126,7 @@ class OpenAlexBackend:
             "per-page": min(limit, 200),
             "select": (
                 "id,doi,title,publication_year,authorships,primary_location,locations,"
-                "cited_by_count,abstract_inverted_index,open_access"
+                "cited_by_count,abstract_inverted_index,open_access,type"
             ),
             "mailto": _MAILTO,
         }
@@ -173,7 +174,7 @@ class OpenAlexBackend:
                     "per-page": 1,
                     "select": (
                         "id,doi,title,publication_year,authorships,primary_location,locations,"
-                        "cited_by_count,abstract_inverted_index,open_access"
+                        "cited_by_count,abstract_inverted_index,open_access,type"
                     ),
                     "mailto": _MAILTO,
                 },

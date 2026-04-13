@@ -452,7 +452,7 @@ def test_mcp_search_papers_default_backends_are_all_three(tmp_path, monkeypatch)
 
     search_papers("query")
 
-    assert captured["backends"] == ("openalex", "arxiv", "semantic-scholar")
+    assert captured["backends"] == ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
 
 
 def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
@@ -476,6 +476,9 @@ def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
             "citation_count": 0,
             "pdf_url": "",
             "source": "openalex",
+            "confidence": 0.5,
+            "found_in": [],
+            "doc_type": "",
         }
     ]
 
@@ -490,3 +493,28 @@ def test_mcp_enrich_candidates_drops_unresolvable(monkeypatch):
 
     assert len(result) == 1
     assert result[0]["doi"] == "10.1/a"
+
+
+def test_mcp_search_papers_forwards_new_filter_params(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    captured = {}
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+
+    def fake_search(*args, **kwargs):
+        captured.update(kwargs)
+        return [SearchResult(title="Paper", doi="10.1/a", source="openalex")]
+
+    monkeypatch.setattr("research_hub.search.search_papers", fake_search)
+
+    search_papers(
+        "query",
+        exclude_types=["report"],
+        exclude_terms=["ipcc"],
+        min_confidence=0.75,
+        rank_by="year",
+    )
+
+    assert captured["exclude_types"] == ("report",)
+    assert captured["exclude_terms"] == ("ipcc",)
+    assert captured["min_confidence"] == 0.75
+    assert captured["rank_by"] == "year"

@@ -538,7 +538,12 @@ def _search(
     year_from: int | None = None,
     year_to: int | None = None,
     min_citations: int = 0,
-    backends: tuple[str, ...] = ("openalex", "arxiv", "semantic-scholar"),
+    backends: tuple[str, ...] = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp"),
+    exclude_types: tuple[str, ...] = (),
+    exclude_terms: tuple[str, ...] = (),
+    min_confidence: float = 0.0,
+    rank_by: str = "smart",
+    backend_trace: bool = False,
     emit_json: bool = False,
     to_papers_input: bool = False,
     cluster_slug: str | None = None,
@@ -554,6 +559,11 @@ def _search(
         year_to=year_to,
         min_citations=min_citations,
         backends=backends,
+        exclude_types=exclude_types,
+        exclude_terms=exclude_terms,
+        min_confidence=min_confidence,
+        rank_by=rank_by,
+        backend_trace=backend_trace,
     )
     from research_hub.dedup import normalize_doi
 
@@ -603,6 +613,14 @@ def _parse_year_range(spec: str | None) -> tuple[int | None, int | None]:
         start, end = text.split("-", 1)
         return (int(start), int(end))
     raise SystemExit(f"invalid --year spec: {spec}")
+
+
+def _parse_csv_terms(spec: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in spec.split(",") if item.strip())
+
+
+def _parse_negative_terms(spec: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in re.split(r"[\s,]+", spec) if item.strip())
 
 
 def _enrich(
@@ -1031,6 +1049,8 @@ def _discover_new(args) -> int:
     cfg = get_config()
     year_from, year_to = _parse_year_range(args.year) if args.year else (None, None)
     backends = tuple(item.strip() for item in args.backend.split(",") if item.strip())
+    exclude_types = _parse_csv_terms(args.exclude_type)
+    exclude_terms = _parse_negative_terms(args.exclude)
     state, prompt = discover_new(
         cfg,
         args.cluster,
@@ -1041,6 +1061,10 @@ def _discover_new(args) -> int:
         backends=backends,
         limit=args.limit,
         definition=args.definition,
+        exclude_types=exclude_types,
+        exclude_terms=exclude_terms,
+        min_confidence=args.min_confidence,
+        rank_by=args.rank_by,
     )
     if args.prompt_out:
         Path(args.prompt_out).write_text(prompt, encoding="utf-8")
@@ -1399,8 +1423,35 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--min-citations", type=int, default=0)
     search_parser.add_argument(
         "--backend",
-        default="openalex,arxiv,semantic-scholar",
-        help="Comma-separated list of backends (openalex, arxiv, semantic-scholar)",
+        default="openalex,arxiv,semantic-scholar,crossref,dblp",
+        help="Comma-separated list of backends (openalex, arxiv, semantic-scholar, crossref, dblp)",
+    )
+    search_parser.add_argument(
+        "--exclude-type",
+        default="",
+        help="Comma-separated list of doc types to exclude (e.g. 'book-chapter,report,paratext')",
+    )
+    search_parser.add_argument(
+        "--exclude",
+        default="",
+        help="Comma-or-space-separated negative keywords. Drop papers whose title or abstract contains any.",
+    )
+    search_parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.0,
+        help="Minimum confidence (0.0..1.0). 0.5=found by 1 backend, 0.75=2 backends, 1.0=3+",
+    )
+    search_parser.add_argument(
+        "--backend-trace",
+        action="store_true",
+        help="Print per-backend hit counts before merge",
+    )
+    search_parser.add_argument(
+        "--rank-by",
+        choices=["smart", "citation", "year"],
+        default="smart",
+        help="Ranking strategy. smart = 2*confidence + recency + relevance (default). citation = legacy v0.15 behavior. year = recency only.",
     )
     search_parser.add_argument("--json", action="store_true", help="Emit JSON array")
     search_parser.add_argument(
@@ -1802,7 +1853,11 @@ def build_parser() -> argparse.ArgumentParser:
     new_p.add_argument("--query", required=True)
     new_p.add_argument("--year", help="Year range e.g. 2024-2025")
     new_p.add_argument("--min-citations", type=int, default=0)
-    new_p.add_argument("--backend", default="openalex,arxiv,semantic-scholar")
+    new_p.add_argument("--backend", default="openalex,arxiv,semantic-scholar,crossref,dblp")
+    new_p.add_argument("--exclude-type", default="")
+    new_p.add_argument("--exclude", default="")
+    new_p.add_argument("--min-confidence", type=float, default=0.0)
+    new_p.add_argument("--rank-by", choices=["smart", "citation", "year"], default="smart")
     new_p.add_argument("--limit", type=int, default=25)
     new_p.add_argument("--definition", help="Cluster definition")
     new_p.add_argument("--prompt-out", help="Write fit-check prompt to file (default: stdout)")
@@ -2067,6 +2122,8 @@ def main(argv: list[str] | None = None) -> int:
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
         backends = tuple(b.strip() for b in args.backend.split(",") if b.strip())
+        exclude_types = _parse_csv_terms(args.exclude_type)
+        exclude_terms = _parse_negative_terms(args.exclude)
         if args.enrich:
             candidates = ["-"] if args.query == "-" else [item.strip() for item in re.split(r"[\n,]+", args.query) if item.strip()]
             return _enrich(
@@ -2084,6 +2141,11 @@ def main(argv: list[str] | None = None) -> int:
             year_to=year_to,
             min_citations=args.min_citations,
             backends=backends,
+            exclude_types=exclude_types,
+            exclude_terms=exclude_terms,
+            min_confidence=args.min_confidence,
+            rank_by=args.rank_by,
+            backend_trace=args.backend_trace,
             emit_json=args.json,
             to_papers_input=args.to_papers_input,
             cluster_slug=args.cluster,

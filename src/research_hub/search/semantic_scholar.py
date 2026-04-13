@@ -11,7 +11,7 @@ from research_hub.search.base import SearchResult
 
 SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1"
 DEFAULT_FIELDS = (
-    "title,abstract,year,authors,externalIds,venue,citationCount,url,openAccessPdf"
+    "title,abstract,year,authors,externalIds,venue,citationCount,url,openAccessPdf,publicationTypes"
 )
 
 

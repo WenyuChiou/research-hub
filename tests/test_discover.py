@@ -409,3 +409,79 @@ def test_cli_discover_status_after_continue_shows_done(tmp_path, monkeypatch, ca
 
     stdout = capsys.readouterr().out
     assert "stage:   done" in stdout
+
+
+def test_discover_new_forwards_new_search_filters(tmp_path, monkeypatch):
+    from research_hub.discover import discover_new
+
+    cfg = _cfg(tmp_path)
+    captured = {}
+
+    def fake_search(*args, **kwargs):
+        captured["exclude_types"] = kwargs["exclude_types"]
+        captured["exclude_terms"] = kwargs["exclude_terms"]
+        captured["min_confidence"] = kwargs["min_confidence"]
+        captured["rank_by"] = kwargs["rank_by"]
+        return _results()
+
+    monkeypatch.setattr("research_hub.search.search_papers", fake_search)
+    monkeypatch.setattr("research_hub.fit_check.emit_prompt", lambda *args, **kwargs: "prompt")
+
+    discover_new(
+        cfg,
+        "agents",
+        "llm agents",
+        exclude_types=("report",),
+        exclude_terms=("ipcc",),
+        min_confidence=0.75,
+        rank_by="year",
+    )
+
+    assert captured == {
+        "exclude_types": ("report",),
+        "exclude_terms": ("ipcc",),
+        "min_confidence": 0.75,
+        "rank_by": "year",
+    }
+
+
+def test_cli_discover_new_forwards_new_flags(tmp_path, monkeypatch):
+    from research_hub import cli
+
+    cfg = _cfg(tmp_path)
+    captured = {}
+    monkeypatch.setattr(cli, "get_config", lambda: cfg)
+
+    def fake_discover_new(cfg, cluster_slug, query, **kwargs):
+        captured.update(kwargs)
+        from research_hub.discover import DiscoverState
+
+        return DiscoverState(cluster_slug=cluster_slug, stage="scored_pending", query=query), "prompt"
+
+    monkeypatch.setattr("research_hub.discover.discover_new", fake_discover_new)
+
+    assert cli.main(
+        [
+            "discover",
+            "new",
+            "--cluster",
+            "agents",
+            "--query",
+            "llm",
+            "--exclude-type",
+            "report,book-chapter",
+            "--exclude",
+            "ipcc lancet",
+            "--min-confidence",
+            "0.75",
+            "--rank-by",
+            "citation",
+            "--prompt-out",
+            str(tmp_path / "prompt.md"),
+        ]
+    ) == 0
+
+    assert captured["exclude_types"] == ("report", "book-chapter")
+    assert captured["exclude_terms"] == ("ipcc", "lancet")
+    assert captured["min_confidence"] == 0.75
+    assert captured["rank_by"] == "citation"

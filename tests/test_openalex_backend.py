@@ -120,3 +120,13 @@ def test_openalex_get_paper_by_doi_returns_none_on_404(mock_get, _mock_sleep):
     mock_get.return_value = _Response(status_code=404)
 
     assert OpenAlexBackend().get_paper("10.1234/bad") is None
+
+
+@patch("research_hub.search.openalex.time.sleep")
+@patch("research_hub.search.openalex.requests.get")
+def test_openalex_populates_doc_type(mock_get, _mock_sleep):
+    mock_get.return_value = _Response({"results": [_work(type="journal-article")]})
+
+    result = OpenAlexBackend().search("llm")
+
+    assert result[0].doc_type == "journal-article"

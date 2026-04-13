@@ -96,3 +96,39 @@ def test_cli_search_backend_flag_splits_comma_list(monkeypatch):
     assert main(["search", "llm", "--backend", "openalex,arxiv"]) == 0
     assert captured["query"] == "llm"
     assert captured["backends"] == ("openalex", "arxiv")
+
+
+def test_cli_search_forwards_new_filter_and_rank_flags(monkeypatch):
+    captured = {}
+
+    def fake_search(query, limit, verify=False, **kwargs):
+        captured["exclude_types"] = kwargs["exclude_types"]
+        captured["exclude_terms"] = kwargs["exclude_terms"]
+        captured["min_confidence"] = kwargs["min_confidence"]
+        captured["rank_by"] = kwargs["rank_by"]
+        captured["backend_trace"] = kwargs["backend_trace"]
+        return 0
+
+    monkeypatch.setattr("research_hub.cli._search", fake_search)
+
+    assert main(
+        [
+            "search",
+            "llm",
+            "--exclude-type",
+            "report,book-chapter",
+            "--exclude",
+            "ipcc lancet",
+            "--min-confidence",
+            "0.75",
+            "--rank-by",
+            "year",
+            "--backend-trace",
+        ]
+    ) == 0
+
+    assert captured["exclude_types"] == ("report", "book-chapter")
+    assert captured["exclude_terms"] == ("ipcc", "lancet")
+    assert captured["min_confidence"] == 0.75
+    assert captured["rank_by"] == "year"
+    assert captured["backend_trace"] is True

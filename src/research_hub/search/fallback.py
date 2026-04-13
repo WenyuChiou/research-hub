@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from dataclasses import replace
 
 from research_hub.search.arxiv_backend import ArxivBackend
+from research_hub.search.crossref import CrossrefBackend
+from research_hub.search.dblp import DblpBackend
 from research_hub.search.base import SearchBackend, SearchResult
 from research_hub.search.openalex import OpenAlexBackend
 from research_hub.search.semantic_scholar import SemanticScholarClient
@@ -18,9 +19,11 @@ _BACKEND_REGISTRY: dict[str, type[SearchBackend]] = {
     "openalex": OpenAlexBackend,
     "arxiv": ArxivBackend,
     "semantic-scholar": SemanticScholarClient,
+    "crossref": CrossrefBackend,
+    "dblp": DblpBackend,
 }
 
-DEFAULT_BACKENDS = ("openalex", "arxiv", "semantic-scholar")
+DEFAULT_BACKENDS = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
 
 
 def search_papers(
@@ -31,10 +34,21 @@ def search_papers(
     year_to: int | None = None,
     min_citations: int = 0,
     backends: Sequence[str] = DEFAULT_BACKENDS,
+    exclude_types: Sequence[str] = (),
+    exclude_terms: Sequence[str] = (),
+    min_confidence: float = 0.0,
+    rank_by: str = "smart",
+    backend_trace: bool = False,
+    per_backend_limit: int | None = None,
 ) -> list[SearchResult]:
-    """Run a query across multiple backends and merge results by dedup_key."""
-    merged: dict[str, SearchResult] = {}
+    """Multi-backend search with merge + filter + rank."""
+    from research_hub.search._rank import apply_filters, merge_results, rank
 
+    if per_backend_limit is None:
+        per_backend_limit = max(limit * 2, 20)
+
+    per_backend: dict[str, list[SearchResult]] = {}
+    trace: dict[str, int] = {}
     for name in backends:
         cls = _BACKEND_REGISTRY.get(name)
         if cls is None:
@@ -42,51 +56,41 @@ def search_papers(
             continue
         try:
             backend = cls()
-            results = backend.search(
-                query,
-                limit=limit,
-                year_from=year_from,
-                year_to=year_to,
-            )
+            if name == "arxiv":
+                results = backend.search(
+                    query,
+                    limit=per_backend_limit,
+                    year_from=year_from,
+                    year_to=year_to,
+                )
+            else:
+                results = backend.search(
+                    query,
+                    limit=per_backend_limit,
+                    year_from=year_from,
+                    year_to=year_to,
+                )
+                if min_citations > 0:
+                    results = [result for result in results if result.citation_count >= min_citations]
         except Exception as exc:
             logger.warning("search backend %s failed: %s", name, exc)
-            continue
+            results = []
+        per_backend[name] = results
+        trace[name] = len(results)
 
-        for result in results:
-            if result.citation_count < min_citations:
-                continue
-            key = result.dedup_key
-            if not key:
-                continue
-            if key not in merged:
-                merged[key] = result
-            else:
-                merged[key] = _merge(merged[key], result)
+    if backend_trace:
+        for name, count in trace.items():
+            logger.info("backend %s: %d hits", name, count)
 
-    ranked = sorted(
-        merged.values(),
-        key=lambda r: (r.year or 0, r.citation_count),
-        reverse=True,
+    merged = merge_results(per_backend)
+    filtered = apply_filters(
+        merged,
+        exclude_types=tuple(exclude_types),
+        exclude_terms=tuple(exclude_terms),
+        min_confidence=min_confidence,
     )
+    ranked = rank(filtered, rank_by=rank_by, relevance_query=query)
     return ranked[:limit]
-
-
-def _merge(base: SearchResult, extra: SearchResult) -> SearchResult:
-    """Fill empty fields on `base` from `extra`. Never overwrite non-empty fields."""
-    fill: dict[str, object] = {}
-    if not base.abstract and extra.abstract:
-        fill["abstract"] = extra.abstract
-    if not base.doi and extra.doi:
-        fill["doi"] = extra.doi
-    if not base.arxiv_id and extra.arxiv_id:
-        fill["arxiv_id"] = extra.arxiv_id
-    if not base.pdf_url and extra.pdf_url:
-        fill["pdf_url"] = extra.pdf_url
-    if base.citation_count == 0 and extra.citation_count:
-        fill["citation_count"] = extra.citation_count
-    if not base.venue and extra.venue:
-        fill["venue"] = extra.venue
-    return replace(base, **fill) if fill else base
 
 
 def iter_new_results(
