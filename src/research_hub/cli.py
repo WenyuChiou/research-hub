@@ -630,6 +630,18 @@ def _parse_negative_terms(spec: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in re.split(r"[\s,]+", spec) if item.strip())
 
 
+def _parse_seed_dois(seed_dois: str, seed_dois_file: str | None) -> tuple[str, ...]:
+    values: list[str] = []
+    if seed_dois:
+        values.extend(item.strip() for item in seed_dois.split(",") if item.strip())
+    if seed_dois_file:
+        for line in Path(seed_dois_file).read_text(encoding="utf-8").splitlines():
+            doi = line.strip()
+            if doi and not doi.startswith("#"):
+                values.append(doi)
+    return tuple(values)
+
+
 def _enrich(
     candidates: list[str],
     *,
@@ -1058,6 +1070,8 @@ def _discover_new(args) -> int:
     backends = tuple(item.strip() for item in args.backend.split(",") if item.strip()) if args.backend else None
     exclude_types = _parse_csv_terms(args.exclude_type)
     exclude_terms = _parse_negative_terms(args.exclude)
+    seed_dois = _parse_seed_dois(args.seed_dois, args.seed_dois_file)
+    expand_from = tuple(item.strip() for item in args.expand_from.split(",") if item.strip())
     state, prompt = discover_new(
         cfg,
         args.cluster,
@@ -1074,6 +1088,12 @@ def _discover_new(args) -> int:
         exclude_terms=exclude_terms,
         min_confidence=args.min_confidence,
         rank_by=args.rank_by,
+        from_variants=args.from_variants,
+        expand_auto=args.expand_auto,
+        expand_from=expand_from,
+        expand_hops=args.expand_hops,
+        seed_dois=seed_dois,
+        include_existing=args.include_existing,
     )
     if args.prompt_out:
         Path(args.prompt_out).write_text(prompt, encoding="utf-8")
@@ -1123,11 +1143,28 @@ def _discover_status(args) -> int:
     print(f"stage:   {state.stage}")
     print(f"query:   {state.query}")
     print(f"candidates: {state.candidate_count}")
+    print(f"variations_used: {state.variations_used}")
+    print(f"expanded_from: {state.expanded_from}")
+    print(f"seed_dois: {state.seed_dois}")
+    print(f"deduped_against_cluster: {state.deduped_against_cluster}")
     if state.stage == "done":
         print(f"accepted: {state.accepted_count} / {state.candidate_count}")
         print(f"rejected: {state.rejected_count}")
         suffix = " (auto)" if state.auto_threshold else ""
         print(f"threshold: {state.threshold}{suffix}")
+    return 0
+
+
+def _discover_variants(args) -> int:
+    from research_hub.discover import emit_variation_prompt
+
+    cfg = get_config()
+    prompt = emit_variation_prompt(cfg, args.cluster, args.query, target_count=args.count)
+    if args.out:
+        Path(args.out).write_text(prompt, encoding="utf-8")
+        print(f"wrote {args.out}")
+    else:
+        print(prompt)
     return 0
 
 
@@ -1912,8 +1949,19 @@ def build_parser() -> argparse.ArgumentParser:
     new_p.add_argument("--exclude", default="")
     new_p.add_argument("--min-confidence", type=float, default=0.0)
     new_p.add_argument("--rank-by", choices=["smart", "citation", "year"], default="smart")
-    new_p.add_argument("--limit", type=int, default=25)
+    new_p.add_argument("--limit", type=int, default=50)
     new_p.add_argument("--definition", help="Cluster definition")
+    new_p.add_argument("--from-variants", help="Path to a JSON file with query variations from `discover variants`")
+    new_p.add_argument(
+        "--expand-auto",
+        action="store_true",
+        help="Auto-pick top 3 keyword results as seeds for citation expansion",
+    )
+    new_p.add_argument("--expand-from", default="", help="Comma-separated DOIs to use as citation expansion seeds")
+    new_p.add_argument("--expand-hops", type=int, default=1, help="Citation expansion hops (default 1, bounded)")
+    new_p.add_argument("--seed-dois", default="", help="Comma-separated DOIs to inject as seeds")
+    new_p.add_argument("--seed-dois-file", help="File with one DOI per line")
+    new_p.add_argument("--include-existing", action="store_true", help="Do NOT dedup against existing cluster papers")
     new_p.add_argument("--prompt-out", help="Write fit-check prompt to file (default: stdout)")
 
     continue_p = discover_sub.add_parser("continue", help="Apply AI scores, emit papers_input.json")
@@ -1928,6 +1976,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     clean_p = discover_sub.add_parser("clean", help="Remove stashed discover state")
     clean_p.add_argument("--cluster", required=True)
+
+    variants_p = discover_sub.add_parser("variants", help="Emit a query-variation prompt for an AI to consume")
+    variants_p.add_argument("--cluster", required=True)
+    variants_p.add_argument("--query", required=True)
+    variants_p.add_argument("--count", type=int, default=4)
+    variants_p.add_argument("--out", help="Write to file instead of stdout")
 
     return parser
 
@@ -2065,6 +2119,8 @@ def main(argv: list[str] | None = None) -> int:
             return _discover_status(args)
         if args.discover_command == "clean":
             return _discover_clean(args)
+        if args.discover_command == "variants":
+            return _discover_variants(args)
         parser.error("discover requires a subcommand")
         return 2
     if args.command == "index":

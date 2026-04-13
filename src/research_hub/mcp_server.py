@@ -778,7 +778,7 @@ def discover_new(
     year_to: int | None = None,
     min_citations: int = 0,
     backends: list[str] | None = None,
-    limit: int = 25,
+    limit: int = 50,
     definition: str | None = None,
     exclude_types: list[str] | None = None,
     exclude_terms: list[str] | None = None,
@@ -786,6 +786,12 @@ def discover_new(
     rank_by: str = "smart",
     field: str | None = None,
     region: str | None = None,
+    from_variants: list[dict] | None = None,
+    expand_auto: bool = False,
+    expand_from: list[str] | None = None,
+    expand_hops: int = 1,
+    seed_dois: list[str] | None = None,
+    include_existing: bool = False,
 ) -> dict:
     """Run search + emit fit-check prompt, stashing state for discover_continue."""
     try:
@@ -794,6 +800,13 @@ def discover_new(
 
         cfg = get_config()
         backend_list = tuple(backends) if backends else None
+        variants_path = None
+        if from_variants is not None:
+            variants_path = cfg.research_hub_dir / "discover_variants_input.json"
+            variants_path.write_text(
+                json.dumps({"variations": from_variants}, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
         state, prompt = _discover_new(
             cfg,
             cluster_slug,
@@ -810,13 +823,40 @@ def discover_new(
             exclude_terms=tuple(exclude_terms or []),
             min_confidence=min_confidence,
             rank_by=rank_by,
+            from_variants=variants_path,
+            expand_auto=expand_auto,
+            expand_from=tuple(expand_from or []),
+            expand_hops=expand_hops,
+            seed_dois=tuple(seed_dois or []),
+            include_existing=include_existing,
         )
         return {
             "ok": True,
             "stage": state.stage,
             "candidate_count": state.candidate_count,
             "prompt": prompt,
+            "variations_used": state.variations_used,
+            "expanded_from": state.expanded_from,
+            "seed_dois": state.seed_dois,
+            "deduped_against_cluster": state.deduped_against_cluster,
         }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def discover_variants(
+    cluster_slug: str,
+    query: str,
+    count: int = 4,
+) -> dict:
+    """Emit a query-variation prompt for the given cluster."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.discover import emit_variation_prompt
+
+        cfg = get_config()
+        prompt = emit_variation_prompt(cfg, cluster_slug, query, target_count=count)
+        return {"prompt": prompt, "target_count": count}
     except Exception as exc:
         return _tool_error(exc)
 
@@ -870,6 +910,10 @@ def discover_status(cluster_slug: str) -> dict:
             "accepted_count": state.accepted_count,
             "rejected_count": state.rejected_count,
             "threshold": state.threshold,
+            "variations_used": state.variations_used,
+            "expanded_from": state.expanded_from,
+            "seed_dois": state.seed_dois,
+            "deduped_against_cluster": state.deduped_against_cluster,
         }
     except Exception as exc:
         return _tool_error(exc)
@@ -1138,6 +1182,7 @@ mcp.tool()(fit_check_apply)
 mcp.tool()(fit_check_audit)
 mcp.tool()(fit_check_drift)
 mcp.tool()(discover_new)
+mcp.tool()(discover_variants)
 mcp.tool()(discover_continue)
 mcp.tool()(discover_status)
 mcp.tool()(discover_clean)

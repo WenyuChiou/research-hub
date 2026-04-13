@@ -1,5 +1,102 @@
 # Changelog
 
+## v0.21.0 (2026-04-13)
+
+**Discovery quality — multi-query + citation expansion + cluster dedup + seed DOIs + larger defaults.**
+
+Live test on `llm-agents-software-engineering` found the cluster had only ~25-30% of the papers a real literature review would include (20 out of an expected 50-80). Root cause: `discover new` only ran a single query with a small default limit, never fetched citation neighbors, and re-showed papers already ingested in the cluster. v0.21 fixes all five gaps in one release.
+
+### Added — Track A: Multi-query variation
+
+- **`research-hub discover variants --cluster X --query "..." --count 4`** — new subcommand that emits a prompt asking the AI to generate N query variations, each capturing a different facet of the topic (benchmarks vs frameworks vs evaluation vs adjacent specializations). Reads the cluster definition from `00_overview.md` if present.
+- **`research-hub discover new --from-variants file.json`** — runs the search once per variation and merges results via the existing DOI-keyed merge layer. Papers hit by multiple variations get a confidence boost and their `_discover_meta.matched_variations` list tracks which queries found them.
+- **`emit_variation_prompt()` and `apply_variations()`** helpers in `discover.py` for the emit/apply pattern.
+- **1 new MCP tool:** `discover_variants(cluster_slug, query, count=4)` — **46 total** (was 45).
+
+### Added — Track B: Citation graph expansion
+
+- **`research-hub discover new --expand-auto`** — picks the top 3 keyword-search results (ranked by confidence then citation count) as seed papers and fetches their references + forward citations via the existing `CitationGraphClient` (v0.8, Semantic Scholar-backed).
+- **`research-hub discover new --expand-from doi1,doi2,doi3`** — user-specified seed DOIs for expansion.
+- **`--expand-hops`** (default 1, bounded — no recursion in v0.21).
+- **30-per-seed-per-direction cap** — stops runaway expansion on highly-cited seeds like SWE-bench.
+- **Graceful degradation** — if S2 rate-limits (HTTP 429), log a warning and continue with whatever was fetched. Never crashes the discover flow.
+- **Dedup with keyword results** — if a seed's reference is already in the keyword pool, the entry gets a confidence boost and a `source_tags` entry for "citation-graph" instead of being added as a duplicate.
+- **`_citation_node_to_search_result()` helper** converts `CitationNode` (S2 shape) to `SearchResult` for uniform merging.
+
+### Added — Track C: Cluster dedup (default behavior)
+
+- **`discover new` now filters out papers already ingested in the cluster** before stashing candidates. Reads `raw/<cluster>/*.md` frontmatter, extracts DOIs, normalizes, and excludes matching candidates.
+- **`--include-existing`** flag bypasses the dedup (useful for re-scoring already-ingested papers against a new definition).
+- **`DiscoverState.deduped_against_cluster`** tracks the skipped count, visible in `discover status`.
+- Skips `00_overview.md`, `index.md`, and the `topics/` subdirectory when scanning.
+
+### Added — Track D: Seed DOI injection
+
+- **`research-hub discover new --seed-dois "10.x/meta,10.y/auto,10.z/ling"`** — user-specified DOIs to inject as candidates regardless of search hits.
+- **`--seed-dois-file path.txt`** — one DOI per line, comments (lines starting with `#`) allowed.
+- **Resolution logic:** if the DOI is already in keyword-search results, boost its confidence and tag as `seed`. Otherwise call `enrich_candidates()` (v0.13) to resolve the DOI to full metadata via Crossref/OpenAlex/arXiv and add as new entry.
+- **Max confidence (1.0)** for user-supplied seeds — the user has explicit intent.
+- **`DiscoverState.seed_dois`** tracks the list.
+- **Graceful skip** on invalid DOIs — logged, not raised.
+
+### Added — Track E: Larger defaults
+
+- **`limit`** default in `discover_new()`: **25 → 50**
+- **`per_backend_limit`** (over-fetch factor): **`max(limit*2, 20)` → `max(limit*3, 40)`**
+- Rationale: a limit of 25 was truncating the long tail before ranking could pick the best. Over-fetching 3x gives the merge layer enough material to produce N high-quality candidates after dedup + confidence sort.
+- CLI `--limit` flag still overrides the default exactly.
+
+### Extended DiscoverState
+
+New fields (all backwards-compat via `from_json()` defaulting):
+
+```python
+variations_used: list[str]       # variation queries that ran
+expanded_from: list[str]         # seed DOIs used for citation expansion
+seed_dois: list[str]             # user-injected seeds
+deduped_against_cluster: int     # count of candidates filtered by cluster dedup
+```
+
+### CLI + MCP surface
+
+**CLI:**
+```bash
+research-hub discover variants --cluster X --query "..." --count 4 [--out file.md]
+research-hub discover new --cluster X --query "..." \
+    [--from-variants file.json] \
+    [--expand-auto | --expand-from doi1,doi2] [--expand-hops 1] \
+    [--seed-dois doi1,doi2 | --seed-dois-file dois.txt] \
+    [--include-existing]
+```
+
+**MCP:**
+- `discover_new` gains `from_variants`, `expand_auto`, `expand_from`, `expand_hops`, `seed_dois`, `include_existing` parameters (all optional, backwards compatible)
+- `discover_variants` added (**46 MCP tools total**)
+
+### Non-breaking except…
+
+- **Default `limit` changed from 25 to 50** — unflagged `discover new` returns roughly 2x as many candidates as before. Revert explicitly with `--limit 25`.
+- **Cluster dedup is now default** — unflagged `discover new` skips papers already in the cluster. Revert explicitly with `--include-existing`.
+
+These behavior changes are net-positive for a normal workflow but scripts that depended on the exact v0.20 numbers will see differences.
+
+### Tests
+
+- **740 → 775 passing** (+35 tests, 5 skipped unchanged).
+- `tests/test_discover_quality.py`: 35 tests across 5 tracks (8 multi-query, 8 citation expansion, 6 cluster dedup, 7 seed DOIs, 6 defaults + integration).
+- Existing `tests/test_discover.py` (20 tests) kept green with minor default adjustments.
+
+### Expected impact on real discovery runs
+
+Running the v0.21 flow on the existing `llm-agents-software-engineering` cluster with `--from-variants --expand-auto --seed-dois "metagpt,autocoderover,lingma"` should yield 50-80 candidates instead of 15-20, surfacing the papers the v0.20 audit identified as missing: MetaGPT, AutoCodeRover, Agentless, Lingma, SWE-rebench, SWE-Verified, Commit0, Moatless, and others.
+
+### Deferred to v0.22+
+
+- OpenAlex citation graph as S2 alternative (would eliminate rate-limit risk)
+- NLP-driven query expansion (synonym explosion, boolean OR groups) — emit/apply variation already achieves similar ends via AI
+- `discover iterate` to remember which variations have been run across sessions
+- Cross-cluster citation expansion
+
 ## v0.20.2 (2026-04-13)
 
 **Backend live-behavior fixes + honest coverage audit.** A session-ending audit ran each of the 13 registered backends against a real query designed to hit its strongest coverage area. **Only 4 of 13 returned correct results end-to-end.** Mocked unit tests were passing but the live APIs behaved differently from the test fixtures. v0.20.2 fixes the three most impactful issues and documents the rest as known-broken for v0.21.
