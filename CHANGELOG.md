@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.19.1 (2026-04-13)
+
+**Build fix.** v0.19.0 wheel was rejected by PyPI with a 400 Bad Request because the wheel had **duplicate file entries** for `research_hub/examples/*`. The `[tool.hatch.build.targets.wheel] packages = ["src/research_hub"]` already includes the `examples/` subpackage automatically, but the additional `[tool.hatch.build.targets.wheel.force-include]` section added the same files a second time. Removing the redundant `force-include` block fixes the duplicate entries; `twine check` now PASSES and the wheel uploads cleanly. No code changes — same v0.19.0 features, just a working build.
+
 ## v0.19.0 (2026-04-13)
 
 **Onboarding wizard + bundled examples + bilingual docs scaffolding — lower the barrier for non-CS users.**
