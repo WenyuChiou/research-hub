@@ -1200,8 +1200,29 @@ def build_parser() -> argparse.ArgumentParser:
         default="researcher",
         help="researcher = with Zotero (default), analyst = no Zotero",
     )
+    init_parser.add_argument(
+        "--field",
+        choices=sorted(FIELD_PRESETS.keys()),
+        help="Field-aware onboarding wizard mode",
+    )
+    init_parser.add_argument("--cluster", help="Pre-fill cluster slug")
+    init_parser.add_argument("--name", help="Pre-fill cluster display name")
+    init_parser.add_argument("--query", help="Pre-fill search query")
+    init_parser.add_argument("--definition", help="Pre-fill cluster definition")
 
     subparsers.add_parser("doctor", help="Health check for research-hub installation")
+
+    examples_parser = subparsers.add_parser(
+        "examples",
+        help="Browse and copy bundled cluster examples",
+    )
+    examples_sub = examples_parser.add_subparsers(dest="examples_command")
+    examples_sub.add_parser("list", help="List bundled example clusters")
+    examples_show = examples_sub.add_parser("show", help="Show one example's full definition")
+    examples_show.add_argument("name")
+    examples_copy = examples_sub.add_parser("copy", help="Copy an example into your clusters")
+    examples_copy.add_argument("name")
+    examples_copy.add_argument("--cluster", help="Override the cluster slug")
 
     install_parser = subparsers.add_parser(
         "install",
@@ -1908,6 +1929,25 @@ def main(argv: list[str] | None = None) -> int:
             fit_check_threshold=getattr(args, "fit_check_threshold", 3),
         )
     if args.command == "init":
+        if args.field:
+            from research_hub.onboarding import run_field_wizard
+
+            cfg = get_config()
+            result = run_field_wizard(
+                cfg,
+                field=args.field,
+                cluster_slug=args.cluster,
+                cluster_name=args.name,
+                query=args.query,
+                definition=args.definition,
+                non_interactive=args.non_interactive,
+            )
+            print(f"Created cluster {result.cluster_slug} with {result.candidate_count} candidates")
+            print()
+            print("Next steps:")
+            for step in result.next_steps:
+                print(f"  {step}")
+            return 0
         from research_hub.init_wizard import run_init
 
         return run_init(
@@ -1921,6 +1961,36 @@ def main(argv: list[str] | None = None) -> int:
         from research_hub.doctor import print_doctor_report, run_doctor
 
         return print_doctor_report(run_doctor())
+    if args.command == "examples":
+        from research_hub.examples import copy_example_as_cluster, list_examples, load_example
+
+        cfg = get_config()
+        if args.examples_command == "list":
+            for ex in list_examples():
+                print(f"  {ex['slug']:35s} ({ex['field']:7s}) - {ex['name']}")
+            return 0
+        if args.examples_command == "show":
+            try:
+                ex = load_example(args.name)
+            except FileNotFoundError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            print(json.dumps(ex, indent=2, ensure_ascii=False))
+            return 0
+        if args.examples_command == "copy":
+            try:
+                slug = copy_example_as_cluster(cfg, args.name, cluster_slug=args.cluster)
+                ex = load_example(args.name)
+            except (FileNotFoundError, ValueError) as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            print(f"copied {args.name} as cluster {slug}")
+            print(
+                f"next: research-hub discover new --cluster {slug} --query '{ex['query']}' --field {ex['field']}"
+            )
+            return 0
+        parser.error("examples requires a subcommand")
+        return 2
     if args.command == "install":
         from research_hub.skill_installer import install_skill, list_platforms
 

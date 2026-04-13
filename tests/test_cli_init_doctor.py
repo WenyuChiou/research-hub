@@ -28,6 +28,37 @@ def test_build_parser_accepts_init_flags():
     assert args.persona == "analyst"
 
 
+def test_build_parser_accepts_field_init_and_examples_commands():
+    from research_hub.cli import build_parser
+
+    args = build_parser().parse_args(
+        [
+            "init",
+            "--field",
+            "cs",
+            "--cluster",
+            "llm-agents",
+            "--name",
+            "LLM Agents",
+            "--query",
+            "LLM agent benchmark",
+            "--definition",
+            "Cluster definition",
+            "--non-interactive",
+        ]
+    )
+    assert args.field == "cs"
+    assert args.cluster == "llm-agents"
+    assert args.name == "LLM Agents"
+    assert args.query == "LLM agent benchmark"
+    assert args.definition == "Cluster definition"
+
+    args = build_parser().parse_args(["examples", "show", "cs_swe"])
+    assert args.command == "examples"
+    assert args.examples_command == "show"
+    assert args.name == "cs_swe"
+
+
 def test_build_parser_accepts_add_command():
     from research_hub.cli import build_parser
 
@@ -131,4 +162,54 @@ def test_main_routes_init_and_doctor(monkeypatch):
         ),
         ("doctor.run", tuple(), {}),
         ("doctor.print", (["result"],), {}),
+    ]
+
+
+def test_main_routes_field_init_to_onboarding(monkeypatch):
+    from research_hub import cli
+
+    calls = []
+
+    class Result:
+        cluster_slug = "field-cluster"
+        candidate_count = 6
+        next_steps = ["1. step"]
+
+    def fake_wizard(cfg, **kwargs):
+        calls.append((cfg, kwargs))
+        return Result()
+
+    monkeypatch.setattr("research_hub.cli.get_config", lambda: "cfg")
+    monkeypatch.setattr("research_hub.onboarding.run_field_wizard", fake_wizard)
+
+    rc = cli.main(
+        [
+            "init",
+            "--field",
+            "bio",
+            "--cluster",
+            "field-cluster",
+            "--name",
+            "Field Cluster",
+            "--query",
+            "protein folding",
+            "--definition",
+            "desc",
+            "--non-interactive",
+        ]
+    )
+
+    assert rc == 0
+    assert calls == [
+        (
+            "cfg",
+            {
+                "field": "bio",
+                "cluster_slug": "field-cluster",
+                "cluster_name": "Field Cluster",
+                "query": "protein folding",
+                "definition": "desc",
+                "non_interactive": True,
+            },
+        )
     ]

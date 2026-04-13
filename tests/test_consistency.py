@@ -53,6 +53,9 @@ EXPECTED_MAPPINGS = {
     "discover_continue": "discover continue",
     "discover_status": "discover status",
     "discover_clean": "discover clean",
+    "examples_list": "examples list",
+    "examples_show": "examples show",
+    "examples_copy": "examples copy",
 }
 
 
@@ -75,4 +78,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(_list_mcp_tool_names(mcp)) >= 42
+    assert len(_list_mcp_tool_names(mcp)) >= 45

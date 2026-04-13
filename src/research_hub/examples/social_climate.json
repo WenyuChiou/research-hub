@@ -1,0 +1,15 @@
+{
+  "name": "Climate Adaptation Modeling",
+  "slug": "climate-adaptation-modeling",
+  "field": "social",
+  "query": "climate adaptation modeling policy resilience communities",
+  "definition": "Research on climate adaptation modeling in human systems, including resilience planning, policy simulation, vulnerability assessment, and community-level adaptation strategies.",
+  "year_from": 2021,
+  "year_to": 2025,
+  "min_citations": 5,
+  "sample_dois": [
+    "10.1016/j.gloenvcha.2023.102601",
+    "10.31235/osf.io/climadpt1"
+  ],
+  "description": "Social-science oriented template for adaptation and resilience research."
+}

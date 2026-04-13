@@ -39,9 +39,9 @@ class _FallbackMCP:
         self.instructions = instructions
         self._tool_manager = _FallbackToolManager()
 
-    def tool(self) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def tool(self, name: str | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            self._tool_manager._tools[func.__name__] = func
+            self._tool_manager._tools[name or func.__name__] = func
             return func
 
         return decorator
@@ -883,6 +883,39 @@ def discover_clean(cluster_slug: str) -> dict:
         return _tool_error(exc)
 
 
+def examples_list() -> list[dict[str, Any]] | dict[str, str]:
+    """List bundled example clusters."""
+    try:
+        from research_hub.examples import list_examples as _list_examples
+
+        return _list_examples()
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def examples_show(name: str) -> dict[str, Any]:
+    """Return the full definition for one bundled example."""
+    try:
+        from research_hub.examples import load_example
+
+        return load_example(name)
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def examples_copy(name: str, cluster_slug: str | None = None) -> dict[str, Any]:
+    """Copy an example into the user's cluster registry."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.examples import copy_example_as_cluster
+
+        cfg = get_config()
+        slug = copy_example_as_cluster(cfg, name, cluster_slug=cluster_slug)
+        return {"ok": True, "slug": slug}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
 @mcp.tool()
 def download_artifacts(
     cluster_slug: str,
@@ -1103,6 +1136,9 @@ mcp.tool()(discover_new)
 mcp.tool()(discover_continue)
 mcp.tool()(discover_status)
 mcp.tool()(discover_clean)
+mcp.tool()(examples_list)
+mcp.tool()(examples_show)
+mcp.tool()(examples_copy)
 
 
 if __name__ == "__main__":

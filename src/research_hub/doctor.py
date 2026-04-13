@@ -183,6 +183,33 @@ def run_doctor() -> list[CheckResult]:
 
     if cfg is not None:
         try:
+            from research_hub.doctor_field import field_inference_check
+
+            for report in field_inference_check(cfg):
+                if report["status"] == "warn":
+                    results.append(
+                        CheckResult(
+                            name=f"cluster_field:{report['cluster_slug']}",
+                            status="WARN",
+                            message=(
+                                f"declared field={report['declared_field']} but papers look like "
+                                f"{report['inferred_field']} (confidence={report['confidence']}, "
+                                f"signal={report['signal_total']})"
+                            ),
+                        )
+                    )
+                else:
+                    results.append(
+                        CheckResult(
+                            name=f"cluster_field:{report['cluster_slug']}",
+                            status="OK",
+                            message=f"field={report['inferred_field']}",
+                        )
+                    )
+        except Exception as exc:
+            results.append(CheckResult("cluster_field", "WARN", f"Could not check: {exc}"))
+
+        try:
             dedup_path = cfg.research_hub_dir / "dedup_index.json"
             if dedup_path.exists():
                 data = json.loads(dedup_path.read_text(encoding="utf-8"))

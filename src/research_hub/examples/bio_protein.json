@@ -1,0 +1,15 @@
+{
+  "name": "Protein Structure Prediction",
+  "slug": "protein-structure-prediction",
+  "field": "bio",
+  "query": "protein structure prediction foundation model folding",
+  "definition": "Methods, benchmarks, and evaluation studies on protein structure prediction, folding, and representation learning, including sequence-to-structure models and downstream bioinformatics applications.",
+  "year_from": 2022,
+  "year_to": 2025,
+  "min_citations": 10,
+  "sample_dois": [
+    "10.1101/2024.02.14.580001",
+    "10.1038/s41586-021-03819-2"
+  ],
+  "description": "Template for molecular biology and protein-modeling literature discovery."
+}

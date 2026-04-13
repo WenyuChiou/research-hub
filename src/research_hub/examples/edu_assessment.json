@@ -1,0 +1,15 @@
+{
+  "name": "Automated Writing Assessment with LLMs",
+  "slug": "automated-writing-assessment-llms",
+  "field": "edu",
+  "query": "automated writing assessment LLM feedback education",
+  "definition": "Studies of automated writing assessment using LLMs and adjacent NLP methods, covering scoring, formative feedback, rubric alignment, validity, fairness, and classroom deployment.",
+  "year_from": 2023,
+  "year_to": 2025,
+  "min_citations": 3,
+  "sample_dois": [
+    "10.18653/v1/2024.bea-1.12",
+    "10.1007/s40593-024-00345-6"
+  ],
+  "description": "Education-focused template for writing assessment, feedback, and validity studies."
+}

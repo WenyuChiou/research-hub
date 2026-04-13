@@ -1,5 +1,72 @@
 # Changelog
 
+## v0.19.0 (2026-04-13)
+
+**Onboarding wizard + bundled examples + bilingual docs scaffolding — lower the barrier for non-CS users.**
+
+After v0.18.0, research-hub had 11 backends and 11 field presets but a brand-new researcher still had to read three docs and stitch six CLI calls together to create their first cluster. v0.19 ships an interactive `init --field <slug>` wizard that walks through cluster creation + first `discover` run with field-appropriate defaults, plus a bundled examples library so users can copy a working cluster definition instead of inventing one from scratch.
+
+### Added — `research-hub init --field <slug>` wizard
+
+- **`src/research_hub/onboarding.py`** (~250 LOC) — field-aware wizard that:
+  1. Prompts for cluster name + slug (auto-derived from name)
+  2. Prompts for query + optional definition
+  3. Creates the cluster registry entry
+  4. Runs `discover_new()` internally with the field preset (so the user gets a fit-check prompt without having to call `discover new` themselves)
+  5. Prints next-steps with copy-pasteable commands
+- **Both interactive and scriptable.** `--non-interactive` mode requires all flags (`--field`, `--cluster`, `--name`, `--query`) and runs end-to-end without input prompts.
+- **Existing `init` (no `--field`) unchanged** — calls the legacy `init_wizard.run_init()` for backwards compatibility.
+
+### Added — Field-aware `doctor` check
+
+- **`src/research_hub/doctor_field.py`** (~120 LOC) — for each cluster, scans paper notes for venue/keyword signals and infers the dominant field. Compares against the cluster's declared field (inferred from `seed_keywords`) and reports a `WARN` when they disagree.
+- Surfaces in `research-hub doctor` output as `cluster_field:<slug>`. Example: `WARN cluster_field:my-cluster: declared field=cs but papers look like bio (confidence=0.78, signal=12)`.
+- Signal keywords cover all 11 fields (cs, bio, med, physics, math, astro, chem, social, econ, edu, general).
+
+### Added — `research-hub examples {list, show, copy}` subcommand group
+
+- **`src/research_hub/examples/`** — bundled example cluster definitions:
+  - `cs_swe.json` — LLM agents for software engineering
+  - `bio_protein.json` — protein structure prediction
+  - `social_climate.json` — climate adaptation modeling
+  - `edu_assessment.json` — automated writing assessment with LLMs
+- Each example has `name`, `slug`, `field`, `query`, `definition`, `year_from`/`year_to`, `min_citations`, `sample_dois`, `description`.
+- `research-hub examples list` — print all 4 with field tags
+- `research-hub examples show <name>` — full JSON definition
+- `research-hub examples copy <name> [--cluster <slug>]` — copy as a new cluster in the user's `clusters.yaml`, ready for `discover new`
+- **3 new MCP tools** (45 total): `examples_list`, `examples_show`, `examples_copy`
+- Wheel build now `force-include`s the `examples/` directory via `[tool.hatch.build.targets.wheel.force-include]`.
+
+### Added — Bilingual docs scaffolding
+
+- **`docs/onboarding.md`** (English, new) — first-time setup, three personas (CS researcher, biomedicine PhD, social science postdoc), wizard walkthrough, field reference table.
+- **`docs/zh/`** — directory scaffolded with English placeholder content + `<!-- ZH translation pending -->` markers in each file:
+  - `docs/zh/README.md` — Chinese entry point with translation status
+  - `docs/zh/quickstart.md` — quickstart stub
+  - `docs/zh/onboarding.md` — onboarding stub
+  - `docs/zh/ai-integrations.md` — integration guide stub
+- **A separate Gemini pass** will translate these stubs to traditional Chinese in v0.19.x. Codex did not write Chinese content because CJK content is poorly handled by Codex per the project delegation rules.
+
+### Tests
+
+- **680 → 702 passing** (+22 tests, 5 skipped unchanged).
+- `tests/test_onboarding.py`: 10 tests for wizard interactive/non-interactive flows + examples loader.
+- `tests/test_doctor_field.py`: 6 tests for field inference signals + doctor warnings.
+- `tests/test_examples_cli.py`: 4 tests for CLI surface (list/show/copy/init --field).
+- `tests/test_cli_init_doctor.py`, `tests/test_consistency.py`: extended for new commands and MCP tools.
+
+### Non-breaking changes only
+
+- Existing `init`, `doctor`, `examples`-namespace-free CLI all unchanged.
+- `--field` flag on `init` is purely additive.
+- All v0.18.0 features and import paths preserved.
+
+### Deferred to v0.19.x and v0.20+
+
+- **Chinese translation pass** for `docs/zh/` — separate Gemini run, lighter than this release.
+- **CJK literature backends** (CiNii Japan, KCI Korea) — non-trivial encoding + API access challenges; v0.20 candidate.
+- **Field auto-detection at cluster creation** — currently doctor warns after the fact; in v0.20+ the wizard could pre-validate the user's chosen field against their seed keywords.
+
 ## v0.18.0 (2026-04-13)
 
 **Three more domain backends — chemistry, astronomy/astrophysics, education now first-class.**

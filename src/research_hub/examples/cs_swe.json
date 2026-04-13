@@ -1,0 +1,15 @@
+{
+  "name": "LLM Agents for Software Engineering",
+  "slug": "llm-agents-software-engineering",
+  "field": "cs",
+  "query": "LLM agent software engineering benchmark",
+  "definition": "Benchmarks, frameworks, and evaluation methods for LLM-based agents performing software engineering tasks including code generation, bug fixing, issue resolution, and repository-level manipulation.",
+  "year_from": 2024,
+  "year_to": 2025,
+  "min_citations": 5,
+  "sample_dois": [
+    "10.48550/arXiv.2310.06770",
+    "10.48550/arXiv.2405.15793"
+  ],
+  "description": "Canonical SE-agent benchmark cluster. Use this as a template for your own LLM-agent SE cluster."
+}
