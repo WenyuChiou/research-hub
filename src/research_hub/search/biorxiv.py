@@ -125,10 +125,17 @@ class BiorxivBackend:
         return None
 
     def _matches_query(self, result: SearchResult, terms: set[str]) -> bool:
+        """Require ALL query terms to appear in the paper's title or abstract.
+
+        bioRxiv has no server-side text search; this backend pulls a date
+        window and filters client-side. A weaker filter (any/majority) is
+        overwhelmed by how often generic terms like "protein" and "structure"
+        appear in biomedical abstracts. Strict AND is the only setting that
+        delivers non-garbage results for typical multi-word queries."""
         if not terms:
             return True
         haystack = f"{result.title} {result.abstract}".lower()
-        return any(re.search(rf"\b{re.escape(term)}\b", haystack) for term in terms)
+        return all(re.search(rf"\b{re.escape(term)}\b", haystack) for term in terms)
 
     def _parse_entry(self, entry: dict[str, Any], server: str) -> SearchResult:
         date_str = entry.get("date", "") or ""

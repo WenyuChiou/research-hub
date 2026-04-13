@@ -114,3 +114,42 @@ def test_arxiv_pdf_url_built_from_arxiv_id(mock_get, _mock_sleep):
     result = ArxivBackend().search("llm")
 
     assert result[0].pdf_url == "https://arxiv.org/pdf/2411.12345.pdf"
+
+
+def test_build_arxiv_query_splits_into_and_terms():
+    """Regression: quoted phrase matching missed real arxiv results because
+    no paper contained the exact query string verbatim. Build an AND-joined
+    term query instead."""
+    from research_hub.search.arxiv_backend import _build_arxiv_query
+
+    result = _build_arxiv_query("LLM agent software engineering")
+    # Every term should be present as its own all: clause, AND-joined
+    assert "all:LLM" in result
+    assert "all:agent" in result
+    assert "all:software" in result
+    assert "all:engineering" in result
+    assert " AND " in result
+    # No phrase quoting
+    assert '"LLM agent software engineering"' not in result
+
+
+def test_build_arxiv_query_preserves_explicit_quoted_phrases():
+    from research_hub.search.arxiv_backend import _build_arxiv_query
+
+    result = _build_arxiv_query('"SWE-bench" agent')
+    # Quoted phrase preserved, loose term AND-joined
+    assert 'all:"SWE-bench"' in result
+    assert "all:agent" in result
+
+
+def test_build_arxiv_query_empty_falls_back_to_wildcard():
+    from research_hub.search.arxiv_backend import _build_arxiv_query
+
+    assert _build_arxiv_query("") == "all:*"
+
+
+def test_build_arxiv_query_single_word():
+    from research_hub.search.arxiv_backend import _build_arxiv_query
+
+    result = _build_arxiv_query("transformer")
+    assert result == "all:transformer"

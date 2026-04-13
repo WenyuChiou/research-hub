@@ -29,6 +29,32 @@ def _collapse_whitespace(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
+def _build_arxiv_query(query: str) -> str:
+    """Build the arXiv `search_query` string from a free-text query.
+
+    arXiv's API treats `all:"LLM agent benchmark"` as a phrase match that
+    requires the exact sequence, which almost never exists in paper metadata.
+    Splitting into AND-joined term matches gives real recall.
+
+    - Word terms (len >= 2) become `all:word`
+    - Literal quoted phrases ("swe bench") stay as phrase matches
+    - Multiple terms are joined with AND
+    - Falls back to `all:{query}` if tokenization yields nothing
+    """
+    stripped = (query or "").strip()
+    if not stripped:
+        return "all:*"
+    # Preserve explicit quoted substrings as phrases; otherwise split on
+    # whitespace and AND-join.
+    phrases = re.findall(r'"([^"]+)"', stripped)
+    without_phrases = re.sub(r'"[^"]+"', " ", stripped)
+    tokens = [t for t in re.split(r"\s+", without_phrases.strip()) if len(t) >= 2]
+    parts = [f'all:"{phrase}"' for phrase in phrases] + [f"all:{tok}" for tok in tokens]
+    if not parts:
+        return f"all:{stripped}"
+    return " AND ".join(parts)
+
+
 class ArxivBackend:
     """arXiv Atom API backend."""
 
@@ -117,7 +143,7 @@ class ArxivBackend:
     ) -> list[SearchResult]:
         response = self._request(
             {
-                "search_query": f'all:"{query}"',
+                "search_query": _build_arxiv_query(query),
                 "start": 0,
                 "max_results": limit,
                 "sortBy": "submittedDate",
@@ -148,6 +174,7 @@ class ArxivBackend:
     def get_paper(self, identifier: str) -> SearchResult | None:
         cleaned = identifier.strip()
         if _DOI_RE.match(cleaned):
+            # DOI lookup: quote the DOI since it's a literal identifier
             params = {
                 "search_query": f'all:"{cleaned}"',
                 "start": 0,

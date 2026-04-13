@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.20.2 (2026-04-13)
+
+**Backend live-behavior fixes + honest coverage audit.** A session-ending audit ran each of the 13 registered backends against a real query designed to hit its strongest coverage area. **Only 4 of 13 returned correct results end-to-end.** Mocked unit tests were passing but the live APIs behaved differently from the test fixtures. v0.20.2 fixes the three most impactful issues and documents the rest as known-broken for v0.21.
+
+### Fixed
+
+- **arXiv backend (`search/arxiv_backend.py`)** — the search query was wrapped in quotes as `all:"LLM agent software engineering"`, which arXiv interprets as a phrase match requiring the exact sequence. No paper's metadata contains that exact string, so live queries returned 0 results for the entire v0.13.0-v0.20.1 period. Live audit confirmed 0 hits against "LLM agent software engineering" while a raw API call with AND-joined terms returned 5 relevant papers.
+  - **Fix:** new `_build_arxiv_query()` helper that splits free-text queries into `all:term1 AND all:term2 AND ...`, preserves explicit quoted phrases, and falls back to `all:*` on empty input.
+  - **Verified live:** post-fix returns 5 on-topic papers (SkillMOO, SWE-bench bug triggers, Tokalator, From LLMs to LLM-based Agents, etc.).
+  - **Regression tests:** 4 new tests in `test_arxiv_backend.py` covering AND-split, quoted-phrase preservation, empty fallback, single-word.
+
+- **bioRxiv backend (`search/biorxiv.py`)** — `_matches_query()` used `any(...)`, so a 4-word query matched any paper containing at least one query word. Live audit returned papers about "heavy metal bacterial adaptation" for a query about "protein structure prediction AlphaFold" because both use the word "protein".
+  - **Fix:** switched to strict AND — all query terms must be present in the title or abstract.
+  - **Trade-off:** strict AND returns 0 results for specific multi-word queries where bioRxiv doesn't have a matching paper, instead of returning irrelevant papers. The honest-zero behavior is better for downstream fit-check and ranking.
+  - **Regression tests:** updated `test_biorxiv_matches_query_requires_all_terms` to assert strict AND semantics with 4/4, 3/4, 2/4, 1/4 term cases.
+
+- **Semantic Scholar backend (`search/semantic_scholar.py`)** — on HTTP 429 the backend silently returned an empty list with no user-facing signal, making it impossible to distinguish "no results" from "rate-limited". Live audit hit 429 on every run because S2's free tier throttles aggressively.
+  - **Fix:** added a `logger.warning()` with a link to the API key signup page. Existing silent return behavior preserved for callers that don't want to fail on rate limit; visible warning tells the user why they're getting zero results.
+
+### Known issues deferred to v0.21
+
+These were surfaced by the live audit but need a larger fix than a patch release:
+
+- **DBLP** — query uses substring matching that accepts "Swedish" as a match for "SWE-bench". Needs a word-boundary regex or a different API query strategy.
+- **ChemRxiv** — ChemRxiv migrated off the Figshare API around 2022-2023; group_id 13652 returns empty results. Needs the Cambridge Open Engage API.
+- **RePEc** — the IDEAS HTML scraper's regex pattern (`/p/<series>/<handle>.html`) matches zero handles against the current HTML. Needs a rewrite against either the current DOM or the OAI-PMH endpoint directly (skipping the HTML handle-list step).
+- **CiNii** — live audit confirmed the backend parses the Atom XML correctly, but the `from`/`until` year filter excludes all results because CiNii dates everything as the current year (2026) by default. Needs verification of CiNii's date field semantics.
+- **KCI** — the endpoint URL returned HTML not JSON in the live audit. The KCI public REST API may live at a different path or may not exist at all. Needs investigation.
+- **NASA ADS** — correctly reports `ADS_DEV_KEY` missing at runtime. Not a bug, just requires the user to set the env var.
+
+### Working backends after v0.20.2 (5 of 13)
+
+| Backend | Live status | Use case |
+|---|---|---|
+| OpenAlex | ✅ | general STEM + humanities |
+| arXiv | ✅ (post-fix) | CS, math, physics, bio preprints |
+| Crossref | ✅ | DOI-authoritative metadata, all fields |
+| PubMed | ✅ | biomedicine |
+| ERIC | ✅ | education research |
+
+Plus **Semantic Scholar** when not rate-limited (intermittent).
+
+### Tests
+
+- **735 → 740 passing** (+5 regression tests, 5 skipped unchanged).
+- `test_arxiv_backend.py`: 4 tests for `_build_arxiv_query()`.
+- `test_biorxiv_backend.py`: 1 test for strict AND filter.
+
 ## v0.20.1 (2026-04-13)
 
 **Bug fix.** v0.14.0-B's `_update_subtopic_frontmatter` (called when `topic build` runs on an existing sub-topic file) dropped the trailing newline before the closing `---` fence, producing corrupted frontmatter like:

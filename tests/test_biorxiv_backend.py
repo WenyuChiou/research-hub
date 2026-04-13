@@ -89,3 +89,45 @@ def test_biorxiv_query_filter_drops_irrelevant_papers(mock_get):
     results = BiorxivBackend(delay_seconds=0).search("genomics", limit=1)
 
     assert results == []
+
+
+def test_biorxiv_matches_query_requires_all_terms():
+    """Regression: the filter was `any` which accepted any paper containing
+    at least one query word. bioRxiv has no server-side text search, so
+    client-side filtering must be strict AND — otherwise common words like
+    "protein" and "structure" match the entire bio literature and dilute
+    results beyond usability. Live test on 'protein structure prediction
+    AlphaFold' returned heavy-metal-adaptation papers."""
+    from research_hub.search.base import SearchResult
+    from research_hub.search.biorxiv import BiorxivBackend
+
+    backend = BiorxivBackend()
+    terms = {"protein", "structure", "alphafold", "prediction"}
+
+    # All 4 terms present — passes
+    r_full = SearchResult(
+        title="AlphaFold protein structure prediction benchmarks",
+        abstract="We evaluate methods for protein structure prediction.",
+    )
+    assert backend._matches_query(r_full, terms) is True
+
+    # 3/4 terms (missing "alphafold") — strict AND rejects
+    r_three = SearchResult(
+        title="Fast protein structure prediction using transformers",
+        abstract="",
+    )
+    assert backend._matches_query(r_three, terms) is False
+
+    # 2/4 terms (just "protein" + "structure") — rejects
+    r_two = SearchResult(
+        title="Protein structure stability in extreme environments",
+        abstract="",
+    )
+    assert backend._matches_query(r_two, terms) is False
+
+    # 1/4 terms — rejects (previously `any` accepted this)
+    r_one = SearchResult(
+        title="Heavy metal environment adaptation in bacteria",
+        abstract="We study how populations adapt. Mentions protein once.",
+    )
+    assert backend._matches_query(r_one, terms) is False

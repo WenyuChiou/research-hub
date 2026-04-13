@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import requests
 
 from research_hub.search.base import SearchResult
+
+logger = logging.getLogger(__name__)
 
 
 SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1"
@@ -64,6 +67,12 @@ class SemanticScholarClient:
         except requests.exceptions.RequestException:
             return []
         if response.status_code == 429:
+            logger.warning(
+                "semantic-scholar rate-limited (HTTP 429); "
+                "backend returned 0 results. Consider requesting an API key at "
+                "https://www.semanticscholar.org/product/api#api-key-form or "
+                "using --backend-trace to see the silent-drop."
+            )
             time.sleep(self.delay * 2)
             return []
         try:
