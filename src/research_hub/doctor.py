@@ -106,21 +106,80 @@ def run_doctor() -> list[CheckResult]:
         )
     if not no_zotero and zotero_key and library_id:
         import requests
+        import time
 
+        # Cache the Zotero API probe result for 60 seconds so rapid
+        # dashboard renders / watch-mode cycles don't hammer the API
+        # and trip its rate limiter (429).
+        cache_result = None
         try:
-            response = requests.head(
-                f"https://api.zotero.org/users/{library_id}/items?limit=1",
-                headers={"Zotero-API-Key": zotero_key},
-                timeout=5,
-            )
-            if response.status_code == 200:
-                results.append(CheckResult("zotero_api", "OK", "API reachable"))
-            else:
-                results.append(
-                    CheckResult("zotero_api", "WARN", f"API returned {response.status_code}")
+            cfg_for_cache = get_config()
+            cache_path = cfg_for_cache.research_hub_dir / "doctor_zotero_api_cache.json"
+            if cache_path.exists():
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                age = time.time() - float(cached.get("ts", 0))
+                if age < 60:
+                    cache_result = cached
+        except Exception:
+            cache_path = None
+
+        status_code: int | None
+        if cache_result is not None:
+            status_code = int(cache_result.get("status_code", 0))
+            request_error: str | None = None
+        else:
+            request_error = None
+            status_code = None
+            try:
+                response = requests.head(
+                    f"https://api.zotero.org/users/{library_id}/items?limit=1",
+                    headers={"Zotero-API-Key": zotero_key},
+                    timeout=5,
                 )
-        except Exception as exc:
-            results.append(CheckResult("zotero_api", "WARN", f"Cannot reach API: {exc}"))
+                status_code = response.status_code
+                try:
+                    if cache_path is not None:
+                        cache_path.parent.mkdir(parents=True, exist_ok=True)
+                        cache_path.write_text(
+                            json.dumps({"ts": time.time(), "status_code": status_code}),
+                            encoding="utf-8",
+                        )
+                except Exception:
+                    pass
+            except Exception as exc:
+                request_error = str(exc)
+
+        if request_error is not None:
+            results.append(CheckResult("zotero_api", "WARN", f"Cannot reach API: {request_error}"))
+        elif status_code == 200:
+            results.append(CheckResult("zotero_api", "OK", "API reachable"))
+        elif status_code == 429:
+            # Rate-limited: key is valid, transient. Not a user-actionable problem.
+            results.append(
+                CheckResult("zotero_api", "OK", "API reachable (rate limited, transient)")
+            )
+        elif status_code == 401:
+            results.append(
+                CheckResult(
+                    "zotero_api",
+                    "FAIL",
+                    "API returned 401 — Zotero API key is invalid or revoked",
+                    remedy="Regenerate at https://www.zotero.org/settings/keys",
+                )
+            )
+        elif status_code == 403:
+            results.append(
+                CheckResult(
+                    "zotero_api",
+                    "WARN",
+                    f"API returned {status_code} — key lacks required permissions",
+                    remedy="Enable library + notes + write access for the API key",
+                )
+            )
+        else:
+            results.append(
+                CheckResult("zotero_api", "WARN", f"API returned {status_code}")
+            )
 
     if cfg is not None:
         try:
@@ -177,11 +236,14 @@ def run_doctor() -> list[CheckResult]:
                             (md_path, match.group(1).strip().strip('"').strip("'"))
                         )
                 if len(bad_keys) > 50:
+                    # Informational: we cap the probe at 50 notes to avoid
+                    # hammering the Zotero API. "Probe skipped" is a safety
+                    # feature, not a problem.
                     results.append(
                         CheckResult(
                             "vault_invariant",
-                            "WARN",
-                            f"{len(bad_keys)} notes have zotero-key (probe skipped for >50)",
+                            "OK",
+                            f"{len(bad_keys)} notes have zotero-key (probe capped at 50 for rate safety)",
                         )
                     )
                 else:

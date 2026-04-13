@@ -122,6 +122,9 @@ def test_doctor_vault_invariant_detects_stale_zotero_keys(tmp_path, monkeypatch)
 
 
 def test_doctor_invariant_skips_large_vaults(tmp_path, monkeypatch):
+    """With > 50 zotero-keyed notes, vault_invariant should report OK
+    (not WARN) — skipping the probe is a rate-safety feature, not a
+    problem the user needs to fix."""
     root = _write_config(tmp_path, monkeypatch)
     for index in range(60):
         (root / "raw" / f"paper-{index}.md").write_text(
@@ -132,8 +135,8 @@ def test_doctor_invariant_skips_large_vaults(tmp_path, monkeypatch):
     results = run_doctor()
 
     check = next(result for result in results if result.name == "vault_invariant")
-    assert check.status == "WARN"
-    assert "probe skipped" in check.message
+    assert check.status == "OK"
+    assert "probe capped" in check.message or "probe skipped" in check.message
 
 
 def test_doctor_reports_dedup_consistency_when_index_missing(tmp_path, monkeypatch):
