@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from research_hub.mcp_server import mcp
 
+from tests._mcp_helpers import _list_mcp_tool_names
+
 
 EXPECTED_MAPPINGS = {
     "search_papers": "search",
@@ -42,7 +44,7 @@ EXPECTED_MAPPINGS = {
 
 
 def test_every_mcp_tool_is_documented_in_expected_mappings():
-    tool_names = set(mcp._tool_manager._tools.keys())
+    tool_names = _list_mcp_tool_names(mcp)
     for name in tool_names:
         assert name in EXPECTED_MAPPINGS, (
             f"MCP tool {name!r} has no documented CLI mapping. "
@@ -51,7 +53,7 @@ def test_every_mcp_tool_is_documented_in_expected_mappings():
 
 
 def test_no_orphaned_mappings():
-    tool_names = set(mcp._tool_manager._tools.keys())
+    tool_names = _list_mcp_tool_names(mcp)
     for name in EXPECTED_MAPPINGS:
         assert name in tool_names, (
             f"EXPECTED_MAPPINGS has {name!r} but no such MCP tool exists. "
@@ -60,4 +62,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(mcp._tool_manager._tools) >= 21
+    assert len(_list_mcp_tool_names(mcp)) >= 21

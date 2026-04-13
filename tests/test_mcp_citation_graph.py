@@ -4,6 +4,7 @@ from http import HTTPStatus
 from functools import wraps
 
 import requests
+from tests._mcp_helpers import _list_mcp_tool_names
 
 try:
     import responses
@@ -137,5 +138,5 @@ def test_get_citations_tool_returns_dicts():
 
 
 def test_citation_graph_tools_are_registered():
-    assert "get_references" in mcp._tool_manager._tools
-    assert "get_citations" in mcp._tool_manager._tools
+    assert "get_references" in _list_mcp_tool_names(mcp)
+    assert "get_citations" in _list_mcp_tool_names(mcp)

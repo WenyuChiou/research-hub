@@ -10,6 +10,7 @@ from pathlib import Path
 
 import requests
 
+from tests._mcp_helpers import _list_mcp_tool_names
 from research_hub.search import SearchResult
 
 try:
@@ -330,7 +331,7 @@ def test_new_operation_tools_are_registered():
         "write_topic_overview",
         "read_topic_overview",
     ]:
-        assert tool_name in mcp._tool_manager._tools
+        assert tool_name in _list_mcp_tool_names(mcp)
 
 
 def test_generate_dashboard_tool_returns_path(tmp_path, monkeypatch):
