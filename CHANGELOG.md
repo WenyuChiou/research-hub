@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.15.0 (2026-04-13)
+
+**Discovery workflow glue — the "one wrapper, not six commands" release.**
+
+Driven by a live end-to-end test of v0.14.0 that revealed 9 pain points between "I have a topic" and "I have a papers_input.json ready to ingest". This release fixes the highest-priority glue issues (shape bugs + command chain) in one track. Tracks B (backend dedup + confidence) and C (query intelligence) are deferred to v0.16+ pending a second live test.
+
+### Added — `research-hub discover` wrapper
+
+- **`src/research_hub/discover.py`** (new module, ~290 LOC) — stateful wrapper around search + fit-check that chains the two together with a pause at the AI-scoring handoff. State lives under `<vault>/.research_hub/discover/<cluster-slug>/` and is safe to delete.
+- **`research-hub discover new --cluster X --query "..."`** — runs search internally, stashes candidates, writes the fit-check prompt to stdout or `--prompt-out file`. Supports `--year`, `--min-citations`, `--backend`, `--limit`, `--definition`.
+- **`research-hub discover continue --cluster X --scored file.json`** — reads stashed candidates, runs fit-check apply (writes the existing `.fit_check_rejected.json` sidecar), converts accepted candidates into a correctly-shaped papers_input.json. Supports `--threshold N` (explicit) and `--auto-threshold` (uses `median(scores) - 1` clamped to `[2, 5]`).
+- **`research-hub discover status --cluster X`** — shows current stage (`new` / `scored_pending` / `done`), candidate count, accepted/rejected counts.
+- **`research-hub discover clean --cluster X`** — removes the stash directory, safe to run before re-discovering.
+
+### Added — `--auto-threshold` for fit-check apply
+
+- **`research-hub fit-check apply --auto-threshold`** computes threshold from score distribution (`median - 1` clamped to `[2, 5]`). Explicit `--threshold N` still wins when both are supplied. Useful for well-calibrated AI scoring where 5 = obvious accept, 3 = boundary case, 0-1 = obvious reject — the median-1 heuristic rejects boundary cases that the default threshold of 3 would keep.
+- **`fit_check.compute_auto_threshold(scores)`** exposed as a reusable helper.
+
+### Fixed — shape bugs from v0.13.0-A
+
+- **`research-hub search --to-papers-input` emitted `{"papers": [...]}`** but the pipeline schema requires a flat JSON array. Now emits a flat list.
+- **Authors were a comma-joined string** instead of the Zotero creator dicts the pipeline expects (`[{"creatorType":"author", "firstName":"...", "lastName":"..."}, ...]`). Now emits creator dicts via a shared `_authors_to_creators` helper.
+- **Required-but-empty fields** (`summary`, `key_findings`, `methodology`, `relevance`) caused the pipeline validator to reject the output. Now filled with `[TODO: ...]` placeholder markers that the AI replaces in the next step.
+
+These bugs meant v0.14.0's `--to-papers-input` output was unusable without a manual Python adapter script between `search` and `ingest`. v0.15.0 eliminates both adapter steps.
+
+### MCP surface
+
+- 4 new tools: `discover_new`, `discover_continue`, `discover_status`, `discover_clean` — **42 tools total** (was 38).
+
+### Tests
+
+- **560 → 581 passing** (+21 new tests, 5 skipped unchanged).
+- `tests/test_discover.py`: 20 tests covering state management, continue logic, auto-threshold, status, clean, and a CLI end-to-end smoke test.
+- Existing `test_cli_search.py` and `test_fit_check.py` updated for the new shapes.
+
+### Non-breaking changes only
+
+- `research-hub search --to-papers-input` output shape changed from `{"papers": [...]}` to a flat list. **This is technically a breaking change for any script that parsed the old (buggy) output.** But since the old shape was incompatible with the pipeline validator, it's unlikely any caller actually used it end-to-end.
+- All existing CLI commands and MCP tool signatures continue to work unchanged.
+
+### Deferred to v0.16+
+
+- Cross-backend dedup (arxiv↔DOI pairs still double-count)
+- SearchResult confidence scoring (which backends found each paper)
+- Query generation from cluster definition
+- Reject-reason failure analysis
+
 ## v0.14.0 (2026-04-13)
 
 **Rigorous fit-check + sub-topic notes — the "know your papers are on-topic AND find them by theme" release.**

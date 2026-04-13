@@ -61,8 +61,11 @@ def test_cli_search_to_papers_input_produces_ingest_ready_shape(tmp_path, monkey
     assert main(["search", "llm", "--to-papers-input", "--cluster", "foo-bar"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["papers"][0]["sub_category"] == "foo-bar"
-    assert payload["papers"][0]["slug"]
+    assert isinstance(payload, list)
+    assert payload[0]["sub_category"] == "foo-bar"
+    assert payload[0]["slug"]
+    assert payload[0]["authors"][0]["lastName"] == "Doe"
+    assert payload[0]["summary"].startswith("[TODO]")
 
 
 def test_cli_search_year_range_parses_2024_2025():

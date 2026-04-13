@@ -134,11 +134,17 @@ def apply_scores(
     candidates: list[dict],
     scores: list[dict] | dict,
     threshold: int = 3,
+    auto_threshold: bool = False,
     cfg=None,
 ) -> FitCheckReport:
     """Consume AI-produced scores and write the rejected sidecar when configured."""
     if isinstance(scores, dict) and "scores" in scores:
         scores = scores["scores"]
+
+    if auto_threshold:
+        values = [int(item.get("score", 0)) for item in scores]
+        threshold = compute_auto_threshold(values)
+        logger.info("auto threshold computed: %d", threshold)
 
     by_doi: dict[str, dict] = {}
     by_title: dict[str, dict] = {}
@@ -186,6 +192,19 @@ def apply_scores(
         _write_rejected_sidecar(cfg, cluster_slug, report.rejected, threshold)
 
     return report
+
+
+def compute_auto_threshold(scores: list[int]) -> int:
+    """Return median(scores) - 1 clamped to [2, 5]."""
+    if not scores:
+        return 3
+    sorted_scores = sorted(scores)
+    n = len(sorted_scores)
+    if n % 2 == 1:
+        median = sorted_scores[n // 2]
+    else:
+        median = (sorted_scores[n // 2 - 1] + sorted_scores[n // 2]) // 2
+    return max(2, min(5, median - 1))
 
 
 def term_overlap(abstract: str, key_terms: Iterable[str]) -> float:

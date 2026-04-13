@@ -278,6 +278,40 @@ def test_cli_fit_check_apply_respects_threshold_flag(tmp_path, monkeypatch, caps
     assert stdout.strip() == "[]"
 
 
+def test_cli_fit_check_apply_auto_threshold_flag(tmp_path, monkeypatch, capsys):
+    from research_hub import cli
+
+    cfg = _cfg(tmp_path)
+    candidates_path = tmp_path / "candidates.json"
+    scored_path = tmp_path / "scored.json"
+    candidates_path.write_text(json.dumps([_candidate("Paper", "10.1/a")]), encoding="utf-8")
+    scored_path.write_text(
+        json.dumps({"scores": [{"doi": "10.1/a", "score": 3, "reason": "borderline"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "get_config", lambda: cfg)
+
+    rc = cli.main(
+        [
+            "fit-check",
+            "apply",
+            "--cluster",
+            "agents",
+            "--candidates",
+            str(candidates_path),
+            "--scored",
+            str(scored_path),
+            "--threshold",
+            "5",
+            "--auto-threshold",
+        ]
+    )
+
+    stdout = capsys.readouterr().out
+    assert rc == 0
+    assert '"score": 3' in stdout
+
+
 def test_cli_fit_check_audit_exits_1_when_flags_present(tmp_path, monkeypatch):
     from research_hub import cli
 

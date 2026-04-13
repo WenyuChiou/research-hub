@@ -49,6 +49,10 @@ EXPECTED_MAPPINGS = {
     "fit_check_apply": "fit-check apply",
     "fit_check_audit": "fit-check audit",
     "fit_check_drift": "fit-check drift",
+    "discover_new": "discover new",
+    "discover_continue": "discover continue",
+    "discover_status": "discover status",
+    "discover_clean": "discover clean",
 }
 
 
@@ -71,4 +75,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(_list_mcp_tool_names(mcp)) >= 38
+    assert len(_list_mcp_tool_names(mcp)) >= 42

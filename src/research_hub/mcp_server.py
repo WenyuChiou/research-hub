@@ -746,6 +746,111 @@ def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
         return _tool_error(exc)
 
 
+def discover_new(
+    cluster_slug: str,
+    query: str,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    min_citations: int = 0,
+    backends: list[str] | None = None,
+    limit: int = 25,
+    definition: str | None = None,
+) -> dict:
+    """Run search + emit fit-check prompt, stashing state for discover_continue."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.discover import discover_new as _discover_new
+
+        cfg = get_config()
+        backend_list = tuple(backends) if backends else ("openalex", "arxiv", "semantic-scholar")
+        state, prompt = _discover_new(
+            cfg,
+            cluster_slug,
+            query,
+            year_from=year_from,
+            year_to=year_to,
+            min_citations=min_citations,
+            backends=backend_list,
+            limit=limit,
+            definition=definition,
+        )
+        return {
+            "ok": True,
+            "stage": state.stage,
+            "candidate_count": state.candidate_count,
+            "prompt": prompt,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def discover_continue(
+    cluster_slug: str,
+    scored: list[dict] | dict,
+    threshold: int | None = None,
+    auto_threshold: bool = False,
+) -> dict:
+    """Apply AI scores and emit papers_input.json for later ingest."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.discover import discover_continue as _discover_continue
+
+        cfg = get_config()
+        state, path = _discover_continue(
+            cfg,
+            cluster_slug,
+            scored,
+            threshold=threshold,
+            auto_threshold=auto_threshold,
+        )
+        return {
+            "ok": True,
+            "stage": state.stage,
+            "accepted_count": state.accepted_count,
+            "rejected_count": state.rejected_count,
+            "threshold": state.threshold,
+            "papers_input_path": str(path),
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def discover_status(cluster_slug: str) -> dict:
+    """Return current discover state for a cluster."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.discover import discover_status as _discover_status
+
+        cfg = get_config()
+        state = _discover_status(cfg, cluster_slug)
+        if state is None:
+            return {"ok": False, "reason": "no discover state for cluster"}
+        return {
+            "ok": True,
+            "cluster_slug": state.cluster_slug,
+            "stage": state.stage,
+            "candidate_count": state.candidate_count,
+            "accepted_count": state.accepted_count,
+            "rejected_count": state.rejected_count,
+            "threshold": state.threshold,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def discover_clean(cluster_slug: str) -> dict:
+    """Remove the discover stash directory for a cluster."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.discover import discover_clean as _discover_clean
+
+        cfg = get_config()
+        removed = _discover_clean(cfg, cluster_slug)
+        return {"ok": True, "removed": removed}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
 @mcp.tool()
 def download_artifacts(
     cluster_slug: str,
@@ -962,6 +1067,10 @@ mcp.tool()(fit_check_prompt)
 mcp.tool()(fit_check_apply)
 mcp.tool()(fit_check_audit)
 mcp.tool()(fit_check_drift)
+mcp.tool()(discover_new)
+mcp.tool()(discover_continue)
+mcp.tool()(discover_status)
+mcp.tool()(discover_clean)
 
 
 if __name__ == "__main__":

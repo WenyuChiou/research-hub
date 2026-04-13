@@ -579,30 +579,11 @@ def _search(
 
 
 def _emit_papers_input_json(results: list, cluster_slug: str | None) -> None:
-    """Print a papers_input.json-shaped JSON document to stdout."""
-    from research_hub.clusters import slugify
+    """Print a flat papers_input.json list to stdout."""
+    from research_hub.discover import _to_papers_input
 
-    papers = []
-    for r in results:
-        first_author = (r.authors[0].split()[-1].lower() if r.authors else "unknown")
-        slug = f"{first_author}{r.year or ''}-{slugify(r.title)[:60]}"
-        papers.append(
-            {
-                "title": r.title,
-                "doi": r.doi,
-                "authors": ", ".join(r.authors),
-                "year": r.year or 0,
-                "abstract": r.abstract,
-                "journal": r.venue,
-                "slug": slug,
-                "sub_category": cluster_slug or "",
-                "summary": "",
-                "key_findings": [],
-                "methodology": "",
-                "relevance": "",
-            }
-        )
-    print(json.dumps({"papers": papers}, indent=2, ensure_ascii=False))
+    papers = _to_papers_input([asdict(result) for result in results], cluster_slug)
+    print(json.dumps(papers, indent=2, ensure_ascii=False))
 
 
 def _parse_year_range(spec: str | None) -> tuple[int | None, int | None]:
@@ -992,6 +973,7 @@ def _fit_check_apply(
     candidates_path: str,
     scored_path: str,
     threshold: int,
+    auto_threshold: bool,
     out: str | None,
 ) -> int:
     from research_hub.fit_check import apply_scores
@@ -999,7 +981,14 @@ def _fit_check_apply(
     cfg = get_config()
     candidates = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
     scored = json.loads(Path(scored_path).read_text(encoding="utf-8"))
-    report = apply_scores(cluster_slug, candidates, scored, threshold=threshold, cfg=cfg)
+    report = apply_scores(
+        cluster_slug,
+        candidates,
+        scored,
+        threshold=threshold,
+        auto_threshold=auto_threshold,
+        cfg=cfg,
+    )
     print(f"fit-check {report.summary()}", file=sys.stderr)
     output = json.dumps([item.to_dict() for item in report.accepted], indent=2, ensure_ascii=False)
     if out:
@@ -1034,6 +1023,91 @@ def _fit_check_audit(cluster_slug: str) -> int:
     for title in flagged:
         print(f"  - {title}")
     return 1
+
+
+def _discover_new(args) -> int:
+    from research_hub.discover import discover_new
+
+    cfg = get_config()
+    year_from, year_to = _parse_year_range(args.year) if args.year else (None, None)
+    backends = tuple(item.strip() for item in args.backend.split(",") if item.strip())
+    state, prompt = discover_new(
+        cfg,
+        args.cluster,
+        args.query,
+        year_from=year_from,
+        year_to=year_to,
+        min_citations=args.min_citations,
+        backends=backends,
+        limit=args.limit,
+        definition=args.definition,
+    )
+    if args.prompt_out:
+        Path(args.prompt_out).write_text(prompt, encoding="utf-8")
+        print(f"wrote {args.prompt_out}", file=sys.stderr)
+    else:
+        print(prompt)
+    print(
+        f"[discover] stashed {state.candidate_count} candidates for {args.cluster}. "
+        f"Score the prompt, save to scored.json, then run `discover continue`.",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _discover_continue(args) -> int:
+    from research_hub.discover import discover_continue
+
+    cfg = get_config()
+    scored = json.loads(Path(args.scored).read_text(encoding="utf-8"))
+    out_path = Path(args.out) if args.out else None
+    state, papers_input_path = discover_continue(
+        cfg,
+        args.cluster,
+        scored,
+        threshold=args.threshold,
+        auto_threshold=args.auto_threshold,
+        out_path=out_path,
+    )
+    print(
+        f"[discover] accepted {state.accepted_count} / {state.candidate_count} "
+        f"(rejected {state.rejected_count}, threshold {state.threshold})",
+        file=sys.stderr,
+    )
+    print(f"papers_input.json: {papers_input_path}")
+    return 0
+
+
+def _discover_status(args) -> int:
+    from research_hub.discover import discover_status
+
+    cfg = get_config()
+    state = discover_status(cfg, args.cluster)
+    if state is None:
+        print(f"no discover state for cluster {args.cluster}")
+        return 1
+    print(f"cluster: {state.cluster_slug}")
+    print(f"stage:   {state.stage}")
+    print(f"query:   {state.query}")
+    print(f"candidates: {state.candidate_count}")
+    if state.stage == "done":
+        print(f"accepted: {state.accepted_count} / {state.candidate_count}")
+        print(f"rejected: {state.rejected_count}")
+        suffix = " (auto)" if state.auto_threshold else ""
+        print(f"threshold: {state.threshold}{suffix}")
+    return 0
+
+
+def _discover_clean(args) -> int:
+    from research_hub.discover import discover_clean
+
+    cfg = get_config()
+    removed = discover_clean(cfg, args.cluster)
+    if removed:
+        print(f"removed discover state for {args.cluster}")
+    else:
+        print(f"no discover state for {args.cluster}")
+    return 0
 
 
 def _fit_check_drift(cluster_slug: str, threshold: int) -> int:
@@ -1703,6 +1777,11 @@ def build_parser() -> argparse.ArgumentParser:
     fit_apply.add_argument("--candidates", required=True)
     fit_apply.add_argument("--scored", required=True)
     fit_apply.add_argument("--threshold", type=int, default=3)
+    fit_apply.add_argument(
+        "--auto-threshold",
+        action="store_true",
+        help="Compute threshold as median(scores) - 1 (clamped [2, 5])",
+    )
     fit_apply.add_argument("--out")
 
     fit_audit = fit_sub.add_parser("audit", help="Parse the latest briefing for off-topic flags")
@@ -1711,6 +1790,35 @@ def build_parser() -> argparse.ArgumentParser:
     fit_drift = fit_sub.add_parser("drift", help="Emit a drift-check prompt")
     fit_drift.add_argument("--cluster", required=True)
     fit_drift.add_argument("--threshold", type=int, default=3)
+
+    discover_parser = subparsers.add_parser(
+        "discover",
+        help="Discover papers for a cluster (search + fit-check wrapper)",
+    )
+    discover_sub = discover_parser.add_subparsers(dest="discover_command")
+
+    new_p = discover_sub.add_parser("new", help="Run search + emit fit-check prompt, stash for continue")
+    new_p.add_argument("--cluster", required=True)
+    new_p.add_argument("--query", required=True)
+    new_p.add_argument("--year", help="Year range e.g. 2024-2025")
+    new_p.add_argument("--min-citations", type=int, default=0)
+    new_p.add_argument("--backend", default="openalex,arxiv,semantic-scholar")
+    new_p.add_argument("--limit", type=int, default=25)
+    new_p.add_argument("--definition", help="Cluster definition")
+    new_p.add_argument("--prompt-out", help="Write fit-check prompt to file (default: stdout)")
+
+    continue_p = discover_sub.add_parser("continue", help="Apply AI scores, emit papers_input.json")
+    continue_p.add_argument("--cluster", required=True)
+    continue_p.add_argument("--scored", required=True, help="Path to AI-produced scored JSON")
+    continue_p.add_argument("--threshold", type=int)
+    continue_p.add_argument("--auto-threshold", action="store_true")
+    continue_p.add_argument("--out", help="Write papers_input.json here (default: stash dir)")
+
+    status_p = discover_sub.add_parser("status", help="Show discover stage for a cluster")
+    status_p.add_argument("--cluster", required=True)
+
+    clean_p = discover_sub.add_parser("clean", help="Remove stashed discover state")
+    clean_p.add_argument("--cluster", required=True)
 
     return parser
 
@@ -1781,6 +1889,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.candidates,
                 args.scored,
                 args.threshold,
+                args.auto_threshold,
                 args.out,
             )
         if args.fit_check_command == "audit":
@@ -1788,6 +1897,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.fit_check_command == "drift":
             return _fit_check_drift(args.cluster, args.threshold)
         parser.error("fit-check requires a subcommand")
+        return 2
+    if args.command == "discover":
+        if args.discover_command == "new":
+            return _discover_new(args)
+        if args.discover_command == "continue":
+            return _discover_continue(args)
+        if args.discover_command == "status":
+            return _discover_status(args)
+        if args.discover_command == "clean":
+            return _discover_clean(args)
+        parser.error("discover requires a subcommand")
         return 2
     if args.command == "index":
         return _rebuild_index()
