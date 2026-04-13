@@ -74,6 +74,7 @@ def discover_new(
     min_citations: int = 0,
     backends: tuple[str, ...] | None = None,
     field: str | None = None,
+    region: str | None = None,
     limit: int = 25,
     definition: str | None = None,
     exclude_types: tuple[str, ...] = (),
@@ -84,12 +85,18 @@ def discover_new(
     """Run search, stash candidates, and build a fit-check prompt."""
     from research_hub.fit_check import emit_prompt
     from research_hub.search import search_papers
-    from research_hub.search.fallback import DEFAULT_BACKENDS, resolve_backends_for_field
+    from research_hub.search.fallback import (
+        DEFAULT_BACKENDS,
+        resolve_backends_for_field,
+        resolve_backends_for_region,
+    )
 
     dest = stash_dir(cfg, cluster_slug)
     dest.mkdir(parents=True, exist_ok=True)
 
-    if field:
+    if region:
+        resolved_backends = resolve_backends_for_region(region)
+    elif field:
         resolved_backends = resolve_backends_for_field(field)
     elif backends:
         resolved_backends = backends

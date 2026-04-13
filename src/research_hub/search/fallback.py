@@ -8,10 +8,12 @@ from collections.abc import Iterable, Sequence
 from research_hub.search.arxiv_backend import ArxivBackend
 from research_hub.search.biorxiv import BiorxivBackend
 from research_hub.search.chemrxiv import ChemrxivBackend
+from research_hub.search.cinii import CiniiBackend
 from research_hub.search.crossref import CrossrefBackend
 from research_hub.search.dblp import DblpBackend
 from research_hub.search.base import SearchBackend, SearchResult
 from research_hub.search.eric import EricBackend
+from research_hub.search.kci import KciBackend
 from research_hub.search.nasa_ads import NasaAdsBackend
 from research_hub.search.openalex import OpenAlexBackend
 from research_hub.search.pubmed import PubMedBackend
@@ -34,6 +36,8 @@ _BACKEND_REGISTRY: dict[str, type[SearchBackend]] = {
     "chemrxiv": ChemrxivBackend,
     "nasa-ads": NasaAdsBackend,
     "eric": EricBackend,
+    "cinii": CiniiBackend,
+    "kci": KciBackend,
 }
 
 DEFAULT_BACKENDS = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
@@ -64,6 +68,13 @@ FIELD_PRESETS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+REGION_PRESETS: dict[str, tuple[str, ...]] = {
+    "en": DEFAULT_BACKENDS,
+    "jp": ("openalex", "cinii", "crossref"),
+    "kr": ("openalex", "kci", "crossref"),
+    "cjk": ("openalex", "cinii", "kci", "crossref"),
+}
+
 
 def resolve_backends_for_field(field: str) -> tuple[str, ...]:
     """Return the backend tuple for a known field preset."""
@@ -71,6 +82,14 @@ def resolve_backends_for_field(field: str) -> tuple[str, ...]:
         valid = ", ".join(sorted(FIELD_PRESETS.keys()))
         raise ValueError(f"unknown field preset {field!r}; valid: {valid}")
     return FIELD_PRESETS[field]
+
+
+def resolve_backends_for_region(region: str) -> tuple[str, ...]:
+    """Return the backend tuple for a known region preset."""
+    if region not in REGION_PRESETS:
+        valid = ", ".join(sorted(REGION_PRESETS.keys()))
+        raise ValueError(f"unknown region preset {region!r}; valid: {valid}")
+    return REGION_PRESETS[region]
 
 
 def search_papers(

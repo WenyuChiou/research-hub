@@ -1,5 +1,83 @@
 # Changelog
 
+## v0.20.0 (2026-04-13)
+
+**CJK literature backends + region preset — Japanese and Korean academic literature now first-class.**
+
+After v0.19, research-hub covered all major Western fields (CS, biomedicine, social science, chemistry, astronomy, education) but every backend assumed English-language content. Anyone searching for Japanese, Korean, or Chinese literature got nothing — a hard miss for ~15% of the world's research output and a major gap for researchers in Asia. v0.20 adds two CJK-region academic search backends and a `--region` preset that mirrors the `--field` pattern but selects backends by language/region instead of discipline.
+
+### Added — Two CJK backends
+
+- **`CiniiBackend`** (`src/research_hub/search/cinii.py`, ~150 LOC) — CiNii Research, run by Japan's National Institute of Informatics (NII). The canonical bibliography for Japanese academic literature: ~26M records covering Japanese journals, conference proceedings, theses, books, projects. Free, no API key required. Uses the OpenSearch Atom XML endpoint at `https://cir.nii.ac.jp/opensearch/all` with year filters via `from`/`until` params. Parses Atom + Dublin Core + PRISM + CiNii namespaces, extracts DOI from multiple identifier formats (`https://doi.org/...`, `info:doi/...`, `prism:doi`). doc_type maps from `dc:type` to `journal-article`/`thesis`/`book`/`conference-paper`. Japanese characters in titles preserved verbatim.
+
+- **`KciBackend`** (`src/research_hub/search/kci.py`, ~150 LOC) — Korea Citation Index, run by the Korean National Research Foundation. Covers Korean academic literature across all disciplines. Free OpenAPI access at `https://www.kci.go.kr/kciportal/po/search/poArtiSearList.kci` for basic queries, no key required. JSON API. Tries multiple field name variants (`titleEng` first, falling back to `title`; `authors`/`authorList`; `journalNameEng`/`journalName`) to be robust against schema drift. Year filter via `startYear`/`endYear` params.
+
+### Added — `--region` preset
+
+New flag on `research-hub search` and `research-hub discover new`, **mutually exclusive with `--backend` and `--field`**:
+
+| Region preset | Backends |
+|---|---|
+| `en` | v0.16 5-backend list (DEFAULT_BACKENDS) |
+| `jp` | openalex + cinii + crossref |
+| `kr` | openalex + kci + crossref |
+| `cjk` | openalex + cinii + kci + crossref |
+
+Resolution priority: `--region` > `--field` > `--backend` > `DEFAULT_BACKENDS`. The CLI `add_mutually_exclusive_group` enforces that only one of the three flags can be supplied at a time.
+
+### Backend registry
+
+`_BACKEND_REGISTRY` now has **14 entries (13 unique classes + `medrxiv` alias)**:
+
+```python
+_BACKEND_REGISTRY = {
+    # ... v0.16-v0.19 entries ...
+    "cinii": CiniiBackend,    # NEW
+    "kci": KciBackend,        # NEW
+}
+```
+
+`DEFAULT_BACKENDS` stays at the v0.16.0 5-backend list — CJK backends are opt-in.
+
+### CLI / MCP
+
+- `--region` flag on `search` and `discover new` (mutually exclusive with `--backend` and `--field`)
+- `discover_new` Python function gains `region: str | None = None` parameter
+- `search_papers` and `discover_new` MCP tools gain `region: str | None = None` parameter
+- **No new MCP tools** — 45 stays.
+
+### Bilingual docs
+
+- **`docs/zh/cli-reference.md`** (297 lines) — Traditional Chinese translation of `docs/cli-reference.md` (302 lines). Completes the v0.19.0 ZH translation pass that hit a Gemini rate limit on the third file. All four `docs/zh/*.md` files now have full translations.
+
+### Tests
+
+- **702 → 734 passing** (+32 tests, 5 skipped unchanged).
+- `tests/test_cinii_backend.py`: 12 tests (Atom XML parsing, multi-namespace identifier extraction, Japanese characters, year filter, doc_type mapping).
+- `tests/test_kci_backend.py`: 12 tests (titleEng fallback, authors as list/dict/string, year filter, articleId URL building).
+- `tests/test_region_preset.py`: 2 tests for jp/cjk presets.
+- Existing fallback / CLI / discover / MCP tests updated.
+
+### Non-breaking changes only
+
+All existing CLI commands, MCP tool signatures, default backend list, and import paths continue to work unchanged. `--region` is purely additive but mutually exclusive with the existing `--backend` and `--field` flags.
+
+### Field + region coverage matrix
+
+After v0.20 (combining v0.16-v0.20):
+
+| Coverage axis | Options |
+|---|---|
+| **Field presets (11)** | cs, bio, med, physics, math, social, econ, chem, astro, edu, general |
+| **Region presets (4)** | en, jp, kr, cjk |
+| **Total backends (13)** | OpenAlex, arXiv, Semantic Scholar, Crossref, DBLP, PubMed, bioRxiv, RePEc, ChemRxiv, NASA ADS, ERIC, CiNii, KCI |
+
+### Deferred to v0.21+
+
+- **Chinese-language backends** — CSSCI/CNKI require institutional subscriptions; deferred until a free open path exists
+- **Cross-CJK title fuzz match** — current title-similarity dedup uses Latin word boundaries, doesn't handle CJK boundaries well; v0.21 candidate
+- **JSTOR / PsycINFO / IEEE Xplore** — paid databases, lower priority
+
 ## v0.19.1 (2026-04-13)
 
 **Build fix.** v0.19.0 wheel was rejected by PyPI with a 400 Bad Request because the wheel had **duplicate file entries** for `research_hub/examples/*`. The `[tool.hatch.build.targets.wheel] packages = ["src/research_hub"]` already includes the `examples/` subpackage automatically, but the additional `[tool.hatch.build.targets.wheel.force-include]` section added the same files a second time. Removing the redundant `force-include` block fixes the duplicate entries; `twine check` now PASSES and the wheel uploads cleanly. No code changes — same v0.19.0 features, just a working build.

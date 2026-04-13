@@ -518,3 +518,36 @@ def test_discover_new_field_flag_forwards_to_search(tmp_path, monkeypatch):
     ) == 0
 
     assert captured["field"] == "bio"
+
+
+def test_discover_new_region_flag_forwards_to_search(tmp_path, monkeypatch):
+    from research_hub import cli
+
+    cfg = _cfg(tmp_path)
+    captured = {}
+    monkeypatch.setattr(cli, "get_config", lambda: cfg)
+
+    def fake_discover_new(cfg, cluster_slug, query, **kwargs):
+        captured.update(kwargs)
+        from research_hub.discover import DiscoverState
+
+        return DiscoverState(cluster_slug=cluster_slug, stage="scored_pending", query=query), "prompt"
+
+    monkeypatch.setattr("research_hub.discover.discover_new", fake_discover_new)
+
+    assert cli.main(
+        [
+            "discover",
+            "new",
+            "--cluster",
+            "agents",
+            "--query",
+            "llm",
+            "--region",
+            "cjk",
+            "--prompt-out",
+            str(tmp_path / "prompt.md"),
+        ]
+    ) == 0
+
+    assert captured["region"] == "cjk"

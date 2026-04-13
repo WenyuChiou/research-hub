@@ -78,19 +78,26 @@ def search_papers(
     min_confidence: float = 0.0,
     rank_by: str = "smart",
     field: str | None = None,
+    region: str | None = None,
 ) -> list[dict[str, Any]] | dict[str, str]:
     """Search for academic papers across multiple backends."""
     try:
         from research_hub.config import get_config
         from research_hub.dedup import DedupIndex, normalize_doi
         from research_hub.search import search_papers as _search_papers
-        from research_hub.search.fallback import DEFAULT_BACKENDS, resolve_backends_for_field
+        from research_hub.search.fallback import (
+            DEFAULT_BACKENDS,
+            resolve_backends_for_field,
+            resolve_backends_for_region,
+        )
 
         cfg = get_config()
         index_path = cfg.research_hub_dir / "dedup_index.json"
         index = DedupIndex.load(index_path) if index_path.exists() else DedupIndex()
 
-        if field:
+        if region:
+            backend_list = resolve_backends_for_region(region)
+        elif field:
             backend_list = resolve_backends_for_field(field)
         elif backends:
             backend_list = tuple(backends)
@@ -778,6 +785,7 @@ def discover_new(
     min_confidence: float = 0.0,
     rank_by: str = "smart",
     field: str | None = None,
+    region: str | None = None,
 ) -> dict:
     """Run search + emit fit-check prompt, stashing state for discover_continue."""
     try:
@@ -785,11 +793,7 @@ def discover_new(
         from research_hub.discover import discover_new as _discover_new
 
         cfg = get_config()
-        backend_list = (
-            tuple(backends)
-            if backends
-            else ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
-        )
+        backend_list = tuple(backends) if backends else None
         state, prompt = _discover_new(
             cfg,
             cluster_slug,
@@ -799,6 +803,7 @@ def discover_new(
             min_citations=min_citations,
             backends=backend_list,
             field=field,
+            region=region,
             limit=limit,
             definition=definition,
             exclude_types=tuple(exclude_types or []),

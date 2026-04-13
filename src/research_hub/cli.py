@@ -17,7 +17,13 @@ from research_hub.operations import add_paper, mark_paper, move_paper, remove_pa
 from research_hub.pipeline import run_pipeline
 from research_hub.pipeline_repair import repair_cluster
 from research_hub.search import SemanticScholarClient, iter_new_results
-from research_hub.search.fallback import DEFAULT_BACKENDS, FIELD_PRESETS, resolve_backends_for_field
+from research_hub.search.fallback import (
+    DEFAULT_BACKENDS,
+    FIELD_PRESETS,
+    REGION_PRESETS,
+    resolve_backends_for_field,
+    resolve_backends_for_region,
+)
 from research_hub.suggest import PaperInput, suggest_cluster_for_paper, suggest_related_papers
 from research_hub.verify import verify_arxiv, verify_doi, verify_paper
 from research_hub.vault_search import search_vault
@@ -1061,6 +1067,7 @@ def _discover_new(args) -> int:
         min_citations=args.min_citations,
         backends=backends,
         field=args.field,
+        region=args.region,
         limit=args.limit,
         definition=args.definition,
         exclude_types=exclude_types,
@@ -1455,6 +1462,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(FIELD_PRESETS.keys()),
         default=None,
         help="Backend preset for a research field",
+    )
+    search_backend_group.add_argument(
+        "--region",
+        choices=sorted(REGION_PRESETS.keys()),
+        default=None,
+        help="Backend preset by language/region (en, jp, kr, cjk)",
     )
     search_parser.add_argument(
         "--exclude-type",
@@ -1890,6 +1903,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(FIELD_PRESETS.keys()),
         default=None,
     )
+    discover_backend_group.add_argument(
+        "--region",
+        choices=sorted(REGION_PRESETS.keys()),
+        default=None,
+    )
     new_p.add_argument("--exclude-type", default="")
     new_p.add_argument("--exclude", default="")
     new_p.add_argument("--min-confidence", type=float, default=0.0)
@@ -2206,7 +2224,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "find":
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
-        if args.field:
+        if args.region:
+            backends = resolve_backends_for_region(args.region)
+        elif args.field:
             backends = resolve_backends_for_field(args.field)
         elif args.backend:
             backends = tuple(b.strip() for b in args.backend.split(",") if b.strip())

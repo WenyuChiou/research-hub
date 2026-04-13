@@ -111,9 +111,31 @@ def test_cli_search_field_flag_uses_preset(monkeypatch):
     assert captured["backends"] == ("openalex", "pubmed", "biorxiv", "crossref", "semantic-scholar")
 
 
+def test_cli_search_region_flag_uses_preset(monkeypatch):
+    captured = {}
+
+    def fake_search(query, limit, verify=False, **kwargs):
+        captured["backends"] = kwargs["backends"]
+        return 0
+
+    monkeypatch.setattr("research_hub.cli._search", fake_search)
+
+    assert main(["search", "llm", "--region", "jp"]) == 0
+    assert captured["backends"] == ("openalex", "cinii", "crossref")
+
+
 def test_cli_search_field_and_backend_mutually_exclusive():
     with pytest.raises(SystemExit):
         main(["search", "llm", "--backend", "openalex", "--field", "bio"])
+
+
+def test_cli_search_region_field_backend_mutex():
+    for argv in (
+        ["search", "llm", "--region", "jp", "--field", "bio"],
+        ["search", "llm", "--region", "jp", "--backend", "openalex"],
+    ):
+        with pytest.raises(SystemExit):
+            main(argv)
 
 
 def test_cli_search_forwards_new_filter_and_rank_flags(monkeypatch):

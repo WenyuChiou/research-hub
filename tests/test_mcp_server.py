@@ -518,3 +518,41 @@ def test_mcp_search_papers_forwards_new_filter_params(tmp_path, monkeypatch):
     assert captured["exclude_terms"] == ("ipcc",)
     assert captured["min_confidence"] == 0.75
     assert captured["rank_by"] == "year"
+
+
+def test_mcp_search_papers_region_takes_priority_over_backends_and_field(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    captured = {}
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+
+    def fake_search(*args, **kwargs):
+        captured["backends"] = kwargs["backends"]
+        return [SearchResult(title="Paper", doi="10.1/a", source="openalex")]
+
+    monkeypatch.setattr("research_hub.search.search_papers", fake_search)
+
+    result = search_papers("query", backends=["dblp"], field="bio", region="jp")
+
+    assert isinstance(result, list)
+    assert captured["backends"] == ("openalex", "cinii", "crossref")
+
+
+def test_mcp_discover_new_forwards_region(tmp_path, monkeypatch):
+    from research_hub.mcp_server import discover_new as discover_new_tool
+
+    cfg = make_config(tmp_path)
+    captured = {}
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+
+    def fake_discover_new(cfg, cluster_slug, query, **kwargs):
+        captured.update(kwargs)
+        from research_hub.discover import DiscoverState
+
+        return DiscoverState(cluster_slug=cluster_slug, stage="scored_pending", query=query), "prompt"
+
+    monkeypatch.setattr("research_hub.discover.discover_new", fake_discover_new)
+
+    result = discover_new_tool("agents", "llm", region="kr", field="bio", backends=["dblp"])
+
+    assert result["ok"] is True
+    assert captured["region"] == "kr"

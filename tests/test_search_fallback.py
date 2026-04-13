@@ -163,3 +163,8 @@ def test_fallback_registers_chemrxiv_nasa_ads_eric_backends():
     assert _BACKEND_REGISTRY["chemrxiv"].__name__ == "ChemrxivBackend"
     assert _BACKEND_REGISTRY["nasa-ads"].__name__ == "NasaAdsBackend"
     assert _BACKEND_REGISTRY["eric"].__name__ == "EricBackend"
+
+
+def test_fallback_registers_cinii_kci_backends():
+    assert _BACKEND_REGISTRY["cinii"].__name__ == "CiniiBackend"
+    assert _BACKEND_REGISTRY["kci"].__name__ == "KciBackend"
