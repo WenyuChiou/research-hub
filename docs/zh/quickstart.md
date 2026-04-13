@@ -1,59 +1,57 @@
-<!-- ZH translation pending. English content below kept as a translation reference. -->
+# 快速入門
 
-# Quickstart
-
-## Install
+## 安裝
 
 ```bash
 pip install research-hub-pipeline[mcp]
 ```
 
-## Initialize
+## 初始化
 
-Run the setup wizard:
+執行設定精靈：
 
 ```bash
 research-hub init --vault ~/knowledge-base
 ```
 
-Or start with the field-aware onboarding flow:
+或者，使用欄位導向的入門流程開始：
 
 ```bash
 research-hub init --field cs
 ```
 
-## Verify
+## 驗證
 
 ```bash
 research-hub doctor
 ```
 
-## Search
+## 搜尋
 
 ```bash
 research-hub search "LLM agent software engineering benchmark" --field cs
 ```
 
-## Discover
+## 探索
 
 ```bash
 research-hub discover new --cluster llm-agents --query "LLM agent software engineering benchmark" --field cs
 ```
 
-Then score the generated fit-check prompt and continue:
+然後評分產生的 fit-check prompt 並繼續：
 
 ```bash
 research-hub discover continue --cluster llm-agents --scored scored.json --auto-threshold
 ```
 
-## Ingest
+## 匯入
 
 ```bash
 research-hub ingest --cluster llm-agents --fit-check
 ```
 
-## Continue
+## 後續步驟
 
-- Build topic notes with `research-hub topic scaffold --cluster <slug>`
-- Browse bundled examples with `research-hub examples list`
-- Launch the local dashboard with `research-hub dashboard`
+- 使用 `research-hub topic scaffold --cluster <slug>` 建構主題筆記
+- 使用 `research-hub examples list` 瀏覽套件範例
+- 使用 `research-hub dashboard` 啟動本機儀表板
