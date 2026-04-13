@@ -21,6 +21,13 @@ from research_hub.notebooklm.session import (
     open_cdp_session,
 )
 
+BRIEFING_OFF_TOPIC_SECTION = """### Off-topic papers
+
+List any papers in the provided sources that are NOT about the cluster topic.
+For each, give the paper's title and a one-sentence explanation of why it
+doesn't fit. If every paper is on-topic, write "none" on a single line.
+"""
+
 
 def _check_session_health(page) -> tuple[bool, str]:
     """Return (ok, message). Probe NotebookLM home; detect expired sessions."""
@@ -288,12 +295,13 @@ def read_latest_briefing(cluster, cfg) -> str:
     picks the newest ``brief-*.txt``. Raises FileNotFoundError if no
     briefing has been downloaded yet.
     """
-    safe_slug = Path(cluster.slug).name
+    cluster_slug = cluster if isinstance(cluster, str) else cluster.slug
+    safe_slug = Path(cluster_slug).name
     artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
     if not artifacts_dir.exists():
         raise FileNotFoundError(
-            f"No artifacts directory for cluster '{cluster.slug}'. "
-            f"Run `research-hub notebooklm download --cluster {cluster.slug}` first."
+            f"No artifacts directory for cluster '{cluster_slug}'. "
+            f"Run `research-hub notebooklm download --cluster {cluster_slug}` first."
         )
     candidates = sorted(
         artifacts_dir.glob("brief-*.txt"),
@@ -303,7 +311,7 @@ def read_latest_briefing(cluster, cfg) -> str:
     if not candidates:
         raise FileNotFoundError(
             f"No brief-*.txt files in {artifacts_dir}. "
-            f"Run `research-hub notebooklm download --cluster {cluster.slug}` first."
+            f"Run `research-hub notebooklm download --cluster {cluster_slug}` first."
         )
     return candidates[0].read_text(encoding="utf-8")
 

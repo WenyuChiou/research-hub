@@ -973,6 +973,78 @@ def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
     return 0
 
 
+def _fit_check_emit(cluster_slug: str, candidates_path: str, definition: str | None, out: str | None) -> int:
+    from research_hub.fit_check import emit_prompt
+
+    cfg = get_config()
+    candidates = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
+    prompt = emit_prompt(cluster_slug, candidates, definition=definition, cfg=cfg)
+    if out:
+        Path(out).write_text(prompt, encoding="utf-8")
+        print(f"wrote {out}")
+    else:
+        print(prompt)
+    return 0
+
+
+def _fit_check_apply(
+    cluster_slug: str,
+    candidates_path: str,
+    scored_path: str,
+    threshold: int,
+    out: str | None,
+) -> int:
+    from research_hub.fit_check import apply_scores
+
+    cfg = get_config()
+    candidates = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
+    scored = json.loads(Path(scored_path).read_text(encoding="utf-8"))
+    report = apply_scores(cluster_slug, candidates, scored, threshold=threshold, cfg=cfg)
+    print(f"fit-check {report.summary()}", file=sys.stderr)
+    output = json.dumps([item.to_dict() for item in report.accepted], indent=2, ensure_ascii=False)
+    if out:
+        Path(out).write_text(output, encoding="utf-8")
+    else:
+        print(output)
+    return 0
+
+
+def _fit_check_audit(cluster_slug: str) -> int:
+    from research_hub.fit_check import parse_nlm_off_topic
+    from research_hub.notebooklm.upload import read_latest_briefing
+    from research_hub.topic import hub_cluster_dir
+
+    cfg = get_config()
+    try:
+        briefing = read_latest_briefing(cluster_slug, cfg)
+    except FileNotFoundError:
+        print(f"no briefing found for cluster {cluster_slug}", file=sys.stderr)
+        return 2
+    flagged = parse_nlm_off_topic(briefing)
+    out_path = hub_cluster_dir(cfg, cluster_slug) / ".fit_check_nlm_flags.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps({"cluster_slug": cluster_slug, "flagged": flagged}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    if not flagged:
+        print("off-topic: none")
+        return 0
+    print(f"off-topic: {len(flagged)} paper(s)")
+    for title in flagged:
+        print(f"  - {title}")
+    return 1
+
+
+def _fit_check_drift(cluster_slug: str, threshold: int) -> int:
+    from research_hub.fit_check import drift_check
+
+    cfg = get_config()
+    result = drift_check(cfg, cluster_slug, threshold=threshold)
+    print(result["prompt"])
+    return 0
+
+
 def _migrate_yaml(
     assign_cluster: str | None = None,
     folder: str | None = None,
@@ -1073,6 +1145,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-library-duplicates",
         action="store_true",
         help="Bypass Zotero library duplicate blocking and allow re-ingest",
+    )
+    ingest_parser.add_argument(
+        "--fit-check",
+        action="store_true",
+        help=(
+            "Require a valid .fit_check_rejected.json sidecar from a prior `fit-check apply` run, "
+            "and enforce the threshold during ingest"
+        ),
+    )
+    ingest_parser.add_argument(
+        "--fit-check-threshold",
+        type=int,
+        default=3,
+        help="Minimum score (0-5) to keep a paper when --fit-check is on",
     )
 
     for parser_with_verify in (run_parser, ingest_parser):
@@ -1571,6 +1657,29 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_generate.add_argument("--headless", action="store_true", default=False)
     nlm_generate.add_argument("--visible", dest="headless", action="store_false")
 
+    fit_parser = subparsers.add_parser("fit-check", help="Multi-gate fit-check for clusters")
+    fit_sub = fit_parser.add_subparsers(dest="fit_check_command")
+
+    fit_emit = fit_sub.add_parser("emit", help="Emit the Gate 1 scoring prompt for an AI")
+    fit_emit.add_argument("--cluster", required=True)
+    fit_emit.add_argument("--candidates", required=True)
+    fit_emit.add_argument("--definition")
+    fit_emit.add_argument("--out")
+
+    fit_apply = fit_sub.add_parser("apply", help="Apply AI scores and emit accepted papers")
+    fit_apply.add_argument("--cluster", required=True)
+    fit_apply.add_argument("--candidates", required=True)
+    fit_apply.add_argument("--scored", required=True)
+    fit_apply.add_argument("--threshold", type=int, default=3)
+    fit_apply.add_argument("--out")
+
+    fit_audit = fit_sub.add_parser("audit", help="Parse the latest briefing for off-topic flags")
+    fit_audit.add_argument("--cluster", required=True)
+
+    fit_drift = fit_sub.add_parser("drift", help="Emit a drift-check prompt")
+    fit_drift.add_argument("--cluster", required=True)
+    fit_drift.add_argument("--threshold", type=int, default=3)
+
     return parser
 
 
@@ -1585,6 +1694,8 @@ def main(argv: list[str] | None = None) -> int:
             query=getattr(args, "query", None),
             verify=getattr(args, "verify", True),
             allow_library_duplicates=getattr(args, "allow_library_duplicates", False),
+            fit_check=getattr(args, "fit_check", False),
+            fit_check_threshold=getattr(args, "fit_check_threshold", 3),
         )
     if args.command == "init":
         from research_hub.init_wizard import run_init
@@ -1626,7 +1737,26 @@ def main(argv: list[str] | None = None) -> int:
             query=args.query,
             verify=args.verify,
             allow_library_duplicates=args.allow_library_duplicates,
+            fit_check=args.fit_check,
+            fit_check_threshold=args.fit_check_threshold,
         )
+    if args.command == "fit-check":
+        if args.fit_check_command == "emit":
+            return _fit_check_emit(args.cluster, args.candidates, args.definition, args.out)
+        if args.fit_check_command == "apply":
+            return _fit_check_apply(
+                args.cluster,
+                args.candidates,
+                args.scored,
+                args.threshold,
+                args.out,
+            )
+        if args.fit_check_command == "audit":
+            return _fit_check_audit(args.cluster)
+        if args.fit_check_command == "drift":
+            return _fit_check_drift(args.cluster, args.threshold)
+        parser.error("fit-check requires a subcommand")
+        return 2
     if args.command == "index":
         return _rebuild_index()
     if args.command == "dedup":

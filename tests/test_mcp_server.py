@@ -10,7 +10,7 @@ from pathlib import Path
 
 import requests
 
-from tests._mcp_helpers import _list_mcp_tool_names
+from tests._mcp_helpers import _get_mcp_tool, _list_mcp_tool_names
 from research_hub.search import SearchResult
 
 try:
@@ -130,6 +130,7 @@ from research_hub.mcp_server import (
     get_config_info,
     list_quotes,
     list_clusters,
+    mcp,
     run_doctor,
     search_papers,
     show_cluster,
@@ -338,7 +339,7 @@ def test_generate_dashboard_tool_returns_path(tmp_path, monkeypatch):
     cfg = make_config(tmp_path)
     monkeypatch.setattr("research_hub.dashboard.get_config", lambda: cfg)
 
-    result = generate_dashboard.fn()
+    result = _get_mcp_tool(mcp, "generate_dashboard").fn()
 
     assert result["status"] == "ok"
     assert result["path"].endswith("dashboard.html")
@@ -354,7 +355,7 @@ def test_build_citation_returns_inline_and_markdown(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
 
-    result = build_citation.fn("paper-one")
+    result = _get_mcp_tool(mcp, "build_citation").fn("paper-one")
 
     assert result["status"] == "ok"
     assert result["inline"] == "(Doe, 2025)"
@@ -371,8 +372,8 @@ def test_capture_quote_and_list_quotes(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
 
-    saved = capture_quote.fn("paper-one", "12", "hello", "section")
-    listed = list_quotes.fn()
+    saved = _get_mcp_tool(mcp, "capture_quote").fn("paper-one", "12", "hello", "section")
+    listed = _get_mcp_tool(mcp, "list_quotes").fn()
 
     assert saved["status"] == "ok"
     assert listed["count"] == 1
@@ -396,9 +397,9 @@ def test_mcp_compose_draft_returns_ok_with_path_and_preview(tmp_path, monkeypatc
         encoding="utf-8",
     )
     monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
-    capture_quote.fn("paper-one", "12", "hello", "Introduction")
+    _get_mcp_tool(mcp, "capture_quote").fn("paper-one", "12", "hello", "Introduction")
 
-    result = compose_draft.fn("agents", outline=["Introduction"], style="apa")
+    result = _get_mcp_tool(mcp, "compose_draft").fn("agents", outline=["Introduction"], style="apa")
 
     assert result["status"] == "ok"
     assert result["path"].endswith("-agents-draft.md")

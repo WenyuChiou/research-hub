@@ -334,9 +334,10 @@ def test_e2e_mcp_download_artifacts_tool(tmp_path, monkeypatch):
     cfg = _setup_smoke_env(tmp_path, monkeypatch)
     _seed_bundle_and_download_mocks(cfg, monkeypatch)
 
-    from research_hub.mcp_server import download_artifacts, read_briefing
+    from research_hub.mcp_server import mcp
+    from tests._mcp_helpers import _get_mcp_tool
 
-    result = download_artifacts.fn(
+    result = _get_mcp_tool(mcp, "download_artifacts").fn(
         cluster_slug="test-cluster",
         artifact_type="brief",
         headless=True,
@@ -344,11 +345,11 @@ def test_e2e_mcp_download_artifacts_tool(tmp_path, monkeypatch):
     assert result["status"] == "ok"
     assert Path(result["path"]).exists()
 
-    briefing = read_briefing.fn(cluster_slug="test-cluster")
+    briefing = _get_mcp_tool(mcp, "read_briefing").fn(cluster_slug="test-cluster")
     assert briefing["status"] == "ok"
     assert "End-to-end briefing body." in briefing["text"]
 
-    truncated = read_briefing.fn(cluster_slug="test-cluster", max_chars=10)
+    truncated = _get_mcp_tool(mcp, "read_briefing").fn(cluster_slug="test-cluster", max_chars=10)
     assert truncated["status"] == "ok"
     assert truncated["truncated"] is True
     assert truncated["full_chars"] > 10
@@ -358,7 +359,8 @@ def test_e2e_read_briefing_missing_returns_remedy(tmp_path, monkeypatch):
     cfg = _setup_smoke_env(tmp_path, monkeypatch)
 
     from research_hub.clusters import Cluster
-    from research_hub.mcp_server import read_briefing
+    from research_hub.mcp_server import mcp
+    from tests._mcp_helpers import _get_mcp_tool
 
     cluster = Cluster(
         slug="test-cluster",
@@ -367,6 +369,6 @@ def test_e2e_read_briefing_missing_returns_remedy(tmp_path, monkeypatch):
     )
     _write_cluster(cfg, cluster)
 
-    result = read_briefing.fn(cluster_slug="test-cluster")
+    result = _get_mcp_tool(mcp, "read_briefing").fn(cluster_slug="test-cluster")
     assert result["status"] == "error"
     assert "download_artifacts" in result["remedy"]

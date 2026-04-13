@@ -194,6 +194,8 @@ def _render_obsidian_note(
     collection_name: str,
     cluster_slug: str | None,
     query: str | None,
+    *,
+    fit_warning: bool = False,
 ) -> str:
     # Build authors_str from either authors_str field, list of strings,
     # or list of {creatorType, firstName, lastName} dicts (Zotero format).
@@ -233,6 +235,8 @@ def _render_obsidian_note(
         verified=pp.get("verified"),
         verified_at=pp.get("verified_at", ""),
     )
+    if fit_warning:
+        content = content.replace('verified_at: "', 'fit_warning: true\nverified_at: "', 1)
     content += (
         "\n## Summary\n\n"
         + pp["summary"]
@@ -247,6 +251,31 @@ def _render_obsidian_note(
     return content
 
 
+def _load_fit_check_rejections(cfg, cluster_slug: str | None) -> tuple[dict[str, dict], dict[str, dict]]:
+    if not cluster_slug:
+        return {}, {}
+    from research_hub.topic import hub_cluster_dir
+
+    path = hub_cluster_dir(cfg, cluster_slug) / ".fit_check_rejected.json"
+    if not path.exists():
+        return {}, {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}, {}
+
+    by_doi: dict[str, dict] = {}
+    by_title: dict[str, dict] = {}
+    for item in payload.get("rejected", []):
+        doi = str(item.get("doi", "") or "").strip().lower()
+        title = str(item.get("title", "") or "").strip().lower()
+        if doi:
+            by_doi[doi] = item
+        if title:
+            by_title[title] = item
+    return by_doi, by_title
+
+
 def run_pipeline(
     dry_run: bool = False,
     *,
@@ -254,6 +283,8 @@ def run_pipeline(
     query: str | None = None,
     verify: bool = False,
     allow_library_duplicates: bool = False,
+    fit_check: bool = False,
+    fit_check_threshold: int = 3,
 ) -> int:
     cfg = get_config()
     kb = str(cfg.root)
@@ -284,6 +315,15 @@ def run_pipeline(
             query = cluster_obj.first_query
     manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
     dedup_path = cfg.research_hub_dir / "dedup_index.json"
+    fit_rejected_by_doi, fit_rejected_by_title = _load_fit_check_rejections(cfg, cluster_slug)
+    fit_warnings = 0
+    fit_accepted = 0
+    fit_rejected = 0
+    fit_key_terms: list[str] = []
+    if fit_check and cluster_slug:
+        from research_hub.fit_check import _extract_key_terms, _read_definition_from_overview
+
+        fit_key_terms = _extract_key_terms(_read_definition_from_overview(cfg, cluster_slug) or "")
 
     with log_path.open("w", encoding="utf-8") as log:
         def p(message: str) -> None:
@@ -367,6 +407,33 @@ def run_pipeline(
         for i, pp in enumerate(papers):
             p(f"\n--- Paper {i+1}: {pp['title'][:60]}...")
             query_text = _query_for_paper(pp, query)
+            if fit_check:
+                doi_key = str(pp.get("doi", "") or "").strip().lower()
+                title_key = str(pp.get("title", "") or "").strip().lower()
+                rejected_item = fit_rejected_by_doi.get(doi_key) or fit_rejected_by_title.get(title_key)
+                if rejected_item is not None and int(rejected_item.get("score", 0)) < fit_check_threshold:
+                    fit_rejected += 1
+                    p("  SKIPPED fit-check below threshold")
+                    manifest.append(
+                        new_entry(
+                            cluster=cluster_slug or "",
+                            query=query_text,
+                            action="skip-fit-check",
+                            doi=pp.get("doi", ""),
+                            title=pp.get("title", ""),
+                            error="below fit-check threshold",
+                        )
+                    )
+                    zr.append({"title": pp["title"], "status": "SKIPPED_FIT_CHECK", "key": ""})
+                    continue
+                fit_accepted += 1
+                if fit_key_terms:
+                    from research_hub.fit_check import term_overlap
+
+                    pp["_fit_warning"] = term_overlap(pp.get("abstract", ""), fit_key_terms) == 0.0
+                    if pp["_fit_warning"]:
+                        fit_warnings += 1
+                        p("  WARN fit-check term overlap is zero")
             try:
                 is_duplicate, dedup_hits = dedup.check({"doi": pp["doi"], "title": pp["title"]})
                 if is_duplicate:
@@ -567,7 +634,13 @@ def run_pipeline(
             zotero_key = pp.get("zotero_key", "")
             try:
                 file_path.write_text(
-                    _render_obsidian_note(pp, collection_name, cluster_slug, query),
+                    _render_obsidian_note(
+                        pp,
+                        collection_name,
+                        cluster_slug,
+                        query,
+                        fit_warning=bool(pp.get("_fit_warning")),
+                    ),
                     encoding="utf-8",
                 )
                 p(f"  OK: {file_path}")
@@ -626,6 +699,11 @@ def run_pipeline(
         p(
             f"\n=== SUMMARY ===\nPapers: {len(papers)}\nZotero created: {cr}\nZotero skipped: {sk}\nZotero failed: {fl}\nObsidian created: {oc}\nDOIs accessible: {da}"
         )
+        if fit_check:
+            p(
+                f"fit-check: {len(papers)} in, {fit_accepted} accepted, "
+                f"{fit_rejected} rejected, {fit_warnings} warnings"
+            )
         if not dry_run:
             p("\n=== INTEGRATION SUGGESTIONS ===")
             try:

@@ -585,6 +585,76 @@ def read_topic_overview(cluster_slug: str) -> dict[str, Any]:
         return _tool_error(exc)
 
 
+def fit_check_prompt(
+    cluster_slug: str,
+    candidates: list[dict],
+    definition: str | None = None,
+) -> dict:
+    """Build the Gate 1 fit-check prompt for an AI to score."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.fit_check import emit_prompt
+
+        cfg = get_config()
+        prompt = emit_prompt(cluster_slug, candidates, definition=definition, cfg=cfg)
+        return {"prompt": prompt, "candidate_count": len(candidates)}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def fit_check_apply(
+    cluster_slug: str,
+    candidates: list[dict],
+    scores: list[dict],
+    threshold: int = 3,
+) -> dict:
+    """Consume AI scores, filter candidates, write rejected sidecar."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.fit_check import apply_scores
+
+        cfg = get_config()
+        report = apply_scores(cluster_slug, candidates, scores, threshold=threshold, cfg=cfg)
+        return {
+            "cluster_slug": report.cluster_slug,
+            "threshold": report.threshold,
+            "candidates_in": report.candidates_in,
+            "accepted": [item.to_dict() for item in report.accepted],
+            "rejected": [item.to_dict() for item in report.rejected],
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def fit_check_audit(cluster_slug: str) -> dict:
+    """Gate 3: parse latest NLM briefing for off-topic flags."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.fit_check import parse_nlm_off_topic
+        from research_hub.notebooklm.upload import read_latest_briefing
+
+        cfg = get_config()
+        briefing = read_latest_briefing(cluster_slug, cfg)
+        flagged = parse_nlm_off_topic(briefing)
+        return {"ok": True, "cluster_slug": cluster_slug, "flagged": flagged}
+    except FileNotFoundError:
+        return {"ok": False, "reason": "no briefing found"}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
+    """Gate 4: emit drift-check prompt against current overview."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.fit_check import drift_check
+
+        cfg = get_config()
+        return drift_check(cfg, cluster_slug, threshold=threshold)
+    except Exception as exc:
+        return _tool_error(exc)
+
+
 @mcp.tool()
 def download_artifacts(
     cluster_slug: str,
@@ -792,6 +862,10 @@ mcp.tool()(split_cluster)
 mcp.tool()(get_topic_digest)
 mcp.tool()(write_topic_overview)
 mcp.tool()(read_topic_overview)
+mcp.tool()(fit_check_prompt)
+mcp.tool()(fit_check_apply)
+mcp.tool()(fit_check_audit)
+mcp.tool()(fit_check_drift)
 
 
 if __name__ == "__main__":
