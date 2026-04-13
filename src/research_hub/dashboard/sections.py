@@ -288,25 +288,37 @@ class OverviewSection(DashboardSection):
     def _render_treemap(self, clusters: list) -> str:
         if not clusters:
             return '<p class="empty-state">No clusters yet. Run <code>research-hub clusters new --query "topic"</code> to start.</p>'
-        sized = [(c, max(_paper_count(c), 1)) for c in clusters]
-        total = sum(weight for _c, weight in sized) or 1
-        cells = "".join(self._treemap_cell(cluster, weight, total) for cluster, weight in sized)
+        # Use sqrt scaling for flex weights so a vault with 7/8/331
+        # papers does not collapse the small cells to unreadable
+        # widths. Real counts are kept for display.
+        counts = [max(_paper_count(c), 1) for c in clusters]
+        real_total = sum(counts) or 1
+        weights = [round(c ** 0.5, 2) for c in counts]
+        cells = "".join(
+            self._treemap_cell(cluster, count, weight, real_total)
+            for cluster, count, weight in zip(clusters, counts, weights)
+        )
         return f'<div class="treemap" role="img" aria-label="Cluster sizes">{cells}</div>'
 
-    def _treemap_cell(self, cluster, weight: int, total: int) -> str:
+    def _treemap_cell(self, cluster, count: int, flex_weight: float, real_total: int) -> str:
         slug = html_escape(_attr(cluster, "slug", ""))
         name = html_escape(_attr(cluster, "name", ""))
-        count = int(_attr(cluster, "paper_count", 0) or _paper_count(cluster))
-        share_pct = round((weight / total) * 100, 2)
+        share_pct = round((count / real_total) * 100, 1)
+        # Use a button instead of a hash-linked anchor: the anchor
+        # triggered Chrome's "unsafe attempt to load URL from frame"
+        # security check when the page origin is file://. The button
+        # falls back to a click handler in script.js that selects the
+        # library tab radio without navigating the URL.
         return (
-            f'<a class="treemap-cell" href="#tab-library" '
-            f'style="flex: {weight} 1 0;" '
+            f'<button type="button" class="treemap-cell" '
+            f'data-jump-tab="library" '
+            f'style="flex: {flex_weight} 1 0;" '
             f'data-cluster="{slug}" '
-            f'aria-label="{name}, {count} papers">'
+            f'aria-label="Jump to {name} in Library tab, {count} papers">'
             f'<span class="treemap-name">{name}</span>'
             f'<span class="treemap-count">{count}</span>'
-            f'<span class="treemap-share">{share_pct}%</span>'
-            f'</a>'
+            f'<span class="treemap-share">{share_pct}% of vault</span>'
+            f'</button>'
         )
 
     def _render_storage_map(self, clusters: list, show_zotero: bool) -> str:

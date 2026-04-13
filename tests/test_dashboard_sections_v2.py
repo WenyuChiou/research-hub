@@ -120,16 +120,24 @@ def test_header_section_renders_no_emoji():
 
 
 def test_overview_renders_treemap_with_proportional_flex():
-    cluster_a = _cluster(slug="a", name="A", papers=[_paper(slug="a-1")] * 5)
-    cluster_b = _cluster(slug="b", name="B", papers=[_paper(slug="b-1")] * 20)
+    """Treemap uses sqrt(count) for flex weights so tiny clusters
+    stay readable next to giant ones — but the displayed share
+    percentage is still computed from the raw counts."""
+    cluster_a = _cluster(slug="a", name="A", papers=[_paper(slug="a-1")] * 4)
+    cluster_b = _cluster(slug="b", name="B", papers=[_paper(slug="b-1")] * 16)
     html = OverviewSection().render(
-        _data(clusters=[cluster_a, cluster_b], total_clusters=2, total_papers=25)
+        _data(clusters=[cluster_a, cluster_b], total_clusters=2, total_papers=20)
     )
     assert 'class="treemap"' in html
-    assert 'flex: 5 1 0' in html
-    assert 'flex: 20 1 0' in html
-    assert 'class="treemap-share">20.0%' in html
-    assert 'class="treemap-share">80.0%' in html
+    # sqrt(4) = 2.0, sqrt(16) = 4.0
+    assert 'flex: 2.0 1 0' in html
+    assert 'flex: 4.0 1 0' in html
+    # Share is raw percentage — 4/20 = 20%, 16/20 = 80%
+    assert 'class="treemap-share">20.0% of vault' in html
+    assert 'class="treemap-share">80.0% of vault' in html
+    # Jump target is the library tab (no hash anchors for file:// safety)
+    assert 'data-jump-tab="library"' in html
+    assert 'href="#tab-library"' not in html
 
 
 def test_overview_storage_map_shows_zotero_obsidian_nlm_columns_for_researcher():

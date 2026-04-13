@@ -296,6 +296,28 @@
     }
   }
 
+  // Treemap cells + any data-jump-tab button: select the target tab
+  // radio instead of navigating via a hash anchor. Using a hash anchor
+  // on file:// pages triggers Chrome's "unsafe attempt to load URL
+  // from frame" security block.
+  doc.querySelectorAll("[data-jump-tab]").forEach(function (el) {
+    el.addEventListener("click", function (event) {
+      event.preventDefault();
+      const target = el.dataset.jumpTab;
+      const radio = doc.getElementById("dash-tab-" + target);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+        // Scroll to the top of the panel after the CSS :checked rule
+        // reveals it.
+        const panel = doc.getElementById("tab-" + target);
+        if (panel && panel.scrollIntoView) {
+          panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    });
+  });
+
   // Debug widget — toggle snapshot + copy to clipboard
   const debugToggle = doc.getElementById("debug-toggle-btn");
   const debugSnapshot = doc.getElementById("debug-snapshot");
