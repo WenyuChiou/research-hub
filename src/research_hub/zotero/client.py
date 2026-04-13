@@ -58,18 +58,46 @@ def _read_env_file() -> dict[str, str]:
     return env_values
 
 
+_LEGACY_ZOTERO_SKILL_CONFIG = (
+    Path.home() / ".claude" / "skills" / "zotero-skills" / "config.json"
+)
+
+
+def _load_legacy_zotero_skill_config() -> dict:
+    """Read ~/.claude/skills/zotero-skills/config.json if present.
+
+    This is the older flat-keys credential file written by the
+    standalone zotero-skills install. research-hub's own config
+    resolver (`_resolve_config_path`) does not look here, but it is
+    the canonical credential location for users who set up Zotero
+    via the standalone skill before moving to research-hub. We treat
+    it as a credential fallback only — never as the primary config.
+    """
+    if not _LEGACY_ZOTERO_SKILL_CONFIG.exists():
+        return {}
+    try:
+        with _LEGACY_ZOTERO_SKILL_CONFIG.open(encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def _load_credentials() -> tuple[str | None, str | None, str]:
     """Resolve Zotero credentials.
 
     Resolution order (first hit wins):
     1. Environment variables ``ZOTERO_API_KEY`` / ``ZOTERO_LIBRARY_ID`` / ``ZOTERO_LIBRARY_TYPE``
     2. ``~/.claude/.env`` file with the same keys
-    3. ``config.json`` flat keys (``zotero_api_key`` / ``zotero_library_id`` / ``zotero_library_type``)
-    4. ``config.json`` nested ``zotero`` block (``zotero.api_key`` / ``zotero.library_id`` / ``zotero.library_type``)
+    3. The research-hub config.json — both flat keys
+       (``zotero_api_key`` / ``zotero_library_id``) and the legacy
+       nested ``zotero`` block (``zotero.api_key`` / ``zotero.library_id``)
+    4. The standalone zotero-skills config at
+       ``~/.claude/skills/zotero-skills/config.json`` — flat keys.
+       This is checked LAST as a credential fallback for users who
+       set up Zotero via the standalone skill before research-hub.
 
-    The nested form is the legacy layout written by older
-    ``research-hub init`` versions. Both forms are supported so a
-    user who set things up months ago doesn't have to re-init.
+    All three forms are supported so a user who set things up months
+    ago doesn't have to re-init.
     """
 
     api_key = os.environ.get("ZOTERO_API_KEY")
@@ -103,6 +131,16 @@ def _load_credentials() -> tuple[str | None, str | None, str]:
         nested_type = nested.get("library_type")
         if nested_type:
             lib_type = nested_type
+
+    if not api_key or not lib_id:
+        legacy = _load_legacy_zotero_skill_config()
+        if not api_key:
+            api_key = legacy.get("zotero_api_key")
+        if not lib_id:
+            lib_id = legacy.get("zotero_library_id")
+        legacy_type = legacy.get("zotero_library_type")
+        if legacy_type:
+            lib_type = legacy_type
 
     return api_key, lib_id, lib_type
 

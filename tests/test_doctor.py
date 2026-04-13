@@ -134,6 +134,11 @@ def test_doctor_no_zotero_key(tmp_path, monkeypatch):
         "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
         lambda: None,
     )
+    # Isolate from the user's real legacy zotero-skills config
+    monkeypatch.setattr(
+        "research_hub.zotero.client._load_legacy_zotero_skill_config",
+        lambda: {},
+    )
 
     results = run_doctor()
 

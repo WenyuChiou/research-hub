@@ -78,7 +78,19 @@ def run_doctor() -> list[CheckResult]:
     no_zotero_config = bool(config_data.get("no_zotero", False))
     no_zotero_env = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in ("1", "true", "yes")
     no_zotero = no_zotero_config or no_zotero_env
-    zotero_key = os.environ.get("ZOTERO_API_KEY") or config_data.get("zotero", {}).get("api_key")
+
+    # Use the same resolver as the rest of research-hub so doctor sees
+    # the same credentials the dashboard / pipeline actually use.
+    try:
+        from research_hub.zotero.client import _load_credentials
+
+        zotero_key, library_id, _lib_type = _load_credentials()
+    except Exception:
+        zotero_key = os.environ.get("ZOTERO_API_KEY") or config_data.get("zotero", {}).get("api_key")
+        library_id = os.environ.get("ZOTERO_LIBRARY_ID") or config_data.get("zotero", {}).get(
+            "library_id", ""
+        )
+
     if no_zotero:
         results.append(CheckResult("zotero_key", "OK", "Skipped (analyst mode)"))
     elif zotero_key:
@@ -92,10 +104,6 @@ def run_doctor() -> list[CheckResult]:
                 remedy="Set ZOTERO_API_KEY env var or run: research-hub init",
             )
         )
-
-    library_id = os.environ.get("ZOTERO_LIBRARY_ID") or config_data.get("zotero", {}).get(
-        "library_id", ""
-    )
     if not no_zotero and zotero_key and library_id:
         import requests
 
