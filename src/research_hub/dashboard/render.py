@@ -94,6 +94,8 @@ def _vault_data(ctx: Any) -> dict:
 def render_dashboard(
     ctx: Any,
     sections: list[DashboardSection] | None = None,
+    *,
+    refresh_seconds: int = 0,
 ) -> str:
     """Render the full dashboard HTML for an in-memory snapshot.
 
@@ -102,6 +104,11 @@ def render_dashboard(
     (used by the backwards-compat ``render_dashboard_html`` shim).
     The new section classes use defensive attribute access so the
     same render function handles both.
+
+    ``refresh_seconds`` injects a ``<meta http-equiv="refresh">`` so
+    the open browser tab auto-reloads at that cadence. Used by the
+    ``research-hub dashboard --watch`` mode. ``0`` (default) emits no
+    refresh meta — the file stays static.
     """
     section_list = sorted(
         sections if sections is not None else DEFAULT_SECTIONS,
@@ -114,10 +121,16 @@ def render_dashboard(
     vault_json = json.dumps(_vault_data(ctx), ensure_ascii=False)
     # Escape closing script tag to prevent injection from titles.
     vault_json_safe = vault_json.replace("</", "<\\/")
+    refresh_meta = (
+        f'<meta http-equiv="refresh" content="{int(refresh_seconds)}">'
+        if refresh_seconds and refresh_seconds > 0
+        else ""
+    )
     return (
         template.replace("{{ STYLE }}", style)
         .replace("{{ SCRIPT }}", script)
         .replace("{{ BODY }}", body)
+        .replace("{{ AUTO_REFRESH_META }}", refresh_meta)
         .replace("{{ VAULT_ROOT }}", html_escape(_attr(ctx, "vault_root", "")))
         .replace("{{ GENERATED_AT }}", html_escape(_attr(ctx, "generated_at", "")))
         .replace(
@@ -128,7 +141,7 @@ def render_dashboard(
     )
 
 
-def render_dashboard_from_config(cfg, zot=None) -> str:
+def render_dashboard_from_config(cfg, zot=None, *, refresh_seconds: int = 0) -> str:
     """Collect the v0.10 DashboardData and render in one call.
 
     Falls back to the legacy DashboardContext + render path if the new
@@ -136,7 +149,7 @@ def render_dashboard_from_config(cfg, zot=None) -> str:
     """
     try:
         data = collect_dashboard_data(cfg, zot=zot)
-        return render_dashboard(data)
+        return render_dashboard(data, refresh_seconds=refresh_seconds)
     except Exception:
         ctx = collect_dashboard_context(cfg)
-        return render_dashboard(ctx)
+        return render_dashboard(ctx, refresh_seconds=refresh_seconds)

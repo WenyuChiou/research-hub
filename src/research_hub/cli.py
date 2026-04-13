@@ -492,7 +492,13 @@ def _status(cluster: str | None = None) -> int:
     return 0
 
 
-def _dashboard(open_browser: bool) -> int:
+def _dashboard(open_browser: bool, watch: bool = False, refresh: int = 10) -> int:
+    if watch:
+        from research_hub.dashboard import watch_dashboard
+
+        watch_dashboard(open_browser=open_browser, refresh_seconds=refresh)
+        return 0
+
     from research_hub.dashboard import generate_dashboard
 
     out_path = generate_dashboard(open_browser=open_browser)
@@ -965,6 +971,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Open the dashboard in your default browser after generation",
     )
+    dashboard_parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Re-render the dashboard whenever vault state files change",
+    )
+    dashboard_parser.add_argument(
+        "--refresh",
+        type=int,
+        default=10,
+        help="Browser auto-refresh interval in seconds when --watch is set (default 10)",
+    )
 
     migrate_parser = subparsers.add_parser(
         "migrate-yaml", help="Patch legacy notes to v0.3.x YAML spec"
@@ -1229,7 +1246,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         return _status(cluster=args.cluster)
     if args.command == "dashboard":
-        return _dashboard(args.open_browser)
+        return _dashboard(args.open_browser, watch=args.watch, refresh=args.refresh)
     if args.command == "sync":
         if args.sync_command == "status":
             return _sync_status(cluster_slug=args.cluster)

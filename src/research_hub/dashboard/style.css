@@ -321,17 +321,19 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 /* Hide every panel by default; the matching :checked radio reveals one. */
 .dash-panel { display: none; }
 
-.dash-tab-radio-overview:checked    ~ main #tab-overview,
-.dash-tab-radio-library:checked     ~ main #tab-library,
-.dash-tab-radio-briefings:checked   ~ main #tab-briefings,
-.dash-tab-radio-diagnostics:checked ~ main #tab-diagnostics,
-.dash-tab-radio-manage:checked      ~ main #tab-manage { display: block; }
+/* Radios and panels are siblings inside <main> — direct ~ works. */
+.dash-tab-radio-overview:checked    ~ #tab-overview,
+.dash-tab-radio-library:checked     ~ #tab-library,
+.dash-tab-radio-briefings:checked   ~ #tab-briefings,
+.dash-tab-radio-diagnostics:checked ~ #tab-diagnostics,
+.dash-tab-radio-manage:checked      ~ #tab-manage { display: block; }
 
-.dash-tab-radio-overview:checked    ~ .app-header .dash-tabs .dash-tab-label-overview,
-.dash-tab-radio-library:checked     ~ .app-header .dash-tabs .dash-tab-label-library,
-.dash-tab-radio-briefings:checked   ~ .app-header .dash-tabs .dash-tab-label-briefings,
-.dash-tab-radio-diagnostics:checked ~ .app-header .dash-tabs .dash-tab-label-diagnostics,
-.dash-tab-radio-manage:checked      ~ .app-header .dash-tabs .dash-tab-label-manage {
+/* Highlight the active tab label (also a sibling of the radio). */
+.dash-tab-radio-overview:checked    ~ .dash-tabs .dash-tab-label-overview,
+.dash-tab-radio-library:checked     ~ .dash-tabs .dash-tab-label-library,
+.dash-tab-radio-briefings:checked   ~ .dash-tabs .dash-tab-label-briefings,
+.dash-tab-radio-diagnostics:checked ~ .dash-tabs .dash-tab-label-diagnostics,
+.dash-tab-radio-manage:checked      ~ .dash-tabs .dash-tab-label-manage {
   background: var(--surface);
   color: var(--fg-strong);
   border-color: var(--border);

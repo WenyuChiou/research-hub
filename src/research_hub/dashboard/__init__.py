@@ -142,8 +142,17 @@ def render_dashboard_html(state: dict) -> str:
     return render_dashboard(ctx)
 
 
-def generate_dashboard(open_browser: bool = False) -> Path:
-    """Generate dashboard HTML and optionally open it in the browser."""
+def generate_dashboard(
+    open_browser: bool = False,
+    *,
+    refresh_seconds: int = 0,
+) -> Path:
+    """Generate dashboard HTML and optionally open it in the browser.
+
+    ``refresh_seconds`` injects a meta-refresh so an already-open
+    browser tab will auto-reload at that cadence. ``0`` (default) emits
+    no refresh meta — the file stays static. Used by ``--watch`` mode.
+    """
     cfg = get_config()
     zot = None
     if not getattr(cfg, "no_zotero", False):
@@ -153,13 +162,74 @@ def generate_dashboard(open_browser: bool = False) -> Path:
             zot = get_client()
         except Exception:
             zot = None
-    html = render_dashboard_from_config(cfg, zot=zot)
+    html = render_dashboard_from_config(cfg, zot=zot, refresh_seconds=refresh_seconds)
     out_path = cfg.research_hub_dir / "dashboard.html"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
     if open_browser:
         webbrowser.open(out_path.as_uri())
     return out_path
+
+
+def watch_dashboard(
+    poll_seconds: float = 5.0,
+    refresh_seconds: int = 10,
+    open_browser: bool = True,
+) -> None:
+    """Regenerate the dashboard whenever vault state files change.
+
+    Polls ``manifest.jsonl``, ``dedup_index.json``, ``nlm_cache.json``,
+    and ``clusters.yaml`` for mtime changes. Re-runs ``generate_dashboard``
+    on any change. The emitted HTML carries a meta-refresh of
+    ``refresh_seconds`` so the open browser tab reloads itself.
+
+    Press Ctrl+C to stop.
+    """
+    import time
+
+    cfg = get_config()
+    watch_paths = [
+        cfg.research_hub_dir / "manifest.jsonl",
+        cfg.research_hub_dir / "dedup_index.json",
+        cfg.research_hub_dir / "nlm_cache.json",
+        cfg.clusters_file,
+        cfg.raw,
+    ]
+
+    def _state_signature() -> tuple:
+        sig: list = []
+        for p in watch_paths:
+            try:
+                if p.is_dir():
+                    # Hash of (file count, max mtime) for the raw notes folder
+                    files = list(p.rglob("*.md"))
+                    sig.append(("dir", len(files), max((f.stat().st_mtime for f in files), default=0)))
+                else:
+                    sig.append(("file", p.stat().st_mtime if p.exists() else 0))
+            except OSError:
+                sig.append(("err",))
+        return tuple(sig)
+
+    print(
+        f"Watching vault state ({len(watch_paths)} paths). "
+        f"Re-render on change · meta-refresh {refresh_seconds}s · Ctrl+C to stop."
+    )
+    out_path = generate_dashboard(open_browser=open_browser, refresh_seconds=refresh_seconds)
+    print(f"  initial render → {out_path}")
+    last = _state_signature()
+    try:
+        while True:
+            time.sleep(poll_seconds)
+            current = _state_signature()
+            if current != last:
+                last = current
+                out_path = generate_dashboard(open_browser=False, refresh_seconds=refresh_seconds)
+                from datetime import datetime, timezone
+
+                stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+                print(f"  [{stamp}] vault changed → re-rendered")
+    except KeyboardInterrupt:
+        print("\nStopped watching.")
 
 
 __all__ = [
@@ -183,4 +253,5 @@ __all__ = [
     "render_dashboard",
     "render_dashboard_from_config",
     "render_dashboard_html",
+    "watch_dashboard",
 ]
