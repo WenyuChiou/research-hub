@@ -314,6 +314,33 @@ def test_build_subtopic_notes_overwrites_papers_section_only(tmp_path):
     assert "[[paper2|" in rerun
 
 
+def test_build_subtopic_notes_rerun_preserves_frontmatter_yaml(tmp_path):
+    """Regression test for v0.20.1: _update_subtopic_frontmatter dropped
+    the trailing newline before the closing --- fence on rebuild, producing
+    `status: draft---` jammed onto one line and breaking YAML parsing.
+    `_extract_frontmatter_block` then failed and `_existing_subtopic_paper_count`
+    returned 0 for every cluster, making `topic list` show 0 papers."""
+    cfg = _cfg(tmp_path)
+    _write_note(cfg, "paper1", title="Paper One")
+    _write_note(cfg, "paper2", title="Paper Two")
+    apply_assignments(cfg, "my-cluster", {"paper1": ["benchmarks"]})
+    build_subtopic_notes(cfg, "my-cluster")
+    path = cfg.raw / "my-cluster" / "topics" / "01_benchmarks.md"
+
+    # Rebuild — this triggers _update_subtopic_frontmatter
+    apply_assignments(cfg, "my-cluster", {"paper1": ["benchmarks"], "paper2": ["benchmarks"]})
+    build_subtopic_notes(cfg, "my-cluster")
+
+    rerun_text = path.read_text(encoding="utf-8")
+    # The YAML fence must be on its own line, not glued to the last field
+    assert "\nstatus: draft\n---\n" in rerun_text or "\nstatus: draft\r\n---" in rerun_text
+    assert "status: draft---" not in rerun_text
+    # And `topic list` must still see the correct count
+    descriptors = list_subtopics(cfg, "my-cluster")
+    benchmarks = next(d for d in descriptors if d.slug == "benchmarks")
+    assert benchmarks.paper_count == 2
+
+
 def test_build_subtopic_notes_stable_numbering_on_rerun(tmp_path):
     cfg = _cfg(tmp_path)
     _write_note(cfg, "paper1", title="Paper One")

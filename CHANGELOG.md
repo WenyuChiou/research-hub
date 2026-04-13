@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.20.1 (2026-04-13)
+
+**Bug fix.** v0.14.0-B's `_update_subtopic_frontmatter` (called when `topic build` runs on an existing sub-topic file) dropped the trailing newline before the closing `---` fence, producing corrupted frontmatter like:
+
+```yaml
+papers: 10
+status: draft---     ← missing newline before the fence
+```
+
+The corrupted YAML broke `_extract_frontmatter_block`'s `text.find("\n---\n", 4)` lookup, which made `_existing_subtopic_paper_count` return 0 for every sub-topic file, which made `research-hub topic list` show every cluster as having 0 papers per sub-topic — even though the sub-topic notes themselves contained the correct paper lists.
+
+Bug surfaced during a real live test on the cleaned-up `llm-agents-software-engineering` cluster (8 papers expanded to 20 via `discover new` + `discover continue --auto-threshold`, then sub-topic notes built). The first `topic build` worked; the second `topic build` (after re-running `topic assign apply` with corrected paper slugs) corrupted the frontmatter.
+
+**Fix:** one-character change to add the missing `\n` between the frontmatter body and the closing fence in `_update_subtopic_frontmatter`'s return value.
+
+**Regression test added:** `test_build_subtopic_notes_rerun_preserves_frontmatter_yaml` runs build twice and asserts the YAML closing fence stays on its own line, plus verifies `list_subtopics()` returns the correct paper count after rebuild.
+
+Tests: 734 → 735 passing (+1 regression test).
+
 ## v0.20.0 (2026-04-13)
 
 **CJK literature backends + region preset — Japanese and Korean academic literature now first-class.**

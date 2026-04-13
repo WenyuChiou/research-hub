@@ -691,4 +691,4 @@ def _update_subtopic_frontmatter(
             if frontmatter and not frontmatter.endswith("\n"):
                 frontmatter += "\n"
             frontmatter += f"{key}: {value}\n"
-    return f"---\n{frontmatter}---\n{text[end + 5:]}"
+    return f"---\n{frontmatter}\n---\n{text[end + 5:]}"
