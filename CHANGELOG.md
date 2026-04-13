@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.11.0 (2026-04-12)
+
+**Writing helpers — inline citations, quote capture, and a Writing tab to close the loop from "found it" to "used it in a draft".**
+
+### Added
+- **`research-hub cite --inline`** — emits an inline-style citation like `(Lamparth et al., 2024)` instead of full BibTeX. Useful in draft prose.
+- **`research-hub cite --markdown`** — emits a markdown link with the DOI: `[Lamparth et al. (2024)](https://doi.org/10.1609/aies.v7i1.31681)`.
+- **`research-hub cite --style apa|chicago|mla|latex`** — picks the inline format. APA is default. LaTeX style derives a BibKey from the paper slug (`\citep{lamparth2024human}`).
+- **`research-hub quote <slug> --page 12 --text "..."` + `--context "..."`** — captures an excerpt from a paper into `<vault>/.research_hub/quotes/<slug>.md` with a small frontmatter block per quote (page, captured_at, context_note).
+- **`research-hub quote list [--cluster SLUG]`** — browse captured quotes.
+- **Dashboard Library tab** — every paper row now has a `[Quote]` button next to `[Cite]`. Clicking opens a popup with page + text + context fields and builds the exact `research-hub quote ...` command for you.
+- **New Dashboard tab: Writing** (order 35, between Briefings and Diagnostics) — lists captured quotes grouped by cluster and papers marked `status: cited`. Each quote card has `Copy as markdown` and `Copy inline` action buttons.
+- 3 new MCP tools (24 total):
+  - `build_citation(doi_or_slug, style)` — returns `{inline, markdown}` for a paper so AI agents can build citations for your draft
+  - `list_quotes(cluster_slug)` — lists captured quotes
+  - `capture_quote(slug, page, text, context)` — saves a quote from the agent side
+- **New module `src/research_hub/writing.py`** — holds the citation formatters, `Quote` dataclass persistence, and `resolve_paper_meta` helper that reads an Obsidian note's frontmatter to pull authors/year/title/doi.
+- **New section module `src/research_hub/dashboard/writing_section.py`** — the Writing tab renderer.
+
+### Changed
+- Dashboard `DashboardData` now carries a `quotes: list[Quote]` field populated from `<vault>/.research_hub/quotes/*.md` on each render.
+- `SKILL.md` documents the new `quote`, `cite --inline`, `cite --markdown`, and dashboard Writing tab.
+
+### Tests
+- Suite: **386 → 417 passing** + 5 skipped.
+- 12 new tests in `tests/test_writing.py` covering the inline/markdown formatters, quote persistence (save + load + multi-block files), and frontmatter resolver.
+- 7 new tests in `tests/test_dashboard_sections_v2.py` for the Writing section (empty state, quote cards, grouping by cluster, cited paper listing).
+- Updated `test_header_section_renders_tabs` to expect the 6th tab radio.
+
 ## v0.10.0 (2026-04-12)
 
 **Dashboard redesign — "personal knowledge garden" for AI-assisted literature review.**
