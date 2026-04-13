@@ -326,6 +326,9 @@ def test_new_operation_tools_are_registered():
         "search_vault",
         "merge_clusters",
         "split_cluster",
+        "get_topic_digest",
+        "write_topic_overview",
+        "read_topic_overview",
     ]:
         assert tool_name in mcp._tool_manager._tools
 

@@ -1146,6 +1146,17 @@ def build_parser() -> argparse.ArgumentParser:
     split_parser.add_argument("--query", required=True, help="Keywords for the new sub-cluster")
     split_parser.add_argument("--new-name", required=True, help="Display name for new cluster")
 
+    topic_parser = subparsers.add_parser("topic", help="Manage cluster topic overview notes")
+    topic_subparsers = topic_parser.add_subparsers(dest="topic_command")
+    topic_scaffold = topic_subparsers.add_parser("scaffold", help="Create the overview template file")
+    topic_scaffold.add_argument("--cluster", required=True)
+    topic_scaffold.add_argument("--force", action="store_true", help="Overwrite if exists")
+    topic_digest = topic_subparsers.add_parser("digest", help="Emit the cluster digest for an AI to read")
+    topic_digest.add_argument("--cluster", required=True)
+    topic_digest.add_argument("--out", help="Write digest to this file instead of stdout")
+    topic_show = topic_subparsers.add_parser("show", help="Print the current overview markdown")
+    topic_show.add_argument("--cluster", required=True)
+
     remove_parser = subparsers.add_parser("remove", help="Remove a paper from the vault")
     remove_parser.add_argument("identifier", help="DOI or note filename slug")
     remove_parser.add_argument("--zotero", action="store_true", help="Also delete from Zotero")
@@ -1642,6 +1653,42 @@ def main(argv: list[str] | None = None) -> int:
             return _clusters_merge(args.source, args.target)
         if args.clusters_command == "split":
             return _clusters_split(args.source, args.query, args.new_name)
+    if args.command == "topic":
+        from research_hub.topic import get_topic_digest, read_overview, scaffold_overview
+
+        cfg = get_config()
+        if args.topic_command == "scaffold":
+            try:
+                path = scaffold_overview(cfg, args.cluster, force=args.force)
+            except FileExistsError as exc:
+                print(str(exc), file=sys.stderr)
+                print("hint: use --force to overwrite", file=sys.stderr)
+                return 1
+            print(f"wrote {path}")
+            return 0
+        if args.topic_command == "digest":
+            digest = get_topic_digest(cfg, args.cluster)
+            markdown = digest.to_markdown()
+            if args.out:
+                Path(args.out).write_text(markdown, encoding="utf-8")
+                print(f"wrote {args.out} ({digest.paper_count} papers)")
+            else:
+                print(markdown)
+            return 0
+        if args.topic_command == "show":
+            content = read_overview(cfg, args.cluster)
+            if content is None:
+                print("no overview (run: research-hub topic scaffold --cluster ...)", file=sys.stderr)
+                return 1
+            print(content)
+            return 0
+        topic_parser = next(
+            action
+            for action in parser._subparsers._group_actions[0].choices.values()
+            if action.prog.endswith(" topic")
+        )
+        topic_parser.print_help()
+        return 2
     if args.command == "remove":
         return _remove(args.identifier, args.zotero, args.dry_run)
     if args.command == "mark":

@@ -531,6 +531,60 @@ def split_cluster(source: str, query: str, new_name: str) -> dict[str, Any]:
         return _tool_error(exc)
 
 
+def get_topic_digest(cluster_slug: str) -> dict[str, Any]:
+    """Return every paper in a cluster plus a markdown digest for overview writing."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import get_topic_digest as _digest
+
+        cfg = get_config()
+        digest = _digest(cfg, cluster_slug)
+        return {
+            "cluster_slug": digest.cluster_slug,
+            "cluster_title": digest.cluster_title,
+            "paper_count": digest.paper_count,
+            "papers": [asdict(paper) for paper in digest.papers],
+            "markdown": digest.to_markdown(),
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def write_topic_overview(cluster_slug: str, markdown: str, overwrite: bool = False) -> dict[str, Any]:
+    """Write a topic overview markdown file for a cluster."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import overview_path
+
+        cfg = get_config()
+        path = overview_path(cfg, cluster_slug)
+        if path.exists() and not overwrite:
+            return {
+                "ok": False,
+                "reason": f"overview already exists at {path}; pass overwrite=True to replace",
+            }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(markdown, encoding="utf-8")
+        return {"ok": True, "path": str(path), "bytes": len(markdown.encode("utf-8"))}
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+def read_topic_overview(cluster_slug: str) -> dict[str, Any]:
+    """Return the current topic overview markdown for a cluster, if present."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import read_overview
+
+        cfg = get_config()
+        content = read_overview(cfg, cluster_slug)
+        if content is None:
+            return {"ok": False, "reason": "no overview found"}
+        return {"ok": True, "markdown": content}
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 @mcp.tool()
 def download_artifacts(
     cluster_slug: str,
@@ -735,6 +789,9 @@ mcp.tool()(move_paper)
 mcp.tool()(search_vault)
 mcp.tool()(merge_clusters)
 mcp.tool()(split_cluster)
+mcp.tool()(get_topic_digest)
+mcp.tool()(write_topic_overview)
+mcp.tool()(read_topic_overview)
 
 
 if __name__ == "__main__":

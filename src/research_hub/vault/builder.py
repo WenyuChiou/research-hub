@@ -3,6 +3,7 @@ import re
 
 from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config as _get_config
+from research_hub.topic import read_overview
 from research_hub.vault.progress import count_status_by_cluster
 
 # Merge mapping: normalize duplicate/typo Zotero collection names to canonical wiki names
@@ -42,6 +43,15 @@ def _ingested_sort_key(value: str) -> tuple[int, str]:
     """Sort ingest timestamps with blank values last."""
 
     return (1, value) if value else (0, "")
+
+
+def _strip_frontmatter_and_h1(markdown: str) -> str:
+    if markdown.startswith("---\n"):
+        end = markdown.find("\n---\n", 4)
+        if end != -1:
+            markdown = markdown[end + 5 :]
+    markdown = re.sub(r"^#\s+[^\n]+\n+", "", markdown.lstrip(), count=1)
+    return markdown.strip()
 
 
 def main() -> int:
@@ -178,6 +188,12 @@ papers: {len(matched)}
         os.makedirs(clusters_dir, exist_ok=True)
         for cluster in clusters.list():
             matched = [paper for paper in papers if paper.get("topic_cluster") == cluster.slug]
+            overview = read_overview(cfg, cluster.slug)
+            overview_block = ""
+            if overview:
+                cleaned = _strip_frontmatter_and_h1(overview)
+                if cleaned:
+                    overview_block = cleaned + "\n\n---\n\n"
             content = f"""---
 type: hub-cluster
 cluster: {cluster.slug}
@@ -188,7 +204,7 @@ papers: {len(matched)}
 
 First query: {cluster.first_query}
 
-## Papers ({len(matched)})
+{overview_block}## Papers ({len(matched)})
 
 """
             for paper in sorted(matched, key=lambda item: item.get("year", "0"), reverse=True):

@@ -35,6 +35,9 @@ EXPECTED_MAPPINGS = {
     "list_quotes": "quote list",
     "capture_quote": "quote",
     "compose_draft": "compose-draft",
+    "get_topic_digest": "topic digest",
+    "write_topic_overview": "mcp-only",
+    "read_topic_overview": "topic show",
 }
 
 
