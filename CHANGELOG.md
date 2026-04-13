@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.13.0 (2026-04-12)
+
+**Model-agnostic paper discovery + topic overview notes — the "any AI can drive it" release.**
+
+Two tracks shipped together. Track A replaces single-backend Semantic Scholar search with a three-backend fallback chain (OpenAlex + arXiv + Semantic Scholar) exposed through CLI + MCP, so Claude Code, Claude Desktop, Codex CLI, Gemini CLI, Cursor, Continue, Aider, and plain-shell pipelines all discover papers the same way. Track B adds topic overview notes — every cluster now has a designated `00_overview.md` that any AI can write by reading a cluster digest. Research-hub is pure plumbing; the AI does the writing.
+
+### Added — Track A: Multi-backend paper search + enrich mode
+
+- **`src/research_hub/search/` package** (was single `search.py`) — 7 modules, 759 LOC total. Three backends implementing the `SearchBackend` protocol (`name`, `search`, `get_paper`):
+  - **`OpenAlexBackend`** — free, concept search, no API key. Reconstructs abstracts from OpenAlex's inverted index representation. Extracts `arxiv_id` from location metadata. Uses polite-pool `mailto` query param for higher rate limits.
+  - **`ArxivBackend`** — Atom XML parsing (stdlib `xml.etree.ElementTree`). 3s throttle per arXiv policy. Client-side year filtering. Strips version suffixes from arxiv IDs.
+  - **`SemanticScholarClient`** — existing logic refactored into the backend interface, `year_to` parameter added.
+- **`search/fallback.py::search_papers()`** — multi-backend orchestrator. First backend to return a dedup key (normalized DOI → arxiv_id → title) wins the base record; subsequent backends fill empty fields (abstract, pdf_url, citation_count, venue). Backends that raise are logged at WARNING and skipped — never propagates. Results sorted by year descending then citation_count descending.
+- **`search/enrich.py::enrich_candidates()`** — resolves a list of heterogeneous candidates (DOI / arxiv ID / title) to full `SearchResult` records. Title matches require rapidfuzz similarity ≥ 60. Purpose-built for Claude Code's WebSearch path: WebSearch discovers candidates, `enrich_candidates` turns them into ingest-ready records using OpenAlex/arXiv/Semantic Scholar.
+- **CLI surface:**
+  - `research-hub search "..." --year 2024-2025 --min-citations 10 --backend openalex,arxiv --json` — multi-backend query with year window, citation floor, and JSON output for piping.
+  - `research-hub search "..." --to-papers-input --cluster <slug>` — emits a ready-to-ingest `papers_input.json` document with empty summary/key_findings/methodology/relevance fields for the AI to fill.
+  - `research-hub enrich [candidates...] | -` — new subcommand. Reads DOIs / arxiv IDs / titles from argv or stdin, outputs enriched JSON.
+  - `--year` parser accepts `2024`, `2024-`, `-2024`, and `2024-2025`.
+- **MCP surface:**
+  - `search_papers` extended with `year_from`, `year_to`, `min_citations`, `backends` parameters (backwards compatible — old signature still works).
+  - `enrich_candidates(candidates, backends)` — new tool.
+  - **26 MCP tools total** (was 25).
+- **Backwards compat** — all existing `from research_hub.search import {SearchResult, SemanticScholarClient, iter_new_results}` imports still resolve through `search/__init__.py` re-exports. `iter_new_results` accepts both the legacy single-client signature and new multi-backend signature.
+
+### Added — Track B: Topic overview notes
+
+- **`src/research_hub/topic.py`** (206 LOC) — new module for AI-writable cluster summaries. Research-hub does NOT call any LLM; it provides a digest and a writing target, and the AI does the actual writing.
+- **File convention** — overview lives at `<vault>/research_hub/hub/<cluster-slug>/00_overview.md`. The `00_` prefix floats it to the top of Obsidian's default alphabetical folder view.
+- **Template sections** — Definition / Why it matters / Applications / Key sub-problems / Seed papers / Further reading. Scaffolded with frontmatter (`type: topic-overview`, `cluster: <slug>`, `status: draft`).
+- **CLI surface:**
+  - `research-hub topic scaffold --cluster <slug> [--force]` — writes the overview template file. Raises `FileExistsError` without `--force`.
+  - `research-hub topic digest --cluster <slug> [--out file.md]` — emits the full-text digest of every paper in the cluster (title + authors + year + DOI + abstract) as markdown. The AI reads this to write the overview.
+  - `research-hub topic show --cluster <slug>` — prints the current overview content, or exits 1 with a "no overview" hint.
+- **MCP tools (3 new, 29 tools total)**:
+  - `get_topic_digest(cluster_slug)` — returns `{cluster_slug, cluster_title, paper_count, papers: [...], markdown}`.
+  - `write_topic_overview(cluster_slug, markdown, overwrite=False)` — writes AI-generated markdown. Refuses to overwrite without explicit flag.
+  - `read_topic_overview(cluster_slug)` — returns `{ok, markdown}` or `{ok: False, reason: "no overview found"}`.
+- **Dashboard integration** — `ClusterCard.has_overview` field, populated from `overview_path().exists()`. Cluster card shows "overview" / "no overview" badge; heading links to Obsidian's `00_overview.md` when present.
+- **Vault builder integration** — when rendering the cluster hub/index page, prepends the overview content (frontmatter + first H1 stripped) above the paper list, so the Obsidian hub page opens with the topic summary.
+
+### Added — Docs
+
+- **`docs/ai-integrations.md`** — complete integration guide for Claude Code, Claude Desktop, Cursor, Continue, Codex CLI, Gemini CLI, Aider, and plain-shell workflows. Shows the exact commands for each AI surface. Covers the shared `discover → enrich → ingest → overview → verify via NotebookLM` pattern.
+
+### Fixed
+
+- **CI MCP test failures** — `.github/workflows/ci.yml` now installs `[mcp,dev]` extras. Without fastmcp the `_FallbackMCP` was returning raw functions with no `.fn` attribute, breaking `test_mcp_add_paper`, `test_e2e_smoke::test_e2e_mcp_download_artifacts_tool`, and `test_e2e_smoke::test_e2e_read_briefing_missing_returns_remedy`.
+
+### Tests
+
+- **465 → 520 passing** (+55 tests, 5 skipped unchanged).
+- Track A: 40 new tests — `test_openalex_backend` (7), `test_arxiv_backend` (6), `test_search_fallback` (7), `test_search_enrich` (5), `test_cli_search` (6), `test_mcp_server` additions (3), `test_search.py` dedup_key + backcompat (6).
+- Track B: 15 new tests — `test_topic` (12), `test_cli_operations` topic tests (3).
+
+### Non-breaking changes only
+
+All existing CLI commands, MCP tool signatures, and import paths continue to work unchanged. The `search.py` module is deleted and replaced by the `search/` package, but the public re-exports make this invisible to callers.
+
 ## v0.12.0 (2026-04-13)
 
 **Pipeline hardening + PDF-first NotebookLM bundling + Draft composer — the "vault → draft" transition release.**
