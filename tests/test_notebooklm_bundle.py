@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from research_hub.clusters import Cluster
 from research_hub.notebooklm.bundle import (
@@ -107,3 +108,80 @@ def test_bundle_cluster_emits_pdfs_urls_and_readme(tmp_path):
     sources = (report.bundle_dir / "sources.txt").read_text(encoding="utf-8").strip().splitlines()
     assert len(sources) == 1
     assert "arxiv.org/abs/2502.10978" in sources[0]
+
+
+def test_bundle_with_download_pdfs_flag_calls_fetcher(tmp_path):
+    cfg = StubCfg(tmp_path)
+    cfg.raw.mkdir(parents=True)
+    cfg.research_hub_dir.mkdir(parents=True)
+    _note(cfg.raw / "alpha" / "missing.md", doi="10.1/missing", topic_cluster="alpha")
+    cluster = Cluster(slug="alpha", name="Alpha Cluster", obsidian_subfolder="alpha")
+
+    with patch("research_hub.notebooklm.pdf_fetcher.fetch_paper_pdf") as fetcher:
+        fetcher.return_value.ok = False
+        fetcher.return_value.source = "not-found"
+        fetcher.return_value.error = "missing"
+        bundle_cluster(cluster, cfg, download_pdfs=True)
+
+    fetcher.assert_called_once()
+
+
+def test_bundle_without_flag_skips_fetcher(tmp_path):
+    cfg = StubCfg(tmp_path)
+    cfg.raw.mkdir(parents=True)
+    cfg.research_hub_dir.mkdir(parents=True)
+    _note(cfg.raw / "alpha" / "missing.md", doi="10.1/missing", topic_cluster="alpha")
+    cluster = Cluster(slug="alpha", name="Alpha Cluster", obsidian_subfolder="alpha")
+
+    with patch("research_hub.notebooklm.pdf_fetcher.fetch_paper_pdf") as fetcher:
+        bundle_cluster(cluster, cfg, download_pdfs=False)
+
+    fetcher.assert_not_called()
+
+
+def test_bundle_records_pdf_source_in_entry(tmp_path):
+    cfg = StubCfg(tmp_path)
+    cfg.raw.mkdir(parents=True)
+    cfg.research_hub_dir.mkdir(parents=True)
+    _note(cfg.raw / "alpha" / "missing.md", doi="10.1/missing", topic_cluster="alpha")
+    cluster = Cluster(slug="alpha", name="Alpha Cluster", obsidian_subfolder="alpha")
+    downloaded = tmp_path / "downloaded.pdf"
+    downloaded.write_bytes(b"pdf")
+
+    class Result:
+        ok = True
+        path = downloaded
+        source = "unpaywall"
+        error = ""
+
+    with patch("research_hub.notebooklm.pdf_fetcher.fetch_paper_pdf", return_value=Result()):
+        report = bundle_cluster(cluster, cfg, download_pdfs=True)
+
+    assert report.entries[0].action == "pdf"
+    assert report.entries[0].pdf_source == "unpaywall"
+
+
+def test_bundle_falls_back_to_url_when_fetch_returns_not_found(tmp_path):
+    cfg = StubCfg(tmp_path)
+    cfg.raw.mkdir(parents=True)
+    cfg.research_hub_dir.mkdir(parents=True)
+    _note(
+        cfg.raw / "alpha" / "missing.md",
+        doi="10.1/missing",
+        topic_cluster="alpha",
+        url="https://example.com/paper",
+    )
+    cluster = Cluster(slug="alpha", name="Alpha Cluster", obsidian_subfolder="alpha")
+
+    class Result:
+        ok = False
+        path = None
+        source = "not-found"
+        error = "missing"
+
+    with patch("research_hub.notebooklm.pdf_fetcher.fetch_paper_pdf", return_value=Result()):
+        report = bundle_cluster(cluster, cfg, download_pdfs=True)
+
+    assert report.entries[0].action == "url"
+    assert report.entries[0].url == "https://doi.org/10.1/missing"
+    assert report.entries[0].skip_reason == "no OA; url fallback used"

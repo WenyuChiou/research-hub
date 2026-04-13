@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from research_hub.utils.doi import normalize_doi as _normalize_doi
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class BundleEntry:
@@ -18,6 +22,7 @@ class BundleEntry:
     obsidian_path: str
     action: str
     pdf_path: str = ""
+    pdf_source: str = ""
     url: str = ""
     skip_reason: str = ""
 
@@ -150,6 +155,7 @@ def bundle_cluster(
     cluster,
     cfg,
     out_root: Path | None = None,
+    download_pdfs: bool = False,
 ) -> BundleReport:
     """Walk a cluster's papers and emit a drag-drop bundle."""
     from research_hub.vault.sync import list_cluster_notes
@@ -180,6 +186,22 @@ def bundle_cluster(
         pdf = _find_pdf_for_doi(pdfs_dir, entry.doi)
         if pdf is None:
             pdf = _find_pdf_by_author_year(pdfs_dir, meta.get("authors", ""), meta.get("year", ""))
+            if pdf is not None:
+                entry.pdf_source = "local-slug"
+        elif pdf is not None:
+            entry.pdf_source = "local-doi"
+
+        fetch_result = None
+        if pdf is None and download_pdfs:
+            from research_hub.notebooklm.pdf_fetcher import fetch_paper_pdf
+
+            fetch_result = fetch_paper_pdf(entry.doi, note_path.stem, pdfs_dir)
+            if fetch_result.ok:
+                pdf = fetch_result.path
+                entry.pdf_source = fetch_result.source
+            else:
+                logger.info("pdf_fetch failed for %s: %s", entry.doi or note_path.stem, fetch_result.error)
+
         if pdf is not None:
             destination = bundle_pdfs / pdf.name
             shutil.copy2(pdf, destination)
@@ -192,10 +214,12 @@ def bundle_cluster(
         if url:
             entry.action = "url"
             entry.url = url
+            if download_pdfs and fetch_result is not None:
+                entry.skip_reason = "no OA; url fallback used"
             report.entries.append(entry)
             continue
 
-        entry.skip_reason = "no local PDF and no usable URL"
+        entry.skip_reason = "no DOI, no URL, no local PDF"
         report.entries.append(entry)
 
     sources_file = bundle_dir / "sources.txt"
@@ -224,6 +248,19 @@ def bundle_cluster(
 
     readme = bundle_dir / "README.md"
     readme.write_text(_render_readme(cluster, report), encoding="utf-8")
+    pdf_sources = Counter(
+        entry.pdf_source for entry in report.entries if entry.action == "pdf" and entry.pdf_source
+    )
+    source_summary = ", ".join(
+        f"{source}: {count}" for source, count in sorted(pdf_sources.items())
+    )
+    print(f"bundle summary - {cluster.slug}:")
+    if source_summary:
+        print(f"  pdf: {report.pdf_count} ({source_summary})")
+    else:
+        print(f"  pdf: {report.pdf_count}")
+    print(f"  url: {report.url_count}")
+    print(f"  skip: {report.skip_count}")
     return report
 
 
