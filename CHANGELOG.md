@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.10.0 (2026-04-12)
+
+**Dashboard redesign — "personal knowledge garden" for AI-assisted literature review.**
+
+The dashboard now answers a single question: *"AI added a bunch of papers — what did it add, what categories, and where is each one stored across Zotero / Obsidian / NotebookLM?"*
+
+### Added
+- **Five-tab audit dashboard** (`Overview` / `Library` / `Briefings` / `Diagnostics` / `Manage`). Pure CSS tabs (radio + `:checked` sibling selectors) — zero JavaScript for the tab mechanic. Default tab is Overview.
+- **Overview tab** — three widgets:
+  - **Treemap** of papers per cluster, sqrt-scaled flex weights so a 7/8/331 distribution stays readable (cluster names no longer get squeezed). Click any cell to jump to that cluster in the Library tab.
+  - **Storage map** — per-cluster table with clickable `↗ Open` deep-links to each of the three systems: `zotero://select/library/collections/{key}`, `obsidian://open?path=raw/{slug}`, and the cluster's NotebookLM notebook URL.
+  - **Recent additions** feed — last 15 papers your AI agent ingested, each with a cluster tag, relative time, and inline [Open] menu.
+- **Library tab** — cluster cards with paper rows (title, authors, year, 240-char abstract, [Cite] popup, [Open ▼] menu). Per-cluster [Download .bib] button for batch citation export. NO status badges, NO reading-status pills — this is a locator, not a progress tracker.
+- **Briefings tab** — inline preview of downloaded NotebookLM briefings with [Open in NotebookLM] and [Copy full text] actions.
+- **Diagnostics tab** — health badges (Zotero / Obsidian / NotebookLM) + drift alerts + clickable remedy commands.
+- **Manage tab** — per-cluster command-builder forms: rename, merge, split, bind-Zotero, bind-NLM, delete. Each form emits the exact `research-hub clusters …` CLI command on click and copies it to your clipboard.
+- **Debug widget** — footer section with a "Copy snapshot" button that emits vault metadata + health state + cluster bindings as a paste-ready blob for AI assistant handoff. Closes the user feedback loop when something breaks.
+- **Health banner** — when `doctor` reports any FAIL, the Overview tab shows a red banner at the top with the failing checks and their remedy commands.
+- **`--watch` mode** — `research-hub dashboard --watch` polls vault state files every 5s and re-renders on change. Combine with `--refresh N` to control the browser auto-reload interval.
+- **`--rich-bibtex` flag** — opt-in Zotero `get_formatted` per paper for full BibTeX entries (abstract, tags, collections). Default uses an instant frontmatter fallback — generation is under a second on a 346-paper vault.
+- **Impeccable design tokens** — OKLCH-only color palette, warm-amber brand hue (not default blue), tinted neutrals, 4pt spacing scale, Geist/Literata/Geist Mono typography stack. Light theme.
+
+### Changed
+- Dashboard package now split into 6 modules: `types.py` (dataclass contract), `data.py` (vault walker), `citation.py`, `drift.py`, `briefing.py`, `sections.py`, `render.py`, plus inline `template.html` / `style.css` / `script.js`. Extensible via the `DashboardSection` base class.
+- Dashboard render time on the 346-paper live vault: **0.9 seconds** (was 10+ minutes when the rich-BibTeX path was the default).
+- Zotero credential loader now supports three file layouts: flat keys, nested `zotero.*` block, and the legacy `~/.claude/skills/zotero-skills/config.json` left over from the standalone zotero-skills install. Users who set up Zotero months ago no longer need to re-init.
+- `doctor` routes all Zotero credential reads through the shared `_load_credentials()` helper so the health check sees exactly the same keys as the dashboard and the pipeline.
+- Dashboard no longer renders per-paper Z/O/N sync badges or reading-status pills — they were fighting Zotero/Obsidian for the same real estate. Cross-system state is shown at the cluster level in the Storage map instead.
+
+### Fixed
+- **Chrome file:// security violation.** The Manage tab forms had no `action` attribute, so pressing Enter in an input field submitted to the current URL — which on `file://` triggers Chrome's "unsafe attempt to load URL from frame" block. Forms now carry `action="javascript:void(0)"` and the script.js submit handler routes Enter to the "Copy command" button.
+- **Same security violation from treemap cells** — they used `<a href="#tab-library">`, which also trips the file:// check. Replaced with `<button data-jump-tab="library">` + a click handler that selects the target tab radio without navigating the URL.
+- **331 missing [Cite] buttons** — `citation.py` caught the Zotero API error and returned `""` instead of falling through to the frontmatter fallback. Now every paper gets a valid BibTeX entry regardless of API availability.
+- **Tab panels rendering blank** — CSS `:checked ~ main #tab-*` sibling selector was wrong because the radios are inside `<main>`, not siblings of it. Replaced with `:checked ~ #tab-*` direct sibling.
+- **Treemap label overflow** for long cluster names. Added `-webkit-line-clamp: 3`, bumped min-width 140 → 200px and min-height 90 → 140px.
+- `_detect_persona` no longer forces `analyst` when `zot=None` — persona is a config-time setting, not derived from runtime client state.
+- `generate_dashboard` now instantiates `ZoteroDualClient` (has `get_formatted`) instead of the raw pyzotero `Zotero` object when the api_key is actually loadable.
+
+### Tests
+- Suite: **361 → 386 passing** (5 legacy v0.9.0-G1 section tests marked as `@pytest.mark.skip("rewritten in v0.10")`).
+- 14 new tests for the dashboard data layer (`tests/test_dashboard_data.py`).
+- 23 new tests for the dashboard sections layer (`tests/test_dashboard_sections_v2.py`).
+
 ## v0.9.0 (2026-04-12)
 
 **System integration audit + UX hardening + personal HTML dashboard + closes the AI loop with NotebookLM artifact download.**
