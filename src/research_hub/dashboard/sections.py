@@ -749,12 +749,12 @@ class ManageSection(DashboardSection):
         <article class="manage-card" data-cluster="{slug}">
           <header><h3>{name}</h3><code>{slug}</code></header>
 
-          <form class="manage-form" data-action="rename" data-slug="{slug}">
+          <form class="manage-form" action="javascript:void(0)" data-action="rename" data-slug="{slug}">
             <label>Rename to <input type="text" name="new_name" placeholder="New display name"></label>
             <button type="button" class="manage-build-btn">Copy rename command</button>
           </form>
 
-          <form class="manage-form" data-action="merge" data-slug="{slug}">
+          <form class="manage-form" action="javascript:void(0)" data-action="merge" data-slug="{slug}">
             <label>Merge into
               <select name="target">
                 <option value="">— pick target cluster —</option>
@@ -764,23 +764,23 @@ class ManageSection(DashboardSection):
             <button type="button" class="manage-build-btn">Copy merge command</button>
           </form>
 
-          <form class="manage-form" data-action="split" data-slug="{slug}">
+          <form class="manage-form" action="javascript:void(0)" data-action="split" data-slug="{slug}">
             <label>Split by query <input type="text" name="query" placeholder="keyword"></label>
             <label>New cluster name <input type="text" name="new_name" placeholder="Sub Topic"></label>
             <button type="button" class="manage-build-btn">Copy split command</button>
           </form>
 
-          <form class="manage-form" data-action="bind-zotero" data-slug="{slug}">
+          <form class="manage-form" action="javascript:void(0)" data-action="bind-zotero" data-slug="{slug}">
             <label>Bind Zotero collection key <input type="text" name="zotero" placeholder="ABCD1234"></label>
             <button type="button" class="manage-build-btn">Copy bind command</button>
           </form>
 
-          <form class="manage-form" data-action="bind-nlm" data-slug="{slug}">
+          <form class="manage-form" action="javascript:void(0)" data-action="bind-nlm" data-slug="{slug}">
             <label>Bind NotebookLM notebook name <input type="text" name="notebooklm" placeholder="My Notebook"></label>
             <button type="button" class="manage-build-btn">Copy bind command</button>
           </form>
 
-          <form class="manage-form" data-action="delete" data-slug="{slug}">
+          <form class="manage-form" action="javascript:void(0)" data-action="delete" data-slug="{slug}">
             <button type="button" class="manage-build-btn manage-danger">Copy delete dry-run command</button>
           </form>
         </article>

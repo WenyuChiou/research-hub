@@ -323,6 +323,17 @@
   }
 
   doc.querySelectorAll(".manage-form").forEach(function (form) {
+    // Block default form submission — Enter in an input field would
+    // otherwise post to the current URL, which on file:// triggers
+    // a "load self from self" security violation in Chrome.
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      const button = form.querySelector(".manage-build-btn");
+      if (button) {
+        button.click();
+      }
+      return false;
+    });
     const button = form.querySelector(".manage-build-btn");
     if (!button) {
       return;
