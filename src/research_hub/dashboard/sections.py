@@ -229,8 +229,10 @@ class OverviewSection(DashboardSection):
         treemap = self._render_treemap(clusters)
         storage = self._render_storage_map(clusters, _show_zotero_column(data))
         recent = self._render_recent_additions(data)
+        banner = self._render_health_banner(data)
         return f"""
         <section id="tab-overview" class="dash-panel dash-panel-overview" role="tabpanel">
+          {banner}
           <div class="overview-grid">
             <article class="card card-treemap">
               <header class="card-heading">
@@ -255,6 +257,32 @@ class OverviewSection(DashboardSection):
             </article>
           </div>
         </section>
+        """
+
+    def _render_health_banner(self, data) -> str:
+        health_badges = list(_attr(data, "health_badges", []) or [])
+        problems: list[str] = []
+        for badge in health_badges:
+            status = str(_attr(badge, "status", "OK") or "OK")
+            if status == "FAIL":
+                subsystem = str(_attr(badge, "subsystem", "") or "")
+                items = list(_attr(badge, "items", []) or [])
+                for item in items:
+                    if isinstance(item, dict) and item.get("status") == "FAIL":
+                        msg = str(item.get("message", "")).strip()
+                        remedy = str(item.get("remedy", "")).strip()
+                        line = f"{subsystem.title()}: {msg}"
+                        if remedy:
+                            line += f" — fix: {html_escape(remedy)}"
+                        problems.append(html_escape(line))
+        if not problems:
+            return ""
+        items = "".join(f"<li>{p}</li>" for p in problems)
+        return f"""
+        <div class="debug-banner is-visible" role="alert">
+          <strong>Some checks failed.</strong>
+          <ul style="margin: 4px 0 0; padding-left: 20px;">{items}</ul>
+        </div>
         """
 
     def _render_treemap(self, clusters: list) -> str:
@@ -762,6 +790,74 @@ class ManageSection(DashboardSection):
 # --- DEFAULT_SECTIONS + legacy aliases ----------------------------------
 
 
+class DebugSection(DashboardSection):
+    """Footer feedback widget — copy a debug snapshot for AI handoff.
+
+    Always rendered (outside any tab) so the user can grab a paste
+    blob if anything looks wrong on any panel. The blob includes:
+    vault root, persona, totals, the worst health check messages,
+    and a list of section IDs the user might want to reference.
+    """
+
+    id = "debug"
+    title = "Debug"
+    order = 100
+
+    def __init__(self) -> None:
+        self.id = "debug"
+        self.title = "Debug"
+        self.order = 100
+
+    def render(self, data) -> str:
+        snapshot = self._build_snapshot(data)
+        return f"""
+        <section class="debug-footer" id="debug-section" role="complementary">
+          <h3>Spot a bug? Copy a debug snapshot.</h3>
+          <p>The snapshot includes vault summary, persona, health check status,
+             and section IDs. Paste it back to the AI assistant along with what
+             you saw to get a fix.</p>
+          <div class="debug-actions">
+            <button type="button" class="debug-btn" id="debug-toggle-btn">Show snapshot</button>
+            <button type="button" class="debug-btn" id="debug-copy-btn"
+                    data-snapshot="{html_escape(snapshot)}">Copy snapshot to clipboard</button>
+          </div>
+          <pre class="debug-snapshot" id="debug-snapshot">{html_escape(snapshot)}</pre>
+        </section>
+        """
+
+    def _build_snapshot(self, data) -> str:
+        lines: list[str] = []
+        lines.append("=== research-hub dashboard debug snapshot ===")
+        lines.append(f"vault_root: {_attr(data, 'vault_root', '')}")
+        lines.append(f"generated_at: {_attr(data, 'generated_at', '')}")
+        lines.append(f"persona: {_attr(data, 'persona', '')}")
+        lines.append(f"total_papers: {_attr(data, 'total_papers', 0)}")
+        lines.append(f"total_clusters: {_attr(data, 'total_clusters', 0)}")
+        lines.append("clusters:")
+        for c in _all_clusters(data):
+            lines.append(
+                f"  - slug={_attr(c, 'slug', '')!r} "
+                f"papers={_paper_count(c)} "
+                f"zotero={_attr(c, 'zotero_collection_key', '') or 'unbound'} "
+                f"nlm={'bound' if _attr(c, 'notebooklm_notebook_url', '') else 'unbound'}"
+            )
+        lines.append("health:")
+        for badge in _attr(data, "health_badges", []) or []:
+            lines.append(
+                f"  - {_attr(badge, 'subsystem', '')}: "
+                f"{_attr(badge, 'status', '')} {_attr(badge, 'summary', '')}".rstrip()
+            )
+        lines.append("drift_alerts:")
+        for alert in _attr(data, "drift_alerts", []) or []:
+            lines.append(
+                f"  - {_attr(alert, 'kind', '')}: "
+                f"{_attr(alert, 'severity', '')} {_attr(alert, 'title', '')}"
+            )
+        lines.append("sections: header overview library briefings diagnostics manage debug")
+        lines.append("Paste this with: 'On the [tab] tab I see [problem]'")
+        return "\n".join(lines)
+
+
 DEFAULT_SECTIONS: list[DashboardSection] = [
     HeaderSection(),
     OverviewSection(),
@@ -769,6 +865,7 @@ DEFAULT_SECTIONS: list[DashboardSection] = [
     BriefingsSection(),
     DiagnosticsSection(),
     ManageSection(),
+    DebugSection(),
 ]
 
 

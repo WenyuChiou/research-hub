@@ -59,7 +59,18 @@ def _read_env_file() -> dict[str, str]:
 
 
 def _load_credentials() -> tuple[str | None, str | None, str]:
-    """Resolve Zotero credentials with env vars taking precedence."""
+    """Resolve Zotero credentials.
+
+    Resolution order (first hit wins):
+    1. Environment variables ``ZOTERO_API_KEY`` / ``ZOTERO_LIBRARY_ID`` / ``ZOTERO_LIBRARY_TYPE``
+    2. ``~/.claude/.env`` file with the same keys
+    3. ``config.json`` flat keys (``zotero_api_key`` / ``zotero_library_id`` / ``zotero_library_type``)
+    4. ``config.json`` nested ``zotero`` block (``zotero.api_key`` / ``zotero.library_id`` / ``zotero.library_type``)
+
+    The nested form is the legacy layout written by older
+    ``research-hub init`` versions. Both forms are supported so a
+    user who set things up months ago doesn't have to re-init.
+    """
 
     api_key = os.environ.get("ZOTERO_API_KEY")
     lib_id = os.environ.get("ZOTERO_LIBRARY_ID")
@@ -74,18 +85,24 @@ def _load_credentials() -> tuple[str | None, str | None, str]:
         lib_type = env_values.get("ZOTERO_LIBRARY_TYPE", lib_type)
 
     if not api_key or not lib_id:
-        warnings.warn(
-            "Reading Zotero credentials from plaintext config.json is deprecated. "
-            "Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID as environment variables or in ~/.claude/.env",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         cfg = _load_config()
+        # Flat keys
         if not api_key:
             api_key = cfg.get("zotero_api_key")
         if not lib_id:
             lib_id = cfg.get("zotero_library_id")
-        lib_type = cfg.get("zotero_library_type", lib_type)
+        flat_type = cfg.get("zotero_library_type")
+        if flat_type:
+            lib_type = flat_type
+        # Nested zotero block
+        nested = cfg.get("zotero", {}) if isinstance(cfg.get("zotero"), dict) else {}
+        if not api_key:
+            api_key = nested.get("api_key")
+        if not lib_id:
+            lib_id = nested.get("library_id")
+        nested_type = nested.get("library_type")
+        if nested_type:
+            lib_type = nested_type
 
     return api_key, lib_id, lib_type
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from research_hub.dashboard.sections import (
     BriefingsSection,
     DEFAULT_SECTIONS,
+    DebugSection,
     DiagnosticsSection,
     HeaderSection,
     LibrarySection,
@@ -326,4 +327,41 @@ def test_manage_section_empty_state():
 
 def test_default_sections_in_correct_order():
     ids = [s.id for s in DEFAULT_SECTIONS]
-    assert ids == ["header", "overview", "library", "briefings", "diagnostics", "manage"]
+    assert ids == ["header", "overview", "library", "briefings", "diagnostics", "manage", "debug"]
+
+
+def test_debug_section_renders_snapshot_with_vault_metadata():
+    html = DebugSection().render(
+        _data(
+            total_papers=42,
+            total_clusters=2,
+            clusters=[_cluster(slug="a", name="A"), _cluster(slug="b", name="B")],
+            health_badges=[HealthBadge(subsystem="zotero", status="FAIL", summary="No API key")],
+        )
+    )
+    assert 'id="debug-section"' in html
+    assert "Spot a bug" in html
+    assert "Copy snapshot" in html
+    # Snapshot includes vault summary + cluster slugs
+    assert "vault_root: /vault" in html
+    assert "total_papers: 42" in html
+    assert "slug=&#39;a&#39;" in html
+    assert "zotero: FAIL" in html
+
+
+def test_overview_health_banner_when_check_fails():
+    badge = HealthBadge(
+        subsystem="zotero",
+        status="FAIL",
+        summary="No API key",
+        items=[{"name": "zotero_key", "status": "FAIL", "message": "No Zotero API key found", "remedy": "Set ZOTERO_API_KEY"}],
+    )
+    html = OverviewSection().render(_data(health_badges=[badge]))
+    assert 'class="debug-banner is-visible"' in html
+    assert "Some checks failed" in html
+    assert "No Zotero API key" in html
+
+
+def test_overview_health_banner_hidden_when_clean():
+    html = OverviewSection().render(_data())
+    assert "debug-banner" not in html

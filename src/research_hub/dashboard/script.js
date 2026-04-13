@@ -296,6 +296,32 @@
     }
   }
 
+  // Debug widget — toggle snapshot + copy to clipboard
+  const debugToggle = doc.getElementById("debug-toggle-btn");
+  const debugSnapshot = doc.getElementById("debug-snapshot");
+  if (debugToggle && debugSnapshot) {
+    debugToggle.addEventListener("click", function () {
+      const visible = debugSnapshot.classList.toggle("is-visible");
+      debugToggle.textContent = visible ? "Hide snapshot" : "Show snapshot";
+    });
+  }
+
+  const debugCopy = doc.getElementById("debug-copy-btn");
+  if (debugCopy) {
+    debugCopy.addEventListener("click", function () {
+      const text = debugCopy.dataset.snapshot || "";
+      const original = debugCopy.textContent;
+      copyText(text, function () {
+        debugCopy.textContent = "Copied!";
+        debugCopy.classList.add("copied");
+        setTimeout(function () {
+          debugCopy.textContent = original;
+          debugCopy.classList.remove("copied");
+        }, 1500);
+      });
+    });
+  }
+
   doc.querySelectorAll(".manage-form").forEach(function (form) {
     const button = form.querySelector(".manage-build-btn");
     if (!button) {
