@@ -10,10 +10,22 @@ def _escape_bibtex(value: str) -> str:
 
 
 def build_bibtex_for_paper(paper: PaperRow, zot=None) -> str:
-    """Return a BibTeX entry for one paper."""
+    """Return a BibTeX entry for one paper.
+
+    Tries the Zotero API first when a client + zotero_key are present.
+    On any failure (missing api key, no get_formatted method, network
+    error, …) falls through to a minimal BibTeX built from the
+    Obsidian frontmatter, so the [Cite] button always has SOMETHING
+    to copy.
+    """
+    if zot is not None and paper.zotero_key:
+        try:
+            result = zot.get_formatted(paper.zotero_key, "bibtex")
+            if result:
+                return result
+        except Exception:
+            pass  # fall through to frontmatter fallback
     try:
-        if zot is not None and paper.zotero_key:
-            return zot.get_formatted(paper.zotero_key, "bibtex") or ""
         fields = [
             f"@article{{{paper.slug},",
             f"  title  = {{{_escape_bibtex(paper.title)}}},",

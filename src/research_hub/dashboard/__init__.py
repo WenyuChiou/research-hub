@@ -152,14 +152,22 @@ def generate_dashboard(
     ``refresh_seconds`` injects a meta-refresh so an already-open
     browser tab will auto-reload at that cadence. ``0`` (default) emits
     no refresh meta — the file stays static. Used by ``--watch`` mode.
+
+    Only instantiates a Zotero client when both ``api_key`` AND
+    ``library_id`` are loadable. Otherwise the cite buttons fall back
+    to frontmatter-built BibTeX (always present, never partial).
     """
     cfg = get_config()
     zot = None
     if not getattr(cfg, "no_zotero", False):
         try:
-            from research_hub.zotero.client import get_client
+            from research_hub.zotero.client import _load_credentials
 
-            zot = get_client()
+            api_key, lib_id, _lib_type = _load_credentials()
+            if api_key and lib_id:
+                from research_hub.zotero.client import ZoteroDualClient
+
+                zot = ZoteroDualClient()
         except Exception:
             zot = None
     html = render_dashboard_from_config(cfg, zot=zot, refresh_seconds=refresh_seconds)

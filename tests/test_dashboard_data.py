@@ -129,12 +129,18 @@ def test_build_bibtex_for_paper_researcher_calls_zotero():
     zot.get_formatted.assert_called_once_with("KEY1", "bibtex")
 
 
-def test_build_bibtex_for_paper_returns_empty_on_error():
+def test_build_bibtex_for_paper_falls_back_to_frontmatter_on_zotero_error():
+    """When the Zotero API call fails, we still emit a frontmatter
+    BibTeX entry instead of an empty string — the [Cite] button must
+    always have something to copy."""
     paper = PaperRow(slug="paper-1", title="Alpha", authors="Doe, Jane", year="2025", abstract="", doi="10.1/a", zotero_key="KEY1")
     zot = Mock()
     zot.get_formatted.side_effect = RuntimeError("boom")
 
-    assert build_bibtex_for_paper(paper, zot=zot) == ""
+    result = build_bibtex_for_paper(paper, zot=zot)
+    assert "@article{paper-1" in result
+    assert "title  = {Alpha}" in result
+    assert "doi    = {10.1/a}" in result
 
 
 def test_build_bibtex_for_cluster_concatenates_papers():
