@@ -19,6 +19,15 @@ from research_hub.search import SemanticScholarClient, iter_new_results
 from research_hub.suggest import PaperInput, suggest_cluster_for_paper, suggest_related_papers
 from research_hub.verify import verify_arxiv, verify_doi, verify_paper
 from research_hub.vault_search import search_vault
+from research_hub.writing import (
+    Quote,
+    build_inline_citation,
+    build_markdown_citation,
+    format_paper_meta_from_frontmatter,
+    load_all_quotes,
+    resolve_paper_meta,
+    save_quote,
+)
 
 
 def _verify(args) -> int:
@@ -295,11 +304,22 @@ def _synthesize(cluster: str | None, graph_colors: bool) -> int:
     return 0
 
 
+def _collect_paper_meta_for_cluster(cfg, cluster: str) -> list[dict]:
+    cluster_dir = cfg.raw / cluster
+    if not cluster_dir.exists():
+        raise FileNotFoundError(f"Cluster folder not found: {cluster_dir}")
+    return [format_paper_meta_from_frontmatter(path) for path in sorted(cluster_dir.glob("*.md"))]
+
+
 def _cite(
     identifier: str | None,
     cluster: str | None,
     content_format: str,
     out_path: str | None,
+    *,
+    inline: bool = False,
+    markdown: bool = False,
+    style: str = "apa",
 ) -> int:
     """Export BibTeX / BibLaTeX / RIS / CSL-JSON for a paper or cluster.
 
@@ -308,10 +328,50 @@ def _cite(
     calls ZoteroDualClient.get_formatted to fetch each entry. Concatenates
     results and writes to stdout or --out file.
     """
-    from research_hub.zotero.client import ZoteroDualClient
     from research_hub.dedup import normalize_doi
+    from research_hub.zotero.client import ZoteroDualClient
 
     cfg = get_config()
+
+    if inline or markdown:
+        if cluster:
+            try:
+                metas = _collect_paper_meta_for_cluster(cfg, cluster)
+            except FileNotFoundError as exc:
+                print(str(exc))
+                return 1
+            rendered = []
+            for meta in metas:
+                if markdown:
+                    rendered.append(build_markdown_citation(meta))
+                else:
+                    rendered.append(build_inline_citation(meta, style=style))
+            body = "\n".join(item for item in rendered if item)
+            if not body:
+                print(f"No notes found in cluster '{cluster}'")
+                return 1
+            if out_path:
+                Path(out_path).write_text(body + "\n", encoding="utf-8")
+                print(f"Wrote {len(rendered)} citations to {out_path}")
+            else:
+                print(body)
+            return 0
+
+        if not identifier:
+            print("Either a positional <identifier> or --cluster <slug> is required")
+            return 2
+        meta = resolve_paper_meta(cfg, identifier)
+        if not meta:
+            print(f"Could not resolve identifier '{identifier}'")
+            return 1
+        body = build_markdown_citation(meta) if markdown else build_inline_citation(meta, style=style)
+        if out_path:
+            Path(out_path).write_text(body + "\n", encoding="utf-8")
+            print(f"Wrote citation to {out_path}")
+        else:
+            print(body)
+        return 0
+
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
 
     keys: list[str] = []
@@ -360,6 +420,64 @@ def _cite(
     else:
         print(body)
     return 0 if entries else 1
+
+
+def _quote_add(slug: str, page: str, text: str, context: str) -> int:
+    cfg = get_config()
+    meta = resolve_paper_meta(cfg, slug)
+    quote = Quote(
+        slug=str(meta.get("slug", slug) or slug),
+        doi=str(meta.get("doi", "") or ""),
+        title=str(meta.get("title", slug) or slug),
+        authors=str(meta.get("authors", "") or ""),
+        year=str(meta.get("year", "") or ""),
+        cluster_slug=str(meta.get("topic_cluster", "") or ""),
+        page=page,
+        text=text,
+        context_note=context,
+    )
+    path = save_quote(cfg, quote)
+    print(path)
+    return 0
+
+
+def _quote_list(cluster: str | None) -> int:
+    cfg = get_config()
+    quotes = load_all_quotes(cfg)
+    if cluster:
+        quotes = [quote for quote in quotes if quote.cluster_slug == cluster]
+    for quote in quotes:
+        text = re.sub(r"\s+", " ", quote.text).strip()
+        preview = text[:80] + ("..." if len(text) > 80 else "")
+        print(f"{quote.slug}\t{quote.captured_at}\t{quote.page}\t{preview}")
+    return 0
+
+
+def _quote_remove(slug: str, at: str) -> int:
+    cfg = get_config()
+    path = cfg.research_hub_dir / "quotes" / f"{slug}.md"
+    if not path.exists():
+        print(f"Quote file not found: {path}")
+        return 1
+    original = path.read_text(encoding="utf-8")
+    blocks = list(re.finditer(r"^---\n.*?\n---\n.*?(?:\n(?=---\n)|\Z)", original, re.DOTALL | re.MULTILINE))
+    kept: list[str] = []
+    removed = 0
+    for match in blocks:
+        block = match.group(0).strip()
+        if f"captured_at: {at}" in block and removed == 0:
+            removed += 1
+            continue
+        kept.append(block)
+    if removed == 0:
+        print(f"No quote block found for {slug} at {at}")
+        return 1
+    if kept:
+        path.write_text("\n\n".join(kept) + "\n", encoding="utf-8")
+    else:
+        path.unlink()
+    print(f"Removed quote {slug} at {at}")
+    return 0
 
 
 def _read_zotero_key_from_frontmatter(md_path: Path) -> str | None:
@@ -966,6 +1084,30 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Write to this file instead of stdout",
     )
+    cite_parser.add_argument(
+        "--inline",
+        action="store_true",
+        help="Print an inline citation like (Lamparth et al., 2024)",
+    )
+    cite_parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Print a markdown citation with DOI link",
+    )
+    cite_parser.add_argument(
+        "--style",
+        choices=("apa", "chicago", "mla", "latex"),
+        default="apa",
+        help="Citation style for --inline (default apa)",
+    )
+
+    quote_parser = subparsers.add_parser("quote", help="Capture and manage saved paper quotes")
+    quote_parser.add_argument("quote_target", nargs="*", help="Slug, or commands: list | remove <slug>")
+    quote_parser.add_argument("--page", default=None, help="Page number for the captured quote")
+    quote_parser.add_argument("--text", default=None, help="Quoted passage text")
+    quote_parser.add_argument("--context", default="", help="Optional context note")
+    quote_parser.add_argument("--cluster", default=None, help="Filter list output to one cluster slug")
+    quote_parser.add_argument("--at", default=None, help="Quote captured_at timestamp to remove")
 
     status_parser = subparsers.add_parser("status", help="Show per-cluster reading progress")
     status_parser.add_argument("--cluster", default=None, help="Show only this cluster")
@@ -1249,6 +1391,19 @@ def main(argv: list[str] | None = None) -> int:
         return _move(args.slug, args.to_cluster)
     if args.command == "add":
         return _add(args.identifier, args.cluster, args.no_zotero, args.no_verify)
+    if args.command == "quote":
+        target = list(args.quote_target or [])
+        if target == ["list"]:
+            return _quote_list(args.cluster)
+        if len(target) == 2 and target[0] == "remove":
+            if not args.at:
+                print("Usage: research-hub quote remove <slug> --at <iso-timestamp>")
+                return 2
+            return _quote_remove(target[1], args.at)
+        if len(target) != 1 or not args.page or not args.text:
+            print("Usage: research-hub quote <slug> --page 12 --text \"...\" [--context \"...\"]")
+            return 2
+        return _quote_add(target[0], args.page, args.text, args.context)
     if args.command == "find":
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
@@ -1260,7 +1415,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "suggest":
         return _suggest(args.identifier, args.top, args.json)
     if args.command == "cite":
-        return _cite(args.identifier, args.cluster, args.content_format, args.out)
+        return _cite(
+            args.identifier,
+            args.cluster,
+            args.content_format,
+            args.out,
+            inline=args.inline,
+            markdown=args.markdown,
+            style=args.style,
+        )
     if args.command == "status":
         return _status(cluster=args.cluster)
     if args.command == "dashboard":

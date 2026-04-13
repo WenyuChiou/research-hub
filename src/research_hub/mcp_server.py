@@ -255,6 +255,70 @@ def export_citation(
         return _tool_error(exc)
 
 
+@mcp.tool()
+def build_citation(doi_or_slug: str, style: str = "apa") -> dict:
+    """Return an inline citation string for a paper."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.writing import (
+            build_inline_citation,
+            build_markdown_citation,
+            resolve_paper_meta,
+        )
+
+        cfg = get_config()
+        meta = resolve_paper_meta(cfg, doi_or_slug)
+        return {
+            "status": "ok",
+            "inline": build_inline_citation(meta, style=style),
+            "markdown": build_markdown_citation(meta),
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def list_quotes(cluster_slug: str | None = None) -> dict:
+    """List captured quotes, optionally filtered by cluster."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.writing import load_all_quotes
+
+        cfg = get_config()
+        quotes = load_all_quotes(cfg)
+        if cluster_slug is not None:
+            quotes = [quote for quote in quotes if quote.cluster_slug == cluster_slug]
+        return {"status": "ok", "count": len(quotes), "quotes": [asdict(quote) for quote in quotes]}
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def capture_quote(slug: str, page: str, text: str, context: str = "") -> dict:
+    """Persist a quote to <vault>/.research_hub/quotes/<slug>.md."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.writing import Quote, resolve_paper_meta, save_quote
+
+        cfg = get_config()
+        meta = resolve_paper_meta(cfg, slug)
+        quote = Quote(
+            slug=str(meta.get("slug", slug) or slug),
+            doi=str(meta.get("doi", "") or ""),
+            title=str(meta.get("title", slug) or slug),
+            authors=str(meta.get("authors", "") or ""),
+            year=str(meta.get("year", "") or ""),
+            cluster_slug=str(meta.get("topic_cluster", "") or ""),
+            page=page,
+            text=text,
+            context_note=context,
+        )
+        path = save_quote(cfg, quote)
+        return {"status": "ok", "path": str(path), "quote": asdict(quote)}
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 def get_references(identifier: str, limit: int = 20) -> list[dict[str, Any]] | dict[str, str]:
     """List papers cited by the given paper (its bibliography)."""
     try:

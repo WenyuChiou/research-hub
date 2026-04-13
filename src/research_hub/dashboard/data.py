@@ -22,6 +22,7 @@ from research_hub.dashboard.types import (
     DashboardData,
     HealthBadge,
     PaperRow,
+    Quote,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     nlm_cache = _load_json(cfg.research_hub_dir / "nlm_cache.json")
     clusters: list[ClusterCard] = []
     briefings = []
+    quotes: list[Quote] = []
 
     for cluster in registry.list():
         try:
@@ -200,6 +202,14 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     except Exception:
         logger.exception("Failed to build dashboard health badges")
 
+    try:
+        from research_hub.writing import load_all_quotes
+
+        quotes = [Quote(**quote.__dict__) for quote in load_all_quotes(cfg)]
+    except Exception:
+        logger.exception("Failed to load quotes")
+        quotes = []
+
     drift_alerts = detect_drift(cfg, dedup)
     total_papers = sum(len(cluster.papers) for cluster in clusters)
     papers_this_week = sum(cluster.new_this_week for cluster in clusters)
@@ -214,6 +224,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
         papers_this_week=papers_this_week,
         clusters=clusters,
         briefings=briefings,
+        quotes=quotes,
         health_badges=health_badges,
         drift_alerts=drift_alerts,
     )

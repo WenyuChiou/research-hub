@@ -149,6 +149,7 @@ _TAB_DEFS = [
     ("overview", "Overview"),
     ("library", "Library"),
     ("briefings", "Briefings"),
+    ("writing", "Writing"),
     ("diagnostics", "Diagnostics"),
     ("manage", "Manage"),
 ]
@@ -546,6 +547,13 @@ class LibrarySection(DashboardSection):
                 f'aria-label="Cite {title}">Cite</button>'
             )
 
+        quote_button = (
+            f'<button type="button" class="quote-btn" '
+            f'data-slug="{slug}" '
+            f'data-title="{title}" '
+            f'data-doi="{doi}" '
+            f'aria-label="Capture quote from {title}">Quote</button>'
+        )
         meta_line = authors + ((" · " + year) if year else "")
         return f"""
         <li class="paper-row"
@@ -559,6 +567,7 @@ class LibrarySection(DashboardSection):
           </div>
           <div class="paper-actions">
             {cite_button}
+            {quote_button}
             <button type="button" class="open-btn"
                     data-doi="{doi}"
                     data-zotero-key="{zotero_key}"
@@ -865,9 +874,12 @@ class DebugSection(DashboardSection):
                 f"  - {_attr(alert, 'kind', '')}: "
                 f"{_attr(alert, 'severity', '')} {_attr(alert, 'title', '')}"
             )
-        lines.append("sections: header overview library briefings diagnostics manage debug")
+        lines.append("sections: header overview library briefings writing diagnostics manage debug")
         lines.append("Paste this with: 'On the [tab] tab I see [problem]'")
         return "\n".join(lines)
+
+
+from research_hub.dashboard.writing_section import WritingSection
 
 
 DEFAULT_SECTIONS: list[DashboardSection] = [
@@ -875,6 +887,7 @@ DEFAULT_SECTIONS: list[DashboardSection] = [
     OverviewSection(),
     LibrarySection(),
     BriefingsSection(),
+    WritingSection(),
     DiagnosticsSection(),
     ManageSection(),
     DebugSection(),

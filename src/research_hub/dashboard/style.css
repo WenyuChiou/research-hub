@@ -172,7 +172,7 @@ section {
   gap: var(--space-sm);
 }
 
-.cluster-link, .cluster-cite-btn, .cite-btn, .open-btn, .copy-brief-btn, .btn-primary, .popup-btn {
+.cluster-link, .cluster-cite-btn, .cite-btn, .quote-btn, .open-btn, .copy-brief-btn, .btn-primary, .popup-btn {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: var(--space-xs) var(--space-sm);
@@ -331,6 +331,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .dash-tab-radio-overview:checked    ~ #tab-overview,
 .dash-tab-radio-library:checked     ~ #tab-library,
 .dash-tab-radio-briefings:checked   ~ #tab-briefings,
+.dash-tab-radio-writing:checked     ~ #tab-writing,
 .dash-tab-radio-diagnostics:checked ~ #tab-diagnostics,
 .dash-tab-radio-manage:checked      ~ #tab-manage { display: block; }
 
@@ -338,6 +339,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .dash-tab-radio-overview:checked    ~ .dash-tabs .dash-tab-label-overview,
 .dash-tab-radio-library:checked     ~ .dash-tabs .dash-tab-label-library,
 .dash-tab-radio-briefings:checked   ~ .dash-tabs .dash-tab-label-briefings,
+.dash-tab-radio-writing:checked     ~ .dash-tabs .dash-tab-label-writing,
 .dash-tab-radio-diagnostics:checked ~ .dash-tabs .dash-tab-label-diagnostics,
 .dash-tab-radio-manage:checked      ~ .dash-tabs .dash-tab-label-manage {
   background: var(--surface);
@@ -530,6 +532,112 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   margin-top: var(--space-lg);
 }
 
+.writing-grid {
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: 1fr;
+}
+
+.writing-column,
+.writing-group,
+.writing-quote-card,
+.writing-cited-card {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.writing-stack {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.writing-group {
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+
+.writing-group:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.writing-group-header,
+.writing-quote-header,
+.writing-quote-actions,
+.writing-cited-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.writing-cluster-tag,
+.writing-quote-page,
+.writing-cited-status {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: var(--space-2xs) var(--space-sm);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+}
+
+.writing-group-count,
+.writing-quote-meta,
+.writing-quote-note {
+  margin: 0;
+  color: var(--fg-mute);
+  font-size: var(--text-xs);
+}
+
+.writing-quote-card,
+.writing-cited-card {
+  padding: var(--space-md);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.writing-quote-text {
+  margin: 0;
+  padding-left: var(--space-md);
+  border-left: 3px solid var(--brand);
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+
+.writing-empty {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.popup-quote label {
+  display: grid;
+  gap: var(--space-2xs);
+  color: var(--fg-mute);
+  font-size: var(--text-xs);
+}
+
+.popup-quote input,
+.popup-quote textarea,
+.quote-cmd-preview {
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font: inherit;
+}
+
+.popup-actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
 .manage-card {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -599,6 +707,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .dash-tab-label-overview,
 .dash-tab-label-library,
 .dash-tab-label-briefings,
+.dash-tab-label-writing,
 .dash-tab-label-diagnostics,
 .dash-tab-label-manage {
   border: 1px solid transparent;
@@ -700,3 +809,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 /* Recent feed slimmer borders on light bg */
 .recent-item { border-bottom-color: var(--border); }
+
+@container (min-width: 900px) {
+  .writing-grid { grid-template-columns: 1fr 1fr; }
+}

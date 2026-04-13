@@ -111,6 +111,21 @@ class DriftAlert:
 
 
 @dataclass
+class Quote:
+    slug: str
+    doi: str
+    title: str
+    authors: str
+    year: str
+    cluster_slug: str = ""
+    cluster_name: str = ""
+    page: str = ""
+    text: str = ""
+    captured_at: str = ""
+    context_note: str = ""
+
+
+@dataclass
 class DashboardData:
     """Top-level snapshot — every section reads only from this."""
 
@@ -122,6 +137,7 @@ class DashboardData:
     papers_this_week: int
     clusters: list[ClusterCard] = field(default_factory=list)
     briefings: list[BriefingPreview] = field(default_factory=list)
+    quotes: list[Quote] = field(default_factory=list)
     health_badges: list[HealthBadge] = field(default_factory=list)
     drift_alerts: list[DriftAlert] = field(default_factory=list)
 

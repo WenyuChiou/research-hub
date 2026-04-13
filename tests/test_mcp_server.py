@@ -118,9 +118,12 @@ from research_hub.clusters import ClusterRegistry
 from research_hub.dedup import DedupHit, DedupIndex
 from research_hub.doctor import CheckResult
 from research_hub.mcp_server import (
+    build_citation,
+    capture_quote,
     export_citation,
     generate_dashboard,
     get_config_info,
+    list_quotes,
     list_clusters,
     run_doctor,
     search_papers,
@@ -308,7 +311,10 @@ def test_new_operation_tools_are_registered():
 
     for tool_name in [
         "add_paper",
+        "build_citation",
+        "capture_quote",
         "generate_dashboard",
+        "list_quotes",
         "remove_paper",
         "mark_paper",
         "move_paper",
@@ -327,3 +333,38 @@ def test_generate_dashboard_tool_returns_path(tmp_path, monkeypatch):
 
     assert result["status"] == "ok"
     assert result["path"].endswith("dashboard.html")
+
+
+def test_build_citation_returns_inline_and_markdown(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    note_dir = cfg.raw / "agents"
+    note_dir.mkdir(parents=True)
+    (note_dir / "paper-one.md").write_text(
+        '---\ntitle: "Paper One"\nauthors: "Doe, Jane"\nyear: "2025"\ndoi: "10.1000/one"\n---\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+
+    result = build_citation.fn("paper-one")
+
+    assert result["status"] == "ok"
+    assert result["inline"] == "(Doe, 2025)"
+    assert result["markdown"] == "[Doe (2025)](https://doi.org/10.1000/one)"
+
+
+def test_capture_quote_and_list_quotes(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    note_dir = cfg.raw / "agents"
+    note_dir.mkdir(parents=True)
+    (note_dir / "paper-one.md").write_text(
+        '---\ntitle: "Paper One"\nauthors: "Doe, Jane"\nyear: "2025"\ndoi: "10.1000/one"\ntopic_cluster: "agents"\n---\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+
+    saved = capture_quote.fn("paper-one", "12", "hello", "section")
+    listed = list_quotes.fn()
+
+    assert saved["status"] == "ok"
+    assert listed["count"] == 1
+    assert listed["quotes"][0]["slug"] == "paper-one"

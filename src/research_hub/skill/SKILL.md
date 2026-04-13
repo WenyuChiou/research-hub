@@ -85,11 +85,47 @@ research-hub notebooklm generate --cluster my-cluster --type brief
 # Types: brief, audio, mind-map, video, all
 ```
 
-### Step 6: Export Citations
+### Step 6: Download NotebookLM briefing back (v0.9.0+)
+
+```bash
+research-hub notebooklm download --cluster my-cluster --type brief
+# Saves to <vault>/.research_hub/artifacts/<slug>/brief-<UTC>.txt
+
+research-hub notebooklm read-briefing --cluster my-cluster
+# Prints the latest briefing text for inline AI analysis
+```
+
+MCP tools `download_artifacts(cluster_slug, type)` and
+`read_briefing(cluster_slug)` let AI agents pull briefings into
+context without reopening NotebookLM.
+
+### Step 7: Export Citations
 
 ```bash
 research-hub cite 10.1234/xxxx --format bibtex
 research-hub cite --cluster my-cluster --format bibtex --out refs.bib
+```
+
+### Step 8: View the Dashboard (v0.10.0+)
+
+```bash
+research-hub dashboard --open
+# 5-tab audit view: Overview / Library / Briefings / Diagnostics / Manage
+```
+
+**Tabs:**
+- **Overview** (default) — treemap of cluster sizes, storage map with clickable zotero://, obsidian://, and NotebookLM deep-links, recent-additions feed (last 15 ingests).
+- **Library** — cluster cards with paper rows. Per-paper `[Cite]` popup (BibTeX) and `[Open ▼]` menu (jump to Zotero/Obsidian/NLM). Per-cluster `Download .bib` batch export.
+- **Briefings** — inline preview of downloaded NotebookLM briefings.
+- **Diagnostics** — health checks + drift alerts with remedy commands.
+- **Manage** — command-builder forms for cluster rename/merge/split/bind/delete. Fills a form, click → the exact CLI command is copied to clipboard.
+
+**Footer:** a Debug widget (`Copy snapshot`) dumps vault state for AI handoff when the user reports a dashboard issue.
+
+**Options:**
+```bash
+research-hub dashboard --watch --open         # Re-render on vault change
+research-hub dashboard --open --rich-bibtex   # Use Zotero-formatted BibTeX (slow)
 ```
 
 ## Cluster Management
@@ -135,3 +171,6 @@ research-hub cleanup
 | `synthesize` | Generate cluster synthesis pages |
 | `cleanup` | Deduplicate hub page wikilinks |
 | `migrate-yaml` | Patch legacy notes to current spec |
+| `dashboard [--open] [--watch] [--rich-bibtex]` | Generate the 5-tab audit dashboard |
+| `notebooklm download --cluster X` | Pull a generated briefing back to the vault |
+| `notebooklm read-briefing --cluster X` | Print the latest downloaded briefing |

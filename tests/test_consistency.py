@@ -15,6 +15,7 @@ EXPECTED_MAPPINGS = {
     "list_clusters": "clusters list",
     "show_cluster": "clusters show",
     "export_citation": "cite",
+    "build_citation": "cite --inline/--markdown",
     "run_doctor": "doctor",
     "get_config_info": "doctor",
     "remove_paper": "remove",
@@ -30,6 +31,8 @@ EXPECTED_MAPPINGS = {
     "generate_dashboard": "dashboard",
     "download_artifacts": "notebooklm download",
     "read_briefing": "notebooklm read-briefing",
+    "list_quotes": "quote list",
+    "capture_quote": "quote",
 }
 
 

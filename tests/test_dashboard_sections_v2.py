@@ -11,6 +11,7 @@ from research_hub.dashboard.sections import (
     LibrarySection,
     ManageSection,
     OverviewSection,
+    WritingSection,
 )
 from research_hub.dashboard.types import (
     BriefingPreview,
@@ -19,6 +20,7 @@ from research_hub.dashboard.types import (
     DriftAlert,
     HealthBadge,
     PaperRow,
+    Quote,
 )
 
 
@@ -97,6 +99,7 @@ def test_header_section_renders_tabs():
     assert 'id="dash-tab-overview"' in html
     assert 'id="dash-tab-library"' in html
     assert 'id="dash-tab-briefings"' in html
+    assert 'id="dash-tab-writing"' in html
     assert 'id="dash-tab-diagnostics"' in html
     assert 'id="dash-tab-manage"' in html
     # First tab is checked by default
@@ -228,6 +231,14 @@ def test_library_section_renders_cite_button_for_researcher():
     assert 'data-bibtex="@article{paper-one}"' in html
 
 
+def test_paper_row_has_quote_button():
+    html = LibrarySection().render(
+        _data(clusters=[_cluster()], total_clusters=1, total_papers=1)
+    )
+    assert 'class="quote-btn"' in html
+    assert 'data-slug="paper-one"' in html
+
+
 def test_library_section_escapes_html_in_abstract():
     html = LibrarySection().render(
         _data(
@@ -330,12 +341,74 @@ def test_manage_section_empty_state():
     assert "No clusters to manage" in html
 
 
+# --- WritingSection -----------------------------------------------------
+
+
+def _quote(**overrides) -> Quote:
+    quote = Quote(
+        slug="paper-one",
+        doi="10.1000/one",
+        title="Paper One",
+        authors="Doe, J.; Roe, A.",
+        year="2025",
+        cluster_slug="agents",
+        cluster_name="Agents",
+        page="12",
+        text="Quoted passage about coordination.",
+        captured_at="2026-04-12T12:00:00Z",
+        context_note="Section 3.2",
+    )
+    for key, value in overrides.items():
+        setattr(quote, key, value)
+    return quote
+
+
+def test_writing_section_empty_state():
+    html = WritingSection().render(_data())
+    assert "No captured quotes yet" in html
+    assert "marked cited" in html
+
+
+def test_writing_section_renders_quote_cards():
+    html = WritingSection().render(_data(quotes=[_quote()]))
+    assert 'class="writing-quote-card"' in html
+    assert "Quoted passage about coordination." in html
+    assert "Copy as markdown" in html
+    assert "Copy inline" in html
+
+
+def test_writing_section_groups_quotes_by_cluster():
+    html = WritingSection().render(
+        _data(quotes=[_quote(cluster_name="Agents"), _quote(slug="paper-two", cluster_name="Policy")])
+    )
+    assert "Agents" in html
+    assert "Policy" in html
+
+
+def test_writing_section_renders_cited_papers():
+    cited = _cluster(papers=[_paper(status="cited")])
+    html = WritingSection().render(_data(clusters=[cited], total_clusters=1, total_papers=1))
+    assert "Cited papers" in html
+    assert "Marked cited" in html
+    assert "Copy citation" in html
+
+
+def test_writing_section_hides_cited_when_none():
+    html = WritingSection().render(_data(quotes=[_quote()]))
+    assert "No papers are marked" in html
+
+
+def test_header_section_includes_writing_tab_radio():
+    html = HeaderSection().render(_data())
+    assert 'class="dash-tab-radio dash-tab-radio-writing"' in html
+
+
 # --- DEFAULT_SECTIONS ---------------------------------------------------
 
 
 def test_default_sections_in_correct_order():
     ids = [s.id for s in DEFAULT_SECTIONS]
-    assert ids == ["header", "overview", "library", "briefings", "diagnostics", "manage", "debug"]
+    assert ids == ["header", "overview", "library", "briefings", "writing", "diagnostics", "manage", "debug"]
 
 
 def test_debug_section_renders_snapshot_with_vault_metadata():

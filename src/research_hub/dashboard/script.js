@@ -20,7 +20,7 @@
 
   function placePopup(anchor, popup) {
     const rect = anchor.getBoundingClientRect();
-    popup.className = "popup";
+    popup.classList.add("popup");
     popup.style.top = `${window.scrollY + rect.bottom + 8}px`;
     popup.style.left = `${Math.max(12, window.scrollX + rect.left)}px`;
     doc.body.appendChild(popup);
@@ -96,6 +96,12 @@
     });
   });
 
+  doc.querySelectorAll(".quote-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      showQuotePopup(btn);
+    });
+  });
+
   function showCitePopup(bibtex, slug, anchor) {
     closePopup();
     const popup = doc.createElement("div");
@@ -139,6 +145,50 @@
       downloadText(bibtex, `${cluster}.bib`, "application/x-bibtex");
     });
   });
+
+  function showQuotePopup(btn) {
+    closePopup();
+    const popup = doc.createElement("div");
+    popup.className = "popup popup-quote";
+    popup.innerHTML = `
+      <h4>Capture quote</h4>
+      <label>Page <input type="text" name="page" placeholder="12"></label>
+      <label>Quote text
+        <textarea name="text" rows="4" placeholder="Paste the quoted passage here"></textarea>
+      </label>
+      <label>Context (optional)
+        <input type="text" name="context" placeholder="Section 3.2 on escalation dynamics">
+      </label>
+      <div class="popup-actions">
+        <button type="button" class="popup-btn" data-action="build">Copy capture command</button>
+        <button type="button" class="popup-btn" data-action="close">Close</button>
+      </div>
+      <pre class="quote-cmd-preview" style="display:none"></pre>
+    `;
+    const pageInput = popup.querySelector('input[name="page"]');
+    const textInput = popup.querySelector('textarea[name="text"]');
+    const contextInput = popup.querySelector('input[name="context"]');
+    const preview = popup.querySelector(".quote-cmd-preview");
+    popup.querySelector('[data-action="build"]').addEventListener("click", function () {
+      const page = (pageInput.value || "").trim();
+      const text = (textInput.value || "").trim();
+      const context = (contextInput.value || "").trim();
+      if (!page || !text) {
+        preview.style.display = "block";
+        preview.textContent = "Fill page and quote text first.";
+        return;
+      }
+      let command = `research-hub quote ${shellQuote(btn.dataset.slug || "")} --page ${shellQuote(page)} --text ${shellQuote(text)}`;
+      if (context) {
+        command += ` --context ${shellQuote(context)}`;
+      }
+      preview.style.display = "block";
+      preview.textContent = command;
+      copyText(command);
+    });
+    popup.querySelector('[data-action="close"]').addEventListener("click", closePopup);
+    placePopup(btn, popup);
+  }
 
   doc.querySelectorAll(".open-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
