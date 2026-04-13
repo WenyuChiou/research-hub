@@ -492,16 +492,25 @@ def _status(cluster: str | None = None) -> int:
     return 0
 
 
-def _dashboard(open_browser: bool, watch: bool = False, refresh: int = 10) -> int:
+def _dashboard(
+    open_browser: bool,
+    watch: bool = False,
+    refresh: int = 10,
+    rich_bibtex: bool = False,
+) -> int:
     if watch:
         from research_hub.dashboard import watch_dashboard
 
-        watch_dashboard(open_browser=open_browser, refresh_seconds=refresh)
+        watch_dashboard(
+            open_browser=open_browser,
+            refresh_seconds=refresh,
+            rich_bibtex=rich_bibtex,
+        )
         return 0
 
     from research_hub.dashboard import generate_dashboard
 
-    out_path = generate_dashboard(open_browser=open_browser)
+    out_path = generate_dashboard(open_browser=open_browser, rich_bibtex=rich_bibtex)
     print(f"Dashboard written to {out_path}")
     if open_browser:
         print("Opening in browser...")
@@ -982,6 +991,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=10,
         help="Browser auto-refresh interval in seconds when --watch is set (default 10)",
     )
+    dashboard_parser.add_argument(
+        "--rich-bibtex",
+        action="store_true",
+        help=(
+            "Fetch rich BibTeX entries from Zotero for every paper (slow: "
+            "~1s/paper). Default uses an instant frontmatter fallback that "
+            "is sufficient for most citations."
+        ),
+    )
 
     migrate_parser = subparsers.add_parser(
         "migrate-yaml", help="Patch legacy notes to v0.3.x YAML spec"
@@ -1246,7 +1264,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         return _status(cluster=args.cluster)
     if args.command == "dashboard":
-        return _dashboard(args.open_browser, watch=args.watch, refresh=args.refresh)
+        return _dashboard(
+            args.open_browser,
+            watch=args.watch,
+            refresh=args.refresh,
+            rich_bibtex=args.rich_bibtex,
+        )
     if args.command == "sync":
         if args.sync_command == "status":
             return _sync_status(cluster_slug=args.cluster)

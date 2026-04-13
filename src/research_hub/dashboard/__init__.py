@@ -146,6 +146,7 @@ def generate_dashboard(
     open_browser: bool = False,
     *,
     refresh_seconds: int = 0,
+    rich_bibtex: bool = False,
 ) -> Path:
     """Generate dashboard HTML and optionally open it in the browser.
 
@@ -153,13 +154,16 @@ def generate_dashboard(
     browser tab will auto-reload at that cadence. ``0`` (default) emits
     no refresh meta — the file stays static. Used by ``--watch`` mode.
 
-    Only instantiates a Zotero client when both ``api_key`` AND
-    ``library_id`` are loadable. Otherwise the cite buttons fall back
-    to frontmatter-built BibTeX (always present, never partial).
+    ``rich_bibtex`` opts into per-paper Zotero ``get_formatted`` calls
+    so the [Cite] popup shows the full Zotero-formatted BibTeX (with
+    abstract, tags, collections, etc). Default ``False`` because for a
+    ~300-paper vault this runs 300 round-trips and takes minutes; the
+    frontmatter fallback builds a valid minimal entry instantly and is
+    plenty for writing drafts.
     """
     cfg = get_config()
     zot = None
-    if not getattr(cfg, "no_zotero", False):
+    if rich_bibtex and not getattr(cfg, "no_zotero", False):
         try:
             from research_hub.zotero.client import _load_credentials
 
@@ -183,6 +187,7 @@ def watch_dashboard(
     poll_seconds: float = 5.0,
     refresh_seconds: int = 10,
     open_browser: bool = True,
+    rich_bibtex: bool = False,
 ) -> None:
     """Regenerate the dashboard whenever vault state files change.
 
@@ -222,7 +227,11 @@ def watch_dashboard(
         f"Watching vault state ({len(watch_paths)} paths). "
         f"Re-render on change · meta-refresh {refresh_seconds}s · Ctrl+C to stop."
     )
-    out_path = generate_dashboard(open_browser=open_browser, refresh_seconds=refresh_seconds)
+    out_path = generate_dashboard(
+        open_browser=open_browser,
+        refresh_seconds=refresh_seconds,
+        rich_bibtex=rich_bibtex,
+    )
     print(f"  initial render → {out_path}")
     last = _state_signature()
     try:
@@ -231,7 +240,11 @@ def watch_dashboard(
             current = _state_signature()
             if current != last:
                 last = current
-                out_path = generate_dashboard(open_browser=False, refresh_seconds=refresh_seconds)
+                out_path = generate_dashboard(
+                    open_browser=False,
+                    refresh_seconds=refresh_seconds,
+                    rich_bibtex=rich_bibtex,
+                )
                 from datetime import datetime, timezone
 
                 stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
