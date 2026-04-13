@@ -40,6 +40,11 @@ EXPECTED_MAPPINGS = {
     "get_topic_digest": "topic digest",
     "write_topic_overview": "mcp-only",
     "read_topic_overview": "topic show",
+    "propose_subtopics": "topic propose",
+    "emit_assignment_prompt": "topic assign emit",
+    "apply_subtopic_assignments": "topic assign apply",
+    "build_topic_notes": "topic build",
+    "list_topic_notes": "topic list",
     "fit_check_prompt": "fit-check emit",
     "fit_check_apply": "fit-check apply",
     "fit_check_audit": "fit-check audit",
@@ -66,4 +71,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(_list_mcp_tool_names(mcp)) >= 33
+    assert len(_list_mcp_tool_names(mcp)) >= 38

@@ -466,17 +466,23 @@ class LibrarySection(DashboardSection):
         last_activity = _relative_time(_cluster_last_activity(cluster))
         cluster_bibtex = html_escape(_attr(cluster, "cluster_bibtex", ""))
         has_overview = bool(_attr(cluster, "has_overview", False))
+        subtopic_count = int(_attr(cluster, "subtopic_count", 0) or 0)
         binding_line = self._binding_line(cluster, show_zotero)
         overview_badge = (
             '<span class="cluster-badge">overview</span>'
             if has_overview
             else '<span class="cluster-badge cluster-badge--missing">no overview</span>'
         )
+        subtopics_badge = (
+            f'<span class="cluster-badge">{subtopic_count} subtopics</span>'
+            if subtopic_count > 0
+            else ""
+        )
         overview_href = _obsidian_url(f"hub/{slug}/00_overview.md") if has_overview else ""
         summary_title = (
-            f'<h3><a class="binding-link" href="{html_escape(overview_href)}">{name}</a> {overview_badge}</h3>'
+            f'<h3><a class="binding-link" href="{html_escape(overview_href)}">{name}</a> {overview_badge} {subtopics_badge}</h3>'
             if overview_href
-            else f"<h3>{name} {overview_badge}</h3>"
+            else f"<h3>{name} {overview_badge} {subtopics_badge}</h3>"
         )
 
         download_btn = ""

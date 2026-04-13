@@ -585,6 +585,97 @@ def read_topic_overview(cluster_slug: str) -> dict[str, Any]:
         return _tool_error(exc)
 
 
+def propose_subtopics(cluster_slug: str, target_count: int = 5) -> dict:
+    """Build the Phase 1 sub-topic proposal prompt for an AI to consume."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import emit_propose_prompt, get_topic_digest
+
+        cfg = get_config()
+        prompt = emit_propose_prompt(cfg, cluster_slug, target_count=target_count)
+        digest = get_topic_digest(cfg, cluster_slug)
+        return {
+            "prompt": prompt,
+            "paper_count": digest.paper_count,
+            "target_count": target_count,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def emit_assignment_prompt(cluster_slug: str, subtopics: list[dict]) -> dict:
+    """Build the Phase 2 assignment prompt."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import SubtopicProposal, emit_assign_prompt, get_topic_digest
+
+        cfg = get_config()
+        props = [SubtopicProposal(**item) for item in subtopics]
+        prompt = emit_assign_prompt(cfg, cluster_slug, props)
+        digest = get_topic_digest(cfg, cluster_slug)
+        return {"prompt": prompt, "paper_count": digest.paper_count}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def apply_subtopic_assignments(cluster_slug: str, assignments: dict) -> dict:
+    """Write subtopics frontmatter to each paper note."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import apply_assignments
+
+        cfg = get_config()
+        report = apply_assignments(cfg, cluster_slug, assignments)
+        return {
+            "ok": True,
+            "updated_count": len(report),
+            "assignments": report,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def build_topic_notes(cluster_slug: str) -> dict:
+    """Generate topics/NN_<slug>.md files from paper frontmatter."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import build_subtopic_notes
+
+        cfg = get_config()
+        written = build_subtopic_notes(cfg, cluster_slug)
+        return {
+            "ok": True,
+            "written": [str(path) for path in written],
+            "count": len(written),
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def list_topic_notes(cluster_slug: str) -> dict:
+    """List existing sub-topic notes for a cluster."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.topic import list_subtopics
+
+        cfg = get_config()
+        descriptors = list_subtopics(cfg, cluster_slug)
+        return {
+            "ok": True,
+            "subtopics": [
+                {
+                    "slug": item.slug,
+                    "title": item.title,
+                    "paper_count": item.paper_count,
+                    "path": str(item.path),
+                }
+                for item in descriptors
+            ],
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
 def fit_check_prompt(
     cluster_slug: str,
     candidates: list[dict],
@@ -862,6 +953,11 @@ mcp.tool()(split_cluster)
 mcp.tool()(get_topic_digest)
 mcp.tool()(write_topic_overview)
 mcp.tool()(read_topic_overview)
+mcp.tool()(propose_subtopics)
+mcp.tool()(emit_assignment_prompt)
+mcp.tool()(apply_subtopic_assignments)
+mcp.tool()(build_topic_notes)
+mcp.tool()(list_topic_notes)
 mcp.tool()(fit_check_prompt)
 mcp.tool()(fit_check_apply)
 mcp.tool()(fit_check_audit)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -105,3 +106,66 @@ def test_cli_topic_show_returns_1_when_missing_overview(tmp_path, monkeypatch, c
 
     err = capsys.readouterr().err
     assert "no overview" in err
+
+
+def test_cli_topic_build_generates_notes(tmp_path, monkeypatch):
+    cfg = _setup_topic_cfg(tmp_path)
+    monkeypatch.setattr("research_hub.cli.get_config", lambda: cfg)
+    note_dir = cfg.raw / "agents"
+    note_dir.mkdir(parents=True, exist_ok=True)
+    (note_dir / "paper-one.md").write_text(
+        '---\n'
+        'title: "Paper One"\n'
+        'authors: "Doe, Jane"\n'
+        'year: "2025"\n'
+        'doi: "10.1/one"\n'
+        "---\n\n"
+        "## Abstract\n"
+        "Paper one abstract.\n",
+        encoding="utf-8",
+    )
+    (note_dir / "paper-two.md").write_text(
+        '---\n'
+        'title: "Paper Two"\n'
+        'authors: "Roe, Alex"\n'
+        'year: "2024"\n'
+        'doi: "10.1/two"\n'
+        "---\n\n"
+        "## Abstract\n"
+        "Paper two abstract.\n",
+        encoding="utf-8",
+    )
+
+    proposed = tmp_path / "proposed.json"
+    proposed.write_text(
+        json.dumps(
+            {
+                "subtopics": [
+                    {"slug": "benchmarks", "title": "Benchmarks", "description": "d"},
+                    {"slug": "agent-interfaces", "title": "Agent Interfaces", "description": "d"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assignments = tmp_path / "assignments.json"
+    assignments.write_text(
+        json.dumps(
+            {
+                "assignments": {
+                    "paper-one": ["benchmarks"],
+                    "paper-two": ["agent-interfaces"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["topic", "propose", "--cluster", "agents"]) == 0
+    assert main(["topic", "assign", "emit", "--cluster", "agents", "--subtopics", str(proposed)]) == 0
+    assert main(["topic", "assign", "apply", "--cluster", "agents", "--assignments", str(assignments)]) == 0
+    assert main(["topic", "build", "--cluster", "agents"]) == 0
+
+    topics_dir = cfg.raw / "agents" / "topics"
+    assert (topics_dir / "01_agent-interfaces.md").exists()
+    assert (topics_dir / "02_benchmarks.md").exists()

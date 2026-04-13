@@ -77,6 +77,7 @@ class ClusterCard:
     notebooklm_notebook_url: str = ""
     zotero_collection_key: str = ""
     has_overview: bool = False
+    subtopic_count: int = 0
     cluster_bibtex: str = ""  # pre-rendered .bib for the cluster batch download
     briefing: BriefingPreview | None = None
 

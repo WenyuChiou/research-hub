@@ -24,7 +24,7 @@ from research_hub.dashboard.types import (
     PaperRow,
     Quote,
 )
-from research_hub.topic import overview_path
+from research_hub.topic import list_subtopics, overview_path
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 or str(cluster_cache.get("notebook_url", "")),
                 zotero_collection_key=cluster.zotero_collection_key or "",
                 has_overview=overview_path(cfg, cluster.slug).exists(),
+                subtopic_count=len(list_subtopics(cfg, cluster.slug)),
                 briefing=briefing,
             )
             card.cluster_bibtex = "" if persona == "analyst" else build_bibtex_for_cluster(card)

@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.14.0 (2026-04-13)
+
+**Rigorous fit-check + sub-topic notes — the "know your papers are on-topic AND find them by theme" release.**
+
+Two tracks shipped together. Track A adds a multi-gate fit-check system so you can catch off-topic papers BEFORE they pollute a cluster (instead of discovering it only after the 20-minute NotebookLM cycle). Track B adds sub-topic notes so you can browse a cluster by theme without flipping through every paper. Both tracks stay in the emit/apply pattern — research-hub never calls an LLM directly, the user's AI does the scoring and writing.
+
+### Added — Track A: Multi-gate fit-check system
+
+- **`src/research_hub/fit_check.py`** (328 LOC) — four gates validating cluster topic fit at every pipeline stage.
+- **Gate 1 — Pre-ingest AI scoring.** `research-hub fit-check emit` builds a prompt asking an AI to score each candidate paper 0-5 against the cluster definition (falls back to parsing the overview's `## Definition` section when no `--definition` supplied). `research-hub fit-check apply` consumes the scored JSON, filters by threshold (default 3), and writes `.fit_check_rejected.json` sidecar for audit. Default threshold is 3 (keep score >= 3).
+- **Gate 2 — Ingest-time term overlap.** Fast, no AI. Extracts up to 12 key terms from the cluster definition (4-char words, word-boundary matches, stoplist). Computes the fraction present in each paper's abstract. Zero overlap → paper frontmatter tagged `fit_warning: true` but still ingested (warning only, never blocks).
+- **Gate 3 — Post-ingest NotebookLM audit.** `notebooklm/upload.py` briefing system prompt now requires a `### Off-topic papers` section in every generated briefing. `research-hub fit-check audit --cluster X` parses the section, writes `.fit_check_nlm_flags.json`, and exits 1 if any papers are flagged.
+- **Gate 4 — Periodic drift check.** `research-hub fit-check drift` re-emits the fit-check prompt for already-ingested papers against the current overview. Reports only — never auto-removes.
+- **CLI surface:**
+  - `research-hub fit-check emit --cluster X --candidates file.json [--definition "..."]`
+  - `research-hub fit-check apply --cluster X --candidates file.json --scored file.json [--threshold 3]`
+  - `research-hub fit-check audit --cluster X`
+  - `research-hub fit-check drift --cluster X`
+  - `research-hub ingest --fit-check --fit-check-threshold 3` — opt-in gate at ingest time.
+- **MCP surface:** 4 new tools — `fit_check_prompt`, `fit_check_apply`, `fit_check_audit`, `fit_check_drift` — **33 tools total** (was 29).
+
+### Added — Track B: Sub-topic notes
+
+- **`src/research_hub/topic.py`** extended with sub-topic propose/assign/build/list support. All v0.13.0 functions (`scaffold_overview`, `read_overview`, `get_topic_digest`, `hub_cluster_dir`, `overview_path`) remain unchanged. `topic.py` grew from 206 LOC to ~720 LOC.
+- **File convention** — each cluster's `raw/<cluster>/` folder now has a `topics/` subfolder containing `NN_<slug>.md` files, one per sub-topic. Paper notes gain a `subtopics: [a, b]` frontmatter field. A paper can belong to multiple sub-topics.
+- **Three-phase workflow:**
+  - **Propose** (`research-hub topic propose --cluster X [--target-count 5]`) — emits a prompt asking an AI to propose 3-6 natural groupings from the cluster digest.
+  - **Assign** — `research-hub topic assign emit --subtopics proposed.json` emits the per-paper mapping prompt. `research-hub topic assign apply --assignments file.json` writes the `subtopics:` frontmatter to each paper note.
+  - **Build** (`research-hub topic build --cluster X`) — reads paper frontmatter, generates `topics/NN_<slug>.md` for each unique sub-topic. File numbering is stable across runs. Overwrites ONLY the `## Papers` section; Scope / Why / Open questions / See also are user-owned and preserved verbatim on re-run.
+  - **List** (`research-hub topic list --cluster X`) — prints a table of existing sub-topics with paper counts.
+- **Sub-topic template sections** — Scope / Why these papers cluster together / Papers (auto-generated) / Open questions / See also. Papers section uses Obsidian wiki-links: `[[<slug>|<short-title> (<lastname> <year>)]] — <one-line take>`.
+- **MCP surface:** 5 new tools — `propose_subtopics`, `emit_assignment_prompt`, `apply_subtopic_assignments`, `build_topic_notes`, `list_topic_notes` — **38 tools total** (was 33 after Track A).
+- **Dashboard integration** — `ClusterCard.subtopic_count` field, populated from `list_subtopics()`. Cluster card shows a `N subtopics` badge when count > 0 (hidden when 0 to avoid clutter).
+
+### Fixed
+
+- **CI MCP test failures (second occurrence).** The earlier `[mcp,dev]` fix in v0.13.0 was insufficient: the tests still used fastmcp's private `mcp._tool_manager._tools` API and the direct `imported_function.fn(...)` pattern, both of which break on fastmcp versions where the decorator does not wrap the imported name. Added `tests/_mcp_helpers.py` with `_list_mcp_tool_names(mcp)` and `_get_mcp_tool(mcp, name)` that try the public `mcp.get_tools()` / `mcp.get_tool(name)` (async) API first and fall back to the private path only for older versions. Replaced every private-API access in `test_consistency.py`, `test_mcp_add_paper.py`, `test_mcp_citation_graph.py`, `test_mcp_server.py`, `test_e2e_smoke.py`.
+
+### Tests
+
+- **520 → 560 passing** (+40 new tests, 5 skipped unchanged).
+- Track A: 20 new tests in `tests/test_fit_check.py` covering all four gates (emit_prompt, apply_scores, term_overlap, parse_nlm_off_topic, drift_check, CLI integration).
+- Track B: 20 new tests in `tests/test_topic_subtopics.py` + `tests/test_cli_operations.py` covering propose/assign/build/list, stable numbering, multi-sub-topic papers, Papers-section-only overwriting.
+
+### Non-breaking changes only
+
+All existing CLI commands, MCP tool signatures, and public topic.py functions continue to work unchanged. `--fit-check` and sub-topic features are opt-in — default v0.13.0 behavior preserved.
+
 ## v0.13.0 (2026-04-12)
 
 **Model-agnostic paper discovery + topic overview notes — the "any AI can drive it" release.**

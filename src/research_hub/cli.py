@@ -1232,7 +1232,10 @@ def build_parser() -> argparse.ArgumentParser:
     split_parser.add_argument("--query", required=True, help="Keywords for the new sub-cluster")
     split_parser.add_argument("--new-name", required=True, help="Display name for new cluster")
 
-    topic_parser = subparsers.add_parser("topic", help="Manage cluster topic overview notes")
+    topic_parser = subparsers.add_parser(
+        "topic",
+        help="Manage cluster topic overview + sub-topic notes",
+    )
     topic_subparsers = topic_parser.add_subparsers(dest="topic_command")
     topic_scaffold = topic_subparsers.add_parser("scaffold", help="Create the overview template file")
     topic_scaffold.add_argument("--cluster", required=True)
@@ -1242,6 +1245,35 @@ def build_parser() -> argparse.ArgumentParser:
     topic_digest.add_argument("--out", help="Write digest to this file instead of stdout")
     topic_show = topic_subparsers.add_parser("show", help="Print the current overview markdown")
     topic_show.add_argument("--cluster", required=True)
+    topic_propose = topic_subparsers.add_parser(
+        "propose",
+        help="Emit the sub-topic proposal prompt for an AI",
+    )
+    topic_propose.add_argument("--cluster", required=True)
+    topic_propose.add_argument("--target-count", type=int, default=5)
+    topic_propose.add_argument("--out")
+    topic_assign = topic_subparsers.add_parser("assign", help="Assign papers to sub-topics")
+    topic_assign_sub = topic_assign.add_subparsers(dest="assign_command")
+    topic_assign_emit = topic_assign_sub.add_parser("emit", help="Emit the assignment prompt")
+    topic_assign_emit.add_argument("--cluster", required=True)
+    topic_assign_emit.add_argument("--subtopics", required=True, help="Path to proposed JSON")
+    topic_assign_emit.add_argument("--out")
+    topic_assign_apply = topic_assign_sub.add_parser(
+        "apply",
+        help="Apply AI assignments to paper frontmatter",
+    )
+    topic_assign_apply.add_argument("--cluster", required=True)
+    topic_assign_apply.add_argument("--assignments", required=True, help="Path to assignments JSON")
+    topic_build = topic_subparsers.add_parser(
+        "build",
+        help="Generate topics/NN_<slug>.md files from frontmatter",
+    )
+    topic_build.add_argument("--cluster", required=True)
+    topic_list = topic_subparsers.add_parser(
+        "list",
+        help="List existing sub-topic notes with paper counts",
+    )
+    topic_list.add_argument("--cluster", required=True)
 
     remove_parser = subparsers.add_parser("remove", help="Remove a paper from the vault")
     remove_parser.add_argument("identifier", help="DOI or note filename slug")
@@ -1784,7 +1816,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.clusters_command == "split":
             return _clusters_split(args.source, args.query, args.new_name)
     if args.command == "topic":
-        from research_hub.topic import get_topic_digest, read_overview, scaffold_overview
+        from research_hub.topic import (
+            SubtopicProposal,
+            apply_assignments,
+            build_subtopic_notes,
+            emit_assign_prompt,
+            emit_propose_prompt,
+            get_topic_digest,
+            list_subtopics,
+            read_overview,
+            scaffold_overview,
+        )
 
         cfg = get_config()
         if args.topic_command == "scaffold":
@@ -1811,6 +1853,58 @@ def main(argv: list[str] | None = None) -> int:
                 print("no overview (run: research-hub topic scaffold --cluster ...)", file=sys.stderr)
                 return 1
             print(content)
+            return 0
+        if args.topic_command == "propose":
+            prompt = emit_propose_prompt(cfg, args.cluster, target_count=args.target_count)
+            if args.out:
+                Path(args.out).write_text(prompt, encoding="utf-8")
+                print(f"wrote {args.out}")
+            else:
+                print(prompt)
+            return 0
+        if args.topic_command == "assign":
+            if args.assign_command == "emit":
+                data = json.loads(Path(args.subtopics).read_text(encoding="utf-8"))
+                subtopics = [SubtopicProposal(**item) for item in data.get("subtopics", data)]
+                prompt = emit_assign_prompt(cfg, args.cluster, subtopics)
+                if args.out:
+                    Path(args.out).write_text(prompt, encoding="utf-8")
+                    print(f"wrote {args.out}")
+                else:
+                    print(prompt)
+                return 0
+            if args.assign_command == "apply":
+                data = json.loads(Path(args.assignments).read_text(encoding="utf-8"))
+                assignments = data.get("assignments", data)
+                report = apply_assignments(cfg, args.cluster, assignments)
+                for slug, count in sorted(report.items()):
+                    print(f"  {slug}: {count} subtopic(s)")
+                return 0
+            topic_command_parser = next(
+                action
+                for action in parser._subparsers._group_actions[0].choices.values()
+                if action.prog.endswith(" topic")
+            )
+            topic_assign = next(
+                action
+                for action in topic_command_parser._subparsers._group_actions[0].choices.values()
+                if action.prog.endswith(" topic assign")
+            )
+            topic_assign.print_help()
+            return 2
+        if args.topic_command == "build":
+            written = build_subtopic_notes(cfg, args.cluster)
+            for path in written:
+                print(f"wrote {path}")
+            return 0
+        if args.topic_command == "list":
+            descriptors = list_subtopics(cfg, args.cluster)
+            if not descriptors:
+                print(f"no sub-topics for cluster {args.cluster}")
+                return 0
+            print(f"{'slug':<25} {'title':<35} papers")
+            for descriptor in descriptors:
+                print(f"{descriptor.slug:<25} {descriptor.title:<35} {descriptor.paper_count}")
             return 0
         topic_parser = next(
             action
