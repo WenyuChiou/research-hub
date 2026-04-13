@@ -77,22 +77,25 @@ def search_papers(
     exclude_terms: list[str] | None = None,
     min_confidence: float = 0.0,
     rank_by: str = "smart",
+    field: str | None = None,
 ) -> list[dict[str, Any]] | dict[str, str]:
     """Search for academic papers across multiple backends."""
     try:
         from research_hub.config import get_config
         from research_hub.dedup import DedupIndex, normalize_doi
         from research_hub.search import search_papers as _search_papers
+        from research_hub.search.fallback import DEFAULT_BACKENDS, resolve_backends_for_field
 
         cfg = get_config()
         index_path = cfg.research_hub_dir / "dedup_index.json"
         index = DedupIndex.load(index_path) if index_path.exists() else DedupIndex()
 
-        backend_list = (
-            tuple(backends)
-            if backends
-            else ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
-        )
+        if field:
+            backend_list = resolve_backends_for_field(field)
+        elif backends:
+            backend_list = tuple(backends)
+        else:
+            backend_list = DEFAULT_BACKENDS
         results = _search_papers(
             query,
             limit=min(limit, 100),
@@ -774,6 +777,7 @@ def discover_new(
     exclude_terms: list[str] | None = None,
     min_confidence: float = 0.0,
     rank_by: str = "smart",
+    field: str | None = None,
 ) -> dict:
     """Run search + emit fit-check prompt, stashing state for discover_continue."""
     try:
@@ -794,6 +798,7 @@ def discover_new(
             year_to=year_to,
             min_citations=min_citations,
             backends=backend_list,
+            field=field,
             limit=limit,
             definition=definition,
             exclude_types=tuple(exclude_types or []),

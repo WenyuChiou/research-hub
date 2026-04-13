@@ -17,6 +17,7 @@ from research_hub.operations import add_paper, mark_paper, move_paper, remove_pa
 from research_hub.pipeline import run_pipeline
 from research_hub.pipeline_repair import repair_cluster
 from research_hub.search import SemanticScholarClient, iter_new_results
+from research_hub.search.fallback import DEFAULT_BACKENDS, FIELD_PRESETS, resolve_backends_for_field
 from research_hub.suggest import PaperInput, suggest_cluster_for_paper, suggest_related_papers
 from research_hub.verify import verify_arxiv, verify_doi, verify_paper
 from research_hub.vault_search import search_vault
@@ -1048,7 +1049,7 @@ def _discover_new(args) -> int:
 
     cfg = get_config()
     year_from, year_to = _parse_year_range(args.year) if args.year else (None, None)
-    backends = tuple(item.strip() for item in args.backend.split(",") if item.strip())
+    backends = tuple(item.strip() for item in args.backend.split(",") if item.strip()) if args.backend else None
     exclude_types = _parse_csv_terms(args.exclude_type)
     exclude_terms = _parse_negative_terms(args.exclude)
     state, prompt = discover_new(
@@ -1059,6 +1060,7 @@ def _discover_new(args) -> int:
         year_to=year_to,
         min_citations=args.min_citations,
         backends=backends,
+        field=args.field,
         limit=args.limit,
         definition=args.definition,
         exclude_types=exclude_types,
@@ -1421,10 +1423,17 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--limit", type=int, default=20)
     search_parser.add_argument("--year", help="Year range, e.g. 2024-2025 or 2024- or -2024")
     search_parser.add_argument("--min-citations", type=int, default=0)
-    search_parser.add_argument(
+    search_backend_group = search_parser.add_mutually_exclusive_group()
+    search_backend_group.add_argument(
         "--backend",
-        default="openalex,arxiv,semantic-scholar,crossref,dblp",
-        help="Comma-separated list of backends (openalex, arxiv, semantic-scholar, crossref, dblp)",
+        default=None,
+        help="Comma-separated list of backends",
+    )
+    search_backend_group.add_argument(
+        "--field",
+        choices=sorted(FIELD_PRESETS.keys()),
+        default=None,
+        help="Backend preset for a research field",
     )
     search_parser.add_argument(
         "--exclude-type",
@@ -1853,7 +1862,13 @@ def build_parser() -> argparse.ArgumentParser:
     new_p.add_argument("--query", required=True)
     new_p.add_argument("--year", help="Year range e.g. 2024-2025")
     new_p.add_argument("--min-citations", type=int, default=0)
-    new_p.add_argument("--backend", default="openalex,arxiv,semantic-scholar,crossref,dblp")
+    discover_backend_group = new_p.add_mutually_exclusive_group()
+    discover_backend_group.add_argument("--backend", default=None)
+    discover_backend_group.add_argument(
+        "--field",
+        choices=sorted(FIELD_PRESETS.keys()),
+        default=None,
+    )
     new_p.add_argument("--exclude-type", default="")
     new_p.add_argument("--exclude", default="")
     new_p.add_argument("--min-confidence", type=float, default=0.0)
@@ -2121,7 +2136,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "find":
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
-        backends = tuple(b.strip() for b in args.backend.split(",") if b.strip())
+        if args.field:
+            backends = resolve_backends_for_field(args.field)
+        elif args.backend:
+            backends = tuple(b.strip() for b in args.backend.split(",") if b.strip())
+        else:
+            backends = DEFAULT_BACKENDS
         exclude_types = _parse_csv_terms(args.exclude_type)
         exclude_terms = _parse_negative_terms(args.exclude)
         if args.enrich:

@@ -1,5 +1,89 @@
 # Changelog
 
+## v0.17.0 (2026-04-13)
+
+**Domain backends + field preset — biology, medicine, economics, social sciences now first-class.**
+
+v0.16.0 covered CS / general STEM well but left biomedicine, economics, and social sciences under-served. This release adds three high-impact domain backends and a `--field` preset shortcut so a researcher in biomedicine doesn't need to know which backends fit their field — they say `--field bio` and get the right combination automatically.
+
+### Added — Three new domain backends
+
+- **`PubMedBackend`** (`src/research_hub/search/pubmed.py`, ~150 LOC) — NCBI E-utilities API, free, no key required (key gives 10 req/s instead of 3 req/s, not needed for typical search loads). Two-step request flow: `esearch.fcgi` returns PMID list, `esummary.fcgi` returns structured metadata. Returns title, authors, year, journal, DOI, doc_type. PubMed does not return abstracts via esummary — relies on the merge layer to fill abstracts from other backends. Year filter uses `[pdat]` term tag, DOI lookup uses `[doi]` tag. ~35M biomedical citation database, the canonical biomedicine source.
+
+- **`BiorxivBackend`** (`src/research_hub/search/biorxiv.py`, ~120 LOC) — bioRxiv + medRxiv preprint aggregator. Single backend that queries both servers (biology + medical preprints) and merges results. The official biorxiv API has no free-text search endpoint, so the backend fetches a date window (`/details/{server}/{date_from}/{date_to}/{cursor}`) and filters client-side by query terms. Inefficient but the only option without HTML scraping. Registered as both `biorxiv` and `medrxiv` (alias) in the backend registry.
+
+- **`RepecBackend`** (`src/research_hub/search/repec.py`, ~180 LOC) — RePEc (Research Papers in Economics) via OAI-PMH XML protocol. Two-stage like PubMed: scrape IDEAS HTML search results to get RePEc handle list (`/p/<series>/<handle>.html` regex), then fetch metadata for each handle via OAI-PMH `GetRecord` request. Parses Dublin Core XML (`dc:title`, `dc:creator`, `dc:date`, `dc:identifier`, `dc:type`). The IDEAS HTML scraping is fragile (could break if RePEc changes their markup), but it's the only viable free option. ~3M economics records, cross-publisher coverage.
+
+### Added — `--field` preset shortcut
+
+New flag on `research-hub search` and `research-hub discover new`:
+
+```bash
+research-hub search "..." --field bio
+research-hub discover new --cluster X --field social --query "..."
+```
+
+Available presets:
+
+| Preset | Backends |
+|---|---|
+| `cs` | openalex + arxiv + semantic-scholar + dblp + crossref |
+| `bio` | openalex + pubmed + biorxiv + crossref + semantic-scholar |
+| `med` | openalex + pubmed + biorxiv + crossref + semantic-scholar |
+| `physics` | openalex + arxiv + crossref + semantic-scholar |
+| `math` | openalex + arxiv + crossref + semantic-scholar |
+| `social` | openalex + crossref + semantic-scholar + repec |
+| `econ` | openalex + crossref + semantic-scholar + repec |
+| `general` | all 8 backends |
+
+`--field` and `--backend` are **mutually exclusive** (CLI rejects both at once with a clear error). Default if neither supplied: keep v0.16.0 default (5 backends — `openalex,arxiv,semantic-scholar,crossref,dblp`).
+
+### Backend registry
+
+`_BACKEND_REGISTRY` now includes the 3 new backends + `medrxiv` alias for `BiorxivBackend`:
+
+```python
+_BACKEND_REGISTRY = {
+    "openalex": OpenAlexBackend,
+    "arxiv": ArxivBackend,
+    "semantic-scholar": SemanticScholarClient,
+    "crossref": CrossrefBackend,
+    "dblp": DblpBackend,
+    "pubmed": PubMedBackend,
+    "biorxiv": BiorxivBackend,
+    "medrxiv": BiorxivBackend,    # alias — same backend queries both servers
+    "repec": RepecBackend,
+}
+```
+
+`DEFAULT_BACKENDS` stays at the v0.16.0 5-backend list — the new domain backends are opt-in via `--field` or explicit `--backend`.
+
+### MCP surface
+
+- `search_papers` and `discover_new` MCP tool signatures gain optional `field: str | None = None` parameter. When set, it overrides `backends`. Backwards compatible: omitting it restores v0.16.0 behavior.
+- **No new MCP tools** — 42 tools total.
+
+### Tests
+
+- **618 → 652 passing** (+34 tests, 5 skipped unchanged).
+- `tests/test_pubmed_backend.py`: 8 tests for the two-step esearch+esummary flow.
+- `tests/test_biorxiv_backend.py`: 6 tests covering both servers, date window, query filter.
+- `tests/test_repec_backend.py`: 8 tests for HTML scraping + OAI-PMH XML parsing.
+- `tests/test_field_preset.py`: 8 tests for preset resolution + mutex with `--backend`.
+- Existing fallback / CLI / discover tests updated.
+
+### Non-breaking changes only
+
+All existing CLI commands, MCP tool signatures, default backend list, and import paths continue to work unchanged. `--field` is purely additive.
+
+### Deferred to v0.18+
+
+- **NASA ADS** for astronomy/physics
+- **ChemRxiv** for chemistry preprints
+- **ERIC** for education research
+- **IEEE Xplore** (paid API, lower priority)
+- **JSTOR** for humanities (paid)
+
 ## v0.16.0 (2026-04-13)
 
 **Multi-backend that actually works + filters + smart ranking — fixes the gaps live tests #2 and #3 surfaced.**

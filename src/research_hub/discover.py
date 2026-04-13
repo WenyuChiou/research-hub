@@ -72,7 +72,8 @@ def discover_new(
     year_from: int | None = None,
     year_to: int | None = None,
     min_citations: int = 0,
-    backends: tuple[str, ...] = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp"),
+    backends: tuple[str, ...] | None = None,
+    field: str | None = None,
     limit: int = 25,
     definition: str | None = None,
     exclude_types: tuple[str, ...] = (),
@@ -83,9 +84,17 @@ def discover_new(
     """Run search, stash candidates, and build a fit-check prompt."""
     from research_hub.fit_check import emit_prompt
     from research_hub.search import search_papers
+    from research_hub.search.fallback import DEFAULT_BACKENDS, resolve_backends_for_field
 
     dest = stash_dir(cfg, cluster_slug)
     dest.mkdir(parents=True, exist_ok=True)
+
+    if field:
+        resolved_backends = resolve_backends_for_field(field)
+    elif backends:
+        resolved_backends = backends
+    else:
+        resolved_backends = DEFAULT_BACKENDS
 
     results = search_papers(
         query,
@@ -93,7 +102,7 @@ def discover_new(
         year_from=year_from,
         year_to=year_to,
         min_citations=min_citations,
-        backends=backends,
+        backends=resolved_backends,
         exclude_types=exclude_types,
         exclude_terms=exclude_terms,
         min_confidence=min_confidence,

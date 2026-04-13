@@ -98,6 +98,24 @@ def test_cli_search_backend_flag_splits_comma_list(monkeypatch):
     assert captured["backends"] == ("openalex", "arxiv")
 
 
+def test_cli_search_field_flag_uses_preset(monkeypatch):
+    captured = {}
+
+    def fake_search(query, limit, verify=False, **kwargs):
+        captured["backends"] = kwargs["backends"]
+        return 0
+
+    monkeypatch.setattr("research_hub.cli._search", fake_search)
+
+    assert main(["search", "llm", "--field", "bio"]) == 0
+    assert captured["backends"] == ("openalex", "pubmed", "biorxiv", "crossref", "semantic-scholar")
+
+
+def test_cli_search_field_and_backend_mutually_exclusive():
+    with pytest.raises(SystemExit):
+        main(["search", "llm", "--backend", "openalex", "--field", "bio"])
+
+
 def test_cli_search_forwards_new_filter_and_rank_flags(monkeypatch):
     captured = {}
 

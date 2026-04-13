@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from research_hub.search import SearchResult
-from research_hub.search.fallback import search_papers
+from research_hub.search.fallback import _BACKEND_REGISTRY, search_papers
 
 
 @patch("research_hub.search.fallback.DblpBackend.search")
@@ -150,3 +150,10 @@ def test_fallback_backend_trace_emits_per_backend_counts(mock_openalex, mock_arx
     search_papers("query", backend_trace=True)
 
     assert "backend openalex: 1 hits" in caplog.text
+
+
+def test_fallback_registers_pubmed_biorxiv_repec_backends():
+    assert _BACKEND_REGISTRY["pubmed"].__name__ == "PubMedBackend"
+    assert _BACKEND_REGISTRY["biorxiv"].__name__ == "BiorxivBackend"
+    assert _BACKEND_REGISTRY["medrxiv"] is _BACKEND_REGISTRY["biorxiv"]
+    assert _BACKEND_REGISTRY["repec"].__name__ == "RepecBackend"

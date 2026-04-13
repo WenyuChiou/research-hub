@@ -6,10 +6,13 @@ import logging
 from collections.abc import Iterable, Sequence
 
 from research_hub.search.arxiv_backend import ArxivBackend
+from research_hub.search.biorxiv import BiorxivBackend
 from research_hub.search.crossref import CrossrefBackend
 from research_hub.search.dblp import DblpBackend
 from research_hub.search.base import SearchBackend, SearchResult
 from research_hub.search.openalex import OpenAlexBackend
+from research_hub.search.pubmed import PubMedBackend
+from research_hub.search.repec import RepecBackend
 from research_hub.search.semantic_scholar import SemanticScholarClient
 
 
@@ -21,9 +24,41 @@ _BACKEND_REGISTRY: dict[str, type[SearchBackend]] = {
     "semantic-scholar": SemanticScholarClient,
     "crossref": CrossrefBackend,
     "dblp": DblpBackend,
+    "pubmed": PubMedBackend,
+    "biorxiv": BiorxivBackend,
+    "medrxiv": BiorxivBackend,
+    "repec": RepecBackend,
 }
 
 DEFAULT_BACKENDS = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
+
+FIELD_PRESETS: dict[str, tuple[str, ...]] = {
+    "cs": ("openalex", "arxiv", "semantic-scholar", "dblp", "crossref"),
+    "bio": ("openalex", "pubmed", "biorxiv", "crossref", "semantic-scholar"),
+    "med": ("openalex", "pubmed", "biorxiv", "crossref", "semantic-scholar"),
+    "physics": ("openalex", "arxiv", "crossref", "semantic-scholar"),
+    "math": ("openalex", "arxiv", "crossref", "semantic-scholar"),
+    "social": ("openalex", "crossref", "semantic-scholar", "repec"),
+    "econ": ("openalex", "crossref", "semantic-scholar", "repec"),
+    "general": (
+        "openalex",
+        "arxiv",
+        "semantic-scholar",
+        "crossref",
+        "dblp",
+        "pubmed",
+        "biorxiv",
+        "repec",
+    ),
+}
+
+
+def resolve_backends_for_field(field: str) -> tuple[str, ...]:
+    """Return the backend tuple for a known field preset."""
+    if field not in FIELD_PRESETS:
+        valid = ", ".join(sorted(FIELD_PRESETS.keys()))
+        raise ValueError(f"unknown field preset {field!r}; valid: {valid}")
+    return FIELD_PRESETS[field]
 
 
 def search_papers(
