@@ -65,32 +65,52 @@ def _tool_error(exc: Exception) -> dict[str, str]:
     return {"error": str(exc)}
 
 
-def search_papers(query: str, limit: int = 10, verify: bool = False) -> list[dict[str, Any]] | dict[str, str]:
-    """Search Semantic Scholar for academic papers."""
+def search_papers(
+    query: str,
+    limit: int = 10,
+    verify: bool = False,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    min_citations: int = 0,
+    backends: list[str] | None = None,
+) -> list[dict[str, Any]] | dict[str, str]:
+    """Search for academic papers across multiple backends."""
     try:
         from research_hub.config import get_config
-        from research_hub.dedup import DedupIndex
-        from research_hub.search import SemanticScholarClient, iter_new_results
+        from research_hub.dedup import DedupIndex, normalize_doi
+        from research_hub.search import search_papers as _search_papers
 
         cfg = get_config()
         index_path = cfg.research_hub_dir / "dedup_index.json"
         index = DedupIndex.load(index_path) if index_path.exists() else DedupIndex()
 
-        client = SemanticScholarClient()
-        results = iter_new_results(client, query, index.doi_to_hits.keys(), limit=min(limit, 100))
+        backend_list = tuple(backends) if backends else ("openalex", "arxiv", "semantic-scholar")
+        results = _search_papers(
+            query,
+            limit=min(limit, 100),
+            year_from=year_from,
+            year_to=year_to,
+            min_citations=min_citations,
+            backends=backend_list,
+        )
+        ingested = {normalize_doi(doi) for doi in index.doi_to_hits.keys() if doi}
 
         output: list[dict[str, Any]] = []
         for result in results:
+            already = normalize_doi(result.doi) in ingested
             entry: dict[str, Any] = {
                 "title": result.title,
                 "doi": result.doi,
+                "arxiv_id": result.arxiv_id,
                 "authors": result.authors,
                 "year": result.year,
                 "venue": result.venue,
                 "citation_count": result.citation_count,
                 "url": result.url,
                 "pdf_url": result.pdf_url,
-                "already_in_vault": False,
+                "abstract": result.abstract,
+                "source": result.source,
+                "already_in_vault": already,
             }
             if verify and result.doi:
                 from research_hub.verify import verify_doi
@@ -101,6 +121,21 @@ def search_papers(query: str, limit: int = 10, verify: bool = False) -> list[dic
             output.append(entry)
         return output
     except Exception as exc:  # pragma: no cover - exercised via failure tests
+        return _tool_error(exc)
+
+
+def enrich_candidates(
+    candidates: list[str],
+    backends: list[str] | None = None,
+) -> list[dict[str, Any]] | dict[str, str]:
+    """Resolve candidate identifiers to full paper records."""
+    try:
+        from research_hub.search import enrich_candidates as _enrich
+
+        backend_list = tuple(backends) if backends else ("openalex", "arxiv", "semantic-scholar")
+        resolved = _enrich(candidates, backends=backend_list)
+        return [asdict(r) for r in resolved if r is not None]
+    except Exception as exc:
         return _tool_error(exc)
 
 
@@ -684,6 +719,7 @@ def main() -> None:
 
 
 mcp.tool()(search_papers)
+mcp.tool()(enrich_candidates)
 mcp.tool()(verify_paper)
 mcp.tool()(suggest_integration)
 mcp.tool()(list_clusters)

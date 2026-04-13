@@ -10,6 +10,7 @@ from research_hub.mcp_server import mcp
 
 EXPECTED_MAPPINGS = {
     "search_papers": "search",
+    "enrich_candidates": "enrich",
     "verify_paper": "verify",
     "suggest_integration": "suggest",
     "list_clusters": "clusters list",

@@ -10,6 +10,8 @@ from pathlib import Path
 
 import requests
 
+from research_hub.search import SearchResult
+
 try:
     import responses
 except ImportError:  # pragma: no cover
@@ -121,6 +123,7 @@ from research_hub.mcp_server import (
     build_citation,
     capture_quote,
     compose_draft,
+    enrich_candidates,
     export_citation,
     generate_dashboard,
     get_config_info,
@@ -398,3 +401,87 @@ def test_mcp_compose_draft_returns_ok_with_path_and_preview(tmp_path, monkeypatc
     assert result["quote_count"] == 1
     assert result["section_count"] == 1
     assert "## Introduction" in result["markdown_preview"]
+
+
+def test_mcp_search_papers_accepts_year_range_kwargs(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+    monkeypatch.setattr(
+        "research_hub.search.search_papers",
+        lambda *args, **kwargs: [
+            SearchResult(title="Paper", doi="10.1/a", year=2024, source="openalex")
+        ],
+    )
+
+    result = search_papers("query", year_from=2024, year_to=2025)
+
+    assert isinstance(result, list)
+    assert result[0]["year"] == 2024
+
+
+def test_mcp_search_papers_returns_source_field(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+    monkeypatch.setattr(
+        "research_hub.search.search_papers",
+        lambda *args, **kwargs: [
+            SearchResult(title="Paper", doi="10.1/a", source="openalex")
+        ],
+    )
+
+    result = search_papers("query")
+
+    assert result[0]["source"] == "openalex"
+
+
+def test_mcp_search_papers_default_backends_are_all_three(tmp_path, monkeypatch):
+    cfg = make_config(tmp_path)
+    captured = {}
+    monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+
+    def fake_search(*args, **kwargs):
+        captured["backends"] = kwargs["backends"]
+        return [SearchResult(title="Paper", doi="10.1/a", source="openalex")]
+
+    monkeypatch.setattr("research_hub.search.search_papers", fake_search)
+
+    search_papers("query")
+
+    assert captured["backends"] == ("openalex", "arxiv", "semantic-scholar")
+
+
+def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
+    monkeypatch.setattr(
+        "research_hub.search.enrich_candidates",
+        lambda *args, **kwargs: [SearchResult(title="Paper", doi="10.1/a", source="openalex")],
+    )
+
+    result = enrich_candidates(["10.1/a"])
+
+    assert result == [
+        {
+            "title": "Paper",
+            "doi": "10.1/a",
+            "arxiv_id": "",
+            "abstract": "",
+            "year": None,
+            "authors": [],
+            "venue": "",
+            "url": "",
+            "citation_count": 0,
+            "pdf_url": "",
+            "source": "openalex",
+        }
+    ]
+
+
+def test_mcp_enrich_candidates_drops_unresolvable(monkeypatch):
+    monkeypatch.setattr(
+        "research_hub.search.enrich_candidates",
+        lambda *args, **kwargs: [None, SearchResult(title="Paper", doi="10.1/a", source="openalex")],
+    )
+
+    result = enrich_candidates(["missing", "10.1/a"])
+
+    assert len(result) == 1
+    assert result[0]["doi"] == "10.1/a"

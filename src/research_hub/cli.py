@@ -530,17 +530,124 @@ def _read_zotero_key_from_frontmatter(md_path: Path) -> str | None:
     return match.group(1) if match else None
 
 
-def _search(query: str, limit: int, verify: bool = False) -> int:
+def _search(
+    query: str,
+    limit: int,
+    verify: bool = False,
+    *,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    min_citations: int = 0,
+    backends: tuple[str, ...] = ("openalex", "arxiv", "semantic-scholar"),
+    emit_json: bool = False,
+    to_papers_input: bool = False,
+    cluster_slug: str | None = None,
+) -> int:
     cfg = get_config()
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
-    client = SemanticScholarClient()
-    results = iter_new_results(client, query, index.doi_to_hits.keys(), limit=limit)
+    from research_hub.search import search_papers as _search_papers
+
+    results = _search_papers(
+        query,
+        limit=limit,
+        year_from=year_from,
+        year_to=year_to,
+        min_citations=min_citations,
+        backends=backends,
+    )
+    from research_hub.dedup import normalize_doi
+
+    ingested = {normalize_doi(doi) for doi in index.doi_to_hits.keys() if doi}
+    results = [r for r in results if normalize_doi(r.doi) not in ingested]
+
+    if to_papers_input:
+        _emit_papers_input_json(results, cluster_slug)
+        return 0
+    if emit_json:
+        print(json.dumps([asdict(r) for r in results], indent=2, ensure_ascii=False))
+        return 0
     for result in results:
-        line = f"{result.title}\t{result.doi}"
+        line = (
+            f"{result.title}\t{result.doi or result.arxiv_id}\t"
+            f"{result.year or '????'}\t{result.citation_count}\t{result.source}"
+        )
         if verify:
             verified = bool(result.doi) and verify_doi(result.doi).ok
             line += "\tVERIFIED" if verified else "\tUNVERIFIED"
         print(line)
+    return 0
+
+
+def _emit_papers_input_json(results: list, cluster_slug: str | None) -> None:
+    """Print a papers_input.json-shaped JSON document to stdout."""
+    from research_hub.clusters import slugify
+
+    papers = []
+    for r in results:
+        first_author = (r.authors[0].split()[-1].lower() if r.authors else "unknown")
+        slug = f"{first_author}{r.year or ''}-{slugify(r.title)[:60]}"
+        papers.append(
+            {
+                "title": r.title,
+                "doi": r.doi,
+                "authors": ", ".join(r.authors),
+                "year": r.year or 0,
+                "abstract": r.abstract,
+                "journal": r.venue,
+                "slug": slug,
+                "sub_category": cluster_slug or "",
+                "summary": "",
+                "key_findings": [],
+                "methodology": "",
+                "relevance": "",
+            }
+        )
+    print(json.dumps({"papers": papers}, indent=2, ensure_ascii=False))
+
+
+def _parse_year_range(spec: str | None) -> tuple[int | None, int | None]:
+    if spec is None:
+        return (None, None)
+    text = spec.strip()
+    if not text:
+        raise SystemExit(f"invalid --year spec: {spec}")
+    if re.fullmatch(r"\d{4}", text):
+        year = int(text)
+        return (year, year)
+    if re.fullmatch(r"\d{4}-", text):
+        return (int(text[:4]), None)
+    if re.fullmatch(r"-\d{4}", text):
+        return (None, int(text[1:]))
+    if re.fullmatch(r"\d{4}-\d{4}", text):
+        start, end = text.split("-", 1)
+        return (int(start), int(end))
+    raise SystemExit(f"invalid --year spec: {spec}")
+
+
+def _enrich(
+    candidates: list[str],
+    *,
+    backends: tuple[str, ...],
+    to_papers_input: bool = False,
+    cluster_slug: str | None = None,
+) -> int:
+    items = list(candidates)
+    if not items or items == ["-"]:
+        items = [line.strip() for line in sys.stdin if line.strip()]
+    if not items:
+        print("No candidates provided.", file=sys.stderr)
+        return 2
+
+    from research_hub.search import enrich_candidates
+
+    resolved = enrich_candidates(items, backends=backends)
+    hits = [r for r in resolved if r is not None]
+
+    if to_papers_input:
+        _emit_papers_input_json(hits, cluster_slug)
+        return 0
+
+    print(json.dumps([asdict(r) for r in hits], indent=2, ensure_ascii=False))
     return 0
 
 
@@ -1082,14 +1189,52 @@ def build_parser() -> argparse.ArgumentParser:
     find_parser.add_argument("--json", action="store_true")
     find_parser.add_argument("--limit", type=int, default=20)
 
-    search_parser = subparsers.add_parser("search", help="Search Semantic Scholar")
+    search_parser = subparsers.add_parser("search", help="Search for academic papers")
     search_parser.add_argument("query")
     search_parser.add_argument("--limit", type=int, default=20)
+    search_parser.add_argument("--year", help="Year range, e.g. 2024-2025 or 2024- or -2024")
+    search_parser.add_argument("--min-citations", type=int, default=0)
+    search_parser.add_argument(
+        "--backend",
+        default="openalex,arxiv,semantic-scholar",
+        help="Comma-separated list of backends (openalex, arxiv, semantic-scholar)",
+    )
+    search_parser.add_argument("--json", action="store_true", help="Emit JSON array")
+    search_parser.add_argument(
+        "--to-papers-input",
+        action="store_true",
+        help="Emit a papers_input.json document (stdout) for piping into ingest",
+    )
+    search_parser.add_argument(
+        "--cluster",
+        help="Populate sub_category with this cluster slug (used with --to-papers-input)",
+    )
     search_parser.add_argument(
         "--verify",
         action="store_true",
         help="Verify each DOI against doi.org before printing (adds 1-2s per result)",
     )
+    search_parser.add_argument(
+        "--enrich",
+        action="store_true",
+        help="Treat positional `query` as a newline-or-comma-separated candidate list "
+        "(DOIs / arxiv IDs / titles) and resolve each via backend.get_paper. "
+        "Use '-' to read candidates from stdin.",
+    )
+
+    enrich_parser = subparsers.add_parser(
+        "enrich",
+        help="Resolve candidate identifiers (DOI / arxiv ID / title) to full paper records",
+    )
+    enrich_parser.add_argument(
+        "candidates",
+        nargs="*",
+        help="Identifiers to resolve. Use '-' to read from stdin (one per line).",
+    )
+    enrich_parser.add_argument("--backend", default="openalex,arxiv,semantic-scholar")
+    enrich_parser.add_argument("--json", action="store_true", default=True)
+    enrich_parser.add_argument("--to-papers-input", action="store_true")
+    enrich_parser.add_argument("--cluster", help="Populate sub_category when --to-papers-input")
 
     references_parser = subparsers.add_parser(
         "references",
@@ -1530,7 +1675,35 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "find":
         return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
     if args.command == "search":
-        return _search(args.query, args.limit, verify=args.verify)
+        backends = tuple(b.strip() for b in args.backend.split(",") if b.strip())
+        if args.enrich:
+            candidates = ["-"] if args.query == "-" else [item.strip() for item in re.split(r"[\n,]+", args.query) if item.strip()]
+            return _enrich(
+                candidates=candidates,
+                backends=backends,
+                to_papers_input=args.to_papers_input,
+                cluster_slug=args.cluster,
+            )
+        year_from, year_to = _parse_year_range(args.year)
+        return _search(
+            args.query,
+            args.limit,
+            verify=args.verify,
+            year_from=year_from,
+            year_to=year_to,
+            min_citations=args.min_citations,
+            backends=backends,
+            emit_json=args.json,
+            to_papers_input=args.to_papers_input,
+            cluster_slug=args.cluster,
+        )
+    if args.command == "enrich":
+        return _enrich(
+            candidates=args.candidates,
+            backends=tuple(b.strip() for b in args.backend.split(",") if b.strip()),
+            to_papers_input=args.to_papers_input,
+            cluster_slug=args.cluster,
+        )
     if args.command == "references":
         return _references(args.identifier, args.limit, args.json)
     if args.command == "cited-by":
