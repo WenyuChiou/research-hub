@@ -1,5 +1,76 @@
 # Changelog
 
+## v0.26.0 (2026-04-14)
+
+**End-to-end audit release — search → notes → DB → dashboard/MCP API. 873 → 1019 tests (+146).**
+
+First cross-cutting audit of the package. Four Codex tracks ran in parallel covering literature search accuracy, note organization, database sync/drift, and dashboard + MCP coverage. Full audit report: [`docs/audit_v0.26.md`](docs/audit_v0.26.md).
+
+### Added — Track A: Search accuracy audit (tests/evals/*)
+
+- **Golden fixture** (`tests/evals/fixtures/golden_llm_agents_se.yml`) with 20 hand-curated papers for the `llm-agents-software-engineering` cluster. Generated from live notes, authoritative source.
+- **Metrics collector** (`tests/evals/conftest.py`) writes `tests/evals/_metrics.json` for the audit report.
+- **24 new tests** across recall@20, recall@50, rank stability, dedup merge, confidence calibration, DOI normalization (10 forms), fit-check term-overlap correlation, empty-abstract handling, silent backend failures, auto-threshold floor, citation expansion failure logging.
+- **`@pytest.mark.network`** + `@pytest.mark.evals` markers registered in `pyproject.toml`. Offline by default, opt-in via `pytest -m network`.
+- **5 audit findings locked in as xfail baselines** (recall, rank, merge, calibration): these surface real search-quality bugs that will flip to green once v0.27.0 ranker/fusion fixes land. Full diagnosis in `docs/audit_v0.26.md`.
+
+### Added — Track B: Note organization audit
+
+- **`src/research_hub/paper_schema.py`** — reusable `validate_paper_note(path) -> NoteValidationResult` with missing_frontmatter + empty_sections + todo_placeholders fields.
+- **`doctor.check_frontmatter_completeness()`** — walks every paper note, rolls up to a `HealthBadge`.
+- **`scripts/audit_note_content.py`** → writes `docs/audit_v0.26_notes.md` with per-note coverage.
+- **31 new tests** (parametrized): `test_topic_roundtrip.py` (4), `test_topic_content_guard_stress.py` (21 parametrized cases across 10 section headings × 2 mutation types), `test_frontmatter_schema.py` (4).
+- Round-trip coverage: apply_assignments → build_subtopic_notes → re-read preserves ALL hand-edited structured sections (TL;DR, 核心問題, 範圍, 關鍵概念, 分類法, 代表論文, 時間線, 開放問題, 連結, See also).
+
+### Added — Track C: Database / sync / drift audit
+
+- **`scripts/audit_vault_sync.py`** → writes `docs/audit_v0.26_vault_sync.md` with per-cluster Zotero/Obsidian/dedup counts, orphans, stale manifest refs, drift alerts.
+- **22 new tests** across pipeline_repair (8), dedup rebuild round-trip (4), cluster rename triple-sync (4), manifest integrity (3), drift detector coverage (3).
+- **4 new drift detectors** in `src/research_hub/dashboard/drift.py`:
+  - `zotero_orphan` — Zotero item in bound collection with no matching `.md` note
+  - `subtopic_paper_mismatch` — subtopic file `papers:` frontmatter ≠ actual Papers section count
+  - `stale_dedup_path` — dedup entry pointing to deleted `.md`
+  - `stale_manifest_cluster` — manifest entry references a cluster slug missing from clusters.yaml
+- **`pipeline_repair.py`** now appends `repair_*` actions to `manifest.jsonl` in execute mode + detects folder_mismatch + duplicate_doi across clusters.
+- **`dedup.rebuild_from_obsidian`** now tolerates malformed YAML with WARN log instead of crashing.
+- **`clusters rename`** now syncs NotebookLM cache name in addition to clusters.yaml and Zotero collection name (the v0.25 triple-sync gap).
+
+### Added — Track D: Dashboard + MCP API comprehensive testing
+
+- **`src/research_hub/dashboard/manage_commands.py`** — Python port of JS `buildManageCommand` + `buildComposeDraftCommand` + `shellQuote`. Enables unit-testing command builders without Playwright.
+- **76 new tests** across 5 files:
+  - `test_dashboard_script_logic.py` (14) — all 6 manage action builders + composer builder + shell escape + absolute obsidian:// regression + hash-anchor regression + empty-state rendering
+  - `test_mcp_server_comprehensive.py` (12+) — declarative contract (every MCP tool has docstring + type-annotated params) + behavior tests for 7 of 9 decorated tools
+  - `test_cli_smoke_comprehensive.py` (34+) — declarative `--help` smoke test for every registered subcommand + happy-path smoke tests for discover/fit-check/autofill/pipeline-repair/compose-draft/clusters-rename/topic-scaffold
+  - `test_dashboard_idempotent.py` (3) — same-data renders produce identical HTML, empty vault renders without crash, missing bindings gracefully show unbound
+  - `test_dashboard_persona.py` (3) — analyst hides Zotero column + omits bibtex, researcher auto-detected when Zotero configured
+
+### Fixed
+
+- **`fit_check.emit_prompt()`** rendered empty string for papers with `abstract=""` instead of `(no abstract)` marker. Silent fit-check scoring bug. Regression test in `tests/evals/test_fit_check_accuracy.py`.
+- **`dedup.rebuild_from_obsidian`** crashed on malformed YAML; now warns and skips.
+- **`pipeline_repair.py`** didn't log repair actions to manifest in execute mode.
+- **`clusters rename`** missed NotebookLM cache sync (shipped in v0.24 as intended, covered by test now).
+
+### Test count
+
+- **v0.25.0**: 873 passing, 5 skipped
+- **v0.26.0**: **1019 passing, 12 skipped, 5 xfail baselines** (+146 net)
+
+### Breaking changes
+
+None. All changes are additive: new modules, new tests, new drift detectors, new doctor check, new scripts, new pyproject markers. Existing APIs unchanged. Users who upgrade from v0.25.0 will see the same behavior + auto-labeled clusters will get 2 additional drift detectors enabled by default.
+
+### v0.27.0 backlog (shipped as documented baselines)
+
+1. Deterministic rank tiebreak (`rank_results` sort key) — closes `test_rank_stability`
+2. Longer-wins field fill in `merge_results` — closes `test_dedup_merges_same_paper`
+3. Confidence score incorporates term_overlap — closes `test_confidence_calibration`
+4. Cluster-query aware eval (`test_recall_at_*` uses `cluster.seed_keywords`) — closes recall floors
+5. Legacy folder migration tool (`migrate-yaml --all-legacy`)
+6. Doctor integration for `check_frontmatter_completeness`
+7. Empty-cluster pruning (`clusters prune --empty`)
+
 ## v0.25.0 (2026-04-14)
 
 **Structured research-note principle + dashboard obsidian:// fix + file:// hash navigation fix.**

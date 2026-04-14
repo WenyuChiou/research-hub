@@ -19,6 +19,48 @@ class CheckResult:
     remedy: str = ""
 
 
+def check_frontmatter_completeness(cfg) -> CheckResult:
+    """Validate paper-note frontmatter and required body sections across the vault."""
+    from research_hub.paper_schema import validate_paper_note
+
+    bad: list[str] = []
+    warn: list[str] = []
+    total = 0
+
+    for note in sorted(Path(cfg.raw).rglob("*.md")):
+        if note.name.startswith("00_") or note.name.startswith("index"):
+            continue
+        if "topics" in note.parts:
+            continue
+        total += 1
+        result = validate_paper_note(note)
+        rel = note.relative_to(cfg.raw)
+        if result.severity == "fail":
+            bad.append(f"{rel}: missing {result.missing_frontmatter}")
+        elif result.severity == "warn":
+            warn.append(f"{rel}: empty={result.empty_sections} todo={result.todo_placeholders}")
+
+    if bad:
+        return CheckResult(
+            name="frontmatter_completeness",
+            status="FAIL",
+            message=f"{len(bad)} of {total} notes missing required frontmatter",
+            remedy="Examples: " + "; ".join(bad[:3]),
+        )
+    if warn:
+        return CheckResult(
+            name="frontmatter_completeness",
+            status="WARN",
+            message=f"{len(warn)} of {total} notes have empty sections or TODO placeholders",
+            remedy="Examples: " + "; ".join(warn[:3]),
+        )
+    return CheckResult(
+        name="frontmatter_completeness",
+        status="OK",
+        message=f"All {total} paper notes pass frontmatter validation",
+    )
+
+
 def _load_config_json(config_path: Path | None) -> dict:
     if config_path is None or not config_path.exists():
         return {}
@@ -208,6 +250,11 @@ def run_doctor() -> list[CheckResult]:
                     )
         except Exception as exc:
             results.append(CheckResult("cluster_field", "WARN", f"Could not check: {exc}"))
+
+        try:
+            results.append(check_frontmatter_completeness(cfg))
+        except Exception as exc:
+            results.append(CheckResult("frontmatter_completeness", "WARN", f"Could not check: {exc}"))
 
         try:
             dedup_path = cfg.research_hub_dir / "dedup_index.json"

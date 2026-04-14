@@ -1,0 +1,107 @@
+cluster_slug: llm-agents-software-engineering
+cluster_name: LLM Agents for Software Engineering
+cluster_queries:
+- LLM agent software engineering
+- SWE-bench issue resolution
+- agent computer interface code generation
+golden_papers:
+- doi: 10.1007/s10009-025-00798-x
+  title: LLM-based code generation and system migration in language-driven engineering
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.48550/arxiv.2304.05128
+  title: Teaching Large Language Models to Self-Debug
+  year: 2024
+  must_appear_in_top: 20
+  role: core
+- doi: 10.1109/tse.2025.3586082
+  title: On the Effectiveness of LLM-as-a-Judge for Code Generation and Summarization
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.1145/3728902
+  title: 'ConTested: Consistency-Aided Tested Code Generation with LLM'
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.48550/arxiv.2504.19678
+  title: 'From LLM Reasoning to Autonomous AI Agents: A Comprehensive Review'
+  year: 2025
+  must_appear_in_top: 20
+  role: survey
+- doi: 10.1080/13658816.2025.2549460
+  title: 'GeoCogent: an LLM-based agent for geospatial code generation'
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.48550/arxiv.2403.07974
+  title: 'LiveCodeBench: Holistic and Contamination Free Evaluation of Large Language Models for Code'
+  year: 2024
+  must_appear_in_top: 20
+  role: method
+- doi: 10.48550/arxiv.2310.06770
+  title: 'SWE-bench: Can Language Models Resolve Real-World GitHub Issues?'
+  year: 2024
+  must_appear_in_top: 20
+  role: seed
+- doi: 10.1145/3770084
+  title: A Survey on LLM-based Code Generation for Low-Resource and Domain-Specific Programming Languages
+  year: 2025
+  must_appear_in_top: 20
+  role: survey
+- doi: 10.48550/arxiv.2308.03688
+  title: 'AgentBench: Evaluating LLMs as Agents'
+  year: 2024
+  must_appear_in_top: 20
+  role: benchmark
+- doi: 10.18653/v1/2025.acl-long.559
+  title: 'SoRFT: Issue Resolving with Subtask-oriented Reinforced Fine-Tuning'
+  year: 2025
+  must_appear_in_top: 20
+  role: core
+- doi: 10.48550/arxiv.2307.07924
+  title: Communicative Agents for Software Development
+  year: 2024
+  must_appear_in_top: 20
+  role: core
+- doi: 10.48550/arxiv.2407.16741
+  title: 'OpenDevin: An Open Platform for AI Software Developers as Generalist Agents'
+  year: 2024
+  must_appear_in_top: 20
+  role: seed
+- doi: 10.33774/coe-2025-jbpg6
+  title: Empirical Research on Utilizing LLM-based Agents for Automated Bug Fixing via LangGraph
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.1080/17538947.2025.2569405
+  title: 'GeoColab: an LLM-based multi-agent collaborative framework for geospatial code generation'
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.1145/3715109
+  title: 'HumanEvalComm: Benchmarking the Communication Competence of Code Generation for LLMs and LLM Agent'
+  year: 2025
+  must_appear_in_top: 20
+  role: benchmark
+- doi: 10.48550/arxiv.2405.15793
+  title: 'SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering'
+  year: 2024
+  must_appear_in_top: 20
+  role: seed
+- doi: 10.3390/sym17071087
+  title: 'AnnCoder: A Mti-Agent-Based Code Generation and Optimization Model'
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.70777/si.v2i3.15063
+  title: 'Darwin Gödel Machine: Open-Ended Evolution of Self-Improving Agents'
+  year: 2025
+  must_appear_in_top: 20
+  role: method
+- doi: 10.48550/arxiv.2406.15877
+  title: 'BigCodeBench: Benchmarking Code Generation with Diverse Function Calls and Complex Instructions'
+  year: 2024
+  must_appear_in_top: 20
+  role: benchmark

@@ -35,6 +35,8 @@ class RepairReport:
     obsidian_orphans: list[str] = field(default_factory=list)
     stale_dedup: list[str] = field(default_factory=list)
     created_notes: list[str] = field(default_factory=list)
+    folder_mismatches: list[str] = field(default_factory=list)
+    duplicate_dois: list[dict[str, object]] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -96,6 +98,7 @@ def repair_cluster(cfg, cluster_slug: str, *, dry_run: bool = True) -> RepairRep
     """Reconcile Zotero, Obsidian, and dedup_index for one cluster."""
     from research_hub.clusters import ClusterRegistry
     from research_hub.dedup import DedupHit, DedupIndex
+    from research_hub.manifest import Manifest, new_entry
     from research_hub.utils.doi import normalize_doi
     from research_hub.zotero.client import ZoteroDualClient
     from research_hub.zotero.fetch import extract_item_data, make_raw_md, safe_filename
@@ -108,11 +111,16 @@ def repair_cluster(cfg, cluster_slug: str, *, dry_run: bool = True) -> RepairRep
     report = RepairReport(cluster_slug=cluster_slug, dry_run=dry_run)
     dedup_path = cfg.research_hub_dir / "dedup_index.json"
     dedup = DedupIndex.load(dedup_path)
+    manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
+    action_query = cluster.first_query or cluster.name or cluster.slug
 
     raw_dir = cfg.raw / (cluster.obsidian_subfolder or cluster.slug)
     note_paths = sorted(raw_dir.glob("*.md")) if raw_dir.exists() else []
     notes_by_doi: dict[str, Path] = {}
     for note_path in note_paths:
+        topic_cluster = _frontmatter_value(note_path, "topic_cluster")
+        if topic_cluster and topic_cluster != cluster.slug:
+            report.folder_mismatches.append(str(note_path))
         doi = normalize_doi(_frontmatter_value(note_path, "doi"))
         if doi:
             notes_by_doi[doi] = note_path
@@ -156,6 +164,17 @@ def repair_cluster(cfg, cluster_slug: str, *, dry_run: bool = True) -> RepairRep
         )
         target_path.write_text(markdown, encoding="utf-8")
         report.created_notes.append(str(target_path))
+        manifest.append(
+            new_entry(
+                cluster.slug,
+                action_query,
+                "repair_created_note",
+                doi=doi,
+                title=item_data.get("title", ""),
+                zotero_key=item.get("key", ""),
+                obsidian_path=str(target_path),
+            )
+        )
         notes_by_doi[doi] = target_path
 
     for doi, note_path in sorted(notes_by_doi.items()):
@@ -184,12 +203,61 @@ def repair_cluster(cfg, cluster_slug: str, *, dry_run: bool = True) -> RepairRep
                 )
             )
 
+    stale_paths: set[str] = set()
+    stale_markers: set[str] = set()
+    for hits in dedup.doi_to_hits.values():
+        for hit in hits:
+            obsidian_path = getattr(hit, "obsidian_path", None)
+            if obsidian_path and not Path(obsidian_path).exists():
+                stale_paths.add(obsidian_path)
+                stale_markers.add(normalize_doi(getattr(hit, "doi", "")) or obsidian_path)
+    for hits in dedup.title_to_hits.values():
+        for hit in hits:
+            obsidian_path = getattr(hit, "obsidian_path", None)
+            if obsidian_path and not Path(obsidian_path).exists():
+                stale_paths.add(obsidian_path)
+                stale_markers.add(normalize_doi(getattr(hit, "doi", "")) or obsidian_path)
+    for marker in sorted(stale_markers):
+        report.stale_dedup.append(marker)
+    for stale_path in sorted(stale_paths):
+        if not dry_run:
+            dedup.invalidate_obsidian_path(stale_path)
+            manifest.append(
+                new_entry(
+                    cluster.slug,
+                    action_query,
+                    "repair_pruned_dedup",
+                    obsidian_path=stale_path,
+                )
+            )
+
     live_dois = set(notes_by_doi) | set(zotero_by_doi)
     for doi in sorted(dedup.doi_to_hits.keys()):
         if doi and doi not in live_dois:
-            report.stale_dedup.append(doi)
+            if doi not in report.stale_dedup:
+                report.stale_dedup.append(doi)
             if not dry_run:
                 _prune_stale_doi(dedup, doi)
+                manifest.append(
+                    new_entry(
+                        cluster.slug,
+                        action_query,
+                        "repair_pruned_dedup",
+                        doi=doi,
+                    )
+                )
+
+    duplicate_map: dict[str, set[str]] = {}
+    for doi, hits in dedup.doi_to_hits.items():
+        clusters = {
+            Path(hit.obsidian_path).parent.name
+            for hit in hits
+            if getattr(hit, "obsidian_path", None)
+        }
+        if len(clusters) > 1:
+            duplicate_map[doi] = clusters
+    for doi, clusters in sorted(duplicate_map.items()):
+        report.duplicate_dois.append({"doi": doi, "clusters": sorted(clusters)})
 
     if not dry_run:
         dedup.save(dedup_path)

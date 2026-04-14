@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.25.0"
+version = "0.26.0"
 description = "Zotero -> Obsidian -> NotebookLM research pipeline"
 readme = "README.md"
 license = {text = "MIT"}
@@ -54,6 +54,9 @@ packages = ["src/research_hub"]
 [tool.pytest.ini_options]
 markers = [
     "stress: stress/load tests excluded from default pytest run",
+    "network: Tests that hit real external APIs (OpenAlex, arXiv, etc)",
+    "evals: Evaluation tests measuring search accuracy and fit-check quality",
+    "slow: Tests that take >5 seconds to run",
 ]
 testpaths = ["tests"]
 addopts = "--ignore=tests/stress -p no:cacheprovider -p no:tmpdir"

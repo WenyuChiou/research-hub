@@ -191,6 +191,15 @@ def _clusters_rename(slug: str, name: str) -> int:
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.rename(slug, name)
     print(f"{cluster.slug}\t{cluster.name}")
+    cache_path = cfg.research_hub_dir / "nlm_cache.json"
+    if cache_path.exists():
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            cache = {}
+        if isinstance(cache, dict) and isinstance(cache.get(cluster.slug), dict):
+            cache[cluster.slug]["notebook_name"] = name
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
     if not cluster.zotero_collection_key:
         return 0
     try:

@@ -1,0 +1,20 @@
+{
+  "recall_at_20": {
+    "LLM agent software engineering": 0.45
+  },
+  "recall_at_50": {
+    "LLM agent software engineering": 0.7
+  },
+  "rank_stability": {
+    "LLM agent software engineering": 1.0
+  },
+  "confidence_precision": {
+    "low": 0.2,
+    "mid": 0.45,
+    "high": 0.8
+  },
+  "term_overlap_mean": {
+    "accepted": 0.58,
+    "rejected": 0.17
+  }
+}

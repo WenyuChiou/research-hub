@@ -6,12 +6,15 @@ Checks DOI and normalized-title matches across BOTH Zotero and the Obsidian vaul
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from research_hub.utils.doi import normalize_doi  # re-export
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_title(title: str | None) -> str:
@@ -210,17 +213,35 @@ def build_from_obsidian(vault_raw_dir: Path) -> list[DedupHit]:
         if end < 0:
             continue
         frontmatter = text[3:end]
-        title_match = re.search(r'^title:\s*"([^"]+)"', frontmatter, re.MULTILINE)
-        doi_match = re.search(r'^doi:\s*"([^"]*)"', frontmatter, re.MULTILINE)
-        key_match = re.search(r'^zotero-key:\s*"?([^"\n]+)"?', frontmatter, re.MULTILINE)
-        zotero_key = key_match.group(1) if key_match else None
+        try:
+            import yaml
+
+            parsed = yaml.safe_load(frontmatter) or {}
+            if not isinstance(parsed, dict):
+                parsed = {}
+        except ImportError:
+            parsed = {}
+        except Exception as exc:
+            logger.warning("Skipping malformed frontmatter in %s: %s", md_path, exc)
+            continue
+        if parsed:
+            title = str(parsed.get("title", "") or "")
+            doi = str(parsed.get("doi", "") or "")
+            zotero_key = parsed.get("zotero-key")
+        else:
+            title_match = re.search(r'^title:\s*"([^"]+)"', frontmatter, re.MULTILINE)
+            doi_match = re.search(r'^doi:\s*"([^"]*)"', frontmatter, re.MULTILINE)
+            key_match = re.search(r'^zotero-key:\s*"?([^"\n]+)"?', frontmatter, re.MULTILINE)
+            title = title_match.group(1) if title_match else ""
+            doi = doi_match.group(1) if doi_match else ""
+            zotero_key = key_match.group(1) if key_match else None
         if zotero_key == "null":
             zotero_key = None
         hits.append(
             DedupHit(
                 source="obsidian",
-                doi=doi_match.group(1) if doi_match else "",
-                title=title_match.group(1) if title_match else "",
+                doi=doi,
+                title=title,
                 zotero_key=zotero_key,
                 obsidian_path=str(md_path),
             )

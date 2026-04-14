@@ -115,6 +115,8 @@ def emit_prompt(
         year = paper.get("year") or "????"
         doi = paper.get("doi", "") or paper.get("arxiv_id", "")
         abstract = paper.get("abstract", "(no abstract)")
+        if not str(abstract or "").strip():
+            abstract = "(no abstract)"
         lines.extend(
             [
                 f"### {i}. {title}",
