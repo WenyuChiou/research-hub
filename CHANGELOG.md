@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.23.1 (2026-04-14)
+
+**Python 3.11 CI fix.** `tests/test_dashboard_data.py:55` used a nested f-string with backslashes in the expression part (for quoting label strings inline), which is valid Python 3.12+ but raises `SyntaxError: f-string expression part cannot include a backslash` on Python 3.10/3.11. Local tests passed on Python 3.14; CI's 3.11 job failed immediately on import. Fix: extract the label-quoting into a plain string join outside the f-string. No runtime behavior change.
+
 ## v0.23.0 (2026-04-14)
 
 **Dashboard feature completion + stress test suite.** v0.22 added label plumbing; v0.23 wires labels into the dashboard as an interactive filter system and adds a stress test layer the project was missing entirely.

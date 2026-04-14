@@ -52,7 +52,11 @@ def _write_note(
     note_path = note_dir / filename
     assigned_cluster = cluster_slug if topic_cluster is None else topic_cluster
     zotero_line = f'zotero-key: "{zotero_key}"\n' if zotero_key is not None else ""
-    labels_line = f'labels: [{", ".join(f"""\"{label}\"""" for label in (labels or []))}]\n' if labels is not None else ""
+    if labels is None:
+        labels_line = ""
+    else:
+        quoted = ", ".join('"' + label + '"' for label in labels)
+        labels_line = f"labels: [{quoted}]\n"
     note_path.write_text(
         f"""---
 title: "{title}"
