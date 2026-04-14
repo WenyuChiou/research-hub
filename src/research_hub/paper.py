@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -111,12 +112,20 @@ def list_papers_by_label(
 def apply_fit_check_to_labels(cfg, cluster_slug: str) -> dict[str, list[str]]:
     from research_hub.dedup import normalize_doi
 
-    sidecar = _hub_cluster_dir(cfg, cluster_slug) / ".fit_check_rejected.json"
-    if not sidecar.exists():
+    cluster_dir = _hub_cluster_dir(cfg, cluster_slug)
+    rejected_sidecar = cluster_dir / ".fit_check_rejected.json"
+    accepted_sidecar = cluster_dir / ".fit_check_accepted.json"
+    if not rejected_sidecar.exists() and not accepted_sidecar.exists():
         return {"tagged": [], "already": [], "missing": []}
 
-    payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    rejected = payload.get("rejected") or []
+    rejected_payload = (
+        json.loads(rejected_sidecar.read_text(encoding="utf-8")) if rejected_sidecar.exists() else {}
+    )
+    accepted_payload = (
+        json.loads(accepted_sidecar.read_text(encoding="utf-8")) if accepted_sidecar.exists() else {}
+    )
+    rejected = rejected_payload.get("rejected") or []
+    accepted = accepted_payload.get("accepted") or []
 
     doi_to_note: dict[str, Path] = {}
     for note_path in _iter_cluster_notes(cfg, cluster_slug, include_archive=False):
@@ -128,7 +137,13 @@ def apply_fit_check_to_labels(cfg, cluster_slug: str) -> dict[str, list[str]]:
     tagged: list[str] = []
     already: list[str] = []
     missing: list[str] = []
-    for entry in rejected:
+
+    accepted_top_tier = _pick_top_tier_indices(accepted)
+    entries: list[tuple[dict, bool, int | None]] = []
+    entries.extend((entry, False, index) for index, entry in enumerate(accepted))
+    entries.extend((entry, True, None) for entry in rejected)
+
+    for entry, from_rejected, accepted_index in entries:
         norm = normalize_doi(str(entry.get("doi", "") or ""))
         if not norm:
             continue
@@ -136,15 +151,29 @@ def apply_fit_check_to_labels(cfg, cluster_slug: str) -> dict[str, list[str]]:
         if note_path is None:
             missing.append(str(entry.get("doi", "") or ""))
             continue
-        existing = _parse_paper_label(note_path, slug=note_path.stem).labels
-        if "deprecated" in existing:
+        state = _parse_paper_label(note_path, slug=note_path.stem)
+        existing = state.labels
+        entry_score = int(entry.get("score", 0))
+        labels_to_add = label_from_fit_score(
+            entry_score,
+            is_top_tier=not from_rejected and accepted_index in accepted_top_tier,
+        )
+        if not labels_to_add:
+            set_labels(
+                cfg,
+                note_path.stem,
+                fit_score=entry_score,
+                fit_reason=str(entry.get("reason", "") or ""),
+            )
+            continue
+        if all(label in existing for label in labels_to_add):
             already.append(note_path.stem)
             continue
         set_labels(
             cfg,
             note_path.stem,
-            add=["deprecated"],
-            fit_score=int(entry.get("score", 0)),
+            add=labels_to_add,
+            fit_score=entry_score,
             fit_reason=str(entry.get("reason", "") or ""),
         )
         tagged.append(note_path.stem)
@@ -246,14 +275,24 @@ def archive_dir(cfg, cluster_slug: str) -> Path:
     return Path(cfg.raw) / ARCHIVE_DIRNAME / cluster_slug
 
 
-def label_from_fit_score(score: int) -> str | None:
-    if score >= 4:
-        return "core"
+def label_from_fit_score(score: int, is_top_tier: bool = False) -> list[str]:
+    if score >= 5:
+        return ["seed", "core"] if is_top_tier else ["core"]
+    if score == 4:
+        return ["core"]
     if score <= 1:
-        return "deprecated"
+        return ["deprecated"]
     if score == 2:
-        return "tangential"
-    return None
+        return ["tangential"]
+    return []
+
+
+def _pick_top_tier_indices(accepted: list[dict], top_fraction: float = 0.2) -> set[int]:
+    score_five = [(index, entry) for index, entry in enumerate(accepted) if int(entry.get("score", 0)) >= 5]
+    if not score_five:
+        return set()
+    top_n = max(1, math.ceil(len(score_five) * top_fraction))
+    return {index for index, _ in score_five[:top_n]}
 
 
 def _find_note_path(cfg, slug: str) -> Path | None:

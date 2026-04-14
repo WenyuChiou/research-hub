@@ -137,7 +137,7 @@ def apply_scores(
     auto_threshold: bool = False,
     cfg=None,
 ) -> FitCheckReport:
-    """Consume AI-produced scores and write the rejected sidecar when configured."""
+    """Consume AI-produced scores and write sidecars when configured."""
     if isinstance(scores, dict) and "scores" in scores:
         scores = scores["scores"]
 
@@ -190,6 +190,7 @@ def apply_scores(
 
     if cfg is not None:
         _write_rejected_sidecar(cfg, cluster_slug, report.rejected, threshold)
+        _write_accepted_sidecar(cfg, cluster_slug, report.accepted, threshold)
 
     return report
 
@@ -342,6 +343,26 @@ def _write_rejected_sidecar(
         "cluster_slug": cluster_slug,
         "threshold": threshold,
         "rejected": [item.to_dict() for item in rejected],
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _write_accepted_sidecar(
+    cfg,
+    cluster_slug: str,
+    accepted: list[FitCheckResult],
+    threshold: int,
+) -> Path:
+    from research_hub.topic import hub_cluster_dir
+
+    target_dir = hub_cluster_dir(cfg, cluster_slug)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / ".fit_check_accepted.json"
+    payload = {
+        "cluster_slug": cluster_slug,
+        "threshold": threshold,
+        "accepted": [item.to_dict() for item in accepted],
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return path

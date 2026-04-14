@@ -331,6 +331,8 @@ def test_new_operation_tools_are_registered():
         "get_topic_digest",
         "write_topic_overview",
         "read_topic_overview",
+        "autofill_emit",
+        "autofill_apply",
     ]:
         assert tool_name in _list_mcp_tool_names(mcp)
 

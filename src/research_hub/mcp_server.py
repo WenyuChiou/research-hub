@@ -771,6 +771,41 @@ def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
         return _tool_error(exc)
 
 
+def autofill_emit(cluster_slug: str) -> dict:
+    """Build the paper-note autofill prompt for an AI to consume."""
+    try:
+        from research_hub.autofill import emit_autofill_prompt, find_todo_papers
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        papers = find_todo_papers(cfg, cluster_slug)
+        return {
+            "prompt": emit_autofill_prompt(cfg, cluster_slug),
+            "paper_count": len(papers),
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def autofill_apply(cluster_slug: str, scored: list[dict] | dict) -> dict:
+    """Apply AI-supplied body content to paper notes."""
+    try:
+        from research_hub.autofill import apply_autofill
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        result = apply_autofill(cfg, cluster_slug, scored)
+        return {
+            "cluster_slug": result.cluster_slug,
+            "candidate_count": result.candidate_count,
+            "filled": result.filled,
+            "skipped": result.skipped,
+            "missing": result.missing,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
 def label_paper(
     slug: str,
     labels: list[str] | None = None,
@@ -1280,6 +1315,8 @@ mcp.tool()(fit_check_prompt)
 mcp.tool()(fit_check_apply)
 mcp.tool()(fit_check_audit)
 mcp.tool()(fit_check_drift)
+mcp.tool()(autofill_emit)
+mcp.tool()(autofill_apply)
 mcp.tool()(label_paper)
 mcp.tool()(list_papers_by_label)
 mcp.tool()(prune_cluster)

@@ -188,8 +188,25 @@ def _clusters_bind(slug: str, zotero_key, obsidian_folder, notebooklm_notebook) 
 
 def _clusters_rename(slug: str, name: str) -> int:
     cfg = get_config()
-    cluster = ClusterRegistry(cfg.clusters_file).rename(slug, name)
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.rename(slug, name)
     print(f"{cluster.slug}\t{cluster.name}")
+    if not cluster.zotero_collection_key:
+        return 0
+    try:
+        from research_hub.zotero.client import get_client
+
+        zotero = get_client()
+        collection = zotero.collection(cluster.zotero_collection_key)
+        current_name = str(collection.get("data", {}).get("name", "") or "")
+        if current_name == name:
+            print(f"Zotero collection already named {name!r}")
+            return 0
+        collection["data"]["name"] = name
+        zotero.update_collection(collection)
+        print(f"renamed Zotero collection {cluster.zotero_collection_key} to {name!r}")
+    except Exception as exc:
+        print(f"WARNING: Zotero rename failed: {exc}", file=sys.stderr)
     return 0
 
 
@@ -355,6 +372,34 @@ def _fit_check_apply_labels(cluster_slug: str) -> int:
         print(f"already deprecated: {len(result['already'])}")
     if result["missing"]:
         print(f"missing from vault: {len(result['missing'])}")
+    return 0
+
+
+def _autofill_emit(cluster_slug: str, out: str | None) -> int:
+    from research_hub.autofill import emit_autofill_prompt, find_todo_papers
+
+    cfg = get_config()
+    prompt = emit_autofill_prompt(cfg, cluster_slug)
+    if out:
+        Path(out).write_text(prompt, encoding="utf-8")
+        print(f"wrote {out}", file=sys.stderr)
+    else:
+        print(prompt)
+    print(f"autofill candidates: {len(find_todo_papers(cfg, cluster_slug))}", file=sys.stderr)
+    return 0
+
+
+def _autofill_apply(cluster_slug: str, scored_path: str) -> int:
+    from research_hub.autofill import apply_autofill
+
+    cfg = get_config()
+    scored = json.loads(Path(scored_path).read_text(encoding="utf-8"))
+    result = apply_autofill(cfg, cluster_slug, scored)
+    print(f"filled: {len(result.filled)}")
+    if result.skipped:
+        print(f"skipped: {len(result.skipped)}")
+    if result.missing:
+        print(f"missing: {len(result.missing)}")
     return 0
 
 
@@ -2084,6 +2129,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fit_apply_labels.add_argument("--cluster", required=True)
 
+    autofill_parser = subparsers.add_parser(
+        "autofill",
+        help="Auto-fill paper note body content via AI emit/apply",
+    )
+    autofill_sub = autofill_parser.add_subparsers(dest="autofill_command")
+    autofill_emit = autofill_sub.add_parser("emit", help="Emit autofill prompt for an AI")
+    autofill_emit.add_argument("--cluster", required=True)
+    autofill_emit.add_argument("--out")
+    autofill_apply = autofill_sub.add_parser("apply", help="Apply AI-supplied content to paper notes")
+    autofill_apply.add_argument("--cluster", required=True)
+    autofill_apply.add_argument("--scored", required=True, help="Path to AI-produced JSON")
+
     paper_parser = subparsers.add_parser("paper", help="Paper curation operations")
     paper_sub = paper_parser.add_subparsers(dest="paper_command")
     prune_p = paper_sub.add_parser("prune", help="Move or delete labeled papers")
@@ -2302,6 +2359,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.fit_check_command == "apply-labels":
             return _fit_check_apply_labels(args.cluster)
         parser.error("fit-check requires a subcommand")
+        return 2
+    if args.command == "autofill":
+        if args.autofill_command == "emit":
+            return _autofill_emit(args.cluster, args.out)
+        if args.autofill_command == "apply":
+            return _autofill_apply(args.cluster, args.scored)
+        parser.error("autofill requires a subcommand")
         return 2
     if args.command == "discover":
         if args.discover_command == "new":

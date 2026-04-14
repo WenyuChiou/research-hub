@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.24.0 (2026-04-14)
+
+**Autofill + auto labels + Zotero sync + sub-topic protection — closing the "everything should be automatic on a full run" gap.**
+
+Live audit on `llm-agents-software-engineering` exposed four process gaps where the pipeline silently left work for the user after ingest. v0.24 fixes all four.
+
+### Added — Track A: Autofill paper note content via emit/apply
+
+- **`src/research_hub/autofill.py`** — canonical module for generating paper note body content from abstracts.
+- **`find_todo_papers(cfg, cluster_slug)`** scans for papers whose body contains `[TODO: ...]` markers and whose abstract is non-empty.
+- **`emit_autofill_prompt(cfg, cluster_slug)`** builds a markdown prompt listing each TODO paper's title + abstract, asks the AI for structured JSON with `summary`, `key_findings`, `methodology`, `relevance` per paper.
+- **`apply_autofill(cfg, cluster_slug, scored)`** consumes the AI JSON and rewrites the `## Summary … ## Relevance` block in each paper note, preserving frontmatter, abstract, and the `## Related Papers in This Cluster` footer.
+- **CLI:** `research-hub autofill emit --cluster X > prompt.md` and `research-hub autofill apply --cluster X --scored out.json`. Same emit/apply pattern as fit-check.
+- **2 new MCP tools:** `autofill_emit`, `autofill_apply`.
+
+### Added — Track B: Auto labels from fit score
+
+- **`.fit_check_accepted.json` sidecar** written alongside the existing rejected sidecar during `fit_check.apply_scores`.
+- **`paper.label_from_fit_score(score, is_top_tier)`** mapping: score 5 → `core` + `seed` for top-tier (top 20%); score 4 → `core`; score 3 → user decides (metadata only); score 2 → `tangential`; score 0-1 → `deprecated`.
+- **`paper.apply_fit_check_to_labels(cfg, cluster_slug)`** now reads BOTH sidecars and labels accepted papers too — not just deprecated.
+
+### Added — Track C: Zotero collection rename sync
+
+- **`research-hub clusters rename --name "Foo" slug`** now ALSO renames the bound Zotero collection via `pyzotero.update_collection` when `zotero_collection_key` is set.
+- **Warning-only failure** — Zotero API error prints to stderr but doesn't roll back the clusters.yaml rename.
+- **Idempotent** — no API call when target name already matches.
+
+### Added — Track D: Sub-topic content protection
+
+- **`topic._write_papers_section` content guard** — snapshots all non-Papers sections before rewrite, verifies every section is still byte-identical after rewrite, raises `ValueError` if any section would be deleted or modified.
+- **`_extract_sections_excluding_papers(text)`** helper — returns `{heading: content}` for every `## X` section except `## Papers`.
+
+### Tests
+
+- **832 → 873 passing** (+41 tests, 5 skipped unchanged).
+- `tests/test_autofill.py`: 10 tests
+- `tests/test_label_from_fit_score.py`: 8 tests
+- `tests/test_clusters_rename_zotero.py`: 4 tests (mocked pyzotero)
+- `tests/test_subtopic_content_protection.py`: 6 tests
+- Existing fit_check / paper / topic / consistency tests extended for 13 new assertions
+
+### CLI + MCP
+
+- 1 new CLI subcommand group: `autofill {emit, apply}`
+- 2 new MCP tools: `autofill_emit`, `autofill_apply` → **52 total** (was 50)
+- `clusters rename` gains Zotero sync side effect
+- `fit-check apply-labels` now handles accepted papers too
+
+### Deferred to v0.25+
+
+- Pipeline-integrated autofill (run automatically as part of `ingest --fit-check`)
+- Bi-directional Zotero note sync (Obsidian body changes propagate to Zotero mirror)
+- Slug rename for clusters
+- Top-tier seed ranking by citation count (currently list-order)
+
 ## v0.23.1 (2026-04-14)
 
 **Python 3.11 CI fix.** `tests/test_dashboard_data.py:55` used a nested f-string with backslashes in the expression part (for quoting label strings inline), which is valid Python 3.12+ but raises `SyntaxError: f-string expression part cannot include a backslash` on Python 3.10/3.11. Local tests passed on Python 3.14; CI's 3.11 job failed immediately on import. Fix: extract the label-quoting into a plain string join outside the f-string. No runtime behavior change.

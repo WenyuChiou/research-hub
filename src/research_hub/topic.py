@@ -95,7 +95,7 @@ status: draft
 
 ## Papers
 
-<!-- AUTO-GENERATED ??do not edit. `topic build` overwrites this
+<!-- AUTO-GENERATED — do not edit. `topic build` overwrites this
      section on each run. To change the list, update the `subtopics:`
      frontmatter field on individual paper notes. -->
 
@@ -110,7 +110,7 @@ status: draft
 
 ## See also
 
-- [[00_overview]] ??cluster overview
+- [[00_overview]] — cluster overview
 """
 
 
@@ -433,6 +433,7 @@ def list_subtopics(cfg, cluster_slug: str) -> list[SubtopicDescriptor]:
 def _read_subtopics_from_paper_note(note_path: Path) -> list[str]:
     """Parse the `subtopics:` frontmatter field."""
     text = note_path.read_text(encoding="utf-8")
+    pre_sections = _extract_sections_excluding_papers(text)
     frontmatter = _extract_frontmatter_block(text)
     if frontmatter is None:
         return []
@@ -469,10 +470,11 @@ def _write_papers_section(
     """Replace the `## Papers` section content in a sub-topic note."""
     paper_meta_by_slug = paper_meta_by_slug or {}
     text = note_path.read_text(encoding="utf-8")
+    pre_sections = _extract_sections_excluding_papers(text)
     body = _render_papers_markdown(papers, paper_meta_by_slug)
     replacement = (
         "## Papers\n\n"
-        "<!-- AUTO-GENERATED ??do not edit. `topic build` overwrites this\n"
+        "<!-- AUTO-GENERATED — do not edit. `topic build` overwrites this\n"
         "     section on each run. To change the list, update the `subtopics:`\n"
         "     frontmatter field on individual paper notes. -->\n\n"
         f"{body}\n\n"
@@ -485,6 +487,16 @@ def _write_papers_section(
     prefix = text[:start_match.start()]
     suffix = text[end:]
     new_text = prefix + replacement + suffix.lstrip("\n")
+    post_sections = _extract_sections_excluding_papers(new_text)
+    for heading, content in pre_sections.items():
+        if heading not in post_sections:
+            raise ValueError(
+                f"_write_papers_section would delete section {heading!r} in {note_path.name} - refusing to write."
+            )
+        if post_sections[heading] != content:
+            raise ValueError(
+                f"_write_papers_section would modify section {heading!r} in {note_path.name} - refusing to write."
+            )
     note_path.write_text(new_text, encoding="utf-8")
 
 
@@ -497,6 +509,19 @@ def _parse_note(path: Path) -> tuple[dict[str, str | list[str]], str]:
     match = re.search(r"^##\s+Abstract\s*\n(.*?)(?=^##\s|\Z)", body, re.MULTILINE | re.DOTALL)
     abstract = match.group(1).strip() if match else ""
     return meta, abstract
+
+
+def _extract_sections_excluding_papers(text: str) -> dict[str, str]:
+    sections: dict[str, str] = {}
+    matches = list(re.finditer(r"^##\s+(.+?)\s*$", text, re.MULTILINE))
+    for index, match in enumerate(matches):
+        heading = match.group(1).strip()
+        if heading == "Papers":
+            continue
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sections[heading] = text[start:end].strip()
+    return sections
 
 
 def _split_authors(authors_str: str) -> list[str]:
@@ -637,9 +662,9 @@ def _render_papers_markdown(
         badge = _render_label_badge(meta)
         link = f"[[{paper.slug}|{_paper_link_label(paper)}]]"
         if badge:
-            lines.append(f"- {link} {badge} ??{summary}")
+            lines.append(f"- {link} {badge} — {summary}")
         else:
-            lines.append(f"- {link} ??{summary}")
+            lines.append(f"- {link} — {summary}")
     return "\n".join(lines) if lines else "- (no papers assigned)"
 
 
