@@ -79,6 +79,26 @@ def _load_json(path: Path) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _parse_frontmatter_dict(text: str) -> dict[str, object]:
+    from research_hub.paper import _parse_frontmatter
+
+    return _parse_frontmatter(text)
+
+
+def _labels_from_meta(meta: dict[str, object]) -> list[str]:
+    labels_raw = meta.get("labels", [])
+    if isinstance(labels_raw, list):
+        return [str(item).strip() for item in labels_raw if str(item).strip()]
+    if isinstance(labels_raw, str):
+        cleaned = labels_raw.strip()
+        if not cleaned:
+            return []
+        if cleaned.startswith("[") and cleaned.endswith("]"):
+            return [part.strip().strip('"').strip("'") for part in cleaned[1:-1].split(",") if part.strip()]
+        return [part.strip() for part in cleaned.split(";") if part.strip()]
+    return []
+
+
 def _in_nlm(cluster_cache: dict, doi: str, obsidian_path: str) -> bool:
     uploaded_sources = cluster_cache.get("uploaded_sources", [])
     if not isinstance(uploaded_sources, list):
@@ -121,6 +141,8 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     clusters: list[ClusterCard] = []
     briefings = []
     quotes: list[Quote] = []
+    labels_across_clusters: dict[str, list[tuple[str, str, str]]] = {}
+    paper_labels_by_slug: dict[str, list[str]] = {}
 
     for cluster in registry.list():
         try:
@@ -131,6 +153,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
             for note_path in list_cluster_notes(cluster.slug, cfg.raw):
                 try:
                     frontmatter = _read_frontmatter(note_path)
+                    labels = _list_field(frontmatter, "labels")
                     status = _field(frontmatter, "status", "unread") or "unread"
                     zotero_key = _field(frontmatter, "zotero-key")
                     paper = PaperRow(
@@ -141,6 +164,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                         abstract=_field(frontmatter, "abstract"),
                         doi=_field(frontmatter, "doi"),
                         tags=_list_field(frontmatter, "tags"),
+                        labels=labels,
                         status=status if status in {"unread", "reading", "deep-read", "cited"} else "unread",
                         ingested_at=_field(frontmatter, "ingested_at"),
                         obsidian_path=str(note_path),
@@ -155,6 +179,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                         else build_bibtex_for_paper(paper, zot=zot if persona == "researcher" else None)
                     )
                     papers.append(paper)
+                    paper_labels_by_slug[paper.slug] = list(labels)
                 except Exception:
                     logger.exception("Failed to build dashboard paper row for %s", note_path)
             papers.sort(key=lambda paper: (paper.ingested_at or "", paper.title.lower()), reverse=True)
@@ -168,8 +193,28 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
             for state in list_papers_by_label(cfg, cluster.slug):
                 for label in state.labels:
                     label_counts[label] = label_counts.get(label, 0) + 1
+                    labels_across_clusters.setdefault(label, []).append(
+                        (cluster.slug, state.slug, next((paper.title for paper in papers if paper.slug == state.slug), state.slug))
+                    )
             arch_dir = archive_dir(cfg, cluster.slug)
             archived_count = len(list(arch_dir.glob("*.md"))) if arch_dir.exists() else 0
+            archived_papers: list[dict[str, object]] = []
+            if arch_dir.exists():
+                for note_path in sorted(arch_dir.glob("*.md")):
+                    try:
+                        text = note_path.read_text(encoding="utf-8")
+                        meta = _parse_frontmatter_dict(text)
+                        archived_papers.append(
+                            {
+                                "slug": note_path.stem,
+                                "title": str(meta.get("title", note_path.stem) or note_path.stem),
+                                "labels": _labels_from_meta(meta),
+                                "fit_reason": str(meta.get("fit_reason", "") or ""),
+                                "fit_score": str(meta.get("fit_score", "") or ""),
+                            }
+                        )
+                    except Exception:
+                        logger.exception("Failed to parse archived dashboard paper for %s", note_path)
             card = ClusterCard(
                 slug=cluster.slug,
                 name=cluster.name,
@@ -187,6 +232,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 briefing=briefing,
                 label_counts=label_counts,
                 archived_count=archived_count,
+                archived_papers=archived_papers,
             )
             card.cluster_bibtex = "" if persona == "analyst" else build_bibtex_for_cluster(card)
             clusters.append(card)
@@ -217,7 +263,11 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     try:
         from research_hub.writing import load_all_quotes
 
-        quotes = [Quote(**quote.__dict__) for quote in load_all_quotes(cfg)]
+        quotes = []
+        for quote in load_all_quotes(cfg):
+            payload = dict(quote.__dict__)
+            payload["paper_labels"] = list(paper_labels_by_slug.get(str(payload.get("slug", "")), []))
+            quotes.append(Quote(**payload))
     except Exception:
         logger.exception("Failed to load quotes")
         quotes = []
@@ -237,6 +287,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
         clusters=clusters,
         briefings=briefings,
         quotes=quotes,
+        labels_across_clusters=labels_across_clusters,
         health_badges=health_badges,
         drift_alerts=drift_alerts,
     )

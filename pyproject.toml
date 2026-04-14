@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.22.0"
+version = "0.23.0"
 description = "Zotero -> Obsidian -> NotebookLM research pipeline"
 readme = "README.md"
 license = {text = "MIT"}
@@ -50,3 +50,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/research_hub"]
+
+[tool.pytest.ini_options]
+markers = [
+    "stress: stress/load tests excluded from default pytest run",
+]
+testpaths = ["tests"]
+addopts = "--ignore=tests/stress -p no:cacheprovider -p no:tmpdir"

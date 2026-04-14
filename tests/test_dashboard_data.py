@@ -45,12 +45,14 @@ def _write_note(
     ingested_at: str = "2026-04-12T10:00:00Z",
     topic_cluster: str | None = None,
     zotero_key: str = "ABCD1234",
+    labels: list[str] | None = None,
 ) -> Path:
     note_dir = cfg.raw / cluster_slug
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = note_dir / filename
     assigned_cluster = cluster_slug if topic_cluster is None else topic_cluster
     zotero_line = f'zotero-key: "{zotero_key}"\n' if zotero_key is not None else ""
+    labels_line = f'labels: [{", ".join(f"""\"{label}\"""" for label in (labels or []))}]\n' if labels is not None else ""
     note_path.write_text(
         f"""---
 title: "{title}"
@@ -62,7 +64,7 @@ topic_cluster: "{assigned_cluster}"
 status: "{status}"
 ingested_at: "{ingested_at}"
 tags: ["tag-a", "tag-b"]
-{zotero_line}---
+{labels_line}{zotero_line}---
 Body
 """,
         encoding="utf-8",
@@ -272,3 +274,61 @@ def test_detect_drift_duplicate_doi_requires_both_sources_and_conflicting_cluste
     alerts = detect_drift(cfg, dedup)
 
     assert any(alert.kind == "duplicate_doi" for alert in alerts)
+
+
+def test_dashboard_data_populates_labels_across_clusters(tmp_path, monkeypatch):
+    cfg = _make_config(tmp_path)
+    registry = ClusterRegistry(cfg.clusters_file)
+    registry.create(query="agents", name="Agents", slug="agents")
+    registry.create(query="policy", name="Policy", slug="policy")
+    _write_note(cfg, "agents", "paper-1.md", title="Agent Seed", labels=["seed"])
+    _write_note(cfg, "policy", "paper-2.md", title="Policy Core", labels=["core", "seed"])
+    monkeypatch.setattr("research_hub.dashboard.data.run_doctor", lambda: [])
+    monkeypatch.setattr("research_hub.dashboard.data.detect_drift", lambda cfg, dedup: [])
+    monkeypatch.setattr("research_hub.dashboard.data.load_all_quotes", lambda cfg: [], raising=False)
+
+    data = collect_dashboard_data(cfg, zot=None)
+
+    assert [item[0] for item in data.labels_across_clusters["seed"]] == ["agents", "policy"]
+    assert data.labels_across_clusters["seed"][0][2] == "Agent Seed"
+
+
+def test_dashboard_data_populates_archived_papers_from_archive_dir(tmp_path, monkeypatch):
+    cfg = _make_config(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(query="agents", name="Agents", slug="agents")
+    _write_note(cfg, "agents", "paper-1.md")
+    archived_dir = cfg.raw / "_archive" / "agents"
+    archived_dir.mkdir(parents=True, exist_ok=True)
+    (archived_dir / "old-paper.md").write_text(
+        """---
+title: "Old Paper"
+labels:
+  - deprecated
+fit_reason: "no longer relevant"
+fit_score: "1"
+topic_cluster: "_archive/agents"
+---
+Body
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("research_hub.dashboard.data.run_doctor", lambda: [])
+    monkeypatch.setattr("research_hub.dashboard.data.detect_drift", lambda cfg, dedup: [])
+
+    data = collect_dashboard_data(cfg, zot=None)
+
+    assert data.clusters[0].archived_count == 1
+    assert data.clusters[0].archived_papers[0]["slug"] == "old-paper"
+    assert data.clusters[0].archived_papers[0]["fit_reason"] == "no longer relevant"
+
+
+def test_dashboard_data_paper_row_labels_from_frontmatter(tmp_path, monkeypatch):
+    cfg = _make_config(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(query="agents", name="Agents", slug="agents")
+    _write_note(cfg, "agents", "paper-1.md", labels=["seed", "core"])
+    monkeypatch.setattr("research_hub.dashboard.data.run_doctor", lambda: [])
+    monkeypatch.setattr("research_hub.dashboard.data.detect_drift", lambda cfg, dedup: [])
+
+    data = collect_dashboard_data(cfg, zot=None)
+
+    assert data.clusters[0].papers[0].labels == ["seed", "core"]

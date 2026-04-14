@@ -34,6 +34,7 @@ class WritingSection(DashboardSection):
         quote_groups = self._group_quotes(quotes)
         cited_groups = self._group_cited(cited)
         composer = self._composer_panel(data, quotes)
+        quote_filter = self._render_quote_label_filter(self._all_quote_labels(quotes))
         quote_html = (
             "".join(self._quote_group(name, items) for name, items in quote_groups.items())
             if quote_groups
@@ -52,6 +53,7 @@ class WritingSection(DashboardSection):
                 <h2>Captured quotes</h2>
                 <p class="card-meta">Saved excerpts ready to copy into a draft.</p>
               </header>
+              {quote_filter}
               <div class="writing-stack">{quote_html}</div>
               <div class="writing-cited-block">
                 <header class="card-heading">
@@ -86,6 +88,25 @@ class WritingSection(DashboardSection):
         for cluster, paper in cited:
             grouped[str(_attr(cluster, "name", "") or "Unassigned")].append((cluster, paper))
         return dict(sorted(grouped.items(), key=lambda item: item[0].lower()))
+
+    def _all_quote_labels(self, quotes: list) -> list[str]:
+        labels: set[str] = set()
+        for quote in quotes:
+            for label in _attr(quote, "paper_labels", []) or []:
+                text = str(label).strip()
+                if text:
+                    labels.add(text)
+        ordered = ["seed", "core", "method", "benchmark", "survey", "application", "tangential", "deprecated"]
+        return [label for label in ordered if label in labels] + sorted(label for label in labels if label not in ordered)
+
+    def _render_quote_label_filter(self, all_labels: list[str]) -> str:
+        if not all_labels:
+            return ""
+        chips = " ".join(
+            f'<a href="javascript:void(0)" class="quote-filter-chip{" active" if label == "all" else ""}" data-label="{html_escape(label)}">{html_escape(label)}</a>'
+            for label in ["all", *all_labels]
+        )
+        return f'<div class="quote-filter-bar">Filter by paper label: {chips}</div>'
 
     def _quote_group(self, cluster_name: str, quotes: list) -> str:
         cards = "".join(self._quote_card(quote) for quote in quotes)
@@ -131,8 +152,10 @@ class WritingSection(DashboardSection):
         page_badge = f'<span class="writing-quote-page">p. {html_escape(page)}</span>' if page else ""
         note = str(_attr(quote, "context_note", "") or "").strip()
         note_html = f'<p class="writing-quote-note">{html_escape(note)}</p>' if note else ""
+        labels = [str(label).strip() for label in (_attr(quote, "paper_labels", []) or []) if str(label).strip()]
+        labels_attr = html_escape(",".join(labels))
         return f"""
-        <article class="writing-quote-card" data-select-id="{html_escape(_attr(quote, "slug", ""))}">
+        <article class="writing-quote-card quote-card" data-select-id="{html_escape(_attr(quote, "slug", ""))}" data-paper-labels="{labels_attr}">
           <header class="writing-quote-header">
             <div>
               <h3>{html_escape(title)}</h3>

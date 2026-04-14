@@ -67,8 +67,14 @@ def test_writing_section_empty_state():
 
 def test_writing_section_renders_quote_cards():
     html = WritingSection().render(_data(quotes=[_quote()]))
-    assert 'class="writing-quote-card"' in html
+    assert 'class="writing-quote-card quote-card"' in html
     assert "Quoted passage" in html
+
+
+def test_writing_section_quote_filter_uses_paper_labels():
+    html = WritingSection().render(_data(quotes=[_quote(paper_labels=["seed"])]))
+    assert 'class="quote-filter-chip active"' in html
+    assert 'data-paper-labels="seed"' in html
 
 
 def test_writing_section_groups_quotes_by_cluster():

@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.23.0 (2026-04-14)
+
+**Dashboard feature completion + stress test suite.** v0.22 added label plumbing; v0.23 wires labels into the dashboard as an interactive filter system and adds a stress test layer the project was missing entirely.
+
+### Added — Dashboard feature completion (Track A)
+
+- **Clickable label filter chips.** Cluster card label chips (`seed: 3`, `core: 4`, etc.) are now `<a>` elements with `data-label` + `data-cluster` attributes. Clicking one jumps to the Library tab and filters paper rows to only those with that label. Click again to clear. URL hash tracks the state (`#tab-library?label=seed&cluster=llm-agents-software-engineering`), so filters are bookmarkable.
+- **Archived papers section per cluster.** Each cluster card gains a collapsible `<details class="cluster-archive">` block showing archived papers (from `raw/_archive/<cluster>/`) with their fit_reason and a copy-button that emits the exact `research-hub paper unarchive --cluster X --slug Y` command. Hidden when `archived_count == 0`.
+- **Cross-cluster "Papers by label" view.** New section at the top of the Library tab, rendered only when any cluster has labeled papers. Groups papers by canonical label across all clusters — answers "show me every `seed` paper in my vault" in one place. Each paper in the list links to its Obsidian note.
+- **Label badges in Library paper rows.** Each paper row now shows `[seed, benchmark]` monospaced chips alongside the existing title/authors/year. Rows gain `data-cluster-row` + `data-labels` attributes so the label filter (A1) can hide/show them in one JS pass.
+- **Writing tab quote filter by paper label.** Writing tab gains a filter bar (`Filter by paper label: [all] [seed] [core] [method] [benchmark]`) that hides quote cards to only those captured from papers with the selected label. Quote cards gain `data-paper-labels` attribute.
+- **Minimal CSS additions** — all new classes (`cluster-label--active`, `cluster-archive`, `cross-cluster-labels`, `paper-row-labels`, `quote-filter-bar`, `quote-filter-chip`, `label-group`) reuse existing `--brand` / `--muted` color vars. No new CSS variables.
+- **`script.js` gains two handlers** — `handleLabelFilter()` for A1/A4, `handleQuoteLabelFilter()` for A5. Both attach on `DOMContentLoaded`.
+
+### Added — Stress test suite (Track B)
+
+New `tests/stress/` directory with 8 stress test modules, all auto-marked with `@pytest.mark.stress` via `tests/stress/conftest.py`. **Default `pytest -q` excludes them** via `addopts = "--ignore=tests/stress"` in `pyproject.toml`. Opt-in with `pytest tests/stress/ -v`.
+
+| Module | Stress coverage |
+|---|---|
+| `test_dashboard_render.py` | Render on 100/500/2000/5000-paper synthetic vaults with linear time budgets |
+| `test_dashboard_render_content.py` | Verify label markup still renders at scale |
+| `test_frontmatter_rewrite.py` | 500-paper `set_labels` loop + body preservation (regression for v0.20.1-class corruption) |
+| `test_topic_build.py` | 30 sub-topics × 100 papers with random assignments |
+| `test_discover_merge.py` | 5 backends × 100 results with 60% DOI overlap, confidence boost correctness |
+| `test_pipeline_ingest.py` | 100-paper ingest with mocked Zotero, dedup index growth check |
+| `test_paper_label_parallel.py` | 200-paper threaded `set_labels(add=)` — race detection |
+| `test_fit_check_prompt.py` | 200-candidate prompt budget check (< 200KB for LLM context) |
+
+`tests/stress/_helpers.py` provides `make_stress_cfg`, `build_synthetic_cluster`, `build_synthetic_vault`, `synthetic_paper_note` — reusable fixtures for any stress test that needs a fake vault.
+
+### CI workflow
+
+- `.github/workflows/ci.yml` gains a new `stress-tests` job that runs only on `pull_request`. 10-minute timeout. Stays off the main branch push path so default CI stays fast (default run is ~45s, stress run is ~60s).
+
+### Tests
+
+- **Default suite: 810 → 832 passing** (+22 dashboard + data unit tests in the default pyramid)
+- **Stress suite: 0 → 12 tests** (opt-in, excluded from default)
+- **Default `pytest --collect-only | grep stress` returns 0** — stress tests genuinely excluded
+
+### Live verification on the real cluster
+
+Labeled 8 core papers in `llm-agents-software-engineering` and verified end-to-end:
+- `research-hub label <slug> --set seed,benchmark` wrote frontmatter cleanly
+- `research-hub find --cluster X --label seed` returned the 3 seed papers
+- `research-hub dashboard` rendered `seed: 3 core: 4 method: 5 benchmark: 4` histogram on the cluster card
+- Clicking a chip in the rendered HTML emits the filter hash
+
+### Non-breaking
+
+All existing CLI commands, MCP tools (50 still), and existing dashboard rendering unchanged. This release is purely additive: new dashboard elements, new stress tests, new CI job.
+
+### Deferred to v0.24+
+
+- Auto-label `accepted` papers from fit-check (needs a `.fit_check_accepted.json` sidecar that `discover continue` doesn't yet write)
+- `topic build --group-by-label` sectioned sub-topic notes
+- Cross-cluster label view in MCP (currently only in dashboard UI)
+- Stress test run against a real production vault (currently all synthetic)
+
 ## v0.22.0 (2026-04-13)
 
 **Paper labels + pruning — curate clusters after ingest with a 9-label vocabulary, archive-first deletion, and a fit-check → labels bridge.**

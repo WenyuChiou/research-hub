@@ -9,6 +9,13 @@ from pathlib import Path
 import pytest
 
 
+def pytest_configure(config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "stress: stress/load tests (opt-in via pytest tests/stress/)",
+    )
+
+
 @pytest.fixture
 def tmp_path() -> Path:
     root = Path.cwd() / ".pytest-work"

@@ -490,6 +490,66 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .cluster-bindings { color: var(--fg-mute); font-size: var(--text-xs); margin: 0 0 var(--space-md); }
 .binding-link { color: var(--brand); text-decoration: none; }
 .binding-link:hover { text-decoration: underline; }
+.cluster-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+.cluster-label {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2xs) var(--space-sm);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  text-decoration: none;
+}
+.cluster-label--active {
+  background: var(--brand);
+  color: oklch(99% 0 0);
+  border-color: var(--brand);
+}
+.cluster-label--archived {
+  opacity: 0.7;
+  font-style: italic;
+}
+.cluster-archive summary {
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--fg-mute);
+}
+.cluster-archive ul {
+  margin: var(--space-sm) 0 0;
+  padding-left: var(--space-lg);
+  display: grid;
+  gap: var(--space-xs);
+}
+.archived-labels,
+.archived-reason,
+.archived-title {
+  color: var(--fg-mute);
+}
+.cross-cluster-labels {
+  margin-bottom: var(--space-xl);
+}
+.cross-cluster-labels details {
+  margin-bottom: var(--space-xs);
+}
+.paper-row-labels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  margin: 0;
+}
+.paper-label-chip {
+  font-size: var(--text-xs);
+  padding: 0.1rem 0.4rem;
+  background: var(--surface);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-family: "Geist Mono", "JetBrains Mono", monospace;
+}
 
 /* Diagnostics tab grid */
 .diag-grid { grid-template-columns: 1fr; gap: var(--space-lg); }
@@ -612,6 +672,29 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .writing-empty {
   display: grid;
   gap: var(--space-xs);
+}
+.quote-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.quote-filter-chip {
+  padding: var(--space-2xs) var(--space-sm);
+  background: var(--surface);
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--border);
+}
+.quote-filter-chip.active {
+  background: var(--brand);
+  color: oklch(99% 0 0);
+  border-color: var(--brand);
 }
 
 .popup-quote label {

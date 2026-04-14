@@ -3,6 +3,67 @@
 
   const doc = document;
   let activePopup = null;
+  let activeLibraryLabelFilter = null;
+  let activeLibraryArchivedFilter = null;
+  let activeLibraryClusterFilter = null;
+  let searchQuery = "";
+
+  function activateTab(target) {
+    const radio = doc.getElementById("dash-tab-" + target);
+    if (radio) {
+      radio.checked = true;
+      radio.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    return radio;
+  }
+
+  function syncClusterChipState() {
+    doc.querySelectorAll(".cluster-label").forEach(function (chip) {
+      const isArchived = chip.dataset.archived === "1";
+      const matchesCluster = (chip.dataset.cluster || "") === (activeLibraryClusterFilter || "");
+      const matches = isArchived
+        ? !!activeLibraryArchivedFilter && matchesCluster
+        : !!activeLibraryLabelFilter && matchesCluster && (chip.dataset.label || "") === activeLibraryLabelFilter;
+      chip.classList.toggle("cluster-label--active", matches);
+    });
+  }
+
+  function applyLibraryFilters() {
+    const normalizedSearch = (searchQuery || "").trim().toLowerCase();
+    doc.querySelectorAll(".paper-row").forEach(function (row) {
+      const title = row.dataset.title || "";
+      const tags = row.dataset.tags || "";
+      const cluster = row.closest(".cluster-card")?.querySelector("summary")?.textContent?.toLowerCase() || "";
+      const labels = (row.dataset.labels || "")
+        .split(",")
+        .map(function (item) { return item.trim(); })
+        .filter(Boolean);
+      const matchesSearch = !normalizedSearch || title.includes(normalizedSearch) || tags.includes(normalizedSearch) || cluster.includes(normalizedSearch);
+      const matchesCluster = !activeLibraryClusterFilter || (row.dataset.clusterRow || "") === activeLibraryClusterFilter;
+      const matchesLabel = !activeLibraryLabelFilter || labels.includes(activeLibraryLabelFilter);
+      const matchesArchived = !activeLibraryArchivedFilter;
+      const visible = matchesSearch && matchesCluster && matchesLabel && matchesArchived;
+      row.hidden = !visible;
+      row.style.display = visible ? "" : "none";
+    });
+    doc.querySelectorAll(".cluster-card").forEach(function (card) {
+      const anyVisible = !!card.querySelector(".paper-row:not([hidden])");
+      if (normalizedSearch || activeLibraryLabelFilter || activeLibraryArchivedFilter) {
+        card.open = anyVisible || (activeLibraryArchivedFilter && (card.dataset.cluster || "") === activeLibraryClusterFilter);
+      }
+    });
+    doc.querySelectorAll(".cluster-archive").forEach(function (section) {
+      const cluster = section.dataset.clusterArchive || "";
+      const show = !activeLibraryArchivedFilter || cluster === activeLibraryClusterFilter;
+      section.style.display = show ? "" : "none";
+      if (activeLibraryArchivedFilter && cluster === activeLibraryClusterFilter) {
+        section.open = true;
+      } else if (!activeLibraryArchivedFilter && !section.open) {
+        section.style.display = "";
+      }
+    });
+    syncClusterChipState();
+  }
 
   function closePopup() {
     if (activePopup) {
@@ -72,21 +133,8 @@
   const search = doc.getElementById("vault-search");
   if (search) {
     search.addEventListener("input", function (event) {
-      const q = (event.target.value || "").trim().toLowerCase();
-      doc.querySelectorAll(".paper-row").forEach(function (row) {
-        const title = row.dataset.title || "";
-        const tags = row.dataset.tags || "";
-        const cluster = row.closest(".cluster-card")?.querySelector("summary")?.textContent?.toLowerCase() || "";
-        const hit = !q || title.includes(q) || tags.includes(q) || cluster.includes(q);
-        row.hidden = !hit;
-      });
-      doc.querySelectorAll(".cluster-card").forEach(function (card) {
-        if (!q) {
-          return;
-        }
-        const anyVisible = !!card.querySelector(".paper-row:not([hidden])");
-        card.open = anyVisible;
-      });
+      searchQuery = (event.target.value || "").trim().toLowerCase();
+      applyLibraryFilters();
     });
   }
 
@@ -354,10 +402,8 @@
     el.addEventListener("click", function (event) {
       event.preventDefault();
       const target = el.dataset.jumpTab;
-      const radio = doc.getElementById("dash-tab-" + target);
+      const radio = activateTab(target);
       if (radio) {
-        radio.checked = true;
-        radio.dispatchEvent(new Event("change", { bubbles: true }));
         // Scroll to the top of the panel after the CSS :checked rule
         // reveals it.
         const panel = doc.getElementById("tab-" + target);
@@ -367,6 +413,88 @@
       }
     });
   });
+
+  function handleLabelFilter() {
+    doc.querySelectorAll(".cluster-label").forEach(function (chip) {
+      chip.addEventListener("click", function (event) {
+        event.preventDefault();
+        activateTab("library");
+        const cluster = chip.dataset.cluster || "";
+        const isArchived = chip.dataset.archived === "1";
+        const label = chip.dataset.label || "";
+        const wasActive = chip.classList.contains("cluster-label--active");
+        if (wasActive) {
+          activeLibraryLabelFilter = null;
+          activeLibraryArchivedFilter = false;
+          activeLibraryClusterFilter = null;
+          window.location.hash = "#tab-library";
+        } else if (isArchived) {
+          activeLibraryLabelFilter = null;
+          activeLibraryArchivedFilter = true;
+          activeLibraryClusterFilter = cluster;
+          window.location.hash = "#tab-library?archived=1&cluster=" + encodeURIComponent(cluster);
+        } else {
+          activeLibraryLabelFilter = label;
+          activeLibraryArchivedFilter = false;
+          activeLibraryClusterFilter = cluster;
+          window.location.hash = "#tab-library?label=" + encodeURIComponent(label) + "&cluster=" + encodeURIComponent(cluster);
+        }
+        applyLibraryFilters();
+        const targetCard = doc.querySelector('.cluster-card[data-cluster="' + cluster + '"]');
+        if (targetCard) {
+          targetCard.open = true;
+        }
+      });
+    });
+  }
+
+  function applyLibraryHashFilter() {
+    const hash = window.location.hash || "";
+    if (!hash.startsWith("#tab-library")) {
+      return;
+    }
+    const queryIndex = hash.indexOf("?");
+    if (queryIndex === -1) {
+      return;
+    }
+    const params = new URLSearchParams(hash.slice(queryIndex + 1));
+    const cluster = params.get("cluster") || "";
+    if (params.get("archived") === "1" && cluster) {
+      activeLibraryLabelFilter = null;
+      activeLibraryArchivedFilter = true;
+      activeLibraryClusterFilter = cluster;
+    } else {
+      const label = params.get("label") || "";
+      if (label && cluster) {
+        activeLibraryLabelFilter = label;
+        activeLibraryArchivedFilter = false;
+        activeLibraryClusterFilter = cluster;
+      }
+    }
+    activateTab("library");
+    applyLibraryFilters();
+  }
+
+  function handleQuoteLabelFilter() {
+    doc.querySelectorAll(".quote-filter-chip").forEach(function (chip) {
+      chip.addEventListener("click", function (event) {
+        event.preventDefault();
+        const label = chip.dataset.label || "all";
+        doc.querySelectorAll(".quote-filter-chip").forEach(function (other) {
+          other.classList.remove("active");
+        });
+        chip.classList.add("active");
+        doc.querySelectorAll(".quote-card").forEach(function (card) {
+          const labels = (card.dataset.paperLabels || "")
+            .split(",")
+            .map(function (item) { return item.trim(); })
+            .filter(Boolean);
+          const visible = label === "all" || labels.includes(label);
+          card.style.display = visible ? "" : "none";
+        });
+      });
+    });
+  }
 
   // Debug widget — toggle snapshot + copy to clipboard
   const debugToggle = doc.getElementById("debug-toggle-btn");
@@ -502,4 +630,9 @@
       });
     });
   });
+
+  handleLabelFilter();
+  handleQuoteLabelFilter();
+  applyLibraryHashFilter();
+  applyLibraryFilters();
 })();

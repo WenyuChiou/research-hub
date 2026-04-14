@@ -12,6 +12,9 @@ from research_hub.dashboard.sections import (
     ManageSection,
     OverviewSection,
     WritingSection,
+    _render_archived_section,
+    _render_cross_cluster_labels,
+    _render_label_breakdown,
 )
 from research_hub.dashboard.types import (
     BriefingPreview,
@@ -251,6 +254,117 @@ def test_library_section_escapes_html_in_abstract():
     assert "&lt;script&gt;alert(1)&lt;/script&gt; abstract" in html
 
 
+def test_render_label_breakdown_makes_chips_clickable():
+    html = _render_label_breakdown({"seed": 2, "core": 1}, 0, "agents")
+    assert 'class="cluster-label"' in html
+    assert 'data-label="seed"' in html
+    assert 'data-cluster="agents"' in html
+    assert "<a " in html
+
+
+def test_render_label_breakdown_active_class_when_matching_filter():
+    html = _render_label_breakdown({"seed": 2}, 0, "agents", active_label="seed")
+    assert 'cluster-label cluster-label--active' in html
+
+
+def test_render_archived_section_hidden_when_no_archived_papers():
+    html = _render_archived_section(_cluster(archived_papers=[]))
+    assert html == ""
+
+
+def test_render_archived_section_shows_unarchive_command():
+    html = _render_archived_section(
+        _cluster(
+            archived_papers=[{"slug": "old-paper", "title": "Old Paper", "labels": ["deprecated"], "fit_reason": "", "fit_score": "1"}]
+        )
+    )
+    assert "research-hub paper unarchive --cluster agents --slug old-paper" in html
+    assert "unarchive cmd" in html
+
+
+def test_render_archived_section_shows_fit_reason():
+    html = _render_archived_section(
+        _cluster(
+            archived_papers=[{"slug": "old-paper", "title": "Old Paper", "labels": ["deprecated"], "fit_reason": "off topic", "fit_score": "1"}]
+        )
+    )
+    assert "off topic" in html
+
+
+def test_render_cross_cluster_labels_empty_when_no_labels():
+    assert _render_cross_cluster_labels({}) == ""
+
+
+def test_render_cross_cluster_labels_groups_by_canonical_order():
+    html = _render_cross_cluster_labels(
+        {
+            "benchmark": [("agents", "paper-b", "Benchmark Paper")],
+            "seed": [("agents", "paper-a", "Seed Paper")],
+        }
+    )
+    assert html.index("seed (1)") < html.index("benchmark (1)")
+
+
+def test_render_cross_cluster_labels_per_paper_links_to_obsidian():
+    html = _render_cross_cluster_labels({"seed": [("agents", "paper-a", "Seed Paper")]})
+    assert 'obsidian://open?path=raw/agents/paper-a.md' in html
+    assert "Seed Paper" in html
+
+
+def test_paper_row_includes_label_chips_when_labels_set():
+    html = LibrarySection().render(
+        _data(clusters=[_cluster(papers=[_paper(labels=["seed", "benchmark"])])], total_clusters=1, total_papers=1)
+    )
+    assert 'class="paper-row-labels"' in html
+    assert 'class="paper-label-chip">seed<' in html
+    assert 'class="paper-label-chip">benchmark<' in html
+
+
+def test_paper_row_has_data_labels_attribute_for_filter_js():
+    html = LibrarySection().render(
+        _data(clusters=[_cluster(papers=[_paper(labels=["seed", "core"])])], total_clusters=1, total_papers=1)
+    )
+    assert 'data-labels="seed,core"' in html
+
+
+def test_paper_row_data_cluster_row_attribute():
+    html = LibrarySection().render(_data(clusters=[_cluster()], total_clusters=1, total_papers=1))
+    assert 'data-cluster-row="agents"' in html
+
+
+def test_library_section_renders_cross_cluster_label_view():
+    html = LibrarySection().render(
+        _data(
+            clusters=[_cluster()],
+            labels_across_clusters={"seed": [("agents", "paper-one", "Paper One")]},
+            total_clusters=1,
+            total_papers=1,
+        )
+    )
+    assert "Papers by label (across all clusters)" in html
+    assert "seed (1)" in html
+
+
+def test_cluster_card_label_chips_match_clicker_js_selector():
+    html = LibrarySection().render(
+        _data(clusters=[_cluster(label_counts={"seed": 2})], total_clusters=1, total_papers=1)
+    )
+    assert 'class="cluster-label"' in html
+    assert 'data-label="seed"' in html
+
+
+def test_label_breakdown_skips_zero_count_labels():
+    html = _render_label_breakdown({"seed": 0, "core": 1}, 0, "agents")
+    assert "seed:" not in html
+    assert "core: 1" in html
+
+
+def test_label_breakdown_includes_archived_chip_when_count_gt_0():
+    html = _render_label_breakdown({}, 3, "agents")
+    assert 'data-archived="1"' in html
+    assert "archived: 3" in html
+
+
 # --- BriefingsSection ---------------------------------------------------
 
 
@@ -371,10 +485,37 @@ def test_writing_section_empty_state():
 
 def test_writing_section_renders_quote_cards():
     html = WritingSection().render(_data(quotes=[_quote()]))
-    assert 'class="writing-quote-card"' in html
+    assert 'class="writing-quote-card quote-card"' in html
     assert "Quoted passage about coordination." in html
     assert "Copy as markdown" in html
     assert "Copy inline" in html
+
+
+def test_writing_section_renders_label_filter_chips():
+    html = WritingSection().render(_data(quotes=[_quote(paper_labels=["seed", "benchmark"])]))
+    assert 'class="quote-filter-chip active"' in html
+    assert 'data-label="seed"' in html
+    assert 'data-label="benchmark"' in html
+
+
+def test_writing_section_quote_card_has_data_paper_labels():
+    html = WritingSection().render(_data(quotes=[_quote(paper_labels=["seed", "benchmark"])]))
+    assert 'class="writing-quote-card quote-card"' in html
+    assert 'data-paper-labels="seed,benchmark"' in html
+
+
+def test_writing_section_filter_bar_lists_all_distinct_labels():
+    html = WritingSection().render(
+        _data(
+            quotes=[
+                _quote(paper_labels=["seed", "benchmark"]),
+                _quote(slug="paper-two", paper_labels=["seed", "core"]),
+            ]
+        )
+    )
+    assert html.count('data-label="seed"') == 1
+    assert 'data-label="core"' in html
+    assert 'data-label="benchmark"' in html
 
 
 def test_writing_section_groups_quotes_by_cluster():

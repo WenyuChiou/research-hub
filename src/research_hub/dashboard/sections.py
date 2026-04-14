@@ -127,19 +127,97 @@ def _show_zotero_column(data) -> bool:
     return _persona(data) != "analyst"
 
 
-def _render_label_breakdown(counts: dict[str, int], archived: int) -> str:
+def _render_label_breakdown(
+    counts: dict[str, int],
+    archived: int,
+    cluster_slug: str,
+    *,
+    active_label: str = "",
+    active_archived: bool = False,
+) -> str:
     if not counts and archived == 0:
         return ""
     parts: list[str] = []
     for label in ("seed", "core", "method", "benchmark", "survey", "application", "tangential", "deprecated"):
         count = counts.get(label, 0)
         if count > 0:
-            parts.append(f'<span class="cluster-label">{html_escape(label)}: {count}</span>')
+            active = " cluster-label--active" if active_label == label else ""
+            parts.append(
+                f'<a href="javascript:void(0)" class="cluster-label{active}" '
+                f'data-label="{html_escape(label)}" data-cluster="{html_escape(cluster_slug)}">'
+                f"{html_escape(label)}: {count}</a>"
+            )
     if archived:
-        parts.append(f'<span class="cluster-label cluster-label--archived">archived: {archived}</span>')
+        active = " cluster-label--active" if active_archived else ""
+        parts.append(
+            f'<a href="javascript:void(0)" class="cluster-label cluster-label--archived{active}" '
+            f'data-archived="1" data-cluster="{html_escape(cluster_slug)}">archived: {archived}</a>'
+        )
     if not parts:
         return ""
     return '<div class="cluster-labels">' + " ".join(parts) + "</div>"
+
+
+def _render_archived_section(cluster) -> str:
+    archived_papers = list(_attr(cluster, "archived_papers", []) or [])
+    if not archived_papers:
+        return ""
+    items: list[str] = []
+    slug = str(_attr(cluster, "slug", "") or "")
+    for paper in archived_papers:
+        paper_slug = str(paper.get("slug", "") or "")
+        title = str(paper.get("title", paper_slug) or paper_slug)
+        labels = [str(label) for label in (paper.get("labels", []) or []) if str(label).strip()]
+        labels_html = (
+            '<span class="archived-labels">[' + ", ".join(html_escape(label) for label in labels) + "]</span>"
+            if labels
+            else ""
+        )
+        fit_reason = str(paper.get("fit_reason", "") or "")
+        reason_html = f'<span class="archived-reason">{html_escape(fit_reason)}</span>' if fit_reason else ""
+        cmd = f"research-hub paper unarchive --cluster {slug} --slug {paper_slug}"
+        items.append(
+            f"<li>"
+            f'<code>{html_escape(paper_slug)}</code> '
+            f'<span class="archived-title">{html_escape(title)}</span> '
+            f"{labels_html} {reason_html} "
+            f'<button type="button" class="copy-cmd-btn" data-text="{html_escape(cmd)}">unarchive cmd</button>'
+            f"</li>"
+        )
+    return (
+        f'<details class="cluster-archive" data-cluster-archive="{html_escape(slug)}">'
+        f"<summary>Archived papers ({len(archived_papers)})</summary>"
+        f'<ul>{"".join(items)}</ul></details>'
+    )
+
+
+def _render_cross_cluster_labels(labels_map: dict[str, list[tuple[str, str, str]]]) -> str:
+    if not labels_map:
+        return ""
+    ordered = ("seed", "core", "method", "benchmark", "survey", "application", "tangential", "deprecated")
+    sections: list[str] = []
+    for label in ordered:
+        items = labels_map.get(label, [])
+        if not items:
+            continue
+        lis = "".join(
+            f'<li><code>{html_escape(cluster)}</code>/'
+            f'<a class="binding-link" href="{html_escape(_obsidian_url(f"raw/{cluster}/{slug}.md"))}">'
+            f"{html_escape(title[:70])}</a></li>"
+            for cluster, slug, title in items
+        )
+        sections.append(
+            f'<details class="label-group"><summary>{html_escape(label)} ({len(items)})</summary>'
+            f"<ul>{lis}</ul></details>"
+        )
+    if not sections:
+        return ""
+    return (
+        '<section class="cross-cluster-labels">'
+        "<h2>Papers by label (across all clusters)</h2>"
+        + "".join(sections)
+        + "</section>"
+    )
 
 
 # --- base ---------------------------------------------------------------
@@ -468,8 +546,12 @@ class LibrarySection(DashboardSection):
         </section>
         """
         cards = "".join(self._cluster_card(c, _show_zotero_column(data)) for c in clusters)
+        cross_cluster_labels = _render_cross_cluster_labels(
+            dict(_attr(data, "labels_across_clusters", {}) or {})
+        )
         return f"""
         <section id="tab-library" class="dash-panel dash-panel-library" role="tabpanel">
+          {cross_cluster_labels}
           <div class="cluster-stack">{cards}</div>
         </section>
         """
@@ -485,7 +567,9 @@ class LibrarySection(DashboardSection):
         label_breakdown = _render_label_breakdown(
             dict(_attr(cluster, "label_counts", {}) or {}),
             int(_attr(cluster, "archived_count", 0) or 0),
+            str(_attr(cluster, "slug", "") or ""),
         )
+        archived_section = _render_archived_section(cluster)
         binding_line = self._binding_line(cluster, show_zotero)
         overview_badge = (
             '<span class="cluster-badge">overview</span>'
@@ -532,6 +616,7 @@ class LibrarySection(DashboardSection):
             <p class="cluster-bindings">{binding_line}</p>
             {label_breakdown}
             <div class="cluster-toolbar">{download_btn}</div>
+            {archived_section}
             {paper_list}
           </div>
         </details>
@@ -575,6 +660,18 @@ class LibrarySection(DashboardSection):
         tags_value = " ".join(str(t) for t in (_attr(paper, "tags", []) or [])).lower()
         tags = html_escape(tags_value)
         bibtex = html_escape(_attr(paper, "bibtex", ""))
+        labels = [str(label) for label in (_attr(paper, "labels", []) or []) if str(label).strip()]
+        labels_attr = html_escape(",".join(labels))
+        labels_span = ""
+        if labels:
+            labels_span = (
+                '<span class="paper-row-labels">'
+                + " ".join(
+                    f'<span class="paper-label-chip">{html_escape(label)}</span>'
+                    for label in labels
+                )
+                + "</span>"
+            )
 
         cite_button = ""
         if show_zotero and bibtex:
@@ -596,11 +693,14 @@ class LibrarySection(DashboardSection):
         return f"""
         <li class="paper-row"
             data-cluster="{html_escape(cluster_slug)}"
+            data-cluster-row="{html_escape(cluster_slug)}"
             data-title="{title_lower}"
-            data-tags="{tags}">
+            data-tags="{tags}"
+            data-labels="{labels_attr}">
           <div class="paper-content">
             <p class="paper-author">{meta_line}</p>
             <h4 class="paper-title">{title}</h4>
+            {labels_span}
             <p class="paper-abstract">{abstract}</p>
           </div>
           <div class="paper-actions">

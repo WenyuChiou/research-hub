@@ -31,3 +31,20 @@ jobs:
       - name: Coverage
         if: matrix.python-version == '3.12'
         run: pytest --cov=research_hub --cov-report=term-missing
+
+  stress-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -e '.[mcp,dev]'
+
+      - name: Run stress tests
+        run: pytest tests/stress/ -v
+        timeout-minutes: 10

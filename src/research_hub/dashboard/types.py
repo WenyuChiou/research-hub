@@ -38,6 +38,7 @@ class PaperRow:
     abstract: str           # from Obsidian frontmatter `abstract` field
     doi: str
     tags: list[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list)
     status: ReadingStatus = "unread"
     ingested_at: str = ""
     obsidian_path: str = ""
@@ -82,6 +83,7 @@ class ClusterCard:
     briefing: BriefingPreview | None = None
     label_counts: dict[str, int] = field(default_factory=dict)
     archived_count: int = 0
+    archived_papers: list[dict[str, object]] = field(default_factory=list)
 
     @property
     def paper_count(self) -> int:
@@ -127,6 +129,7 @@ class Quote:
     text: str = ""
     captured_at: str = ""
     context_note: str = ""
+    paper_labels: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -142,6 +145,7 @@ class DashboardData:
     clusters: list[ClusterCard] = field(default_factory=list)
     briefings: list[BriefingPreview] = field(default_factory=list)
     quotes: list[Quote] = field(default_factory=list)
+    labels_across_clusters: dict[str, list[tuple[str, str, str]]] = field(default_factory=dict)
     health_badges: list[HealthBadge] = field(default_factory=list)
     drift_alerts: list[DriftAlert] = field(default_factory=list)
 
