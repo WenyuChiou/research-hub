@@ -427,17 +427,14 @@
           activeLibraryLabelFilter = null;
           activeLibraryArchivedFilter = false;
           activeLibraryClusterFilter = null;
-          window.location.hash = "#tab-library";
         } else if (isArchived) {
           activeLibraryLabelFilter = null;
           activeLibraryArchivedFilter = true;
           activeLibraryClusterFilter = cluster;
-          window.location.hash = "#tab-library?archived=1&cluster=" + encodeURIComponent(cluster);
         } else {
           activeLibraryLabelFilter = label;
           activeLibraryArchivedFilter = false;
           activeLibraryClusterFilter = cluster;
-          window.location.hash = "#tab-library?label=" + encodeURIComponent(label) + "&cluster=" + encodeURIComponent(cluster);
         }
         applyLibraryFilters();
         const targetCard = doc.querySelector('.cluster-card[data-cluster="' + cluster + '"]');
@@ -446,33 +443,6 @@
         }
       });
     });
-  }
-
-  function applyLibraryHashFilter() {
-    const hash = window.location.hash || "";
-    if (!hash.startsWith("#tab-library")) {
-      return;
-    }
-    const queryIndex = hash.indexOf("?");
-    if (queryIndex === -1) {
-      return;
-    }
-    const params = new URLSearchParams(hash.slice(queryIndex + 1));
-    const cluster = params.get("cluster") || "";
-    if (params.get("archived") === "1" && cluster) {
-      activeLibraryLabelFilter = null;
-      activeLibraryArchivedFilter = true;
-      activeLibraryClusterFilter = cluster;
-    } else {
-      const label = params.get("label") || "";
-      if (label && cluster) {
-        activeLibraryLabelFilter = label;
-        activeLibraryArchivedFilter = false;
-        activeLibraryClusterFilter = cluster;
-      }
-    }
-    activateTab("library");
-    applyLibraryFilters();
   }
 
   function handleQuoteLabelFilter() {
@@ -633,6 +603,5 @@
 
   handleLabelFilter();
   handleQuoteLabelFilter();
-  applyLibraryHashFilter();
   applyLibraryFilters();
 })();

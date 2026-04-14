@@ -99,11 +99,23 @@ def _zotero_collection_url(library_id: str, collection_key: str) -> str:
     return f"zotero://select/library/collections/{collection_key}"
 
 
-def _obsidian_url(folder_path: str) -> str:
-    if not folder_path:
+def _obsidian_url(relative_path: str, vault_root: str = "") -> str:
+    """Build an obsidian://open URL.
+
+    Obsidian's ``path=`` parameter requires an absolute filesystem path.
+    Callers pass a vault-relative path (``raw/cluster/slug.md``) plus the
+    vault_root from DashboardData; we join + URL-encode to an absolute path.
+    """
+    if not relative_path:
         return ""
-    safe = folder_path.replace("\\", "/")
-    return f"obsidian://open?path={safe}"
+    from pathlib import Path as _Path
+    from urllib.parse import quote as _quote
+    rel = relative_path.replace("\\", "/").lstrip("/")
+    if vault_root:
+        abs_path = str(_Path(vault_root) / rel).replace("\\", "/")
+    else:
+        abs_path = rel
+    return f"obsidian://open?path={_quote(abs_path, safe='/:')}"
 
 
 def _all_clusters(data) -> list:
@@ -191,7 +203,10 @@ def _render_archived_section(cluster) -> str:
     )
 
 
-def _render_cross_cluster_labels(labels_map: dict[str, list[tuple[str, str, str]]]) -> str:
+def _render_cross_cluster_labels(
+    labels_map: dict[str, list[tuple[str, str, str]]],
+    vault_root: str = "",
+) -> str:
     if not labels_map:
         return ""
     ordered = ("seed", "core", "method", "benchmark", "survey", "application", "tangential", "deprecated")
@@ -202,7 +217,7 @@ def _render_cross_cluster_labels(labels_map: dict[str, list[tuple[str, str, str]
             continue
         lis = "".join(
             f'<li><code>{html_escape(cluster)}</code>/'
-            f'<a class="binding-link" href="{html_escape(_obsidian_url(f"raw/{cluster}/{slug}.md"))}">'
+            f'<a class="binding-link" href="{html_escape(_obsidian_url(f"raw/{cluster}/{slug}.md", vault_root))}">'
             f"{html_escape(title[:70])}</a></li>"
             for cluster, slug, title in items
         )
@@ -321,7 +336,11 @@ class OverviewSection(DashboardSection):
     def render(self, data) -> str:
         clusters = _all_clusters(data)
         treemap = self._render_treemap(clusters)
-        storage = self._render_storage_map(clusters, _show_zotero_column(data))
+        storage = self._render_storage_map(
+            clusters,
+            _show_zotero_column(data),
+            str(_attr(data, "vault_root", "") or ""),
+        )
         recent = self._render_recent_additions(data)
         banner = self._render_health_banner(data)
         return f"""
@@ -415,10 +434,10 @@ class OverviewSection(DashboardSection):
             f'</button>'
         )
 
-    def _render_storage_map(self, clusters: list, show_zotero: bool) -> str:
+    def _render_storage_map(self, clusters: list, show_zotero: bool, vault_root: str = "") -> str:
         if not clusters:
             return '<p class="empty-state">No clusters bound yet.</p>'
-        rows = "".join(self._storage_row(c, show_zotero) for c in clusters)
+        rows = "".join(self._storage_row(c, show_zotero, vault_root) for c in clusters)
         zotero_th = '<th scope="col">Zotero</th>' if show_zotero else ""
         return f"""
         <table class="storage-table">
@@ -434,7 +453,7 @@ class OverviewSection(DashboardSection):
         </table>
         """
 
-    def _storage_row(self, cluster, show_zotero: bool) -> str:
+    def _storage_row(self, cluster, show_zotero: bool, vault_root: str = "") -> str:
         name = html_escape(_attr(cluster, "name", ""))
         count = int(_attr(cluster, "paper_count", 0) or _paper_count(cluster))
         slug = html_escape(_attr(cluster, "slug", ""))
@@ -454,7 +473,7 @@ class OverviewSection(DashboardSection):
                 zotero_cell = '<td class="storage-cell storage-empty">—</td>'
 
         obs_folder = f"raw/{slug}"
-        obs_href = _obsidian_url(obs_folder)
+        obs_href = _obsidian_url(obs_folder, vault_root)
         obs_cell = (
             f'<td class="storage-cell">'
             f'<span class="storage-name">{html_escape(obs_folder)}</span>'
@@ -545,9 +564,13 @@ class LibrarySection(DashboardSection):
           <p class="empty-state">No clusters yet. Run <code>research-hub clusters new --query "topic"</code>.</p>
         </section>
         """
-        cards = "".join(self._cluster_card(c, _show_zotero_column(data)) for c in clusters)
+        vault_root = str(_attr(data, "vault_root", "") or "")
+        cards = "".join(
+            self._cluster_card(c, _show_zotero_column(data), vault_root) for c in clusters
+        )
         cross_cluster_labels = _render_cross_cluster_labels(
-            dict(_attr(data, "labels_across_clusters", {}) or {})
+            dict(_attr(data, "labels_across_clusters", {}) or {}),
+            vault_root,
         )
         return f"""
         <section id="tab-library" class="dash-panel dash-panel-library" role="tabpanel">
@@ -556,7 +579,7 @@ class LibrarySection(DashboardSection):
         </section>
         """
 
-    def _cluster_card(self, cluster, show_zotero: bool) -> str:
+    def _cluster_card(self, cluster, show_zotero: bool, vault_root: str = "") -> str:
         slug = html_escape(_attr(cluster, "slug", ""))
         name = html_escape(_attr(cluster, "name", ""))
         count = int(_attr(cluster, "paper_count", 0) or _paper_count(cluster))
@@ -570,7 +593,7 @@ class LibrarySection(DashboardSection):
             str(_attr(cluster, "slug", "") or ""),
         )
         archived_section = _render_archived_section(cluster)
-        binding_line = self._binding_line(cluster, show_zotero)
+        binding_line = self._binding_line(cluster, show_zotero, vault_root)
         overview_badge = (
             '<span class="cluster-badge">overview</span>'
             if has_overview
@@ -581,7 +604,7 @@ class LibrarySection(DashboardSection):
             if subtopic_count > 0
             else ""
         )
-        overview_href = _obsidian_url(f"hub/{slug}/00_overview.md") if has_overview else ""
+        overview_href = _obsidian_url(f"hub/{slug}/00_overview.md", vault_root) if has_overview else ""
         summary_title = (
             f'<h3><a class="binding-link" href="{html_escape(overview_href)}">{name}</a> {overview_badge} {subtopics_badge}</h3>'
             if overview_href
@@ -622,7 +645,7 @@ class LibrarySection(DashboardSection):
         </details>
         """
 
-    def _binding_line(self, cluster, show_zotero: bool) -> str:
+    def _binding_line(self, cluster, show_zotero: bool, vault_root: str = "") -> str:
         parts: list[str] = []
         if show_zotero:
             zk = str(_attr(cluster, "zotero_collection_key", "") or "")
@@ -635,7 +658,7 @@ class LibrarySection(DashboardSection):
         slug = str(_attr(cluster, "slug", ""))
         obs_path = f"raw/{slug}"
         parts.append(
-            f'Obsidian · <a class="binding-link" href="{html_escape(_obsidian_url(obs_path))}">{html_escape(obs_path)}</a>'
+            f'Obsidian · <a class="binding-link" href="{html_escape(_obsidian_url(obs_path, vault_root))}">{html_escape(obs_path)}</a>'
         )
         nlm_url = str(_attr(cluster, "notebooklm_notebook_url", "") or "")
         nlm_name = str(_attr(cluster, "notebooklm_notebook", "") or "")

@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.25.0 (2026-04-14)
+
+**Structured research-note principle + dashboard obsidian:// fix + file:// hash navigation fix.**
+
+Live use of the `llm-agents-software-engineering` cluster surfaced three distinct issues: (1) topic overview and sub-topic notes were being emitted as wall-of-text English prose that was unreadable for skim-first research use; (2) the "Papers by label" cross-cluster list in the dashboard Library tab produced `obsidian://` URLs with relative paths, so clicking them did nothing; (3) label-filter chips in the dashboard triggered `window.location.hash` assignments that Chrome blocks under `file://` origin, making the first click unreliable. v0.25 fixes all three.
+
+### Added — Structured note templates (Track A)
+
+- **`OVERVIEW_TEMPLATE`** and **`SUBTOPIC_TEMPLATE`** in `src/research_hub/topic.py` rewritten as hierarchical, table-driven skeletons. Future `topic scaffold` and `topic build` runs emit the new structure automatically.
+- **Sub-topic structure:** bilingual H1 (`# 中文標題 / English Title`), TL;DR (1–2 sentences), 核心問題 (blockquote), 範圍 (涵蓋/不涵蓋 as separate bullet lists), 關鍵概念 table, 分類法 table, 代表論文 table, Papers (auto-generated), 時間線 table, 開放問題 (numbered + bolded), 連結, See also.
+- **Overview structure:** TL;DR, 核心問題, 範圍定義, 領域地圖 table (linking sub-topics), 關鍵概念詞彙表 table, 必讀論文 table, 時間線 table, 開放問題, 連結, 延伸閱讀.
+- **Design rationale:** tables > paragraphs for any comparison or list of >3 items with the same shape; Traditional Chinese prose with English technical proper nouns preserved inline (LLM, SWE-bench, ACI, GPT-4, etc.); H1 is bilingual so the vault is searchable in both languages.
+
+### Fixed — Dashboard `obsidian://` URLs now use absolute paths (Track B)
+
+- **`_obsidian_url(relative_path, vault_root)`** in `src/research_hub/dashboard/sections.py` now accepts a vault_root and builds absolute paths via `Path(vault_root) / relative`, URL-encoding the result with `quote(..., safe='/:')`. Previously produced `obsidian://open?path=raw/cluster/slug.md` (relative), which Obsidian cannot resolve.
+- **Threaded `vault_root`** from `DashboardData.vault_root` through five call sites: `_render_cross_cluster_labels`, `_cluster_card`, `_binding_line`, `_storage_row`, and the cluster card overview link.
+- **Affected tabs:** Library tab → "Papers by label (across all clusters)" → clicking a paper now opens Obsidian. Also the cluster card header, binding line Obsidian chip, and Overview tab storage map rows.
+
+### Fixed — Dashboard file:// hash navigation (Track C)
+
+- **`handleLabelFilter()`** in `src/research_hub/dashboard/script.js` previously wrote `window.location.hash = "#tab-library?..."` on every label-chip click. Chrome's file:// security policy blocks hash changes with query strings, throwing "Unsafe attempt to load URL from frame with URL file:///..." — making the first click unreliable.
+- **Fix:** removed all three `window.location.hash = ...` assignments. `applyLibraryFilters()` already updates DOM state directly; the hash was decorative and also broke file:// origin usage. Removed the now-unused `applyLibraryHashFilter()` function (24 lines of dead code).
+
+### Enforcement
+
+- The new template structure is codified in THREE places to keep future work consistent:
+  1. `topic.py` templates (research-hub internal — affects future `topic scaffold`/`topic build`)
+  2. `~/.claude/projects/.../memory/feedback_note_structure.md` (cross-conversation Claude memory)
+  3. Worked example in the `llm-agents-software-engineering` cluster (5 files: overview + 4 sub-topics)
+
+### Tests
+
+- `tests/test_subtopic_content_protection.py` — 6 tests updated from English section headings (`## Scope`, `## Why these papers cluster together`, `## Open questions`) to new Chinese headings (`## 範圍`, `## 核心問題`, `## 開放問題`).
+- `tests/test_topic_subtopics.py::test_build_subtopic_notes_overwrites_papers_section_only` — same heading update.
+- **873 tests pass / 5 skipped.** No new tests added; the existing content-protection suite validates that the new templates still round-trip cleanly through `topic build` rebuilds without losing hand-edited content in preserved sections.
+
+### Breaking changes
+
+- **None for existing clusters.** `topic build` preserves all non-Papers section content across rebuilds (content-guard from v0.24 still active). Users with wall-of-text sub-topic notes can keep them — the new template only applies to newly scaffolded sub-topics.
+- **Guidance:** users who want to adopt the new structure for existing clusters should rewrite `00_overview.md` and `topics/NN_*.md` by hand following the template in `feedback_note_structure.md`. There is no auto-migration tool because the new format is semantic, not mechanical.
+
 ## v0.24.0 (2026-04-14)
 
 **Autofill + auto labels + Zotero sync + sub-topic protection — closing the "everything should be automatic on a full run" gap.**

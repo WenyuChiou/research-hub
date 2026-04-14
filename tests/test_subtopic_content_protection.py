@@ -65,25 +65,25 @@ def test_write_papers_section_preserves_scope_across_rebuild(tmp_path):
     _write_paper(cfg, "paper-one", subtopics=["benchmarks"])
     build_subtopic_notes(cfg, "my-cluster")
     path = cfg.raw / "my-cluster" / "topics" / "01_benchmarks.md"
-    _replace_section(path, "Scope", "Custom scope paragraph.")
+    _replace_section(path, "範圍", "Custom scope paragraph.")
 
     build_subtopic_notes(cfg, "my-cluster")
 
     assert "Custom scope paragraph." in path.read_text(encoding="utf-8")
 
 
-def test_write_papers_section_preserves_why_across_rebuild(tmp_path):
+def test_write_papers_section_preserves_core_question_across_rebuild(tmp_path):
     from research_hub.topic import build_subtopic_notes
 
     cfg = _cfg(tmp_path)
     _write_paper(cfg, "paper-one", subtopics=["benchmarks"])
     build_subtopic_notes(cfg, "my-cluster")
     path = cfg.raw / "my-cluster" / "topics" / "01_benchmarks.md"
-    _replace_section(path, "Why these papers cluster together", "Custom why paragraph.")
+    _replace_section(path, "核心問題", "Custom core question.")
 
     build_subtopic_notes(cfg, "my-cluster")
 
-    assert "Custom why paragraph." in path.read_text(encoding="utf-8")
+    assert "Custom core question." in path.read_text(encoding="utf-8")
 
 
 def test_write_papers_section_preserves_open_questions_across_rebuild(tmp_path):
@@ -93,7 +93,7 @@ def test_write_papers_section_preserves_open_questions_across_rebuild(tmp_path):
     _write_paper(cfg, "paper-one", subtopics=["benchmarks"])
     build_subtopic_notes(cfg, "my-cluster")
     path = cfg.raw / "my-cluster" / "topics" / "01_benchmarks.md"
-    _replace_section(path, "Open questions", "- Custom open question")
+    _replace_section(path, "開放問題", "- Custom open question")
 
     build_subtopic_notes(cfg, "my-cluster")
 
@@ -107,16 +107,16 @@ def test_write_papers_section_raises_if_section_deleted(tmp_path, monkeypatch):
     path = cfg.raw / "my-cluster" / "topics" / "01_benchmarks.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "---\ncluster: my-cluster\n---\n\n# Benchmarks\n\n## Scope\n\nKeep.\n\n## Papers\n\nOld.\n\n## Open questions\n\n- Keep\n",
+        "---\ncluster: my-cluster\n---\n\n# Benchmarks\n\n## 範圍\n\nKeep.\n\n## Papers\n\nOld.\n\n## 開放問題\n\n- Keep\n",
         encoding="utf-8",
     )
 
     monkeypatch.setattr(
         "research_hub.topic._extract_sections_excluding_papers",
-        lambda text: {} if "AUTO-GENERATED" in text else {"Scope": "Keep.", "Open questions": "- Keep"},
+        lambda text: {} if "(no papers assigned)" in text else {"範圍": "Keep.", "開放問題": "- Keep"},
     )
 
-    with pytest.raises(ValueError, match="delete section 'Scope'"):
+    with pytest.raises(ValueError, match="delete section '範圍'"):
         _write_papers_section(path, [], {})
 
 
@@ -124,13 +124,13 @@ def test_extract_sections_excluding_papers_returns_all_non_papers():
     from research_hub.topic import _extract_sections_excluding_papers
 
     sections = _extract_sections_excluding_papers(
-        "# Title\n\n## Scope\n\nA\n\n## Papers\n\nX\n\n## Why these papers cluster together\n\nB\n\n## Open questions\n\nC\n\n## See also\n\nD\n"
+        "# Title\n\n## 範圍\n\nA\n\n## Papers\n\nX\n\n## 核心問題\n\nB\n\n## 開放問題\n\nC\n\n## See also\n\nD\n"
     )
 
     assert sections == {
-        "Scope": "A",
-        "Why these papers cluster together": "B",
-        "Open questions": "C",
+        "範圍": "A",
+        "核心問題": "B",
+        "開放問題": "C",
         "See also": "D",
     }
 
@@ -148,9 +148,9 @@ def test_build_subtopic_notes_double_run_no_content_loss(tmp_path):
     expected: dict[str, str] = {}
     for path in sorted((cfg.raw / "my-cluster" / "topics").glob("*.md")):
         custom = path.stem
-        _replace_section(path, "Scope", f"Scope for {custom}.")
-        _replace_section(path, "Why these papers cluster together", f"Why for {custom}.")
-        _replace_section(path, "Open questions", f"- Open for {custom}")
+        _replace_section(path, "範圍", f"Scope for {custom}.")
+        _replace_section(path, "核心問題", f"Why for {custom}.")
+        _replace_section(path, "開放問題", f"- Open for {custom}")
         _replace_section(path, "See also", f"- See also {custom}")
         expected[path.name] = path.read_text(encoding="utf-8")
 

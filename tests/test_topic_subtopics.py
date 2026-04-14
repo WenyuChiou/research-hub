@@ -298,9 +298,9 @@ def test_build_subtopic_notes_overwrites_papers_section_only(tmp_path):
     build_subtopic_notes(cfg, "my-cluster")
     path = cfg.raw / "my-cluster" / "topics" / "01_benchmarks.md"
     original = path.read_text(encoding="utf-8")
-    edited = original.replace("## Scope\n", "## Scope\n\nCustom scope.\n").replace(
-        "## Open questions\n",
-        "## Open questions\n\n- custom question\n",
+    edited = original.replace("## 範圍\n", "## 範圍\n\nCustom scope.\n").replace(
+        "## 開放問題\n",
+        "## 開放問題\n\n- custom question\n",
     )
     path.write_text(edited, encoding="utf-8")
 
