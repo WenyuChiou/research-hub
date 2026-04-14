@@ -488,7 +488,7 @@ def _write_papers_section(
     note_path.write_text(new_text, encoding="utf-8")
 
 
-def _parse_note(path: Path) -> tuple[dict[str, str], str]:
+def _parse_note(path: Path) -> tuple[dict[str, str | list[str]], str]:
     """Return note frontmatter plus abstract section text."""
     text = path.read_text(encoding="utf-8")
     meta = _parse_frontmatter(text)
@@ -505,15 +505,36 @@ def _split_authors(authors_str: str) -> list[str]:
     return [author.strip() for author in authors_str.replace(";", ",").split(",") if author.strip()]
 
 
-def _parse_frontmatter(text: str) -> dict[str, str]:
+def _parse_frontmatter(text: str) -> dict[str, str | list[str]]:
     frontmatter = _extract_frontmatter_block(text)
-    meta: dict[str, str] = {}
+    meta: dict[str, str | list[str]] = {}
     if frontmatter is None:
         return meta
-    for line in frontmatter.splitlines():
-        if ":" in line:
-            key, _, value = line.partition(":")
-            meta[key.strip()] = value.strip().strip('"')
+    lines = frontmatter.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if ":" not in line:
+            i += 1
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if value.startswith("[") and value.endswith("]"):
+            meta[key] = [part.strip().strip("\"'") for part in value[1:-1].split(",") if part.strip()]
+            i += 1
+            continue
+        if value == "":
+            children: list[str] = []
+            j = i + 1
+            while j < len(lines) and re.match(r"^[ \t]+-\s+", lines[j]):
+                children.append(re.sub(r"^[ \t]+-\s+", "", lines[j]).strip().strip("\"'"))
+                j += 1
+            meta[key] = children if children else ""
+            i = j
+            continue
+        meta[key] = value.strip('"')
+        i += 1
     return meta
 
 
@@ -607,14 +628,32 @@ def _humanize_slug(slug: str) -> str:
 
 def _render_papers_markdown(
     papers: list[PaperDigestEntry],
-    paper_meta_by_slug: dict[str, dict[str, str]],
+    paper_meta_by_slug: dict[str, dict[str, str | list[str]]],
 ) -> str:
     lines: list[str] = []
     for paper in papers:
         meta = paper_meta_by_slug.get(paper.slug, {})
         summary = _paper_one_line_take(meta, paper.abstract)
-        lines.append(f"- [[{paper.slug}|{_paper_link_label(paper)}]] ??{summary}")
+        badge = _render_label_badge(meta)
+        link = f"[[{paper.slug}|{_paper_link_label(paper)}]]"
+        if badge:
+            lines.append(f"- {link} {badge} ??{summary}")
+        else:
+            lines.append(f"- {link} ??{summary}")
     return "\n".join(lines) if lines else "- (no papers assigned)"
+
+
+def _render_label_badge(meta: dict[str, str | list[str]]) -> str:
+    labels_raw = meta.get("labels", "")
+    if isinstance(labels_raw, list):
+        labels = [str(item) for item in labels_raw if str(item).strip()]
+    elif isinstance(labels_raw, str) and labels_raw.startswith("[") and labels_raw.endswith("]"):
+        labels = [item.strip().strip("\"'") for item in labels_raw[1:-1].split(",") if item.strip()]
+    else:
+        labels = []
+    if not labels:
+        return ""
+    return "`[" + ", ".join(labels) + "]`"
 
 
 def _paper_link_label(paper: PaperDigestEntry) -> str:

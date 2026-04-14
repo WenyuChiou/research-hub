@@ -771,6 +771,105 @@ def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
         return _tool_error(exc)
 
 
+def label_paper(
+    slug: str,
+    labels: list[str] | None = None,
+    add: list[str] | None = None,
+    remove: list[str] | None = None,
+    fit_score: int | None = None,
+    fit_reason: str | None = None,
+) -> dict:
+    """Set, add, or remove labels on a paper note."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.paper import set_labels
+
+        cfg = get_config()
+        state = set_labels(
+            cfg,
+            slug,
+            labels=labels,
+            add=add,
+            remove=remove,
+            fit_score=fit_score,
+            fit_reason=fit_reason,
+        )
+        return {
+            "ok": True,
+            "slug": state.slug,
+            "labels": state.labels,
+            "fit_score": state.fit_score,
+            "fit_reason": state.fit_reason,
+            "labeled_at": state.labeled_at,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def list_papers_by_label(
+    cluster_slug: str,
+    label: str | None = None,
+    label_not: str | None = None,
+) -> list[dict] | dict:
+    """Return paper states for the cluster, optionally filtered by label."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.paper import list_papers_by_label as _list
+
+        cfg = get_config()
+        states = _list(cfg, cluster_slug, label=label, label_not=label_not)
+        return [
+            {
+                "slug": state.slug,
+                "cluster_slug": state.cluster_slug,
+                "labels": state.labels,
+                "fit_score": state.fit_score,
+                "fit_reason": state.fit_reason,
+                "labeled_at": state.labeled_at,
+            }
+            for state in states
+        ]
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def prune_cluster(
+    cluster_slug: str,
+    label: str = "deprecated",
+    archive: bool = True,
+    delete: bool = False,
+    dry_run: bool = True,
+) -> dict:
+    """Move or delete papers with the given label."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.paper import prune_cluster as _prune
+
+        cfg = get_config()
+        return _prune(
+            cfg,
+            cluster_slug,
+            label=label,
+            archive=archive,
+            delete=delete,
+            dry_run=dry_run,
+        )
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+def apply_fit_check_to_labels(cluster_slug: str) -> dict:
+    """Tag papers rejected by fit-check as deprecated."""
+    try:
+        from research_hub.config import get_config
+        from research_hub.paper import apply_fit_check_to_labels as _apply
+
+        cfg = get_config()
+        return _apply(cfg, cluster_slug)
+    except Exception as exc:
+        return _tool_error(exc)
+
+
 def discover_new(
     cluster_slug: str,
     query: str,
@@ -1181,6 +1280,10 @@ mcp.tool()(fit_check_prompt)
 mcp.tool()(fit_check_apply)
 mcp.tool()(fit_check_audit)
 mcp.tool()(fit_check_drift)
+mcp.tool()(label_paper)
+mcp.tool()(list_papers_by_label)
+mcp.tool()(prune_cluster)
+mcp.tool()(apply_fit_check_to_labels)
 mcp.tool()(discover_new)
 mcp.tool()(discover_variants)
 mcp.tool()(discover_continue)

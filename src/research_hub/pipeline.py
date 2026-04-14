@@ -285,7 +285,9 @@ def run_pipeline(
     allow_library_duplicates: bool = False,
     fit_check: bool = False,
     fit_check_threshold: int = 3,
+    no_fit_check_auto_labels: bool = False,
 ) -> int:
+    del no_fit_check_auto_labels
     cfg = get_config()
     kb = str(cfg.root)
     collection_key = cfg.zotero_default_collection

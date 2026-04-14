@@ -1,5 +1,118 @@
 # Changelog
 
+## v0.22.0 (2026-04-13)
+
+**Paper labels + pruning — curate clusters after ingest with a 9-label vocabulary, archive-first deletion, and a fit-check → labels bridge.**
+
+v0.14-v0.21 built discovery + ingest + topic notes, but zero curation after ingest. Once a paper landed in the vault, you could only mark its reading status (`unread/reading/read`) or use free-form Obsidian tags. v0.22 adds a controlled label vocabulary stored in paper frontmatter, a CLI to query and update it, an archive-first pruning workflow, and label-aware topic + dashboard rendering.
+
+### Added — `src/research_hub/paper.py` (~290 LOC)
+
+New canonical module for paper labels and curation:
+
+- **`PaperLabel` dataclass** — `slug`, `cluster_slug`, `path`, `labels`, `fit_score`, `fit_reason`, `labeled_at`
+- **`CANONICAL_LABELS`** — frozenset of 9 standard labels: `seed`, `core`, `method`, `benchmark`, `survey`, `application`, `tangential`, `deprecated`, `archived`. User-defined labels also work; only the 9 drive tooling.
+- **`read_labels(cfg, slug)`** — locate paper note by slug across all clusters, return label state
+- **`set_labels(cfg, slug, labels=, add=, remove=, fit_score=, fit_reason=)`** — three modes (replace / add / remove), updates `labeled_at` timestamp automatically
+- **`list_papers_by_label(cfg, cluster_slug, label=, label_not=)`** — query papers in a cluster with label filters
+- **`apply_fit_check_to_labels(cfg, cluster_slug)`** — read `.fit_check_rejected.json` sidecar, tag matching papers in the vault as `deprecated` with their fit_score and fit_reason
+- **`prune_cluster(cfg, cluster_slug, label=, archive=True, delete=False, dry_run=True)`** — archive-first move-to-`raw/_archive/<cluster>/` (default), or hard-delete with explicit `--delete` flag. Rebuilds dedup index after either operation.
+- **`unarchive(cfg, cluster_slug, slug)`** — restore an archived paper back to its active cluster, removes `archived` label
+- **`label_from_fit_score(score)`** — default mapping: 5/4 → `core`, 2 → `tangential`, 0/1 → `deprecated`, 3 → no auto-label
+- **`_rewrite_paper_frontmatter()`** — defensive rewriter that handles CRLF and LF, preserves block-list continuations, and is regression-tested against the v0.20.1 newline bug class
+
+### Added — Frontmatter fields
+
+Paper notes now support (all optional, backwards-compatible):
+
+```yaml
+labels: [seed, benchmark]                          # list of labels
+fit_score: 5                                       # int 0-5 from fit-check
+fit_reason: "Canonical SE benchmark"               # one-line rationale
+labeled_at: "2026-04-14T08:00:00Z"                 # ISO timestamp
+```
+
+Existing `tags:`, `status:`, `subtopics:`, `topic_cluster:` are unchanged. Labels live in their own namespace.
+
+### Added — CLI surface
+
+```bash
+# Label a paper
+research-hub label <slug> --set seed,benchmark      # replace
+research-hub label <slug> --add method               # append
+research-hub label <slug> --remove deprecated        # subtract
+research-hub label <slug>                            # show current state
+
+# Bulk from JSON
+research-hub label-bulk --from-json labels.json
+
+# Query by label
+research-hub find --cluster X --label seed
+research-hub find --cluster X --label-not deprecated
+
+# Bridge fit-check sidecar to labels
+research-hub fit-check apply-labels --cluster X
+
+# Pruning (archive-first)
+research-hub paper prune --cluster X --label deprecated --dry-run
+research-hub paper prune --cluster X --label deprecated --archive
+research-hub paper prune --cluster X --label deprecated --delete --zotero
+
+# Undo
+research-hub paper unarchive --cluster X --slug <slug>
+```
+
+### Added — Pipeline integration
+
+`research-hub ingest --fit-check` now auto-runs `apply_fit_check_to_labels()` after the pipeline finishes, tagging any rejected papers in the vault as `deprecated` with their fit score + reason. Disable with `--no-fit-check-auto-labels`.
+
+### Added — Topic note integration
+
+`topic build` now renders inline label badges next to each paper wiki-link in sub-topic notes:
+
+```markdown
+## Papers
+
+- [[jimenez2024-swe-bench|SWE-bench (Jimenez 2024)]] `[seed, benchmark]` — canonical SE benchmark
+- [[yang2024-swe-agent|SWE-agent (Yang 2024)]] `[core, method]` — agent-computer interfaces for SE
+- [[chen2024-self-debug|Self-Debug (Chen 2024)]] `[method]` — iterative self-correction
+```
+
+### Added — Dashboard integration
+
+`ClusterCard` gains `label_counts: dict[str, int]` and `archived_count: int` fields, populated from `paper.list_papers_by_label()` and `paper.archive_dir()`. The cluster card UI shows a label histogram + archived count under the existing summary line.
+
+### MCP surface (4 new, 50 total)
+
+- `label_paper(slug, labels?, add?, remove?, fit_score?, fit_reason?)` → `{ok, slug, labels, fit_score, fit_reason, labeled_at}`
+- `list_papers_by_label(cluster_slug, label?, label_not?)` → list of paper state dicts
+- `prune_cluster(cluster_slug, label="deprecated", archive=True, delete=False, dry_run=True)` → move/delete report
+- `apply_fit_check_to_labels(cluster_slug)` → `{tagged, already, missing}`
+
+**46 → 50 MCP tools.**
+
+### Tests
+
+- **775 → 810 passing** (+35 tests, 5 skipped unchanged)
+- `tests/test_paper_labels.py`: 25 tests
+  - read/set labels (12) — including v0.20.1-class regression test for closing-fence newline preservation
+  - list_papers_by_label (6)
+  - apply_fit_check_to_labels (4)
+  - frontmatter rewrite (3)
+- `tests/test_paper_prune.py`: 10 tests covering archive, delete, custom label, unarchive, dedup index rebuild
+
+### Non-breaking changes
+
+All existing CLI commands, MCP tool signatures, and frontmatter fields are unchanged. Papers without `labels:` are valid and read as `labels: []`. The pipeline auto-labels only papers that were REJECTED by fit-check (the rejected sidecar already exists). Accepted-papers auto-labeling is deferred to v0.23 (needs a `.fit_check_accepted.json` sidecar that doesn't exist yet).
+
+### Deferred to v0.23+
+
+- Auto-label accepted papers from fit-check (needs new accepted-sidecar)
+- `topic build --group-by-label` for sectioned sub-topic notes
+- AI bulk labeling from cluster digest (`label-bulk --from-digest`)
+- Clickable dashboard label filters
+- Cross-cluster label views (e.g. all `seed` papers across clusters)
+
 ## v0.21.0 (2026-04-13)
 
 **Discovery quality — multi-query + citation expansion + cluster dedup + seed DOIs + larger defaults.**

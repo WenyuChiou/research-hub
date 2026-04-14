@@ -345,3 +345,10 @@ def _write_rejected_sidecar(
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def rejected_as_label_updates(cfg, cluster_slug: str) -> dict[str, list[str]]:
+    """Apply deprecated labels to papers rejected by Gate 1 fit-check."""
+    from research_hub.paper import apply_fit_check_to_labels
+
+    return apply_fit_check_to_labels(cfg, cluster_slug)

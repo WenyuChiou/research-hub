@@ -49,6 +49,10 @@ EXPECTED_MAPPINGS = {
     "fit_check_apply": "fit-check apply",
     "fit_check_audit": "fit-check audit",
     "fit_check_drift": "fit-check drift",
+    "label_paper": "label",
+    "list_papers_by_label": "find --label",
+    "prune_cluster": "paper prune",
+    "apply_fit_check_to_labels": "fit-check apply-labels",
     "discover_new": "discover new",
     "discover_variants": "discover variants",
     "discover_continue": "discover continue",
@@ -79,4 +83,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(_list_mcp_tool_names(mcp)) >= 46
+    assert len(_list_mcp_tool_names(mcp)) >= 50

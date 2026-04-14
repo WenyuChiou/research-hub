@@ -252,7 +252,35 @@ def _find(
     full_text: bool,
     emit_json: bool,
     limit: int,
+    label: str | None = None,
+    label_not: str | None = None,
 ) -> int:
+    if cluster and (label or label_not):
+        from research_hub.paper import list_papers_by_label
+
+        cfg = get_config()
+        states = list_papers_by_label(cfg, cluster, label=label, label_not=label_not)
+        if query:
+            lowered = query.lower()
+            states = [state for state in states if lowered in state.slug.lower()]
+        if emit_json:
+            payload = [
+                {
+                    "slug": state.slug,
+                    "cluster": state.cluster_slug,
+                    "labels": state.labels,
+                    "fit_score": state.fit_score,
+                    "fit_reason": state.fit_reason,
+                    "labeled_at": state.labeled_at,
+                    "status": "",
+                }
+                for state in states[:limit]
+            ]
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        for state in states[:limit]:
+            print(f"{state.slug}\t{state.cluster_slug}\t{state.labels}\t{state.fit_score or ''}")
+        return 0
     results = search_vault(query, cluster=cluster, status=status, full_text=full_text, limit=limit)
     if emit_json:
         print(json.dumps(results, ensure_ascii=False, indent=2))
@@ -260,6 +288,112 @@ def _find(
     for item in results:
         print(f"{item['slug']}\t{item['title']}\t{item['cluster']}\t{item['status']}")
     return 0
+
+
+def _label(args) -> int:
+    from research_hub.paper import read_labels, set_labels
+
+    cfg = get_config()
+    set_list = [label.strip() for label in args.set.split(",") if label.strip()] if args.set else None
+    add_list = [label.strip() for label in args.add.split(",") if label.strip()] if args.add else None
+    remove_list = [label.strip() for label in args.remove.split(",") if label.strip()] if args.remove else None
+
+    if not any([set_list, add_list, remove_list, args.fit_score is not None, args.fit_reason]):
+        state = read_labels(cfg, args.slug)
+        if state is None:
+            print(f"paper not found: {args.slug}", file=sys.stderr)
+            return 2
+        print(f"slug: {state.slug}")
+        print(f"cluster: {state.cluster_slug}")
+        print(f"labels: {state.labels}")
+        if state.fit_score is not None:
+            print(f"fit_score: {state.fit_score}")
+            print(f"fit_reason: {state.fit_reason}")
+        print(f"labeled_at: {state.labeled_at}")
+        return 0
+
+    try:
+        state = set_labels(
+            cfg,
+            args.slug,
+            labels=set_list,
+            add=add_list,
+            remove=remove_list,
+            fit_score=args.fit_score,
+            fit_reason=args.fit_reason,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"labels: {state.labels}")
+    return 0
+
+
+def _label_bulk(json_path: str) -> int:
+    from research_hub.paper import set_labels
+
+    cfg = get_config()
+    payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    assignments = payload.get("assignments", {})
+    updated = 0
+    for slug, labels in assignments.items():
+        set_labels(cfg, slug, labels=list(labels))
+        updated += 1
+    print(f"updated {updated} paper(s)")
+    return 0
+
+
+def _fit_check_apply_labels(cluster_slug: str) -> int:
+    from research_hub.fit_check import rejected_as_label_updates
+
+    cfg = get_config()
+    result = rejected_as_label_updates(cfg, cluster_slug)
+    print(f"tagged: {len(result['tagged'])}")
+    for slug in result["tagged"]:
+        print(f"  - {slug}")
+    if result["already"]:
+        print(f"already deprecated: {len(result['already'])}")
+    if result["missing"]:
+        print(f"missing from vault: {len(result['missing'])}")
+    return 0
+
+
+def _paper_command(args) -> int:
+    if args.paper_command == "prune":
+        from research_hub.paper import prune_cluster
+
+        cfg = get_config()
+        result = prune_cluster(
+            cfg,
+            args.cluster,
+            label=args.label,
+            archive=not args.delete,
+            delete=args.delete,
+            dry_run=args.dry_run,
+            include_zotero=args.zotero,
+        )
+        if args.dry_run:
+            print(f"dry run - would affect {len(result['would_affect'])} paper(s):")
+            for slug in result["would_affect"]:
+                print(f"  - {slug}")
+        else:
+            mode = result["mode"]
+            count = len(result["moved"] if mode == "archive" else result["deleted"])
+            print(f"{mode}d {count} paper(s) with label {args.label!r}")
+        return 0
+    if args.paper_command == "unarchive":
+        from research_hub.paper import unarchive
+
+        cfg = get_config()
+        try:
+            result = unarchive(cfg, args.cluster, args.slug)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(f"restored: {result['restored']}")
+        print(f"path: {result['path']}")
+        return 0
+    return 2
 
 
 def _cleanup_hub(dry_run: bool = False) -> int:
@@ -1297,6 +1431,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--cluster", default=None, help="Cluster slug for ingestion")
     run_parser.add_argument("--query", default=None, help="Query text")
     run_parser.add_argument(
+        "--no-fit-check-auto-labels",
+        action="store_true",
+        help="Skip auto-labeling papers from fit-check score after ingest",
+    )
+    run_parser.add_argument(
         "--allow-library-duplicates",
         action="store_true",
         help="Bypass Zotero library duplicate blocking and allow re-ingest",
@@ -1306,6 +1445,11 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("--cluster", default=None, help="Cluster slug for ingestion")
     ingest_parser.add_argument("--query", default=None, help="Query text")
     ingest_parser.add_argument("--dry-run", action="store_true", help="Validate config and inputs only")
+    ingest_parser.add_argument(
+        "--no-fit-check-auto-labels",
+        action="store_true",
+        help="Skip auto-labeling papers from fit-check score after ingest",
+    )
     ingest_parser.add_argument(
         "--allow-library-duplicates",
         action="store_true",
@@ -1474,7 +1618,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     find_parser = subparsers.add_parser("find", help="Search within vault notes")
-    find_parser.add_argument("query", help="Search query")
+    find_parser.add_argument("query", nargs="?", default="", help="Search query")
     find_parser.add_argument("--cluster", default=None)
     find_parser.add_argument(
         "--status", default=None, choices=["unread", "reading", "deep-read", "cited"]
@@ -1482,6 +1626,19 @@ def build_parser() -> argparse.ArgumentParser:
     find_parser.add_argument("--full", action="store_true", help="Full-text search (slower)")
     find_parser.add_argument("--json", action="store_true")
     find_parser.add_argument("--limit", type=int, default=20)
+    find_parser.add_argument("--label", help="Only return papers with this label")
+    find_parser.add_argument("--label-not", help="Only return papers WITHOUT this label")
+
+    label_parser = subparsers.add_parser("label", help="Manage a paper's labels")
+    label_parser.add_argument("slug", help="Paper slug (filename stem)")
+    label_parser.add_argument("--set", default="", help="Comma-separated labels to set (replaces existing)")
+    label_parser.add_argument("--add", default="", help="Comma-separated labels to add")
+    label_parser.add_argument("--remove", default="", help="Comma-separated labels to remove")
+    label_parser.add_argument("--fit-score", type=int, help="Set fit_score")
+    label_parser.add_argument("--fit-reason", help="Set fit_reason")
+
+    bulk_parser = subparsers.add_parser("label-bulk", help="Apply labels from a JSON file")
+    bulk_parser.add_argument("--from-json", required=True, help="Path to labels.json")
 
     search_parser = subparsers.add_parser("search", help="Search for academic papers")
     search_parser.add_argument("query")
@@ -1921,6 +2078,24 @@ def build_parser() -> argparse.ArgumentParser:
     fit_drift = fit_sub.add_parser("drift", help="Emit a drift-check prompt")
     fit_drift.add_argument("--cluster", required=True)
     fit_drift.add_argument("--threshold", type=int, default=3)
+    fit_apply_labels = fit_sub.add_parser(
+        "apply-labels",
+        help="Tag rejected papers as deprecated from the sidecar",
+    )
+    fit_apply_labels.add_argument("--cluster", required=True)
+
+    paper_parser = subparsers.add_parser("paper", help="Paper curation operations")
+    paper_sub = paper_parser.add_subparsers(dest="paper_command")
+    prune_p = paper_sub.add_parser("prune", help="Move or delete labeled papers")
+    prune_p.add_argument("--cluster", required=True)
+    prune_p.add_argument("--label", default="deprecated")
+    prune_p.add_argument("--archive", action="store_true", default=True, help="Move to raw/_archive/<cluster>/ (default)")
+    prune_p.add_argument("--delete", action="store_true", help="Hard-delete instead of archive")
+    prune_p.add_argument("--zotero", action="store_true", help="Also delete Zotero items (only with --delete)")
+    prune_p.add_argument("--dry-run", action="store_true")
+    unarch_p = paper_sub.add_parser("unarchive", help="Restore an archived paper back to active cluster")
+    unarch_p.add_argument("--cluster", required=True)
+    unarch_p.add_argument("--slug", required=True)
 
     discover_parser = subparsers.add_parser(
         "discover",
@@ -1991,7 +2166,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command in (None, "run"):
-        return run_pipeline(
+        rc = run_pipeline(
             dry_run=getattr(args, "dry_run", False),
             cluster_slug=getattr(args, "cluster", None),
             query=getattr(args, "query", None),
@@ -1999,7 +2174,15 @@ def main(argv: list[str] | None = None) -> int:
             allow_library_duplicates=getattr(args, "allow_library_duplicates", False),
             fit_check=getattr(args, "fit_check", False),
             fit_check_threshold=getattr(args, "fit_check_threshold", 3),
+            no_fit_check_auto_labels=getattr(args, "no_fit_check_auto_labels", False),
         )
+        if rc == 0 and getattr(args, "fit_check", False) and not getattr(args, "no_fit_check_auto_labels", False):
+            from research_hub.paper import apply_fit_check_to_labels
+
+            cfg = get_config()
+            result = apply_fit_check_to_labels(cfg, args.cluster)
+            print(f"auto-labeled {len(result['tagged'])} paper(s) as deprecated from fit-check sidecar")
+        return rc
     if args.command == "init":
         if args.field:
             from research_hub.onboarding import run_field_wizard
@@ -2083,7 +2266,7 @@ def main(argv: list[str] | None = None) -> int:
         serve_main()
         return 0
     if args.command == "ingest":
-        return run_pipeline(
+        rc = run_pipeline(
             dry_run=args.dry_run,
             cluster_slug=args.cluster,
             query=args.query,
@@ -2091,7 +2274,15 @@ def main(argv: list[str] | None = None) -> int:
             allow_library_duplicates=args.allow_library_duplicates,
             fit_check=args.fit_check,
             fit_check_threshold=args.fit_check_threshold,
+            no_fit_check_auto_labels=args.no_fit_check_auto_labels,
         )
+        if rc == 0 and args.fit_check and not args.no_fit_check_auto_labels:
+            from research_hub.paper import apply_fit_check_to_labels
+
+            cfg = get_config()
+            result = apply_fit_check_to_labels(cfg, args.cluster)
+            print(f"auto-labeled {len(result['tagged'])} paper(s) as deprecated from fit-check sidecar")
+        return rc
     if args.command == "fit-check":
         if args.fit_check_command == "emit":
             return _fit_check_emit(args.cluster, args.candidates, args.definition, args.out)
@@ -2108,6 +2299,8 @@ def main(argv: list[str] | None = None) -> int:
             return _fit_check_audit(args.cluster)
         if args.fit_check_command == "drift":
             return _fit_check_drift(args.cluster, args.threshold)
+        if args.fit_check_command == "apply-labels":
+            return _fit_check_apply_labels(args.cluster)
         parser.error("fit-check requires a subcommand")
         return 2
     if args.command == "discover":
@@ -2255,6 +2448,12 @@ def main(argv: list[str] | None = None) -> int:
         return _move(args.slug, args.to_cluster)
     if args.command == "add":
         return _add(args.identifier, args.cluster, args.no_zotero, args.no_verify)
+    if args.command == "label":
+        return _label(args)
+    if args.command == "label-bulk":
+        return _label_bulk(args.from_json)
+    if args.command == "paper":
+        return _paper_command(args)
     if args.command == "quote":
         target = list(args.quote_target or [])
         if target == ["list"]:
@@ -2278,7 +2477,16 @@ def main(argv: list[str] | None = None) -> int:
             args.out,
         )
     if args.command == "find":
-        return _find(args.query, args.cluster, args.status, args.full, args.json, args.limit)
+        return _find(
+            args.query,
+            args.cluster,
+            args.status,
+            args.full,
+            args.json,
+            args.limit,
+            args.label,
+            args.label_not,
+        )
     if args.command == "search":
         if args.region:
             backends = resolve_backends_for_region(args.region)

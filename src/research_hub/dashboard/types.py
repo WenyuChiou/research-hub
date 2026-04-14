@@ -80,6 +80,8 @@ class ClusterCard:
     subtopic_count: int = 0
     cluster_bibtex: str = ""  # pre-rendered .bib for the cluster batch download
     briefing: BriefingPreview | None = None
+    label_counts: dict[str, int] = field(default_factory=dict)
+    archived_count: int = 0
 
     @property
     def paper_count(self) -> int:

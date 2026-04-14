@@ -127,6 +127,21 @@ def _show_zotero_column(data) -> bool:
     return _persona(data) != "analyst"
 
 
+def _render_label_breakdown(counts: dict[str, int], archived: int) -> str:
+    if not counts and archived == 0:
+        return ""
+    parts: list[str] = []
+    for label in ("seed", "core", "method", "benchmark", "survey", "application", "tangential", "deprecated"):
+        count = counts.get(label, 0)
+        if count > 0:
+            parts.append(f'<span class="cluster-label">{html_escape(label)}: {count}</span>')
+    if archived:
+        parts.append(f'<span class="cluster-label cluster-label--archived">archived: {archived}</span>')
+    if not parts:
+        return ""
+    return '<div class="cluster-labels">' + " ".join(parts) + "</div>"
+
+
 # --- base ---------------------------------------------------------------
 
 
@@ -467,6 +482,10 @@ class LibrarySection(DashboardSection):
         cluster_bibtex = html_escape(_attr(cluster, "cluster_bibtex", ""))
         has_overview = bool(_attr(cluster, "has_overview", False))
         subtopic_count = int(_attr(cluster, "subtopic_count", 0) or 0)
+        label_breakdown = _render_label_breakdown(
+            dict(_attr(cluster, "label_counts", {}) or {}),
+            int(_attr(cluster, "archived_count", 0) or 0),
+        )
         binding_line = self._binding_line(cluster, show_zotero)
         overview_badge = (
             '<span class="cluster-badge">overview</span>'
@@ -511,6 +530,7 @@ class LibrarySection(DashboardSection):
           </summary>
           <div class="cluster-body">
             <p class="cluster-bindings">{binding_line}</p>
+            {label_breakdown}
             <div class="cluster-toolbar">{download_btn}</div>
             {paper_list}
           </div>

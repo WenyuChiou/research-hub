@@ -24,6 +24,7 @@ from research_hub.dashboard.types import (
     PaperRow,
     Quote,
 )
+from research_hub.paper import archive_dir, list_papers_by_label
 from research_hub.topic import list_subtopics, overview_path
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,12 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 cluster_cache,
                 cfg.research_hub_dir / "artifacts" / cluster.slug,
             )
+            label_counts: dict[str, int] = {}
+            for state in list_papers_by_label(cfg, cluster.slug):
+                for label in state.labels:
+                    label_counts[label] = label_counts.get(label, 0) + 1
+            arch_dir = archive_dir(cfg, cluster.slug)
+            archived_count = len(list(arch_dir.glob("*.md"))) if arch_dir.exists() else 0
             card = ClusterCard(
                 slug=cluster.slug,
                 name=cluster.name,
@@ -178,6 +185,8 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 has_overview=overview_path(cfg, cluster.slug).exists(),
                 subtopic_count=len(list_subtopics(cfg, cluster.slug)),
                 briefing=briefing,
+                label_counts=label_counts,
+                archived_count=archived_count,
             )
             card.cluster_bibtex = "" if persona == "analyst" else build_bibtex_for_cluster(card)
             clusters.append(card)
