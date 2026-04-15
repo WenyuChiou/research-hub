@@ -556,6 +556,30 @@ def split_cluster(source: str, query: str, new_name: str) -> dict[str, Any]:
         return _tool_error(exc)
 
 
+@mcp.tool()
+def suggest_cluster_split(
+    cluster_slug: str,
+    min_community_size: int = 8,
+    max_communities: int = 8,
+) -> dict:
+    """Analyze a cluster's citation graph and suggest sub-topic splits."""
+    try:
+        from research_hub.analyze import suggest_split
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        return asdict(
+            suggest_split(
+                cfg,
+                cluster_slug,
+                min_community_size=min_community_size,
+                max_communities=max_communities,
+            )
+        )
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 def get_topic_digest(cluster_slug: str) -> dict[str, Any]:
     """Return every paper in a cluster plus a markdown digest for overview writing."""
     try:

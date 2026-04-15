@@ -240,6 +240,32 @@ def _clusters_split(source: str, query: str, new_name: str) -> int:
     return 0
 
 
+def _cmd_clusters_analyze(args, cfg) -> int:
+    from research_hub.analyze import render_split_suggestion_markdown, suggest_split
+
+    if not args.split_suggestion:
+        print("(no analysis type specified; pass --split-suggestion)")
+        return 0
+
+    suggestion = suggest_split(
+        cfg,
+        args.cluster,
+        min_community_size=args.min_community_size,
+        max_communities=args.max_communities,
+    )
+    markdown = render_split_suggestion_markdown(suggestion)
+    out_path = Path(args.out) if args.out else Path("docs") / f"cluster_autosplit_{args.cluster}.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(markdown, encoding="utf-8")
+    print(
+        "Analyzed "
+        f"{suggestion.paper_count} papers -> {suggestion.community_count} communities "
+        f"(modularity={suggestion.modularity_score:.3f}, coverage={suggestion.coverage_fraction:.0%})"
+    )
+    print(f"Report written to {out_path}")
+    return 0
+
+
 def _remove(identifier: str, include_zotero: bool, dry_run: bool) -> int:
     print(json.dumps(remove_paper(identifier, include_zotero=include_zotero, dry_run=dry_run)))
     return 0
@@ -465,7 +491,7 @@ def _cleanup_hub(dry_run: bool = False) -> int:
 
 
 def _synthesize(cluster: str | None, graph_colors: bool) -> int:
-    from research_hub.vault.graph_config import update_from_clusters_file
+    from research_hub.vault.graph_config import refresh_graph_from_vault
     from research_hub.vault.synthesis import synthesize_all_clusters, synthesize_cluster
 
     cfg = get_config()
@@ -491,11 +517,7 @@ def _synthesize(cluster: str | None, graph_colors: bool) -> int:
         print(f"Wrote {len(outs)} synthesis pages")
 
     if graph_colors:
-        report = update_from_clusters_file(cfg.root, cfg.clusters_file)
-        if report.updated:
-            print(f"Updated graph.json with {report.color_groups_written} color groups")
-        else:
-            print(f"graph.json skipped: {report.skipped_reason}")
+        print(f"Updated graph.json with {refresh_graph_from_vault(cfg)} color groups")
 
     return 0
 
@@ -973,11 +995,49 @@ def _dashboard(
         return 0
 
     from research_hub.dashboard import generate_dashboard
+    from research_hub.vault.graph_config import refresh_graph_from_vault
 
+    cfg = get_config()
     out_path = generate_dashboard(open_browser=open_browser, rich_bibtex=rich_bibtex)
+    try:
+        group_count = refresh_graph_from_vault(cfg)
+        print(f"Graph colors refreshed ({group_count} groups)")
+    except Exception as exc:
+        print(f"WARNING: graph color refresh failed: {exc}", file=sys.stderr)
     print(f"Dashboard written to {out_path}")
     if open_browser:
         print("Opening in browser...")
+    return 0
+
+
+def _cmd_serve(args, cfg) -> int:
+    if args.dashboard:
+        from research_hub.dashboard.http_server import serve_dashboard
+
+        serve_dashboard(
+            cfg,
+            host=args.host,
+            port=args.port,
+            allow_external=args.allow_external,
+            open_browser=not args.no_browser,
+        )
+        return 0
+
+    from research_hub.mcp_server import main as mcp_main
+
+    mcp_main()
+    return 0
+
+
+def _vault_graph_colors(refresh: bool) -> int:
+    from research_hub.vault.graph_config import refresh_graph_from_vault
+
+    if not refresh:
+        print("Nothing to do. Pass --refresh.", file=sys.stderr)
+        return 2
+    cfg = get_config()
+    count = refresh_graph_from_vault(cfg)
+    print(f"Refreshed graph colors: {count} groups")
     return 0
 
 
@@ -1473,10 +1533,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="List supported platforms and install status",
     )
 
-    subparsers.add_parser(
+    serve_parser = subparsers.add_parser(
         "serve",
-        help="Start MCP stdio server for AI assistant integration",
+        help="Start MCP stdio server or live dashboard HTTP server",
     )
+    serve_parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Run the live dashboard HTTP server instead of MCP stdio",
+    )
+    serve_parser.add_argument("--host", default="127.0.0.1")
+    serve_parser.add_argument("--port", type=int, default=8765)
+    serve_parser.add_argument(
+        "--allow-external",
+        action="store_true",
+        help="Allow binding non-loopback host (power-user only)",
+    )
+    serve_parser.add_argument("--no-browser", action="store_true")
 
     run_parser = subparsers.add_parser("run", help="Run the research pipeline")
     run_parser.add_argument("--topic", default=None, help="Pipeline topic context")
@@ -1594,6 +1667,19 @@ def build_parser() -> argparse.ArgumentParser:
     split_parser.add_argument("source", help="Source cluster slug")
     split_parser.add_argument("--query", required=True, help="Keywords for the new sub-cluster")
     split_parser.add_argument("--new-name", required=True, help="Display name for new cluster")
+    analyze_parser = clusters_subparsers.add_parser(
+        "analyze",
+        help="Analyze a cluster and produce split suggestions",
+    )
+    analyze_parser.add_argument("--cluster", required=True)
+    analyze_parser.add_argument("--split-suggestion", action="store_true")
+    analyze_parser.add_argument("--min-community-size", type=int, default=8)
+    analyze_parser.add_argument("--max-communities", type=int, default=8)
+    analyze_parser.add_argument(
+        "--out",
+        default=None,
+        help="Output markdown path (default: docs/cluster_autosplit_<slug>.md)",
+    )
 
     topic_parser = subparsers.add_parser(
         "topic",
@@ -1931,6 +2017,18 @@ def build_parser() -> argparse.ArgumentParser:
             "~1s/paper). Default uses an instant frontmatter fallback that "
             "is sufficient for most citations."
         ),
+    )
+
+    vault_parser = subparsers.add_parser("vault", help="Vault maintenance commands")
+    vault_subparsers = vault_parser.add_subparsers(dest="vault_command", required=True)
+    vault_graph_colors = vault_subparsers.add_parser(
+        "graph-colors",
+        help="Refresh managed Obsidian graph color groups",
+    )
+    vault_graph_colors.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Rebuild research-hub-managed graph color groups",
     )
 
     migrate_parser = subparsers.add_parser(
@@ -2327,10 +2425,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Installed SKILL.md to {path}")
         return 0
     if args.command == "serve":
-        from research_hub.mcp_server import main as serve_main
-
-        serve_main()
-        return 0
+        cfg = get_config()
+        return _cmd_serve(args, cfg)
     if args.command == "ingest":
         rc = run_pipeline(
             dry_run=args.dry_run,
@@ -2415,6 +2511,8 @@ def main(argv: list[str] | None = None) -> int:
             return _clusters_merge(args.source, args.target)
         if args.clusters_command == "split":
             return _clusters_split(args.source, args.query, args.new_name)
+        if args.clusters_command == "analyze":
+            return _cmd_clusters_analyze(args, get_config())
     if args.command == "topic":
         from research_hub.topic import (
             SubtopicProposal,
@@ -2629,6 +2727,9 @@ def main(argv: list[str] | None = None) -> int:
             refresh=args.refresh,
             rich_bibtex=args.rich_bibtex,
         )
+    if args.command == "vault":
+        if args.vault_command == "graph-colors":
+            return _vault_graph_colors(refresh=args.refresh)
     if args.command == "sync":
         if args.sync_command == "status":
             return _sync_status(cluster_slug=args.cluster)

@@ -127,6 +127,27 @@ section {
 .stat-strip { margin: 0; color: var(--fg); }
 .search-label { font-size: var(--text-xs); }
 
+.live-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  margin-left: 8px;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.live-pill--on {
+  background: oklch(85% 0.12 150);
+  color: oklch(28% 0.12 150);
+  border-color: oklch(65% 0.14 150);
+}
+
+.live-pill--off {
+  background: var(--bg-muted, var(--surface-2));
+  color: var(--fg-mute);
+}
+
 .vault-search {
   width: 100%;
   border: 1px solid var(--border);
@@ -189,6 +210,29 @@ section {
 }
 
 .paper-list { margin: 0; padding-left: var(--space-lg); }
+
+.subtopic-card {
+  margin: var(--space-xs) 0;
+  padding: var(--space-xs) var(--space-md);
+  border-left: 2px solid var(--brand);
+  background: var(--bg);
+  border-radius: 12px;
+}
+
+.subtopic-card > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.subtopic-card--unassigned {
+  border-left-color: var(--border);
+  opacity: 0.8;
+}
+
+.subtopic-card > .paper-list {
+  margin-top: var(--space-xs);
+}
 
 .paper-row {
   border-top: 1px solid var(--border);
@@ -773,6 +817,12 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 .manage-build-btn:hover { filter: brightness(1.1); }
 .manage-build-btn.copied { background: var(--ok); border-color: var(--ok); }
+.manage-build-btn[disabled],
+.composer-build-btn[disabled],
+.copy-cmd-btn[disabled] {
+  cursor: progress;
+  opacity: 0.7;
+}
 
 .manage-build-btn.manage-danger { background: var(--surface); color: var(--fail); border-color: var(--fail); }
 .manage-build-btn.manage-danger:hover { background: var(--fail); color: var(--bg); }

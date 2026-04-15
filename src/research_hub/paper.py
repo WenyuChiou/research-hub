@@ -28,6 +28,8 @@ CANONICAL_LABELS: frozenset[str] = frozenset(
 )
 
 ARCHIVE_DIRNAME = "_archive"
+LABEL_TAGS_START = "<!-- research-hub tags start -->"
+LABEL_TAGS_END = "<!-- research-hub tags end -->"
 
 
 @dataclass
@@ -88,6 +90,7 @@ def set_labels(
         updates["fit_reason"] = fit_reason
 
     _rewrite_paper_frontmatter(note_path, updates)
+    ensure_label_tags_in_body(note_path, new_labels)
     return _parse_paper_label(note_path, slug=slug)
 
 
@@ -267,8 +270,40 @@ def unarchive(cfg, cluster_slug: str, slug: str) -> dict:
             "labeled_at": _utc_now(),
         },
     )
+    ensure_label_tags_in_body(dest, [label for label in state.labels if label != "archived"])
     _rebuild_dedup_index(cfg)
     return {"restored": slug, "path": str(dest)}
+
+
+def ensure_label_tags_in_body(path: Path, labels: list[str]) -> bool:
+    """Ensure the note body ends with an idempotent label-tag sentinel block."""
+
+    text = _read_text_preserve_newlines(path)
+    split = _split_frontmatter(text)
+    if split is None:
+        return False
+    opening, frontmatter, body, newline = split
+    rendered_labels = " ".join(f"#label/{label}" for label in sorted(_clean_labels(labels)))
+    block = (
+        f"{LABEL_TAGS_START}{newline}"
+        f"{rendered_labels}{newline}"
+        f"{LABEL_TAGS_END}"
+    )
+    pattern = re.compile(
+        rf"(?:\r?\n)*{re.escape(LABEL_TAGS_START)}\r?\n.*?\r?\n{re.escape(LABEL_TAGS_END)}\s*$",
+        re.DOTALL,
+    )
+    body_without_block = re.sub(pattern, "", body).rstrip("\r\n")
+    if body_without_block:
+        new_body = f"{body_without_block}{newline}{newline}{block}{newline}"
+    else:
+        new_body = f"{block}{newline}"
+    updated = f"{opening}{frontmatter}{newline}---{newline}{new_body}"
+    if updated == text:
+        return False
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(updated)
+    return True
 
 
 def archive_dir(cfg, cluster_slug: str) -> Path:

@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+import re
 
 
 # --- helpers ------------------------------------------------------------
@@ -301,7 +303,7 @@ class HeaderSection(DashboardSection):
         <header class="vault-header" id="vault-header">
           <div class="hero-copy">
             <p class="eyebrow">Personal knowledge garden</p>
-            <h1 id="vault-title">research-hub vault</h1>
+            <h1 id="vault-title">research-hub vault <span id="live-pill" class="live-pill live-pill--off">Static</span></h1>
             <p class="stat-strip">{total_papers} papers · {total_clusters} clusters · {len(briefings)} briefings · last added {html_escape(last_added_label)}</p>
           </div>
           <label class="search-label" for="vault-search">Filter library</label>
@@ -580,7 +582,8 @@ class LibrarySection(DashboardSection):
         """
 
     def _cluster_card(self, cluster, show_zotero: bool, vault_root: str = "") -> str:
-        slug = html_escape(_attr(cluster, "slug", ""))
+        slug = str(_attr(cluster, "slug", "") or "")
+        slug_html = html_escape(slug)
         name = html_escape(_attr(cluster, "name", ""))
         count = int(_attr(cluster, "paper_count", 0) or _paper_count(cluster))
         last_activity = _relative_time(_cluster_last_activity(cluster))
@@ -615,7 +618,7 @@ class LibrarySection(DashboardSection):
         if show_zotero and cluster_bibtex:
             download_btn = (
                 f'<button type="button" class="cluster-cite-btn" '
-                f'data-cluster="{slug}" '
+                f'data-cluster="{slug_html}" '
                 f'data-bibtex="{cluster_bibtex}">Download cluster .bib</button>'
             )
 
@@ -623,12 +626,21 @@ class LibrarySection(DashboardSection):
         if not papers:
             paper_list = '<p class="cluster-empty">No papers yet in this cluster.</p>'
         else:
-            paper_list = '<ol class="paper-list">' + "".join(
-                self._paper_row(slug, p, show_zotero) for p in papers
-            ) + '</ol>'
+            subtopics = self._load_subtopics_for_cluster(vault_root, slug)
+            if subtopics:
+                paper_list = self._render_subtopic_grouped_papers(
+                    papers=papers,
+                    subtopics=subtopics,
+                    cluster_slug=slug,
+                    show_zotero=show_zotero,
+                )
+            else:
+                paper_list = '<ol class="paper-list">' + "".join(
+                    self._paper_row(slug, p, show_zotero) for p in papers
+                ) + '</ol>'
 
         return f"""
-        <details class="cluster-card" data-cluster="{slug}">
+        <details class="cluster-card" data-cluster="{slug_html}">
           <summary>
             <div class="cluster-summary">
               {summary_title}
@@ -644,6 +656,78 @@ class LibrarySection(DashboardSection):
           </div>
         </details>
         """
+
+    def _load_subtopics_for_cluster(self, vault_root: str, slug: str) -> list[dict[str, object]]:
+        """Read raw/<slug>/topics/*.md and return ordered sub-topic descriptors."""
+
+        if not vault_root or not slug:
+            return []
+        topics_dir = Path(vault_root) / "raw" / slug / "topics"
+        if not topics_dir.exists():
+            return []
+        from research_hub.paper import _parse_frontmatter
+
+        subtopics: list[dict[str, object]] = []
+        for path in sorted(topics_dir.glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            meta = _parse_frontmatter(text)
+            title = str(meta.get("subtopic_title", "") or meta.get("title", "") or path.stem)
+            papers_section = text.split("## Papers", 1)
+            member_slugs: list[str] = []
+            if len(papers_section) == 2:
+                member_slugs = re.findall(r"\[\[([^\]|#]+)(?:\|[^\]]+)?\]\]", papers_section[1])
+            paper_count_raw = meta.get("papers", meta.get("paper_count", 0))
+            if isinstance(paper_count_raw, str) and paper_count_raw.isdigit():
+                paper_count = int(paper_count_raw)
+            elif isinstance(paper_count_raw, int):
+                paper_count = paper_count_raw
+            else:
+                paper_count = len(member_slugs)
+            subtopics.append(
+                {
+                    "slug": str(meta.get("subtopic_slug", "") or path.stem.split("_", 1)[-1]),
+                    "title": title,
+                    "paper_count": paper_count,
+                    "member_slugs": member_slugs,
+                }
+            )
+        return subtopics
+
+    def _render_subtopic_grouped_papers(
+        self,
+        papers,
+        subtopics,
+        cluster_slug: str,
+        show_zotero: bool,
+    ) -> str:
+        """Render papers grouped by sub-topic membership."""
+
+        by_slug = {str(_attr(paper, "slug", "") or ""): paper for paper in papers}
+        assigned_slugs: set[str] = set()
+        blocks: list[str] = []
+        for subtopic in subtopics:
+            member_slugs = [str(slug) for slug in (subtopic.get("member_slugs") or [])]
+            members = [by_slug[slug] for slug in member_slugs if slug in by_slug]
+            if not members:
+                continue
+            assigned_slugs.update(slug for slug in member_slugs if slug in by_slug)
+            rows = "".join(self._paper_row(cluster_slug, paper, show_zotero) for paper in members)
+            blocks.append(
+                f'<details class="subtopic-card" data-subtopic="{html_escape(subtopic.get("slug", ""))}">'
+                f'<summary>{html_escape(subtopic.get("title", ""))} &middot; {len(members)} papers</summary>'
+                f'<ol class="paper-list">{rows}</ol>'
+                f"</details>"
+            )
+        unassigned = [paper for paper in papers if str(_attr(paper, "slug", "") or "") not in assigned_slugs]
+        if unassigned:
+            rows = "".join(self._paper_row(cluster_slug, paper, show_zotero) for paper in unassigned)
+            blocks.append(
+                '<details class="subtopic-card subtopic-card--unassigned">'
+                f"<summary>Unassigned &middot; {len(unassigned)} papers</summary>"
+                f'<ol class="paper-list">{rows}</ol>'
+                "</details>"
+            )
+        return "".join(blocks)
 
     def _binding_line(self, cluster, show_zotero: bool, vault_root: str = "") -> str:
         parts: list[str] = []

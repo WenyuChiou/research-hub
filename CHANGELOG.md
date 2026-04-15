@@ -1,5 +1,74 @@
 # Changelog
 
+## v0.27.0 (2026-04-15)
+
+**Directness release — live HTTP dashboard server, auto-refreshing Obsidian graph colors, sub-topic-grouped Library UI, citation-graph cluster auto-split. 1019 → 1087 tests (+68).**
+
+v0.26.0 diagnosed friction. v0.27.0 removes it. Full audit report: [`docs/audit_v0.27.md`](docs/audit_v0.27.md).
+
+### Added — Track A: Live dashboard HTTP server
+
+- **`research-hub serve --dashboard [--port 8765] [--host 127.0.0.1]`** — starts a localhost-only HTTP server backing the dashboard. Forms in the Manage tab now POST to `/api/exec` and execute directly (whitelisted subprocess), bypassing the copy-to-clipboard step.
+- **`src/research_hub/dashboard/http_server.py`** (~240 LOC) — stdlib `ThreadingHTTPServer` with `GET /`, `/healthz`, `/api/state`, `/api/events` (SSE), `POST /api/exec`. No new dependencies.
+- **`src/research_hub/dashboard/executor.py`** (~170 LOC) — whitelist of 20+ allowed actions (rename/merge/split/bind-*/move/label/mark/remove/ingest/topic-build/dashboard/pipeline-repair/notebooklm-*/discover-*/autofill-apply/compose-draft/clusters-analyze). `subprocess.run([...], shell=False)` — never shell interpolation.
+- **`src/research_hub/dashboard/events.py`** (~90 LOC) — `EventBroadcaster` + `VaultWatcher` thread. Polls vault mtimes every 5s; on change, emits `vault_changed` to all connected SSE clients.
+- **`script.js` live mode** — `detectLiveMode()` on page load hits `/healthz`, switches to fetch-and-execute when server present; falls back to clipboard copy when it's not (no regression for static usage).
+- **Live pill** (`● Live` / `◯ Static`) in header indicates current mode.
+- **38 new tests** in `tests/test_dashboard_live_server.py` cover bind enforcement, whitelist rejection, subprocess never uses `shell=True`, SSE broadcaster delivery, vault watcher mtime detection, CLI flag parsing.
+
+### Added — Track B: Auto-refreshing graph colors + sub-topic Library UI
+
+- **`vault/graph_config.py`** now produces TWO dimensions: (a) existing cluster-path color groups (`path:raw/<slug>/`), (b) new label-tag color groups (`tag:#label/seed`, `tag:#label/core`, ..., 9 groups covering `CANONICAL_LABELS`).
+- **`refresh_graph_from_vault(cfg)`** — high-level convenience that reads `clusters.yaml`, rebuilds both dimensions, writes `.obsidian/graph.json` idempotently. Preserves user-authored color groups whose queries don't match the research-hub patterns.
+- **Auto-refresh hooks** wired into `ClusterRegistry.create/delete/rename/bind/merge/split` + `research-hub dashboard` — so every cluster mutation and every dashboard rebuild auto-updates the graph.
+- **`research-hub vault graph-colors --refresh`** — explicit manual trigger.
+- **`paper.ensure_label_tags_in_body(path, labels)`** — injects `<!-- research-hub tags start -->\n#label/seed #label/core\n<!-- research-hub tags end -->` at the end of each paper note body. Idempotent. Required for Obsidian's graph `tag:#label/foo` query to work.
+- **`LibrarySection._cluster_card`** rewritten to group papers by sub-topic when the cluster has `topics/NN_*.md` files. Each sub-topic renders as a collapsed `<details class="subtopic-card">`. Papers not assigned to any sub-topic go to a trailing "Unassigned" group. If the cluster has zero sub-topics, falls back to today's flat list (no regression for small clusters).
+- **18 new tests** in `tests/test_graph_config_v027.py` / `test_library_subtopic_rendering.py` / `test_paper_label_tags.py`.
+
+### Added — Track C: Citation-graph cluster auto-split
+
+- **`src/research_hub/analyze.py`** (~220 LOC) — new module. `build_intra_cluster_citation_graph` fetches references for every paper via existing `citation_graph.get_references`, builds co-citation graph (nodes = cluster papers, edges = shared refs). `suggest_split` runs `networkx.algorithms.community.greedy_modularity_communities` + TF-IDF sub-topic name generation. `render_split_suggestion_markdown` produces a markdown report the user reviews before running `topic apply-assignments`.
+- **`research-hub clusters analyze --cluster X --split-suggestion [--min-community-size N] [--max-communities M]`** — new CLI command.
+- **`@mcp.tool() def suggest_cluster_split(cluster_slug, ...)`** — new MCP tool (v0.27 brings MCP tool count to 47).
+- **Persistent citation cache** at `.research_hub/citation_cache/<cluster>/<slug>.json` — prevents re-hitting Semantic Scholar. Rate-limit aware: if >50% of papers return empty citations, the markdown report emits a "rerun after 1 hour" warning.
+- **New dependency: `networkx >= 3.0`** — pure Python, ~10 MB, no heavy transitive deps.
+- **12 new tests** in `tests/test_analyze.py`.
+
+### Live verification results
+
+- Graph refresh: **14 groups** written to `.obsidian/graph.json` (5 cluster + 9 label).
+- 331-paper cluster auto-split: analyzed successfully, **4 communities** found (RAG/knowledge, multi-agent frameworks, LLM+disaster, long-term memory), modularity 0.312, citation coverage 44% (rate-limited but still usable). Full report at `docs/cluster_autosplit_llm-agents-social-cognitive-simulation.md`.
+- Live server: `/healthz` returns live mode, `/api/state` returns 366 papers + 5 clusters + 2 briefings JSON, `/api/exec dashboard` runs in 7.6s and returns returncode 0, unknown action returns 400.
+
+### Fixed during review
+
+- **`_read_cluster_papers` used folder name instead of `topic_cluster` frontmatter.** The 331-paper cluster's notes live in `raw/llm-agent/` but have `topic_cluster: llm-agents-social-cognitive-simulation` in their YAML. Fixed by delegating to `vault.sync.list_cluster_notes` (rglob + frontmatter filter). ~15 LOC.
+- **`test_consistency.py::test_every_mcp_tool_is_documented_in_expected_mappings`** — Track C added `suggest_cluster_split` without updating the contract test. Added `"suggest_cluster_split": "clusters analyze --split-suggestion"` to `EXPECTED_MAPPINGS`.
+
+### Test count
+
+| Release | Passing | Delta |
+|---|---|---|
+| v0.26.0 | 1019 | — |
+| **v0.27.0** | **1087** | **+68** |
+
+### Breaking changes
+
+None. All additions are backward-compatible:
+- The live server is opt-in via `--dashboard` flag; `serve` without it still starts MCP stdio.
+- `script.js` falls back to clipboard when no server is running (existing static usage unchanged).
+- Graph color auto-refresh preserves user-authored color groups.
+- `LibrarySection._cluster_card` falls back to flat-list rendering when the cluster has no sub-topics.
+
+### v0.28.0 backlog
+
+- Auto-apply split suggestion (`clusters analyze --apply`)
+- Sub-topic card virtualization for 100+ papers per sub-topic
+- Multi-user auth (if server needs sharing)
+- Search quality fixes (from v0.26 xfail baselines — still outstanding)
+- Translate NotebookLM briefings (still deferred)
+
 ## v0.26.0 (2026-04-14)
 
 **End-to-end audit release — search → notes → DB → dashboard/MCP API. 873 → 1019 tests (+146).**

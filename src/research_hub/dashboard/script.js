@@ -2,6 +2,7 @@
   "use strict";
 
   const doc = document;
+  const LIVE_MODE = { active: false, eventSource: null };
   let activePopup = null;
   let activeLibraryLabelFilter = null;
   let activeLibraryArchivedFilter = null;
@@ -130,25 +131,142 @@
     URL.revokeObjectURL(url);
   }
 
-  const search = doc.getElementById("vault-search");
-  if (search) {
-    search.addEventListener("input", function (event) {
-      searchQuery = (event.target.value || "").trim().toLowerCase();
-      applyLibraryFilters();
+  function shellQuote(value) {
+    if (value === undefined || value === null) {
+      return "\"\"";
+    }
+    const text = String(value);
+    if (/^[A-Za-z0-9_./-]+$/.test(text)) {
+      return text;
+    }
+    return "\"" + text.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"";
+  }
+
+  function updateLivePill(isLive) {
+    const pill = doc.getElementById("live-pill");
+    if (!pill) {
+      return;
+    }
+    pill.textContent = isLive ? "Live" : "Static";
+    pill.className = "live-pill " + (isLive ? "live-pill--on" : "live-pill--off");
+  }
+
+  function refreshFromState() {
+    window.location.reload();
+  }
+
+  function openEventStream() {
+    if (LIVE_MODE.eventSource || !window.EventSource) {
+      return;
+    }
+    const es = new EventSource("/api/events");
+    LIVE_MODE.eventSource = es;
+    es.onmessage = function (ev) {
+      try {
+        const payload = JSON.parse(ev.data);
+        if (payload.type === "vault_changed") {
+          refreshFromState();
+        }
+      } catch (_) {
+        // ignore malformed events
+      }
+    };
+    es.onerror = function () {
+      if (LIVE_MODE.eventSource) {
+        LIVE_MODE.eventSource.close();
+        LIVE_MODE.eventSource = null;
+      }
+      LIVE_MODE.active = false;
+      updateLivePill(false);
+    };
+  }
+
+  function detectLiveMode() {
+    const options = {};
+    if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) {
+      options.signal = AbortSignal.timeout(500);
+    }
+    return fetch("/healthz", options)
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (data) {
+        if (data && data.ok && data.mode === "live") {
+          LIVE_MODE.active = true;
+          doc.body.classList.add("live-mode");
+          updateLivePill(true);
+          openEventStream();
+        } else {
+          LIVE_MODE.active = false;
+          updateLivePill(false);
+        }
+      })
+      .catch(function () {
+        LIVE_MODE.active = false;
+        updateLivePill(false);
+      });
+  }
+
+  function withTemporaryButtonState(button, interimText, fn) {
+    const original = button ? button.textContent : "";
+    if (button) {
+      button.textContent = interimText;
+      button.disabled = true;
+    }
+    return Promise.resolve(fn()).finally(function () {
+      if (button) {
+        setTimeout(function () {
+          button.textContent = original;
+          button.disabled = false;
+        }, 2000);
+      }
     });
   }
 
-  doc.querySelectorAll(".cite-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      showCitePopup(btn.dataset.bibtex || "", btn.dataset.slug || "paper", btn);
-    });
-  });
+  async function execAction(action, slug, fields, button) {
+    if (!LIVE_MODE.active) {
+      return false;
+    }
+    const original = button ? button.textContent : "";
+    if (button) {
+      button.textContent = "Running...";
+      button.disabled = true;
+    }
+    try {
+      const response = await fetch("/api/exec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: action, slug: slug, fields: fields }),
+      });
+      const data = await response.json();
+      if (button) {
+        button.textContent = data.ok ? "Done" : "Error";
+        setTimeout(function () {
+          button.textContent = original;
+          button.disabled = false;
+        }, 2000);
+      }
+      return !!data.ok;
+    } catch (_) {
+      if (button) {
+        button.textContent = "Error";
+        setTimeout(function () {
+          button.textContent = original;
+          button.disabled = false;
+        }, 2000);
+      }
+      return false;
+    }
+  }
 
-  doc.querySelectorAll(".quote-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      showQuotePopup(btn);
-    });
-  });
+  function showCopiedState(button, originalText) {
+    button.textContent = "Copied!";
+    button.classList.add("copied");
+    setTimeout(function () {
+      button.textContent = originalText;
+      button.classList.remove("copied");
+    }, 1500);
+  }
 
   function showCitePopup(bibtex, slug, anchor) {
     closePopup();
@@ -185,14 +303,6 @@
     popup.append(pre, actions);
     placePopup(anchor, popup);
   }
-
-  doc.querySelectorAll(".cluster-cite-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      const bibtex = btn.dataset.bibtex || "";
-      const cluster = btn.dataset.cluster || "cluster";
-      downloadText(bibtex, `${cluster}.bib`, "application/x-bibtex");
-    });
-  });
 
   function showQuotePopup(btn) {
     closePopup();
@@ -237,12 +347,6 @@
     popup.querySelector('[data-action="close"]').addEventListener("click", closePopup);
     placePopup(btn, popup);
   }
-
-  doc.querySelectorAll(".open-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      showOpenMenu(btn);
-    });
-  });
 
   function showOpenMenu(btn) {
     closePopup();
@@ -309,43 +413,6 @@
     placePopup(btn, popup);
   }
 
-  doc.querySelectorAll(".copy-brief-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      const original = btn.textContent;
-      copyText(btn.dataset.text || "", function () {
-        btn.textContent = "Copied!";
-        setTimeout(function () {
-          btn.textContent = original;
-        }, 1500);
-      });
-    });
-  });
-
-  // Generic copy-cmd buttons (drift fix commands etc.)
-  doc.querySelectorAll(".copy-cmd-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      const original = btn.textContent;
-      copyText(btn.dataset.text || "", function () {
-        btn.textContent = "Copied!";
-        setTimeout(function () {
-          btn.textContent = original;
-        }, 1500);
-      });
-    });
-  });
-
-  // Manage tab — command builder forms
-  function shellQuote(value) {
-    if (value === undefined || value === null) {
-      return '""';
-    }
-    const text = String(value);
-    if (/^[A-Za-z0-9_./-]+$/.test(text)) {
-      return text;
-    }
-    return '"' + text.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
-  }
-
   function buildManageCommand(form) {
     const action = form.dataset.action;
     const slug = form.dataset.slug || "";
@@ -394,25 +461,72 @@
     }
   }
 
-  // Treemap cells + any data-jump-tab button: select the target tab
-  // radio instead of navigating via a hash anchor. Using a hash anchor
-  // on file:// pages triggers Chrome's "unsafe attempt to load URL
-  // from frame" security block.
-  doc.querySelectorAll("[data-jump-tab]").forEach(function (el) {
-    el.addEventListener("click", function (event) {
-      event.preventDefault();
-      const target = el.dataset.jumpTab;
-      const radio = activateTab(target);
-      if (radio) {
-        // Scroll to the top of the panel after the CSS :checked rule
-        // reveals it.
-        const panel = doc.getElementById("tab-" + target);
-        if (panel && panel.scrollIntoView) {
-          panel.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+  function buildManageFields(form) {
+    const action = form.dataset.action;
+    const data = new FormData(form);
+    switch (action) {
+      case "rename":
+        return { new_name: (data.get("new_name") || "").trim() };
+      case "merge":
+        return { target: (data.get("target") || "").trim() };
+      case "split":
+        return {
+          query: (data.get("query") || "").trim(),
+          new_name: (data.get("new_name") || "").trim()
+        };
+      case "bind-zotero":
+        return { zotero: (data.get("zotero") || "").trim() };
+      case "bind-nlm":
+        return { notebooklm: (data.get("notebooklm") || "").trim() };
+      case "delete":
+        return {};
+      default:
+        return {};
+    }
+  }
+
+  function buildComposeCommand(form) {
+    const cluster = (form.querySelector('[name="cluster"]').value || "").trim();
+    const outline = (form.querySelector('[name="outline"]').value || "")
+      .split(/\r?\n/)
+      .map(function (s) { return s.trim(); })
+      .filter(Boolean)
+      .join(";");
+    const style = (form.querySelector('[name="style"]:checked') || {}).value || "apa";
+    const includeBib = !!form.querySelector('[name="include_bibliography"]:checked');
+    const selectedSlugs = Array.from(
+      form.querySelectorAll('.composer-quote-list input[type="checkbox"]:checked')
+    )
+      .filter(function (el) { return (el.dataset.cluster || "") === cluster; })
+      .map(function (el) { return el.dataset.slug || ""; })
+      .filter(Boolean);
+
+    if (!cluster) {
+      return null;
+    }
+
+    const parts = ["research-hub compose-draft", "--cluster", shellQuote(cluster)];
+    if (outline) {
+      parts.push("--outline", shellQuote(outline));
+    }
+    if (selectedSlugs.length) {
+      parts.push("--quotes", shellQuote(selectedSlugs.join(",")));
+    }
+    parts.push("--style", style);
+    if (!includeBib) {
+      parts.push("--no-bibliography");
+    }
+    return {
+      command: parts.join(" "),
+      fields: {
+        cluster_slug: cluster,
+        outline: outline,
+        quote_slugs: selectedSlugs,
+        style: style,
+        include_bibliography: includeBib
       }
-    });
-  });
+    };
+  }
 
   function handleLabelFilter() {
     doc.querySelectorAll(".cluster-label").forEach(function (chip) {
@@ -466,7 +580,92 @@
     });
   }
 
-  // Debug widget — toggle snapshot + copy to clipboard
+  const search = doc.getElementById("vault-search");
+  if (search) {
+    search.addEventListener("input", function (event) {
+      searchQuery = (event.target.value || "").trim().toLowerCase();
+      applyLibraryFilters();
+    });
+  }
+
+  doc.querySelectorAll(".cite-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      showCitePopup(btn.dataset.bibtex || "", btn.dataset.slug || "paper", btn);
+    });
+  });
+
+  doc.querySelectorAll(".quote-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      showQuotePopup(btn);
+    });
+  });
+
+  doc.querySelectorAll(".cluster-cite-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const bibtex = btn.dataset.bibtex || "";
+      const cluster = btn.dataset.cluster || "cluster";
+      downloadText(bibtex, `${cluster}.bib`, "application/x-bibtex");
+    });
+  });
+
+  doc.querySelectorAll(".open-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      showOpenMenu(btn);
+    });
+  });
+
+  doc.querySelectorAll(".copy-brief-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const original = btn.textContent;
+      copyText(btn.dataset.text || "", function () {
+        btn.textContent = "Copied!";
+        setTimeout(function () {
+          btn.textContent = original;
+        }, 1500);
+      });
+    });
+  });
+
+  doc.querySelectorAll(".copy-cmd-btn").forEach(function (btn) {
+    btn.addEventListener("click", async function () {
+      const original = btn.textContent;
+      if (LIVE_MODE.active && btn.dataset.action) {
+        let fields = {};
+        if (btn.dataset.fields) {
+          try {
+            fields = JSON.parse(btn.dataset.fields);
+          } catch (_) {
+            fields = {};
+          }
+        }
+        const ok = await execAction(btn.dataset.action, btn.dataset.slug || null, fields, btn);
+        if (ok) {
+          return;
+        }
+      }
+      copyText(btn.dataset.text || "", function () {
+        btn.textContent = "Copied!";
+        setTimeout(function () {
+          btn.textContent = original;
+        }, 1500);
+      });
+    });
+  });
+
+  doc.querySelectorAll("[data-jump-tab]").forEach(function (el) {
+    el.addEventListener("click", function (event) {
+      event.preventDefault();
+      const target = el.dataset.jumpTab;
+      const radio = activateTab(target);
+      if (radio) {
+        const panel = doc.getElementById("tab-" + target);
+        if (panel && panel.scrollIntoView) {
+          panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    });
+  });
+
   const debugToggle = doc.getElementById("debug-toggle-btn");
   const debugSnapshot = doc.getElementById("debug-snapshot");
   if (debugToggle && debugSnapshot) {
@@ -493,9 +692,6 @@
   }
 
   doc.querySelectorAll(".manage-form").forEach(function (form) {
-    // Block default form submission — Enter in an input field would
-    // otherwise post to the current URL, which on file:// triggers
-    // a "load self from self" security violation in Chrome.
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       const button = form.querySelector(".manage-build-btn");
@@ -508,12 +704,11 @@
     if (!button) {
       return;
     }
-    button.addEventListener("click", function () {
+    button.addEventListener("click", async function () {
       const command = buildManageCommand(form);
       if (!command) {
         button.textContent = "Fill the fields first";
         setTimeout(function () {
-          // Restore original label by reading the inverse of "Copy …"
           const labels = {
             rename: "Copy rename command",
             merge: "Copy merge command",
@@ -526,19 +721,19 @@
         }, 1500);
         return;
       }
+      if (LIVE_MODE.active) {
+        const ok = await execAction(form.dataset.action || "", form.dataset.slug || null, buildManageFields(form), button);
+        if (ok) {
+          return;
+        }
+      }
       const original = button.textContent;
       copyText(command, function () {
-        button.textContent = "Copied!";
-        button.classList.add("copied");
-        setTimeout(function () {
-          button.textContent = original;
-          button.classList.remove("copied");
-        }, 1500);
+        showCopiedState(button, original);
       });
     });
   });
 
-  // Writing tab - draft composer form
   doc.querySelectorAll(".composer-form").forEach(function (form) {
     const buildBtn = form.querySelector(".composer-build-btn");
     const preview = form.parentElement.querySelector(".composer-cmd-preview");
@@ -552,51 +747,27 @@
       return false;
     });
 
-    buildBtn.addEventListener("click", function () {
-      const cluster = (form.querySelector('[name="cluster"]').value || "").trim();
-      const outline = (form.querySelector('[name="outline"]').value || "")
-        .split(/\r?\n/)
-        .map(function (s) { return s.trim(); })
-        .filter(Boolean)
-        .join(";");
-      const style = (form.querySelector('[name="style"]:checked') || {}).value || "apa";
-      const includeBib = !!form.querySelector('[name="include_bibliography"]:checked');
-      const selectedSlugs = Array.from(
-        form.querySelectorAll('.composer-quote-list input[type="checkbox"]:checked')
-      )
-        .filter(function (el) { return (el.dataset.cluster || "") === cluster; })
-        .map(function (el) { return el.dataset.slug || ""; })
-        .filter(Boolean);
-
-      if (!cluster) {
+    buildBtn.addEventListener("click", async function () {
+      const built = buildComposeCommand(form);
+      if (!built) {
         preview.hidden = false;
         preview.textContent = "Pick a cluster first.";
         return;
       }
 
-      const parts = ["research-hub compose-draft", "--cluster", shellQuote(cluster)];
-      if (outline) {
-        parts.push("--outline", shellQuote(outline));
-      }
-      if (selectedSlugs.length) {
-        parts.push("--quotes", shellQuote(selectedSlugs.join(",")));
-      }
-      parts.push("--style", style);
-      if (!includeBib) {
-        parts.push("--no-bibliography");
-      }
-      const command = parts.join(" ");
       preview.hidden = false;
-      preview.textContent = command;
+      preview.textContent = built.command;
+
+      if (LIVE_MODE.active) {
+        const ok = await execAction("compose-draft", null, built.fields, buildBtn);
+        if (ok) {
+          return;
+        }
+      }
 
       const original = buildBtn.textContent;
-      copyText(command, function () {
-        buildBtn.textContent = "Copied!";
-        buildBtn.classList.add("copied");
-        setTimeout(function () {
-          buildBtn.textContent = original;
-          buildBtn.classList.remove("copied");
-        }, 1500);
+      copyText(built.command, function () {
+        showCopiedState(buildBtn, original);
       });
     });
   });
@@ -604,4 +775,5 @@
   handleLabelFilter();
   handleQuoteLabelFilter();
   applyLibraryFilters();
+  detectLiveMode();
 })();

@@ -63,6 +63,7 @@ EXPECTED_MAPPINGS = {
     "examples_list": "examples list",
     "examples_show": "examples show",
     "examples_copy": "examples copy",
+    "suggest_cluster_split": "clusters analyze --split-suggestion",
 }
 
 

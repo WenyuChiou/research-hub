@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
@@ -10,6 +11,8 @@ from pathlib import Path
 
 from research_hub.config import get_config
 from research_hub.operations import _update_frontmatter_field, move_paper, note_matches_query
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -118,6 +121,20 @@ class ClusterRegistry:
         """List all clusters."""
         return list(self.clusters.values())
 
+    def _refresh_graph_if_possible(self) -> None:
+        try:
+            cfg = get_config()
+        except Exception:
+            return
+        if not hasattr(cfg, "root"):
+            return
+        try:
+            from research_hub.vault.graph_config import refresh_graph_from_vault
+
+            refresh_graph_from_vault(cfg)
+        except Exception as exc:
+            logger.warning("graph refresh failed after cluster change: %s", exc)
+
     def create(
         self,
         query: str,
@@ -143,6 +160,7 @@ class ClusterRegistry:
         )
         self.clusters[final_slug] = cluster
         self.save()
+        self._refresh_graph_if_possible()
         return cluster
 
     def bind(
@@ -170,6 +188,7 @@ class ClusterRegistry:
         if notebooklm_notebook_id is not None:
             cluster.notebooklm_notebook_id = notebooklm_notebook_id
         self.save()
+        self._refresh_graph_if_possible()
         return cluster
 
     def rename(self, slug: str, new_name: str) -> Cluster:
@@ -179,6 +198,7 @@ class ClusterRegistry:
             raise ValueError(f"Cluster not found: {slug}")
         cluster.name = new_name
         self.save()
+        self._refresh_graph_if_possible()
         return cluster
 
     def delete(self, slug: str, dry_run: bool = False) -> dict[str, str | int | bool]:
@@ -192,6 +212,7 @@ class ClusterRegistry:
             for note_path in note_paths:
                 _update_frontmatter_field(note_path, "topic_cluster", "")
             self.save()
+            self._refresh_graph_if_possible()
         return {"slug": slug, "notes_unbound": len(note_paths), "dry_run": dry_run}
 
     def merge(self, source_slug: str, target_slug: str, vault_raw: Path | None = None) -> dict[str, str | int]:
@@ -209,6 +230,7 @@ class ClusterRegistry:
             moved += 1
         self.clusters.pop(source.slug)
         self.save()
+        self._refresh_graph_if_possible()
         return {"source": source_slug, "target": target_slug, "moved": moved}
 
     def split(
@@ -233,6 +255,7 @@ class ClusterRegistry:
                 moved += 1
             else:
                 remaining += 1
+        self._refresh_graph_if_possible()
         return {
             "source": source_slug,
             "new_cluster": new_cluster.slug,
