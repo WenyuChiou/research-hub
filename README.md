@@ -1,340 +1,187 @@
-# research-hub-pipeline
+# research-hub
 
-Zotero -> Obsidian -> NotebookLM research pipeline.
-Search, verify, save, organize, and upload academic papers -> all from the terminal.
+> Zotero + Obsidian + NotebookLM, wired together for AI agents.
+
+[![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
+[![Tests](https://img.shields.io/badge/tests-1113%20passing-brightgreen.svg)](docs/audit_v0.28.md)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+繁體中文說明 → [README.zh-TW.md](README.zh-TW.md)
+
+![Dashboard Overview](docs/images/dashboard-overview.png)
+
+---
+
+## What this is
+
+A CLI + MCP server that does three things at once:
+
+1. **Ingest** academic papers into Zotero (citations) + Obsidian (structured notes) + NotebookLM (briefings) — one command.
+2. **Organize** papers into clusters, sub-topics, and an Obsidian graph coloured by research label.
+3. **Serve** 52 MCP tools so Claude Code / Codex / any MCP-compatible AI can drive the whole thing.
+
+Built for PhD students and research teams who already use AI agents daily and don't want to context-switch between six tabs.
+
+## What makes it different
+
+### 1. Crystals — pre-computed answers, not lazy retrieval (v0.28)
+
+Every RAG system, including Karpathy's "LLM wiki", still assembles context at query time. research-hub's answer: **store the AI's reasoning, not the inputs**.
+
+For each research cluster, you generate ~10 canonical Q→A "crystals" once (via emit/apply, using any LLM you like). When an AI agent asks "what's the SOTA in X?", it reads a pre-written 100-word paragraph — not 20 paper abstracts.
+
+```bash
+research-hub crystal emit --cluster llm-agents-software-engineering > prompt.md
+# Feed prompt.md to Claude/GPT/Gemini, save answer as crystals.json
+research-hub crystal apply --cluster llm-agents-software-engineering --scored crystals.json
+```
+
+Token cost per cluster-level query: **~1 KB** (crystal read) vs ~30 KB (cluster digest). 30× compression without losing quality, because the quality was pre-computed.
+
+[→ Why this is not RAG](docs/anti-rag.md)
+
+### 2. Live dashboard with direct execution (v0.27)
+
+```bash
+research-hub serve --dashboard
+```
+
+Opens a localhost HTTP dashboard at `http://127.0.0.1:8765/`. Every Manage-tab button **directly executes** the CLI command instead of copying to clipboard. Vault changes push to the browser via Server-Sent Events. Fallback to static clipboard mode when the server isn't running.
+
+![Live dashboard](docs/images/dashboard-manage-live.png)
+
+### 3. Obsidian graph auto-coloured by label (v0.27)
+
+```bash
+research-hub vault graph-colors --refresh
+```
+
+Writes 14 colour groups to `.obsidian/graph.json`: 5 per cluster path + 9 per paper label (`seed`, `core`, `method`, `benchmark`, `survey`, `application`, `tangential`, `deprecated`, `archived`). Every `research-hub dashboard` run auto-refreshes them. Open Obsidian Graph View — your vault is visually structured by meaning, not just file tree.
+
+![Obsidian Graph coloured by label](docs/images/obsidian-graph.png)
+
+### 4. Sub-topic-aware Library + citation-graph cluster split (v0.27)
+
+Big clusters (331 papers?) don't render as a flat list anymore. They're grouped by sub-topic, each expandable. And if your cluster has no sub-topics yet:
+
+```bash
+research-hub clusters analyze --cluster my-big-cluster --split-suggestion
+```
+
+Uses Semantic Scholar citation graph + networkx community detection to suggest 3-8 coherent sub-topics. Writes a markdown report you review before running `topic apply-assignments`.
+
+![Library tab with sub-topics](docs/images/dashboard-library-subtopic.png)
+
+---
 
 ## Install
 
 ```bash
 pip install research-hub-pipeline
-# With NotebookLM browser automation:
-pip install research-hub-pipeline[playwright]
-playwright install chromium
+research-hub init              # interactive config + vault layout
+research-hub serve --dashboard # opens browser
 ```
 
-`research-hub` requires Python 3.10 or newer. Install the `playwright`
-extra only if you plan to use NotebookLM login, upload, or generation.
+Python 3.10+. No OpenAI/Anthropic API key required — research-hub is provider-agnostic (all AI generation uses emit/apply pattern; you feed prompts to your own AI).
 
-## Two personas, one tool
+## For Claude Code / Claude Desktop users
 
-`research-hub` supports two workflows out of the box:
+Add to `claude_desktop_config.json`:
 
-### Researcher (default)
-
-```bash
-pip install research-hub-pipeline[playwright]
-research-hub init                  # interactive: vault + Zotero + library id
-research-hub doctor                # 7-check health diagnostic
-research-hub add 10.1234/example   # one-shot fetch + ingest
-research-hub notebooklm upload --cluster my-topic
+```json
+{
+  "mcpServers": {
+    "research-hub": {
+      "command": "research-hub",
+      "args": ["serve"]
+    }
+  }
+}
 ```
 
-You get: Zotero items with full citation metadata + Obsidian research
-notes + NotebookLM upload + AI suggestions + BibTeX export.
+Then talk to Claude:
 
-### Data analyst (no Zotero)
+> "Claude, add arxiv 2310.06770 to a new cluster called LLM-SE"
+> "Claude, generate crystals for the LLM-SE cluster"
+> "Claude, what's this cluster about?" → Claude calls `list_crystals` + `read_crystal` → gets the pre-written 100-word answer
 
-```bash
-pip install research-hub-pipeline[playwright]
-research-hub init --persona analyst   # skips Zotero prompts
-research-hub doctor                    # Zotero checks marked "skipped"
-research-hub add 10.1234/example       # writes to Obsidian only
-research-hub notebooklm upload --cluster my-topic
-```
+52 MCP tools cover: paper ingest, cluster CRUD, labels, quotes, draft composition, citation graph, NotebookLM, crystal generation, fit-check, autofill.
 
-You get: Obsidian-only knowledge base + NotebookLM upload + AI
-suggestions. No Zotero account required. Perfect for industry research,
-white papers, and technical documentation.
-
-## Quick start
-
-1. Run the first-time setup wizard:
-
-   ```bash
-   research-hub init
-   ```
-
-   This creates your config file, vault folders, and optional Zotero
-   settings.
-
-2. Verify the installation:
-
-   ```bash
-   research-hub doctor
-   ```
-
-   The health check reports config, vault paths, Zotero credentials,
-   dedup index status, Chrome availability, and NotebookLM session state.
-
-3. Search for papers and verify DOIs while printing results:
-
-   ```bash
-   research-hub search "graph neural networks" --verify
-   ```
-
-4. Ask for cluster and related-paper suggestions for a DOI:
-
-   ```bash
-   research-hub suggest 10.1145/3448016.3452841 --json
-   ```
-
-5. Ingest papers into your Zotero + Obsidian workflow:
-
-   ```bash
-   research-hub ingest --cluster my-cluster
-   ```
-
-6. Upload a prepared cluster to NotebookLM:
-
-   ```bash
-   research-hub notebooklm upload --cluster my-cluster
-   ```
-
-7. Export a citation when you need it:
-
-   ```bash
-   research-hub cite 10.1145/3448016.3452841 --format bibtex
-   ```
-
-If you are starting from scratch, a common first session is:
+## Quickstart (5 commands)
 
 ```bash
+# 1. Initialize vault
 research-hub init
-research-hub doctor
-research-hub clusters new --query "graph neural networks" --slug my-cluster
-research-hub search "graph neural networks" --verify
-research-hub ingest --cluster my-cluster
-research-hub notebooklm login --cdp
-research-hub notebooklm upload --cluster my-cluster
+
+# 2. Ingest one paper
+research-hub add 10.48550/arxiv.2310.06770 --cluster llm-agents
+
+# 3. Open live dashboard
+research-hub serve --dashboard
+
+# 4. Generate crystals once you have a few papers
+research-hub crystal emit --cluster llm-agents > prompt.md
+# (feed prompt.md to your AI, save response as crystals.json)
+research-hub crystal apply --cluster llm-agents --scored crystals.json
+
+# 5. Ask your AI questions — it reads crystals, not papers
+# (via Claude Desktop MCP, or any MCP-compatible client)
 ```
 
-## Features
+## Status
 
-The CLI is organized around a paper workflow: find papers, verify
-identifiers, save notes, keep clusters aligned, and push selected
-clusters into NotebookLM.
+- **Latest**: v0.28.0 (2026-04-15)
+- **Tests**: 1113 passing, 12 skipped, 5 xfail baselines (documented search-quality issues)
+- **Platforms**: Windows, macOS, Linux
+- **Python**: 3.10+
+- **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
+- **Optional**: `playwright` extra for NotebookLM browser automation
 
-| Stage | Command | Description |
+## Architecture docs
+
+- [Anti-RAG crystals](docs/anti-rag.md) — why pre-computed Q→A beats retrieval
+- [Audit reports](docs/) — `audit_v0.26.md`, `audit_v0.27.md`, `audit_v0.28.md`
+- [NotebookLM setup](docs/notebooklm.md) — CDP attach flow + troubleshooting
+- [Papers input schema](docs/papers_input_schema.md) — ingestion pipeline reference
+
+## Workflow reference
+
+| Stage | Command | What it does |
 |---|---|---|
-| **Search** | `search` | Query Semantic Scholar for new papers by keyword |
-| **Verify** | `verify --doi` / `verify --arxiv` / `verify --paper` | Check that a DOI, arXiv ID, or fuzzy title match resolves |
-| **Save** | `run` / `ingest` | Run the ingestion pipeline and write Zotero + Obsidian outputs |
-| **Organize** | `clusters new` / `clusters list` / `clusters show` / `clusters bind` | Create, inspect, and bind topic clusters |
-| **Suggest** | `suggest <id> [--json]` | Recommend a cluster and related existing papers |
-| **Sync** | `sync status` / `sync reconcile` | Detect and reconcile Zotero -> Obsidian drift |
-| **Upload** | `notebooklm upload` | Upload bundle sources to NotebookLM using a saved browser session |
-| **Generate** | `notebooklm generate --type brief` | Trigger NotebookLM artifact generation |
-| **Cite** | `cite <id> --format bibtex` | Export BibTeX, BibLaTeX, RIS, or CSL-JSON |
-| **Maintain** | `index` / `status` / `cleanup` / `synthesize` | Rebuild indexes, check progress, deduplicate hub pages, generate synthesis pages |
-| **Setup** | `init` / `doctor` | Create config and validate the local environment |
+| **Init** | `init` / `doctor` | First-time config + health check |
+| **Find** | `search` / `verify` / `discover new` | Multi-backend paper search + DOI resolution + AI-scored discovery |
+| **Ingest** | `add` / `ingest` | One-shot or bulk paper ingest into Zotero + Obsidian |
+| **Organize** | `clusters new/list/show/bind/merge/split/rename/delete` | Cluster CRUD |
+| **Topic** | `topic scaffold/propose/assign/build` | Sub-topic notes from `subtopics:` frontmatter |
+| **Label** | `label` / `find --label` / `paper prune` | Canonical label vocabulary (seed/core/method/...) |
+| **Crystal** | `crystal emit/apply/list/read/check` | Pre-computed canonical Q→A answers |
+| **Analyze** | `clusters analyze --split-suggestion` | Citation-graph community detection for big clusters |
+| **Sync** | `sync status` / `pipeline repair` | Detect + repair Zotero ↔ Obsidian drift |
+| **Dashboard** | `dashboard` / `serve --dashboard` / `vault graph-colors` | Static HTML or live HTTP server + auto-refresh Obsidian graph |
+| **NotebookLM** | `notebooklm bundle/upload/generate/download` | Browser-automated NLM flows (CDP attach) |
+| **Write** | `quote` / `compose-draft` / `cite` | Quote capture, markdown draft assembly, BibTeX export |
 
-### Search and verify
+## Two personas
 
-Use `search` to discover candidate papers before adding anything to your
-vault:
+| Persona | Install | Zotero? | Best for |
+|---|---|---|---|
+| **Researcher** (default) | `pip install research-hub-pipeline[playwright]` | Yes | PhD students, academic literature review |
+| **Analyst** | `research-hub init --persona analyst` | No — Obsidian only | Industry research, white papers, technical docs |
 
-```bash
-research-hub search "retrieval augmented generation" --limit 10
-```
-
-Add `--verify` when you want each DOI checked against `doi.org` before
-it is printed:
-
-```bash
-research-hub search "retrieval augmented generation" --limit 10 --verify
-```
-
-Use `verify` directly when you already know the identifier:
-
-```bash
-research-hub verify --doi 10.48550/arXiv.1706.03762
-research-hub verify --arxiv 1706.03762
-research-hub verify --paper "Attention Is All You Need" --paper-year 2017
-research-hub verify --paper "Attention Is All You Need" --paper-author Vaswani
-```
-
-### Run ingestion
-
-`run` and `ingest` both execute the pipeline. Use `--dry-run` when you
-want to validate config and inputs without writing anything:
-
-```bash
-research-hub ingest --cluster my-cluster --dry-run
-research-hub ingest --cluster my-cluster --query "retrieval augmented generation"
-research-hub run --cluster my-cluster --query "retrieval augmented generation"
-```
-
-Verification is enabled by default for `run` and `ingest`. Skip DOI or
-arXiv checks only when you want faster batch work:
-
-```bash
-research-hub ingest --cluster my-cluster --no-verify
-```
-
-### Organize by cluster
-
-Clusters give the rest of the workflow a stable slug for folders,
-Zotero collections, and NotebookLM notebooks:
-
-```bash
-research-hub clusters new --query "retrieval augmented generation" --name "RAG" --slug rag
-research-hub clusters list
-research-hub clusters show rag
-research-hub clusters bind rag --zotero ABCD1234 --obsidian rag --notebooklm "RAG Notebook"
-```
-
-### Get suggestions before saving
-
-`suggest` accepts a DOI, arXiv ID, or quoted title and scores both
-cluster matches and related existing notes:
-
-```bash
-research-hub suggest 10.48550/arXiv.1706.03762
-research-hub suggest 1706.03762 --top 8
-research-hub suggest "Attention Is All You Need" --json
-```
-
-This is the fastest way to decide whether a new paper belongs in an
-existing cluster before you ingest it.
-
-### Track status and repair drift
-
-Use `status` for reading progress, `sync status` for cross-system drift,
-and `sync reconcile` to create missing Obsidian notes from Zotero:
-
-```bash
-research-hub status
-research-hub status --cluster rag
-research-hub sync status
-research-hub sync status --cluster rag
-research-hub sync reconcile --cluster rag --dry-run
-research-hub sync reconcile --cluster rag --execute
-```
-
-### Export citations
-
-`cite` can export one paper by DOI or filename stem, or an entire
-cluster:
-
-```bash
-research-hub cite 10.48550/arXiv.1706.03762 --format bibtex
-research-hub cite 10.48550/arXiv.1706.03762 --format ris
-research-hub cite --cluster rag --format biblatex --out rag.bib
-```
-
-Supported output formats are `bibtex`, `biblatex`, `ris`, and
-`csljson`.
-
-### Maintain the vault
-
-These commands help keep the local knowledge base consistent:
-
-```bash
-research-hub index
-research-hub cleanup --dry-run
-research-hub cleanup
-research-hub synthesize
-research-hub synthesize --cluster rag --graph-colors
-research-hub migrate-yaml --dry-run
-research-hub migrate-yaml --assign-cluster rag --folder raw --force
-```
-
-`index` rebuilds the dedup index from Zotero and Obsidian. `cleanup`
-removes duplicate wiki links in hub pages. `synthesize` writes cluster
-summary pages. `migrate-yaml` patches older notes to the current YAML
-layout.
-
-### NotebookLM workflow
-
-NotebookLM commands are separate because they require browser
-automation:
-
-```bash
-research-hub notebooklm login --cdp
-research-hub notebooklm bundle --cluster rag
-research-hub notebooklm upload --cluster rag --dry-run
-research-hub notebooklm upload --cluster rag
-research-hub notebooklm generate --cluster rag --type brief
-research-hub notebooklm generate --cluster rag --type all
-```
-
-Use `--headless` for unattended runs or `--visible` when you want to
-watch the browser. `generate --type` supports `brief`, `audio`,
-`mind-map`, `video`, and `all`.
-
-## Configuration
-
-`research-hub init` writes a JSON config file automatically. By default
-the config file lives at `~/.config/research-hub/config.json` on Linux
-and macOS, or `%APPDATA%/research-hub/config.json` on Windows.
-
-If you want to point the CLI at a different file, set
-`RESEARCH_HUB_CONFIG`.
-
-The vault root comes from config field `knowledge_base.root` or from
-`RESEARCH_HUB_ROOT`. If neither is set, the default root is
-`~/knowledge-base`.
-
-Useful path overrides:
-
-- `RESEARCH_HUB_RAW`
-- `RESEARCH_HUB_HUB`
-- `RESEARCH_HUB_PROJECTS`
-- `RESEARCH_HUB_LOGS`
-- `RESEARCH_HUB_GRAPH`
-
-Zotero credentials can come from config or environment variables:
-
-- `ZOTERO_API_KEY`
-- `ZOTERO_LIBRARY_ID`
-- `ZOTERO_LIBRARY_TYPE`
-- `RESEARCH_HUB_DEFAULT_COLLECTION`
-
-The typical vault layout created by `research-hub init` is:
-
-```text
-<vault>/
-  raw/
-  hub/
-  logs/
-  .research_hub/
-```
-
-After setup, `research-hub doctor` is the fastest way to confirm the
-config file, vault, Zotero credentials, dedup index, Chrome, and saved
-NotebookLM session all look valid.
-
-## NotebookLM integration
-
-NotebookLM support uses a Chrome DevTools Protocol attach flow rather
-than a Playwright-launched browser, which avoids the Google bot check
-that blocks normal automated logins. Install Chrome, run
-`research-hub notebooklm login --cdp` once, then use
-`notebooklm bundle`, `notebooklm upload`, and `notebooklm generate` for
-cluster-level workflows. Full setup, troubleshooting, and selector
-maintenance notes are in [docs/notebooklm.md](docs/notebooklm.md).
+Both personas get the same dashboard, MCP server, and crystal system.
 
 ## For developers
-
-If you are working from a clone instead of installing from PyPI:
 
 ```bash
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q
+python -m pytest -q  # 1113 passing
 ```
 
-Useful developer checks:
-
-```bash
-research-hub --help
-research-hub doctor
-research-hub search "test query" --limit 3
-```
-
-The package entry point is `research-hub`, while the PyPI package name
-is `research-hub-pipeline`.
+Package name on PyPI: **research-hub-pipeline**
+CLI entry point: **research-hub**
 
 ## License
 

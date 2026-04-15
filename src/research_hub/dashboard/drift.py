@@ -120,6 +120,37 @@ def _check_subtopic_paper_mismatch(cfg, cluster) -> list[DriftAlert]:
     return alerts
 
 
+def _check_crystal_staleness(cfg, cluster) -> list[DriftAlert]:
+    """Emit DriftAlert for each stale crystal in the cluster."""
+    try:
+        from research_hub import crystal as crystal_module
+
+        staleness = crystal_module.check_staleness(cfg, cluster.slug)
+    except Exception:
+        return []
+
+    alerts: list[DriftAlert] = []
+    for crystal_slug, stale_info in (staleness or {}).items():
+        if not getattr(stale_info, "stale", False):
+            continue
+        alerts.append(
+            DriftAlert(
+                kind="crystal_stale",
+                severity="WARN",
+                title="Crystal is stale",
+                description=(
+                    f"Crystal '{crystal_slug}' is stale: "
+                    f"+{len(getattr(stale_info, 'added_papers', []) or [])} / "
+                    f"-{len(getattr(stale_info, 'removed_papers', []) or [])} papers since generation "
+                    f"(delta={float(getattr(stale_info, 'delta_ratio', 0.0) or 0.0):.0%})"
+                ),
+                sample_paths=[],
+                fix_command=f"research-hub crystal emit --cluster {cluster.slug} > prompt.md",
+            )
+        )
+    return alerts
+
+
 def _check_stale_manifest_clusters(cfg, registry: ClusterRegistry) -> list[DriftAlert]:
     manifest_path = cfg.research_hub_dir / "manifest.jsonl"
     if not manifest_path.exists():
@@ -246,6 +277,7 @@ def detect_drift(cfg, dedup, zot=None) -> list[DriftAlert]:
         for cluster in registry.list():
             alerts.extend(_check_zotero_orphans(cfg, cluster, zot))
             alerts.extend(_check_subtopic_paper_mismatch(cfg, cluster))
+            alerts.extend(_check_crystal_staleness(cfg, cluster))
         alerts.extend(_check_stale_manifest_clusters(cfg, registry))
     except Exception:
         logger.exception("Failed to detect dashboard drift")

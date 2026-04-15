@@ -830,6 +830,105 @@ def autofill_apply(cluster_slug: str, scored: list[dict] | dict) -> dict:
         return _tool_error(exc)
 
 
+@mcp.tool()
+def list_crystals(cluster_slug: str) -> dict:
+    """List all pre-computed crystal answers for a cluster."""
+    try:
+        from research_hub import crystal
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        crystals = crystal.list_crystals(cfg, cluster_slug)
+        staleness = crystal.check_staleness(cfg, cluster_slug)
+        return {
+            "cluster": cluster_slug,
+            "crystals": [
+                {
+                    "slug": item.question_slug,
+                    "question": item.question,
+                    "tldr": item.tldr,
+                    "confidence": item.confidence,
+                    "based_on_paper_count": item.based_on_paper_count,
+                    "last_generated": item.last_generated,
+                    "stale": staleness.get(item.question_slug, crystal.CrystalStaleness(item.question_slug, [], [], 0.0, False)).stale,
+                }
+                for item in crystals
+            ],
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def read_crystal(cluster_slug: str, crystal_slug: str, level: str = "gist") -> dict:
+    """Read a specific crystal at the requested detail level."""
+    try:
+        from research_hub import crystal
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        item = crystal.read_crystal(cfg, cluster_slug, crystal_slug)
+        if item is None:
+            return {"status": "not_found", "cluster": cluster_slug, "slug": crystal_slug}
+        answer = item.tldr if level == "tldr" else item.full if level == "full" else item.gist
+        return {
+            "status": "ok",
+            "cluster": cluster_slug,
+            "slug": item.question_slug,
+            "question": item.question,
+            "level": level,
+            "answer": answer,
+            "evidence": [{"claim": ev.claim, "papers": ev.papers} for ev in item.evidence],
+            "based_on_papers": item.based_on_papers,
+            "based_on_paper_count": item.based_on_paper_count,
+            "last_generated": item.last_generated,
+            "confidence": item.confidence,
+            "see_also": item.see_also,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def emit_crystal_prompt(cluster_slug: str, question_slugs: list[str] | None = None) -> dict:
+    """Emit the markdown prompt the calling AI should answer to generate crystals."""
+    try:
+        from research_hub import crystal
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        return {"cluster": cluster_slug, "prompt": crystal.emit_crystal_prompt(cfg, cluster_slug, question_slugs=question_slugs)}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def apply_crystals(cluster_slug: str, crystals_json: dict) -> dict:
+    """Persist crystal answers to hub/<cluster>/crystals/<slug>.md."""
+    try:
+        from research_hub import crystal
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        return crystal.apply_crystals(cfg, cluster_slug, crystals_json).to_dict()
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def check_crystal_staleness(cluster_slug: str) -> dict:
+    """Check how many crystals are stale (>10% cluster paper delta since generation)."""
+    try:
+        from research_hub import crystal
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        staleness = crystal.check_staleness(cfg, cluster_slug)
+        return {"cluster": cluster_slug, "crystals": {slug: item.to_dict() for slug, item in staleness.items()}}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
 def label_paper(
     slug: str,
     labels: list[str] | None = None,

@@ -1,5 +1,85 @@
 # Changelog
 
+## v0.28.0 (2026-04-15)
+
+**Crystals — anti-RAG semantic compression. Pre-computed canonical Q→A answers replace query-time context assembly. 1087 → 1122 tests (+35).**
+
+First research-hub release that changes the architectural axis instead of refining the existing one. Full architectural explainer: [`docs/anti-rag.md`](docs/anti-rag.md). Release audit: [`docs/audit_v0.28.md`](docs/audit_v0.28.md).
+
+### The shift
+
+Every previous research-hub MCP tool returned **raw materials** (paper abstracts, cluster digests, topic lists) that the calling AI had to piece together at query time. v0.28 introduces a parallel path: for each cluster, the user's AI writes up to 10 canonical Q→A answers ONCE via emit/apply, stored as markdown. Subsequent queries read the pre-written answer directly — no re-synthesis, no 30 KB abstract dumps.
+
+Measured token efficiency on the test cluster: **32 KB (old get_topic_digest) → 1.8 KB (new list_crystals + read_crystal) = ~18× reduction** for common-case cluster-level questions. Quality is deterministic because synthesis happens once at generation time, not per-query.
+
+### Added — Track A: Crystal core (`crystal.py`)
+
+- **`src/research_hub/crystal.py`** (~320 LOC) — full module with:
+  - `CANONICAL_QUESTIONS` — 10 slots (what-is-this-field / why-now / main-threads / where-experts-disagree / sota-and-open-problems / reading-order / key-concepts / evaluation-standards / common-pitfalls / adjacent-fields)
+  - `Crystal`, `CrystalEvidence`, `CrystalStaleness` dataclasses
+  - `emit_crystal_prompt()` — builds markdown prompt with cluster paper list + 10 questions + JSON schema
+  - `apply_crystals()` — parses JSON, writes to `hub/<cluster>/crystals/<slug>.md` (idempotent)
+  - `list_crystals()` / `read_crystal()` / `check_staleness()` — query API
+  - Stores `based_on_papers:` provenance + `last_generated:` + `generator:` + `confidence:` in frontmatter
+  - `STALENESS_THRESHOLD = 0.10` — crystal flagged stale if >10% of cluster papers changed since generation
+- **`research-hub crystal emit/apply/list/read/check`** — new CLI sub-commands mirroring the autofill + fit-check emit/apply pattern
+- **5 new MCP tools**: `list_crystals`, `read_crystal`, `emit_crystal_prompt`, `apply_crystals`, `check_crystal_staleness` (total MCP tool count now 52)
+- **26 new tests** in `tests/test_crystal.py` covering emit + apply + round-trip + staleness + canonical question stability
+
+### Added — Track B: Crystal dashboard surface
+
+- **`CrystalSection`** in `dashboard/sections.py` — renders inside Overview tab, shows per-cluster completion ratio (e.g. 10/10), stale badges, expandable crystal list with TL;DRs, "Copy regenerate command" button
+- **`_check_crystal_staleness`** drift detector in `dashboard/drift.py` — emits `DriftAlert` for each stale crystal with fix command
+- **`CrystalSummary`** dataclass on `DashboardData` — populated in `collect_dashboard_data` by calling `crystal.list_crystals` + `crystal.check_staleness` per cluster
+- **9 new tests** in `tests/test_dashboard_crystal_section.py` + `tests/test_drift_crystal.py`
+- CSS: `.crystal-section`, `.crystal-card`, `.crystal-stale-badge`, `.crystal-list`
+
+### Added — Track C: Documentation + multilingual
+
+- **`docs/anti-rag.md`** (~340 lines) — architectural explainer. Karpathy critique, eager-vs-lazy framing, concrete before/after example, generation + query flow diagrams, honest limitations
+- **`README.zh-TW.md`** — full 繁中 README mirror
+- **`README.md`** — rewritten from 341 → 170 lines. Screenshot-led, MCP-first, anti-RAG value prop in first 15 lines
+- Status badges for PyPI / tests / Python / license
+- Claude Desktop `mcpServers` config snippet copy-paste ready
+
+### Fixed during Phase 4 review
+
+- `tests/test_consistency.py` — added 5 new MCP tool mappings (`list_crystals → crystal list`, etc). Contract test requires every `@mcp.tool()` to have a CLI mapping; Track A added 5 new tools so the mapping needed updating.
+
+### Live verification
+
+Executed end-to-end against `llm-agents-software-engineering` (20 papers, 4 sub-topics):
+
+1. `research-hub crystal emit` → 176-line prompt with 20 paper rows + 10 questions (~8 KB)
+2. Fed prompt to the Claude in this release session (Opus 4.6) who answered all 10 questions based on accumulated knowledge from v0.12-v0.28 audits
+3. `research-hub crystal apply` → 10 markdown files written, 775 lines total
+4. `research-hub crystal list` → all 10 returned with TL;DRs
+5. `research-hub crystal check` → all 10 fresh (delta = 0%)
+6. `research-hub crystal read --level gist` → ~1 KB pre-written paragraph returned
+7. `research-hub dashboard` → CrystalSection renders 10/10, 0 stale
+
+### Test count
+
+| Release | Passing | Delta |
+|---|---|---|
+| v0.27.0 | 1087 | — |
+| **v0.28.0** | **1122** | **+35** |
+
+### Breaking changes
+
+None. All additions are backward-compatible:
+- Clusters without crystals get empty CrystalSection + clear generation instructions.
+- All existing MCP tools unchanged.
+- Crystal generation uses emit/apply (never calls an LLM from inside research-hub — provider-agnostic).
+
+### v0.29 backlog
+
+- Custom canonical questions per cluster (`canonical_questions.yaml`)
+- `.dxt` Claude Desktop extension for one-click install
+- `clusters analyze --apply` (auto-apply split suggestions)
+- Search quality fixes (the 4 v0.26 xfail root causes)
+- Sub-topic IntersectionObserver virtualization (100+ papers per sub-topic)
+
 ## v0.27.0 (2026-04-15)
 
 **Directness release — live HTTP dashboard server, auto-refreshing Obsidian graph colors, sub-topic-grouped Library UI, citation-graph cluster auto-split. 1019 → 1087 tests (+68).**

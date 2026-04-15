@@ -438,6 +438,54 @@ def _autofill_apply(cluster_slug: str, scored_path: str) -> int:
     return 0
 
 
+def _cmd_crystal(args, cfg) -> int:
+    from research_hub import crystal
+
+    if args.crystal_command == "emit":
+        question_slugs = [item.strip() for item in args.questions.split(",") if item.strip()] if args.questions else None
+        prompt = crystal.emit_crystal_prompt(cfg, args.cluster, question_slugs=question_slugs)
+        if args.out:
+            Path(args.out).write_text(prompt, encoding="utf-8")
+            print(f"wrote {args.out}")
+        else:
+            print(prompt)
+        return 0
+    if args.crystal_command == "apply":
+        scored = json.loads(Path(args.scored).read_text(encoding="utf-8"))
+        result = crystal.apply_crystals(cfg, args.cluster, scored)
+        print(f"written: {len(result.written)}, replaced: {len(result.replaced)}, skipped: {len(result.skipped)}")
+        if result.errors:
+            for error in result.errors:
+                print(f"  ERROR: {error}", file=sys.stderr)
+            return 1
+        return 0
+    if args.crystal_command == "list":
+        crystals = crystal.list_crystals(cfg, args.cluster)
+        if not crystals:
+            print("(no crystals yet; generate via `research-hub crystal emit`)")
+            return 0
+        for item in crystals:
+            print(f"{item.question_slug:25s}  {item.tldr[:80]}")
+        return 0
+    if args.crystal_command == "read":
+        item = crystal.read_crystal(cfg, args.cluster, args.slug)
+        if item is None:
+            print(f"crystal not found: {args.slug}", file=sys.stderr)
+            return 1
+        print(item.tldr if args.level == "tldr" else item.full if args.level == "full" else item.gist)
+        return 0
+    if args.crystal_command == "check":
+        staleness = crystal.check_staleness(cfg, args.cluster)
+        if not staleness:
+            print("(no crystals to check)")
+            return 0
+        for slug, item in staleness.items():
+            marker = "STALE" if item.stale else "fresh"
+            print(f"{slug:25s}  {marker}  delta={item.delta_ratio:.0%}  +{len(item.added_papers)}/-{len(item.removed_papers)}")
+        return 0
+    raise ValueError(f"unknown crystal command: {args.crystal_command}")
+
+
 def _paper_command(args) -> int:
     if args.paper_command == "prune":
         from research_hub.paper import prune_cluster
@@ -2248,6 +2296,24 @@ def build_parser() -> argparse.ArgumentParser:
     autofill_apply.add_argument("--cluster", required=True)
     autofill_apply.add_argument("--scored", required=True, help="Path to AI-produced JSON")
 
+    crystal_parser = subparsers.add_parser("crystal", help="Manage pre-computed canonical crystals")
+    crystal_sub = crystal_parser.add_subparsers(dest="crystal_command")
+    crystal_emit = crystal_sub.add_parser("emit", help="Emit a crystal-generation prompt for an AI")
+    crystal_emit.add_argument("--cluster", required=True)
+    crystal_emit.add_argument("--questions", help="Comma-separated question slugs to emit")
+    crystal_emit.add_argument("--out")
+    crystal_apply = crystal_sub.add_parser("apply", help="Apply AI-generated crystals")
+    crystal_apply.add_argument("--cluster", required=True)
+    crystal_apply.add_argument("--scored", required=True, help="Path to JSON produced by AI")
+    crystal_list = crystal_sub.add_parser("list", help="List crystals for a cluster")
+    crystal_list.add_argument("--cluster", required=True)
+    crystal_read = crystal_sub.add_parser("read", help="Read a specific crystal")
+    crystal_read.add_argument("--cluster", required=True)
+    crystal_read.add_argument("--slug", required=True)
+    crystal_read.add_argument("--level", choices=["tldr", "gist", "full"], default="gist")
+    crystal_check = crystal_sub.add_parser("check", help="Check crystal staleness")
+    crystal_check.add_argument("--cluster", required=True)
+
     paper_parser = subparsers.add_parser("paper", help="Paper curation operations")
     paper_sub = paper_parser.add_subparsers(dest="paper_command")
     prune_p = paper_sub.add_parser("prune", help="Move or delete labeled papers")
@@ -2472,6 +2538,11 @@ def main(argv: list[str] | None = None) -> int:
             return _autofill_apply(args.cluster, args.scored)
         parser.error("autofill requires a subcommand")
         return 2
+    if args.command == "crystal":
+        if not args.crystal_command:
+            parser.error("crystal requires a subcommand")
+            return 2
+        return _cmd_crystal(args, get_config())
     if args.command == "discover":
         if args.discover_command == "new":
             return _discover_new(args)

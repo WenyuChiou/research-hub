@@ -26,6 +26,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 
+try:
+    from research_hub import crystal as crystal_module
+except ImportError:  # TODO(track-a): replace fallback once crystal.py is merged.
+    crystal_module = None
+
 
 # --- helpers ------------------------------------------------------------
 
@@ -345,6 +350,7 @@ class OverviewSection(DashboardSection):
         )
         recent = self._render_recent_additions(data)
         banner = self._render_health_banner(data)
+        crystals = CrystalSection().render_panel(data)
         return f"""
         <section id="tab-overview" class="dash-panel dash-panel-overview" role="tabpanel">
           {banner}
@@ -371,6 +377,7 @@ class OverviewSection(DashboardSection):
               {recent}
             </article>
           </div>
+          {crystals}
         </section>
         """
 
@@ -821,6 +828,129 @@ class LibrarySection(DashboardSection):
                     aria-label="Open {title}">↗ Open</button>
           </div>
         </li>
+        """
+
+
+# --- CrystalSection -----------------------------------------------------
+
+
+class CrystalSection(DashboardSection):
+    id = "crystals"
+    title = "Crystals"
+    order = 15
+
+    def __init__(self) -> None:
+        self.id = "crystals"
+        self.title = "Crystals"
+        self.order = 15
+
+    def render(self, data) -> str:
+        return self.render_panel(data)
+
+    def render_panel(self, data) -> str:
+        summaries = _attr(data, "crystal_summary_by_cluster", {}) or {}
+        clusters = _all_clusters(data)
+        if not clusters:
+            return ""
+
+        if not any(int(_attr(summary, "generated_count", 0) or 0) > 0 for summary in summaries.values()):
+            return self._render_empty_state(clusters)
+
+        rows: list[str] = []
+        vault_root = str(_attr(data, "vault_root", "") or "")
+        total_canonical = 0
+        if crystal_module is not None:
+            total_canonical = len(getattr(crystal_module, "CANONICAL_QUESTIONS", []) or [])
+        for cluster in clusters:
+            summary = summaries.get(_attr(cluster, "slug", ""))
+            if summary is None:
+                continue
+            rows.append(self._render_cluster_row(cluster, summary, vault_root))
+
+        if not rows:
+            return self._render_empty_state(clusters)
+
+        if not total_canonical:
+            total_canonical = max(
+                (int(_attr(summary, "total_canonical", 0) or 0) for summary in summaries.values()),
+                default=0,
+            )
+
+        explainer = ""
+        if total_canonical:
+            explainer = (
+                f"""
+            <p class="crystal-blurb">
+              Instead of re-reading every paper every time an AI agent asks a question,
+              each cluster has up to {total_canonical} pre-computed canonical answers.
+              The calling AI reads these directly via <code>list_crystals()</code> and
+              <code>read_crystal()</code>.
+            </p>
+            """
+            )
+
+        return f"""
+        <section class="crystal-section">
+          <h2>Crystals</h2>
+          {explainer}
+          {''.join(rows)}
+        </section>
+        """
+
+    def _render_empty_state(self, clusters: list) -> str:
+        example = str(_attr(clusters[0], "slug", "X")) if clusters else "X"
+        return f"""
+        <section class="crystal-section crystal-section--empty">
+          <h2>Crystals</h2>
+          <p>No crystals generated yet.</p>
+          <p>Run <code>research-hub crystal emit --cluster {html_escape(example)} &gt; prompt.md</code>, feed the prompt to your AI, save the answer as <code>crystals.json</code>, then <code>research-hub crystal apply --cluster X --scored crystals.json</code>.</p>
+        </section>
+        """
+
+    def _render_cluster_row(self, cluster, summary, vault_root: str) -> str:
+        slug = str(_attr(cluster, "slug", "") or "")
+        name = html_escape(str(_attr(cluster, "name", "") or slug))
+        stale_count = int(_attr(summary, "stale_count", 0) or 0)
+        stale_badge = ""
+        if stale_count > 0:
+            stale_badge = f'<span class="crystal-stale-badge">{stale_count} stale</span>'
+
+        crystal_list_html = ""
+        crystals = list(_attr(summary, "crystals", []) or [])
+        if crystals:
+            crystal_lis: list[str] = []
+            for crystal in crystals:
+                crystal_slug = str(crystal.get("slug", "") or "")
+                stale_marker = ' <span class="crystal-stale-inline">STALE</span>' if crystal.get("stale") else ""
+                crystal_url = _obsidian_url(f"hub/{slug}/crystals/{crystal_slug}.md", vault_root)
+                tldr_html = html_escape(str(crystal.get("tldr", "") or ""))[:180]
+                crystal_lis.append(
+                    f'<li><code>{html_escape(crystal_slug)}</code> | '
+                    f'{html_escape(str(crystal.get("question", "") or ""))} | '
+                    f'<a class="binding-link" href="{html_escape(crystal_url)}">open</a>'
+                    f'{stale_marker}<br>'
+                    f'<span class="crystal-tldr">{tldr_html}</span></li>'
+                )
+            crystal_list_html = f'<ul class="crystal-list">{"".join(crystal_lis)}</ul>'
+
+        regenerate_cmd = f"research-hub crystal emit --cluster {slug} > prompt.md"
+        return f"""
+        <details class="crystal-card" data-cluster="{html_escape(slug)}">
+          <summary>
+            <strong>{name}</strong>
+            <span class="crystal-count">{int(_attr(summary, "generated_count", 0) or 0)}/{int(_attr(summary, "total_canonical", 0) or 0)}</span>
+            {stale_badge}
+          </summary>
+          <div class="crystal-body">
+            <p class="crystal-meta">Last generated: {html_escape(str(_attr(summary, "last_generated", "") or "never"))}</p>
+            {crystal_list_html}
+            <p class="crystal-regenerate">
+              <button type="button" class="copy-cmd-btn" data-text="{html_escape(regenerate_cmd)}">
+                Copy regenerate command
+              </button>
+            </p>
+          </div>
+        </details>
         """
 
 

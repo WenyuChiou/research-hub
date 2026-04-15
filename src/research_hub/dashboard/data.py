@@ -19,6 +19,7 @@ from research_hub.dashboard.citation import build_bibtex_for_cluster, build_bibt
 from research_hub.dashboard.drift import detect_drift
 from research_hub.dashboard.types import (
     ClusterCard,
+    CrystalSummary,
     DashboardData,
     HealthBadge,
     PaperRow,
@@ -28,6 +29,12 @@ from research_hub.paper import archive_dir, list_papers_by_label
 from research_hub.topic import list_subtopics, overview_path
 
 logger = logging.getLogger(__name__)
+
+
+try:
+    from research_hub import crystal as crystal_module
+except ImportError:  # TODO(track-a): replace fallback once crystal.py is merged.
+    crystal_module = None
 
 
 def _detect_persona(cfg, zot) -> str:
@@ -141,6 +148,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     clusters: list[ClusterCard] = []
     briefings = []
     quotes: list[Quote] = []
+    crystal_summary_by_cluster: dict[str, CrystalSummary] = {}
     labels_across_clusters: dict[str, list[tuple[str, str, str]]] = {}
     paper_labels_by_slug: dict[str, list[str]] = {}
 
@@ -277,6 +285,58 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     papers_this_week = sum(cluster.new_this_week for cluster in clusters)
     clusters.sort(key=lambda cluster: (-len(cluster.papers), cluster.name.lower()))
 
+    total_canonical = 0
+    if crystal_module is not None:
+        total_canonical = len(getattr(crystal_module, "CANONICAL_QUESTIONS", []) or [])
+    for cluster in clusters:
+        crystals = []
+        staleness = {}
+        if crystal_module is not None:
+            try:
+                crystals = list(crystal_module.list_crystals(cfg, cluster.slug))
+                staleness = dict(crystal_module.check_staleness(cfg, cluster.slug) or {})
+            except Exception as exc:
+                logger.warning("crystal summary failed for %s: %s", cluster.slug, exc)
+                crystals = []
+                staleness = {}
+
+        crystal_dicts: list[dict[str, object]] = []
+        stale_count = 0
+        for crystal in crystals:
+            stale_info = staleness.get(getattr(crystal, "question_slug", ""))
+            stale = bool(getattr(stale_info, "stale", False)) if stale_info is not None else False
+            if stale:
+                stale_count += 1
+            crystal_dicts.append(
+                {
+                    "slug": getattr(crystal, "question_slug", ""),
+                    "question": getattr(crystal, "question", ""),
+                    "tldr": getattr(crystal, "tldr", ""),
+                    "confidence": getattr(crystal, "confidence", ""),
+                    "stale": stale,
+                }
+            )
+
+        last_generated = ""
+        if crystals:
+            last_generated = max(
+                (
+                    str(getattr(crystal, "last_generated", "") or "")
+                    for crystal in crystals
+                    if getattr(crystal, "last_generated", "")
+                ),
+                default="",
+            )
+
+        crystal_summary_by_cluster[cluster.slug] = CrystalSummary(
+            cluster_slug=cluster.slug,
+            total_canonical=total_canonical,
+            generated_count=len(crystals),
+            stale_count=stale_count,
+            last_generated=last_generated,
+            crystals=crystal_dicts,
+        )
+
     return DashboardData(
         vault_root=str(cfg.root),
         generated_at=generated_at,
@@ -287,6 +347,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
         clusters=clusters,
         briefings=briefings,
         quotes=quotes,
+        crystal_summary_by_cluster=crystal_summary_by_cluster,
         labels_across_clusters=labels_across_clusters,
         health_badges=health_badges,
         drift_alerts=drift_alerts,

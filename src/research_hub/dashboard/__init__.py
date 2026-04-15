@@ -37,6 +37,7 @@ from research_hub.dashboard.render import (
     render_dashboard_from_config,
 )
 from research_hub.dashboard.sections import (
+    CrystalSection,
     DEFAULT_SECTIONS,
     ActivitySection,
     ClustersSection,
@@ -259,6 +260,7 @@ __all__ = [
     "ClusterRow",
     "ClustersSection",
     "ClusterStats",
+    "CrystalSection",
     "DEFAULT_SECTIONS",
     "DashboardContext",
     "DashboardSection",

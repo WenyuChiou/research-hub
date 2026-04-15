@@ -24,7 +24,13 @@ from typing import Literal
 Persona = Literal["researcher", "analyst"]
 ReadingStatus = Literal["unread", "reading", "deep-read", "cited"]
 HealthStatus = Literal["OK", "WARN", "FAIL"]
-DriftKind = Literal["folder_mismatch", "duplicate_doi", "orphan_note", "stale_nlm"]
+DriftKind = Literal[
+    "folder_mismatch",
+    "duplicate_doi",
+    "orphan_note",
+    "stale_nlm",
+    "crystal_stale",
+]
 
 
 @dataclass
@@ -133,6 +139,20 @@ class Quote:
 
 
 @dataclass
+class CrystalSummary:
+    cluster_slug: str
+    total_canonical: int
+    generated_count: int
+    stale_count: int
+    last_generated: str = ""
+    crystals: list[dict] = field(default_factory=list)
+
+    @property
+    def completion_ratio(self) -> float:
+        return self.generated_count / self.total_canonical if self.total_canonical else 0.0
+
+
+@dataclass
 class DashboardData:
     """Top-level snapshot — every section reads only from this."""
 
@@ -145,6 +165,7 @@ class DashboardData:
     clusters: list[ClusterCard] = field(default_factory=list)
     briefings: list[BriefingPreview] = field(default_factory=list)
     quotes: list[Quote] = field(default_factory=list)
+    crystal_summary_by_cluster: dict[str, CrystalSummary] = field(default_factory=dict)
     labels_across_clusters: dict[str, list[tuple[str, str, str]]] = field(default_factory=dict)
     health_badges: list[HealthBadge] = field(default_factory=list)
     drift_alerts: list[DriftAlert] = field(default_factory=list)
