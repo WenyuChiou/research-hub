@@ -59,7 +59,7 @@ research-hub vault graph-colors --refresh
 
 Writes 14 colour groups to `.obsidian/graph.json`: 5 per cluster path + 9 per paper label (`seed`, `core`, `method`, `benchmark`, `survey`, `application`, `tangential`, `deprecated`, `archived`). Every `research-hub dashboard` run auto-refreshes them. Open Obsidian Graph View — your vault is visually structured by meaning, not just file tree.
 
-![Obsidian Graph coloured by label](docs/images/obsidian-graph.png)
+_(Obsidian graph screenshot pending — capture from `Ctrl+G` after `research-hub vault graph-colors --refresh`.)_
 
 ### 4. Sub-topic-aware Library + citation-graph cluster split (v0.27)
 

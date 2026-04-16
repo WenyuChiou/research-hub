@@ -59,7 +59,7 @@ research-hub vault graph-colors --refresh
 
 寫入 14 個顏色群組到 `.obsidian/graph.json`:5 個 cluster 路徑 + 9 個論文 label(`seed`、`core`、`method`、`benchmark`、`survey`、`application`、`tangential`、`deprecated`、`archived`)。每次 `research-hub dashboard` 都會自動刷新。打開 Obsidian Graph View — 你的 vault 是按「意義」視覺化,不是按檔案樹。
 
-![Obsidian Graph 按 label 上色](docs/images/obsidian-graph.png)
+_(Obsidian graph 截圖待補 — 跑完 `research-hub vault graph-colors --refresh` 後按 `Ctrl+G` 截。)_
 
 ### 4. 分 sub-topic 的 Library + citation graph 自動分群 (v0.27)
 
