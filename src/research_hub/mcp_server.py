@@ -1556,5 +1556,179 @@ mcp.tool()(examples_show)
 mcp.tool()(examples_copy)
 
 
+# v0.31 Track D: NotebookLM round-trip exposed via MCP.
+
+
+@mcp.tool()
+def notebooklm_bundle(cluster_slug: str, download_pdfs: bool = False) -> dict[str, Any]:
+    """Build a NotebookLM upload bundle for a cluster."""
+    cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+    try:
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.config import get_config
+        from research_hub.notebooklm.bundle import bundle_cluster
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            return {"status": "error", "error": f"Cluster not found: {cluster_slug}"}
+
+        report = bundle_cluster(cluster, cfg, download_pdfs=download_pdfs)
+        return {
+            "status": "ok",
+            "cluster_slug": cluster_slug,
+            "bundle_dir": str(report.bundle_dir),
+            "paper_count": len(report.entries),
+            "pdf_count": report.pdf_count,
+            "url_count": report.url_count,
+            "skip_count": report.skip_count,
+            "created_at": report.created_at,
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def notebooklm_upload(
+    cluster_slug: str,
+    dry_run: bool = False,
+    headless: bool = True,
+    create_if_missing: bool = True,
+) -> dict[str, Any]:
+    """Upload the latest cluster bundle to NotebookLM via Playwright/CDP."""
+    cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+    try:
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.config import get_config
+        from research_hub.notebooklm.upload import upload_cluster
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            return {"status": "error", "error": f"Cluster not found: {cluster_slug}"}
+
+        report = upload_cluster(
+            cluster,
+            cfg,
+            dry_run=dry_run,
+            headless=headless,
+            create_if_missing=create_if_missing,
+        )
+        return {
+            "status": "ok",
+            "cluster_slug": cluster_slug,
+            "dry_run": dry_run,
+            "notebook_name": report.notebook_name,
+            "notebook_url": report.notebook_url,
+            "notebook_id": report.notebook_id,
+            "uploaded_count": report.success_count,
+            "failed_count": report.fail_count,
+            "skipped_already_uploaded": report.skipped_already_uploaded,
+            "uploads": [asdict(item) for item in report.uploaded],
+            "errors": list(report.errors),
+        }
+    except ImportError:  # pragma: no cover
+        return {
+            "status": "error",
+            "error": "Playwright support is not installed. Run: pip install 'research-hub-pipeline[playwright]'",
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def notebooklm_generate(
+    cluster_slug: str,
+    artifact_type: str = "brief",
+    headless: bool = True,
+) -> dict[str, Any]:
+    """Trigger NotebookLM artifact generation for a cluster notebook."""
+    cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+    valid_types = {"brief", "audio", "mind-map", "video", "all"}
+    if artifact_type not in valid_types:
+        return {
+            "status": "error",
+            "error": f"Invalid artifact_type: {artifact_type!r}. Expected one of {sorted(valid_types)}",
+        }
+    try:
+        from datetime import datetime, timezone
+
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.config import get_config
+        from research_hub.notebooklm.upload import generate_artifact
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            return {"status": "error", "error": f"Cluster not found: {cluster_slug}"}
+
+        if artifact_type == "all":
+            kinds = ["brief", "audio", "mind_map", "video"]
+        elif artifact_type == "mind-map":
+            kinds = ["mind_map"]
+        else:
+            kinds = [artifact_type]
+
+        artifacts: dict[str, str] = {}
+        for kind in kinds:
+            artifacts[kind] = generate_artifact(cluster, cfg, kind=kind, headless=headless)
+
+        return {
+            "status": "ok",
+            "cluster_slug": cluster_slug,
+            "artifact_type": artifact_type,
+            "artifacts": artifacts,
+            "started_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+    except ImportError:  # pragma: no cover
+        return {
+            "status": "error",
+            "error": "Playwright support is not installed. Run: pip install 'research-hub-pipeline[playwright]'",
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def notebooklm_download(
+    cluster_slug: str,
+    artifact_type: str = "brief",
+    headless: bool = True,
+) -> dict[str, Any]:
+    """Download the latest NotebookLM briefing artifact into the vault."""
+    cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+    if artifact_type != "brief":
+        return {
+            "status": "error",
+            "error": f"Only artifact_type='brief' is supported (got {artifact_type!r}).",
+        }
+    try:
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.config import get_config
+        from research_hub.notebooklm.upload import download_briefing_for_cluster
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            return {"status": "error", "error": f"Cluster not found: {cluster_slug}"}
+
+        report = download_briefing_for_cluster(cluster, cfg, headless=headless)
+        return {
+            "status": "ok",
+            "cluster_slug": cluster_slug,
+            "artifact_type": artifact_type,
+            "artifact_path": str(report.artifact_path),
+            "char_count": report.char_count,
+            "notebook_name": report.notebook_name,
+            "titles": report.titles,
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 if __name__ == "__main__":
     main()

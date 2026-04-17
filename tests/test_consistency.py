@@ -69,6 +69,11 @@ EXPECTED_MAPPINGS = {
     "examples_show": "examples show",
     "examples_copy": "examples copy",
     "suggest_cluster_split": "clusters analyze --split-suggestion",
+    "import_folder_tool": "import-folder",
+    "notebooklm_bundle": "notebooklm bundle",
+    "notebooklm_upload": "notebooklm upload",
+    "notebooklm_generate": "notebooklm generate",
+    "notebooklm_download": "notebooklm download",
 }
 
 
