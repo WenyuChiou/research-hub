@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -1059,6 +1060,23 @@ def _dashboard(
 
 
 def _cmd_serve(args, cfg) -> int:
+    if args.dashboard and args.allow_external:
+        print("+" + "-" * 62 + "+")
+        print("| DASHBOARD BOUND TO 0.0.0.0" + " " * 34 + "|")
+        print("|" + " " * 62 + "|")
+        print("| Anyone on your network can:" + " " * 32 + "|")
+        print("| - View your research data" + " " * 34 + "|")
+        print("| - Execute whitelisted CLI commands" + " " * 24 + "|")
+        print("|" + " " * 62 + "|")
+        print("| Use only on trusted networks (home LAN, VPN)." + " " * 15 + "|")
+        print("|" + " " * 62 + "|")
+        if args.yes:
+            print("| Continuing immediately because --yes was passed." + " " * 15 + "|")
+        else:
+            print("| Continuing in 5 seconds - Ctrl+C to abort." + " " * 17 + "|")
+        print("+" + "-" * 62 + "+")
+        if not args.yes:
+            time.sleep(5)
     if args.dashboard:
         from research_hub.dashboard.http_server import serve_dashboard
 
@@ -1752,6 +1770,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow binding non-loopback host (power-user only)",
     )
     serve_parser.add_argument("--no-browser", action="store_true")
+    serve_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the external-bind warning delay when used with --allow-external",
+    )
 
     run_parser = subparsers.add_parser("run", help="Run the research pipeline")
     run_parser.add_argument("--topic", default=None, help="Pipeline topic context")

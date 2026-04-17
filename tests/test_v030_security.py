@@ -484,6 +484,64 @@ def test_event_broadcaster_drops_oldest_when_queue_is_full():
     assert queue.get_nowait()["type"] == "three"
 
 
+def test_serve_warns_on_external_bind(monkeypatch, capsys):
+    from research_hub import cli
+
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "research_hub.dashboard.http_server.serve_dashboard",
+        lambda cfg, **kwargs: seen.setdefault("kwargs", kwargs),
+    )
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: seen.setdefault("sleep", seconds))
+
+    args = SimpleNamespace(
+        dashboard=True,
+        host="0.0.0.0",
+        port=8765,
+        allow_external=True,
+        no_browser=True,
+        yes=False,
+    )
+
+    assert cli._cmd_serve(args, cfg=SimpleNamespace()) == 0
+
+    output = capsys.readouterr().out
+    assert "DASHBOARD BOUND TO 0.0.0.0" in output
+    assert "Continuing in 5 seconds" in output
+    assert seen["sleep"] == 5
+
+
+def test_serve_yes_skips_warning_delay(monkeypatch, capsys):
+    from research_hub import cli
+
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "research_hub.dashboard.http_server.serve_dashboard",
+        lambda cfg, **kwargs: seen.setdefault("kwargs", kwargs),
+    )
+    monkeypatch.setattr(
+        cli.time,
+        "sleep",
+        lambda seconds: (_ for _ in ()).throw(AssertionError("sleep should be skipped")),
+    )
+
+    args = SimpleNamespace(
+        dashboard=True,
+        host="0.0.0.0",
+        port=8765,
+        allow_external=True,
+        no_browser=True,
+        yes=True,
+    )
+
+    assert cli._cmd_serve(args, cfg=SimpleNamespace()) == 0
+
+    output = capsys.readouterr().out
+    assert "Continuing immediately because --yes was passed." in output
+
+
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX perms only")
 def test_init_chmods_config_to_600(tmp_path, monkeypatch):
     from research_hub.init_wizard import run_init
