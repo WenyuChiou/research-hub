@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import platformdirs
 
+from research_hub.security import chmod_sensitive
+
 CONFIG_PATH = Path.home() / ".claude" / "skills" / "knowledge-base" / "config.json"
 
 
@@ -56,6 +58,8 @@ class HubConfig:
         if config_path is not None:
             with config_path.open(encoding="utf-8") as file_obj:
                 data = json.load(file_obj)
+            chmod_sensitive(config_path.parent, mode=0o700)
+            chmod_sensitive(config_path, mode=0o600)
             knowledge_base = data.get("knowledge_base", {})
             config_root = knowledge_base.get("root")
             config_raw = knowledge_base.get("raw")
@@ -114,6 +118,8 @@ class HubConfig:
         for path in (self.logs, self.research_hub_dir):
             try:
                 path.mkdir(parents=True, exist_ok=True)
+                if path == self.research_hub_dir:
+                    chmod_sensitive(path, mode=0o700)
             except PermissionError:
                 pass
 

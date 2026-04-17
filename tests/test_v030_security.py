@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -435,3 +436,46 @@ def test_executor_kills_process_on_timeout(monkeypatch):
     assert result.returncode == -1
     assert "process killed" in result.stderr
     assert seen["proc"].poll() is not None
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX perms only")
+def test_init_chmods_config_to_600(tmp_path, monkeypatch):
+    from research_hub.init_wizard import run_init
+
+    config_dir = tmp_path / "cfg"
+    monkeypatch.setattr(
+        "research_hub.init_wizard.platformdirs.user_config_dir",
+        lambda *args, **kwargs: str(config_dir),
+    )
+    monkeypatch.setattr("research_hub.notebooklm.cdp_launcher.find_chrome_binary", lambda: None)
+
+    assert run_init(vault_root=str(tmp_path / "vault"), non_interactive=True, persona="analyst") == 0
+
+    config_path = config_dir / "config.json"
+    assert os.stat(config_path).st_mode & 0o777 == 0o600
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX perms only")
+def test_init_chmods_research_hub_dir_to_700(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+    from research_hub.init_wizard import run_init
+
+    config_dir = tmp_path / "cfg"
+    monkeypatch.setattr(
+        "research_hub.init_wizard.platformdirs.user_config_dir",
+        lambda *args, **kwargs: str(config_dir),
+    )
+    monkeypatch.setattr(
+        "research_hub.config.platformdirs.user_config_dir",
+        lambda *args, **kwargs: str(config_dir),
+    )
+    monkeypatch.setattr("research_hub.notebooklm.cdp_launcher.find_chrome_binary", lambda: None)
+
+    vault_root = tmp_path / "vault"
+    assert run_init(vault_root=str(vault_root), non_interactive=True, persona="analyst") == 0
+    hub_config._config = None
+    hub_config._config_path = None
+    cfg = hub_config.get_config()
+
+    assert cfg.research_hub_dir == vault_root / ".research_hub"
+    assert os.stat(cfg.research_hub_dir).st_mode & 0o777 == 0o700

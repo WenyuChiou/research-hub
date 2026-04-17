@@ -8,6 +8,8 @@ from pathlib import Path
 
 import platformdirs
 
+from research_hub.security import chmod_sensitive
+
 
 def get_default_config_dir() -> Path:
     return Path(platformdirs.user_config_dir("research-hub", ensure_exists=False))
@@ -87,6 +89,7 @@ def run_init(
 
     for subdir in ("raw", "hub", "logs", "pdfs", ".research_hub"):
         (vault / subdir).mkdir(parents=True, exist_ok=True)
+    chmod_sensitive(vault / ".research_hub", mode=0o700)
     print(f"  Vault root: {vault}")
 
     if not is_analyst and not zotero_key and interactive:
@@ -151,6 +154,8 @@ def run_init(
         json.dumps(config, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    chmod_sensitive(config_path.parent, mode=0o700)
+    chmod_sensitive(config_path, mode=0o600)
     print(f"  Config written: {config_path}")
 
     try:
