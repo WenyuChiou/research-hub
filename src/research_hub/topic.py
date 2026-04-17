@@ -7,6 +7,8 @@ import logging
 from pathlib import Path
 import re
 
+from research_hub.security import safe_join
+
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +207,7 @@ def hub_cluster_dir(cfg, cluster_slug: str) -> Path:
         if root is None:
             raise AttributeError("config must define either 'hub' or 'root'")
         hub_root = Path(root) / "research_hub" / "hub"
-    return Path(hub_root) / cluster_slug
+    return safe_join(Path(hub_root), cluster_slug)
 
 
 def overview_path(cfg, cluster_slug: str) -> Path:
@@ -214,7 +216,7 @@ def overview_path(cfg, cluster_slug: str) -> Path:
 
 def subtopics_dir(cfg, cluster_slug: str) -> Path:
     """<vault>/raw/<cluster>/topics/"""
-    return Path(cfg.raw) / cluster_slug / SUBTOPICS_DIRNAME
+    return safe_join(cfg.raw, cluster_slug, SUBTOPICS_DIRNAME)
 
 
 def get_topic_digest(cfg, cluster_slug: str) -> TopicDigest:
@@ -226,7 +228,7 @@ def get_topic_digest(cfg, cluster_slug: str) -> TopicDigest:
     if cluster is None:
         raise ValueError(f"unknown cluster: {cluster_slug}")
 
-    cluster_dir = Path(cfg.raw) / cluster_slug
+    cluster_dir = safe_join(cfg.raw, cluster_slug)
     if not cluster_dir.exists():
         return TopicDigest(cluster_slug=cluster_slug, cluster_title=cluster.name, paper_count=0)
 
@@ -359,7 +361,7 @@ def apply_assignments(
     assignments: dict[str, list[str]],
 ) -> dict[str, int]:
     """Write `subtopics:` frontmatter field to each paper note."""
-    cluster_dir = Path(cfg.raw) / cluster_slug
+    cluster_dir = safe_join(cfg.raw, cluster_slug)
     report: dict[str, int] = {}
     for paper_slug, values in assignments.items():
         note_path = cluster_dir / f"{paper_slug}.md"
@@ -383,7 +385,7 @@ def build_subtopic_notes(cfg, cluster_slug: str) -> list[Path]:
     if cluster is None:
         raise ValueError(f"unknown cluster: {cluster_slug}")
 
-    cluster_dir = Path(cfg.raw) / cluster_slug
+    cluster_dir = safe_join(cfg.raw, cluster_slug)
     topics_root = subtopics_dir(cfg, cluster_slug)
     topics_root.mkdir(parents=True, exist_ok=True)
 

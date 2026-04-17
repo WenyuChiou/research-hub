@@ -22,6 +22,8 @@ from dataclasses import asdict
 import re
 from typing import Any, Callable
 
+from research_hub.security import ValidationError, validate_identifier, validate_slug
+
 try:
     from fastmcp import FastMCP
 except ImportError:  # pragma: no cover - dependency is optional
@@ -63,6 +65,20 @@ mcp = _MCP_CLS(
 
 def _tool_error(exc: Exception) -> dict[str, str]:
     return {"error": str(exc)}
+
+
+def _validate_mcp_args(**kwargs: object) -> dict[str, object]:
+    validated: dict[str, object] = {}
+    for field, value in kwargs.items():
+        if value is None:
+            validated[field] = None
+        elif field in {"identifier", "doi_or_slug"}:
+            validated[field] = validate_identifier(value, field=field)
+        elif field in {"cluster", "cluster_slug", "slug", "crystal_slug", "to_cluster", "source", "into"}:
+            validated[field] = validate_slug(value, field=field)
+        else:
+            validated[field] = value
+    return validated
 
 
 def search_papers(
@@ -200,6 +216,7 @@ def suggest_integration(
 ) -> dict[str, Any]:
     """Suggest which cluster a paper belongs to and find related papers."""
     try:
+        identifier = _validate_mcp_args(identifier=identifier)["identifier"]
         from research_hub.clusters import ClusterRegistry
         from research_hub.config import get_config
         from research_hub.dedup import DedupIndex
@@ -269,6 +286,7 @@ def list_clusters() -> list[dict[str, Any]] | dict[str, str]:
 def show_cluster(slug: str) -> dict[str, Any]:
     """Show detailed info for a cluster including sync status."""
     try:
+        slug = _validate_mcp_args(slug=slug)["slug"]
         from research_hub.clusters import ClusterRegistry
         from research_hub.config import get_config
         from research_hub.vault.sync import compute_sync_status
@@ -302,6 +320,9 @@ def export_citation(
 ) -> str | dict[str, str]:
     """Export citation in BibTeX, BibLaTeX, RIS, or CSL-JSON format."""
     try:
+        validated = _validate_mcp_args(identifier=identifier, cluster=cluster)
+        identifier = validated["identifier"]
+        cluster = validated["cluster"]
         from contextlib import redirect_stdout
         import io
 
@@ -319,6 +340,7 @@ def export_citation(
 def build_citation(doi_or_slug: str, style: str = "apa") -> dict:
     """Return an inline citation string for a paper."""
     try:
+        doi_or_slug = _validate_mcp_args(doi_or_slug=doi_or_slug)["doi_or_slug"]
         from research_hub.config import get_config
         from research_hub.writing import (
             build_inline_citation,
@@ -341,6 +363,7 @@ def build_citation(doi_or_slug: str, style: str = "apa") -> dict:
 def list_quotes(cluster_slug: str | None = None) -> dict:
     """List captured quotes, optionally filtered by cluster."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.writing import load_all_quotes
 
@@ -357,6 +380,7 @@ def list_quotes(cluster_slug: str | None = None) -> dict:
 def capture_quote(slug: str, page: str, text: str, context: str = "") -> dict:
     """Persist a quote to <vault>/.research_hub/quotes/<slug>.md."""
     try:
+        slug = _validate_mcp_args(slug=slug)["slug"]
         from research_hub.config import get_config
         from research_hub.writing import Quote, resolve_paper_meta, save_quote
 
@@ -389,6 +413,7 @@ def compose_draft(
 ) -> dict:
     """Assemble captured quotes into a markdown draft."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.drafting import DraftRequest, compose_draft as _compose_draft
 
@@ -417,6 +442,7 @@ def compose_draft(
 def get_references(identifier: str, limit: int = 20) -> list[dict[str, Any]] | dict[str, str]:
     """List papers cited by the given paper (its bibliography)."""
     try:
+        identifier = _validate_mcp_args(identifier=identifier)["identifier"]
         from research_hub.citation_graph import CitationGraphClient
 
         client = CitationGraphClient()
@@ -428,6 +454,7 @@ def get_references(identifier: str, limit: int = 20) -> list[dict[str, Any]] | d
 def get_citations(identifier: str, limit: int = 20) -> list[dict[str, Any]] | dict[str, str]:
     """List papers that cite the given paper."""
     try:
+        identifier = _validate_mcp_args(identifier=identifier)["identifier"]
         from research_hub.citation_graph import CitationGraphClient
 
         client = CitationGraphClient()
@@ -467,6 +494,7 @@ def get_config_info() -> dict[str, Any]:
 def remove_paper(identifier: str, include_zotero: bool = False, dry_run: bool = False) -> dict[str, Any]:
     """Remove a paper from the vault, optionally deleting its Zotero item too."""
     try:
+        identifier = _validate_mcp_args(identifier=identifier)["identifier"]
         from research_hub.operations import remove_paper as _remove
 
         return _remove(identifier, include_zotero=include_zotero, dry_run=dry_run)
@@ -477,6 +505,7 @@ def remove_paper(identifier: str, include_zotero: bool = False, dry_run: bool = 
 def mark_paper(slug: str, status: str) -> dict[str, Any]:
     """Update reading status for a note."""
     try:
+        slug = _validate_mcp_args(slug=slug)["slug"]
         from research_hub.operations import mark_paper as _mark
 
         return _mark(slug, status)
@@ -487,6 +516,9 @@ def mark_paper(slug: str, status: str) -> dict[str, Any]:
 def move_paper(slug: str, to_cluster: str) -> dict[str, Any]:
     """Move a note to a different cluster."""
     try:
+        validated = _validate_mcp_args(slug=slug, to_cluster=to_cluster)
+        slug = validated["slug"]
+        to_cluster = validated["to_cluster"]
         from research_hub.operations import move_paper as _move
 
         return _move(slug, to_cluster)
@@ -502,6 +534,9 @@ def add_paper(
     skip_verify: bool = False,
 ) -> dict:
     """Fetch a paper by DOI/arXiv ID and ingest it (one-shot)."""
+    validated = _validate_mcp_args(identifier=identifier, cluster=cluster)
+    identifier = validated["identifier"]
+    cluster = validated["cluster"]
     try:
         from research_hub.operations import add_paper as _add
 
@@ -523,6 +558,7 @@ def search_vault(
 ) -> list[dict[str, Any]] | dict[str, str]:
     """Search local vault notes by title or full text."""
     try:
+        cluster = _validate_mcp_args(cluster=cluster)["cluster"]
         from research_hub.vault_search import search_vault as _search
 
         return _search(query, cluster=cluster, status=status, full_text=full_text)
@@ -533,6 +569,9 @@ def search_vault(
 def merge_clusters(source: str, into: str) -> dict[str, Any]:
     """Merge one cluster into another."""
     try:
+        validated = _validate_mcp_args(source=source, into=into)
+        source = validated["source"]
+        into = validated["into"]
         from research_hub.clusters import ClusterRegistry
         from research_hub.config import get_config
 
@@ -546,6 +585,7 @@ def merge_clusters(source: str, into: str) -> dict[str, Any]:
 def split_cluster(source: str, query: str, new_name: str) -> dict[str, Any]:
     """Split a source cluster into a new cluster based on title keyword overlap."""
     try:
+        source = _validate_mcp_args(source=source)["source"]
         from research_hub.clusters import ClusterRegistry
         from research_hub.config import get_config
 
@@ -564,6 +604,7 @@ def suggest_cluster_split(
 ) -> dict:
     """Analyze a cluster's citation graph and suggest sub-topic splits."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.analyze import suggest_split
         from research_hub.config import get_config
 
@@ -583,6 +624,7 @@ def suggest_cluster_split(
 def get_topic_digest(cluster_slug: str) -> dict[str, Any]:
     """Return every paper in a cluster plus a markdown digest for overview writing."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import get_topic_digest as _digest
 
@@ -602,6 +644,7 @@ def get_topic_digest(cluster_slug: str) -> dict[str, Any]:
 def write_topic_overview(cluster_slug: str, markdown: str, overwrite: bool = False) -> dict[str, Any]:
     """Write a topic overview markdown file for a cluster."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import overview_path
 
@@ -622,6 +665,7 @@ def write_topic_overview(cluster_slug: str, markdown: str, overwrite: bool = Fal
 def read_topic_overview(cluster_slug: str) -> dict[str, Any]:
     """Return the current topic overview markdown for a cluster, if present."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import read_overview
 
@@ -637,6 +681,7 @@ def read_topic_overview(cluster_slug: str) -> dict[str, Any]:
 def propose_subtopics(cluster_slug: str, target_count: int = 5) -> dict:
     """Build the Phase 1 sub-topic proposal prompt for an AI to consume."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import emit_propose_prompt, get_topic_digest
 
@@ -655,6 +700,7 @@ def propose_subtopics(cluster_slug: str, target_count: int = 5) -> dict:
 def emit_assignment_prompt(cluster_slug: str, subtopics: list[dict]) -> dict:
     """Build the Phase 2 assignment prompt."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import SubtopicProposal, emit_assign_prompt, get_topic_digest
 
@@ -670,6 +716,7 @@ def emit_assignment_prompt(cluster_slug: str, subtopics: list[dict]) -> dict:
 def apply_subtopic_assignments(cluster_slug: str, assignments: dict) -> dict:
     """Write subtopics frontmatter to each paper note."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import apply_assignments
 
@@ -687,6 +734,7 @@ def apply_subtopic_assignments(cluster_slug: str, assignments: dict) -> dict:
 def build_topic_notes(cluster_slug: str) -> dict:
     """Generate topics/NN_<slug>.md files from paper frontmatter."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import build_subtopic_notes
 
@@ -704,6 +752,7 @@ def build_topic_notes(cluster_slug: str) -> dict:
 def list_topic_notes(cluster_slug: str) -> dict:
     """List existing sub-topic notes for a cluster."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.topic import list_subtopics
 
@@ -732,6 +781,7 @@ def fit_check_prompt(
 ) -> dict:
     """Build the Gate 1 fit-check prompt for an AI to score."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.fit_check import emit_prompt
 
@@ -750,6 +800,7 @@ def fit_check_apply(
 ) -> dict:
     """Consume AI scores, filter candidates, write rejected sidecar."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.fit_check import apply_scores
 
@@ -769,6 +820,7 @@ def fit_check_apply(
 def fit_check_audit(cluster_slug: str) -> dict:
     """Gate 3: parse latest NLM briefing for off-topic flags."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.fit_check import parse_nlm_off_topic
         from research_hub.notebooklm.upload import read_latest_briefing
@@ -786,6 +838,7 @@ def fit_check_audit(cluster_slug: str) -> dict:
 def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
     """Gate 4: emit drift-check prompt against current overview."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.fit_check import drift_check
 
@@ -798,6 +851,7 @@ def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
 def autofill_emit(cluster_slug: str) -> dict:
     """Build the paper-note autofill prompt for an AI to consume."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.autofill import emit_autofill_prompt, find_todo_papers
         from research_hub.config import get_config
 
@@ -814,6 +868,7 @@ def autofill_emit(cluster_slug: str) -> dict:
 def autofill_apply(cluster_slug: str, scored: list[dict] | dict) -> dict:
     """Apply AI-supplied body content to paper notes."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.autofill import apply_autofill
         from research_hub.config import get_config
 
@@ -834,6 +889,7 @@ def autofill_apply(cluster_slug: str, scored: list[dict] | dict) -> dict:
 def list_crystals(cluster_slug: str) -> dict:
     """List all pre-computed crystal answers for a cluster."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub import crystal
         from research_hub.config import get_config
 
@@ -862,6 +918,9 @@ def list_crystals(cluster_slug: str) -> dict:
 @mcp.tool()
 def read_crystal(cluster_slug: str, crystal_slug: str, level: str = "gist") -> dict:
     """Read a specific crystal at the requested detail level."""
+    validated = _validate_mcp_args(cluster_slug=cluster_slug, crystal_slug=crystal_slug)
+    cluster_slug = validated["cluster_slug"]
+    crystal_slug = validated["crystal_slug"]
     try:
         from research_hub import crystal
         from research_hub.config import get_config
@@ -893,6 +952,7 @@ def read_crystal(cluster_slug: str, crystal_slug: str, level: str = "gist") -> d
 def emit_crystal_prompt(cluster_slug: str, question_slugs: list[str] | None = None) -> dict:
     """Emit the markdown prompt the calling AI should answer to generate crystals."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub import crystal
         from research_hub.config import get_config
 
@@ -906,6 +966,7 @@ def emit_crystal_prompt(cluster_slug: str, question_slugs: list[str] | None = No
 def apply_crystals(cluster_slug: str, crystals_json: dict) -> dict:
     """Persist crystal answers to hub/<cluster>/crystals/<slug>.md."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub import crystal
         from research_hub.config import get_config
 
@@ -919,6 +980,7 @@ def apply_crystals(cluster_slug: str, crystals_json: dict) -> dict:
 def check_crystal_staleness(cluster_slug: str) -> dict:
     """Check how many crystals are stale (>10% cluster paper delta since generation)."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub import crystal
         from research_hub.config import get_config
 
@@ -939,6 +1001,7 @@ def label_paper(
 ) -> dict:
     """Set, add, or remove labels on a paper note."""
     try:
+        slug = _validate_mcp_args(slug=slug)["slug"]
         from research_hub.config import get_config
         from research_hub.paper import set_labels
 
@@ -971,6 +1034,7 @@ def list_papers_by_label(
 ) -> list[dict] | dict:
     """Return paper states for the cluster, optionally filtered by label."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.paper import list_papers_by_label as _list
 
@@ -1000,6 +1064,7 @@ def prune_cluster(
 ) -> dict:
     """Move or delete papers with the given label."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.paper import prune_cluster as _prune
 
@@ -1019,6 +1084,7 @@ def prune_cluster(
 def apply_fit_check_to_labels(cluster_slug: str) -> dict:
     """Tag papers rejected by fit-check as deprecated."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.paper import apply_fit_check_to_labels as _apply
 
@@ -1052,6 +1118,7 @@ def discover_new(
 ) -> dict:
     """Run search + emit fit-check prompt, stashing state for discover_continue."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.discover import discover_new as _discover_new
 
@@ -1108,6 +1175,7 @@ def discover_variants(
 ) -> dict:
     """Emit a query-variation prompt for the given cluster."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.discover import emit_variation_prompt
 
@@ -1126,6 +1194,7 @@ def discover_continue(
 ) -> dict:
     """Apply AI scores and emit papers_input.json for later ingest."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.discover import discover_continue as _discover_continue
 
@@ -1152,6 +1221,7 @@ def discover_continue(
 def discover_status(cluster_slug: str) -> dict:
     """Return current discover state for a cluster."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.discover import discover_status as _discover_status
 
@@ -1179,6 +1249,7 @@ def discover_status(cluster_slug: str) -> dict:
 def discover_clean(cluster_slug: str) -> dict:
     """Remove the discover stash directory for a cluster."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.discover import discover_clean as _discover_clean
 
@@ -1212,6 +1283,7 @@ def examples_show(name: str) -> dict[str, Any]:
 def examples_copy(name: str, cluster_slug: str | None = None) -> dict[str, Any]:
     """Copy an example into the user's cluster registry."""
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.examples import copy_example_as_cluster
 
@@ -1246,6 +1318,7 @@ def download_artifacts(
         dict with status, path, char_count, notebook_name, and titles.
     """
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.clusters import ClusterRegistry
         from research_hub.notebooklm.upload import download_briefing_for_cluster
@@ -1298,6 +1371,7 @@ def read_briefing(cluster_slug: str, max_chars: int = _BRIEFING_MAX_CHARS) -> di
         and the original `full_chars` count.
     """
     try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
         from research_hub.clusters import ClusterRegistry
         from research_hub.notebooklm.upload import read_latest_briefing

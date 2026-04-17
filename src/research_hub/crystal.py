@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from research_hub.security import safe_join
+
 logger = logging.getLogger(__name__)
 
 CANONICAL_QUESTIONS: list[dict[str, str]] = [
@@ -161,7 +163,7 @@ class CrystalStaleness:
 
 
 def crystal_dir(cfg, cluster_slug: str) -> Path:
-    return Path(cfg.hub) / cluster_slug / "crystals"
+    return safe_join(cfg.hub, cluster_slug, "crystals")
 
 
 def emit_crystal_prompt(cfg, cluster_slug: str, *, question_slugs: list[str] | None = None) -> str:
@@ -355,7 +357,7 @@ def _extract_one_liner(text: str) -> str:
 
 
 def _read_cluster_definition(cfg, cluster_slug: str) -> str:
-    path = Path(cfg.hub) / cluster_slug / "00_overview.md"
+    path = safe_join(cfg.hub, cluster_slug, "00_overview.md")
     if not path.exists():
         return ""
     body = _strip_frontmatter(path.read_text(encoding="utf-8"))

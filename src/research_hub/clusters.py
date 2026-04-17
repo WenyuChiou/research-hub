@@ -11,6 +11,7 @@ from pathlib import Path
 
 from research_hub.config import get_config
 from research_hub.operations import _update_frontmatter_field, move_paper, note_matches_query
+from research_hub.security import safe_join
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,15 @@ class ClusterRegistry:
     def get(self, slug: str) -> Cluster | None:
         """Get a cluster by slug."""
         return self.clusters.get(slug)
+
+    def raw_dir(self, slug: str, vault_raw: Path | None = None) -> Path:
+        """Return a cluster raw directory using safe path joining."""
+        return safe_join(vault_raw or get_config().raw, slug)
+
+    def hub_dir(self, slug: str, hub_root: Path | None = None) -> Path:
+        """Return a cluster hub directory using safe path joining."""
+        root = hub_root or get_config().hub
+        return safe_join(root, slug)
 
     def list(self) -> list[Cluster]:
         """List all clusters."""
