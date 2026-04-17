@@ -549,6 +549,35 @@ def add_paper(
         return _tool_error(exc)
 
 
+@mcp.tool()
+def import_folder_tool(folder: str, cluster_slug: str, dry_run: bool = False) -> dict:
+    """Walk a local folder and ingest non-DOI files as document notes."""
+    try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+        from research_hub.config import require_config
+        from research_hub.importer import import_folder
+
+        cfg = require_config()
+        report = import_folder(cfg, folder, cluster_slug=cluster_slug, dry_run=dry_run)
+        return {
+            "cluster": cluster_slug,
+            "imported": report.imported_count,
+            "skipped": report.skipped_count,
+            "failed": report.failed_count,
+            "entries": [
+                {
+                    "file": str(entry.path),
+                    "status": entry.status,
+                    "slug": entry.slug,
+                    "error": entry.error,
+                }
+                for entry in report.entries
+            ],
+        }
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 def search_vault(
     query: str,
     cluster: str | None = None,

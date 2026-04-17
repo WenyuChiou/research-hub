@@ -539,6 +539,31 @@ def _cleanup_hub(dry_run: bool = False) -> int:
     return 0
 
 
+def _import_folder_command(args) -> int:
+    from research_hub.importer import import_folder
+
+    cfg = require_config()
+    report = import_folder(
+        cfg,
+        args.folder,
+        cluster_slug=args.cluster,
+        extensions=tuple(item.strip() for item in args.extensions.split(",") if item.strip()),
+        skip_existing=not args.no_skip_existing,
+        use_graphify=args.use_graphify,
+        dry_run=args.dry_run,
+    )
+    print(f"\nImport summary ({'DRY RUN' if args.dry_run else 'WRITTEN'}):")
+    print(f"  imported:  {report.imported_count}")
+    print(f"  skipped:   {report.skipped_count}")
+    print(f"  failed:    {report.failed_count}")
+    if report.failed_count > 0:
+        print("\nFailures:")
+        for entry in report.entries:
+            if entry.status == "failed":
+                print(f"  {entry.path.name}: {entry.error}")
+    return 0 if report.failed_count == 0 else 1
+
+
 def _synthesize(cluster: str | None, graph_colors: bool) -> int:
     from research_hub.vault.graph_config import refresh_graph_from_vault
     from research_hub.vault.synthesis import synthesize_all_clusters, synthesize_cluster
@@ -1834,6 +1859,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum score (0-5) to keep a paper when --fit-check is on",
     )
 
+    import_folder_parser = subparsers.add_parser(
+        "import-folder",
+        help="Walk a folder and ingest local files as document notes",
+    )
+    import_folder_parser.add_argument("folder", help="Path to source folder (recursive)")
+    import_folder_parser.add_argument("--cluster", required=True, help="Target cluster slug")
+    import_folder_parser.add_argument(
+        "--extensions",
+        default="pdf,md,txt,docx,url",
+        help="Comma-separated file extensions to ingest",
+    )
+    import_folder_parser.add_argument(
+        "--no-skip-existing",
+        action="store_true",
+        help="Re-import even if content hash matches an existing imported note",
+    )
+    import_folder_parser.add_argument(
+        "--use-graphify",
+        action="store_true",
+        help="Run graphify post-processing if graphify_bridge is available",
+    )
+    import_folder_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be imported without writing notes",
+    )
+
     for parser_with_verify in (run_parser, ingest_parser):
         parser_with_verify.add_argument(
             "--no-verify",
@@ -2694,6 +2746,8 @@ def main(argv: list[str] | None = None) -> int:
             result = apply_fit_check_to_labels(cfg, args.cluster)
             print(f"auto-labeled {len(result['tagged'])} paper(s) as deprecated from fit-check sidecar")
         return rc
+    if args.command == "import-folder":
+        return _import_folder_command(args)
     if args.command == "fit-check":
         if args.fit_check_command == "emit":
             return _fit_check_emit(args.cluster, args.candidates, args.definition, args.out)
