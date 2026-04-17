@@ -64,6 +64,52 @@ def _fake_crystal(slug, question, tldr="T", gist="G", full="F", confidence="medi
 # ---------------------------------------------------------------------------
 
 
+def test_ask_cluster_matches_sota_acronym(tmp_path):
+    """Regression: 'what's the SOTA' must match crystal with 'state of the art'
+    in its question. Before v0.33.1 fix this failed (token_set_ratio 33 < 55)
+    because the acronym and full phrase share no tokens.
+    """
+    from research_hub.workflows import ask_cluster
+    cfg = _make_cfg(tmp_path)
+
+    crystal = _fake_crystal(
+        "sota-and-open-problems",
+        "What is the current state of the art and what remains unsolved?",
+        gist="Answer about SOTA.",
+    )
+    with patch("research_hub.crystal.list_crystals", return_value=[crystal]), \
+         patch("research_hub.crystal.check_staleness", return_value={}):
+        result = ask_cluster(
+            cfg, "test-cluster", question="what's the SOTA", detail="gist",
+        )
+    assert result["ok"] is True
+    assert result["source"] == "crystal"
+    assert result["crystal_slug"] == "sota-and-open-problems"
+
+
+def test_ask_cluster_does_not_match_wrong_crystal_via_wratio(tmp_path):
+    """Regression: before v0.33.1 fix, 'what is this field about' wrongly
+    matched 'why-now' via WRatio scorer. Fix removed WRatio and uses only
+    token_set_ratio across question + slug.
+    """
+    from research_hub.workflows import ask_cluster
+    cfg = _make_cfg(tmp_path)
+
+    crystals = [
+        _fake_crystal("what-is-this-field", "What is this research area about?", gist="FIELD ANSWER"),
+        _fake_crystal("why-now", "Why does this research matter now? What changed?", gist="WHY ANSWER"),
+    ]
+    with patch("research_hub.crystal.list_crystals", return_value=crystals), \
+         patch("research_hub.crystal.check_staleness", return_value={}):
+        result = ask_cluster(
+            cfg, "test-cluster",
+            question="what is this field about", detail="gist",
+        )
+    assert result["ok"] is True
+    assert result["crystal_slug"] == "what-is-this-field"
+    assert "FIELD ANSWER" in result["answer"]
+
+
 def test_ask_cluster_hits_crystal_when_question_matches(tmp_path):
     from research_hub.workflows import ask_cluster
     cfg = _make_cfg(tmp_path)

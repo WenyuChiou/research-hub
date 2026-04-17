@@ -20,6 +20,30 @@ _DOI_RE = re.compile(r"^10\.\d{4,}/\S+$")
 _ARXIV_RE = re.compile(r"^(arxiv:|arXiv:)?\d{4}\.\d{4,5}(v\d+)?$", re.IGNORECASE)
 
 
+# Common research acronyms expanded before fuzzy matching. Without this,
+# "what's the SOTA" fails to match crystal "sota-and-open-problems" because
+# token-based scorers don't know SOTA = state of the art.
+_QUESTION_ACRONYMS: dict[str, str] = {
+    r"\bsota\b": "state of the art",
+    r"\bnlp\b": "natural language processing",
+    r"\bllm\b": "large language model",
+    r"\brl\b": "reinforcement learning",
+    r"\bnn\b": "neural network",
+    r"\bml\b": "machine learning",
+    r"\brag\b": "retrieval augmented generation",
+    r"\bbenchmark(s)?\b": "benchmark evaluation standard",
+    r"\bopen problem(s)?\b": "unsolved problem state of the art",
+}
+
+
+def _expand_acronyms(text: str) -> str:
+    """Expand common research acronyms for better fuzzy matching."""
+    out = text
+    for pattern, expansion in _QUESTION_ACRONYMS.items():
+        out = re.sub(pattern, expansion, out, flags=re.IGNORECASE)
+    return out
+
+
 def _err(message: str) -> dict:
     return {"ok": False, "error": message}
 
@@ -80,12 +104,32 @@ def ask_cluster(
             fuzz = None  # type: ignore[assignment]
 
         if process is not None and fuzz is not None:
-            choices = {c.question_slug: c.question for c in crystals}
-            match = process.extractOne(
-                question, choices, scorer=fuzz.token_set_ratio, score_cutoff=60,
-            )
-            if match is not None:
-                _, score, matched_slug = match
+            # Score the user's question against BOTH the crystal question text
+            # AND the crystal slug (slug-as-prose is often a better match when
+            # the user rephrases, e.g. "what is this field about" vs slug
+            # "what-is-this-field" tokenises to the same words).
+            # token_set_ratio is the reliable scorer here; we tried adding
+            # WRatio but it promotes false positives (e.g. "Why-now" scoring
+            # 85 for "what is this field about" because of "What" in the
+            # question text).
+            best_slug: str | None = None
+            best_score: float = 0.0
+            expanded_q = _expand_acronyms(question)
+            for crystal in crystals:
+                slug_text = crystal.question_slug.replace("-", " ")
+                expanded_target_q = _expand_acronyms(crystal.question)
+                expanded_target_s = _expand_acronyms(slug_text)
+                score_q = fuzz.token_set_ratio(expanded_q, expanded_target_q)
+                score_s = fuzz.token_set_ratio(expanded_q, expanded_target_s)
+                score = max(score_q, score_s)
+                if score > best_score:
+                    best_score = score
+                    best_slug = crystal.question_slug
+            # Accept if best score >= 55 (empirically tuned on canonical
+            # questions: matching question scores 60-75, unrelated <40).
+            if best_slug is not None and best_score >= 55:
+                matched_slug = best_slug
+                score = int(best_score)
                 crystal = next(
                     (c for c in crystals if c.question_slug == matched_slug),
                     None,

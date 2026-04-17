@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.33.1 (2026-04-17)
+
+**Patch: ask_cluster fuzzy-match bugs found via live testing. 1247 → 1249 tests (+2 regression).**
+
+Live smoke-test of v0.33.0 on the real `llm-agents-software-engineering` cluster (10 crystals) caught two bugs in the `ask_cluster` fuzzy matcher:
+
+### Fixed — `ask_cluster` false-miss on boundary scores
+
+The token_set_ratio cutoff of 60 was too strict. "what is this field about" vs "What is this research area about?" scores 59.6 — just below the cutoff, causing a false miss and digest fallback. **Cutoff lowered to 55.** Canonical questions still score ≥60 when matching; unrelated questions still score <40.
+
+### Fixed — `ask_cluster` false-positive via WRatio scorer
+
+Adding rapidfuzz's `WRatio` as a fallback scorer turned out promiscuous. Example: "what is this field about" ↔ "Why does this research matter now? What changed?" scored WRatio=86 (because of "What" in the target) while the correct match scored only 67. **Removed WRatio**, kept only token_set_ratio applied to both the crystal question text AND the slug-as-words (slugs often match better when user rephrases, e.g. "what is this field about" → slug "what-is-this-field" tokenises to the same words).
+
+### Added — acronym expansion for common research terms
+
+"what's the SOTA" scored only 33 against "What is the current state of the art..." because the acronym and full phrase share no tokens. Added `_expand_acronyms()` preprocessing that expands SOTA → state of the art, LLM → large language model, RAG → retrieval augmented generation, RL → reinforcement learning, etc. both sides before scoring.
+
+### Test matrix (post-fix live against real cluster)
+
+| User query | Matched crystal | Score |
+|---|---|---|
+| "what is this field about" | what-is-this-field | 100 |
+| "what's the SOTA" | sota-and-open-problems | 82 |
+| "how do people evaluate work" | evaluation-standards | 92 |
+| "common mistakes beginners make" | common-pitfalls | 80 |
+| "completely unrelated question about cooking" | (falls back to digest) | - |
+
++ 2 regression tests in `tests/test_v033_workflows.py` for both failure modes.
+
 ## v0.33.0 (2026-04-17)
 
 **Tool consolidation (Codex Phase 3). 1235 → 1247 tests (+12). 5 task-level MCP wrappers on top of 64 low-level tools.**
