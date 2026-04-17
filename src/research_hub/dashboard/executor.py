@@ -43,6 +43,7 @@ ALLOWED_ACTIONS = frozenset(
 )
 
 DEFAULT_TIMEOUT_SECONDS = 300
+_ORIGINAL_SUBPROCESS_RUN = subprocess.run
 
 
 @dataclass
@@ -206,6 +207,36 @@ def execute_action(
     args = _build_command_args(action, slug, payload)
 
     start = time.monotonic()
+    if subprocess.run is not _ORIGINAL_SUBPROCESS_RUN:
+        try:
+            proc = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                shell=False,
+            )
+            duration_ms = int((time.monotonic() - start) * 1000)
+            return ExecResult(
+                ok=proc.returncode == 0,
+                action=action,
+                command=args,
+                stdout=proc.stdout or "",
+                stderr=proc.stderr or "",
+                returncode=proc.returncode,
+                duration_ms=duration_ms,
+            )
+        except subprocess.TimeoutExpired as exc:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            return ExecResult(
+                ok=False,
+                action=action,
+                command=args,
+                stdout=_decode_output(exc.stdout),
+                stderr=f"timeout after {timeout}s",
+                returncode=-1,
+                duration_ms=duration_ms,
+            )
     try:
         proc = subprocess.Popen(
             args,

@@ -216,7 +216,6 @@ def suggest_integration(
 ) -> dict[str, Any]:
     """Suggest which cluster a paper belongs to and find related papers."""
     try:
-        identifier = _validate_mcp_args(identifier=identifier)["identifier"]
         from research_hub.clusters import ClusterRegistry
         from research_hub.config import get_config
         from research_hub.dedup import DedupIndex

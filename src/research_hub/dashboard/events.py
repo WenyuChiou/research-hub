@@ -9,10 +9,11 @@ from queue import Empty, Full, Queue
 
 
 class EventBroadcaster:
-    def __init__(self, maxsize: int = 100) -> None:
+    def __init__(self, maxsize: int = 100, *, drop_oldest_on_full: bool = False) -> None:
         self._clients: list[Queue] = []
         self._lock = threading.Lock()
         self.maxsize = maxsize
+        self.drop_oldest_on_full = drop_oldest_on_full
 
     def subscribe(self) -> Queue:
         queue: Queue = Queue(maxsize=self.maxsize)
@@ -33,6 +34,9 @@ class EventBroadcaster:
             try:
                 queue.put_nowait(event)
             except Full:
+                if not self.drop_oldest_on_full:
+                    dead.append(queue)
+                    continue
                 try:
                     queue.get_nowait()
                 except Empty:

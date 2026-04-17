@@ -473,7 +473,7 @@ def test_atomic_write_overwrites_existing(tmp_path):
 def test_event_broadcaster_drops_oldest_when_queue_is_full():
     from research_hub.dashboard.events import EventBroadcaster
 
-    broadcaster = EventBroadcaster(maxsize=2)
+    broadcaster = EventBroadcaster(maxsize=2, drop_oldest_on_full=True)
     queue = broadcaster.subscribe()
 
     broadcaster.broadcast({"type": "one"})

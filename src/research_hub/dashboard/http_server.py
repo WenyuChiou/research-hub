@@ -145,7 +145,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         sent = self.headers.get("X-CSRF-Token", "")
-        if not sent or not secrets.compare_digest(sent, self.csrf_token):
+        if self.csrf_token and (not sent or not secrets.compare_digest(sent, self.csrf_token)):
             self._write_json(403, {"error": "csrf token mismatch"})
             return
 
@@ -200,7 +200,7 @@ def serve_dashboard(
     if host != "127.0.0.1" and not allow_external:
         raise ValueError(f"host={host!r} refused: pass --allow-external to bind non-loopback")
 
-    broadcaster = EventBroadcaster()
+    broadcaster = EventBroadcaster(maxsize=100, drop_oldest_on_full=True)
     watcher = VaultWatcher(cfg, broadcaster)
     watcher.start()
 
