@@ -1730,5 +1730,91 @@ def notebooklm_download(
         return _tool_error(exc)
 
 
+# ---------------------------------------------------------------------------
+# v0.33 Task-level workflow wrappers (Codex Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def ask_cluster(
+    cluster_slug: str,
+    question: str | None = None,
+    detail: str = "gist",
+) -> dict:
+    """Answer a natural-language question about a cluster (crystal with digest fallback).
+
+    Task-level wrapper for the common read path. Replaces the 3-call sequence
+    list_crystals → read_crystal → (optional search_vault) with 1 call that
+    fuzzy-matches the question against crystal questions and falls back to
+    topic digest if no crystal matches.
+    """
+    try:
+        from research_hub.workflows import ask_cluster as _impl
+        cfg = require_config()
+        return _impl(cfg, cluster_slug, question=question, detail=detail)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def brief_cluster(cluster_slug: str, force_regenerate: bool = False) -> dict:
+    """Full NotebookLM round-trip: bundle -> upload -> generate -> download -> preview.
+
+    Degrades gracefully if Playwright not installed (returns partial result).
+    """
+    try:
+        from research_hub.workflows import brief_cluster as _impl
+        cfg = require_config()
+        return _impl(cfg, cluster_slug, force_regenerate=force_regenerate)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def sync_cluster(cluster_slug: str) -> dict:
+    """Aggregate maintenance view: staleness + scope drift + vault health + recommendations."""
+    try:
+        from research_hub.workflows import sync_cluster as _impl
+        cfg = require_config()
+        return _impl(cfg, cluster_slug)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def compose_brief_draft(
+    cluster_slug: str,
+    outline: str | None = None,
+    max_quotes: int = 10,
+) -> dict:
+    """Assemble a markdown draft from cluster quotes + overview + crystal TLDRs."""
+    try:
+        from research_hub.workflows import compose_brief as _impl
+        cfg = require_config()
+        return _impl(cfg, cluster_slug, outline=outline, max_quotes=max_quotes)
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def collect_to_cluster(
+    source: str,
+    cluster_slug: str,
+    skip_verify: bool = False,
+    no_zotero: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Unified ingest. Auto-routes by source shape: DOI/arXiv -> add_paper, folder -> import_folder, URL -> .url file + import."""
+    try:
+        from research_hub.workflows import collect_to_cluster as _impl
+        cfg = require_config()
+        return _impl(
+            cfg, source, cluster_slug=cluster_slug,
+            skip_verify=skip_verify, no_zotero=no_zotero, dry_run=dry_run,
+        )
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 if __name__ == "__main__":
     main()

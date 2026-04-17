@@ -1856,6 +1856,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show where research-hub stores config, vault, and data",
     )
 
+    ask_parser = subparsers.add_parser(
+        "ask",
+        help="Ask a natural-language question about a cluster (task-level, v0.33+)",
+    )
+    ask_parser.add_argument("cluster", help="Cluster slug")
+    ask_parser.add_argument(
+        "question",
+        nargs="?",
+        default=None,
+        help="Natural-language question (optional; omitting returns digest)",
+    )
+    ask_parser.add_argument(
+        "--detail",
+        choices=["tldr", "gist", "full"],
+        default="gist",
+        help="Answer detail level (default: gist)",
+    )
+
     serve_parser = subparsers.add_parser(
         "serve",
         help="Start MCP stdio server or live dashboard HTTP server",
@@ -2850,6 +2868,13 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_install(args)
     if args.command == "where":
         return _cmd_where(args)
+    if args.command == "ask":
+        cfg = require_config()
+        from research_hub.workflows import ask_cluster as _ask
+        result = _ask(cfg, args.cluster, question=args.question, detail=args.detail)
+        import json as _json
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result.get("ok") else 1
     if args.command == "serve":
         cfg = get_config()
         return _cmd_serve(args, cfg)
