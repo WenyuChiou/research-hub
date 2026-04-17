@@ -6,6 +6,57 @@ A worked example of the full crystal generation + query flow, as seen from the C
 
 ---
 
+## How it fits together
+
+```mermaid
+sequenceDiagram
+    participant U as You
+    participant CD as Claude Desktop
+    participant MCP as research-hub MCP server
+    participant V as Vault (Obsidian)
+    participant Z as Zotero
+    participant N as NotebookLM
+
+    U->>CD: "Add arxiv 2310.06770 to llm-agents cluster"
+    CD->>MCP: add_paper(identifier, cluster_slug)
+    MCP->>Z: create item in cluster collection
+    MCP->>V: write raw/<cluster>/<slug>.md
+    MCP-->>CD: ok, slug=jimenez2024-swe-bench
+
+    Note over U,N: --- weeks later, cluster is stable ---
+
+    U->>CD: "Crystallize the llm-agents cluster"
+    CD->>MCP: emit_crystal_prompt(cluster_slug)
+    MCP-->>CD: ~30KB prompt with 10 questions
+    CD->>CD: answer all 10 questions itself
+    CD->>MCP: apply_crystals(cluster_slug, json)
+    MCP->>V: write hub/<cluster>/crystals/*.md
+
+    Note over U,N: --- query time, fast path ---
+
+    U->>CD: "What's SOTA in LLM-SE?"
+    CD->>MCP: list_crystals(cluster_slug)
+    MCP-->>CD: 10 (slug, q, tldr) tuples (~1KB)
+    CD->>MCP: read_crystal("sota-and-open-problems", level=gist)
+    MCP-->>CD: ~100 word pre-written answer
+    CD-->>U: relays the gist + optional commentary
+
+    Note over U,N: --- bundle to NotebookLM (optional) ---
+
+    U->>CD: "Bundle this cluster for NotebookLM and download the brief"
+    CD->>MCP: notebooklm_bundle(cluster_slug)
+    MCP->>V: read raw/<cluster>/* + write bundle dir
+    CD->>MCP: notebooklm_upload + generate + download
+    MCP->>N: Playwright + CDP attach
+    N-->>MCP: brief.txt
+    MCP->>V: write .research_hub/artifacts/<cluster>/brief-*.txt
+    CD-->>U: brief ready
+```
+
+Every arrow above is a single MCP tool call (or its CLI equivalent). The crystal layer is what makes the "weeks later" path fast: 30 KB → 1 KB compression for typical questions.
+
+---
+
 ## Setup verification
 
 ```

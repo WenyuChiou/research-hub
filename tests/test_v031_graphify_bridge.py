@@ -12,29 +12,31 @@ import pytest
 FIXTURE_GRAPH = Path(__file__).parent / "fixtures" / "graphify_graph_sample.json"
 
 
-def test_find_graphify_binary_returns_path_when_installed(monkeypatch):
-    """find_graphify_binary returns the graphify path when it is installed."""
+def test_find_graphify_binary_deprecated_returns_none(monkeypatch):
+    """v0.32: find_graphify_binary is deprecated and always returns None.
+
+    graphify is a coding-skill, not a standalone CLI — see audit_v0.31.md.
+    """
+    import warnings
     from research_hub.graphify_bridge import find_graphify_binary
 
-    monkeypatch.setattr(
-        shutil,
-        "which",
-        lambda name: "/fake/path/to/graphify" if name == "graphify" else None,
-    )
-
-    assert find_graphify_binary() == "/fake/path/to/graphify"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert find_graphify_binary() is None
 
 
-def test_run_graphify_raises_when_binary_missing(monkeypatch, tmp_path):
-    """run_graphify raises GraphifyNotInstalled with an actionable message."""
+def test_run_graphify_deprecated_raises_with_2step_workflow(monkeypatch, tmp_path):
+    """v0.32: run_graphify always raises GraphifyNotInstalled with /graphify guidance."""
+    import warnings
     from research_hub.graphify_bridge import GraphifyNotInstalled, run_graphify
 
-    monkeypatch.setattr(shutil, "which", lambda name: None)
     folder = tmp_path / "src"
     folder.mkdir()
 
-    with pytest.raises(GraphifyNotInstalled, match="graphify CLI not found"):
-        run_graphify(folder)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(GraphifyNotInstalled, match="graphify cannot be invoked"):
+            run_graphify(folder)
 
 
 def test_parse_graphify_communities_groups_files_by_community():
@@ -71,23 +73,18 @@ def test_map_to_subtopics_matches_imported_files(tmp_path):
     assert assignments[str(note3)] == ["topic-beta"]
 
 
-def test_run_graphify_subprocess_invocation(monkeypatch, tmp_path):
-    """run_graphify returns the expected graph.json path after success."""
-    from research_hub.graphify_bridge import run_graphify
-
-    monkeypatch.setattr(shutil, "which", lambda name: "graphify")
+def test_run_graphify_v032_no_longer_invokes_subprocess(tmp_path):
+    """v0.32: run_graphify no longer invokes subprocess at all (it always raises)."""
+    import warnings
+    from research_hub.graphify_bridge import run_graphify, GraphifyNotInstalled
 
     folder = tmp_path / "src"
     folder.mkdir()
-    (folder / "note.md").write_text("x", encoding="utf-8")
 
-    out_dir = folder / "graphify-out"
-    out_dir.mkdir()
-    expected_graph = out_dir / "graph.json"
-    expected_graph.write_text(json.dumps({"nodes": [], "edges": []}), encoding="utf-8")
-
-    fake_proc = MagicMock(returncode=0, stdout="ok", stderr="")
-    with patch("research_hub.graphify_bridge.subprocess.run", return_value=fake_proc):
-        result = run_graphify(folder)
-
-    assert result == expected_graph
+    # Even when an output graph.json already exists from a prior run, v0.32's
+    # run_graphify never tries to invoke subprocess — it just raises with
+    # actionable guidance pointing at --graphify-graph PATH instead.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(GraphifyNotInstalled):
+            run_graphify(folder)

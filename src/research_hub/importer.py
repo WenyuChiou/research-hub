@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -360,6 +361,7 @@ def import_folder(
     extensions: tuple[str, ...] | None = None,
     skip_existing: bool = True,
     use_graphify: bool = False,
+    graphify_graph: Path | None = None,
     dry_run: bool = False,
 ) -> ImportReport:
     cluster_slug = validate_slug(cluster_slug, field="cluster_slug")
@@ -378,6 +380,16 @@ def import_folder(
         cluster_raw_dir.mkdir(parents=True, exist_ok=True)
 
     report = ImportReport(folder=folder_path, cluster_slug=cluster_slug, dry_run=dry_run)
+
+    if use_graphify and not graphify_graph:
+        warnings.warn(
+            "--use-graphify is deprecated in v0.32. graphify cannot be invoked "
+            "as a standalone CLI. Run /graphify in Claude Code to produce "
+            "graph.json, then pass --graphify-graph PATH instead. "
+            "See docs/import-folder.md.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     for path in sorted(folder_path.rglob("*")):
         if not path.is_file():
@@ -439,26 +451,24 @@ def import_folder(
     if not dry_run and report.imported_count > 0:
         dedup.save(dedup_path)
 
-    if use_graphify and not dry_run:
-        _run_graphify(report, folder_path)
+    if graphify_graph and not dry_run:
+        _apply_graphify_assignments(report, Path(graphify_graph))
 
     return report
 
 
-def _run_graphify(report: ImportReport, folder_path: Path) -> None:
+def _apply_graphify_assignments(report: ImportReport, graphify_graph: Path) -> None:
     try:
         from research_hub.graphify_bridge import (
             map_to_subtopics,
             parse_graphify_communities,
-            run_graphify,
         )
     except ImportError:
-        logger.warning("graphify_bridge not available; skipping --use-graphify step")
+        logger.warning("graphify_bridge not available; skipping graphify graph import")
         return
 
     try:
-        graph_json = run_graphify(folder_path)
-        communities = parse_graphify_communities(graph_json)
+        communities = parse_graphify_communities(graphify_graph)
         assignments = map_to_subtopics(
             communities,
             [entry.path for entry in report.entries if entry.status == "imported"],
@@ -469,8 +479,13 @@ def _run_graphify(report: ImportReport, folder_path: Path) -> None:
             subtopics = assignments.get(str(entry.path), [])
             if subtopics:
                 _add_subtopics_frontmatter(entry.note_path, subtopics)
+        logger.info(
+            "applied %d community assignments from %s",
+            sum(1 for value in assignments.values() if value),
+            graphify_graph,
+        )
     except Exception as exc:  # pragma: no cover - best effort bridge
-        logger.warning("graphify integration failed: %s", exc)
+        logger.warning("graphify graph.json parse failed: %s", exc)
 
 
 def _add_subtopics_frontmatter(note_path: Path, subtopics: list[str]) -> None:

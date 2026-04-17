@@ -1,8 +1,8 @@
-# `research-hub import-folder` — local file ingest
+# `research-hub import-folder` - local file ingest
 
 > Available since v0.31.0. For analyst persona users with folders of mixed local docs (no DOIs).
 
-The `add` command works for academic papers (DOI / arXiv ID lookup). `import-folder` is its sibling for everything else — internal PDFs, market reports, meeting notes, web clippings, Word drafts.
+The `add` command works for academic papers (DOI / arXiv ID lookup). `import-folder` is its sibling for everything else: internal PDFs, market reports, meeting notes, web clippings, Word drafts.
 
 ## When to use
 
@@ -10,7 +10,7 @@ The `add` command works for academic papers (DOI / arXiv ID lookup). `import-fol
 |---|---|
 | A DOI or arXiv ID | `research-hub add 10.48550/arxiv.2310.06770 --cluster X` |
 | A folder of mixed PDF / DOCX / Markdown / TXT / URL files | `research-hub import-folder ./folder --cluster X` |
-| A pile of Zotero items already collected | (use Zotero ingest path — `research-hub ingest`) |
+| A pile of Zotero items already collected | (use Zotero ingest path: `research-hub ingest`) |
 
 ## Quick start
 
@@ -56,7 +56,8 @@ research-hub import-folder FOLDER --cluster SLUG [OPTIONS]
   --cluster SLUG      Target cluster (auto-created if missing)
   --extensions LIST   Comma-separated extensions (default: pdf,md,txt,docx,url)
   --no-skip-existing  Re-import even if content hash matches existing note
-  --use-graphify      Run graphify CLI for deep extraction + community-based sub-topics
+  --use-graphify      Deprecated; warns and does not run graphify
+  --graphify-graph    Path to pre-built graphify-out/graph.json
   --dry-run           Show what would be imported, write nothing
 ```
 
@@ -89,23 +90,32 @@ research-hub import-folder ./project --cluster X --no-skip-existing
 
 ## Deep extraction with graphify
 
-graphify (https://github.com/safishamsi/graphify) is an external tool that reads multi-modal content (PDFs, code, images, video transcripts) and builds a knowledge graph using Leiden community detection. research-hub uses it as an OPTIONAL backend for deep multi-modal extraction.
+[graphify](https://github.com/safishamsi/graphify) is an external coding-skill that reads multi-modal content (PDFs, code, images, video transcripts via Whisper) and builds a knowledge graph using Leiden community detection. research-hub can use a graphify-built `graph.json` to assign sub-topics to imported notes.
+
+**graphify runs inside an AI coding agent (Claude Code, Codex, etc.) and is not a standalone CLI.** First-time extraction needs subagent dispatch from the host AI tool.
+
+### Two-step workflow
+
+**Step 1: produce `graph.json` via graphify (in Claude Code):**
 
 ```bash
-# Install graphify separately (heavyweight; not added to research-hub deps)
-pip install graphifyy && graphify install
-
-# Use it during import
-research-hub import-folder ./project --cluster X --use-graphify
+# Inside Claude Code:
+/graphify ./project
+# Produces: ./graphify-out/graph.json with nodes + edges + community assignments
 ```
 
-What `--use-graphify` does on top of the default flow:
-1. After lightweight extraction, runs `graphify <folder>` once to build a concept graph
-2. Parses `graphify-out/graph.json` to find communities (semantic clusters of related files)
-3. Adds `subtopics: [...]` frontmatter to each imported note based on its community membership
-4. You can then run `research-hub topic build --cluster X` to generate per-subtopic landing pages
+**Step 2: point research-hub at the `graph.json`:**
 
-If graphify isn't installed, you get an actionable error pointing to the install command.
+```bash
+research-hub import-folder ./project --cluster X \
+    --graphify-graph ./graphify-out/graph.json
+```
+
+Each imported note gets `subtopics: [community-name, ...]` frontmatter based on which graphify community its source file belongs to. Then run `research-hub topic build --cluster X` to generate per-subtopic landing pages.
+
+### Deprecated: `--use-graphify`
+
+v0.31 had a `--use-graphify` flag that tried to invoke graphify via subprocess. This was a design error: graphify is not a standalone CLI. The flag is preserved for backward compatibility in v0.32 but does nothing except emit a deprecation warning. Use `--graphify-graph PATH` instead. See [audit_v0.31.md](audit_v0.31.md) for the discovery story.
 
 ## Frontmatter that gets written
 
@@ -153,14 +163,14 @@ After `import-folder`:
 
 | Command | Works on imported docs? |
 |---|---|
-| `research-hub status` | yes — shows them as papers |
-| `research-hub where` | yes — counted in note total |
-| `research-hub label SLUG --add core` | yes — labels work on any Document |
-| `research-hub move SLUG --to OTHER-CLUSTER` | yes — moves between clusters |
-| `research-hub crystal emit --cluster X` | yes — crystals work on mixed paper + Document content |
-| `research-hub notebooklm bundle --cluster X` | yes — bundle walks `raw/<cluster>/` regardless of source_kind |
-| `research-hub topic build --cluster X` | yes — sub-topics work on imported docs (especially with `--use-graphify`) |
-| `research-hub clusters analyze --split-suggestion` | partial — uses citation graph, which non-paper docs don't have. Falls back to keyword overlap. |
+| `research-hub status` | yes - shows them as papers |
+| `research-hub where` | yes - counted in note total |
+| `research-hub label SLUG --add core` | yes - labels work on any Document |
+| `research-hub move SLUG --to OTHER-CLUSTER` | yes - moves between clusters |
+| `research-hub crystal emit --cluster X` | yes - crystals work on mixed paper + Document content |
+| `research-hub notebooklm bundle --cluster X` | yes - bundle walks `raw/<cluster>/` regardless of source_kind |
+| `research-hub topic build --cluster X` | yes - sub-topics work on imported docs (especially with `--graphify-graph`) |
+| `research-hub clusters analyze --split-suggestion` | partial - uses citation graph, which non-paper docs don't have. Falls back to keyword overlap. |
 
 ## Troubleshooting
 
@@ -170,16 +180,17 @@ You tried to ingest a PDF/DOCX/URL without installing the optional extractors. R
 pip install 'research-hub-pipeline[import]'
 ```
 
-**`ERROR: --use-graphify requires graphify CLI`**
-You passed `--use-graphify` but graphify isn't on your PATH. Install:
+**`--use-graphify` warns and nothing happens**
+That flag is deprecated in v0.32 because graphify cannot be invoked as a standalone CLI. Run `/graphify ./project` in Claude Code first, then pass the generated graph file:
 ```bash
-pip install graphifyy && graphify install
+research-hub import-folder ./project --cluster X \
+    --graphify-graph ./graphify-out/graph.json
 ```
 
 **Imported PDF has weird text artifacts**
-`pdfplumber` is text-based — it doesn't OCR. If your PDF is a scanned image, the text extraction will be garbage. Workarounds:
+`pdfplumber` is text-based; it does not OCR. If your PDF is a scanned image, the text extraction will be garbage. Workarounds:
 - Pre-process with `ocrmypdf` then re-import
-- Use `--use-graphify` (graphify can run Whisper/OCR on multi-modal sources)
+- Use graphify separately to produce a richer `graph.json`, then import with `--graphify-graph`
 
 **Same file imported twice, both notes appear**
 The second one was written because content hash differed (e.g., file was edited between runs) OR `--no-skip-existing` was passed. To clean up:
@@ -192,6 +203,6 @@ First time will take a while (PDF extraction is slow). Subsequent runs only proc
 
 ## See also
 
-- [docs/anti-rag.md](anti-rag.md) — why crystals work on imported docs too
-- [docs/example-claude-mcp-flow.md](example-claude-mcp-flow.md) — Claude Desktop driving the full ingest → bundle → NotebookLM flow
-- [docs/notebooklm.md](notebooklm.md) — wiring NotebookLM for the bundle/upload/generate/download chain
+- [docs/anti-rag.md](anti-rag.md) - why crystals work on imported docs too
+- [docs/example-claude-mcp-flow.md](example-claude-mcp-flow.md) - Claude Desktop driving the full ingest -> bundle -> NotebookLM flow
+- [docs/notebooklm.md](notebooklm.md) - wiring NotebookLM for the bundle/upload/generate/download chain

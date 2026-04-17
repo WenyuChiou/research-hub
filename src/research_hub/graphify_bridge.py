@@ -1,31 +1,49 @@
-"""Invoke external graphify CLI and parse its output.
+"""graphify_bridge: parse graphify-out/graph.json for sub-topic assignment.
 
-graphify (safishamsi/graphify) is an external multi-modal extraction +
-community detection tool. We invoke it via subprocess when the user passes
---use-graphify to research-hub import-folder, then parse its graph.json
-output to suggest sub-topic assignments.
+graphify is an external coding-skill (https://github.com/safishamsi/graphify)
+that runs inside Claude Code / Codex / etc. It cannot be invoked as a
+standalone CLI for first-time extraction.
 
-graphify is NOT a pyproject.toml dep; user installs separately:
-    pip install graphifyy && graphify install
+v0.32 redesign: instead of trying to subprocess graphify, accept a pre-built
+graph.json path. Workflow:
+
+  Step 1 (user, via Claude Code): /graphify ./project
+                                  (produces ./graphify-out/graph.json)
+  Step 2 (research-hub):
+    research-hub import-folder ./project --cluster X \
+                  --graphify-graph ./graphify-out/graph.json
 """
 from __future__ import annotations
 
 import json
 import logging
-import shutil
-import subprocess
+import warnings
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
 class GraphifyNotInstalled(RuntimeError):
-    """graphify CLI binary not on PATH."""
+    """DEPRECATED in v0.32. Kept for backward compat with v0.31 imports.
+
+    v0.31 used this when subprocess invocation of `graphify` failed. v0.32+
+    no longer attempts subprocess invocation because graphify is a coding-skill,
+    not a standalone CLI. Users supply pre-built graph.json paths instead.
+    """
 
 
 def find_graphify_binary() -> str | None:
-    """Return path to graphify binary or None if not installed."""
-    return shutil.which("graphify")
+    """DEPRECATED in v0.32. Always returns None now.
+
+    Kept for backward-compat imports. Use `--graphify-graph PATH` instead.
+    """
+    warnings.warn(
+        "find_graphify_binary() is deprecated in v0.32. graphify is a coding-skill, "
+        "not a standalone CLI. Provide a pre-built graph.json via --graphify-graph.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return None
 
 
 def run_graphify(
@@ -34,57 +52,33 @@ def run_graphify(
     output_dir: Path | None = None,
     timeout: float = 600.0,
 ) -> Path:
-    """Invoke `graphify <folder>` and return path to graphify-out/graph.json.
+    """DEPRECATED in v0.32. Always raises GraphifyNotInstalled.
 
-    Raises:
-        GraphifyNotInstalled: if `graphify` is not on PATH
-        subprocess.CalledProcessError: if graphify exits non-zero
-        FileNotFoundError: if expected graph.json is missing after the run
+    graphify cannot be invoked as a standalone CLI. Users must run /graphify
+    in Claude Code (or equivalent) to produce graph.json, then pass that path
+    to research-hub via --graphify-graph.
     """
-    binary = find_graphify_binary()
-    if not binary:
-        raise GraphifyNotInstalled(
-            "graphify CLI not found on PATH.\n"
-            "  Install: pip install graphifyy && graphify install\n"
-            "  Or omit --use-graphify to use lightweight extractors only."
-        )
-
-    folder = Path(folder).resolve()
-    if not folder.is_dir():
-        raise ValueError(f"folder not a directory: {folder}")
-
-    cwd = Path(output_dir).resolve() if output_dir is not None else folder
-    cmd = [binary, str(folder)]
-    logger.info("running graphify: %s", " ".join(cmd))
-
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        shell=False,
+    del folder, output_dir, timeout
+    warnings.warn(
+        "run_graphify() is deprecated in v0.32. Use --graphify-graph PATH "
+        "with a pre-built graph.json from `/graphify` in Claude Code.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-
-    if proc.returncode != 0:
-        raise subprocess.CalledProcessError(
-            proc.returncode,
-            cmd,
-            output=proc.stdout,
-            stderr=proc.stderr,
-        )
-
-    graph_json = cwd / "graphify-out" / "graph.json"
-    if not graph_json.exists():
-        raise FileNotFoundError(
-            f"expected {graph_json} after graphify run; "
-            f"stdout: {proc.stdout[-500:]}\nstderr: {proc.stderr[-500:]}"
-        )
-    return graph_json
+    raise GraphifyNotInstalled(
+        "graphify cannot be invoked as a standalone CLI. To use graphify "
+        "with research-hub:\n"
+        "  1. Inside Claude Code (or any AI assistant where graphify is installed):\n"
+        "     /graphify ./project\n"
+        "     (produces ./graphify-out/graph.json)\n"
+        "  2. Then run:\n"
+        "     research-hub import-folder ./project --cluster X "
+        "--graphify-graph ./graphify-out/graph.json"
+    )
 
 
 def parse_graphify_communities(graph_json: Path) -> dict[str, list[str]]:
-    """Parse graphify graph.json as {community_label: [file_path, ...]}."""
+    """Parse graphify's graph.json. Return {community_label: [file_path, ...]}."""
     data = json.loads(Path(graph_json).read_text(encoding="utf-8"))
     nodes = data.get("nodes", [])
     community_names = data.get("communities", {}) or {}
@@ -111,23 +105,17 @@ def map_to_subtopics(
     communities: dict[str, list[str]],
     imported_files: list[Path],
 ) -> dict[str, list[str]]:
-    """Match graphify's communities to imported files.
-
-    Returns {imported_file_str: [subtopic_label, ...]}.
-    """
+    """Match graphify's communities to research-hub's imported files."""
     imported_strs = {str(Path(path).resolve()): str(path) for path in imported_files}
-    assignments: dict[str, list[str]] = {
-        original: [] for original in imported_strs.values()
-    }
+    assignments: dict[str, list[str]] = {original: [] for original in imported_strs.values()}
 
     for community_label, source_files in communities.items():
-        for source_file in source_files:
-            resolved_source = str(Path(source_file).resolve())
-            if resolved_source not in imported_strs:
-                continue
-            original = imported_strs[resolved_source]
-            if community_label not in assignments[original]:
-                assignments[original].append(community_label)
+        for src in source_files:
+            src_resolved = str(Path(src).resolve())
+            if src_resolved in imported_strs:
+                original = imported_strs[src_resolved]
+                if community_label not in assignments[original]:
+                    assignments[original].append(community_label)
 
     return assignments
 
