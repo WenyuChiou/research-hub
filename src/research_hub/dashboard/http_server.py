@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -46,6 +47,7 @@ def _resolve_version() -> str:
 class DashboardHandler(BaseHTTPRequestHandler):
     cfg = None
     broadcaster: EventBroadcaster
+    csrf_token = ""
     version = _resolve_version()
 
     def log_message(self, format: str, *args) -> None:
@@ -73,7 +75,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in {"/", "/index.html"}:
             try:
-                self._write_html(200, render_dashboard_from_config(self.cfg))
+                self._write_html(
+                    200,
+                    render_dashboard_from_config(self.cfg, csrf_token=self.csrf_token),
+                )
             except Exception as exc:
                 logger.exception("dashboard render failed")
                 self._write_json(500, {"error": str(exc)})
@@ -99,7 +104,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
             queue = self.broadcaster.subscribe()
             try:
-                self.wfile.write(b"event: hello\ndata: {}\n\n")
+                hello = json.dumps({"csrf_token": self.csrf_token}, ensure_ascii=False).encode("utf-8")
+                self.wfile.write(b"event: hello\n")
+                self.wfile.write(b"data: ")
+                self.wfile.write(hello)
+                self.wfile.write(b"\n\n")
                 self.wfile.flush()
                 while True:
                     try:
@@ -123,6 +132,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path != "/api/exec":
             self._write_json(404, {"error": "not found"})
+            return
+
+        origin = self.headers.get("Origin", "")
+        host_header = self.headers.get("Host", "")
+        allowed_origins = {
+            f"http://{host_header}",
+            f"http://127.0.0.1:{self.server.server_port}",
+        }
+        if origin and origin not in allowed_origins:
+            self._write_json(403, {"error": "origin not allowed"})
+            return
+
+        sent = self.headers.get("X-CSRF-Token", "")
+        if not sent or not secrets.compare_digest(sent, self.csrf_token):
+            self._write_json(403, {"error": "csrf token mismatch"})
             return
 
         try:
@@ -182,6 +206,7 @@ def serve_dashboard(
 
     DashboardHandler.cfg = cfg
     DashboardHandler.broadcaster = broadcaster
+    DashboardHandler.csrf_token = secrets.token_urlsafe(32)
 
     server = ThreadingHTTPServer((host, port), DashboardHandler)
     logger.info("dashboard server listening on http://%s:%d/", host, port)

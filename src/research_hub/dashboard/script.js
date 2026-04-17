@@ -3,6 +3,7 @@
 
   const doc = document;
   const LIVE_MODE = { active: false, eventSource: null };
+  let csrfToken = "";
   let activePopup = null;
   let activeLibraryLabelFilter = null;
   let activeLibraryArchivedFilter = null;
@@ -161,6 +162,16 @@
     }
     const es = new EventSource("/api/events");
     LIVE_MODE.eventSource = es;
+    es.addEventListener("hello", function (ev) {
+      try {
+        const payload = JSON.parse(ev.data);
+        if (payload.csrf_token) {
+          csrfToken = String(payload.csrf_token);
+        }
+      } catch (_) {
+        // ignore malformed hello payloads
+      }
+    });
     es.onmessage = function (ev) {
       try {
         const payload = JSON.parse(ev.data);
@@ -235,7 +246,10 @@
     try {
       const response = await fetch("/api/exec", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
         body: JSON.stringify({ action: action, slug: slug, fields: fields }),
       });
       const data = await response.json();
@@ -775,5 +789,6 @@
   handleLabelFilter();
   handleQuoteLabelFilter();
   applyLibraryFilters();
+  csrfToken = doc.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
   detectLiveMode();
 })();

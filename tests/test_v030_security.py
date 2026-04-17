@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+import threading
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -22,6 +26,66 @@ def _create_cluster(cfg, slug: str, zotero_collection_key: str | None = None) ->
     if zotero_collection_key:
         lines.append(f"    zotero_collection_key: {zotero_collection_key}")
     cfg.clusters_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _http_json(url: str, *, method: str = "GET", body: dict | None = None, headers: dict[str, str] | None = None):
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    request = Request(url, data=data, method=method)
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+    try:
+        with urlopen(request) as response:
+            payload = response.read().decode("utf-8")
+            return response.status, payload, dict(response.headers)
+    except HTTPError as exc:
+        payload = exc.read().decode("utf-8")
+        return exc.code, payload, dict(exc.headers)
+
+
+@pytest.fixture
+def dashboard_server(tmp_path, monkeypatch):
+    from http.server import ThreadingHTTPServer
+
+    from research_hub.dashboard.events import EventBroadcaster
+    from research_hub.dashboard.executor import ExecResult
+    from research_hub.dashboard.http_server import DashboardHandler
+
+    cfg = SimpleNamespace(
+        root=tmp_path / "vault",
+        raw=tmp_path / "vault" / "raw",
+        research_hub_dir=tmp_path / "vault" / ".research_hub",
+        hub=tmp_path / "vault" / "hub",
+        clusters_file=tmp_path / "vault" / ".research_hub" / "clusters.yaml",
+    )
+    cfg.raw.mkdir(parents=True, exist_ok=True)
+    cfg.research_hub_dir.mkdir(parents=True, exist_ok=True)
+    cfg.hub.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        "research_hub.dashboard.http_server.execute_action",
+        lambda action, slug, fields: ExecResult(
+            ok=True,
+            action=action,
+            command=["research-hub", action],
+            stdout="ok",
+            stderr="",
+            returncode=0,
+            duration_ms=1,
+        ),
+    )
+
+    DashboardHandler.cfg = cfg
+    DashboardHandler.broadcaster = EventBroadcaster()
+    DashboardHandler.csrf_token = "csrf-test-token"
+    server = ThreadingHTTPServer(("127.0.0.1", 0), DashboardHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", DashboardHandler
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_pipeline_routes_to_cluster_collection_when_bound(tmp_path, monkeypatch):
@@ -242,3 +306,108 @@ def test_mcp_add_paper_blocks_injection_identifier():
 
     with pytest.raises(ValidationError):
         add_paper.fn("10.1234/x; rm -rf /")
+
+
+def test_api_exec_rejects_missing_csrf_token(dashboard_server):
+    base_url, _handler = dashboard_server
+
+    status, payload, _headers = _http_json(
+        f"{base_url}/api/exec",
+        method="POST",
+        body={"action": "dashboard", "slug": None, "fields": {}},
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert status == 403
+    assert json.loads(payload) == {"error": "csrf token mismatch"}
+
+
+def test_api_exec_rejects_wrong_csrf_token(dashboard_server):
+    base_url, _handler = dashboard_server
+
+    status, payload, _headers = _http_json(
+        f"{base_url}/api/exec",
+        method="POST",
+        body={"action": "dashboard", "slug": None, "fields": {}},
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": "wrong-token",
+        },
+    )
+
+    assert status == 403
+    assert json.loads(payload) == {"error": "csrf token mismatch"}
+
+
+def test_api_exec_accepts_correct_csrf_token(dashboard_server):
+    base_url, handler = dashboard_server
+
+    status, payload, _headers = _http_json(
+        f"{base_url}/api/exec",
+        method="POST",
+        body={"action": "dashboard", "slug": None, "fields": {}},
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": handler.csrf_token,
+        },
+    )
+
+    assert status == 200
+    assert json.loads(payload)["ok"] is True
+
+
+def test_api_exec_rejects_evil_origin(dashboard_server):
+    base_url, handler = dashboard_server
+
+    status, payload, _headers = _http_json(
+        f"{base_url}/api/exec",
+        method="POST",
+        body={"action": "dashboard", "slug": None, "fields": {}},
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": handler.csrf_token,
+            "Origin": "http://evil.com",
+        },
+    )
+
+    assert status == 403
+    assert json.loads(payload) == {"error": "origin not allowed"}
+
+
+def test_api_exec_accepts_localhost_origin(dashboard_server):
+    base_url, handler = dashboard_server
+    port = base_url.rsplit(":", 1)[1]
+
+    status, payload, _headers = _http_json(
+        f"{base_url}/api/exec",
+        method="POST",
+        body={"action": "dashboard", "slug": None, "fields": {}},
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": handler.csrf_token,
+            "Origin": f"http://127.0.0.1:{port}",
+        },
+    )
+
+    assert status == 200
+    assert json.loads(payload)["ok"] is True
+
+
+def test_html_contains_csrf_meta_tag():
+    from research_hub.dashboard.render import render_dashboard
+
+    ctx = SimpleNamespace(
+        vault_root="/vault",
+        generated_at="2026-04-16T12:00:00Z",
+        persona="researcher",
+        total_papers=0,
+        total_clusters=0,
+        total_unread=0,
+        papers_this_week=0,
+        clusters=[],
+        papers=[],
+    )
+
+    html = render_dashboard(ctx, csrf_token="csrf-meta-token")
+
+    assert '<meta name="csrf-token" content="csrf-meta-token">' in html

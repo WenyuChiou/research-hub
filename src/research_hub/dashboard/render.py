@@ -96,6 +96,7 @@ def render_dashboard(
     sections: list[DashboardSection] | None = None,
     *,
     refresh_seconds: int = 0,
+    csrf_token: str = "",
 ) -> str:
     """Render the full dashboard HTML for an in-memory snapshot.
 
@@ -126,11 +127,13 @@ def render_dashboard(
         if refresh_seconds and refresh_seconds > 0
         else ""
     )
+    csrf_meta = f'<meta name="csrf-token" content="{html_escape(csrf_token)}">'
     return (
         template.replace("{{ STYLE }}", style)
         .replace("{{ SCRIPT }}", script)
         .replace("{{ BODY }}", body)
         .replace("{{ AUTO_REFRESH_META }}", refresh_meta)
+        .replace("{{ CSRF_META }}", csrf_meta)
         .replace("{{ VAULT_ROOT }}", html_escape(_attr(ctx, "vault_root", "")))
         .replace("{{ GENERATED_AT }}", html_escape(_attr(ctx, "generated_at", "")))
         .replace(
@@ -141,7 +144,13 @@ def render_dashboard(
     )
 
 
-def render_dashboard_from_config(cfg, zot=None, *, refresh_seconds: int = 0) -> str:
+def render_dashboard_from_config(
+    cfg,
+    zot=None,
+    *,
+    refresh_seconds: int = 0,
+    csrf_token: str = "",
+) -> str:
     """Collect the v0.10 DashboardData and render in one call.
 
     Falls back to the legacy DashboardContext + render path if the new
@@ -149,7 +158,7 @@ def render_dashboard_from_config(cfg, zot=None, *, refresh_seconds: int = 0) -> 
     """
     try:
         data = collect_dashboard_data(cfg, zot=zot)
-        return render_dashboard(data, refresh_seconds=refresh_seconds)
+        return render_dashboard(data, refresh_seconds=refresh_seconds, csrf_token=csrf_token)
     except Exception:
         ctx = collect_dashboard_context(cfg)
-        return render_dashboard(ctx, refresh_seconds=refresh_seconds)
+        return render_dashboard(ctx, refresh_seconds=refresh_seconds, csrf_token=csrf_token)
