@@ -300,15 +300,17 @@ def test_safe_join_allows_valid_subpath(tmp_path):
 def test_mcp_read_crystal_blocks_traversal_slug():
     from research_hub.mcp_server import read_crystal
 
+    fn = getattr(read_crystal, "fn", read_crystal)
     with pytest.raises(ValidationError):
-        read_crystal.fn("../../etc", "what-is-this-field")
+        fn("../../etc", "what-is-this-field")
 
 
 def test_mcp_add_paper_blocks_injection_identifier():
     from research_hub.mcp_server import add_paper
 
+    fn = getattr(add_paper, "fn", add_paper)
     with pytest.raises(ValidationError):
-        add_paper.fn("10.1234/x; rm -rf /")
+        fn("10.1234/x; rm -rf /")
 
 
 def test_api_exec_rejects_missing_csrf_token(dashboard_server):

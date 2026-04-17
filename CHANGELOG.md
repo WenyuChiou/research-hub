@@ -2,13 +2,32 @@
 
 ## v0.31.1 (2026-04-17)
 
-**Patch release for `import-folder` title quality and safer cluster cleanup.**
+**Patch release: 3 bugs found in v0.31 live smoke test + 1 CI flake fix. 1223 → 1227 tests (+4).**
 
-- **PDF title derivation fixed** in `src/research_hub/importer.py` - imported PDF notes now prefer embedded PDF metadata title and otherwise fall back to the first non-empty extracted line instead of the filename.
-- **DOCX title derivation fixed** in `src/research_hub/importer.py` - DOCX extraction now returns `(title, body)`, sourcing title from `core_properties.title` or the first `Heading 1` / `Title` paragraph before falling back to the filename.
-- **Markdown and TXT title logic clarified** - markdown keeps `# ` H1 detection; plain text uses the first non-empty short line when it looks like a title.
-- **`clusters delete --purge-folder` added** in `src/research_hub/cli.py` - optional destructive cleanup now removes `<vault>/raw/<slug>/` and `<vault>/hub/<slug>/` after unbinding the registry entry. Default behavior remains unchanged.
-- **4 regression tests added** in `tests/test_v031_1_quality.py`.
+All bugs were caught within an hour of v0.31.0 shipping by hands-on validation against PDF, DOCX, URL, and graphify imports. Patches landed same day.
+
+### Fixed — `import-folder` quality
+
+- **PDF title derivation** (`src/research_hub/importer.py`): imported PDF notes now prefer embedded PDF metadata title, then fall back to the first non-empty extracted line. Previously fell straight to the filename.
+- **DOCX title derivation** (`src/research_hub/importer.py`): DOCX extractor refactored to return `(title, body)`. Title sourced from `core_properties.title` or the first `Heading 1` / `Title` paragraph before falling back to the filename.
+- **Markdown and TXT title logic clarified**: markdown keeps `# ` H1 detection; plain text uses the first non-empty short line when it looks like a title.
+- **URL extraction returns plain text, not raw HTML** (`src/research_hub/importer.py::_html_to_text`): `_extract_url` now strips HTML tags from `readability-lxml`'s `.summary()` output via stdlib `html.parser`, preserving paragraph breaks. Previously imported URL notes had full `<html><body><div>...` markup in the body.
+
+### Fixed — `clusters delete`
+
+- **`--purge-folder` flag added** (`src/research_hub/cli.py`): optional destructive cleanup removes `<vault>/raw/<slug>/` and `<vault>/hub/<slug>/` after unbinding the registry entry. Default behavior unchanged (registry-only unbind).
+
+### Fixed — CI test compatibility
+
+- **`tests/test_v030_security.py`**: `test_mcp_read_crystal_blocks_traversal_slug` and `test_mcp_add_paper_blocks_injection_identifier` previously called `tool.fn(...)` directly. CI runs a fastmcp version where the decorator returns the raw function (no `.fn` attribute) — tests now use `getattr(tool, "fn", tool)` to work in both environments. Same pattern Track D's NotebookLM tests already use.
+
+### Documented — graphify integration limitation
+
+Live attempt to use `--use-graphify` revealed graphify (`pip install graphifyy`) is not a standalone CLI for full first-time extraction — it's a coding-assistant skill that runs subagents from inside Claude Code / Codex / etc. Standalone `graphify <folder>` is not a valid invocation. Our `graphify_bridge.run_graphify()` will always fail with subprocess error in v0.31. Workaround in v0.31.1: `--use-graphify` continues to fail-soft (warning logged, import continues without sub-topic assignment). v0.32 will redesign the integration: either invoke `graphify update <path>` (no-LLM AST mode) or document a "use Claude Code's `/graphify` skill, then point research-hub at the produced `graphify-out/graph.json`" workflow with a new `--graph-json` flag.
+
+### Added
+
+- **4 regression tests** in `tests/test_v031_1_quality.py`.
 
 ## v0.31.0 (2026-04-17)
 

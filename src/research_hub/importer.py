@@ -146,7 +146,48 @@ def _extract_url(path: Path) -> str:
         headers={"User-Agent": "research-hub/0.31"},
     )
     response.raise_for_status()
-    return ReadabilityDocument(response.text).summary()
+    html_summary = ReadabilityDocument(response.text).summary()
+    return _html_to_text(html_summary)
+
+
+def _html_to_text(html: str) -> str:
+    """Strip HTML tags from readability output, preserving paragraph breaks.
+
+    readability-lxml returns the article body as HTML — we want plain text in
+    the Obsidian note. Uses html.parser (stdlib only).
+    """
+    from html.parser import HTMLParser
+
+    class _TextCollector(HTMLParser):
+        BLOCK_TAGS = {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "br", "li"}
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.parts: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs):
+            if tag in self.BLOCK_TAGS and self.parts and not self.parts[-1].endswith("\n"):
+                self.parts.append("\n")
+
+        def handle_endtag(self, tag: str):
+            if tag in self.BLOCK_TAGS:
+                self.parts.append("\n")
+
+        def handle_data(self, data: str):
+            if data.strip():
+                self.parts.append(data.strip())
+
+    collector = _TextCollector()
+    try:
+        collector.feed(html)
+    except Exception:
+        return html  # fallback to raw if parser blows up
+    text = " ".join(collector.parts)
+    # Collapse runs of whitespace + collapse repeated newlines
+    import re
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]*\n+", "\n\n", text)
+    return text.strip()
 
 
 _EXTRACTORS = {
