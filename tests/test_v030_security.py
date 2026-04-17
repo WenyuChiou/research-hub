@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 import threading
+import sys
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -411,3 +413,25 @@ def test_html_contains_csrf_meta_tag():
     html = render_dashboard(ctx, csrf_token="csrf-meta-token")
 
     assert '<meta name="csrf-token" content="csrf-meta-token">' in html
+
+
+def test_executor_kills_process_on_timeout(monkeypatch):
+    from research_hub.dashboard import executor
+
+    seen: dict[str, subprocess.Popen[str]] = {}
+    real_popen = subprocess.Popen
+
+    def tracking_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        seen["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(executor, "_build_command_args", lambda action, slug, fields: [sys.executable, "-c", "import time; time.sleep(10)"])
+    monkeypatch.setattr(executor.subprocess, "Popen", tracking_popen)
+
+    result = executor.execute_action("dashboard", None, {}, timeout=1)
+
+    assert result.ok is False
+    assert result.returncode == -1
+    assert "process killed" in result.stderr
+    assert seen["proc"].poll() is not None

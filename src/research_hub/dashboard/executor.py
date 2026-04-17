@@ -207,31 +207,37 @@ def execute_action(
 
     start = time.monotonic()
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             args,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             shell=False,
         )
+        stdout, stderr = proc.communicate(timeout=timeout)
         duration_ms = int((time.monotonic() - start) * 1000)
         return ExecResult(
             ok=proc.returncode == 0,
             action=action,
             command=args,
-            stdout=proc.stdout or "",
-            stderr=proc.stderr or "",
+            stdout=stdout or "",
+            stderr=stderr or "",
             returncode=proc.returncode,
             duration_ms=duration_ms,
         )
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
         duration_ms = int((time.monotonic() - start) * 1000)
         return ExecResult(
             ok=False,
             action=action,
             command=args,
-            stdout=_decode_output(exc.stdout),
-            stderr=f"timeout after {timeout}s",
+            stdout=_decode_output(stdout),
+            stderr=f"timeout after {timeout}s (process killed)",
             returncode=-1,
             duration_ms=duration_ms,
         )
