@@ -1,5 +1,63 @@
 # Changelog
 
+## v0.33.0 (2026-04-17)
+
+**Tool consolidation (Codex Phase 3). 1235 → 1247 tests (+12). 5 task-level MCP wrappers on top of 64 low-level tools.**
+
+Addresses the Codex architecture critique: "把 50+ tools 往上收斂成 task-oriented actions... 底下再去調 MCP tool." Casual Claude Desktop users now get 2-3× faster workflows (1 call instead of 3-4). Power users unaffected — all 64 low-level tools registered unchanged.
+
+Full release report: [docs/audit_v0.33.md](docs/audit_v0.33.md). User guide: [docs/task-workflows.md](docs/task-workflows.md).
+
+### Added — Track A: 5 task-level workflow wrappers
+
+**New file:** `src/research_hub/workflows.py` (~440 LOC). Every function imports and calls existing internals; zero logic duplication.
+
+- **`ask_cluster(cluster_slug, question, detail="gist")`** — read path. Fuzzy-matches natural-language question against crystal questions via rapidfuzz. Falls back to topic digest if no crystal matches. Replaces the common 3-call sequence `list_crystals → read_crystal → (optional) search_vault`.
+- **`brief_cluster(cluster_slug, force_regenerate=False)`** — full NotebookLM round-trip. Chains `notebooklm_bundle → upload_cluster → generate_artifact → download_briefing_for_cluster → read_briefing`. Degrades gracefully if Playwright not installed.
+- **`sync_cluster(cluster_slug)`** — "what needs attention" maintenance view. Combines `check_crystal_staleness + drift_check + run_doctor` into a prioritized recommendations list with copy-paste CLI commands.
+- **`compose_brief_draft(cluster_slug, outline=None, max_quotes=10)`** — writing assembly. Builds default outline from cluster overview + crystal TLDRs when outline not provided, then delegates to `compose_draft`.
+- **`collect_to_cluster(source, cluster_slug, ...)`** — unified ingest. Auto-routes: DOI/arXiv → `add_paper`; folder path → `import_folder`; http(s):// URL → `.url` file + `import_folder`.
+
+### Added — CLI
+
+- **`research-hub ask <cluster> "<question>" [--detail tldr|gist|full]`** — terminal wrapper for `ask_cluster`. Other 4 workflows stay MCP-only (see audit for why).
+
+### Added — Tests
+
+- **12 new tests** in `tests/test_v033_workflows.py`. Autouse fixture pops cached `research_hub.*` modules between tests to prevent ordering pollution that surfaced during development.
+- **5 new entries** in `tests/test_consistency.py::EXPECTED_MAPPINGS` for the 5 new MCP tools.
+
+### Added — Documentation
+
+- `docs/task-workflows.md` (NEW) — user-facing guide with example Claude Desktop prompts for each wrapper.
+- `docs/audit_v0.33.md` (NEW) — release report with design decisions and verification.
+
+### Backward compatibility
+
+**Absolute.** All 64 v0.32 MCP tools and signatures remain unchanged. Calling code written against v0.32 works identically against v0.33. `tests/test_consistency.py::test_no_orphaned_mappings` gates this — it would fail if any tool were removed.
+
+### Test count
+
+| Release | Passing | Skipped | xfail | Delta |
+|---|---|---|---|---|
+| v0.32.0 | 1235 | 14 | 2 + 1 xpassed | — |
+| **v0.33.0** | **1247** | **14** | **2** + 1 xpassed | **+12** |
+
+### Notes on delivery
+
+Codex Track A hung after 15 minutes of exploration (same pattern as v0.30/v0.31/v0.32 Codex stalls when faced with large multi-file surveys). Claude took over directly, inspected actual internal signatures (crystal attrs, NLM function names, fit-check API), and finished the implementation. Workflows.py matches the real codebase — several of the brief's guessed function names were wrong (e.g. `upload_cluster_bundle` vs real `upload_cluster`).
+
+### Out of scope (v0.34+)
+
+- **Codex Phase 2** — structured memory layer (entities / claims / methods / datasets)
+- **Connector abstraction** — NotebookLM as pluggable plug-in
+- **`cli.py` / `mcp_server.py` monolith splits** — still HIGH RISK
+- **Live NotebookLM round-trip test** — when user opens Chrome
+- **Task #124 archived vault restore** — needs user decision on merge strategy
+- **Search recall xfail baselines** (v0.26)
+- **Zotero key encryption** via OS keyring
+- **`.dxt` Claude Desktop extension**
+
 ## v0.32.0 (2026-04-17)
 
 **Polish: high-quality screenshots + housekeeping. 1227 → 1235 tests (+8). No architectural changes.**

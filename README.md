@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1235%20passing-brightgreen.svg)](docs/audit_v0.32.md)
+[![Tests](https://img.shields.io/badge/tests-1247%20passing-brightgreen.svg)](docs/audit_v0.33.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Status
 
-- **Latest**: v0.32.0 (2026-04-17)
-- **Tests**: 1235 passing, 14 skipped, 2 xfail baselines (documented search-quality issues)
+- **Latest**: v0.33.0 (2026-04-17)
+- **Tests**: 1247 passing, 14 skipped, 2 xfail baselines (documented search-quality issues)
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
@@ -160,8 +160,9 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 - [Import folder](docs/import-folder.md) — local file ingest for analyst persona (PDF/DOCX/MD/TXT/URL)
 - [Anti-RAG crystals](docs/anti-rag.md) — why pre-computed Q→A beats retrieval
 - [Upgrade guide](UPGRADE.md) — migrating from older versions
+- [Task-level workflows](docs/task-workflows.md) — v0.33+ 5 MCP wrappers (ask/brief/sync/compose/collect) that collapse 3-4 call sequences into 1
 - [Screenshot workflow](docs/screenshot-workflow.md) — re-render any dashboard tab via `dashboard --screenshot` CLI
-- [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.32.md`
+- [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.33.md`
 - [NotebookLM setup](docs/notebooklm.md) — CDP attach flow + troubleshooting
 - [Papers input schema](docs/papers_input_schema.md) — ingestion pipeline reference
 
@@ -197,7 +198,7 @@ Both personas get the same dashboard, MCP server, and crystal system.
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1235 passing
+python -m pytest -q  # 1247 passing
 ```
 
 Package name on PyPI: **research-hub-pipeline**
