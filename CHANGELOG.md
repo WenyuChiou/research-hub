@@ -1,5 +1,61 @@
 # Changelog
 
+## v0.30.0 (2026-04-16)
+
+**Hardening + production audit. 1142 → 1199 tests (+57). Closes 28-issue audit.**
+
+The release that takes research-hub from "shipping fast" to "safe to recommend to others." A 3-agent audit found 28 issues across security, workflow correctness, UX, performance, docs, and tests; this release closes 20 of them across 4 parallel tracks. The headline P0 fix: **`pipeline.py` Zotero collection routing was broken** — when a cluster was bound to a Zotero collection, papers always went to the default. The user's literal stated workflow ("整理到Zotero 對應collection") was silently broken in v0.29 and is fixed in v0.30.
+
+Full release report: [`docs/audit_v0.30.md`](docs/audit_v0.30.md). Migration guide: [`UPGRADE.md`](UPGRADE.md).
+
+### Fixed — Track A: Critical fixes + security
+
+- **Zotero collection routing** (P0 #1) — `pipeline.py` now routes papers to the cluster-bound `zotero_collection_key` instead of always using the default. The cluster collection was already computed for dedup checks but never plumbed to `t["collections"]`. Adds explicit log line `Routing to collection: KEY (cluster=slug)` so users can verify.
+- **Path traversal** (P0 #2) — new `src/research_hub/security.py` module: `validate_slug`, `validate_identifier`, `safe_join`, `chmod_sensitive`, `atomic_write_text`. Wired `validate_slug()` into 50+ MCP tool call sites. `Path(cfg.X) / cluster_slug / ...` constructions in `crystal.py`, `topic.py`, `clusters.py` now use `safe_join`.
+- **CSRF + Origin check on `/api/exec`** (P0 #3) — server generates CSRF token at startup, embeds in HTML as `<meta name="csrf-token">`; clients must send `X-CSRF-Token` header. Origin header validated against server's bind address.
+- **Subprocess kill on timeout** (P0 #4) — `dashboard/executor.py` switched from `subprocess.run(timeout=...)` to `Popen` + explicit `proc.kill()` on `TimeoutExpired`. No more zombie processes piling up.
+- **File permissions** (P1 #6) — `init_wizard.py` + `config.py` now `chmod 700` on `~/.research_hub/` and `chmod 600` on `config.json` (POSIX only; Windows handled via NTFS ACLs).
+- **Identifier validation** (P1 #7) — MCP `add_paper(identifier=...)` rejects shell metacharacters, semicolons, newlines.
+- **Atomic state writes** (P1 #8) — `clusters.yaml`, `dedup_index.json`, crystal markdown writes go through `atomic_write_text` (tmp file + `os.replace`).
+- **`--allow-external` warning** (P1 #9) — 5-second banner warning before `serve --dashboard --host 0.0.0.0`. Skip via `--yes`.
+- **Bounded SSE queue** (P2 #13) — backpressure via oldest-event-drop instead of blocking new events.
+
+### Fixed — Track B: UX + Performance
+
+- **Cross-platform file locks** — new `src/research_hub/locks.py` (~80 LOC) with `fcntl`/`msvcrt` advisory `file_lock(path)` context manager. Wrapped `clusters.py::ClusterRegistry.save()` and `dedup.py::DedupIndex.save()` so two concurrent processes (e.g., dashboard server + CLI ingest) don't corrupt state.
+- **Cluster slug case normalization** (P2 #14) — `ClusterRegistry.get()` and `create()` now normalize slug to lowercase + strip whitespace. `clusters get LLM-AGENTS`, `clusters get llm-agents`, `clusters get "  LLM-Agents  "` all resolve to the same cluster.
+- **Env var validation** (P2 #15) — `config.py` `_validate_root_under_home()` rejects `RESEARCH_HUB_ROOT` paths outside `$HOME` unless explicitly opted in via `RESEARCH_HUB_ALLOW_EXTERNAL_ROOT=1` (e.g., shared network drive). Prevents misconfigured env vars from creating vault folders in system directories.
+- **`--help` epilog with "Start here" banner** (P1 #12) — `research-hub --help` now ends with a 5-step quickstart pointing at `init` → `doctor` → `where` → `serve --dashboard` → `install --mcp`. Plus link to GitHub.
+
+### Added — Track C: Test gap closure
+
+NEW test files:
+- `tests/test_v030_migration.py` (5 tests) — v0.10 → v0.29 vault format compatibility
+- `tests/test_v030_concurrent.py` (4 tests) — `file_lock` contract, atomic write idempotence
+- `tests/test_v030_unicode.py` (5 tests) — CJK / RTL / emoji titles, slugs rejected for non-ASCII
+- `tests/test_v030_large_vault.py` (4 stress tests) — 1000-paper render budget, 500-paper dedup rebuild
+
+### Added — Track E: Documentation
+
+- **`docs/mcp-tools.md`** (~250 lines) — 50+ MCP tools categorized by stage (discovery, clusters, labels, sub-topics, crystals, fit-check, autofill, citation graph, quotes, search, examples) with signatures + use cases. Closes the gap that left Claude Desktop users blind to research-hub's capabilities.
+- **`UPGRADE.md`** (~135 lines) — Migration guide covering v0.1 → v0.30, with quick path for v0.28/v0.29 users + breaking-changes detail for older versions + rollback procedure.
+- **`docs/anti-rag.zh-TW.md`** (~200 lines) — Full 繁體中文 translation of the architectural explainer. Largest non-Anglophone audience.
+- **`docs/example-claude-mcp-flow.md`** (~180 lines) — Worked example: ingest paper → crystallize cluster → query → handle staleness → cluster split. With token economics ($0.94/year per cluster vs $23.40 with raw-paper queries).
+- **`docs/audit_v0.30.md`** (~190 lines) — Release report with before/after metrics + per-track delivery summary + verification commands.
+
+### Test count
+
+| Release | Passing | Skipped | xfail | Delta |
+|---|---|---|---|---|
+| v0.29.0 | 1142 | 12 | 5 | — |
+| **v0.30.0** | **1199** | **14** | **2** + 1 xpassed | **+57** |
+
+### Out of scope (v0.31+)
+
+- Track D refactor — `cli.py` (3012 LOC) and `mcp_server.py` (1458 LOC) splits deferred (HIGH RISK; non-essential)
+- Audit log, CDP token rotation, symlink config validation, Zotero key encryption, gRPC/REST API, .dxt Claude Desktop extension
+- Search-quality v0.26 xfail baselines (5 outstanding) and citation-graph optimization for >500-paper clusters
+
 ## v0.29.0 (2026-04-16)
 
 **Onboarding UX — confusion-proof first install. 1122 → 1142 tests (+20).**

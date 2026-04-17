@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM 三合一，專為 AI agent 打造。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1113%20passing-brightgreen.svg)](docs/audit_v0.28.md)
+[![Tests](https://img.shields.io/badge/tests-1199%20passing-brightgreen.svg)](docs/audit_v0.30.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 目前狀態
 
-- **最新版本**: v0.28.0 (2026-04-15)
-- **測試**: 1113 passing, 12 skipped, 5 xfail baselines(有紀錄的 search quality 問題)
+- **最新版本**: v0.30.0 (2026-04-16)
+- **測試**: 1199 passing, 14 skipped, 2 xfail baselines(有紀錄的 search quality 問題)
 - **平台**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **相依**: `pyzotero`、`pyyaml`、`requests`、`rapidfuzz`、`networkx`、`platformdirs`(都是 pure-Python)
@@ -155,8 +155,11 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 架構文件
 
-- [Anti-RAG crystals(為什麼不用 RAG)](docs/anti-rag.md) — 英文完整版
-- [Audit 報告](docs/) — `audit_v0.26.md`、`audit_v0.27.md`、`audit_v0.28.md`
+- [MCP tools 參考](docs/mcp-tools.md) — 50+ tools 完整列表
+- [Claude Desktop 示範流程](docs/example-claude-mcp-flow.md) — 從 ingest → crystallize → query 的具體例子
+- [Anti-RAG crystals(為什麼不用 RAG)](docs/anti-rag.zh-TW.md) — 繁中完整版
+- [升級指南](UPGRADE.md) — 從舊版本升級的注意事項
+- [Audit 報告](docs/) — `audit_v0.26.md` … `audit_v0.30.md`
 - [NotebookLM 設定](docs/notebooklm.md) — CDP attach 流程 + 疑難排解
 - [Papers input schema](docs/papers_input_schema.md) — ingest 管線參考
 

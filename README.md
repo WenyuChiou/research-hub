@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1113%20passing-brightgreen.svg)](docs/audit_v0.28.md)
+[![Tests](https://img.shields.io/badge/tests-1199%20passing-brightgreen.svg)](docs/audit_v0.30.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Status
 
-- **Latest**: v0.28.0 (2026-04-15)
-- **Tests**: 1113 passing, 12 skipped, 5 xfail baselines (documented search-quality issues)
+- **Latest**: v0.30.0 (2026-04-16)
+- **Tests**: 1199 passing, 14 skipped, 2 xfail baselines (documented search-quality issues)
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
@@ -155,8 +155,11 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Architecture docs
 
+- [MCP tools reference](docs/mcp-tools.md) — all 50+ tools categorized + signatures
+- [Example Claude Desktop flow](docs/example-claude-mcp-flow.md) — worked example: ingest → crystallize → query
 - [Anti-RAG crystals](docs/anti-rag.md) — why pre-computed Q→A beats retrieval
-- [Audit reports](docs/) — `audit_v0.26.md`, `audit_v0.27.md`, `audit_v0.28.md`
+- [Upgrade guide](UPGRADE.md) — migrating from older versions
+- [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.30.md`
 - [NotebookLM setup](docs/notebooklm.md) — CDP attach flow + troubleshooting
 - [Papers input schema](docs/papers_input_schema.md) — ingestion pipeline reference
 
