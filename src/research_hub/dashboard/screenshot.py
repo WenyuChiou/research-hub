@@ -10,8 +10,9 @@ from research_hub.dashboard import generate_dashboard
 logger = logging.getLogger(__name__)
 
 
-# The live dashboard uses radio-driven tabs. "crystal" is kept as a legacy alias
-# for the overview tab because crystal summaries render inside overview.
+# The live dashboard uses radio-driven tabs. Real tab IDs in template.html.
+# Crystal summaries render inside the briefings tab (alongside NotebookLM
+# briefs); "crystal" is kept as a legacy alias pointing at briefings.
 TAB_TARGETS: dict[str, str] = {
     "overview": "overview",
     "library": "library",
@@ -19,7 +20,7 @@ TAB_TARGETS: dict[str, str] = {
     "writing": "writing",
     "diagnostics": "diagnostics",
     "manage": "manage",
-    "crystal": "overview",
+    "crystal": "briefings",
 }
 
 VALID_TABS = set(TAB_TARGETS) | {"all"}
