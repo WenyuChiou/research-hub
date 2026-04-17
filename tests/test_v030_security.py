@@ -438,6 +438,52 @@ def test_executor_kills_process_on_timeout(monkeypatch):
     assert seen["proc"].poll() is not None
 
 
+def test_atomic_write_creates_target_file(tmp_path):
+    from research_hub.security import atomic_write_text
+
+    target = tmp_path / "state.json"
+    atomic_write_text(target, '{"ok": true}')
+
+    assert target.read_text(encoding="utf-8") == '{"ok": true}'
+
+
+def test_atomic_write_cleans_up_tmp_on_failure(tmp_path, monkeypatch):
+    from research_hub import security
+
+    target = tmp_path / "state.json"
+    monkeypatch.setattr(security.os, "replace", lambda src, dst: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        security.atomic_write_text(target, '{"ok": true}')
+
+    assert not list(tmp_path.glob("state.json.tmp.*"))
+
+
+def test_atomic_write_overwrites_existing(tmp_path):
+    from research_hub.security import atomic_write_text
+
+    target = tmp_path / "state.json"
+    target.write_text("old", encoding="utf-8")
+
+    atomic_write_text(target, "new")
+
+    assert target.read_text(encoding="utf-8") == "new"
+
+
+def test_event_broadcaster_drops_oldest_when_queue_is_full():
+    from research_hub.dashboard.events import EventBroadcaster
+
+    broadcaster = EventBroadcaster(maxsize=2)
+    queue = broadcaster.subscribe()
+
+    broadcaster.broadcast({"type": "one"})
+    broadcaster.broadcast({"type": "two"})
+    broadcaster.broadcast({"type": "three"})
+
+    assert queue.get_nowait()["type"] == "two"
+    assert queue.get_nowait()["type"] == "three"
+
+
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX perms only")
 def test_init_chmods_config_to_600(tmp_path, monkeypatch):
     from research_hub.init_wizard import run_init

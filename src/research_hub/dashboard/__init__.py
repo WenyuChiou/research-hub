@@ -32,6 +32,7 @@ from research_hub.dashboard.context import (
     PaperRow,
     collect_dashboard_context,
 )
+from research_hub.security import atomic_write_text
 from research_hub.dashboard.render import (
     render_dashboard,
     render_dashboard_from_config,
@@ -178,7 +179,7 @@ def generate_dashboard(
     html = render_dashboard_from_config(cfg, zot=zot, refresh_seconds=refresh_seconds)
     out_path = cfg.research_hub_dir / "dashboard.html"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(html, encoding="utf-8")
+    atomic_write_text(out_path, html, encoding="utf-8")
     if open_browser:
         webbrowser.open(out_path.as_uri())
     return out_path

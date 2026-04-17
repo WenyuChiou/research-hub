@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from research_hub.security import safe_join
+from research_hub.security import atomic_write_text, safe_join
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +274,7 @@ def apply_crystals(cfg, cluster_slug: str, scored: dict | list) -> CrystalApplyR
             result.replaced.append(slug)
         else:
             result.written.append(slug)
-        path.write_text(crystal.to_markdown(), encoding="utf-8")
+        atomic_write_text(path, crystal.to_markdown(), encoding="utf-8")
     return result
 
 

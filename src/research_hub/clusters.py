@@ -11,7 +11,7 @@ from pathlib import Path
 
 from research_hub.config import get_config
 from research_hub.operations import _update_frontmatter_field, move_paper, note_matches_query
-from research_hub.security import safe_join
+from research_hub.security import atomic_write_text, safe_join
 
 logger = logging.getLogger(__name__)
 
@@ -107,12 +107,17 @@ class ClusterRegistry:
         try:
             import yaml
 
-            self.path.write_text(
+            atomic_write_text(
+                self.path,
                 yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
                 encoding="utf-8",
             )
         except ImportError:
-            self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_text(
+                self.path,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
     def get(self, slug: str) -> Cluster | None:
         """Get a cluster by slug."""

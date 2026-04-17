@@ -12,6 +12,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from research_hub.security import atomic_write_text
 from research_hub.utils.doi import normalize_doi  # re-export
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,11 @@ class DedupIndex:
                 for title, hits in self.title_to_hits.items()
             },
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_text(
+            path,
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def add(self, hit: DedupHit) -> None:
         """Add a hit to DOI and title lookups if not already present."""

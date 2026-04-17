@@ -5,16 +5,17 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Full, Queue
 
 
 class EventBroadcaster:
-    def __init__(self) -> None:
+    def __init__(self, maxsize: int = 100) -> None:
         self._clients: list[Queue] = []
         self._lock = threading.Lock()
+        self.maxsize = maxsize
 
     def subscribe(self) -> Queue:
-        queue: Queue = Queue(maxsize=100)
+        queue: Queue = Queue(maxsize=self.maxsize)
         with self._lock:
             self._clients.append(queue)
         return queue
@@ -31,6 +32,15 @@ class EventBroadcaster:
         for queue in clients:
             try:
                 queue.put_nowait(event)
+            except Full:
+                try:
+                    queue.get_nowait()
+                except Empty:
+                    pass
+                try:
+                    queue.put_nowait(event)
+                except Full:
+                    dead.append(queue)
             except Exception:
                 dead.append(queue)
         if dead:
