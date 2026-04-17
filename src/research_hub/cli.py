@@ -563,6 +563,7 @@ def _import_folder_command(args) -> int:
         extensions=tuple(item.strip() for item in args.extensions.split(",") if item.strip()),
         skip_existing=not args.no_skip_existing,
         use_graphify=args.use_graphify,
+        graphify_graph=Path(args.graphify_graph) if args.graphify_graph else None,
         dry_run=args.dry_run,
     )
     print(f"\nImport summary ({'DRY RUN' if args.dry_run else 'WRITTEN'}):")
@@ -1070,7 +1071,59 @@ def _dashboard(
     watch: bool = False,
     refresh: int = 10,
     rich_bibtex: bool = False,
+    screenshot: str | None = None,
+    out: str | None = None,
+    out_dir: str | None = None,
+    scale: float = 2.0,
+    viewport_width: int = 1440,
+    viewport_height: int = 900,
+    full_page: bool = False,
 ) -> int:
+    if screenshot:
+        from research_hub.dashboard.screenshot import (
+            PlaywrightNotInstalled,
+            screenshot_all,
+            screenshot_dashboard,
+        )
+
+        try:
+            cfg = require_config()
+            if screenshot == "all":
+                if not out_dir:
+                    print("ERROR: --out-dir required with --screenshot all", file=sys.stderr)
+                    return 2
+                paths = screenshot_all(
+                    cfg,
+                    out_dir=Path(out_dir),
+                    scale=scale,
+                    viewport_width=viewport_width,
+                    viewport_height=viewport_height,
+                    full_page=full_page,
+                )
+                for path in paths:
+                    print(f"wrote {path}")
+                return 0
+            if not out:
+                print("ERROR: --out required with single-tab --screenshot", file=sys.stderr)
+                return 2
+            path = screenshot_dashboard(
+                cfg,
+                tab=screenshot,
+                out=Path(out),
+                scale=scale,
+                viewport_width=viewport_width,
+                viewport_height=viewport_height,
+                full_page=full_page,
+            )
+            print(f"wrote {path}")
+            return 0
+        except PlaywrightNotInstalled as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 3
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+
     if watch:
         from research_hub.dashboard import watch_dashboard
 
@@ -1894,6 +1947,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run graphify post-processing if graphify_bridge is available",
     )
     import_folder_parser.add_argument(
+        "--graphify-graph",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to pre-built graphify-out/graph.json. Adds subtopics frontmatter "
+            "to imported notes based on Leiden community detection from the graph. "
+            "Run `/graphify <folder>` in Claude Code first to produce graph.json."
+        ),
+    )
+    import_folder_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be imported without writing notes",
@@ -2324,6 +2387,50 @@ def build_parser() -> argparse.ArgumentParser:
             "~1s/paper). Default uses an instant frontmatter fallback that "
             "is sufficient for most citations."
         ),
+    )
+    dashboard_parser.add_argument(
+        "--screenshot",
+        metavar="TAB",
+        default=None,
+        help=(
+            "Capture TAB as PNG via Playwright headless. Tabs: overview, library, "
+            "briefings, writing, diagnostics, manage, all. Legacy alias: crystal -> overview."
+        ),
+    )
+    dashboard_parser.add_argument(
+        "--out",
+        metavar="PATH",
+        default=None,
+        help="Output PNG path for single-tab --screenshot",
+    )
+    dashboard_parser.add_argument(
+        "--out-dir",
+        metavar="DIR",
+        default=None,
+        help="Output directory for --screenshot all",
+    )
+    dashboard_parser.add_argument(
+        "--scale",
+        type=float,
+        default=2.0,
+        help="Device pixel ratio (default: 2.0 for Retina-grade)",
+    )
+    dashboard_parser.add_argument(
+        "--viewport-width",
+        type=int,
+        default=1440,
+        help="Viewport width before scaling (default: 1440)",
+    )
+    dashboard_parser.add_argument(
+        "--viewport-height",
+        type=int,
+        default=900,
+        help="Viewport height before scaling (default: 900)",
+    )
+    dashboard_parser.add_argument(
+        "--full-page",
+        action="store_true",
+        help="Capture the entire scrolled page instead of the visible viewport",
     )
 
     vault_parser = subparsers.add_parser("vault", help="Vault maintenance commands")
@@ -3052,6 +3159,13 @@ def main(argv: list[str] | None = None) -> int:
             watch=args.watch,
             refresh=args.refresh,
             rich_bibtex=args.rich_bibtex,
+            screenshot=args.screenshot,
+            out=args.out,
+            out_dir=args.out_dir,
+            scale=args.scale,
+            viewport_width=args.viewport_width,
+            viewport_height=args.viewport_height,
+            full_page=args.full_page,
         )
     if args.command == "vault":
         if args.vault_command == "graph-colors":
