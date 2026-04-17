@@ -19,7 +19,7 @@ def test_build_parser_accepts_notebooklm_upload_and_generate_flags():
     assert generate_args.headless is False
 
 
-def test_main_routes_notebooklm_upload_and_generate(monkeypatch):
+def test_main_routes_notebooklm_upload_and_generate(monkeypatch, mock_require_config):
     from research_hub import cli
 
     calls = []

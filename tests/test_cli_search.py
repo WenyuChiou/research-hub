@@ -83,7 +83,7 @@ def test_cli_search_year_range_invalid_raises_systemexit():
         _parse_year_range("2024-2025-2026")
 
 
-def test_cli_search_backend_flag_splits_comma_list(monkeypatch):
+def test_cli_search_backend_flag_splits_comma_list(monkeypatch, mock_require_config):
     captured = {}
 
     def fake_search(query, limit, verify=False, **kwargs):
@@ -98,7 +98,7 @@ def test_cli_search_backend_flag_splits_comma_list(monkeypatch):
     assert captured["backends"] == ("openalex", "arxiv")
 
 
-def test_cli_search_field_flag_uses_preset(monkeypatch):
+def test_cli_search_field_flag_uses_preset(monkeypatch, mock_require_config):
     captured = {}
 
     def fake_search(query, limit, verify=False, **kwargs):

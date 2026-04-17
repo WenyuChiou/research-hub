@@ -26,3 +26,8 @@ def tmp_path() -> Path:
         yield path
     finally:
         shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture
+def mock_require_config(monkeypatch):
+    monkeypatch.setattr("research_hub.cli.get_config", lambda: None)
