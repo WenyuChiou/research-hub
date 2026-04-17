@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.29.0 (2026-04-16)
+
+**Onboarding UX — confusion-proof first install. 1122 → 1142 tests (+20).**
+
+Fixes 7 pain points that confused new users about "source code vs vault" separation.
+
+### Added
+- **`research-hub where`** — instant (<0.1s) status showing config path, vault path, note count, crystal count, MCP config status, and vault folder tree. No API calls. The first command a new user should run after `init`.
+- **`research-hub install --mcp`** — auto-writes `research-hub` MCP server entry to `claude_desktop_config.json` (Windows/macOS/Linux paths auto-detected). Non-destructive merge preserves existing MCP servers. Prints "Restart Claude Desktop to activate."
+- **`require_config()`** in `config.py` — fails early with actionable error ("Run: research-hub init") when no config exists, instead of silently creating vault at `~/knowledge-base`. Wired into all CLI commands except `init`, `doctor`, `install`, `examples`.
+- **Init completion banner** — `research-hub init` now ends with formatted box showing vault path + config path + 4-step ordered command checklist (doctor → add → serve → install --mcp).
+- **Existing Obsidian vault detection** — if init path contains `.obsidian/`, prints note count + "will add folders alongside your notes, nothing overwritten".
+- **Doctor header** — `research-hub doctor` now prints config + vault paths at the top before running checks, so user immediately sees which vault they're checking.
+- **README "Source code vs vault" section** — new table explaining the two-directory design in both README.md (EN) and README.zh-TW.md (繁中).
+- **6 demo screenshots** in `docs/images/` — dashboard overview, crystals section, library sub-topics, manage live pill, diagnostics, Obsidian graph view with label coloring.
+- **20 new tests** in `tests/test_onboarding_ux.py`.
+
+### Changed
+- **PyPI description** updated to: "CLI + MCP server for Zotero + Obsidian + NotebookLM research pipelines. Run `research-hub init` after install."
+
+### Test count
+| Release | Passing | Delta |
+|---|---|---|
+| v0.28.0 | 1122 | — |
+| **v0.29.0** | **1142** | **+20** |
+
 ## v0.28.0 (2026-04-15)
 
 **Crystals — anti-RAG semantic compression. Pre-computed canonical Q→A answers replace query-time context assembly. 1087 → 1122 tests (+35).**

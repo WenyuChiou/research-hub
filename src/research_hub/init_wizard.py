@@ -17,6 +17,50 @@ def get_default_config_path() -> Path:
     return get_default_config_dir() / "config.json"
 
 
+def _detect_existing_obsidian_vault(vault: Path) -> None:
+    """Print a reassurance banner when onboarding into an existing vault."""
+    obsidian_dir = vault / ".obsidian"
+    if obsidian_dir.exists():
+        note_count = len(list(vault.rglob("*.md")))
+        print(f"\n  Found existing Obsidian vault at {vault}")
+        print(f"    ({note_count} .md files detected)")
+        print("    research-hub will add raw/ + hub/ + .research_hub/")
+        print("    alongside your existing notes. Nothing is overwritten.\n")
+
+
+def _print_completion_banner(vault_path: Path, config_path: Path) -> None:
+    """Print formatted completion message with next steps."""
+    vault_str = str(vault_path)
+    config_str = str(config_path)
+
+    lines = [
+        "",
+        "  Setup complete!",
+        "",
+        f"  Your vault:  {vault_str}",
+        f"  Your config: {config_str}",
+        "",
+        "  NEXT STEPS (run in order):",
+        "",
+        "  1. research-hub doctor",
+        "     -> Verify all green before continuing",
+        "",
+        "  2. research-hub add <DOI> --cluster <name>",
+        "     -> Add your first paper (creates cluster automatically)",
+        "",
+        "  3. research-hub serve --dashboard",
+        "     -> Opens live dashboard at http://127.0.0.1:8765/",
+        "",
+        "  4. research-hub install --mcp",
+        "     -> Auto-configure Claude Desktop (optional)",
+        "",
+        "  Docs: https://github.com/WenyuChiou/research-hub",
+        "",
+    ]
+    for line in lines:
+        print(line)
+
+
 def run_init(
     *,
     vault_root: str | None = None,
@@ -38,6 +82,8 @@ def run_init(
     else:
         print("Error: --vault is required in non-interactive mode")
         return 1
+
+    _detect_existing_obsidian_vault(vault)
 
     for subdir in ("raw", "hub", "logs", "pdfs", ".research_hub"):
         (vault / subdir).mkdir(parents=True, exist_ok=True)
@@ -122,14 +168,5 @@ def run_init(
     except ImportError:
         print("  Chrome check: skipped (playwright not installed)")
 
-    if is_analyst:
-        print("\n  Setup complete (analyst mode)!")
-        print("  Next steps:")
-        print("    research-hub doctor")
-        print("    research-hub add 10.1234/example  # add by DOI")
-    else:
-        print("\n  Setup complete!")
-        print("  Next steps:")
-        print("    research-hub doctor           # verify everything is green")
-        print("    research-hub search 'topic'   # find papers")
+    _print_completion_banner(vault, config_path)
     return 0

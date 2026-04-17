@@ -23,6 +23,21 @@ English → [README.md](README.md)
 
 設計給每天都在用 AI agent 的 PhD 學生跟研究團隊,不想在六個分頁之間切來切去的人。
 
+## Source code vs Vault(兩個不同的東西)
+
+research-hub 在你電腦上有兩個分開的位置,這是刻意的設計:
+
+| | Source code (程式碼) | Vault (你的資料庫) |
+|---|---|---|
+| **是什麼** | Python 套件 + CLI 工具 | 你的研究資料 |
+| **在哪裡** | `site-packages/research_hub/`(pip 管理) | `~/knowledge-base/`(預設,`init` 時你自己選) |
+| **裡面有** | CLI, MCP server, dashboard 產生器 | 論文筆記, Obsidian graph, crystals, Zotero 同步 |
+| **多人共用?** | 是 — 每個人裝同一個 pip package | 否 — 每個人自己的 vault |
+
+`pip install` 之後跑 `research-hub init` 建立你的 vault。如果你已經有 Obsidian vault,`init` 指到那個路徑就好 — research-hub 會把它的資料夾加在你現有筆記旁邊,不會覆蓋。
+
+隨時跑 `research-hub where` 查看你的 config 跟 vault 路徑。
+
 ## 跟其他工具的差別
 
 ### 1. Crystals — 預先運算好的答案,不是 lazy retrieval (v0.28)
@@ -59,7 +74,7 @@ research-hub vault graph-colors --refresh
 
 寫入 14 個顏色群組到 `.obsidian/graph.json`:5 個 cluster 路徑 + 9 個論文 label(`seed`、`core`、`method`、`benchmark`、`survey`、`application`、`tangential`、`deprecated`、`archived`)。每次 `research-hub dashboard` 都會自動刷新。打開 Obsidian Graph View — 你的 vault 是按「意義」視覺化,不是按檔案樹。
 
-_(Obsidian graph 截圖待補 — 跑完 `research-hub vault graph-colors --refresh` 後按 `Ctrl+G` 截。)_
+![Obsidian Graph 按 label 上色](docs/images/obsidian-graph.png)
 
 ### 4. 分 sub-topic 的 Library + citation graph 自動分群 (v0.27)
 

@@ -23,6 +23,21 @@ A CLI + MCP server that does three things at once:
 
 Built for PhD students and research teams who already use AI agents daily and don't want to context-switch between six tabs.
 
+## Source code vs vault
+
+research-hub has two separate locations on your computer. This is intentional:
+
+| | Source code | Vault |
+|---|---|---|
+| **What** | The Python package + CLI | Your research data |
+| **Where** | `site-packages/research_hub/` (managed by pip) | `~/knowledge-base/` (default, you choose during `init`) |
+| **Contains** | CLI, MCP server, dashboard renderer | Paper notes, Obsidian graph, crystals, Zotero sync |
+| **Shared?** | Yes — same package for every user | No — each user has their own vault |
+
+After `pip install`, run `research-hub init` to create your vault. If you already have an Obsidian vault, point `init` at it — research-hub adds its folders alongside your existing notes without overwriting anything.
+
+Run `research-hub where` at any time to see exactly where your config and vault live.
+
 ## What makes it different
 
 ### 1. Crystals — pre-computed answers, not lazy retrieval (v0.28)
@@ -59,7 +74,7 @@ research-hub vault graph-colors --refresh
 
 Writes 14 colour groups to `.obsidian/graph.json`: 5 per cluster path + 9 per paper label (`seed`, `core`, `method`, `benchmark`, `survey`, `application`, `tangential`, `deprecated`, `archived`). Every `research-hub dashboard` run auto-refreshes them. Open Obsidian Graph View — your vault is visually structured by meaning, not just file tree.
 
-_(Obsidian graph screenshot pending — capture from `Ctrl+G` after `research-hub vault graph-colors --refresh`.)_
+![Obsidian Graph coloured by label](docs/images/obsidian-graph.png)
 
 ### 4. Sub-topic-aware Library + citation-graph cluster split (v0.27)
 

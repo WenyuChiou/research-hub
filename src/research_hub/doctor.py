@@ -78,6 +78,21 @@ def run_doctor() -> list[CheckResult]:
     config_path = _resolve_config_path()
     config_data = _load_config_json(config_path)
 
+    print("=" * 60)
+    print("research-hub health check")
+    if config_path:
+        print(f"  Config:  {config_path}")
+        try:
+            cfg = get_config()
+            print(f"  Vault:   {cfg.root}")
+        except Exception:
+            print("  Vault:   (error reading config)")
+    else:
+        print("  Config:  (not found - run: research-hub init)")
+        print("  Vault:   (unknown)")
+    print("=" * 60)
+    print()
+
     if config_path and config_path.exists():
         results.append(CheckResult("config", "OK", f"Found at {config_path}"))
     else:

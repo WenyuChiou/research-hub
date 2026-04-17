@@ -35,10 +35,18 @@ def _serialize_dashboard_data(cfg) -> dict:
     return _clean_for_json(asdict(data))
 
 
+def _resolve_version() -> str:
+    try:
+        from importlib.metadata import version as _v
+        return _v("research-hub-pipeline")
+    except Exception:
+        return "unknown"
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     cfg = None
     broadcaster: EventBroadcaster
-    version = "0.27.0"
+    version = _resolve_version()
 
     def log_message(self, format: str, *args) -> None:
         logger.info("%s - %s", self.address_string(), format % args)

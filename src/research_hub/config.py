@@ -111,11 +111,11 @@ class HubConfig:
             config_zotero_collections, dict
         ) else {}
 
-        self.logs.mkdir(parents=True, exist_ok=True)
-        try:
-            self.research_hub_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError:
-            pass
+        for path in (self.logs, self.research_hub_dir):
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                pass
 
 
 _config: HubConfig | None = None
@@ -131,3 +131,20 @@ def get_config() -> HubConfig:
         _config = HubConfig()
         _config_path = resolved_path
     return _config
+
+
+def require_config() -> HubConfig:
+    """Like get_config() but fail early if the user has not run init."""
+    path = _resolve_config_path()
+    if path is None:
+        import sys
+
+        print("ERROR: research-hub is not initialized.", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("  Run:  research-hub init", file=sys.stderr)
+        print(
+            "  Docs: https://github.com/WenyuChiou/research-hub#install",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    return get_config()

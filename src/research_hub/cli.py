@@ -11,7 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from research_hub.clusters import ClusterRegistry
-from research_hub.config import get_config
+from research_hub.config import get_config, require_config
 from research_hub.dedup import DedupIndex, build_from_obsidian, build_from_zotero
 from research_hub.operations import add_paper, mark_paper, move_paper, remove_paper
 from research_hub.pipeline import run_pipeline
@@ -1077,6 +1077,150 @@ def _cmd_serve(args, cfg) -> int:
     return 0
 
 
+def _get_claude_desktop_config_path() -> Path:
+    import platform
+
+    if platform.system() == "Windows":
+        config_dir = Path.home() / "AppData" / "Roaming" / "Claude"
+    elif platform.system() == "Darwin":
+        config_dir = Path.home() / "Library" / "Application Support" / "Claude"
+    else:
+        config_dir = Path.home() / ".config" / "claude"
+    return config_dir / "claude_desktop_config.json"
+
+
+def _install_mcp(config_path: Path | None = None) -> int:
+    """Auto-write research-hub MCP server entry to Claude Desktop config."""
+    config_path = config_path or _get_claude_desktop_config_path()
+
+    config: dict = {}
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception:
+            config = {}
+
+    servers = config.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        servers = {}
+        config["mcpServers"] = servers
+
+    if "research-hub" in servers:
+        print(f"research-hub already configured in {config_path}")
+        print("  No changes made.")
+        return 0
+
+    servers["research-hub"] = {
+        "command": "research-hub",
+        "args": ["serve"],
+    }
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(config, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    print(f"MCP server added to {config_path}")
+    print("  Restart Claude Desktop to activate.")
+    print("  Then ask Claude: 'list my research clusters'")
+    return 0
+
+
+def _cmd_install(args, cfg=None) -> int:
+    if getattr(args, "mcp", False):
+        return _install_mcp()
+
+    from research_hub.skill_installer import install_skill, list_platforms
+
+    if args.list_platforms:
+        for key, name, installed in list_platforms():
+            status = "installed" if installed else "not installed"
+            print(f"  {key:15s} {name:20s} [{status}]")
+        return 0
+    if not args.platform:
+        print("Specify --platform or use --list to see options.")
+        return 1
+    path = install_skill(args.platform)
+    print(f"Installed SKILL.md to {path}")
+    return 0
+
+
+def _cmd_where(args) -> int:
+    """Print config/vault/data locations without external API calls."""
+    from research_hub.config import _resolve_config_path, get_config
+
+    config_path = _resolve_config_path()
+    print()
+
+    if not config_path:
+        print("  Config:   (not found)")
+        print("  Vault:    (not configured)")
+        print()
+        print("  Run: research-hub init")
+        return 1
+
+    print(f"  Config:   {config_path}")
+
+    try:
+        cfg = get_config()
+    except Exception as exc:
+        print(f"  Vault:    (error: {exc})")
+        return 1
+
+    vault = Path(cfg.root)
+    print(f"  Vault:    {vault}")
+
+    raw = Path(cfg.raw)
+    note_count = len(list(raw.rglob("*.md"))) if raw.exists() else 0
+
+    clusters_file = Path(cfg.research_hub_dir) / "clusters.yaml"
+    cluster_count = 0
+    if clusters_file.exists():
+        try:
+            cluster_count = len(ClusterRegistry(clusters_file).list())
+        except Exception:
+            pass
+
+    print(f"  Notes:    {note_count} papers across {cluster_count} cluster(s)")
+
+    hub = Path(cfg.hub)
+    crystal_count = len(list(hub.rglob("crystals/*.md"))) if hub.exists() else 0
+    if crystal_count:
+        print(f"  Crystals: {crystal_count} pre-computed answers")
+
+    mcp_config = _get_claude_desktop_config_path()
+    if mcp_config.exists():
+        try:
+            mcp_data = json.loads(mcp_config.read_text(encoding="utf-8"))
+            if "research-hub" in mcp_data.get("mcpServers", {}):
+                print(f"  MCP:      {mcp_config} (configured)")
+            else:
+                print(f"  MCP:      {mcp_config} (not configured - run: research-hub install --mcp)")
+        except Exception:
+            print(f"  MCP:      {mcp_config} (error reading)")
+    else:
+        print("  MCP:      (not found - run: research-hub install --mcp)")
+
+    dashboard = Path(cfg.research_hub_dir) / "dashboard.html"
+    if dashboard.exists():
+        print(f"  Dashboard: {dashboard}")
+
+    if raw.exists():
+        print()
+        print("  Vault folders:")
+        for cluster_dir in sorted(raw.iterdir()):
+            if cluster_dir.is_dir():
+                paper_count = len(list(cluster_dir.glob("*.md")))
+                topics_dir = cluster_dir / "topics"
+                topic_count = len(list(topics_dir.glob("*.md"))) if topics_dir.exists() else 0
+                extra = f" + {topic_count} sub-topics" if topic_count else ""
+                print(f"    raw/{cluster_dir.name}/  ({paper_count} papers{extra})")
+
+    print()
+    return 0
+
+
 def _vault_graph_colors(refresh: bool) -> int:
     from research_hub.vault.graph_config import refresh_graph_from_vault
 
@@ -1579,6 +1723,16 @@ def build_parser() -> argparse.ArgumentParser:
         dest="list_platforms",
         action="store_true",
         help="List supported platforms and install status",
+    )
+    install_parser.add_argument(
+        "--mcp",
+        action="store_true",
+        help="Auto-configure Claude Desktop MCP server connection",
+    )
+
+    subparsers.add_parser(
+        "where",
+        help="Show where research-hub stores config, vault, and data",
     )
 
     serve_parser = subparsers.add_parser(
@@ -2394,6 +2548,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    exempt_commands = {"init", "doctor", "install", "examples", "where"}
+
+    if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
+        require_config()
 
     if args.command in (None, "run"):
         rc = run_pipeline(
@@ -2449,7 +2607,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "examples":
         from research_hub.examples import copy_example_as_cluster, list_examples, load_example
 
-        cfg = get_config()
         if args.examples_command == "list":
             for ex in list_examples():
                 print(f"  {ex['slug']:35s} ({ex['field']:7s}) - {ex['name']}")
@@ -2463,6 +2620,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(ex, indent=2, ensure_ascii=False))
             return 0
         if args.examples_command == "copy":
+            cfg = get_config()
             try:
                 slug = copy_example_as_cluster(cfg, args.name, cluster_slug=args.cluster)
                 ex = load_example(args.name)
@@ -2477,19 +2635,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("examples requires a subcommand")
         return 2
     if args.command == "install":
-        from research_hub.skill_installer import install_skill, list_platforms
-
-        if args.list_platforms:
-            for key, name, installed in list_platforms():
-                status = "installed" if installed else "not installed"
-                print(f"  {key:15s} {name:20s} [{status}]")
-            return 0
-        if not args.platform:
-            print("Specify --platform or use --list to see options.")
-            return 1
-        path = install_skill(args.platform)
-        print(f"Installed SKILL.md to {path}")
-        return 0
+        return _cmd_install(args)
+    if args.command == "where":
+        return _cmd_where(args)
     if args.command == "serve":
         cfg = get_config()
         return _cmd_serve(args, cfg)
