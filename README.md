@@ -195,7 +195,7 @@ Both personas get the same dashboard, MCP server, and crystal system.
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1113 passing
+python -m pytest -q  # 1199 passing
 ```
 
 Package name on PyPI: **research-hub-pipeline**

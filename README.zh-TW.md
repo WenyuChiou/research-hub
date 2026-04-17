@@ -195,7 +195,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1113 passing
+python -m pytest -q  # 1199 passing
 ```
 
 PyPI 套件名稱: **research-hub-pipeline**
