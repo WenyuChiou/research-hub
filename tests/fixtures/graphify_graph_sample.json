@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    {"id": "n1", "type": "concept", "community": 0, "source_file": "/abs/path/note1.md"},
+    {"id": "n2", "type": "concept", "community": 0, "source_file": "/abs/path/note2.md"},
+    {"id": "n3", "type": "concept", "community": 1, "source_file": "/abs/path/note3.md"},
+    {"id": "n4", "type": "concept", "community": 1, "source_file": "/abs/path/note4.md"},
+    {"id": "n5", "type": "concept", "community": 2, "source_file": "/abs/path/note5.md"}
+  ],
+  "edges": [
+    {"source": "n1", "target": "n2", "type": "semantically_similar_to"},
+    {"source": "n3", "target": "n4", "type": "semantically_similar_to"}
+  ],
+  "communities": {
+    "0": "topic-alpha",
+    "1": "topic-beta"
+  }
+}
