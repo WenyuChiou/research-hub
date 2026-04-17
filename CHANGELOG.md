@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.31.1 (2026-04-17)
+
+**Patch release for `import-folder` title quality and safer cluster cleanup.**
+
+- **PDF title derivation fixed** in `src/research_hub/importer.py` - imported PDF notes now prefer embedded PDF metadata title and otherwise fall back to the first non-empty extracted line instead of the filename.
+- **DOCX title derivation fixed** in `src/research_hub/importer.py` - DOCX extraction now returns `(title, body)`, sourcing title from `core_properties.title` or the first `Heading 1` / `Title` paragraph before falling back to the filename.
+- **Markdown and TXT title logic clarified** - markdown keeps `# ` H1 detection; plain text uses the first non-empty short line when it looks like a title.
+- **`clusters delete --purge-folder` added** in `src/research_hub/cli.py` - optional destructive cleanup now removes `<vault>/raw/<slug>/` and `<vault>/hub/<slug>/` after unbinding the registry entry. Default behavior remains unchanged.
+- **4 regression tests added** in `tests/test_v031_1_quality.py`.
+
 ## v0.31.0 (2026-04-17)
 
 **Document abstraction + analyst persona enablement. 1199 → 1223 tests (+24).**

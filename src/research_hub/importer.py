@@ -78,6 +78,20 @@ def _extract_pdf(path: Path) -> str:
     return "\n\n".join(parts).strip()
 
 
+def _pdf_metadata_title(path: Path) -> str | None:
+    try:
+        import pdfplumber
+    except ImportError as exc:  # pragma: no cover - dependency-gated
+        raise RuntimeError(
+            "PDF extraction requires pdfplumber. Install: pip install 'research-hub-pipeline[import]'"
+        ) from exc
+
+    with pdfplumber.open(str(path)) as pdf:
+        metadata = pdf.metadata or {}
+        title = str(metadata.get("Title", "") or "").strip()
+    return title or None
+
+
 def _extract_markdown(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="replace")
     if text.startswith("---\n"):
@@ -87,7 +101,7 @@ def _extract_markdown(path: Path) -> str:
     return text.strip()
 
 
-def _extract_docx(path: Path) -> str:
+def _extract_docx(path: Path) -> tuple[str, str]:
     try:
         import docx
     except ImportError as exc:  # pragma: no cover - dependency-gated
@@ -96,7 +110,15 @@ def _extract_docx(path: Path) -> str:
         ) from exc
 
     doc = docx.Document(str(path))
-    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip()).strip()
+    title = str(doc.core_properties.title or "").strip()
+    if not title:
+        for paragraph in doc.paragraphs[:5]:
+            style_name = getattr(getattr(paragraph, "style", None), "name", "")
+            if style_name in {"Heading 1", "Title"} and paragraph.text.strip():
+                title = paragraph.text.strip()
+                break
+    body = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip()).strip()
+    return title, body
 
 
 def _extract_txt(path: Path) -> str:
@@ -130,18 +152,39 @@ def _extract_url(path: Path) -> str:
 _EXTRACTORS = {
     "pdf": _extract_pdf,
     "markdown": _extract_markdown,
-    "docx": _extract_docx,
     "txt": _extract_txt,
     "url": _extract_url,
 }
 
 
-def _derive_title(text: str, fallback: Path) -> str:
-    for line in text.splitlines()[:50]:
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            return stripped[2:].strip()
+def _first_nonempty_line(text: str) -> str:
+    return next((line.strip() for line in text.splitlines() if line.strip()), "")
+
+
+def _derive_title(text: str, fallback: Path, source_kind: str, source_path: Path) -> str:
+    if source_kind == "markdown":
+        for line in text.splitlines()[:50]:
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                return stripped[2:].strip()
+    elif source_kind == "pdf":
+        metadata_title = _pdf_metadata_title(source_path)
+        if metadata_title:
+            return metadata_title
+        first_line = _first_nonempty_line(text)
+        if first_line:
+            return first_line
+    elif source_kind == "txt":
+        first_line = _first_nonempty_line(text)
+        if first_line and len(first_line) < 100:
+            return first_line
     return fallback.stem.replace("_", " ").replace("-", " ").strip() or fallback.stem
+
+
+def _derive_title_for_kind(text: str, source_path: Path, source_kind: str, *, title_hint: str = "") -> str:
+    if title_hint.strip():
+        return title_hint.strip()
+    return _derive_title(text, source_path, source_kind, source_path)
 
 
 def _filename_slug(path: Path) -> str:
@@ -307,14 +350,18 @@ def import_folder(
         source_kind = SUPPORTED_EXTENSIONS[ext]
         entry = ImportEntry(path=path, source_kind=source_kind)
         try:
-            text = _EXTRACTORS[source_kind](path)
+            title_hint = ""
+            if source_kind == "docx":
+                title_hint, text = _extract_docx(path)
+            else:
+                text = _EXTRACTORS[source_kind](path)
         except Exception as exc:
             entry.status = "failed"
             entry.error = f"extraction failed: {exc}"
             report.entries.append(entry)
             continue
 
-        title = _derive_title(text, path)
+        title = _derive_title_for_kind(text, path, source_kind, title_hint=title_hint)
         entry.slug = _derive_slug(title, path)
         content_hash = _content_hash(text)
         if skip_existing and dedup.title_to_hits.get(_hash_key(content_hash)):

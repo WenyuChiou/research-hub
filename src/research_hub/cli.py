@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -17,6 +18,7 @@ from research_hub.dedup import DedupIndex, build_from_obsidian, build_from_zoter
 from research_hub.operations import add_paper, mark_paper, move_paper, remove_paper
 from research_hub.pipeline import run_pipeline
 from research_hub.pipeline_repair import repair_cluster
+from research_hub.security import safe_join
 from research_hub.search import SemanticScholarClient, iter_new_results
 from research_hub.search.fallback import (
     DEFAULT_BACKENDS,
@@ -220,9 +222,20 @@ def _clusters_rename(slug: str, name: str) -> int:
     return 0
 
 
-def _clusters_delete(slug: str, dry_run: bool) -> int:
+def _clusters_delete(slug: str, dry_run: bool, purge_folder: bool = False) -> int:
     cfg = get_config()
     result = ClusterRegistry(cfg.clusters_file).delete(slug, dry_run=dry_run)
+    purged: list[str] = []
+    if purge_folder and not dry_run:
+        for root in (cfg.raw, cfg.hub):
+            try:
+                target = safe_join(root, slug)
+                if target.exists():
+                    shutil.rmtree(target)
+                    purged.append(str(target))
+            except Exception as exc:
+                print(f"WARN: could not purge {root}/{slug}: {exc}", file=sys.stderr)
+    result["purged_folders"] = purged
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -1949,6 +1962,11 @@ def build_parser() -> argparse.ArgumentParser:
     delete_parser = clusters_subparsers.add_parser("delete", help="Delete a cluster")
     delete_parser.add_argument("slug")
     delete_parser.add_argument("--dry-run", action="store_true")
+    delete_parser.add_argument(
+        "--purge-folder",
+        action="store_true",
+        help="Also delete <vault>/raw/<slug>/ and <vault>/hub/<slug>/ folders (destructive)",
+    )
     merge_parser = clusters_subparsers.add_parser("merge", help="Merge two clusters")
     merge_parser.add_argument("source", help="Source cluster slug (will be removed)")
     merge_parser.add_argument("--into", required=True, dest="target", help="Target cluster slug")
@@ -2814,7 +2832,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.clusters_command == "rename":
             return _clusters_rename(args.slug, args.name)
         if args.clusters_command == "delete":
-            return _clusters_delete(args.slug, args.dry_run)
+            return _clusters_delete(args.slug, args.dry_run, args.purge_folder)
         if args.clusters_command == "merge":
             return _clusters_merge(args.source, args.target)
         if args.clusters_command == "split":
