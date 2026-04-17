@@ -409,6 +409,8 @@ def run_pipeline(
         for i, pp in enumerate(papers):
             p(f"\n--- Paper {i+1}: {pp['title'][:60]}...")
             query_text = _query_for_paper(pp, query)
+            cluster_obj = clusters.get(cluster_slug) if cluster_slug else None
+            cluster_coll = cluster_obj.zotero_collection_key if cluster_obj else None
             if fit_check:
                 doi_key = str(pp.get("doi", "") or "").strip().lower()
                 title_key = str(pp.get("title", "") or "").strip().lower()
@@ -501,8 +503,6 @@ def run_pipeline(
                 if no_zotero:
                     dup = False
                 else:
-                    cluster_obj = clusters.get(cluster_slug) if cluster_slug else None
-                    cluster_coll = cluster_obj.zotero_collection_key if cluster_obj else None
                     dup = check_duplicate(
                         zot,
                         pp["title"],
@@ -537,8 +537,12 @@ def run_pipeline(
             t["pages"] = pp.get("pages", "")
             t["abstractNote"] = pp["abstract"]
             t["tags"] = [{"tag": x} for x in pp.get("tags", [])]
-            t["collections"] = [collection_key]
+            t["collections"] = [cluster_coll or collection_key]
             try:
+                p(
+                    f"  Routing to collection: {cluster_coll or collection_key} "
+                    f"(cluster={cluster_slug or 'none'})"
+                )
                 resp = zot.create_items([t])
                 if resp.get("successful"):
                     key = list(resp["successful"].values())[0]["key"]
