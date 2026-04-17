@@ -60,6 +60,7 @@ class DedupIndex:
 
     def save(self, path: Path) -> None:
         """Persist the index to disk."""
+        from research_hub.locks import file_lock
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "doi_to_hits": {
@@ -70,11 +71,12 @@ class DedupIndex:
                 for title, hits in self.title_to_hits.items()
             },
         }
-        atomic_write_text(
-            path,
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        with file_lock(path):
+            atomic_write_text(
+                path,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
     def add(self, hit: DedupHit) -> None:
         """Add a hit to DOI and title lookups if not already present."""

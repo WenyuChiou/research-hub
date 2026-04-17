@@ -12,6 +12,28 @@ from research_hub.security import chmod_sensitive
 CONFIG_PATH = Path.home() / ".claude" / "skills" / "knowledge-base" / "config.json"
 
 
+def _validate_root_under_home(root: Path) -> None:
+    """Reject vault roots outside HOME unless explicitly opted in.
+
+    Set RESEARCH_HUB_ALLOW_EXTERNAL_ROOT=1 to allow paths outside HOME
+    (e.g., a shared network drive). Without that opt-in, a misconfigured
+    RESEARCH_HUB_ROOT pointing at a system directory will fail loudly
+    instead of silently filling /etc with vault folders.
+    """
+    if os.environ.get("RESEARCH_HUB_ALLOW_EXTERNAL_ROOT") == "1":
+        return
+    try:
+        resolved = root.resolve()
+        home = Path.home().resolve()
+        resolved.relative_to(home)
+    except ValueError:
+        raise ValueError(
+            f"RESEARCH_HUB_ROOT={resolved} is outside HOME={home}.\n"
+            "  Set RESEARCH_HUB_ALLOW_EXTERNAL_ROOT=1 to allow this "
+            "(e.g., shared network drive)."
+        )
+
+
 def _resolve_config_path() -> Path | None:
     """Find the config file in priority order."""
 
@@ -89,6 +111,7 @@ class HubConfig:
             raw_root = str(Path.home() / "knowledge-base")
 
         self.root = Path(raw_root).expanduser()
+        _validate_root_under_home(self.root)
         self.raw = Path(raw_path).expanduser() if raw_path else self.root / "raw"
         self.hub = Path(hub_path).expanduser() if hub_path else self.root / "hub"
         self.projects = (

@@ -95,6 +95,7 @@ class ClusterRegistry:
 
     def save(self) -> None:
         """Persist cluster definitions."""
+        from research_hub.locks import file_lock
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "clusters": {
@@ -104,24 +105,27 @@ class ClusterRegistry:
                 for cluster in self.clusters.values()
             }
         }
-        try:
-            import yaml
+        with file_lock(self.path):
+            try:
+                import yaml
 
-            atomic_write_text(
-                self.path,
-                yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
-                encoding="utf-8",
-            )
-        except ImportError:
-            atomic_write_text(
-                self.path,
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+                atomic_write_text(
+                    self.path,
+                    yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+                    encoding="utf-8",
+                )
+            except ImportError:
+                atomic_write_text(
+                    self.path,
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
 
     def get(self, slug: str) -> Cluster | None:
-        """Get a cluster by slug."""
-        return self.clusters.get(slug)
+        """Get a cluster by slug. Case-insensitive."""
+        if not isinstance(slug, str):
+            return None
+        return self.clusters.get(slug.strip().lower())
 
     def raw_dir(self, slug: str, vault_raw: Path | None = None) -> Path:
         """Return a cluster raw directory using safe path joining."""
@@ -159,7 +163,7 @@ class ClusterRegistry:
         **kwargs,
     ) -> Cluster:
         """Create a cluster from a query or return the existing one."""
-        final_slug = slug or slugify(query)
+        final_slug = (slug or slugify(query)).strip().lower()
         if final_slug in self.clusters:
             return self.clusters[final_slug]
         from datetime import datetime, timezone

@@ -1677,7 +1677,19 @@ def _migrate_yaml(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="research-hub")
+    parser = argparse.ArgumentParser(
+        prog="research-hub",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Start here ->\n\n"
+            "  $ research-hub init           # interactive setup wizard\n"
+            "  $ research-hub doctor         # verify everything is wired\n"
+            "  $ research-hub where          # show vault + config paths\n"
+            "  $ research-hub serve --dashboard  # open live dashboard\n"
+            "  $ research-hub install --mcp  # wire into Claude Desktop\n\n"
+            "Docs: https://github.com/WenyuChiou/research-hub\n"
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     init_parser = subparsers.add_parser(
