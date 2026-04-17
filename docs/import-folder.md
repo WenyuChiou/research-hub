@@ -35,6 +35,10 @@ After step 3:
 - Body contains a 5000-char preview (trimmed for note size; full content stays at `raw_path`)
 - Dedup index updated with content hash so re-running skips already-imported files
 
+The dashboard Library tab picks them up immediately:
+
+![Imported docs in Library tab](images/import-folder-result.png)
+
 ## Supported file types
 
 | Extension | Source kind | Extractor | Optional dep |

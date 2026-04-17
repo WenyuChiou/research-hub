@@ -35,6 +35,10 @@ research-hub where
 - body 包含前 5000 字元的預覽（限制 note 大小；完整內容留在 `raw_path`）
 - dedup index 用內容 hash 更新，所以重跑會跳過已經匯入的檔
 
+dashboard 的 Library tab 立刻會看到:
+
+![匯入的文件在 Library tab](images/import-folder-result.png)
+
 ## 支援的檔案類型
 
 | 副檔名 | source kind | 抽取器 | 選用相依 |

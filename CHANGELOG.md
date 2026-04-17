@@ -1,5 +1,76 @@
 # Changelog
 
+## v0.32.0 (2026-04-17)
+
+**Polish: high-quality screenshots + housekeeping. 1227 → 1235 tests (+8). No architectural changes.**
+
+User concrete pain: existing `docs/images/*.png` were 800-1200 px non-Retina manual captures from weeks ago. v0.32 ships a permanent fix: a `--screenshot` CLI that re-renders any dashboard tab via headless Playwright at user-controlled DPI. All 5 demo PNGs re-shot at 2880×1800 (Retina @2x). Plus graphify integration redesign (v0.31.1 design bug) and external repo fix to `gemini-delegate-skill`.
+
+Full release report: [docs/audit_v0.32.md](docs/audit_v0.32.md).
+
+### Added — Track A: Dashboard `--screenshot` CLI
+
+- **`src/research_hub/dashboard/screenshot.py`** (NEW): `screenshot_dashboard()` and `screenshot_all()` render the self-contained `dashboard.html` in headless Chromium at user-controlled `device_scale_factor`.
+- **CLI:** `research-hub dashboard --screenshot TAB --out PATH --scale 2 --viewport-width 1440 --viewport-height 900`
+- **Tabs:** overview / library / briefings / writing / diagnostics / manage (+ crystal alias for briefings)
+- **Batch:** `--screenshot all --out-dir DIR` writes one PNG per tab
+- **Default scale=2** = Retina-grade (2880×1800). Pass `--scale 3` for print-quality (5760×3600).
+- **Graceful** `PlaywrightNotInstalled` error if `[playwright]` extra missing (same dep as NotebookLM).
+- **5 new tests** in `tests/test_v032_screenshot.py` (Playwright mocked).
+
+### Added — Track B: 5 dashboard PNGs re-shot at @2x
+
+All 5 PNGs in `docs/images/` re-captured via the new CLI. File sizes ~6-7× larger; resolution ~3.5× per axis.
+
+### Added — Track C: New image + Mermaid
+
+- **`docs/images/import-folder-result.png`** — Library tab showing imported docs (referenced from `import-folder.md` + `.zh-TW.md`)
+- **`docs/example-claude-mcp-flow.md`** — NEW Mermaid sequence diagram showing full ingest → crystallize → query → bundle flow visually (renders natively on GitHub)
+
+### Fixed — Track D: graphify integration redesign
+
+v0.31.1 audit documented: graphify is a coding-skill, not a standalone CLI. v0.31's `--use-graphify` always failed soft.
+
+- **`--graphify-graph PATH`** flag added — accepts pre-built `graph.json` from user's `/graphify` skill run in Claude Code
+- **`--use-graphify`** kept for backward compat (now emits `DeprecationWarning` and skips integration)
+- **`graphify_bridge.run_graphify()`** deprecated — raises `GraphifyNotInstalled` with actionable 2-step workflow guidance
+- **`graphify_bridge.parse_graphify_communities()`** + `map_to_subtopics()` unchanged (still parse pre-built graph.json)
+- **`docs/import-folder.md`** rewrote "Deep extraction with graphify" section with the new workflow
+- **3 new tests** in `tests/test_v032_graphify_redesign.py`
+- **3 v0.31 graphify tests** updated for new deprecated behavior (test count unchanged for those)
+
+### Added — Track E: Documentation
+
+- **`docs/screenshot-workflow.md`** (NEW) — usage guide for the screenshot CLI, custom dimensions, batch capture, Obsidian graph manual workflow, troubleshooting
+- **`docs/audit_v0.32.md`** (NEW) — release report with before/after metrics
+
+### Fixed — Track F: gemini-delegate-skill external repo
+
+External repo `https://github.com/WenyuChiou/gemini-delegate-skill` updated (commit `7493c8e`):
+
+- **`SKILL.md`**: NEW "Fourth rule" section — verify file writes after Gemini exits. Documents two failure modes from v0.31 work: (1) `Error executing tool write_file: params must have required property 'file_path'` after first successful write, (2) silent partial writes from rate-limit retries. Includes B-grade translation-quality caveat.
+- **`scripts/run_gemini.sh`** + **`.ps1`**: NEW `--verify-file PATH` (repeatable) + `--verify-sentinel TEXT` flags. After gemini exits, check expected files exist + non-empty + optionally contain sentinel string. Exit 1 with `VERIFY_FAILED` if not.
+- **`README.md`**: "Known Limitations" section with verify-file usage example
+- **Local skill** at `~/.claude/skills/gemini-delegate/` synced
+
+### Test count
+
+| Release | Passing | Skipped | xfail | Delta |
+|---|---|---|---|---|
+| v0.31.1 | 1227 | 14 | 2 + 1 xpassed | — |
+| **v0.32.0** | **1235** | **14** | **2** + 1 xpassed | **+8** |
+
+### Out of scope (v0.33+)
+
+- **Codex Phase 2** — structured memory layer (entities/claims/methods/datasets)
+- **Codex Phase 3** — tool consolidation (50+ tools → 5 task-level wrappers)
+- **Connector abstraction** (NotebookLM → optional plug-in)
+- **`cli.py` / `mcp_server.py` monolith splits** — still HIGH RISK
+- **Search recall xfail baselines** (v0.26)
+- **Restore archived vault** (Task #124) — archive contents have legacy folder names predating v0.27 cluster slugs; needs user decision on merge strategy
+- **Live NotebookLM round-trip test** — needs user to open browser + CDP attach
+- **Zotero key encryption**, **CDP token rotation**, **`.dxt` Claude Desktop extension**
+
 ## v0.31.1 (2026-04-17)
 
 **Patch release: 3 bugs found in v0.31 live smoke test + 1 CI flake fix. 1223 → 1227 tests (+4).**
