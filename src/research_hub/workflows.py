@@ -221,7 +221,6 @@ def brief_cluster(
 
     from research_hub.clusters import ClusterRegistry
     registry = ClusterRegistry(cfg.research_hub_dir / "clusters.yaml")
-    registry.load()
     cluster = registry.get(cluster_slug)
     if cluster is None:
         return _err(f"cluster not found: {cluster_slug}")
@@ -238,7 +237,11 @@ def brief_cluster(
         from research_hub.notebooklm.bundle import bundle_cluster
         bundle_result = bundle_cluster(cluster, cfg)
         out["bundle_dir"] = str(getattr(bundle_result, "bundle_dir", "") or "")
-        out["source_count"] = getattr(bundle_result, "source_count", 0)
+        pdf_c = getattr(bundle_result, "pdf_count", 0)
+        url_c = getattr(bundle_result, "url_count", 0)
+        out["source_count"] = (pdf_c or 0) + (url_c or 0)
+        out["pdf_count"] = pdf_c
+        out["url_count"] = url_c
         out["steps_completed"].append("bundle")
     except Exception as exc:
         return _err(f"bundle failed: {exc}")

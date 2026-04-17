@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.33.2 (2026-04-17)
+
+**Patch: brief_cluster fixes found in live NotebookLM round-trip test.**
+
+Full live round-trip validation (bundle → upload → generate → download → preview against real NotebookLM with 20 sources) caught two bugs in the `brief_cluster` wrapper that all unit tests missed (because they mocked the cluster registry).
+
+### Fixed — `ClusterRegistry` has no `load()` method
+
+`brief_cluster` called `ClusterRegistry.load()` but the registry auto-loads on `__init__`. Removed the redundant call.
+
+### Fixed — wrong attr name for source count
+
+`bundle_result.source_count` doesn't exist on `BundleReport`; it has `pdf_count` and `url_count` properties instead. `brief_cluster` now returns `pdf_count`, `url_count`, AND their sum as `source_count`.
+
+### Verified — end-to-end live
+
+Live round-trip on `llm-agents-software-engineering` cluster (20 URL sources):
+- Bundle: 20 URLs bundled
+- Upload: 6 new uploaded, 14 skipped from cache (prior NLM session auth still valid)
+- Generate: 3 saved briefings created
+- Download: 313-char briefing persisted to `.research_hub/artifacts/`
+- `brief_cluster` wrapper: completes with `steps=[bundle, download]` when notebook already exists
+
 ## v0.33.1 (2026-04-17)
 
 **Patch: ask_cluster fuzzy-match bugs found via live testing. 1247 → 1249 tests (+2 regression).**
