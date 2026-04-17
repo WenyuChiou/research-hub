@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM 三合一，專為 AI agent 打造。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1199%20passing-brightgreen.svg)](docs/audit_v0.30.md)
+[![Tests](https://img.shields.io/badge/tests-1223%20passing-brightgreen.svg)](docs/audit_v0.31.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 目前狀態
 
-- **最新版本**: v0.30.0 (2026-04-16)
-- **測試**: 1199 passing, 14 skipped, 2 xfail baselines(有紀錄的 search quality 問題)
+- **最新版本**: v0.31.0 (2026-04-17)
+- **測試**: 1223 passing, 14 skipped, 2 xfail baselines(有紀錄的 search quality 問題)
 - **平台**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **相依**: `pyzotero`、`pyyaml`、`requests`、`rapidfuzz`、`networkx`、`platformdirs`(都是 pure-Python)
@@ -157,9 +157,10 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 - [MCP tools 參考](docs/mcp-tools.md) — 50+ tools 完整列表
 - [Claude Desktop 示範流程](docs/example-claude-mcp-flow.md) — 從 ingest → crystallize → query 的具體例子
+- [本地檔案匯入](docs/import-folder.zh-TW.md) — 給 analyst persona 的 import-folder 指南（PDF/DOCX/MD/TXT/URL）
 - [Anti-RAG crystals(為什麼不用 RAG)](docs/anti-rag.zh-TW.md) — 繁中完整版
 - [升級指南](UPGRADE.md) — 從舊版本升級的注意事項
-- [Audit 報告](docs/) — `audit_v0.26.md` … `audit_v0.30.md`
+- [Audit 報告](docs/) — `audit_v0.26.md` … `audit_v0.31.md`
 - [NotebookLM 設定](docs/notebooklm.md) — CDP attach 流程 + 疑難排解
 - [Papers input schema](docs/papers_input_schema.md) — ingest 管線參考
 
@@ -195,7 +196,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1199 passing
+python -m pytest -q  # 1223 passing
 ```
 
 PyPI 套件名稱: **research-hub-pipeline**

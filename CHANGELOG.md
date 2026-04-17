@@ -1,5 +1,78 @@
 # Changelog
 
+## v0.31.0 (2026-04-17)
+
+**Document abstraction + analyst persona enablement. 1199 → 1223 tests (+24).**
+
+External Codex architecture review surfaced a real strategic gap: research-hub was too paper-centric to serve users with folders of mixed local docs (industry researchers, internal knowledge bases, founders doing market research). The repo's analyst persona existed in name but the ingest pipeline still demanded a DOI. v0.31 starts the `paper → document` abstraction without breaking academic paper paths, and adds `import-folder` so folder-of-PDFs use cases work end-to-end. Plus closes the NotebookLM CLI/MCP asymmetry critique.
+
+Full release report: [docs/audit_v0.31.md](docs/audit_v0.31.md).
+
+### Added — Track A: Document abstraction
+
+- **`src/research_hub/document.py`** (NEW) — `Document` base class with 7 canonical source kinds (paper / pdf / markdown / docx / txt / url / transcript). `Paper` becomes a subclass with the rich academic frontmatter; non-academic content uses `Document` directly with minimal frontmatter.
+- **Backward compat:** existing paper notes have `source_kind: paper` implicit (parser defaults to "paper" if field missing). No migration needed.
+- **6 new tests** in `tests/test_v031_document.py`.
+
+### Added — Track B: `import-folder` command
+
+- **`src/research_hub/importer.py`** (NEW, ~280 LOC) — walks a folder, extracts text per file type, writes Document notes via `atomic_write_text`.
+- **5 supported file types**: `.pdf` (pdfplumber), `.md` / `.markdown` (direct), `.txt` (direct + encoding detect), `.docx` (python-docx), `.url` (requests + readability-lxml).
+- **Dedup by SHA256 content hash** alongside existing DOI dedup.
+- **Auto-creates cluster** if `--cluster` slug doesn't exist.
+- **`--dry-run`** flag for preview before writing.
+- **`--use-graphify`** flag delegates to Track C for deep multi-modal extraction.
+- **CLI:** `research-hub import-folder ./project --cluster X`
+- **MCP tool:** `import_folder_tool(folder, cluster_slug, dry_run)`
+- **New optional deps** in `pyproject.toml`: `[project.optional-dependencies] import = [pdfplumber, python-docx, readability-lxml, requests]`. Install via `pip install 'research-hub-pipeline[import]'`.
+- **8 new tests** in `tests/test_v031_import_folder.py`.
+
+### Added — Track C: graphify bridge
+
+- **`src/research_hub/graphify_bridge.py`** (NEW, ~140 LOC) — subprocess wrapper around the external [graphify](https://github.com/safishamsi/graphify) CLI for users who want deep multi-modal extraction (PDFs + code + images + video transcripts) and Leiden community detection-based sub-topic suggestions.
+- `find_graphify_binary()` detects graphify on PATH; raises `GraphifyNotInstalled` with actionable install instructions if missing.
+- `parse_graphify_communities()` reads graphify's `graph.json`, groups nodes by community.
+- `map_to_subtopics()` matches graphify's communities to research-hub's imported files for `subtopics:` frontmatter assignment.
+- graphify is **NOT** added to research-hub deps — user installs separately via `pip install graphifyy && graphify install`.
+- **4 new tests** in `tests/test_v031_graphify_bridge.py` (all subprocess mocked).
+
+### Added — Track D: NotebookLM MCP tools
+
+Closes the CLI/MCP asymmetry external critique flagged: `read_briefing` was MCP but the rest of the NotebookLM round-trip was CLI-only.
+
+- `notebooklm_bundle(cluster_slug, download_pdfs)` — wrap existing bundle handler as MCP tool
+- `notebooklm_upload(cluster_slug)` — Playwright + CDP attach upload
+- `notebooklm_generate(cluster_slug, artifact_type)` — trigger brief generation
+- `notebooklm_download(cluster_slug)` — pull generated brief into vault artifacts
+- AI agents (Claude Desktop) can now drive the full ingest → bundle → upload → generate → download flow without dropping to terminal.
+- **3 new tests** in `tests/test_v031_notebooklm_mcp.py` (Playwright mocked).
+
+### Added — Track E: Documentation
+
+- **`docs/import-folder.md`** + **`docs/import-folder.zh-TW.md`** — usage guide for the new feature with examples per file type, troubleshooting, graphify walkthrough. zh-TW translated by Gemini and edited by Claude (first production Gemini test — see audit).
+- **`docs/audit_v0.31.md`** — release report.
+- **README.md + README.zh-TW.md** — Architecture docs section links to new docs.
+
+### Fixed — Track Z: ship-today (commit fa4e0e2)
+
+- README.md:198 + README.zh-TW.md:198: `1113 passing` → `1199 passing` (left over from v0.30).
+- Created GitHub Releases for v0.10.0 through v0.30.0 via `gh release create --generate-notes` (was only on tags before; "Latest" badge had been showing v0.9.0).
+
+### Test count
+
+| Release | Passing | Skipped | xfail | Delta |
+|---|---|---|---|---|
+| v0.30.0 | 1199 | 14 | 2 + 1 xpassed | — |
+| **v0.31.0** | **1223** | **14** | **2** + 1 xpassed | **+24** |
+
+### Out of scope (v0.32+ — Codex critique deferred items)
+
+- **Structured memory layer** (entities / claims / methods / datasets) — Codex's Phase 2. Genuinely a research project; needs its own design + scope.
+- **Tool consolidation to ~5 task-level actions** — Codex's Phase 3. Risky for AI agent users who want fine-grained primitives. Need to design carefully so we expose BOTH layers.
+- **Stable external API + auto-sync version/test counts** — infra, not user-visible.
+- **NotebookLM as fully optional connector** — already true (analyst persona); Track D closed the MCP asymmetry but didn't extract a connector interface.
+- **v0.30's deferred Track D refactor** (`cli.py` / `mcp_server.py` splits) — still HIGH RISK, still deferred.
+
 ## v0.30.0 (2026-04-16)
 
 **Hardening + production audit. 1142 → 1199 tests (+57). Closes 28-issue audit.**

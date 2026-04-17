@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1199%20passing-brightgreen.svg)](docs/audit_v0.30.md)
+[![Tests](https://img.shields.io/badge/tests-1223%20passing-brightgreen.svg)](docs/audit_v0.31.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Status
 
-- **Latest**: v0.30.0 (2026-04-16)
-- **Tests**: 1199 passing, 14 skipped, 2 xfail baselines (documented search-quality issues)
+- **Latest**: v0.31.0 (2026-04-17)
+- **Tests**: 1223 passing, 14 skipped, 2 xfail baselines (documented search-quality issues)
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
@@ -157,9 +157,10 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 - [MCP tools reference](docs/mcp-tools.md) — all 50+ tools categorized + signatures
 - [Example Claude Desktop flow](docs/example-claude-mcp-flow.md) — worked example: ingest → crystallize → query
+- [Import folder](docs/import-folder.md) — local file ingest for analyst persona (PDF/DOCX/MD/TXT/URL)
 - [Anti-RAG crystals](docs/anti-rag.md) — why pre-computed Q→A beats retrieval
 - [Upgrade guide](UPGRADE.md) — migrating from older versions
-- [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.30.md`
+- [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.31.md`
 - [NotebookLM setup](docs/notebooklm.md) — CDP attach flow + troubleshooting
 - [Papers input schema](docs/papers_input_schema.md) — ingestion pipeline reference
 
@@ -195,7 +196,7 @@ Both personas get the same dashboard, MCP server, and crystal system.
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1199 passing
+python -m pytest -q  # 1223 passing
 ```
 
 Package name on PyPI: **research-hub-pipeline**
