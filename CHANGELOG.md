@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.37.1 (2026-04-18)
+
+**CI green for the first time since v0.31.1. 15+ red builds caused by one test pollution bug.**
+
+`tests/test_drift_crystal.py::_install_fake_crystal_module` permanently replaced `sys.modules["research_hub.crystal"]` with a stub module containing only `check_staleness`, with no teardown. In CI's alphabetical test order this stub leaked into every subsequent test that imports from `research_hub.crystal` — most notably `test_v033_workflows.py`, which then failed with `AttributeError: <module 'research_hub.crystal'> does not have the attribute 'list_crystals'` when `mock.patch` tried to find an attribute on the stub.
+
+Locally the failure was hidden because Python 3.14 + pytest's discovery order in pip-editable mode loaded `research_hub.crystal` differently. CI uses 3.10/3.11/3.12 + plain install + `--maxfail=3`.
+
+**Fix**: autouse fixture in `test_drift_crystal.py` snapshots `sys.modules["research_hub.crystal"]` and `research_hub.crystal` attribute before each test, restores both on teardown. 5-line change.
+
+This release ships ONLY the fixture fix — same 1312 tests, no other code changes.
+
+---
+
 ## v0.37.0 (2026-04-18)
 
 **Cluster integrity + memory CLI/MCP exposure + critical require_config bug fix. 1282 → 1312 tests (+30).**
