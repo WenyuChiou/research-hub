@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from research_hub.dashboard.sections import DashboardSection, _attr, html_escape
+from research_hub.dashboard.terminology import visible_tabs
 from research_hub.writing import build_inline_citation, build_markdown_citation
 
 
@@ -19,6 +20,8 @@ class WritingSection(DashboardSection):
         self.order = 35
 
     def render(self, data) -> str:
+        if self.id not in visible_tabs(str(_attr(data, "persona", "researcher") or "researcher")):
+            return ""
         quotes = list(_attr(data, "quotes", []) or [])
         cited = self._find_cited_papers(data)
         if not quotes and not cited:
@@ -207,6 +210,9 @@ class WritingSection(DashboardSection):
         """
 
     def _composer_panel(self, data, quotes: list) -> str:
+        persona = str(_attr(data, "persona", "researcher") or "researcher")
+        if persona in {"analyst", "internal"}:
+            return ""
         clusters = list(_attr(data, "clusters", []) or [])
         cluster_options = "".join(
             (

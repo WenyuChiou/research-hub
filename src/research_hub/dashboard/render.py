@@ -26,7 +26,12 @@ def _load_text(path: Path) -> str:
 
 
 def _persona_label(persona: str) -> str:
-    return "Analyst persona" if persona == "analyst" else "Researcher persona"
+    return {
+        "researcher": "Researcher persona",
+        "analyst": "Analyst persona",
+        "humanities": "Humanities persona",
+        "internal": "Internal KM persona",
+    }.get(persona, "Researcher persona")
 
 
 def _attr(obj: Any, name: str, default: Any = "") -> Any:

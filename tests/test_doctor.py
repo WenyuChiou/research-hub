@@ -49,6 +49,7 @@ def _write_config(tmp_path, monkeypatch, *, root_exists=True, zotero_key="secret
         json.dumps(
             {
                 "knowledge_base": {"root": str(root)},
+                "persona": "researcher",
                 "zotero": {
                     "api_key": zotero_key,
                     "library_id": library_id,

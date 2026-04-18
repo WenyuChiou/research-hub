@@ -126,12 +126,15 @@ def _yaml_field(frontmatter: str, key: str, default: str = "") -> str:
 
 
 def _detect_persona(cfg) -> str:
-    if os.environ.get("RESEARCH_HUB_NO_ZOTERO") == "1":
-        return "analyst"
-    persona = getattr(cfg, "persona", None)
-    if persona == "analyst":
-        return "analyst"
-    if getattr(cfg, "no_zotero", False):
+    valid = {"researcher", "analyst", "humanities", "internal"}
+    explicit = str(getattr(cfg, "persona", "") or "").strip().lower()
+    if explicit in valid:
+        return explicit
+    env_p = os.environ.get("RESEARCH_HUB_PERSONA", "").strip().lower()
+    if env_p in valid:
+        return env_p
+    env_no_zotero = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in {"1", "true", "yes"}
+    if env_no_zotero or getattr(cfg, "no_zotero", False):
         return "analyst"
     return "researcher"
 

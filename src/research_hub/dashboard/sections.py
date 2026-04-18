@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 
+from research_hub.dashboard.terminology import get_label, is_section_visible, label_capitalize, visible_tabs
+
 try:
     from research_hub import crystal as crystal_module
 except ImportError:  # TODO(track-a): replace fallback once crystal.py is merged.
@@ -143,7 +145,19 @@ def _persona(data) -> str:
 
 
 def _show_zotero_column(data) -> bool:
-    return _persona(data) != "analyst"
+    return is_section_visible("library_zotero_column", _persona(data))
+
+
+def _show_compose_draft(data) -> bool:
+    return is_section_visible("writing_compose_draft", _persona(data))
+
+
+def _show_bind_zotero_button(data) -> bool:
+    return is_section_visible("manage_bind_zotero", _persona(data))
+
+
+def _show_citation_graph(data) -> bool:
+    return is_section_visible("library_citation_graph", _persona(data))
 
 
 def _render_label_breakdown(
@@ -213,6 +227,7 @@ def _render_archived_section(cluster) -> str:
 def _render_cross_cluster_labels(
     labels_map: dict[str, list[tuple[str, str, str]]],
     vault_root: str = "",
+    persona: str = "researcher",
 ) -> str:
     if not labels_map:
         return ""
@@ -222,6 +237,7 @@ def _render_cross_cluster_labels(
         items = labels_map.get(label, [])
         if not items:
             continue
+        summary_label = label if persona == "researcher" else get_label(f"label_{label}", persona)
         lis = "".join(
             f'<li><code>{html_escape(cluster)}</code>/'
             f'<a class="binding-link" href="{html_escape(_obsidian_url(f"raw/{cluster}/{slug}.md", vault_root))}">'
@@ -229,14 +245,14 @@ def _render_cross_cluster_labels(
             for cluster, slug, title in items
         )
         sections.append(
-            f'<details class="label-group"><summary>{html_escape(label)} ({len(items)})</summary>'
+            f'<details class="label-group"><summary>{html_escape(summary_label)} ({len(items)})</summary>'
             f"<ul>{lis}</ul></details>"
         )
     if not sections:
         return ""
     return (
         '<section class="cross-cluster-labels">'
-        "<h2>Papers by label (across all clusters)</h2>"
+        f"<h2>{html_escape(label_capitalize('papers', persona))} by label (across all {html_escape(get_label('clusters', persona).lower())})</h2>"
         + "".join(sections)
         + "</section>"
     )
@@ -281,6 +297,7 @@ class HeaderSection(DashboardSection):
         self.order = 0
 
     def render(self, data) -> str:
+        persona = _persona(data)
         total_papers = int(_attr(data, "total_papers", 0) or 0)
         total_clusters = int(_attr(data, "total_clusters", 0) or 0)
         briefings = list(_attr(data, "briefings", []) or [])
@@ -290,17 +307,18 @@ class HeaderSection(DashboardSection):
             if ts and ts > last_added:
                 last_added = ts
         last_added_label = _relative_time(last_added) if last_added else "no activity"
+        filtered_tabs = [(tab_id, label) for tab_id, label in _TAB_DEFS if tab_id in visible_tabs(persona)]
         radios = "".join(
             (
                 f'<input type="radio" name="dash-tab" id="dash-tab-{tab_id}" '
                 f'class="dash-tab-radio dash-tab-radio-{tab_id}"'
                 f'{" checked" if i == 0 else ""}>'
             )
-            for i, (tab_id, _label) in enumerate(_TAB_DEFS)
+            for i, (tab_id, _label) in enumerate(filtered_tabs)
         )
         labels = "".join(
             f'<label for="dash-tab-{tab_id}" class="dash-tab-label dash-tab-label-{tab_id}">{html_escape(label)}</label>'
-            for tab_id, label in _TAB_DEFS
+            for tab_id, label in filtered_tabs
         )
         return (
             radios
@@ -341,6 +359,9 @@ class OverviewSection(DashboardSection):
         self.order = 10
 
     def render(self, data) -> str:
+        if self.id not in visible_tabs(_persona(data)):
+            return ""
+        persona = _persona(data)
         clusters = _all_clusters(data)
         treemap = self._render_treemap(clusters)
         storage = self._render_storage_map(
@@ -357,7 +378,7 @@ class OverviewSection(DashboardSection):
           <div class="overview-grid">
             <article class="card card-treemap">
               <header class="card-heading">
-                <h2>Papers per cluster</h2>
+                <h2>{html_escape(label_capitalize('papers', persona))} per {html_escape(label_capitalize('cluster', persona))}</h2>
                 <p class="card-meta">Area is proportional to paper count.</p>
               </header>
               {treemap}
@@ -365,7 +386,7 @@ class OverviewSection(DashboardSection):
             <article class="card card-storage">
               <header class="card-heading">
                 <h2>Storage map</h2>
-                <p class="card-meta">Where each cluster lives across Zotero, Obsidian, and NotebookLM.</p>
+                <p class="card-meta">Where each {html_escape(get_label('cluster', persona).lower())} lives across Zotero, Obsidian, and NotebookLM.</p>
               </header>
               {storage}
             </article>
@@ -579,6 +600,9 @@ class LibrarySection(DashboardSection):
         self.order = 20
 
     def render(self, data) -> str:
+        if self.id not in visible_tabs(_persona(data)):
+            return ""
+        persona = _persona(data)
         clusters = _all_clusters(data)
         if not clusters:
             return """
@@ -588,11 +612,12 @@ class LibrarySection(DashboardSection):
         """
         vault_root = str(_attr(data, "vault_root", "") or "")
         cards = "".join(
-            self._cluster_card(c, _show_zotero_column(data), vault_root) for c in clusters
+            self._cluster_card(c, _show_zotero_column(data), vault_root, persona) for c in clusters
         )
         cross_cluster_labels = _render_cross_cluster_labels(
             dict(_attr(data, "labels_across_clusters", {}) or {}),
             vault_root,
+            persona,
         )
         return f"""
         <section id="tab-library" class="dash-panel dash-panel-library" role="tabpanel">
@@ -601,7 +626,7 @@ class LibrarySection(DashboardSection):
         </section>
         """
 
-    def _cluster_card(self, cluster, show_zotero: bool, vault_root: str = "") -> str:
+    def _cluster_card(self, cluster, show_zotero: bool, vault_root: str = "", persona: str = "researcher") -> str:
         slug = str(_attr(cluster, "slug", "") or "")
         slug_html = html_escape(slug)
         name = html_escape(_attr(cluster, "name", ""))
@@ -623,7 +648,7 @@ class LibrarySection(DashboardSection):
             else '<span class="cluster-badge cluster-badge--missing">no overview</span>'
         )
         subtopics_badge = (
-            f'<span class="cluster-badge">{subtopic_count} subtopics</span>'
+            f'<span class="cluster-badge">{subtopic_count} {html_escape(get_label("subtopics", persona).lower())}</span>'
             if subtopic_count > 0
             else ""
         )
@@ -644,7 +669,7 @@ class LibrarySection(DashboardSection):
 
         papers = _attr(cluster, "papers", []) or []
         if not papers:
-            paper_list = '<p class="cluster-empty">No papers yet in this cluster.</p>'
+            paper_list = f'<p class="cluster-empty">No {html_escape(get_label("papers", persona).lower())} yet in this {html_escape(get_label("cluster", persona).lower())}.</p>'
         else:
             subtopics = self._load_subtopics_for_cluster(vault_root, slug)
             if subtopics:
@@ -863,6 +888,7 @@ class CrystalSection(DashboardSection):
     def render_panel(self, data) -> str:
         summaries = _attr(data, "crystal_summary_by_cluster", {}) or {}
         clusters = _all_clusters(data)
+        persona = _persona(data)
         if not clusters:
             return ""
 
@@ -904,7 +930,7 @@ class CrystalSection(DashboardSection):
 
         return f"""
         <section class="crystal-section">
-          <h2>Crystals</h2>
+          <h2>{html_escape(label_capitalize("crystals", persona))}</h2>
           {explainer}
           {''.join(rows)}
         </section>
@@ -981,6 +1007,8 @@ class BriefingsSection(DashboardSection):
         self.order = 30
 
     def render(self, data) -> str:
+        if self.id not in visible_tabs(_persona(data)):
+            return ""
         briefings = list(_attr(data, "briefings", []) or [])
         if not briefings:
             return """
@@ -1043,6 +1071,8 @@ class DiagnosticsSection(DashboardSection):
         self.order = 40
 
     def render(self, data) -> str:
+        if self.id not in visible_tabs(_persona(data)):
+            return ""
         health = list(_attr(data, "health_badges", []) or [])
         drift = list(_attr(data, "drift_alerts", []) or [])
         return f"""
@@ -1129,6 +1159,8 @@ class ManageSection(DashboardSection):
         self.order = 50
 
     def render(self, data) -> str:
+        if self.id not in visible_tabs(_persona(data)):
+            return ""
         clusters = _all_clusters(data)
         if not clusters:
             return """
@@ -1140,7 +1172,7 @@ class ManageSection(DashboardSection):
             f'<option value="{html_escape(_attr(c, "slug", ""))}">{html_escape(_attr(c, "name", ""))}</option>'
             for c in clusters
         )
-        cards = "".join(self._manage_card(c, slug_options) for c in clusters)
+        cards = "".join(self._manage_card(c, slug_options, _persona(data)) for c in clusters)
         return f"""
         <section id="tab-manage" class="dash-panel dash-panel-manage" role="tabpanel">
           <header class="manage-intro">
@@ -1151,9 +1183,17 @@ class ManageSection(DashboardSection):
         </section>
         """
 
-    def _manage_card(self, cluster, slug_options: str) -> str:
+    def _manage_card(self, cluster, slug_options: str, persona: str) -> str:
         slug = html_escape(_attr(cluster, "slug", ""))
         name = html_escape(_attr(cluster, "name", ""))
+        bind_zotero_form = ""
+        if _show_bind_zotero_button(type("PersonaView", (), {"persona": persona})()):
+            bind_zotero_form = f"""
+          <form class="manage-form" action="javascript:void(0)" data-action="bind-zotero" data-slug="{slug}">
+            <label>Bind Zotero collection key <input type="text" name="zotero" placeholder="ABCD1234"></label>
+            <button type="button" class="manage-build-btn">Copy bind command</button>
+          </form>
+"""
         return f"""
         <article class="manage-card" data-cluster="{slug}">
           <header><h3>{name}</h3><code>{slug}</code></header>
@@ -1179,10 +1219,7 @@ class ManageSection(DashboardSection):
             <button type="button" class="manage-build-btn">Copy split command</button>
           </form>
 
-          <form class="manage-form" action="javascript:void(0)" data-action="bind-zotero" data-slug="{slug}">
-            <label>Bind Zotero collection key <input type="text" name="zotero" placeholder="ABCD1234"></label>
-            <button type="button" class="manage-build-btn">Copy bind command</button>
-          </form>
+          {bind_zotero_form}
 
           <form class="manage-form" action="javascript:void(0)" data-action="bind-nlm" data-slug="{slug}">
             <label>Bind NotebookLM notebook name <input type="text" name="notebooklm" placeholder="My Notebook"></label>

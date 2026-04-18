@@ -69,11 +69,25 @@ def run_init(
     zotero_key: str | None = None,
     zotero_library_id: str | None = None,
     non_interactive: bool = False,
-    persona: str = "researcher",
+    persona: str | None = None,
 ) -> int:
     """Run the init wizard. Returns 0 on success, 1 on error."""
     interactive = sys.stdin.isatty() and not non_interactive
-    is_analyst = persona == "analyst"
+    valid_personas = {"researcher", "analyst", "humanities", "internal"}
+
+    if persona is None and interactive:
+        print("What's your primary use case?")
+        print("  1. Researcher (PhD/academic, uses Zotero)")
+        print("  2. Humanities researcher (uses Zotero, quote-heavy work)")
+        print("  3. Industry analyst (no Zotero, imports PDFs/MD)")
+        print("  4. Internal knowledge management (no Zotero, mixed file types)")
+        answer = input("> ").strip()
+        persona = {"1": "researcher", "2": "humanities", "3": "analyst", "4": "internal"}.get(answer, "researcher")
+    persona = str(persona or "researcher").strip().lower()
+    if persona not in valid_personas:
+        print("Error: --persona must be one of researcher, analyst, humanities, internal")
+        return 1
+    no_zotero_persona = persona in {"analyst", "internal"}
 
     if vault_root:
         vault = Path(vault_root).expanduser().resolve()
@@ -92,20 +106,20 @@ def run_init(
     chmod_sensitive(vault / ".research_hub", mode=0o700)
     print(f"  Vault root: {vault}")
 
-    if not is_analyst and not zotero_key and interactive:
+    if not no_zotero_persona and not zotero_key and interactive:
         print("\n  Zotero API key is needed to sync papers.")
         print("  Get one at: https://www.zotero.org/settings/keys")
         zotero_key = input("  Zotero API key: ").strip() or None
-    if not is_analyst and not zotero_library_id and interactive:
+    if not no_zotero_persona and not zotero_library_id and interactive:
         print("  Your Zotero library ID (numeric, from the same settings page):")
         zotero_library_id = input("  Zotero library ID: ").strip() or None
 
-    if is_analyst:
-        print("  Persona: analyst -> skipping Zotero (Obsidian + NotebookLM only)")
+    if no_zotero_persona:
+        print(f"  Persona: {persona} -> skipping Zotero (Obsidian + NotebookLM only)")
         zotero_key = None
         zotero_library_id = None
 
-    if not is_analyst and zotero_key and zotero_library_id:
+    if not no_zotero_persona and zotero_key and zotero_library_id:
         import requests
 
         try:
@@ -136,8 +150,9 @@ def run_init(
     knowledge_base = config.setdefault("knowledge_base", {})
     if isinstance(knowledge_base, dict):
         knowledge_base["root"] = str(vault)
+    config["persona"] = persona
 
-    if is_analyst:
+    if no_zotero_persona:
         config["no_zotero"] = True
     else:
         config.pop("no_zotero", None)

@@ -66,6 +66,7 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     default_home = tmp_path / "home"
     answers = iter(
         [
+            "1",
             str(tmp_path / "interactive-vault"),
             "z-key",
             "999",
@@ -96,6 +97,7 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     assert config["zotero"]["api_key"] == "z-key"
     assert config["zotero"]["library_id"] == "999"
     assert prompts == [
+        "> ",
         f"Vault root directory [{default_home / 'knowledge-base'}]: ",
         "  Zotero API key: ",
         "  Zotero library ID: ",

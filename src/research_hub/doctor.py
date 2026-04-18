@@ -71,6 +71,19 @@ def _load_config_json(config_path: Path | None) -> dict:
         return {}
 
 
+def check_persona_set(cfg) -> CheckResult:
+    """v0.38: nudge users to explicitly set their persona."""
+    persona = str(getattr(cfg, "persona", "") or "").strip()
+    if not persona:
+        return CheckResult(
+            "config/persona",
+            "WARN",
+            "Persona not explicitly set - defaulting to researcher.",
+            remedy="Run: research-hub init --persona <researcher|analyst|humanities|internal>",
+        )
+    return CheckResult("config/persona", "OK", f"Persona: {persona}")
+
+
 def check_cluster_missing_dir(cfg) -> CheckResult:
     """F1: cluster.obsidian_subfolder doesn't exist as raw/<dir>."""
     from research_hub.clusters import ClusterRegistry
@@ -272,6 +285,7 @@ def run_doctor() -> list[CheckResult]:
         cfg = get_config()
         if cfg.root.exists():
             results.append(CheckResult("vault", "OK", str(cfg.root)))
+            results.append(check_persona_set(cfg))
             for subdir in ("raw", ".research_hub"):
                 if not (cfg.root / subdir).exists():
                     results.append(

@@ -1860,9 +1860,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "--persona",
-        choices=["researcher", "analyst"],
-        default="researcher",
-        help="researcher = with Zotero (default), analyst = no Zotero",
+        choices=["researcher", "analyst", "humanities", "internal"],
+        default=None,
+        help="researcher|humanities use Zotero; analyst|internal skip Zotero",
     )
     init_parser.add_argument(
         "--field",

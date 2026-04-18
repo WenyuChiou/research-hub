@@ -38,12 +38,20 @@ except ImportError:  # TODO(track-a): replace fallback once crystal.py is merged
 
 
 def _detect_persona(cfg, zot) -> str:
-    """Persona is set at init; zot=None alone does not imply analyst.
+    """Persona resolution priority.
 
-    The render path can call us without a live Zotero client (the
-    bibtex column gracefully degrades to the frontmatter fallback).
-    Only an explicit env var or config flag flips us to analyst.
+    1. cfg.persona
+    2. RESEARCH_HUB_PERSONA
+    3. legacy no-zotero flags -> analyst
+    4. researcher default
     """
+    valid = {"researcher", "analyst", "humanities", "internal"}
+    explicit = str(getattr(cfg, "persona", "") or "").strip().lower()
+    if explicit in valid:
+        return explicit
+    env_p = os.environ.get("RESEARCH_HUB_PERSONA", "").strip().lower()
+    if env_p in valid:
+        return env_p
     env_no_zotero = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in {"1", "true", "yes"}
     if env_no_zotero or getattr(cfg, "no_zotero", False):
         return "analyst"
@@ -141,6 +149,7 @@ def _doctor_subsystem(name: str) -> str:
 def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     """Walk the vault and build the full DashboardData snapshot."""
     persona = _detect_persona(cfg, zot)
+    zotero_persona = persona in {"researcher", "humanities"}
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     registry = ClusterRegistry(cfg.clusters_file)
     dedup = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
@@ -177,13 +186,13 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                         ingested_at=_field(frontmatter, "ingested_at"),
                         obsidian_path=str(note_path),
                         zotero_key=zotero_key,
-                        in_zotero=bool(zotero_key) and persona == "researcher",
+                        in_zotero=bool(zotero_key) and zotero_persona,
                         in_obsidian=True,
                         in_nlm=_in_nlm(cluster_cache, _field(frontmatter, "doi"), str(note_path)),
                     )
                     paper.bibtex = (
                         ""
-                        if persona == "analyst"
+                        if not zotero_persona
                         else build_bibtex_for_paper(paper, zot=zot if persona == "researcher" else None)
                     )
                     papers.append(paper)
@@ -227,7 +236,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 slug=cluster.slug,
                 name=cluster.name,
                 papers=papers,
-                zotero_count=sum(1 for paper in papers if paper.zotero_key and persona == "researcher"),
+                zotero_count=sum(1 for paper in papers if paper.zotero_key and zotero_persona),
                 obsidian_count=len(papers),
                 nlm_count=int(cluster_cache.get("uploaded_doi_count", 0) or 0),
                 last_activity=max((paper.ingested_at for paper in papers), default=""),
@@ -242,7 +251,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 archived_count=archived_count,
                 archived_papers=archived_papers,
             )
-            card.cluster_bibtex = "" if persona == "analyst" else build_bibtex_for_cluster(card)
+            card.cluster_bibtex = "" if not zotero_persona else build_bibtex_for_cluster(card)
             clusters.append(card)
             if briefing is not None:
                 briefings.append(briefing)
