@@ -17,6 +17,7 @@ class CheckResult:
     status: str
     message: str
     remedy: str = ""
+    details: str = ""
 
 
 def check_frontmatter_completeness(cfg) -> CheckResult:
@@ -68,6 +69,167 @@ def _load_config_json(config_path: Path | None) -> dict:
         return json.loads(config_path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def check_cluster_missing_dir(cfg) -> CheckResult:
+    """F1: cluster.obsidian_subfolder doesn't exist as raw/<dir>."""
+    from research_hub.clusters import ClusterRegistry
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    clusters = registry.list()
+    missing: list[str] = []
+    for cluster in clusters:
+        sub = cluster.obsidian_subfolder or cluster.slug
+        if not (Path(cfg.raw) / sub).exists():
+            missing.append(f"{cluster.slug} -> raw/{sub}")
+    if missing:
+        return CheckResult(
+            "cluster/missing_dir",
+            "FAIL",
+            f"{len(missing)} cluster(s) point to non-existent directories",
+            remedy="Run: research-hub clusters rebind --emit > rebind.md (then review + apply)",
+            details="\n  ".join(missing[:10]),
+        )
+    return CheckResult("cluster/missing_dir", "OK", f"All {len(clusters)} cluster directories exist")
+
+
+def check_cluster_orphan_papers(cfg) -> CheckResult:
+    """F2: papers in raw/ folders not bound to any cluster's obsidian_subfolder."""
+    from research_hub.clusters import ClusterRegistry
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    bound_dirs = {(cluster.obsidian_subfolder or cluster.slug) for cluster in registry.list()}
+
+    orphans: list[str] = []
+    raw_dir = Path(cfg.raw)
+    if not raw_dir.exists():
+        return CheckResult("cluster/orphan_papers", "OK", "raw/ does not exist yet")
+    for sub in raw_dir.iterdir():
+        if not sub.is_dir() or sub.name.startswith(".") or sub.name in {"pdfs", "attachments"}:
+            continue
+        if sub.name not in bound_dirs:
+            md_count = sum(1 for _ in sub.glob("*.md"))
+            if md_count > 0:
+                orphans.append(f"{sub.name}/ ({md_count} papers)")
+
+    if orphans:
+        return CheckResult(
+            "cluster/orphan_papers",
+            "WARN",
+            f"{len(orphans)} folder(s) hold papers not bound to any cluster",
+            remedy="Run: research-hub clusters rebind --emit (proposes cluster bindings)",
+            details="\n  ".join(orphans[:10]),
+        )
+    return CheckResult("cluster/orphan_papers", "OK", "All paper folders are bound to clusters")
+
+
+def check_cluster_empty(cfg) -> CheckResult:
+    """F3: cluster has 0 papers in its obsidian_subfolder."""
+    from research_hub.clusters import ClusterRegistry
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    empty: list[str] = []
+    for cluster in registry.list():
+        sub = cluster.obsidian_subfolder or cluster.slug
+        path = Path(cfg.raw) / sub
+        if path.exists():
+            md_count = sum(1 for _ in path.glob("*.md"))
+            if md_count == 0:
+                empty.append(cluster.slug)
+
+    if empty:
+        return CheckResult(
+            "cluster/empty",
+            "WARN",
+            f"{len(empty)} cluster(s) have 0 papers",
+            remedy="Add papers (research-hub add ...) or run: research-hub clusters rebind --emit",
+            details="\n  ".join(empty[:10]),
+        )
+    return CheckResult("cluster/empty", "OK", "All clusters have at least 1 paper")
+
+
+def check_cluster_cross_tagged(cfg) -> CheckResult:
+    """F4: paper physically in cluster A folder but frontmatter tags say cluster B."""
+    from research_hub.clusters import ClusterRegistry
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    sub_to_slug = {(cluster.obsidian_subfolder or cluster.slug): cluster.slug for cluster in registry.list()}
+    valid_slugs = set(sub_to_slug.values())
+
+    mismatches: list[str] = []
+    raw_dir = Path(cfg.raw)
+    if not raw_dir.exists():
+        return CheckResult("cluster/cross_tagged", "OK", "raw/ does not exist yet")
+    for sub_name, current_slug in sub_to_slug.items():
+        path = raw_dir / sub_name
+        if not path.exists():
+            continue
+        for md in path.glob("*.md"):
+            try:
+                text = md.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            match = re.search(r"^(?:cluster|topic_cluster):\s*([\w-]+)\s*$", text, re.MULTILINE)
+            if match:
+                tagged_slug = match.group(1)
+                if tagged_slug != current_slug and tagged_slug in valid_slugs:
+                    mismatches.append(f"{md.name}: in {current_slug} but tagged {tagged_slug}")
+
+    if mismatches:
+        return CheckResult(
+            "cluster/cross_tagged",
+            "WARN",
+            f"{len(mismatches)} paper(s) have cluster tag mismatching their folder",
+            remedy="Move papers to match their tag, or update tags to match their folder",
+            details="\n  ".join(mismatches[:10]),
+        )
+    return CheckResult("cluster/cross_tagged", "OK", "All cluster tags match paper locations")
+
+
+def check_quote_orphan(cfg) -> CheckResult:
+    """F5: quote captured on paper not in any cluster."""
+    from research_hub.clusters import ClusterRegistry
+
+    quote_dir = Path(cfg.root) / ".research_hub" / "quotes"
+    if not quote_dir.exists():
+        return CheckResult("quote/orphan", "OK", "No quotes captured yet")
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    bound_dirs = [(cluster.obsidian_subfolder or cluster.slug) for cluster in registry.list()]
+    all_paper_slugs: set[str] = set()
+    raw_dir = Path(cfg.raw)
+    if raw_dir.exists():
+        for sub_name in bound_dirs:
+            sub = raw_dir / sub_name
+            if sub.exists():
+                for md in sub.glob("*.md"):
+                    all_paper_slugs.add(md.stem)
+
+    orphans: list[str] = []
+    for quote_path in sorted(quote_dir.iterdir()):
+        if quote_path.suffix == ".json":
+            try:
+                data = json.loads(quote_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            paper_slug = data.get("paper_slug") or data.get("paper") or quote_path.stem
+        elif quote_path.suffix == ".md":
+            paper_slug = quote_path.stem
+        else:
+            continue
+        if str(paper_slug) not in all_paper_slugs:
+            orphans.append(f"{quote_path.name} -> {paper_slug}")
+
+    if orphans:
+        return CheckResult(
+            "quote/orphan",
+            "WARN",
+            f"{len(orphans)} quote(s) reference papers not in any cluster",
+            remedy="Run: research-hub clusters rebind --emit (binds papers to clusters)",
+            details="\n  ".join(orphans[:10]),
+        )
+    quote_count = sum(1 for path in quote_dir.iterdir() if path.suffix in {".json", ".md"})
+    return CheckResult("quote/orphan", "OK", f"All {quote_count} quotes reference live papers")
 
 
 def run_doctor() -> list[CheckResult]:
@@ -447,6 +609,19 @@ def run_doctor() -> list[CheckResult]:
     else:
         results.append(CheckResult("nlm_session", "WARN", "Could not check"))
 
+    if cfg is not None:
+        for check in (
+            check_cluster_missing_dir,
+            check_cluster_orphan_papers,
+            check_cluster_empty,
+            check_cluster_cross_tagged,
+            check_quote_orphan,
+        ):
+            try:
+                results.append(check(cfg))
+            except Exception as exc:
+                results.append(CheckResult(check.__name__, "WARN", f"check failed: {exc}"))
+
     return results
 
 
@@ -456,6 +631,8 @@ def print_doctor_report(results: list[CheckResult]) -> int:
     for result in results:
         icon = {"OK": "OK", "WARN": "!!", "FAIL": "XX"}[result.status]
         line = f"  [{icon}] {result.name}: {result.message}"
+        if result.details:
+            line += f"\n        {result.details}"
         if result.remedy:
             line += f"\n        -> {result.remedy}"
         print(line)

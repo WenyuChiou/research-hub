@@ -282,7 +282,7 @@ def test_run_doctor_returns_check_results(monkeypatch):
         lambda: [CheckResult(name="config", status="OK", message="ready")],
     )
 
-    assert run_doctor() == [{"name": "config", "status": "OK", "message": "ready", "remedy": ""}]
+    assert run_doctor() == [{"name": "config", "status": "OK", "message": "ready", "remedy": "", "details": ""}]
 
 
 def test_get_config_info_returns_paths(tmp_path, monkeypatch):

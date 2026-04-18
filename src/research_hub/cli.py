@@ -2068,6 +2068,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Output markdown path (default: docs/cluster_autosplit_<slug>.md)",
     )
+    rebind_parser = clusters_subparsers.add_parser(
+        "rebind", help="Detect orphan papers and propose cluster bindings"
+    )
+    rebind_parser.add_argument("--emit", action="store_true", help="Emit a rebind proposal report to stdout")
+    rebind_parser.add_argument("--apply", type=Path, help="Apply moves from a previously emitted report file")
+    rebind_parser.add_argument(
+        "--no-dry-run",
+        action="store_true",
+        help="Actually move files (default is dry-run)",
+    )
 
     topic_parser = subparsers.add_parser(
         "topic",
@@ -2971,6 +2981,24 @@ def main(argv: list[str] | None = None) -> int:
             return _clusters_split(args.source, args.query, args.new_name)
         if args.clusters_command == "analyze":
             return _cmd_clusters_analyze(args, get_config())
+        if args.clusters_command == "rebind":
+            from research_hub.cluster_rebind import apply_rebind, emit_rebind_prompt
+
+            cfg = require_config()
+            if args.emit:
+                print(emit_rebind_prompt(cfg))
+                return 0
+            if args.apply:
+                result = apply_rebind(cfg, args.apply, dry_run=not args.no_dry_run)
+                mode = "DRY-RUN" if not args.no_dry_run else "APPLIED"
+                print(
+                    f"[{mode}] moved={len(result.moved)} skipped={len(result.skipped)} errors={len(result.errors)}"
+                )
+                if result.log_path:
+                    print(f"Log: {result.log_path}")
+                return 0 if not result.errors else 1
+            print("Specify --emit or --apply <path>", file=sys.stderr)
+            return 2
     if args.command == "topic":
         from research_hub.topic import (
             SubtopicProposal,
