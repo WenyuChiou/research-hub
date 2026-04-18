@@ -53,7 +53,8 @@ def test_health_badge_has_summary_with_count(tmp_path):
     cfg, _ = make_persona_vault(tmp_path, persona="A")
     html = _render_dashboard(cfg, with_warnings=True)
     assert "click to expand" in html
-    assert re.search(r"\d+ issue", html)
+    # v0.38.1: chip now breaks down "N error(s), N warning(s)" instead of opaque "N issues"
+    assert re.search(r"\d+ (error|warning)", html)
 
 
 def test_font_scale_tokens_present(tmp_path):

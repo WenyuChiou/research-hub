@@ -421,10 +421,20 @@ class OverviewSection(DashboardSection):
                 items.append((status, name, summary or "Issue reported"))
         if not items:
             return ""
-        has_fail = any(status == "FAIL" for status, _, _ in items)
-        overall_status = "fail" if has_fail else "warn"
-        icon = "!" if has_fail else "i"
-        summary_text = f'{len(items)} issue{"s" if len(items) != 1 else ""} - click to expand'
+        n_fail = sum(1 for status, _, _ in items if status == "FAIL")
+        n_warn = sum(1 for status, _, _ in items if status == "WARN")
+        # Color: amber whenever there are warnings; only escalate to red when
+        # FAIL items dominate (>= half) — single FAIL among many warnings stays
+        # amber to avoid alarming "install failed" first impression.
+        overall_status = "fail" if n_fail and n_fail * 2 >= len(items) else "warn"
+        icon = "!" if overall_status == "fail" else "i"
+        # Text: break down "2 errors, 4 warnings" instead of opaque "6 issues".
+        parts = []
+        if n_fail:
+            parts.append(f"{n_fail} error{'s' if n_fail != 1 else ''}")
+        if n_warn:
+            parts.append(f"{n_warn} warning{'s' if n_warn != 1 else ''}")
+        summary_text = ", ".join(parts) + " - click to expand"
         items_html = "".join(
             f'<li class="health-badge-item health-badge-item--{status.lower()}">'
             f"<strong>{html_escape(name)}:</strong> {html_escape(summary)}"

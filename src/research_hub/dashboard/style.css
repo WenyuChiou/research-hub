@@ -1028,7 +1028,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   border-radius: var(--radius-pill);
   background: var(--warn-soft);
   color: oklch(35% 0.10 70);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);  /* v0.38.1: bumped from --text-sm for readability */
   border: 1px solid oklch(75% 0.10 70);
   padding: 0;
   overflow: hidden;
@@ -1042,9 +1042,9 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 .health-badge-summary {
   display: inline-flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  padding: 6px 12px;
+  padding: 10px 18px;       /* v0.38.1: was 6px 12px - more clickable target */
   cursor: pointer;
   list-style: none;
   font-weight: 500;

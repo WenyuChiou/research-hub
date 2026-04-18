@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.38.1 (2026-04-18)
+
+**Health badge UX polish — caught after reviewing v0.38.0 screenshots myself.**
+
+After v0.38.0 shipped, on inspection the doctor health badge had three remaining issues:
+1. Chip text used `--text-sm` (15px) — hard to read on the screenshot at thumbnail size.
+2. Color went red whenever ANY FAIL existed — even 2 errors among 5 warnings looked like a critical install failure.
+3. Counter said opaque "N issues" — no breakdown of how many were actual errors vs informational warnings.
+
+Fixes (no functional changes, no test count change):
+- **Font bump on chip**: `--text-sm` → `--text-md` (15px → 17px). Padding `6px 12px` → `10px 18px` for larger click target.
+- **Smarter color escalation**: amber (warn) is now the default. Only escalates to red (fail) when FAIL items dominate (≥ half of total). 2 errors among 5 warnings stays amber — accurate "needs attention" signal without the "install broke" panic.
+- **Breakdown text**: "6 issues" → "2 errors, 5 warnings" — tells user at a glance how serious the situation is.
+
+4 persona dashboard screenshots re-shot in `docs/images/`. Now visibly amber for typical post-restore vault state.
+
+1 test updated for new text format. 1369 tests still pass.
+
+---
+
 ## v0.38.0 (2026-04-18)
 
 **Persona-aware UI + UX polish + housekeeping. 1312 → 1369 tests (+57). Three problems flagged in v0.37.3 review, all fixed.**
