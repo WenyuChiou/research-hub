@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1270%20passing-brightgreen.svg)](docs/audit_v0.35.md)
+[![Tests](https://img.shields.io/badge/tests-1282%20passing-brightgreen.svg)](docs/audit_v0.36.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Status
 
-- **Latest**: v0.35.0 (2026-04-18)
-- **Tests**: 1270 passing, 14 skipped, 2 xfail baselines (documented search-quality issues)
+- **Latest**: v0.36.0 (2026-04-18)
+- **Tests**: 1282 passing, 14 skipped, 3 xfail baselines (documented search-quality issues)
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
@@ -199,7 +199,7 @@ Both personas get the same dashboard, MCP server, and crystal system.
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1270 passing
+python -m pytest -q  # 1282 passing
 ```
 
 Package name on PyPI: **research-hub-pipeline**

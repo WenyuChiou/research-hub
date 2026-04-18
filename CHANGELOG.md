@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.36.0 (2026-04-18)
+
+**Structured memory layer (entities + claims + methods). 1270 → 1282 tests (+12). Architecture-only release.**
+
+Crystals tell the AI *what to think* about a cluster (canonical prose). The new memory layer captures *what is named and asserted* in a cluster — orgs, datasets, models, benchmarks, methods, and structured claims with confidence + supporting paper slugs. Generated once per cluster via the same emit/apply pattern.
+
+Full release report: [docs/audit_v0.36.md](docs/audit_v0.36.md). Design notes: [docs/cluster-memory.md](docs/cluster-memory.md).
+
+### Added — Cluster memory (Track A)
+
+NEW `src/research_hub/memory.py` (~280 LOC):
+- 4 dataclasses: `MemoryEntity`, `MemoryClaim`, `MemoryMethod`, `ClusterMemory`
+- 3 vocabularies (open-ended, suggested only): entity types (org/dataset/model/benchmark/method/person/concept/venue), method families (supervised/self-supervised/rl/finetune/prompt/search/graph/statistical/geometric/symbolic/hybrid/other), confidence levels (high/medium/low)
+- `emit_memory_prompt(cfg, cluster_slug)` → builds AI extraction prompt (reuses `crystal._read_cluster_papers` + `_read_cluster_definition`)
+- `apply_memory(cfg, cluster_slug, scored)` → validates JSON, dedups by slug, filters unknown paper slugs, writes atomic `hub/<slug>/memory.json`
+- `read_memory`, `list_entities`, `list_claims`, `list_methods` query helpers
+- Strict slug validation (lowercase kebab-case)
+- Claims with no supporting papers are skipped
+
+NEW `tests/test_v036_memory.py` — 12 tests covering emit + apply + filter + dedup + invalid-slug + invalid-confidence + empty-payload + round-trip + missing-file.
+
+NEW `docs/cluster-memory.md` — design rationale, schema reference, how this differs from crystals, how to add a new entity type or method family.
+
+### Preserved (zero behavioral changes)
+
+- `crystal.py` unchanged — memory imports `_read_cluster_papers` and `_read_cluster_definition` read-only
+- All CLI commands unchanged (no `memory` subcommand yet)
+- All MCP tools unchanged (no `list_entities` / `list_claims` / `list_methods` exposed yet)
+- `notebooklm/*` unchanged
+- Connector Protocol from v0.35 unchanged
+
+CLI + MCP integration of memory lands in v0.37 alongside the housekeeping batch.
+
+### Stats
+
+- Tests: 1270 → 1282 (+12)
+- New files: 3 (memory module + tests + design doc)
+- Modified files: 1 (pyproject version bump)
+- LOC delta: ~+700
+
+### Codex critique status (now complete)
+
+- Phase 1 (Document abstraction) ✅ v0.31
+- Phase 2 (structured memory) ✅ v0.36
+- Phase 3 (tool consolidation) ✅ v0.33
+- #5 (NLM as optional connector) ✅ v0.35
+
+---
+
 ## v0.35.0 (2026-04-18)
 
 **Connector Protocol abstraction. 1262 → 1270 tests (+8). Architecture-only release; no CLI/MCP changes.**
