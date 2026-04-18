@@ -162,11 +162,14 @@ def ask_cluster(
     try:
         digest = get_topic_digest(cfg, cluster_slug)
     except Exception as exc:
+        # Include diagnostic info on the fallback path so CI failures show
+        # *why* matching was skipped (rapidfuzz absent? score too low?
+        # crystals empty? — these are the realistic causes)
         if list_error:
             return _err(
-                f"no crystal match and digest failed: {exc}; crystal list error: {list_error}"
+                f"no crystal match and digest failed: {exc}; crystal list error: {list_error}; n_crystals={len(crystals)}"
             )
-        return _err(f"no crystal match and digest failed: {exc}")
+        return _err(f"no crystal match and digest failed: {exc}; n_crystals={len(crystals)}")
 
     overview = ""
     try:
