@@ -625,11 +625,13 @@ def test_overview_health_banner_when_check_fails():
         items=[{"name": "zotero_key", "status": "FAIL", "message": "No Zotero API key found", "remedy": "Set ZOTERO_API_KEY"}],
     )
     html = OverviewSection().render(_data(health_badges=[badge]))
-    assert 'class="debug-banner is-visible"' in html
-    assert "Some checks failed" in html
+    assert 'class="health-badge"' in html
+    assert '<details class="health-badge" data-status="fail">' in html
+    assert "click to expand" in html
+    assert "zotero_key:" in html
     assert "No Zotero API key" in html
 
 
 def test_overview_health_banner_hidden_when_clean():
     html = OverviewSection().render(_data())
-    assert "debug-banner" not in html
+    assert "health-badge" not in html

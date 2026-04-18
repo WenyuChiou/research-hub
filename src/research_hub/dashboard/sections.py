@@ -353,7 +353,7 @@ class OverviewSection(DashboardSection):
         crystals = CrystalSection().render_panel(data)
         return f"""
         <section id="tab-overview" class="dash-panel dash-panel-overview" role="tabpanel">
-          {banner}
+          <div class="overview-topbar">{banner}</div>
           <div class="overview-grid">
             <article class="card card-treemap">
               <header class="card-heading">
@@ -383,29 +383,42 @@ class OverviewSection(DashboardSection):
 
     def _render_health_banner(self, data) -> str:
         health_badges = list(_attr(data, "health_badges", []) or [])
-        problems: list[str] = []
+        items: list[tuple[str, str, str]] = []
         for badge in health_badges:
-            status = str(_attr(badge, "status", "OK") or "OK")
-            if status == "FAIL":
-                subsystem = str(_attr(badge, "subsystem", "") or "")
-                items = list(_attr(badge, "items", []) or [])
-                for item in items:
-                    if isinstance(item, dict) and item.get("status") == "FAIL":
-                        msg = str(item.get("message", "")).strip()
-                        remedy = str(item.get("remedy", "")).strip()
-                        line = f"{subsystem.title()}: {msg}"
-                        if remedy:
-                            line += f" — fix: {html_escape(remedy)}"
-                        problems.append(html_escape(line))
-        if not problems:
+            badge_items = list(_attr(badge, "items", []) or [])
+            badge_name = str(_attr(badge, "subsystem", "") or "").strip() or "check"
+            for item in badge_items:
+                if not isinstance(item, dict):
+                    continue
+                status = str(item.get("status", "")).upper()
+                if status not in {"FAIL", "WARN"}:
+                    continue
+                name = str(item.get("name", "") or "").strip() or badge_name
+                summary = str(item.get("summary", "") or item.get("message", "") or "").strip()
+                if not summary:
+                    summary = str(_attr(badge, "summary", "") or "").strip()
+                items.append((status, name, summary or "Issue reported"))
+        if not items:
             return ""
-        items = "".join(f"<li>{p}</li>" for p in problems)
-        return f"""
-        <div class="debug-banner is-visible" role="alert">
-          <strong>Some checks failed.</strong>
-          <ul style="margin: 4px 0 0; padding-left: 20px;">{items}</ul>
-        </div>
-        """
+        has_fail = any(status == "FAIL" for status, _, _ in items)
+        overall_status = "fail" if has_fail else "warn"
+        icon = "!" if has_fail else "i"
+        summary_text = f'{len(items)} issue{"s" if len(items) != 1 else ""} - click to expand'
+        items_html = "".join(
+            f'<li class="health-badge-item health-badge-item--{status.lower()}">'
+            f"<strong>{html_escape(name)}:</strong> {html_escape(summary)}"
+            f"</li>"
+            for status, name, summary in items
+        )
+        return (
+            f'<details class="health-badge" data-status="{overall_status}">'
+            f'<summary class="health-badge-summary">'
+            f'<span class="health-badge-icon" aria-hidden="true">{icon}</span>'
+            f'<span class="health-badge-text">{html_escape(summary_text)}</span>'
+            f"</summary>"
+            f'<ul class="health-badge-list">{items_html}</ul>'
+            f"</details>"
+        )
 
     def _render_treemap(self, clusters: list) -> str:
         if not clusters:

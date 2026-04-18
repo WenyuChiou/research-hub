@@ -39,8 +39,8 @@
   --space-3xl: 64px;
   /* Type modular scale (closer ratios for better hierarchy) */
   --text-xs: 0.75rem;     /* 12px - meta */
-  --text-sm: 0.875rem;    /* 14px - body */
-  --text-md: 1rem;        /* 16px - default */
+  --text-sm: 0.9375rem;   /* 15px - body */
+  --text-md: 1.0625rem;   /* 17px - default */
   --text-md-2: 1.125rem;  /* 18px - paper title */
   --text-lg: 1.5rem;      /* 24px - section heading */
   --text-2xl: 2rem;       /* 32px - subhero */
@@ -275,6 +275,7 @@ section {
   display: flex;
   justify-content: space-between;
   align-items: start;
+  transition: background 120ms var(--ease-out);
   gap: var(--space-md);
 }
 
@@ -481,7 +482,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   color: var(--fg-mute);
   cursor: pointer;
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: 600;
   transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
@@ -649,22 +650,29 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 /* Recent additions feed */
 .recent-feed { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm); }
 
+.overview-topbar {
+  min-height: 0;
+  margin: 0 0 var(--space-md);
+}
+
 .recent-item {
   display: grid;
   grid-template-columns: 160px 1fr auto;
   gap: var(--space-md);
-  padding: var(--space-sm) 0;
+  padding: 16px 0;
   border-bottom: 1px solid var(--border);
   align-items: start;
+  transition: background 120ms var(--ease-out);
 }
 
+.recent-item:hover { background: var(--surface-2); }
 .recent-item:last-child { border-bottom: none; }
 .recent-meta { display: grid; gap: var(--space-2xs); }
 .recent-time { color: var(--fg-mute); font-size: var(--text-xs); font-family: "Geist Mono", monospace; }
 .recent-cluster { color: var(--fg); font-size: var(--text-xs); font-weight: 500; }
 .recent-body { min-width: 0; }
-.recent-title { margin: 0; color: var(--fg-strong); font-weight: 500; }
-.recent-author { margin: var(--space-2xs) 0 0; color: var(--fg-mute); font-size: var(--text-xs); }
+.recent-title { margin: 0 0 4px 0; color: var(--fg-strong); font-size: var(--text-md); font-weight: 500; line-height: 1.4; }
+.recent-author { margin: 0; color: var(--fg-mute); font-size: var(--text-sm); }
 
 /* Library cluster bindings line (replaces Z/O/N badges) */
 .cluster-bindings { color: var(--fg-mute); font-size: var(--text-xs); margin: 0 0 var(--space-md); }
@@ -1011,6 +1019,51 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 }
 
 .debug-banner.is-visible { display: block; }
+
+/* Collapsed health badge (v0.38) - replaces the wall-of-red .debug-banner.
+   Renders as an inline chip in the Overview header that expands on click. */
+.health-badge {
+  display: inline-block;
+  margin: 8px 0 0 0;
+  border-radius: var(--radius-pill);
+  background: var(--warn-soft);
+  color: oklch(35% 0.10 70);
+  font-size: var(--text-sm);
+  border: 1px solid oklch(75% 0.10 70);
+  padding: 0;
+  overflow: hidden;
+}
+
+.health-badge[data-status="fail"] {
+  background: oklch(96% 0.04 25);
+  color: oklch(35% 0.10 25);
+  border-color: oklch(75% 0.12 25);
+}
+
+.health-badge-summary {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 500;
+}
+
+.health-badge-summary::-webkit-details-marker { display: none; }
+.health-badge-icon { font-size: 1.1em; }
+.health-badge[open] .health-badge-summary { border-bottom: 1px solid var(--border); }
+
+.health-badge-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+}
+
+.health-badge-item { padding: 4px 0; }
+.health-badge-item--fail strong { color: oklch(45% 0.18 25); }
+.health-badge-item--warn strong { color: oklch(45% 0.15 70); }
 
 .debug-footer {
   margin-top: var(--space-2xl);
