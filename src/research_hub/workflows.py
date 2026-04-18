@@ -74,10 +74,14 @@ def ask_cluster(
     if detail not in {"tldr", "gist", "full"}:
         return _err(f"detail={detail!r} invalid. Use tldr / gist / full.")
 
+    import sys as _sys
+    _sys.stderr.write(f"[DEBUG ask_cluster pre-import] sys.modules has crystal: {'research_hub.crystal' in _sys.modules}\n")
     from research_hub.crystal import list_crystals, read_crystal, check_staleness
+    _sys.stderr.write(f"[DEBUG ask_cluster post-import] list_crystals={list_crystals!r}\n")
 
     try:
         crystals = list_crystals(cfg, cluster_slug)
+        _sys.stderr.write(f"[DEBUG ask_cluster] crystals={crystals!r} len={len(crystals)}\n")
     except Exception as exc:
         crystals = []
         list_error = str(exc)
