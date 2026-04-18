@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.38.0 (2026-04-18)
+
+**Persona-aware UI + UX polish + housekeeping. 1312 → 1369 tests (+57). Three problems flagged in v0.37.3 review, all fixed.**
+
+User feedback after v0.37.3 dashboard screenshots:
+1. "UI 有錯誤訊息" — doctor warnings dump as red wall, looks like install failure
+2. "文字太小了" — base body 14px is cramped at @2x render
+3. "如果今天他不是研究者 那這個就不通用了不是嗎" — non-researchers see academic vocabulary + features that don't apply
+
+v0.38 fixes all three. Plus the v0.37 housekeeping backlog.
+
+Full release report: [docs/audit_v0.38.md](docs/audit_v0.38.md). Per-persona dashboard preview: [docs/personas.md](docs/personas.md).
+
+### Added — UX polish (Track A)
+
+- **Collapsed health badge** (`sections.py::_render_health_banner`): doctor warnings now render as a discrete amber/red `<details>` chip ("⚠ N issues — click to expand") in the Overview header. Replaces the previous full-width red bullet list at top of Overview that scared new users.
+- **Font scale bump** (`style.css:40-47`): `--text-sm` 14→15px, `--text-md` 16→17px (~7% larger). `.recent-author` bumped from `--text-xs` (12px) to `--text-sm` (15px). Tab labels weight 500→600.
+- **Recent feed polish**: 16px row padding, hover highlight, `.recent-title` font 14→17px (`--text-md`), better visual hierarchy.
+
+### Added — Persona-aware information architecture (Track B)
+
+- **4-persona detection** (extends previous 2-value researcher/analyst):
+  - `researcher` (default, PhD STEM)
+  - `humanities` (PhD humanities, quote-heavy)
+  - `analyst` (industry, no Zotero)
+  - `internal` (internal KM, no Zotero)
+- Resolution priority: `cfg.persona` (explicit at init) > `RESEARCH_HUB_PERSONA` env > legacy `cfg.no_zotero` → analyst > default researcher
+- NEW `src/research_hub/dashboard/terminology.py`: per-persona display labels (Cluster → Topic / Theme / Project area; Crystal → AI Brief / Synthesis; Paper → Document / Source); tab visibility map; section gates
+- Tab visibility: analyst/internal hide Diagnostics tab (Zotero-noise irrelevant)
+- Section gating: Bind-Zotero button, compose-draft, citation graph, Zotero column hidden for analyst/internal; visible for researcher/humanities
+- Init wizard: 4-option interactive prompt + `--persona researcher|analyst|humanities|internal` flag
+- Doctor: WARN if `cfg.persona` not explicitly set (with remedy pointing to init)
+- All preservation IDs / data-attrs / CSS+JS hooks intact across all 4 personas
+
+### Added — Housekeeping (Track C)
+
+- **Zotero key encryption at rest** (`src/research_hub/security/secret_box.py`): Fernet-based, machine-bound key file (0600 perms), `rh:enc:v1:` prefix marker, back-compat with plaintext (decrypt passes through unencrypted values). Optional dep: `cryptography` (gracefully degrades if missing). Migration: `research-hub config encrypt-secrets` CLI + auto-encrypt nudge on doctor.
+- **Search recall baselines** (`tests/test_v038_search_baselines.py`): re-runs xfail search tests under `@pytest.mark.evals`, writes recall@10 to `metrics/search_recall.json` for trajectory tracking. Doesn't fail the build — just records.
+- **`.dxt` MCP extension** (`src/research_hub/dxt.py` + `research-hub package-dxt` CLI): one-click Claude Desktop install via DXT archive (vs editing claude_desktop_config.json by hand).
+
+### Refreshed — 4 persona dashboard screenshots
+
+Same vault, four rendered dashboards in `docs/images/`: `dashboard-overview-{researcher,humanities,analyst,internal}.png`. Side-by-side preview gallery in `docs/personas.md`.
+
+### Stats
+
+- Tests: 1312 → 1369 (+57: A=8, B=37, C=12)
+- New files: 4 (terminology.py + secret_box.py + dxt.py + 4 test files)
+- Modified files: dashboard sections.py, style.css, data.py, context.py, render.py, init_wizard.py, config.py, doctor.py, cli.py, zotero/client.py
+- New persona screenshots: 4 PNGs
+
+### Reverted
+
+- `pyproject.toml` adds `[secrets]` extra (`cryptography>=42`) — opt-in, not required
+
+---
+
 ## v0.37.3 (2026-04-18)
 
 **Hardening + screenshot refresh after the v0.37.2 CI fix.**

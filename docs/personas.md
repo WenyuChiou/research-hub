@@ -9,7 +9,20 @@ research-hub is built for four user types. Each works with a different combinati
 | **C** | Humanities PhD | ✅ | ✅ | 🟡 light | Books, archived articles, URL-only sources |
 | **H** | Internal knowledge management (lab / company) | ❌ | ✅ | ✅ | Mixed PDF / Markdown / DOCX / web pages |
 
-`init --persona researcher` (default) gives you the Persona A setup. `init --persona analyst` (for Persona B/H) skips Zotero entirely.
+v0.38 expanded `--persona` from 2 values to 4: `researcher | humanities | analyst | internal`. The dashboard auto-adapts vocabulary, hides irrelevant tabs (Diagnostics for analyst/internal), and skips features that don't apply (Bind-Zotero button, compose-draft, citation graph) per persona.
+
+## v0.38 dashboard preview by persona
+
+Same vault, four different rendered dashboards. Note the changing vocabulary, tab set, and feature visibility:
+
+| Persona | Vocabulary | Hidden tabs | Hidden features | Screenshot |
+|---|---|---|---|---|
+| **researcher** | Cluster / Crystal / Paper | (none) | (none) | [`dashboard-overview-researcher.png`](images/dashboard-overview-researcher.png) |
+| **humanities** | Theme / Synthesis / Source | (none) | (none) | [`dashboard-overview-humanities.png`](images/dashboard-overview-humanities.png) |
+| **analyst** | Topic / AI Brief / Document | Diagnostics | Bind-Zotero, compose-draft, citation graph, Zotero column | [`dashboard-overview-analyst.png`](images/dashboard-overview-analyst.png) |
+| **internal** | Project area / AI Brief / Document | Diagnostics | Same as analyst | [`dashboard-overview-internal.png`](images/dashboard-overview-internal.png) |
+
+Run `research-hub init --persona <choice>` to set; `research-hub doctor` warns if persona is unset.
 
 ---
 
