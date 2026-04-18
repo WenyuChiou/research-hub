@@ -1,5 +1,63 @@
 # Changelog
 
+## v0.34.0 (2026-04-18)
+
+**Dashboard polish + persona × pipeline test matrix. 1249 → 1262 tests (+13). No new features.**
+
+CSS-only dashboard polish (dark mode, refined token system, animations) + first cross-persona test coverage (Personas C and H had ZERO direct tests before; now 4 personas tested).
+
+Connector abstraction (the prior v0.34 plan) deferred to v0.35.
+
+Full release report: [docs/audit_v0.34.md](docs/audit_v0.34.md). Persona reference: [docs/personas.md](docs/personas.md).
+
+### Added — Dashboard polish (Track A)
+
+`src/research_hub/dashboard/style.css` (~150 LOC added/edited):
+- **Full dark mode** under `@media (prefers-color-scheme: dark)`. Auto-switches with OS theme.
+- **Token system extended**: `--surface-3`, `--border-strong`, `--header-bg/-fg`, `--brand-glow`, `--ok-soft/--warn-soft/--fail-soft`, `--shadow-1/-2/-glow`, `--radius-sm/md/lg/xl/pill`, `--ease-out`, `--duration-fast/base`. Type scale gained `--text-md-2` (1.125rem) + `--text-2xl` (2rem) — fills the awkward 1rem→1.5rem gap.
+- **Live pill**: pulsing animation + glow ring when active; calmer chip when off
+- **Buttons**: hover lifts to `--brand-strong` + glow; active tap depresses 1px
+- **Cluster cards**: hover lift + open shadow
+- **Treemap cells**: gradient + radial highlight + lift-on-hover with saturation pulse
+- **Status badges**: tinted backgrounds (was just colored borders)
+- **Vault search**: focus ring with brand glow
+- **Sticky header**: theme-aware via `--header-bg` (was hardcoded dark)
+
+5 demo PNGs in `docs/images/` re-shot at @2x via the v0.32 `dashboard --screenshot` CLI.
+
+**Constraints preserved (verified):** all 6 tab radio IDs, all 6 panel IDs, `vault-search`, `live-pill`, `csrf-token`, all `data-jump-tab`/`data-cluster`/`[data-action]` attributes. Zero changes to `template.html`, `script.js`, or any Python.
+
+### Added — Persona × pipeline test matrix (Track B)
+
+NEW `tests/_persona_factory.py` — `make_persona_vault(tmp_path, persona)` builds vault state for personas A/B/C/H. Forces `RESEARCH_HUB_CONFIG=/nonexistent` to bypass developer's real config (caught a real pollution bug during development).
+
+NEW `tests/test_v034_persona_matrix.py` — 13 tests targeting 8 high-risk persona × pipeline combinations + persona-aware doctor + dashboard rendering for all personas. Coverage shifts from "Persona A everywhere + B in 2 spots" to "all 4 personas have at least one direct test for their critical pipeline."
+
+NEW `docs/personas.md` — formal persona reference. Per-persona profile, typical CLI pipeline, per-feature ✅/🟡/❌ matrix. Maps each persona to its test file.
+
+### Fixed — pre-release CI hygiene (shipped earlier today as v0.33.3, included here)
+
+- `pyproject.toml addopts` filters `-m 'not stress'` so 1000-paper stress tests stay opt-in
+- `tests/conftest.py` autouse fixture path pattern extended from `test_cli_*.py` to also match `test_v0NN_*.py` for v030+ tests calling `cli.main([...])`
+
+### Test count
+
+| Release | Passing | Skipped | xfail | Delta |
+|---|---|---|---|---|
+| v0.33.3 | 1249 | 14 | 2 + 1 xpassed | — |
+| **v0.34.0** | **1262** | **14** | **2** + 1 xpassed | **+13** |
+
+### Out of scope (v0.35+)
+
+- **Connector abstraction** — still 1-2 days work; deferred to focus this release on polish + tests
+- **Codex Phase 2 (structured memory)** — multi-release research project
+- **`cli.py` / `mcp_server.py` monolith splits** — HIGH RISK
+- **Live NotebookLM round-trip in CI** — needs Chrome+CDP
+- **Task #124 archived vault restore** — needs user decision
+- **Search recall xfail baselines** (v0.26)
+- **Zotero key encryption** via OS keyring
+- **`.dxt` Claude Desktop extension**
+
 ## v0.33.3 (2026-04-18)
 
 **Patch: stress test marker filter + screenshot CLI test autouse fixture extension.**
