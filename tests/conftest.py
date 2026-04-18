@@ -17,6 +17,58 @@ def pytest_configure(config) -> None:
 
 
 @pytest.fixture
+def reset_research_hub_modules():
+    """Returns a callable that resets named research_hub.* submodules.
+
+    Usage in a test file's autouse fixture::
+
+        @pytest.fixture(autouse=True)
+        def _reset_cached_modules(reset_research_hub_modules):
+            reset_research_hub_modules(
+                "research_hub.crystal",
+                "research_hub.workflows",
+            )
+    """
+    return _reset_research_hub_modules
+
+
+def _reset_research_hub_modules(*module_names: str) -> None:
+    """Force re-import of the named research_hub.* submodules on next access.
+
+    Use this from per-file autouse fixtures when the test patches functions
+    via ``mock.patch("research_hub.<sub>.<func>", ...)`` and the production
+    code does late imports of those functions.
+
+    GOTCHA (regression v0.37.2, 16-build CI red streak): popping
+    ``sys.modules["research_hub.crystal"]`` is NOT enough. The parent package
+    ``research_hub`` still has the OLD module bound as an attribute. When
+    ``mock.patch`` enters, its ``_importer`` walks
+    ``getattr(research_hub_pkg, "crystal")`` first — finds the OLD module
+    and patches the function on it. But the production-code's late
+    ``from research_hub.<sub> import <func>`` finds ``sys.modules`` empty,
+    re-imports from disk → DIFFERENT module object → unpatched real
+    function. Result: mock silently bypassed.
+
+    Local Python 3.14 doesn't reproduce this; Python 3.10/3.11/3.12 does.
+    Always clear BOTH ``sys.modules[name]`` AND ``delattr(parent, child)``.
+    This helper does both.
+    """
+    import sys
+
+    for name in module_names:
+        sys.modules.pop(name, None)
+        parent_name, _, child = name.rpartition(".")
+        if not parent_name:
+            continue
+        parent = sys.modules.get(parent_name)
+        if parent is not None and hasattr(parent, child):
+            try:
+                delattr(parent, child)
+            except AttributeError:
+                pass
+
+
+@pytest.fixture
 def tmp_path() -> Path:
     root = Path.cwd() / ".pytest-work"
     root.mkdir(parents=True, exist_ok=True)

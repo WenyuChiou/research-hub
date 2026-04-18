@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.37.3 (2026-04-18)
+
+**Hardening + screenshot refresh after the v0.37.2 CI fix.**
+
+### Added — Reusable test fixture helper
+
+The fix from v0.37.2 (clear parent-package attribute alongside `sys.modules`) is now a reusable conftest fixture so future test files can opt-in safely without re-discovering the gotcha:
+
+```python
+@pytest.fixture(autouse=True)
+def _reset_cached_modules(reset_research_hub_modules):
+    reset_research_hub_modules(
+        "research_hub.crystal",
+        "research_hub.workflows",
+    )
+```
+
+`tests/test_v033_workflows.py` migrated to use it. Helper docstring documents the gotcha + 16-build CI red streak as the regression source.
+
+### Refreshed — Dashboard screenshots with real vault
+
+6 PNGs in `docs/images/` re-shot at @2x via `dashboard --screenshot all --full-page` against the restored 1094-paper vault (was: 36-paper demo vault). New views show:
+- 5 real clusters with actual paper counts (LLM Agent Architecture: 331, LLM-SE: 20 + 4 subtopics, etc.)
+- v0.37 doctor warnings rendered live (orphan papers, missing dirs)
+- Real recent additions from the user's actual research corpus
+
+### Audited — No other tests vulnerable
+
+`grep` of `mock.patch("research_hub.<sub>.<func>")` across all test files confirmed only `test_v033_workflows.py` had the vulnerable autouse-pop + late-import combination. Other tests using `mock.patch` (test_drift_crystal, test_notebooklm_bundle, test_pdf_fetcher, test_v035_connectors) don't pop modules, so they aren't affected.
+
+---
+
 ## v0.37.2 (2026-04-18)
 
 **Final fix for the 16-build-long CI failure: parent-package attribute leak.**
