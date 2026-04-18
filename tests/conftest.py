@@ -35,13 +35,30 @@ def mock_require_config(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _auto_mock_require_config(request, monkeypatch):
-    """Auto-mock config loading for CLI dispatcher unit tests.
+    """Auto-mock config loading for tests that call cli.main([...]) directly.
 
-    Tests in tests/test_cli_*.py exercise argparse routing via main([...])
-    and must not depend on whether the test environment has a research-hub
-    config installed.
+    These tests exercise argparse routing and must not depend on whether the
+    test environment has a research-hub config installed (CI doesn't).
+
+    Patterns covered:
+    - tests/test_cli_*.py (added v0.30-A10 for cli routing tests)
+    - tests/test_v0NN_*.py for v030+ feature tests that include CLI dispatch
+      (e.g. test_v032_screenshot.py asserts on `main(["dashboard", ...])` and
+      hits require_config() in the dispatcher)
     """
     fspath = str(request.node.fspath).replace("\\", "/")
-    if "/tests/test_cli_" not in fspath:
+    needs_mock = (
+        "/tests/test_cli_" in fspath
+        or "/tests/test_v030_" in fspath
+        or "/tests/test_v031_" in fspath
+        or "/tests/test_v032_" in fspath
+        or "/tests/test_v033_" in fspath
+        or "/tests/test_v034_" in fspath
+    )
+    if not needs_mock:
         return
+    # Patch get_config only — the cli.main dispatcher detects whether it's
+    # been swapped (cli.get_config is require_config.__globals__["get_config"])
+    # and skips require_config(). Replacing require_config itself would break
+    # that detection because lambda has different __globals__.
     monkeypatch.setattr("research_hub.cli.get_config", lambda: None, raising=False)

@@ -146,7 +146,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Status
 
-- **Latest**: v0.33.1 (2026-04-17)
+- **Latest**: v0.33.3 (2026-04-18)
 - **Tests**: 1249 passing, 14 skipped, 2 xfail baselines (documented search-quality issues)
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+

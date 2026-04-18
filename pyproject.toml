@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.33.2"
+version = "0.33.3"
 description = "CLI + MCP server for Zotero + Obsidian + NotebookLM research pipelines. Run `research-hub init` after install."
 readme = "README.md"
 license = {text = "MIT"}
@@ -66,4 +66,4 @@ markers = [
     "slow: Tests that take >5 seconds to run",
 ]
 testpaths = ["tests"]
-addopts = "--ignore=tests/stress -p no:cacheprovider -p no:tmpdir"
+addopts = "--ignore=tests/stress -m 'not stress' -p no:cacheprovider -p no:tmpdir"

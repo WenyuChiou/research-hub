@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.33.3 (2026-04-18)
+
+**Patch: stress test marker filter + screenshot CLI test autouse fixture extension.**
+
+Two CI hygiene fixes that surfaced after v0.33.2:
+
+### Fixed — stress tests no longer run by default
+
+`tests/test_v030_large_vault.py::test_dashboard_render_1000_papers_under_5s` was running in the default pytest run despite the `pytestmark = pytest.mark.stress` marker. The marker was registered in `pyproject.toml::[tool.pytest.ini_options].markers` (purely documentary) but the `addopts` line never actually filtered them out.
+
+Fix: added `-m 'not stress'` to `addopts`. `pytest -m stress` still opts in.
+
+### Fixed — `test_v032_screenshot.py::test_cli_screenshot_requires_out_for_single_tab` CI fail
+
+The autouse `_auto_mock_require_config` fixture in `tests/conftest.py` only matched `tests/test_cli_*.py` paths. v0.32's screenshot test calls `cli.main([...])` from a `test_v032_*.py` file, so it hit `require_config()` and crashed in CI (no config file).
+
+Fix: extend the autouse fixture path pattern to match `test_v0NN_*.py` for v030+ files (currently v030, v031, v032, v033, v034). Patches `cli.get_config` only — NOT `cli.require_config` itself, since the dispatcher detects monkey-patching via `cli.get_config is require_config.__globals__["get_config"]` and would break if we replaced require_config (lambda has different __globals__).
+
 ## v0.33.2 (2026-04-17)
 
 **Patch: brief_cluster fixes found in live NotebookLM round-trip test.**
