@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.37.2 (2026-04-18)
+
+**Final fix for the 16-build-long CI failure: parent-package attribute leak.**
+
+After v0.37.1 fixed test_drift_crystal's `sys.modules` pollution, 3 tests in `test_v033_workflows.py` still failed on Python 3.10/3.11/3.12 with `assert False is True`. Root cause: the autouse `_reset_cached_modules` fixture popped `sys.modules["research_hub.crystal"]` but **not** the cached attribute on the parent package.
+
+**The bug**:
+1. mock.patch("research_hub.crystal.list_crystals") walks `getattr(research_hub_pkg, "crystal")` → finds the OLD module from a prior test
+2. Patches `list_crystals` on the OLD module
+3. `ask_cluster` does `from research_hub.crystal import list_crystals` → finds sys.modules empty (fixture popped it) → re-imports from disk → DIFFERENT module object → unpatched real function
+4. Real `list_crystals` returns `[]` on tmp vault → no match → digest fallback fails → ok=False
+
+**Fix**: Extended `_reset_cached_modules` to also `delattr(parent_pkg, child_name)`. This forces mock.patch's `_importer` to fall through to `__import__`, which re-loads the same module that ask_cluster's late import will find.
+
+Local Python 3.14 didn't reproduce because Python 3.14's import machinery handles the parent-package attribute lookup differently.
+
+**This was a 16-build-long CI red streak** since v0.30 — bug existed earlier, was masked locally by import ordering. Now confirmed green locally with both pytest 8 and 9. Memory file `feedback_research_hub_user_facing_bugs.md` updated to enforce CI-green-before-tag from now on.
+
+---
+
 ## v0.37.1 (2026-04-18)
 
 **CI green for the first time since v0.31.1. 15+ red builds caused by one test pollution bug.**

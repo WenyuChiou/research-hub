@@ -74,14 +74,10 @@ def ask_cluster(
     if detail not in {"tldr", "gist", "full"}:
         return _err(f"detail={detail!r} invalid. Use tldr / gist / full.")
 
-    import sys as _sys
-    _sys.stderr.write(f"[DEBUG ask_cluster pre-import] sys.modules has crystal: {'research_hub.crystal' in _sys.modules}\n")
     from research_hub.crystal import list_crystals, read_crystal, check_staleness
-    _sys.stderr.write(f"[DEBUG ask_cluster post-import] list_crystals={list_crystals!r}\n")
 
     try:
         crystals = list_crystals(cfg, cluster_slug)
-        _sys.stderr.write(f"[DEBUG ask_cluster] crystals={crystals!r} len={len(crystals)}\n")
     except Exception as exc:
         crystals = []
         list_error = str(exc)
@@ -161,8 +157,6 @@ def ask_cluster(
                     }
 
     # Fallback: topic digest
-    import sys as _sys
-    _sys.stderr.write(f"[DEBUG ask_cluster] reaching digest fallback; n_crystals={len(crystals)} list_error={list_error!r} question={question!r}\n")
     from research_hub.topic import get_topic_digest, read_overview
 
     try:
@@ -170,9 +164,9 @@ def ask_cluster(
     except Exception as exc:
         if list_error:
             return _err(
-                f"no crystal match and digest failed: {exc}; crystal list error: {list_error}; n_crystals={len(crystals)}"
+                f"no crystal match and digest failed: {exc}; crystal list error: {list_error}"
             )
-        return _err(f"no crystal match and digest failed: {exc}; n_crystals={len(crystals)}")
+        return _err(f"no crystal match and digest failed: {exc}")
 
     overview = ""
     try:

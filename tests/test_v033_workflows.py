@@ -15,13 +15,25 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _reset_cached_modules(monkeypatch):
-    """Force re-import of research_hub.{crystal,topic,fit_check,doctor,operations,importer}
-    before each test so other tests' mocks don't leak.
+    """Force re-import of research_hub.{crystal,topic,...} before each test
+    so other tests' mocks don't leak.
 
-    v0.33 workflows do late imports — some earlier test (e.g. discover / pipeline)
-    may have monkey-patched attrs at module level and not cleaned up.
+    v0.33 workflows do late imports — some earlier test (e.g. discover /
+    pipeline) may have monkey-patched attrs at module level and not cleaned up.
+
+    REGRESSION (v0.37.x): Just popping sys.modules is NOT enough. The parent
+    package `research_hub` still has the OLD module bound as an attribute
+    (e.g. `research_hub.crystal`). When mock.patch("research_hub.crystal.X")
+    enters, its `_importer` walks `getattr(research_hub_pkg, "crystal")` and
+    finds the OLD module — patching X on it. But ask_cluster's late
+    `from research_hub.crystal import X` finds sys.modules empty, re-imports
+    from disk → DIFFERENT module object → unpatched real X. Result on CI
+    Python 3.10/3.11/3.12: mock silently bypassed, real function returns [],
+    test asserts ok=True but gets ok=False from digest fallback. Fix: clear
+    BOTH sys.modules AND the attribute on the parent package.
     """
     import sys
+    import research_hub
     for name in (
         "research_hub.workflows",
         "research_hub.crystal",
@@ -35,6 +47,16 @@ def _reset_cached_modules(monkeypatch):
         "research_hub.clusters",
     ):
         sys.modules.pop(name, None)
+        # Also drop the cached attribute on the parent package so mock.patch
+        # doesn't resolve to a stale module via the package's __dict__.
+        parent_name, _, child = name.rpartition(".")
+        if parent_name and parent_name in sys.modules:
+            parent = sys.modules[parent_name]
+            if hasattr(parent, child):
+                try:
+                    delattr(parent, child)
+                except AttributeError:
+                    pass
 
 
 def _make_cfg(tmp_path):
