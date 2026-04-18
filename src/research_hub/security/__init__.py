@@ -1,4 +1,4 @@
-"""Centralized validation and safe filesystem helpers for research-hub."""
+"""Security helpers for research-hub."""
 
 from __future__ import annotations
 

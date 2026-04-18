@@ -10,6 +10,8 @@ from pathlib import Path
 
 import requests
 
+from research_hub.security.secret_box import is_encrypted
+
 
 @dataclass
 class CheckResult:
@@ -69,6 +71,29 @@ def _load_config_json(config_path: Path | None) -> dict:
         return json.loads(config_path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _encrypt_plaintext_secrets(config_path: Path | None) -> bool:
+    if config_path is None or not config_path.exists():
+        return False
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    zotero = data.get("zotero")
+    if not isinstance(zotero, dict):
+        return False
+    api_key = zotero.get("api_key")
+    if not isinstance(api_key, str) or not api_key or is_encrypted(api_key):
+        return False
+    from research_hub.security.secret_box import encrypt
+
+    encrypted = encrypt(api_key, config_path.parent)
+    if encrypted == api_key:
+        return False
+    zotero["api_key"] = encrypted
+    config_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return True
 
 
 def check_persona_set(cfg) -> CheckResult:
@@ -251,6 +276,7 @@ def run_doctor() -> list[CheckResult]:
 
     results: list[CheckResult] = []
     config_path = _resolve_config_path()
+    migrated_plaintext = _encrypt_plaintext_secrets(config_path)
     config_data = _load_config_json(config_path)
 
     print("=" * 60)
@@ -270,6 +296,15 @@ def run_doctor() -> list[CheckResult]:
 
     if config_path and config_path.exists():
         results.append(CheckResult("config", "OK", f"Found at {config_path}"))
+        if migrated_plaintext:
+            results.append(
+                CheckResult(
+                    "config/encrypt_secrets",
+                    "WARN",
+                    "Detected plaintext Zotero key and encrypted it in place",
+                    remedy="Future writes use encrypted storage automatically",
+                )
+            )
     else:
         results.append(
             CheckResult(

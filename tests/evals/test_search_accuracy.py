@@ -15,6 +15,7 @@ findings (documented in docs/audit_v0.26.md):
 
 v0.27.0 backlog tracks the actual ranker/fusion fixes. The tests stay in the
 suite as baselines that will flip from xfail→pass once fixes land.
+See tests/test_v038_search_baselines.py for the non-failing recall tracker.
 """
 import time
 

@@ -6,6 +6,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from research_hub.security.secret_box import decrypt, is_encrypted
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +46,8 @@ def test_init_non_interactive_happy_path(tmp_path, monkeypatch, capsys):
     assert exit_code == 0
     config = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
     assert config["knowledge_base"]["root"] == str(vault.resolve())
-    assert config["zotero"]["api_key"] == "secret"
+    assert is_encrypted(config["zotero"]["api_key"])
+    assert decrypt(config["zotero"]["api_key"], config_dir) == "secret"
     assert config["zotero"]["library_id"] == "12345"
     assert "Config written" in capsys.readouterr().out
 
@@ -94,7 +96,8 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     config = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
     assert config["knowledge_base"]["root"] == str((tmp_path / "interactive-vault").resolve())
-    assert config["zotero"]["api_key"] == "z-key"
+    assert is_encrypted(config["zotero"]["api_key"])
+    assert decrypt(config["zotero"]["api_key"], config_dir) == "z-key"
     assert config["zotero"]["library_id"] == "999"
     assert prompts == [
         "> ",

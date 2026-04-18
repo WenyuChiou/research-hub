@@ -24,6 +24,8 @@ import urllib.error
 import warnings
 from pathlib import Path
 
+from research_hub.security.secret_box import decrypt, is_encrypted
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 # Local API settings
@@ -41,6 +43,24 @@ def _load_config() -> dict:
         return {}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _config_dir() -> Path | None:
+    from research_hub.config import _resolve_config_path
+
+    path = _resolve_config_path()
+    return path.parent if path is not None else None
+
+
+def _decrypt_config_value(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return value
+    config_dir = _config_dir()
+    if config_dir is None:
+        return value
+    if is_encrypted(value):
+        return decrypt(value, config_dir)
+    return value
 
 
 def _read_env_file() -> dict[str, str]:
@@ -125,7 +145,7 @@ def _load_credentials() -> tuple[str | None, str | None, str]:
         # Nested zotero block
         nested = cfg.get("zotero", {}) if isinstance(cfg.get("zotero"), dict) else {}
         if not api_key:
-            api_key = nested.get("api_key")
+            api_key = _decrypt_config_value(nested.get("api_key"))
         if not lib_id:
             lib_id = nested.get("library_id")
         nested_type = nested.get("library_type")

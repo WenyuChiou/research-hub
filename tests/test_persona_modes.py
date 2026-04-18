@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from research_hub.security.secret_box import decrypt, is_encrypted
+
 
 def test_init_analyst_persona_skips_zotero(tmp_path, monkeypatch):
     from research_hub.init_wizard import run_init
@@ -50,7 +52,8 @@ def test_init_researcher_persona_default(tmp_path, monkeypatch):
         non_interactive=True,
     ) == 0
     config = json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
-    assert config["zotero"]["api_key"] == "secret"
+    assert is_encrypted(config["zotero"]["api_key"])
+    assert decrypt(config["zotero"]["api_key"], config_dir) == "secret"
     assert config["zotero"]["library_id"] == "123"
     assert "no_zotero" not in config
 

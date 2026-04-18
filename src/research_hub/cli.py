@@ -41,6 +41,47 @@ from research_hub.writing import (
 )
 
 
+def _config_encrypt_secrets() -> int:
+    from research_hub.config import _resolve_config_path
+    from research_hub.security.secret_box import encrypt, is_encrypted
+
+    config_path = _resolve_config_path()
+    if config_path is None or not config_path.exists():
+        print("No config file found")
+        return 1
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Could not read config: {exc}", file=sys.stderr)
+        return 1
+    zotero = data.get("zotero")
+    if not isinstance(zotero, dict):
+        print("No secrets found to encrypt")
+        return 0
+    changed = False
+    api_key = zotero.get("api_key")
+    if isinstance(api_key, str) and api_key and not is_encrypted(api_key):
+        encrypted = encrypt(api_key, config_path.parent)
+        if encrypted != api_key:
+            zotero["api_key"] = encrypted
+            changed = True
+    if not changed:
+        print("No plaintext secrets found")
+        return 0
+    config_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Encrypted secrets in {config_path}")
+    return 0
+
+
+def _package_dxt(out_path: Path) -> int:
+    from research_hub import __version__
+    from research_hub.dxt import build_dxt
+
+    path = build_dxt(out_path, __version__)
+    print(f"Wrote {path}")
+    return 0
+
+
 def _verify(args) -> int:
     if args.doi:
         result = verify_doi(args.doi)
@@ -1876,6 +1917,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("doctor", help="Health check for research-hub installation")
 
+    config_parser = subparsers.add_parser("config", help="Config maintenance commands")
+    config_sub = config_parser.add_subparsers(dest="config_command", required=True)
+    config_sub.add_parser(
+        "encrypt-secrets",
+        help="Encrypt plaintext sensitive values in config.json",
+    )
+
     examples_parser = subparsers.add_parser(
         "examples",
         help="Browse and copy bundled cluster examples",
@@ -1914,6 +1962,12 @@ def build_parser() -> argparse.ArgumentParser:
         "where",
         help="Show where research-hub stores config, vault, and data",
     )
+
+    dxt_parser = subparsers.add_parser(
+        "package-dxt",
+        help="Build a .dxt MCP extension archive for Claude Desktop",
+    )
+    dxt_parser.add_argument("--out", type=Path, default=Path("research-hub.dxt"))
 
     ask_parser = subparsers.add_parser(
         "ask",
@@ -2860,7 +2914,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    exempt_commands = {"init", "doctor", "install", "examples", "where"}
+    exempt_commands = {"init", "doctor", "install", "examples", "where", "config", "package-dxt"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()
@@ -2916,6 +2970,11 @@ def main(argv: list[str] | None = None) -> int:
         from research_hub.doctor import print_doctor_report, run_doctor
 
         return print_doctor_report(run_doctor())
+    if args.command == "config":
+        if args.config_command == "encrypt-secrets":
+            return _config_encrypt_secrets()
+        parser.error("config requires a subcommand")
+        return 2
     if args.command == "examples":
         from research_hub.examples import copy_example_as_cluster, list_examples, load_example
 
@@ -2950,6 +3009,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_install(args)
     if args.command == "where":
         return _cmd_where(args)
+    if args.command == "package-dxt":
+        return _package_dxt(args.out)
     if args.command == "ask":
         cfg = require_config()
         from research_hub.workflows import ask_cluster as _ask

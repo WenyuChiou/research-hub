@@ -9,6 +9,7 @@ from pathlib import Path
 import platformdirs
 
 from research_hub.security import chmod_sensitive
+from research_hub.security.secret_box import encrypt
 
 
 def get_default_config_dir() -> Path:
@@ -159,7 +160,7 @@ def run_init(
         if zotero_key:
             zotero = config.setdefault("zotero", {})
             if isinstance(zotero, dict):
-                zotero["api_key"] = zotero_key
+                zotero["api_key"] = encrypt(zotero_key, config_path.parent)
         if zotero_library_id:
             zotero = config.setdefault("zotero", {})
             if isinstance(zotero, dict):

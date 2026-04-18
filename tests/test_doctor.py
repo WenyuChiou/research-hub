@@ -64,8 +64,12 @@ def _write_config(tmp_path, monkeypatch, *, root_exists=True, zotero_key="secret
 
 def test_doctor_all_green(tmp_path, monkeypatch, capsys):
     from research_hub.doctor import print_doctor_report, run_doctor
+    from research_hub.security.secret_box import encrypt
 
-    root, _ = _write_config(tmp_path, monkeypatch)
+    root, config_path = _write_config(tmp_path, monkeypatch)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["zotero"]["api_key"] = encrypt("secret", config_path.parent)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
     dedup = root / ".research_hub" / "dedup_index.json"
     dedup.write_text(
         json.dumps({"doi_to_hits": {"a": [{}], "b": [{}]}, "title_to_hits": {"t": [{}]}}),

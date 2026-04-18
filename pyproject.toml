@@ -32,6 +32,7 @@ Repository = "https://github.com/WenyuChiou/research-hub"
 Issues = "https://github.com/WenyuChiou/research-hub/issues"
 
 [project.optional-dependencies]
+secrets = ["cryptography>=42"]
 import = [
     "pdfplumber>=0.11",
     "python-docx>=1.1",
