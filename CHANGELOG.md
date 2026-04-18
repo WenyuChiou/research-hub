@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.35.0 (2026-04-18)
+
+**Connector Protocol abstraction. 1262 → 1270 tests (+8). Architecture-only release; no CLI/MCP changes.**
+
+NotebookLM is no longer the only external service research-hub knows about. A new `Connector` Protocol formalizes the bundle/upload/generate/download/check_auth surface so future connectors (Notion, Google Drive, Logseq, custom KM systems) can be plugged in without touching workflows or CLI code.
+
+Full release report: [docs/audit_v0.35.md](docs/audit_v0.35.md). Design notes: [docs/connector-design.md](docs/connector-design.md).
+
+### Added — Connector Protocol (Track A)
+
+NEW `src/research_hub/connectors/__init__.py` (~110 LOC):
+- `Connector` typing.Protocol — name + 5 methods (`bundle`, `upload`, `generate`, `download`, `check_auth`)
+- 3 dataclasses: `ConnectorBundleReport`, `ConnectorUploadReport`, `ConnectorBriefReport` — uniform Report shapes across all connectors
+- Module-level registry: `register_connector()`, `get_connector(name)`, `list_connectors()`
+- Auto-registers built-in `notebooklm` + `null` connectors at import time
+
+NEW `src/research_hub/connectors/null.py` (~70 LOC) — `NullConnector` for testing and Persona B/H environments where NotebookLM is unavailable. Returns synthetic empty reports; `check_auth` always True.
+
+NEW `src/research_hub/connectors/_notebooklm_adapter.py` (~110 LOC) — `NotebookLMConnector` wraps existing `notebooklm.bundle.bundle_cluster`, `notebooklm.upload.upload_cluster`, `notebooklm.upload.generate_artifact`, `notebooklm.upload.download_briefing_for_cluster`. Maps internal Report types to Protocol Report dataclasses.
+
+NEW `tests/test_v035_connectors.py` — 8 tests: protocol satisfaction (`isinstance(c, Connector)`), registry validation (rejects empty name + non-Protocol objects), null connector synthetic returns, adapter delegation via `patch("research_hub.notebooklm.bundle.bundle_cluster")`.
+
+NEW `docs/connector-design.md` — design rationale + how to add a new connector.
+
+### Preserved (zero behavioral changes)
+
+- `src/research_hub/notebooklm/*` — 2,463 LOC unchanged
+- 15 existing import sites of `notebooklm.*` — unchanged
+- All CLI commands — unchanged (no `--connector` flag yet)
+- All MCP tools — unchanged
+- All workflows.py wrappers — unchanged
+
+This release is the architecture seam for v0.36+. CLI/MCP exposure of `--connector` flags lands when a second real connector is added.
+
+### Stats
+
+- Tests: 1262 → 1270 (+8 connector tests)
+- New files: 5 (3 connector source + 1 test + 1 design doc)
+- Modified files: 1 (pyproject version bump)
+- LOC delta: +512
+
+---
+
 ## v0.34.0 (2026-04-18)
 
 **Dashboard polish + persona × pipeline test matrix. 1249 → 1262 tests (+13). No new features.**
