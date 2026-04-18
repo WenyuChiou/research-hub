@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM 三合一，專為 AI agent 打造。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1282%20passing-brightgreen.svg)](docs/audit_v0.36.md)
+[![Tests](https://img.shields.io/badge/tests-1312%20passing-brightgreen.svg)](docs/audit_v0.36.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -19,7 +19,7 @@ English → [README.md](README.md)
 
 1. **Ingest** — 一行指令把學術論文收進 Zotero(引用管理)+ Obsidian(結構化筆記)+ NotebookLM(AI 簡報)。
 2. **Organize** — 論文自動分到 cluster、sub-topic,Obsidian graph 按 research label 上色。
-3. **Serve** — 提供 52 個 MCP tools,讓 Claude Code / Codex / 任何相容 MCP 的 AI 可以直接驅動整個流程。
+3. **Serve** — 提供 56 個 MCP tools,讓 Claude Code / Codex / 任何相容 MCP 的 AI 可以直接驅動整個流程。
 
 設計給每天都在用 AI agent 的 PhD 學生跟研究團隊,不想在六個分頁之間切來切去的人。
 
@@ -121,7 +121,7 @@ Python 3.10+。**不需要 OpenAI/Anthropic API key** — research-hub 完全 pr
 > 「Claude,幫 LLM-SE cluster 產 crystals」
 > 「Claude,這個 cluster 在講什麼?」→ Claude 呼叫 `list_crystals` + `read_crystal` → 拿到預先寫好的 100 字答案
 
-52 個 MCP tools 涵蓋:論文 ingest、cluster CRUD、labels、quotes、draft 組裝、citation graph、NotebookLM、crystal 生成、fit-check、autofill。
+56 個 MCP tools 涵蓋:論文 ingest、cluster CRUD、labels、quotes、draft 組裝、citation graph、NotebookLM、crystal 生成、fit-check、autofill、cluster memory。
 
 ## 五行指令快速上手
 
@@ -147,7 +147,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 ## 目前狀態
 
 - **最新版本**: v0.36.0 (2026-04-18)
-- **測試**: 1282 passing, 14 skipped, 3 xfail baselines(有紀錄的 search quality 問題)
+- **測試**: 1312 passing, 15 skipped, 2 xfailed, 1 xpassed
 - **平台**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **相依**: `pyzotero`、`pyyaml`、`requests`、`rapidfuzz`、`networkx`、`platformdirs`(都是 pure-Python)
@@ -155,7 +155,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 架構文件
 
-- [MCP tools 參考](docs/mcp-tools.md) — 50+ tools 完整列表
+- [MCP tools 參考](docs/mcp-tools.md) — 56 tools 完整列表
+- [Cluster integrity](docs/cluster-integrity.md) — 6 種失敗模式與 4 persona 緩解矩陣
 - [Claude Desktop 示範流程](docs/example-claude-mcp-flow.md) — 從 ingest → crystallize → query 的具體例子
 - [本地檔案匯入](docs/import-folder.zh-TW.md) — 給 analyst persona 的 import-folder 指南（PDF/DOCX/MD/TXT/URL）
 - [Anti-RAG crystals(為什麼不用 RAG)](docs/anti-rag.zh-TW.md) — 繁中完整版
@@ -198,7 +199,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1282 passing
+python -m pytest -q  # 1312 passing
 ```
 
 PyPI 套件名稱: **research-hub-pipeline**

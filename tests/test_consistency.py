@@ -56,6 +56,10 @@ EXPECTED_MAPPINGS = {
     "emit_crystal_prompt": "crystal emit",
     "apply_crystals": "crystal apply",
     "check_crystal_staleness": "crystal check",
+    "list_entities": "memory list --kind entities",
+    "list_claims": "memory list --kind claims",
+    "list_methods": "memory list --kind methods",
+    "read_cluster_memory": "memory read",
     "label_paper": "label",
     "list_papers_by_label": "find --label",
     "prune_cluster": "paper prune",
@@ -101,4 +105,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(_list_mcp_tool_names(mcp)) >= 52
+    assert len(_list_mcp_tool_names(mcp)) >= 56

@@ -22,6 +22,7 @@ from dataclasses import asdict
 import re
 from typing import Any, Callable
 
+from research_hub.config import get_config
 from research_hub.security import ValidationError, validate_identifier, validate_slug
 
 try:
@@ -1015,6 +1016,70 @@ def check_crystal_staleness(cluster_slug: str) -> dict:
         cfg = get_config()
         staleness = crystal.check_staleness(cfg, cluster_slug)
         return {"cluster": cluster_slug, "crystals": {slug: item.to_dict() for slug, item in staleness.items()}}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def list_entities(cluster: str) -> dict:
+    """List all entities (orgs/datasets/models) in a cluster's memory registry."""
+    try:
+        cluster = _validate_mcp_args(cluster=cluster)["cluster"]
+        from research_hub.memory import list_entities as _list
+
+        cfg = get_config()
+        items = _list(cfg, cluster)
+        return {"cluster": cluster, "count": len(items), "entities": [item.to_dict() for item in items]}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def list_claims(cluster: str, min_confidence: str = "low") -> dict:
+    """List structured claims in a cluster's memory. min_confidence in {high, medium, low}."""
+    try:
+        cluster = _validate_mcp_args(cluster=cluster)["cluster"]
+        from research_hub.memory import list_claims as _list
+
+        cfg = get_config()
+        rank = {"high": 3, "medium": 2, "low": 1}
+        threshold = rank.get(min_confidence, 1)
+        items = [item for item in _list(cfg, cluster) if rank.get(item.confidence, 1) >= threshold]
+        return {"cluster": cluster, "count": len(items), "claims": [item.to_dict() for item in items]}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def list_methods(cluster: str) -> dict:
+    """List methods (technique families) in a cluster's memory registry."""
+    try:
+        cluster = _validate_mcp_args(cluster=cluster)["cluster"]
+        from research_hub.memory import list_methods as _list
+
+        cfg = get_config()
+        items = _list(cfg, cluster)
+        return {"cluster": cluster, "count": len(items), "methods": [item.to_dict() for item in items]}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def read_cluster_memory(cluster: str) -> dict:
+    """Return the full ClusterMemory registry (entities + claims + methods) for a cluster."""
+    try:
+        cluster = _validate_mcp_args(cluster=cluster)["cluster"]
+        from research_hub.memory import read_memory
+
+        cfg = get_config()
+        memory = read_memory(cfg, cluster)
+        if memory is None:
+            return {
+                "cluster": cluster,
+                "found": False,
+                "message": "No memory generated yet. Run: research-hub memory emit --cluster <slug>",
+            }
+        return {"cluster": cluster, "found": True, **memory.to_dict()}
     except Exception as exc:
         return _tool_error(exc)
 

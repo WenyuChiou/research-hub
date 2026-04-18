@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1282%20passing-brightgreen.svg)](docs/audit_v0.36.md)
+[![Tests](https://img.shields.io/badge/tests-1312%20passing-brightgreen.svg)](docs/audit_v0.36.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -19,7 +19,7 @@ A CLI + MCP server that does three things at once:
 
 1. **Ingest** academic papers into Zotero (citations) + Obsidian (structured notes) + NotebookLM (briefings) — one command.
 2. **Organize** papers into clusters, sub-topics, and an Obsidian graph coloured by research label.
-3. **Serve** 52 MCP tools so Claude Code / Codex / any MCP-compatible AI can drive the whole thing.
+3. **Serve** 56 MCP tools so Claude Code / Codex / any MCP-compatible AI can drive the whole thing.
 
 Built for PhD students and research teams who already use AI agents daily and don't want to context-switch between six tabs.
 
@@ -121,7 +121,7 @@ Then talk to Claude:
 > "Claude, generate crystals for the LLM-SE cluster"
 > "Claude, what's this cluster about?" → Claude calls `list_crystals` + `read_crystal` → gets the pre-written 100-word answer
 
-52 MCP tools cover: paper ingest, cluster CRUD, labels, quotes, draft composition, citation graph, NotebookLM, crystal generation, fit-check, autofill.
+56 MCP tools cover: paper ingest, cluster CRUD, labels, quotes, draft composition, citation graph, NotebookLM, crystal generation, fit-check, autofill, and cluster memory.
 
 ## Quickstart (5 commands)
 
@@ -147,7 +147,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 ## Status
 
 - **Latest**: v0.36.0 (2026-04-18)
-- **Tests**: 1282 passing, 14 skipped, 3 xfail baselines (documented search-quality issues)
+- **Tests**: 1312 passing, 15 skipped, 2 xfailed, 1 xpassed
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
@@ -161,6 +161,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 - [Anti-RAG crystals](docs/anti-rag.md) — why pre-computed Q→A beats retrieval
 - [Upgrade guide](UPGRADE.md) — migrating from older versions
 - [User personas](docs/personas.md) — 4 persona profiles (PhD STEM / industry / humanities / internal KM) with per-persona feature matrix
+- [Cluster integrity](docs/cluster-integrity.md) — 6 failure modes + mitigation matrix across all 4 personas
 - [Task-level workflows](docs/task-workflows.md) — v0.33+ 5 MCP wrappers (ask/brief/sync/compose/collect) that collapse 3-4 call sequences into 1
 - [Screenshot workflow](docs/screenshot-workflow.md) — re-render any dashboard tab via `dashboard --screenshot` CLI
 - [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.34.md`
@@ -184,14 +185,16 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 | **NotebookLM** | `notebooklm bundle/upload/generate/download` | Browser-automated NLM flows (CDP attach) |
 | **Write** | `quote` / `compose-draft` / `cite` | Quote capture, markdown draft assembly, BibTeX export |
 
-## Two personas
+## Four personas
 
 | Persona | Install | Zotero? | Best for |
 |---|---|---|---|
-| **Researcher** (default) | `pip install research-hub-pipeline[playwright]` | Yes | PhD students, academic literature review |
+| **Researcher** (default) | `pip install research-hub-pipeline[playwright]` | Yes | PhD STEM literature reviews |
 | **Analyst** | `research-hub init --persona analyst` | No — Obsidian only | Industry research, white papers, technical docs |
+| **Humanities** | `research-hub init` + quote-first workflow | Yes | Books, talks, archives, quote-heavy reading |
+| **Internal KM** | `research-hub init --persona analyst` + import-folder | No — Obsidian only | Policies, mixed internal docs, vendor notes |
 
-Both personas get the same dashboard, MCP server, and crystal system.
+All 4 personas now share the same dashboard, MCP server, and crystal system, and the test matrix covers cluster-integrity flows across each persona.
 
 ## For developers
 
@@ -199,7 +202,7 @@ Both personas get the same dashboard, MCP server, and crystal system.
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1282 passing
+python -m pytest -q  # 1312 passing
 ```
 
 Package name on PyPI: **research-hub-pipeline**

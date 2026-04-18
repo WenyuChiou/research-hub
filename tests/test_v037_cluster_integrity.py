@@ -177,3 +177,116 @@ def test_check_cluster_orphan_papers_ignores_pdfs_subdir(tmp_path):
     (pdfs_dir / "some.pdf").write_bytes(b"%PDF-1.0")
     result = check_cluster_orphan_papers(cfg)
     assert result.status == "OK"
+
+
+# ---- persona x cluster-integrity matrix ----
+
+
+def test_B_import_folder_without_cluster_creates_orphans(tmp_path):
+    """Persona B (no Zotero): import-folder dump without --cluster -> doctor warns."""
+    from research_hub.doctor import check_cluster_orphan_papers
+
+    cfg, _ = make_persona_vault(tmp_path, persona="B")
+    imported = cfg.raw / "imported"
+    imported.mkdir()
+    for n in range(3):
+        (imported / f"doc{n}.md").write_text(f"---\ntitle: doc{n}\n---\nbody", encoding="utf-8")
+    result = check_cluster_orphan_papers(cfg)
+    assert result.status == "WARN"
+    assert "imported" in (result.details or result.message)
+
+
+def test_C_humanities_quote_orphan_path(tmp_path):
+    """Persona C: capture quote on a non-DOI source not in any cluster -> warns."""
+    from research_hub.doctor import check_quote_orphan
+
+    cfg, _ = make_persona_vault(tmp_path, persona="C")
+    quote_dir = cfg.root / ".research_hub" / "quotes"
+    quote_dir.mkdir(parents=True, exist_ok=True)
+    (quote_dir / "archive-source.json").write_text(
+        json.dumps({"paper_slug": "1923-newspaper-clipping", "text": "..."}),
+        encoding="utf-8",
+    )
+    result = check_quote_orphan(cfg)
+    assert result.status == "WARN"
+
+
+def test_H_internal_km_rename_breaks_binding(tmp_path):
+    """Persona H: rename cluster, leave folder behind -> cluster_missing_dir triggers."""
+    from research_hub.clusters import ClusterRegistry
+    from research_hub.doctor import check_cluster_missing_dir
+
+    cfg, _ = make_persona_vault(tmp_path, persona="H")
+    reg = ClusterRegistry(cfg.clusters_file)
+    cluster = reg.list()[0]
+    reg.bind(cluster.slug, obsidian_subfolder="renamed-but-folder-not-moved")
+    result = check_cluster_missing_dir(cfg)
+    assert result.status == "FAIL"
+
+
+def test_all_personas_rebind_dry_run_safe(tmp_path):
+    """Rebind --dry-run never moves files for any persona."""
+    from research_hub.cluster_rebind import apply_rebind, emit_rebind_prompt
+
+    for persona in ("A", "B", "C", "H"):
+        sub = tmp_path / persona
+        sub.mkdir()
+        cfg, _ = make_persona_vault(sub, persona=persona)
+        orphan = cfg.raw / "stranded"
+        orphan.mkdir(exist_ok=True)
+        file_path = orphan / "x.md"
+        file_path.write_text("---\ntitle: x\n---\nbody", encoding="utf-8")
+        report_path = sub / "rebind.md"
+        report_path.write_text(emit_rebind_prompt(cfg), encoding="utf-8")
+        apply_rebind(cfg, report_path, dry_run=True)
+        assert file_path.exists(), f"persona {persona}: dry-run should not move files"
+
+
+def test_doctor_cluster_checks_persona_aware(tmp_path):
+    """Doctor cluster checks must run cleanly for all 4 personas (no exceptions)."""
+    from research_hub.doctor import (
+        check_cluster_cross_tagged,
+        check_cluster_empty,
+        check_cluster_missing_dir,
+        check_cluster_orphan_papers,
+        check_quote_orphan,
+    )
+
+    for persona in ("A", "B", "C", "H"):
+        sub = tmp_path / persona
+        sub.mkdir()
+        cfg, _ = make_persona_vault(sub, persona=persona)
+        for check in (
+            check_cluster_missing_dir,
+            check_cluster_orphan_papers,
+            check_cluster_empty,
+            check_cluster_cross_tagged,
+            check_quote_orphan,
+        ):
+            result = check(cfg)
+            assert result.status in ("OK", "WARN", "FAIL"), (
+                f"persona {persona}: {check.__name__} returned bad status {result.status!r}"
+            )
+
+
+def test_rebind_proposes_using_zotero_collection_key_for_persona_A(tmp_path):
+    """Persona A path: paper has collections=[ZOTKEY] that matches a cluster -> proposal is not low-confidence."""
+    from research_hub.cluster_rebind import emit_rebind_prompt
+    from research_hub.clusters import ClusterRegistry
+
+    cfg, _ = make_persona_vault(tmp_path, persona="A")
+    reg = ClusterRegistry(cfg.clusters_file)
+    cluster = reg.list()[0]
+    if not cluster.zotero_collection_key:
+        import pytest
+
+        pytest.skip("persona A factory doesn't set zotero_collection_key on test cluster")
+    orphan = cfg.raw / "by-collection"
+    orphan.mkdir()
+    (orphan / "found-by-zot.md").write_text(
+        f"---\ntitle: x\ncollections: [{cluster.zotero_collection_key}]\n---\nbody",
+        encoding="utf-8",
+    )
+    report = emit_rebind_prompt(cfg)
+    assert "found-by-zot.md" in report
+    assert '"confidence": "high"' in report or '"confidence": "medium"' in report

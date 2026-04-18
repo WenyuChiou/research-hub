@@ -500,6 +500,65 @@ def _cmd_crystal(args, cfg) -> int:
     raise ValueError(f"unknown crystal command: {args.crystal_command}")
 
 
+def _cmd_memory(args, cfg) -> int:
+    from research_hub.memory import (
+        apply_memory,
+        emit_memory_prompt,
+        list_claims,
+        list_entities,
+        list_methods,
+        read_memory,
+    )
+
+    if args.memory_command == "emit":
+        print(emit_memory_prompt(cfg, args.cluster))
+        return 0
+    if args.memory_command == "apply":
+        scored = json.loads(Path(args.scored).read_text(encoding="utf-8"))
+        result = apply_memory(cfg, args.cluster, scored)
+        print(f"entities={result.entity_count} claims={result.claim_count} methods={result.method_count}")
+        print(f"written: {result.written_path}")
+        for error in result.errors:
+            print(f"  ! {error}", file=sys.stderr)
+        return 0
+    if args.memory_command == "list":
+        entities = list_entities(cfg, args.cluster)
+        claims = list_claims(cfg, args.cluster)
+        methods = list_methods(cfg, args.cluster)
+        if args.kind == "entities":
+            for item in entities:
+                print(f"{item.slug}\t{item.type}\t{item.name}")
+            return 0
+        if args.kind == "claims":
+            for item in claims:
+                print(f"[{item.confidence}] {item.slug}: {item.text[:80]}")
+            return 0
+        if args.kind == "methods":
+            for item in methods:
+                print(f"{item.slug}\t{item.family}\t{item.name}")
+            return 0
+        print("[entities]")
+        for item in entities:
+            print(f"{item.slug}\t{item.type}\t{item.name}")
+        print()
+        print("[claims]")
+        for item in claims:
+            print(f"[{item.confidence}] {item.slug}: {item.text[:80]}")
+        print()
+        print("[methods]")
+        for item in methods:
+            print(f"{item.slug}\t{item.family}\t{item.name}")
+        return 0
+    if args.memory_command == "read":
+        memory = read_memory(cfg, args.cluster)
+        if memory is None:
+            print(f"No memory found for cluster: {args.cluster}", file=sys.stderr)
+            return 1
+        print(json.dumps(memory.to_dict(), indent=2, ensure_ascii=False))
+        return 0
+    raise ValueError(f"unknown memory command: {args.memory_command}")
+
+
 def _paper_command(args) -> int:
     if args.paper_command == "prune":
         from research_hub.paper import prune_cluster
@@ -2708,6 +2767,19 @@ def build_parser() -> argparse.ArgumentParser:
     crystal_check = crystal_sub.add_parser("check", help="Check crystal staleness")
     crystal_check.add_argument("--cluster", required=True)
 
+    memory_parser = subparsers.add_parser("memory", help="Manage structured cluster memory registries")
+    memory_sub = memory_parser.add_subparsers(dest="memory_command")
+    memory_emit = memory_sub.add_parser("emit", help="Emit a memory-extraction prompt for an AI")
+    memory_emit.add_argument("--cluster", required=True)
+    memory_apply = memory_sub.add_parser("apply", help="Apply AI-generated cluster memory")
+    memory_apply.add_argument("--cluster", required=True)
+    memory_apply.add_argument("--scored", required=True, help="Path to JSON produced by AI")
+    memory_list = memory_sub.add_parser("list", help="List memory records for a cluster")
+    memory_list.add_argument("--cluster", required=True)
+    memory_list.add_argument("--kind", choices=["entities", "claims", "methods"])
+    memory_read = memory_sub.add_parser("read", help="Read the full cluster memory registry")
+    memory_read.add_argument("--cluster", required=True)
+
     paper_parser = subparsers.add_parser("paper", help="Paper curation operations")
     paper_sub = paper_parser.add_subparsers(dest="paper_command")
     prune_p = paper_sub.add_parser("prune", help="Move or delete labeled papers")
@@ -2940,6 +3012,11 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("crystal requires a subcommand")
             return 2
         return _cmd_crystal(args, get_config())
+    if args.command == "memory":
+        if not args.memory_command:
+            parser.error("memory requires a subcommand")
+            return 2
+        return _cmd_memory(args, get_config())
     if args.command == "discover":
         if args.discover_command == "new":
             return _discover_new(args)

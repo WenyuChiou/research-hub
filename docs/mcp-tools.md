@@ -136,6 +136,22 @@ Check how many crystals are stale (>10% paper delta since generation). Returns p
 
 ---
 
+## Cluster memory
+
+### `list_entities(cluster: str)`
+List structured entities stored in `hub/<cluster>/memory.json`.
+
+### `list_claims(cluster: str, min_confidence: str = "low")`
+List structured claims from cluster memory, optionally filtering to `high`, `medium`, or `low` confidence and above.
+
+### `list_methods(cluster: str)`
+List structured methods stored in cluster memory.
+
+### `read_cluster_memory(cluster: str)`
+Return the full memory registry for a cluster, or `found=false` if memory has not been generated yet.
+
+---
+
 ## Fit-check (scope drift detection)
 
 ### `fit_check_prompt(cluster_slug: str)`
@@ -244,6 +260,6 @@ If a tool errors with `ValidationError`, your slug is malformed — clean it (lo
 
 ---
 
-## Total tool count: 50+
+## Total tool count: 56
 
-Exact count varies slightly by release as we factor or merge tools. See `src/research_hub/mcp_server.py` for the source of truth.
+See `src/research_hub/mcp_server.py` for the source of truth.
