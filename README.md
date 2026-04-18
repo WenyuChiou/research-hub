@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1312%20passing-brightgreen.svg)](docs/audit_v0.36.md)
+[![Tests](https://img.shields.io/badge/tests-1312%20passing-brightgreen.svg)](docs/audit_v0.37.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,7 +146,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Status
 
-- **Latest**: v0.36.0 (2026-04-18)
+- **Latest**: v0.37.0 (2026-04-18)
 - **Tests**: 1312 passing, 15 skipped, 2 xfailed, 1 xpassed
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+

@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM 三合一，專為 AI agent 打造。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1312%20passing-brightgreen.svg)](docs/audit_v0.36.md)
+[![Tests](https://img.shields.io/badge/tests-1312%20passing-brightgreen.svg)](docs/audit_v0.37.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,7 +146,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 目前狀態
 
-- **最新版本**: v0.36.0 (2026-04-18)
+- **最新版本**: v0.37.0 (2026-04-18)
 - **測試**: 1312 passing, 15 skipped, 2 xfailed, 1 xpassed
 - **平台**: Windows, macOS, Linux
 - **Python**: 3.10+

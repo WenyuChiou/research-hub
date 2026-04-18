@@ -238,3 +238,53 @@ def test_get_config_works_with_no_config_file(tmp_path, monkeypatch):
     assert cfg.root == Path.home() / "knowledge-base"
     assert cfg.raw == cfg.root / "raw"
     assert cfg.hub == cfg.root / "hub"
+
+
+def test_require_config_accepts_research_hub_root_env_var(tmp_path, monkeypatch):
+    """REGRESSION (v0.37): require_config must treat RESEARCH_HUB_ROOT as a valid
+    init signal, not just config.json existence. Without this, headless / CI
+    / test environments that bootstrap via env vars hit a misleading
+    'not initialized' SystemExit even though HubConfig honors the env var fully.
+    Originally surfaced via test_v032_screenshot.py CI failure on GitHub Actions.
+    """
+    from research_hub import config as hub_config
+
+    monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "no-config.json")
+    monkeypatch.delenv("RESEARCH_HUB_CONFIG", raising=False)
+    monkeypatch.setenv("RESEARCH_HUB_ROOT", str(tmp_path))
+    monkeypatch.setenv("RESEARCH_HUB_ALLOW_EXTERNAL_ROOT", "1")
+    hub_config._config = None
+    hub_config._config_path = None
+
+    cfg = hub_config.require_config()
+    assert cfg.root == tmp_path
+
+
+def test_require_config_still_fails_when_root_dir_missing(tmp_path, monkeypatch):
+    """RESEARCH_HUB_ROOT must point to an existing directory; bogus paths still fail."""
+    import pytest
+    from research_hub import config as hub_config
+
+    monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "no-config.json")
+    monkeypatch.delenv("RESEARCH_HUB_CONFIG", raising=False)
+    monkeypatch.setenv("RESEARCH_HUB_ROOT", str(tmp_path / "nonexistent-vault"))
+    hub_config._config = None
+    hub_config._config_path = None
+
+    with pytest.raises(SystemExit):
+        hub_config.require_config()
+
+
+def test_require_config_fails_when_no_config_and_no_env(tmp_path, monkeypatch):
+    """Neither config.json nor RESEARCH_HUB_ROOT -> SystemExit (original guard preserved)."""
+    import pytest
+    from research_hub import config as hub_config
+
+    monkeypatch.setattr(hub_config, "CONFIG_PATH", tmp_path / "no-config.json")
+    monkeypatch.delenv("RESEARCH_HUB_CONFIG", raising=False)
+    monkeypatch.delenv("RESEARCH_HUB_ROOT", raising=False)
+    hub_config._config = None
+    hub_config._config_path = None
+
+    with pytest.raises(SystemExit):
+        hub_config.require_config()

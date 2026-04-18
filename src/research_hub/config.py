@@ -163,17 +163,26 @@ def get_config() -> HubConfig:
 
 
 def require_config() -> HubConfig:
-    """Like get_config() but fail early if the user has not run init."""
+    """Like get_config() but fail early if the user has not run init.
+
+    A user is considered initialized when EITHER a config file exists, OR
+    RESEARCH_HUB_ROOT points to an existing directory. The env-var path lets
+    headless / CI / test environments bootstrap without writing config.json
+    (HubConfig honors the same env vars internally).
+    """
     path = _resolve_config_path()
     if path is None:
-        import sys
+        env_root = os.environ.get("RESEARCH_HUB_ROOT")
+        if not (env_root and Path(env_root).expanduser().is_dir()):
+            import sys
 
-        print("ERROR: research-hub is not initialized.", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("  Run:  research-hub init", file=sys.stderr)
-        print(
-            "  Docs: https://github.com/WenyuChiou/research-hub#install",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
+            print("ERROR: research-hub is not initialized.", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("  Run:  research-hub init", file=sys.stderr)
+            print("  Or:   set RESEARCH_HUB_ROOT to an existing directory", file=sys.stderr)
+            print(
+                "  Docs: https://github.com/WenyuChiou/research-hub#install",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
     return get_config()

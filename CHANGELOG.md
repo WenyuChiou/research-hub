@@ -1,5 +1,70 @@
 # Changelog
 
+## v0.37.0 (2026-04-18)
+
+**Cluster integrity + memory CLI/MCP exposure + critical require_config bug fix. 1282 → 1312 tests (+30).**
+
+Two intersecting goals:
+1. **Cluster ↔ paper binding can drift in any vault** (rename + folder not migrated, import-folder dump without --cluster, manual folder reorg). Doctor never noticed; rebind path didn't exist. v0.37 closes both gaps for all 4 personas.
+2. **Memory layer (v0.36) was Python-API only.** v0.37 adds CLI subcommand + 4 MCP tools so Claude Code / any MCP client can query.
+3. **Bonus critical fix**: `require_config()` now treats `RESEARCH_HUB_ROOT` env var as a valid init signal (was: required config.json file). Headless / CI / test environments no longer hit a misleading "not initialized" SystemExit when the env-var path is the only init.
+
+Full release report: [docs/audit_v0.37.md](docs/audit_v0.37.md). Design notes: [docs/cluster-integrity.md](docs/cluster-integrity.md).
+
+### Added — Cluster integrity (Track A)
+
+5 new doctor checks in `src/research_hub/doctor.py`:
+- `cluster/missing_dir` — FAIL: `cluster.obsidian_subfolder` doesn't exist as `raw/<dir>` (e.g. cluster renamed without folder migration)
+- `cluster/orphan_papers` — WARN: `raw/foo/` holds papers but no cluster has `obsidian_subfolder=foo` (e.g. legacy layout, archive restore, import-folder dump)
+- `cluster/empty` — WARN: cluster's folder has 0 papers
+- `cluster/cross_tagged` — WARN: paper physically in cluster A folder but `cluster:` frontmatter says cluster B
+- `quote/orphan` — WARN: quote captured on a paper not in any cluster (Persona C concern)
+
+NEW `src/research_hub/cluster_rebind.py` — emit/apply rebind workflow:
+- `emit_rebind_prompt(cfg)` walks `raw/`, reads each orphan paper's frontmatter (`cluster:`, `collections`, `tags`, `category`), proposes target cluster with high/medium/low confidence
+- `apply_rebind(cfg, report_path, dry_run=True)` executes file moves; dry-run is the default
+- All moves logged to `.research_hub/rebind-<timestamp>.log` for manual undo
+
+NEW CLI: `research-hub clusters rebind {--emit, --apply <path> [--no-dry-run]}`.
+
+### Added — Memory CLI + MCP exposure (Track B)
+
+NEW CLI subcommand `research-hub memory {emit, apply, list, read}` matching the crystal subcommand pattern.
+
+NEW 4 MCP tools (52 → 56):
+- `list_entities(cluster)` — orgs/datasets/models/etc. registry
+- `list_claims(cluster, min_confidence)` — typed claims with confidence filter
+- `list_methods(cluster)` — technique families
+- `read_cluster_memory(cluster)` — full ClusterMemory dict; returns `found: false` graceful fallback
+
+### Fixed — `require_config()` env-var path (Track Z)
+
+`src/research_hub/config.py::require_config` previously raised SystemExit("not initialized") whenever no `config.json` existed, even if `RESEARCH_HUB_ROOT` pointed to a valid directory. This blocked CI tests and any user bootstrapping via env vars (despite `HubConfig.__init__` fully honoring the env var). Now treats either signal as initialized.
+
+3 regression tests in `tests/test_config.py`:
+- `test_require_config_accepts_research_hub_root_env_var` — env-var path works
+- `test_require_config_still_fails_when_root_dir_missing` — bogus paths still fail (security: don't accept any env value blindly)
+- `test_require_config_fails_when_no_config_and_no_env` — original guard preserved
+
+### Tests
+
+- `tests/test_v037_cluster_integrity.py` — 18 tests (12 doctor/rebind + 6 persona × cluster-integrity matrix covering all 4 personas A/B/C/H)
+- `tests/test_v037_memory_cli.py` — 6 tests
+- `tests/test_v037_memory_mcp.py` — 4 tests
+- `tests/test_config.py` — 3 new regression tests for require_config env-var path
+
+### Vault restore (closes Task #124, pending since v0.28)
+
+Restored 1094 paper notes (was 36) from `knowledge-base-archive-20260415/` across 9 topic folders + 5 archived clusters. Cleaned 4 `persona-*-test` test pollution folders + 5 stray quote files. Live-verified the new doctor checks against this real vault: detected 1063 orphans + 3 missing_dir + 5 quote orphans (all from test pollution, since cleaned).
+
+### Stats
+
+- Tests: 1282 → 1312 (+30)
+- New files: 6 (rebind module + 3 test files + 2 docs)
+- Modified: pyproject, CHANGELOG, README ×2, doctor, mcp_server, cli, config, mcp-tools.md
+
+---
+
 ## v0.36.0 (2026-04-18)
 
 **Structured memory layer (entities + claims + methods). 1270 → 1282 tests (+12). Architecture-only release.**
