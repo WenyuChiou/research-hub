@@ -13,6 +13,7 @@ all four user types end-to-end (not just the default).
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -21,13 +22,18 @@ from typing import Any
 def _set_root(tmp_path: Path) -> None:
     """Point HubConfig at tmp_path + reset module cache.
 
-    Forces RESEARCH_HUB_CONFIG to a nonexistent path so HubConfig falls back
-    to env-var-only mode and doesn't pick up the developer's real config.json
-    (which would override RESEARCH_HUB_ROOT and write to the real vault).
+    Writes a temporary config.json so HubConfig resolves this tmp_path first
+    and does not fall through to any developer-local repo/home config.
     """
+    tmp_path.mkdir(parents=True, exist_ok=True)
     os.environ["RESEARCH_HUB_ROOT"] = str(tmp_path)
     os.environ["RESEARCH_HUB_ALLOW_EXTERNAL_ROOT"] = "1"
-    os.environ["RESEARCH_HUB_CONFIG"] = str(tmp_path / "_no_config_.json")
+    config_path = tmp_path / "_persona_factory_config.json"
+    config_path.write_text(
+        json.dumps({"knowledge_base": {"root": str(tmp_path)}}),
+        encoding="utf-8",
+    )
+    os.environ["RESEARCH_HUB_CONFIG"] = str(config_path)
     import research_hub.config as cfg_mod
     cfg_mod._config = None
     cfg_mod._config_path = None
