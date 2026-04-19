@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.40.2 (2026-04-19)
+
+**v0.40.1's narrow regex didn't catch `test_config.py` — make `RESEARCH_HUB_ALLOW_EXTERNAL_ROOT` global for tests.**
+
+v0.40.1 only set the env var bypass for `test_v0NN_*` and `test_cli_*` files. But `test_config.py` (3 tests) also uses tmp_path-based RESEARCH_HUB_ROOT and hit the same v0.30 HOME-guard ValueError on Windows CI.
+
+Cleaner fix: NEW autouse fixture `_allow_external_vault_root_in_tests` sets the env var unconditionally for every test. Safe because tests run in sandboxed tmp_paths, not against the user's real $HOME.
+
+3 lines changed in `tests/conftest.py`. No production code modified. 1402 tests pass.
+
+---
+
 ## v0.40.1 (2026-04-19)
 
 **First multi-OS CI run exposed 2 test-infrastructure bugs (production code unchanged).**

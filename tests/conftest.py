@@ -86,6 +86,19 @@ def mock_require_config(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _allow_external_vault_root_in_tests(monkeypatch):
+    """v0.40.1: Windows CI workspace is on D:\\ but HOME on C:\\, tripping
+    the v0.30 'vault must be under HOME' guard for ANY test using a tmp_path
+    based RESEARCH_HUB_ROOT. This affects test_config.py, test_v030_*,
+    test_v040_*, etc. — broader than the cli-routing fixture below.
+
+    Set the bypass for every test unconditionally; safe because tests run in
+    sandboxed tmp_paths, not against the user's real $HOME.
+    """
+    monkeypatch.setenv("RESEARCH_HUB_ALLOW_EXTERNAL_ROOT", "1")
+
+
+@pytest.fixture(autouse=True)
 def _auto_mock_require_config(request, monkeypatch):
     """Auto-mock config loading for tests that call cli.main([...]) directly.
 
@@ -113,7 +126,5 @@ def _auto_mock_require_config(request, monkeypatch):
     # and skips require_config(). Replacing require_config itself would break
     # that detection because lambda has different __globals__.
     monkeypatch.setattr("research_hub.cli.get_config", lambda: None, raising=False)
-    # v0.40.1: Windows CI runners have HOME=C:\Users\runneradmin and workspace
-    # on D:\, so any test using tmp_path-based RESEARCH_HUB_ROOT trips the
-    # v0.30 "vault must be under HOME" guard. Allow external roots in tests.
-    monkeypatch.setenv("RESEARCH_HUB_ALLOW_EXTERNAL_ROOT", "1")
+    # (RESEARCH_HUB_ALLOW_EXTERNAL_ROOT now set globally by
+    # _allow_external_vault_root_in_tests above — applies to all tests.)
