@@ -24,8 +24,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install dependencies
         run: pip install -e '.[mcp,dev,playwright]'
+
+      - name: Install defuddle CLI
+        run: npm install -g defuddle-cli
+        continue-on-error: true
 
       - name: Run tests
         run: pytest -q --maxfail=3 -m "not slow"
@@ -44,8 +52,16 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install dependencies
         run: pip install -e '.[mcp,dev,playwright]'
+
+      - name: Install defuddle CLI
+        run: npm install -g defuddle-cli
+        continue-on-error: true
 
       - name: Run stress tests
         run: pytest tests/stress/ -v

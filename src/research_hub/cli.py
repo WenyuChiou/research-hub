@@ -1591,6 +1591,45 @@ def _vault_polish_markdown(*, cluster: str | None, dry_run: bool) -> int:
     return 0
 
 
+def _bases_emit(*, cluster_slug: str, stdout: bool, force: bool) -> int:
+    from research_hub.obsidian_bases import (
+        ClusterBaseInputs,
+        build_cluster_base,
+        write_cluster_base,
+    )
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        print(f"  [ERR] Cluster not found: {cluster_slug}")
+        return 1
+
+    if stdout:
+        content = build_cluster_base(
+            ClusterBaseInputs(
+                cluster_slug=cluster_slug,
+                cluster_name=cluster.name,
+                obsidian_subfolder=cluster.obsidian_subfolder,
+            )
+        )
+        print(content)
+        return 0
+
+    path, written = write_cluster_base(
+        hub_root=Path(cfg.hub),
+        cluster_slug=cluster_slug,
+        cluster_name=cluster.name,
+        obsidian_subfolder=cluster.obsidian_subfolder,
+        force=force,
+    )
+    if written:
+        print(f"  [OK] Wrote {path}")
+    else:
+        print(f"  [SKIP] Already exists: {path}  (use --force to overwrite)")
+    return 0
+
+
 def _load_zotero_if_configured():
     try:
         from research_hub.zotero.client import get_client
@@ -2798,6 +2837,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Actually write changes to disk",
     )
 
+    bases_parser = subparsers.add_parser("bases", help="Obsidian Bases (.base) generator")
+    bases_sub = bases_parser.add_subparsers(dest="bases_command", required=True)
+    bases_emit = bases_sub.add_parser("emit", help="Emit or refresh a cluster's .base file")
+    bases_emit.add_argument("--cluster", required=True)
+    bases_emit.add_argument("--stdout", action="store_true", help="Print to stdout instead of writing")
+    bases_emit.add_argument("--force", action="store_true", help="Overwrite existing .base file")
+
     migrate_parser = subparsers.add_parser(
         "migrate-yaml", help="Patch legacy notes to v0.3.x YAML spec"
     )
@@ -3608,6 +3654,13 @@ def main(argv: list[str] | None = None) -> int:
             return _vault_graph_colors(refresh=args.refresh)
         if args.vault_command == "polish-markdown":
             return _vault_polish_markdown(cluster=args.cluster, dry_run=args.dry_run)
+    if args.command == "bases":
+        if args.bases_command == "emit":
+            return _bases_emit(
+                cluster_slug=args.cluster,
+                stdout=args.stdout,
+                force=args.force,
+            )
     if args.command == "sync":
         if args.sync_command == "status":
             return _sync_status(cluster_slug=args.cluster)

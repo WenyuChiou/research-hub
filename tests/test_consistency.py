@@ -87,6 +87,7 @@ EXPECTED_MAPPINGS = {
     "brief_cluster": "mcp-only",
     "sync_cluster": "mcp-only",
     "compose_brief_draft": "mcp-only",
+    "emit_cluster_base": "bases emit",
     "collect_to_cluster": "mcp-only",
 }
 

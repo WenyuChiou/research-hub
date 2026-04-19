@@ -57,7 +57,7 @@ class Crystal:
     see_also: list[str] = field(default_factory=list)
 
     def to_markdown(self) -> str:
-        from research_hub.markdown_conventions import wrap_callout
+        from research_hub.markdown_conventions import wikilink as _wikilink, wrap_callout
 
         tldr_body = wrap_callout("abstract", self.tldr.strip(), block_id="tldr")
         lines = [
@@ -91,7 +91,8 @@ class Crystal:
         if self.evidence:
             lines.extend(["## Evidence", "", "| Claim | Papers |", "|---|---|"])
             for item in self.evidence:
-                lines.append(f"| {item.claim} | {', '.join(f'[[{paper}]]' for paper in item.papers)} |")
+                paper_links = ", ".join(_wikilink(paper) for paper in item.papers)
+                lines.append(f"| {item.claim} | {paper_links} |")
             lines.append("")
         if self.see_also:
             lines.extend(["## See also", ""])

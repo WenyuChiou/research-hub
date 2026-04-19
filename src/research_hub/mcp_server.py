@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+from pathlib import Path
 import re
 from typing import Any, Callable
 
@@ -2028,6 +2029,36 @@ def compose_brief_draft(
         return _impl(cfg, cluster_slug, outline=outline, max_quotes=max_quotes)
     except Exception as exc:  # pragma: no cover
         return _tool_error(exc)
+
+
+@mcp.tool()
+def emit_cluster_base(cluster_slug: str, force: bool = False) -> dict[str, Any]:
+    """Emit (or refresh) the .base dashboard file for a cluster."""
+    try:
+        cfg = get_config()
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.obsidian_bases import write_cluster_base
+
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster = registry.get(cluster_slug)
+        if cluster is None:
+            return {"ok": False, "error": f"Cluster not found: {cluster_slug}"}
+
+        path, written = write_cluster_base(
+            hub_root=Path(cfg.hub),
+            cluster_slug=cluster_slug,
+            cluster_name=cluster.name,
+            obsidian_subfolder=cluster.obsidian_subfolder,
+            force=force,
+        )
+        return {
+            "ok": True,
+            "path": str(path),
+            "bytes": path.stat().st_size if path.exists() else 0,
+            "action": "created" if written else "exists",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 @mcp.tool()

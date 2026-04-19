@@ -1,5 +1,75 @@
 # Changelog
 
+## v0.43.0 (2026-04-19)
+
+**[kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) integration: defuddle URL extraction, full Obsidian Flavored Markdown helpers, auto-generated Obsidian Bases dashboards per cluster.**
+
+The 5 kepano skills (25.3k⭐, MIT, by Steph Ango / Obsidian CEO) were installed; v0.42's Track C had only adopted a slice (callouts + block IDs). v0.43 closes the gap and stress-tests the v0.42 NotebookLM layer at 11-paper scale.
+
+### Track 1 — 11-paper NotebookLM stress test (validation, no code change)
+
+Cluster `llm-evaluation-harness` grew from 6 → 11 papers (added 5 new harness-engineering arXiv preprints: VeRO evaluation harness, AgentSPEX specification language, TDAD test-driven agent definition, AEC-Bench multimodal benchmark, ALaRA least-privilege).
+
+```
+research-hub notebooklm bundle --cluster llm-evaluation-harness
+research-hub notebooklm upload --cluster llm-evaluation-harness
+→ 11 succeeded, 0 failed, 0 skipped from cache
+→ nlm-debug-*.jsonl: success_count: 11, fail_count: 0, retry_count: 0
+```
+
+**v0.42 patchright + persistent-context layer holds at 11-paper scale: every paper uploaded on attempt 1, no retries needed.**
+
+Cross-validated `research-hub notebooklm ask` against the independently-installed `mcp__notebooklm__*` server (PleasePrompto/notebooklm-skill MCP). Both backends converge on the same 3-thread analysis (evaluation / memory / security) with the same exemplar papers. v0.42 ask layer behaves consistently with the 5.9k⭐ reference implementation. Validation log: [`docs/validation_v0.43.md`](docs/validation_v0.43.md).
+
+### Track 2 — defuddle URL extraction (replaces readability-lxml)
+
+NEW `src/research_hub/defuddle_extract.py` — subprocess wrapper around the [defuddle CLI](https://github.com/kepano/defuddle). Replaces `readability-lxml` (unmaintained since 2021, flagged in v0.40 audit) for cleaner URL→markdown extraction.
+
+- `_extract_url` in `importer.py` now tries defuddle first; falls back to readability-lxml on `None` (defuddle binary not installed)
+- Zero breaking change: `[import]` extra still pulls `readability-lxml` so existing v0.42 installs continue to work
+- Optional install: `npm install -g defuddle-cli`
+- CI: GitHub Actions matrix gains `actions/setup-node@v4` + best-effort `npm install -g defuddle-cli`
+
+### Track 3 — Obsidian Flavored Markdown extensions
+
+`src/research_hub/markdown_conventions.py` (213 LOC → ~330 LOC) gains:
+
+- `wikilink(target, *, display=None, heading=None, block_id=None)` — `[[target]]` / `[[target|display]]` / `[[target#heading]]` / `[[target^block]]`
+- `embed(target, *, size=None, page=None)` — `![[image|300]]` / `![[paper.pdf#page=3]]`
+- `highlight(text)` — `==text==`
+- `property_block(**fields)` — Obsidian-property-style YAML
+
+Crystal Evidence column + cluster paper lists now route through `wikilink()` for consistency. Paper note frontmatter (`make_raw_md`) gains optional `zotero-pdf-path:` so notes can embed the PDF via `![[{{zotero-pdf-path}}#page=1]]`.
+
+### Track 4 — Obsidian Bases (`.base`) per-cluster dashboards
+
+NEW `src/research_hub/obsidian_bases.py` — auto-generates a `.base` YAML file per cluster with **4 views**:
+
+1. **Papers** — table filtered by `topic_cluster`, grouped by year DESC
+2. **Crystals** — cards filtered by `type=="crystal"` AND `cluster==<slug>`
+3. **Open Questions** — pulls from cluster overview
+4. **Recent activity** — top 10 by `ingested_at`
+
+Plus 2 formulas (`days_since_ingested`, `paper_count`).
+
+NEW `research-hub bases emit --cluster X [--stdout] [--force]` CLI subcommand. NEW MCP tool `emit_cluster_base(cluster_slug)` for Claude Desktop.
+
+`scaffold_cluster_hub` (`topic.py`) now writes `<slug>.base` alongside `00_overview.md` + `crystals/` + `memory.json`. Idempotent.
+
+### Stats
+
+- Tests: 1458 → 1492+ (Track 2: 8, Track 3: 15, Track 4: 11)
+- LOC delta: ~+550 new, ~5 modified
+
+### Notes
+
+- `obsidian-cli` integration (5th kepano skill) deferred to v0.44 — needs a running Obsidian instance, environmental assumption we can't enforce in CI.
+- `json-canvas` citation graph export — also v0.44 candidate.
+
+繁體中文 release announcement: [docs/release-notes-v0.43.zh-TW.md](docs/release-notes-v0.43.zh-TW.md). Audit: [docs/audit_v0.43.md](docs/audit_v0.43.md).
+
+---
+
 ## Unreleased
 
 - NotebookLM v0.42 browser launcher and `ask` flow adapt patterns from

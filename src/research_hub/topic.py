@@ -303,6 +303,7 @@ def scaffold_cluster_hub(cfg, cluster_slug: str, *, force: bool = False) -> dict
         "overview": "skipped",
         "crystals_dir": "skipped",
         "memory_json": "skipped",
+        "base": "skipped",
     }
 
     path = overview_path(cfg, cluster_slug)
@@ -344,6 +345,21 @@ def scaffold_cluster_hub(cfg, cluster_slug: str, *, force: bool = False) -> dict
             encoding="utf-8",
         )
         summary["memory_json"] = "created"
+
+    base_path = hub_cluster_dir(cfg, cluster_slug) / (cluster_slug + ".base")
+    if base_path.exists() and not force:
+        summary["base"] = "exists"
+    else:
+        from research_hub.obsidian_bases import write_cluster_base
+
+        _, written = write_cluster_base(
+            hub_root=Path(cfg.hub),
+            cluster_slug=cluster_slug,
+            cluster_name=cluster.name,
+            obsidian_subfolder=cluster.obsidian_subfolder,
+            force=force,
+        )
+        summary["base"] = "created" if written else "exists"
 
     return summary
 
@@ -759,12 +775,14 @@ def _render_papers_markdown(
     papers: list[PaperDigestEntry],
     paper_meta_by_slug: dict[str, dict[str, str | list[str]]],
 ) -> str:
+    from research_hub.markdown_conventions import wikilink
+
     lines: list[str] = []
     for paper in papers:
         meta = paper_meta_by_slug.get(paper.slug, {})
         summary = _paper_one_line_take(meta, paper.abstract)
         badge = _render_label_badge(meta)
-        link = f"[[{paper.slug}|{_paper_link_label(paper)}]]"
+        link = wikilink(paper.slug, display=_paper_link_label(paper))
         if badge:
             lines.append(f"- {link} {badge} — {summary}")
         else:

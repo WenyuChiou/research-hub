@@ -210,3 +210,84 @@ def summary_section_to_callout(
     parts.append("## Relevance\n\n")
     parts.append(wrap_callout("note", (relevance or "(no relevance)").strip(), block_id="relevance"))
     return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# v0.43 Obsidian Flavored Markdown extensions
+# (wikilinks, embeds, properties, highlight)
+#
+# Spec reference: kepano/obsidian-skills/obsidian-markdown
+#   https://github.com/kepano/obsidian-skills/tree/main/skills/obsidian-markdown
+# ---------------------------------------------------------------------------
+
+
+def wikilink(
+    target: str,
+    *,
+    display: str | None = None,
+    heading: str | None = None,
+    block_id: str | None = None,
+) -> str:
+    """Render an Obsidian wikilink ``[[target]]`` with optional modifiers."""
+    if not target or not target.strip():
+        raise ValueError("wikilink target cannot be empty")
+    if heading and block_id:
+        raise ValueError("wikilink cannot have both heading and block_id")
+    inner = target.strip()
+    if heading:
+        inner += "#" + heading.strip()
+    elif block_id:
+        inner += "^" + block_id.strip()
+    if display:
+        inner += "|" + display.strip()
+    return "[[" + inner + "]]"
+
+
+def embed(
+    target: str,
+    *,
+    size: int | None = None,
+    page: int | None = None,
+    display: str | None = None,
+) -> str:
+    """Render an Obsidian embed ``![[target]]`` with optional modifiers."""
+    if not target or not target.strip():
+        raise ValueError("embed target cannot be empty")
+    inner = target.strip()
+    if page is not None:
+        inner += "#page=" + str(page)
+    if size is not None:
+        inner += "|" + str(size)
+    elif display is not None:
+        inner += "|" + display.strip()
+    return "![[" + inner + "]]"
+
+
+def highlight(text: str) -> str:
+    """Wrap ``text`` in Obsidian inline highlight ``==text==``."""
+    if not text:
+        return ""
+    return "==" + text + "=="
+
+
+def property_block(**fields) -> str:
+    """Render Obsidian-style property frontmatter (YAML) from kwargs."""
+    if not fields:
+        return ""
+    import json as _json
+
+    lines: list[str] = []
+    for key, value in fields.items():
+        if isinstance(value, list):
+            rendered = _json.dumps(value, ensure_ascii=False)
+            lines.append(f"{key}: {rendered}")
+        elif isinstance(value, bool):
+            lines.append(f"{key}: {'true' if value else 'false'}")
+        elif value is None:
+            lines.append(f"{key}: null")
+        elif isinstance(value, (int, float)):
+            lines.append(f"{key}: {value}")
+        else:
+            escaped = str(value).replace('"', '\\"')
+            lines.append(f'{key}: "{escaped}"')
+    return "\n".join(lines)

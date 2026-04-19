@@ -172,6 +172,9 @@ def make_raw_md(
         f'"{query}"' for query in (cluster_queries or [])
     ) + ']'
     ingested_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pdf_path_line = ""
+    if item_data.get("pdf_path"):
+        pdf_path_line = f'zotero-pdf-path: "{item_data["pdf_path"]}"\n'
 
     wiki_links = tags_to_wiki_links(tags)
 
@@ -210,7 +213,7 @@ ingested_at: "{ingested_at}"
 ingestion_source: "{ingestion_source}"
 topic_cluster: "{topic_cluster}"
 cluster_queries: {cluster_queries_yaml}
-verified: {"null" if verified is None else ("true" if verified else "false")}
+{pdf_path_line}verified: {"null" if verified is None else ("true" if verified else "false")}
 verified_at: "{verified_at}"
 status: unread
 ---

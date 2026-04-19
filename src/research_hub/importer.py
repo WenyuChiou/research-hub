@@ -130,21 +130,32 @@ def _extract_txt(path: Path) -> str:
 
 
 def _extract_url(path: Path) -> str:
+    first_line = next((line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()), "")
+    if not first_line.startswith(("http://", "https://")):
+        raise ValueError(f"{path}: first non-empty line must be a URL")
+
+    # Prefer defuddle (v0.43): cleaner output, actively maintained.
+    from research_hub.defuddle_extract import extract_url_via_defuddle
+
+    defuddle_result = extract_url_via_defuddle(first_line)
+    if defuddle_result is not None:
+        return defuddle_result
+
+    # Fallback: readability-lxml (v0.42 default; unmaintained since 2021).
     try:
         import requests
         from readability import Document as ReadabilityDocument
     except ImportError as exc:  # pragma: no cover - dependency-gated
         raise RuntimeError(
-            "URL extraction requires requests + readability-lxml. Install: pip install 'research-hub-pipeline[import]'"
+            "URL extraction requires either defuddle CLI or "
+            "readability-lxml. Install: npm install -g defuddle-cli, OR "
+            "pip install 'research-hub-pipeline[import]'"
         ) from exc
 
-    first_line = next((line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()), "")
-    if not first_line.startswith(("http://", "https://")):
-        raise ValueError(f"{path}: first non-empty line must be a URL")
     response = requests.get(
         first_line,
         timeout=30,
-        headers={"User-Agent": "research-hub/0.31"},
+        headers={"User-Agent": "research-hub/0.43"},
     )
     response.raise_for_status()
     html_summary = ReadabilityDocument(response.text).summary()
