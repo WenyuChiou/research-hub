@@ -25,7 +25,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e '.[mcp,dev]'
+        run: pip install -e '.[mcp,dev,playwright]'
 
       - name: Run tests
         run: pytest -q --maxfail=3 -m "not slow"
@@ -45,7 +45,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -e '.[mcp,dev]'
+        run: pip install -e '.[mcp,dev,playwright]'
 
       - name: Run stress tests
         run: pytest tests/stress/ -v
