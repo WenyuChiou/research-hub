@@ -2071,13 +2071,18 @@ def auto_research_topic(
     cluster_name: str = "",
     max_papers: int = 8,
     do_nlm: bool = True,
+    do_crystals: bool = False,
+    llm_cli: str = "",
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """One-shot research pipeline: search + ingest + NotebookLM brief.
+    """One-shot research pipeline: search + ingest + NotebookLM brief (+ optional crystals).
 
     Slugifies ``topic`` into a cluster (or reuses ``cluster_slug``), searches
     arXiv + Semantic Scholar, ingests papers into Zotero + Obsidian, then
-    bundles + uploads + generates + downloads a NotebookLM brief.
+    bundles + uploads + generates + downloads a NotebookLM brief. With
+    ``do_crystals=True`` and a detected LLM CLI on PATH (claude/codex/gemini),
+    also generates and applies the canonical Q&A crystals so the cluster is
+    fully ready for ``read_crystal()`` queries.
 
     Use when: user says "research X for me" or "find papers on X".
 
@@ -2093,6 +2098,8 @@ def auto_research_topic(
             cluster_name=cluster_name or None,
             max_papers=max_papers,
             do_nlm=do_nlm,
+            do_crystals=do_crystals,
+            llm_cli=llm_cli or None,
             dry_run=dry_run,
             print_progress=False,
         )

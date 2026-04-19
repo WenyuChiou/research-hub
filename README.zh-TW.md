@@ -4,7 +4,7 @@
 > Zotero + Obsidian + NotebookLM 三合一,專為 AI agent 打造 — **不需要 OpenAI/Anthropic API key**。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1547%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1537%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![MCP tools](https://img.shields.io/badge/MCP%20tools-81-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -14,14 +14,37 @@ English → [README.md](README.md)
 
 ---
 
+## 📋 開始之前要有什麼
+
+| 需要 | 為什麼 | 怎麼弄 |
+|---|---|---|
+| **Python 3.10+** | 整個套件 | `python --version` |
+| **Obsidian**(免費) | research-hub 把筆記寫到 Obsidian 能渲染的 vault 裡 | [obsidian.md](https://obsidian.md) 下載 |
+| **Google 帳號 + NotebookLM** | brief 是它生的 | 去 [notebooklm.google.com](https://notebooklm.google.com) 開通一次 |
+| **Chrome** | patchright 用你本機 Chrome 跑(不用另外申請 API key) | 裝 Chrome — `init` 會自動偵測 |
+| **Zotero 帳號 + API key**(researcher/humanities 才需要) | 跨裝置同步論文 + PDF | [zotero.org/settings/keys](https://www.zotero.org/settings/keys) |
+| (可選)`claude` / `codex` / `gemini` CLI | 要 `auto --with-crystals` 全自動跑完 | 你已經在用哪個 AI CLI 就裝哪個 |
+
+`research-hub init` 結尾會跑一次**首次執行就緒檢查**,缺哪個它會直接告訴你 — 不用把這張表背起來。
+
+---
+
 ## ⚡ 安裝 + 第一次跑(60 秒)
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub init                                          # 互動式:選 persona + Zotero/NLM
+research-hub init                                          # 互動式:選 persona + Zotero/NLM + 就緒檢查
 research-hub notebooklm login                              # 一次性 Google 登入
 research-hub auto "harness engineering for LLM agents"     # 完成 — 50 秒後拿到 8 篇論文 + 一份 brief
 ```
+
+**想要從頭到尾全自動**(search → ingest → NLM brief → 預先運算的 AI 答案)?
+
+```bash
+research-hub auto "harness engineering" --with-crystals    # 自動 pipe 給 claude/codex/gemini CLI
+```
+
+如果支援的 LLM CLI 在你的 PATH 上,`--with-crystals` 會自動跑完 crystal 生成。沒有的話,prompt 會存到 `.research_hub/artifacts/<slug>/crystal-prompt.md`,結尾的 Next Steps 會明確告訴你要把哪個檔案貼到哪。
 
 **裝完之後三條路任你選:**
 
@@ -171,11 +194,27 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 
 ---
 
+## 🩺 疑難排解(第一次跑遇到的問題)
+
+| 症狀 | 原因 | 解法 |
+|---|---|---|
+| `research-hub init` 印 `chrome WARN patchright cannot launch Chrome` | 沒裝 Chrome,或 patchright 找不到 | 從 chrome.com 裝 Chrome,再跑 `research-hub doctor` 重新偵測 |
+| `research-hub notebooklm login` 開了瀏覽器但 Google 擋住登入 | Headless / 新裝置驗證 | 那是 patchright(真的 Chrome)— 在手機按「是的,是我」,然後正常登入 |
+| `research-hub auto` 在 `search` 階段拿到 `0 papers` | 主題太窄,或 arXiv/SemSch 短暫斷線 | 加 `--max-papers 20` 或重新描述主題;兩個 backend 都會 fault-tolerant |
+| `research-hub auto` 在 `nlm.upload` 階段炸「Generation button not found」 | NotebookLM UI 改了,或你沒登入 | 重跑 `research-hub notebooklm login`;持續發生請開 issue 附 `.research_hub/` 裡的 `nlm-debug-*.jsonl` |
+| `auto --with-crystals` 顯示「no LLM CLI on PATH」 | `claude`、`codex`、`gemini` CLI 都沒裝 | 裝你慣用的 AI CLI;或手動跑 `crystal emit` → 貼到 AI → `crystal apply` |
+| Claude Desktop 看不到 MCP server | `claude_desktop_config.json` 不在預期位置 | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` · Windows: `%APPDATA%\Claude\claude_desktop_config.json` · 改完要重啟 Claude Desktop |
+| `init` 印 `zotero WARN` 但我不用 Zotero | 預設 persona 是 `researcher`,它預期要 Zotero | 重跑 `research-hub init --persona analyst`(或 `internal`)— 這兩個 persona 完全跳過 Zotero |
+
+其他狀況: `research-hub doctor --autofix` 會修常見的機械問題,報告會告訴你哪個子系統有事。
+
+---
+
 ## 🛠 狀態
 
-- **最新**: v0.48.0(2026-04-19)— diagnostics 密度重設計,見 [`CHANGELOG.md`](CHANGELOG.md)
-- **測試**: fast suite 1547 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
-- **MCP tools**: 81 個(v0.47 把 auto / cleanup / tidy 加進 MCP)
+- **最新**: v0.49.0(2026-04-19)— auto Next Steps banner + `--with-crystals` LLM-CLI 橋接 + 首次執行就緒檢查,見 [`CHANGELOG.md`](CHANGELOG.md)
+- **測試**: fast suite 1537 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **MCP tools**: 81 個(v0.47 把 auto / cleanup / tidy 加進 MCP;v0.49 把 `auto_research_topic` 擴充 `do_crystals` / `llm_cli`)
 - **依賴**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs`(全部純 Python)
 - **可選 extras**: `[playwright]` 給 NotebookLM、`[import]` 給本機檔案匯入、`[secrets]` 給 OS keyring
 
@@ -185,7 +224,7 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1547 passing
+python -m pytest -q                     # 1537 passing
 ```
 
 貢獻: [CONTRIBUTING.md](CONTRIBUTING.md)。安全性: [SECURITY.md](.github/SECURITY.md)。

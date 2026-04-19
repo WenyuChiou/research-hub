@@ -2080,7 +2080,7 @@ def _migrate_yaml(
     return 0
 
 
-def _auto(*, topic, cluster_slug, cluster_name, max_papers, do_nlm, dry_run) -> int:
+def _auto(*, topic, cluster_slug, cluster_name, max_papers, do_nlm, do_crystals, llm_cli, dry_run) -> int:
     from research_hub.auto import auto_pipeline
 
     report = auto_pipeline(
@@ -2089,17 +2089,14 @@ def _auto(*, topic, cluster_slug, cluster_name, max_papers, do_nlm, dry_run) -> 
         cluster_name=cluster_name,
         max_papers=max_papers,
         do_nlm=do_nlm,
+        do_crystals=do_crystals,
+        llm_cli=llm_cli,
         dry_run=dry_run,
         print_progress=True,
     )
     if not report.ok:
         print(f"  [ERR] {report.error}")
         return 1
-    print(f"\nDone in {report.total_duration_sec:.1f}s.")
-    if report.brief_path:
-        print(f"  brief: {report.brief_path}")
-    if report.notebook_url:
-        print(f"  notebook: {report.notebook_url}")
     return 0
 
 
@@ -2325,6 +2322,10 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--max-papers", type=int, default=8)
     auto_parser.add_argument("--no-nlm", action="store_true",
                              help="Skip NotebookLM bundle/upload/generate/download")
+    auto_parser.add_argument("--with-crystals", action="store_true",
+                             help="Also generate crystals via detected LLM CLI (claude/codex/gemini on PATH)")
+    auto_parser.add_argument("--llm-cli", default=None, choices=["claude", "codex", "gemini"],
+                             help="Force a specific LLM CLI for --with-crystals (default: auto-detect)")
     auto_parser.add_argument("--dry-run", action="store_true",
                              help="Print plan without executing")
 
@@ -3410,6 +3411,8 @@ def main(argv: list[str] | None = None) -> int:
             cluster_name=args.cluster_name,
             max_papers=args.max_papers,
             do_nlm=not args.no_nlm,
+            do_crystals=args.with_crystals,
+            llm_cli=args.llm_cli,
             dry_run=args.dry_run,
         )
     if args.command == "ingest":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -10,6 +11,62 @@ import platformdirs
 
 from research_hub.security import chmod_sensitive
 from research_hub.security.secret_box import encrypt
+
+
+def _check_first_run_readiness(vault: Path, *, persona: str, has_zotero: bool) -> list[tuple[str, str, str]]:
+    """Probe lazy-mode prerequisites; return (subsystem, status, detail) rows.
+
+    Status is one of OK / INFO / WARN. Used after init to give the user a
+    consolidated readiness picture before they try `auto`.
+    """
+    rows: list[tuple[str, str, str]] = []
+
+    # Obsidian vault detection (informational — research-hub still works without it)
+    if (vault / ".obsidian").exists():
+        rows.append(("obsidian", "OK", f"vault detected at {vault}"))
+    else:
+        rows.append(("obsidian", "INFO", f"no .obsidian/ in {vault} — open Obsidian once to render"))
+
+    # patchright + Chrome probe (needed for NotebookLM)
+    try:
+        from patchright.sync_api import sync_playwright
+
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(channel="chrome", headless=True)
+                browser.close()
+            rows.append(("chrome", "OK", "patchright can launch Chrome (channel='chrome')"))
+        except Exception as exc:
+            rows.append(("chrome", "WARN", f"patchright cannot launch Chrome: {str(exc)[:120]}"))
+    except ImportError:
+        rows.append(("chrome", "WARN", "patchright not installed — `pip install research-hub-pipeline[playwright]`"))
+
+    # Zotero (skip for personas that don't use it)
+    if has_zotero:
+        rows.append(("zotero", "OK", "credentials configured (verified above)"))
+    elif persona in {"analyst", "internal"}:
+        rows.append(("zotero", "INFO", f"persona={persona} does not use Zotero"))
+    else:
+        rows.append(("zotero", "WARN", "no Zotero key — run `research-hub init` again to add"))
+
+    # LLM CLI for --with-crystals (informational — auto still works without)
+    for cli in ("claude", "codex", "gemini"):
+        if shutil.which(cli):
+            rows.append(("llm-cli", "OK", f"`{cli}` on PATH — `auto --with-crystals` will work"))
+            break
+    else:
+        rows.append(("llm-cli", "INFO", "no claude/codex/gemini CLI on PATH — crystals stay manual emit/apply"))
+
+    return rows
+
+
+def _print_readiness(rows: list[tuple[str, str, str]]) -> None:
+    print()
+    print("  ── First-run readiness check ─────────────────────────────")
+    for subsystem, status, detail in rows:
+        marker = {"OK": "✅", "INFO": "ℹ️ ", "WARN": "⚠️ "}.get(status, "  ")
+        print(f"  {marker} {subsystem:<10} {status:<5} {detail}")
+    print()
 
 
 def get_default_config_dir() -> Path:
@@ -196,20 +253,15 @@ def run_init(
     chmod_sensitive(config_path, mode=0o600)
     print(f"  Config written: {config_path}")
 
-    try:
-        from research_hub.notebooklm.cdp_launcher import find_chrome_binary
+    has_zotero = bool(zotero_key and zotero_library_id and not no_zotero_persona)
+    readiness = _check_first_run_readiness(vault, persona=persona, has_zotero=has_zotero)
+    _print_readiness(readiness)
 
-        chrome = find_chrome_binary()
-        if chrome:
-            print(f"  Chrome detected: {chrome}")
-            if interactive:
-                answer = input("  Run NotebookLM login now? [y/N]: ").strip().lower()
-                if answer == "y":
-                    print("  Run: research-hub notebooklm login --cdp")
-        else:
-            print("  Chrome: not found (install Chrome for NotebookLM features)")
-    except ImportError:
-        print("  Chrome check: skipped (playwright not installed)")
+    chrome_ok = any(sub == "chrome" and stat == "OK" for sub, stat, _ in readiness)
+    if interactive and chrome_ok:
+        answer = input("  Run NotebookLM Google login now? [y/N]: ").strip().lower()
+        if answer == "y":
+            print("  Run: research-hub notebooklm login")
 
     _print_completion_banner(vault, config_path)
     return 0

@@ -1,5 +1,90 @@
 # Changelog
 
+## v0.49.0 (2026-04-19)
+
+**`auto` becomes truly end-to-end + first-run readiness check.** Closes the v0.48-era gap where new users hit invisible prerequisite walls (Chrome missing, NotebookLM not enabled, Zotero key absent) and where `auto` left users stranded after the brief without telling them what to do next.
+
+User feedback driving this release:
+> 「user 都很懶 希望能一次講拿到所有的資訊 ... auto 'topic' 跑完 這部分可以全自動化」
+> ("Users are lazy — want all info in one shot ... `auto 'topic'` running through to completion can be fully automated.")
+
+### Added — `auto --with-crystals` (full end-to-end automation)
+
+`research-hub auto "topic" --with-crystals` now runs the optional 10th pipeline step: emit the crystal prompt, pipe it through a detected LLM CLI on PATH (`claude` → `codex` → `gemini`, in that order), parse the JSON response, and apply it. The cluster ends up with cached canonical Q&As ready for `read_crystal()` / Claude Desktop queries — no manual `emit/apply` step.
+
+If no LLM CLI is available, the prompt is saved to `.research_hub/artifacts/<slug>/crystal-prompt.md` and the Next Steps banner tells the user exactly what to paste where. Provider-agnostic guarantee preserved — no dependency on Anthropic/OpenAI APIs.
+
+CLI flags:
+- `--with-crystals` — opt-in (default off; turn on once you've verified your CLI of choice works)
+- `--llm-cli {claude,codex,gemini}` — force a specific CLI instead of auto-detection
+
+MCP `auto_research_topic` tool gets matching `do_crystals` / `llm_cli` parameters.
+
+### Added — Next Steps banner at end of `auto`
+
+After every successful `auto` run, the CLI prints a copy-paste-ready banner:
+
+```
+============================================================
+Done in 47.3s. Cluster: harness-engineering-llm-agents
+============================================================
+  NotebookLM: https://notebooklm.google.com/notebook/...
+  Brief:      .research_hub/artifacts/.../brief-2026-04-19T....txt
+
+Next steps (copy-paste any of these):
+
+  # See your new cluster in the live dashboard
+  research-hub serve --dashboard
+
+  # Generate cached AI answers (~10 Q&As, ~1 KB each)
+  research-hub crystal emit  --cluster harness-engineering-llm-agents > /tmp/cprompt.md
+  ...
+
+  # Or auto-pipe through a detected LLM CLI:
+  research-hub auto "harness-engineering-llm-agents" --with-crystals
+
+  # Talk to Claude Desktop instead
+  > "Claude, what's in my harness-engineering-llm-agents cluster?"
+```
+
+Closes the dead-end where users got papers + brief but had no idea what concrete command to run next.
+
+### Added — First-run readiness check in `init`
+
+`research-hub init` now ends with a **First-run readiness check** that probes the four lazy-mode prerequisites and prints a one-line status per subsystem:
+
+```
+  ── First-run readiness check ─────────────────────────────
+  ✅ obsidian   OK    vault detected at /home/user/knowledge-base
+  ✅ chrome     OK    patchright can launch Chrome (channel='chrome')
+  ✅ zotero     OK    credentials configured (verified above)
+  ℹ️  llm-cli    INFO  no claude/codex/gemini CLI on PATH — crystals stay manual emit/apply
+```
+
+Replaces the v0.42-broken `find_chrome_binary` no-op (which always reported "Chrome: not found" even with Chrome installed) with the v0.46 patchright probe. Catches Chrome / Obsidian / Zotero / LLM-CLI issues at install time, not 50 seconds into a failing `auto` run.
+
+### Changed — README rebuilt around prerequisites + troubleshooting
+
+- Added **📋 Prerequisites** table at the top: 6 rows covering Python / Obsidian / Google+NLM / Chrome / Zotero / LLM CLI with "why" + "how" columns.
+- Added **🩺 Troubleshooting** section covering 7 most common first-run problems (Chrome WARN, NLM login blocked, search 0 papers, NLM upload "Generation button", `--with-crystals` no CLI, Claude Desktop config location, Zotero WARN for analyst persona).
+- Added new `--with-crystals` example to the install section so users discover the fully automated path immediately.
+- zh-TW mirror updated symmetrically.
+
+### Stats
+
+- Tests: **1528 → 1537** (+9 in `tests/test_v049_auto_polish.py` covering LLM CLI detection, JSON extraction, Next Steps banner, crystal step fallback, readiness check)
+- MCP tools: 81 (unchanged count; `auto_research_topic` extended with 2 new params)
+- README EN: 178 → 218 lines (added Prerequisites + Troubleshooting tables)
+- README zh-TW: 168 → 208 lines (mirrored)
+
+### Install
+
+```bash
+pip install --upgrade research-hub-pipeline[playwright,secrets]
+```
+
+Existing v0.42–v0.48 users upgrade in place. `--with-crystals` is opt-in, so existing `auto` invocations keep their previous behavior.
+
 ## v0.48.0 (2026-04-19)
 
 **Diagnostics density redesign + post-B1 screenshot refresh + README condensed to 3 differentiators.** All visual / docs polish — no API changes.

@@ -87,8 +87,9 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda prompt="": prompts.append(prompt) or next(answers))
     monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
     monkeypatch.setattr(
-        "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
-        lambda: "C:/Chrome/chrome.exe",
+        init_wizard,
+        "_check_first_run_readiness",
+        lambda vault, *, persona, has_zotero: [("chrome", "OK", "patchright can launch Chrome")],
     )
 
     assert init_wizard.run_init() == 0
@@ -104,9 +105,10 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
         f"Vault root directory [{default_home / 'knowledge-base'}]: ",
         "  Zotero API key: ",
         "  Zotero library ID: ",
-        "  Run NotebookLM login now? [y/N]: ",
+        "  Run NotebookLM Google login now? [y/N]: ",
     ]
-    assert "Chrome detected" in output
+    assert "First-run readiness check" in output
+    assert "patchright can launch Chrome" in output
 
 
 def test_init_creates_vault_subdirs(tmp_path, monkeypatch):
@@ -247,12 +249,17 @@ def test_init_chrome_detected(tmp_path, monkeypatch, capsys):
         lambda *args, **kwargs: str(config_dir),
     )
     monkeypatch.setattr(
-        "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
-        lambda: "C:/Chrome/chrome.exe",
+        init_wizard,
+        "_check_first_run_readiness",
+        lambda vault, *, persona, has_zotero: [
+            ("chrome", "OK", "patchright can launch Chrome (channel='chrome')"),
+        ],
     )
 
     assert init_wizard.run_init(vault_root=str(tmp_path / "vault"), non_interactive=True) == 0
-    assert "Chrome detected: C:/Chrome/chrome.exe" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "First-run readiness check" in out
+    assert "chrome" in out and "OK" in out
 
 
 def test_init_chrome_not_found(tmp_path, monkeypatch, capsys):
@@ -265,12 +272,17 @@ def test_init_chrome_not_found(tmp_path, monkeypatch, capsys):
         lambda *args, **kwargs: str(config_dir),
     )
     monkeypatch.setattr(
-        "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
-        lambda: None,
+        init_wizard,
+        "_check_first_run_readiness",
+        lambda vault, *, persona, has_zotero: [
+            ("chrome", "WARN", "patchright cannot launch Chrome: no chrome binary found"),
+        ],
     )
 
     assert init_wizard.run_init(vault_root=str(tmp_path / "vault"), non_interactive=True) == 0
-    assert "Chrome: not found" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "First-run readiness check" in out
+    assert "WARN" in out and "patchright cannot launch Chrome" in out
 
 
 def test_init_idempotent(tmp_path, monkeypatch):

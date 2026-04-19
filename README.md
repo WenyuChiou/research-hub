@@ -4,7 +4,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents — no API key required.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1547%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1537%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![MCP tools](https://img.shields.io/badge/MCP%20tools-81-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -14,14 +14,37 @@
 
 ---
 
+## 📋 Prerequisites (check these first)
+
+| Need | Why | How |
+|---|---|---|
+| **Python 3.10+** | All package code | `python --version` |
+| **Obsidian** (free) | research-hub writes notes into a vault Obsidian renders | Download at [obsidian.md](https://obsidian.md) |
+| **Google account with NotebookLM** | Powers the brief generation | Visit [notebooklm.google.com](https://notebooklm.google.com) once and accept terms |
+| **Chrome** | patchright drives your local Chrome (no separate API key) | Install Chrome — `init` will probe it |
+| **Zotero account + API key** *(researcher/humanities only)* | Sync papers + PDFs across devices | [zotero.org/settings/keys](https://www.zotero.org/settings/keys) |
+| *(optional)* `claude` / `codex` / `gemini` CLI | Powers `auto --with-crystals` for fully automated runs | Install whichever AI CLI you already use |
+
+`research-hub init` runs a **first-run readiness check** at the end that flags whichever of these is missing — no need to memorize the list.
+
+---
+
 ## ⚡ Install + first run (60 seconds total)
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub init                                          # interactive: persona + Zotero/NLM
+research-hub init                                          # interactive: persona + Zotero/NLM + readiness check
 research-hub notebooklm login                              # one-time Google sign-in
 research-hub auto "harness engineering for LLM agents"     # done — 50s later you have 8 papers + a brief
 ```
+
+**Want fully automated end-to-end** (search → ingest → NLM brief → cached AI answers)?
+
+```bash
+research-hub auto "harness engineering" --with-crystals    # auto-pipes through claude/codex/gemini CLI
+```
+
+If a supported LLM CLI is on your PATH, `--with-crystals` runs the crystal generation step automatically. If not, the prompt is saved to `.research_hub/artifacts/<slug>/crystal-prompt.md` and the Next Steps banner tells you exactly what to paste where.
 
 **Two ways to drive it after install:**
 
@@ -171,11 +194,27 @@ Python 3.10+. Optional `npm install -g defuddle-cli` for cleaner URL imports.
 
 ---
 
+## 🩺 Troubleshooting (first-run problems)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `research-hub init` says `chrome WARN patchright cannot launch Chrome` | Chrome not installed, or patchright cannot find it | Install Chrome from chrome.com; rerun `research-hub doctor` to re-probe |
+| `research-hub notebooklm login` opens browser but Google blocks login | Headless / new device challenge | The browser is patchright (real Chrome) — click "Yes, it's me" on your phone, then complete login normally |
+| `research-hub auto` fails at `search` step with `0 papers` | Topic too narrow, or arXiv/SemSch transient outage | Re-run with `--max-papers 20` or rephrase the topic; both backends are fault-tolerant |
+| `research-hub auto` fails at `nlm.upload` with "Generation button not found" | NotebookLM UI changed, or you're not logged in | Run `research-hub notebooklm login` again; if persists, file an issue with the `nlm-debug-*.jsonl` from `.research_hub/` |
+| `auto --with-crystals` falls back to "no LLM CLI on PATH" | Neither `claude`, `codex`, nor `gemini` CLI installed | Install whichever AI CLI you use; or generate crystals manually with `crystal emit` → paste → `crystal apply` |
+| Claude Desktop doesn't see the MCP server | `claude_desktop_config.json` not in expected location | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` · Windows: `%APPDATA%\Claude\claude_desktop_config.json` · restart Claude Desktop after editing |
+| `init` reports `zotero WARN` but I don't use Zotero | Default persona is `researcher` which expects Zotero | Re-run `research-hub init --persona analyst` (or `internal`) — these personas skip Zotero entirely |
+
+For everything else: `research-hub doctor --autofix` repairs the common mechanical issues; the report tells you which subsystem to look at.
+
+---
+
 ## 🛠 Status
 
-- **Latest**: v0.48.0 (2026-04-19) — diagnostics density redesign, see [`CHANGELOG.md`](CHANGELOG.md)
-- **Tests**: 1547 passing on the fast suite (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
-- **MCP tools**: 81 (v0.47 added auto / cleanup / tidy as MCP tools)
+- **Latest**: v0.49.0 (2026-04-19) — auto Next Steps banner + `--with-crystals` LLM-CLI bridge + first-run readiness check, see [`CHANGELOG.md`](CHANGELOG.md)
+- **Tests**: 1537 passing on the fast suite (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **MCP tools**: 81 (v0.47 added auto / cleanup / tidy as MCP tools; v0.49 extended `auto_research_topic` with `do_crystals` / `llm_cli`)
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
 - **Optional**: `[playwright]` for NotebookLM, `[import]` for local file ingest, `[secrets]` for OS-keyring credential storage
 
@@ -185,7 +224,7 @@ Python 3.10+. Optional `npm install -g defuddle-cli` for cleaner URL imports.
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1547 passing
+python -m pytest -q                     # 1537 passing
 ```
 
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Security: [SECURITY.md](.github/SECURITY.md).

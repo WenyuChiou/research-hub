@@ -1,10 +1,13 @@
 """End-to-end pipeline: topic string ??cluster ??search ??ingest ??NotebookLM.
 
 v0.46 "lazy mode": one command does everything.
+v0.49: optional auto-crystal step via detected LLM CLI + Next Steps banner.
 """
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -21,6 +24,79 @@ from research_hub.notebooklm.upload import (
 )
 from research_hub.pipeline import run_pipeline
 from research_hub.search import search_papers
+
+
+_LLM_CLI_CANDIDATES = ("claude", "codex", "gemini")
+
+
+def detect_llm_cli() -> Optional[str]:
+    """Return the first LLM CLI on PATH, or None.
+
+    Order of preference: claude -> codex -> gemini.
+    Used by the optional crystal step in auto_pipeline so the user does not
+    have to manually pipe the emit prompt through their LLM of choice.
+    """
+    for name in _LLM_CLI_CANDIDATES:
+        if shutil.which(name):
+            return name
+    return None
+
+
+def _invoke_llm_cli(cli_name: str, prompt: str, timeout_sec: float = 180.0) -> str:
+    """Pipe `prompt` through the detected LLM CLI's stdin, capture stdout.
+
+    Each CLI has a slightly different non-interactive invocation:
+    - claude:  `claude -p` (prints once, exits)
+    - codex:   `codex exec --full-auto -m gpt-5.4` (reads prompt from stdin)
+    - gemini:  `gemini --approval-mode yolo` (reads prompt from stdin)
+    """
+    if cli_name == "claude":
+        cmd = ["claude", "-p"]
+    elif cli_name == "codex":
+        cmd = ["codex", "exec", "--full-auto", "-m", "gpt-5.4"]
+    elif cli_name == "gemini":
+        cmd = ["gemini", "--approval-mode", "yolo"]
+    else:
+        raise ValueError(f"unsupported LLM CLI: {cli_name}")
+    proc = subprocess.run(
+        cmd,
+        input=prompt,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout_sec,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"{cli_name} exited {proc.returncode}: {proc.stderr.strip()[:300]}")
+    return proc.stdout
+
+
+def _extract_first_json(text: str) -> Optional[dict]:
+    """Find the first valid JSON object in `text`, ignoring code fences and prose."""
+    if not text:
+        return None
+    fence_starts = [i for i in range(len(text)) if text.startswith("```", i)]
+    candidates: list[str] = []
+    for i in range(0, len(fence_starts) - 1, 2):
+        start = fence_starts[i]
+        end = fence_starts[i + 1]
+        block = text[start + 3 : end]
+        if block.lstrip().lower().startswith("json"):
+            block = block.split("\n", 1)[1] if "\n" in block else ""
+        candidates.append(block)
+    candidates.append(text)
+    for c in candidates:
+        c = c.strip()
+        first_brace = c.find("{")
+        last_brace = c.rfind("}")
+        if first_brace == -1 or last_brace == -1 or last_brace <= first_brace:
+            continue
+        try:
+            return json.loads(c[first_brace : last_brace + 1])
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 
@@ -54,6 +130,8 @@ def auto_pipeline(
     cluster_name: Optional[str] = None,
     max_papers: int = 8,
     do_nlm: bool = True,
+    do_crystals: bool = False,
+    llm_cli: Optional[str] = None,
     dry_run: bool = False,
     print_progress: bool = True,
 ) -> AutoReport:
@@ -115,6 +193,9 @@ def auto_pipeline(
                 f"  notebooklm generate --cluster {slug} --type brief",
                 f"  notebooklm download --cluster {slug} --type brief",
             ])
+        if do_crystals:
+            cli = llm_cli or detect_llm_cli() or "(none on PATH)"
+            plan_lines.append(f"  crystal emit + apply via LLM CLI: {cli}")
         if print_progress:
             print("Dry-run plan:")
             for line in plan_lines:
@@ -169,7 +250,11 @@ def auto_pipeline(
         return report
 
     if not do_nlm:
+        if do_crystals:
+            _run_crystal_step(cfg, slug, llm_cli, report, started, print_progress)
         report.total_duration_sec = time.time() - started
+        if print_progress:
+            _print_next_steps(report, slug, do_crystals=do_crystals)
         return report
 
     # 6, 7, 8, 9 ??NotebookLM
@@ -193,16 +278,120 @@ def auto_pipeline(
 
         download_report = download_briefing_for_cluster(cluster, cfg, headless=False)
         report.brief_path = download_report.artifact_path
-        _step_log(report, "nlm.download", True, _elapsed(started, report),      
-                  f"{download_report.char_count} chars saved", print_progress)  
+        _step_log(report, "nlm.download", True, _elapsed(started, report),
+                  f"{download_report.char_count} chars saved", print_progress)
     except Exception as exc:
         _step_log(report, "nlm", False, _elapsed(started, report), str(exc), print_progress)
         report.ok = False
         report.error = "NotebookLM step failed: " + str(exc)
         return report
 
+    # 10. (optional) Crystal generation via detected LLM CLI
+    if do_crystals:
+        _run_crystal_step(cfg, slug, llm_cli, report, started, print_progress)
+
     report.total_duration_sec = time.time() - started
+    if print_progress:
+        _print_next_steps(report, slug, do_crystals=do_crystals)
     return report
+
+
+def _run_crystal_step(
+    cfg,
+    slug: str,
+    llm_cli: Optional[str],
+    report: AutoReport,
+    started: float,
+    print_progress: bool,
+) -> None:
+    """Emit crystal prompt, pipe through LLM CLI, apply response. Best-effort.
+
+    On any failure (no CLI on PATH, LLM error, malformed JSON), saves the
+    raw prompt to artifacts/<slug>/crystal-prompt.md so the user can run it
+    manually. Never raises — auto_pipeline already succeeded if we got here.
+    """
+    from research_hub.crystal import apply_crystals, emit_crystal_prompt
+
+    try:
+        prompt = emit_crystal_prompt(cfg, slug)
+    except Exception as exc:
+        _step_log(report, "crystals", False, _elapsed(started, report),
+                  f"emit failed: {exc}", print_progress)
+        return
+
+    artifacts_dir = cfg.research_hub_dir / "artifacts" / slug
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = artifacts_dir / "crystal-prompt.md"
+    prompt_path.write_text(prompt, encoding="utf-8")
+
+    cli_name = llm_cli or detect_llm_cli()
+    if cli_name is None:
+        _step_log(report, "crystals", False, _elapsed(started, report),
+                  f"no LLM CLI on PATH (claude/codex/gemini); prompt saved to {prompt_path}",
+                  print_progress)
+        return
+
+    try:
+        raw_response = _invoke_llm_cli(cli_name, prompt)
+    except Exception as exc:
+        _step_log(report, "crystals", False, _elapsed(started, report),
+                  f"{cli_name} failed: {exc}; prompt saved to {prompt_path}",
+                  print_progress)
+        return
+
+    response_path = artifacts_dir / "crystal-response.json"
+    response_path.write_text(raw_response, encoding="utf-8")
+
+    parsed = _extract_first_json(raw_response)
+    if parsed is None:
+        _step_log(report, "crystals", False, _elapsed(started, report),
+                  f"could not parse JSON from {cli_name} output; saved to {response_path}",
+                  print_progress)
+        return
+
+    try:
+        apply_result = apply_crystals(cfg, slug, parsed)
+    except Exception as exc:
+        _step_log(report, "crystals", False, _elapsed(started, report),
+                  f"apply failed: {exc}", print_progress)
+        return
+
+    written = getattr(apply_result, "written_count", None) or len(getattr(apply_result, "written", []) or [])
+    _step_log(report, "crystals", True, _elapsed(started, report),
+              f"{written} crystals via {cli_name}", print_progress)
+
+
+def _print_next_steps(report: AutoReport, slug: str, *, do_crystals: bool) -> None:
+    """Print copy-paste-ready commands so users know what to do after auto."""
+    print()
+    print("=" * 60)
+    print(f"Done in {report.total_duration_sec:.1f}s. Cluster: {slug}")
+    print("=" * 60)
+    if report.notebook_url:
+        print(f"  NotebookLM: {report.notebook_url}")
+    if report.brief_path:
+        print(f"  Brief:      {report.brief_path}")
+    print()
+    print("Next steps (copy-paste any of these):")
+    print()
+    print("  # See your new cluster in the live dashboard")
+    print(f"  research-hub serve --dashboard")
+    print()
+    if not do_crystals:
+        print("  # Generate cached AI answers (~10 Q&As, ~1 KB each)")
+        print(f"  research-hub crystal emit  --cluster {slug} > /tmp/cprompt.md")
+        print(f"  # paste /tmp/cprompt.md into Claude/GPT/Gemini, save response as crystals.json")
+        print(f"  research-hub crystal apply --cluster {slug} --scored crystals.json")
+        print()
+        print("  # Or auto-pipe through a detected LLM CLI:")
+        print(f"  research-hub auto \"{slug}\" --with-crystals  # if claude/codex/gemini on PATH")
+        print()
+    print("  # Ad-hoc Q&A against the uploaded notebook")
+    print(f"  research-hub ask {slug} \"what are the 3 main research threads?\"")
+    print()
+    print("  # Talk to Claude Desktop instead (with research-hub MCP installed)")
+    print(f"  > \"Claude, what's in my {slug} cluster?\"  # calls read_crystal()")
+    print()
 
 
 def _step_log(
