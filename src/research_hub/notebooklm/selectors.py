@@ -1,177 +1,210 @@
-"""NotebookLM UI selectors — one place for every DOM target.
-
-NotebookLM is an Angular + Material Design SPA. The ``_ngcontent-ng-*``
-attributes are regenerated on every build and are NOT stable — do not
-target them. Stable targets (in descending order of durability):
-
-  1. Custom element tag names (``project-button``, ``welcome-page``,
-     ``page-header``, ``project-grid``, ``mat-card``, ``mat-icon``)
-  2. Semantic CSS classes scoped to the app
-     (``create-new-button``, ``create-new-action-button``,
-     ``project-button-title``, ``project-button-card``,
-     ``create-new-label``, ``extendable-label``)
-  3. ``aria-label`` text — localised but stable within a locale
-  4. Href patterns — ``a[href*='/notebook/']`` identifies every
-     notebook tile regardless of layout
-  5. Material data-attributes (``data-mat-icon-type``) — only if the
-     icon name is distinctive
-
-When Google ships a UI update:
-
-  1. Run ``research-hub notebooklm login --cdp --keep-open``.
-  2. F12 → Elements → pick the target control.
-  3. Update the constant in this file, not the calling code.
-  4. Re-run the relevant command with ``--dry-run`` to verify.
-
-The selectors below were verified against the 2026-04-11 NotebookLM
-UI with a Traditional-Chinese locale. For other locales, set the
-alternate-locale strings via environment variables (see
-``_localized_text`` below).
-"""
+"""NotebookLM UI selectors: one place for every DOM target."""
 
 from __future__ import annotations
 
 import os
 
 
-# --- URLs ---------------------------------------------------------------
 NOTEBOOKLM_HOME = "https://notebooklm.google.com/"
 NOTEBOOK_LIST_URL = "https://notebooklm.google.com/"
 NOTEBOOK_URL_TEMPLATE = "https://notebooklm.google.com/notebook/{notebook_id}"
 NOTEBOOK_URL_PATTERN = "/notebook/"
 
-
-# --- Localized strings --------------------------------------------------
-# The app language follows the user's Google account settings. Override
-# via env var if the auto-detected locale is wrong.
 _LOCALE = os.environ.get("RESEARCH_HUB_NLM_LOCALE", "zh-TW")
 
 
 def _localized_text(key: str) -> tuple[str, ...]:
-    """Return all known localized strings for ``key``.
-
-    Playwright's ``get_by_role(name=)`` can accept a regex that matches
-    any of the strings, which makes the client robust to language
-    fallbacks. Add new locale variants here as users report them.
-    """
+    """Return all known localized strings for ``key``."""
     table: dict[str, dict[str, tuple[str, ...]]] = {
         "create_new_notebook": {
-            "zh-TW": ("建立新的筆記本", "新建"),
-            "zh-CN": ("创建新的记事本", "新建"),
+            "zh-TW": ("撱箇??啁?蝑???", "?啣遣"),
+            "zh-CN": ("创建新笔记本", "新建笔记本", "+ 新建"),
             "en": ("Create new notebook", "New notebook", "+ New"),
             "ja": ("新しいノートブックを作成", "新規"),
+            "ko": ("새 노트북 만들기", "새 노트북"),
+            "es": ("Crear cuaderno", "Nuevo cuaderno"),
+            "fr": ("Creer un notebook", "Nouveau notebook"),
+            "de": ("Neues Notebook erstellen", "Neues Notebook"),
         },
         "add_source": {
-            "zh-TW": ("新增來源",),
-            "zh-CN": ("添加来源",),
+            "zh-TW": ("?啣?靘?",),
+            "zh-CN": ("添加来源", "添加资料", "瘛餃??交?"),
             "en": ("Add source",),
             "ja": ("ソースを追加",),
+            "ko": ("소스 추가",),
+            "es": ("Anadir fuente",),
+            "fr": ("Ajouter une source",),
+            "de": ("Quelle hinzufugen",),
         },
         "website_tab": {
-            "zh-TW": ("網站", "網址"),
-            "zh-CN": ("网站", "网址"),
+            "zh-TW": ("蝬脩?", "蝬脣?"),
+            "zh-CN": ("网站", "网址", "链接"),
             "en": ("Website", "URL", "Link"),
-            "ja": ("ウェブサイト",),
+            "ja": ("ウェブサイト", "URL", "リンク"),
+            "ko": ("웹사이트", "URL", "링크"),
+            "es": ("Sitio web", "URL", "Enlace"),
+            "fr": ("Site Web", "URL", "Lien"),
+            "de": ("Webseite", "URL", "Link"),
         },
         "url_input_placeholder": {
-            "zh-TW": ("貼上網址", "輸入網址"),
-            "zh-CN": ("粘贴网址",),
+            "zh-TW": ("鞎潔?蝬脣?", "頛詨蝬脣?"),
+            "zh-CN": ("粘贴网址", "输入网址", "Paste URL"),
             "en": ("Paste URL", "Enter URL"),
-            "ja": ("URLを貼り付け",),
+            "ja": ("URLを貼り付け", "URLを入力"),
+            "ko": ("URL 붙여넣기", "URL 입력"),
+            "es": ("Pega la URL", "Introduce la URL"),
+            "fr": ("Coller l'URL", "Saisir l'URL"),
+            "de": ("URL einfugen", "URL eingeben"),
         },
         "insert_source_button": {
-            "zh-TW": ("插入", "新增"),
-            "zh-CN": ("插入",),
+            "zh-TW": ("?", "?啣?"),
+            "zh-CN": ("插入", "添加", "?"),
             "en": ("Insert", "Add"),
-            "ja": ("挿入",),
+            "ja": ("挿入", "追加"),
+            "ko": ("삽입", "추가"),
+            "es": ("Insertar", "Agregar"),
+            "fr": ("Inserer", "Ajouter"),
+            "de": ("Einfugen", "Hinzufugen"),
         },
         "studio_panel": {
-            "zh-TW": ("Studio", "工作室"),
+            "zh-TW": ("Studio", "撌乩?摰?"),
             "zh-CN": ("Studio", "工作室"),
             "en": ("Studio",),
             "ja": ("Studio",),
+            "ko": ("Studio", "스튜디오"),
+            "es": ("Studio", "Estudio"),
+            "fr": ("Studio",),
+            "de": ("Studio",),
         },
         "briefing_button": {
-            # NotebookLM renamed "Briefing doc" to "Report" in the UI.
-            # The zh-TW aria-label is now "報告", not the legacy
-            # "簡報文件" / "大綱". Keep legacy strings in the tuple so
-            # older instances of the UI still match via regex fallback.
-            "zh-TW": ("報告", "簡報文件", "大綱"),
-            "zh-CN": ("报告", "摘要文档"),
+            "zh-TW": ("?勗?", "蝪∪?辣", "憭抒雇"),
+            "zh-CN": ("报告", "简报文档", "?亙?", "???﹝"),
             "en": ("Report", "Briefing doc", "Briefing document"),
-            "ja": ("レポート", "概要ドキュメント"),
+            "ja": ("レポート", "ブリーフィング ドキュメント"),
+            "ko": ("보고서", "브리핑 문서"),
+            "es": ("Informe", "Documento informativo"),
+            "fr": ("Rapport", "Document de synthese"),
+            "de": ("Bericht", "Briefing-Dokument"),
         },
         "audio_button": {
-            "zh-TW": ("語音摘要", "音訊總覽", "音訊摘要"),
-            "zh-CN": ("语音摘要", "音频概览"),
+            "zh-TW": ("隤??", "?唾?蝮質汗", "?唾???"),
+            "zh-CN": ("音频概览", "语音概览", "霂剝??"),
             "en": ("Audio Overview", "Audio overview"),
             "ja": ("音声概要",),
+            "ko": ("오디오 개요",),
+            "es": ("Resumen de audio",),
+            "fr": ("Vue d'ensemble audio",),
+            "de": ("Audio-Uberblick",),
         },
         "mind_map_button": {
-            "zh-TW": ("心智圖",),
-            "zh-CN": ("思维导图",),
+            "zh-TW": ("敹??",),
+            "zh-CN": ("思维导图", "?輕撖澆"),
             "en": ("Mind map", "Mind Map"),
             "ja": ("マインドマップ",),
+            "ko": ("마인드맵",),
+            "es": ("Mapa mental",),
+            "fr": ("Carte mentale",),
+            "de": ("Mindmap",),
         },
         "video_button": {
-            "zh-TW": ("影片摘要", "影片總覽"),
-            "zh-CN": ("视频概览",),
+            "zh-TW": ("敶梁???", "敶梁?蝮質汗"),
+            "zh-CN": ("视频概览", "閫?璁?"),
             "en": ("Video Overview", "Video overview"),
             "ja": ("動画概要",),
+            "ko": ("비디오 개요",),
+            "es": ("Resumen en video",),
+            "fr": ("Vue d'ensemble video",),
+            "de": ("Video-Uberblick",),
         },
         "slides_button": {
-            "zh-TW": ("簡報",),
-            "zh-CN": ("幻灯片",),
+            "zh-TW": ("蝪∪",),
+            "zh-CN": ("幻灯片", "撟餌??"),
             "en": ("Slides",),
             "ja": ("スライド",),
+            "ko": ("슬라이드",),
+            "es": ("Diapositivas",),
+            "fr": ("Diapositives",),
+            "de": ("Folien",),
         },
         "quiz_button": {
-            "zh-TW": ("測驗",),
-            "zh-CN": ("测验",),
+            "zh-TW": ("皜祇?",),
+            "zh-CN": ("测验", "瘚?"),
             "en": ("Quiz",),
             "ja": ("クイズ",),
+            "ko": ("퀴즈",),
+            "es": ("Cuestionario",),
+            "fr": ("Quiz",),
+            "de": ("Quiz",),
         },
         "flashcards_button": {
-            "zh-TW": ("學習卡",),
-            "zh-CN": ("学习卡",),
+            "zh-TW": ("摮貊???",),
+            "zh-CN": ("抽认卡", "摮虫???"),
             "en": ("Flashcards",),
             "ja": ("フラッシュカード",),
+            "ko": ("플래시카드",),
+            "es": ("Tarjetas",),
+            "fr": ("Fiches memoire",),
+            "de": ("Karteikarten",),
         },
         "data_table_button": {
-            "zh-TW": ("資料表",),
-            "zh-CN": ("数据表",),
+            "zh-TW": ("鞈?銵?",),
+            "zh-CN": ("数据表", "?唳銵?"),
             "en": ("Data Table", "Data table"),
             "ja": ("データテーブル",),
+            "ko": ("데이터 표",),
+            "es": ("Tabla de datos",),
+            "fr": ("Tableau de donnees",),
+            "de": ("Datentabelle",),
         },
         "infographic_button": {
-            "zh-TW": ("資訊圖表",),
-            "zh-CN": ("信息图",),
+            "zh-TW": ("鞈??”",),
+            "zh-CN": ("信息图", "靽⊥??"),
             "en": ("Infographic",),
             "ja": ("インフォグラフィック",),
+            "ko": ("인포그래픽",),
+            "es": ("Infografia",),
+            "fr": ("Infographie",),
+            "de": ("Infografik",),
         },
         "briefing_preset": {
-            "zh-TW": ("簡介文件", "研讀指南", "網誌文章"),
-            "zh-CN": ("简介文件",),
+            "zh-TW": ("蝪∩??辣", "????", "蝬脰???"),
+            "zh-CN": ("摘要", "学习指南", "博客文章"),
             "en": ("Brief", "Study guide", "Blog post"),
-            "ja": ("概要",),
+            "ja": ("概要", "学習ガイド", "ブログ記事"),
+            "ko": ("요약", "학습 가이드", "블로그 게시물"),
+            "es": ("Resumen", "Guia de estudio", "Entrada de blog"),
+            "fr": ("Bref", "Guide d'etude", "Article de blog"),
+            "de": ("Kurzfassung", "Lernhilfe", "Blogbeitrag"),
         },
         "audio_preset": {
-            "zh-TW": ("語音摘要",),
-            "zh-CN": ("语音摘要",),
+            "zh-TW": ("隤??",),
+            "zh-CN": ("音频概览", "霂剝??"),
             "en": ("Audio Overview",),
             "ja": ("音声概要",),
+            "ko": ("오디오 개요",),
+            "es": ("Resumen de audio",),
+            "fr": ("Vue d'ensemble audio",),
+            "de": ("Audio-Uberblick",),
         },
         "mind_map_preset": {
-            "zh-TW": ("心智圖",),
-            "zh-CN": ("思维导图",),
+            "zh-TW": ("敹??",),
+            "zh-CN": ("思维导图", "?輕撖澆"),
             "en": ("Mind map",),
             "ja": ("マインドマップ",),
+            "ko": ("마인드맵",),
+            "es": ("Mapa mental",),
+            "fr": ("Carte mentale",),
+            "de": ("Mindmap",),
         },
         "video_preset": {
-            "zh-TW": ("影片摘要",),
-            "zh-CN": ("视频概览",),
+            "zh-TW": ("敶梁???",),
+            "zh-CN": ("视频概览", "閫?璁?"),
             "en": ("Video Overview",),
             "ja": ("動画概要",),
+            "ko": ("비디오 개요",),
+            "es": ("Resumen en video",),
+            "fr": ("Vue d'ensemble video",),
+            "de": ("Video-Uberblick",),
         },
     }
     primary = table.get(key, {}).get(_LOCALE, ())
@@ -185,87 +218,42 @@ def _localized_text(key: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-# --- Notebook list page -------------------------------------------------
-# Every notebook tile on the home page is a `<a>` inside a
-# `<project-button>` custom element, with an `href` of the form
-# `/notebook/<uuid>`. The visible title sits in a `<span>` with class
-# `project-button-title`. This combination lets us click a tile by
-# its human name without depending on Angular-scoped attributes.
 NOTEBOOK_TILE_LINK_CSS = "project-button a[href*='/notebook/']"
 NOTEBOOK_TILE_CARD_CSS = "project-button mat-card.project-button-card"
 NOTEBOOK_TITLE_SPAN_CSS = "span.project-button-title"
 
-# XPath to click a notebook by its visible title. The span holding the
-# title is inside the anchor via aria-labelledby, so we walk up to the
-# ancestor anchor that has the /notebook/ href.
+
 def notebook_tile_xpath_by_name(name: str) -> str:
     """Build an XPath that matches a notebook tile with exact visible name."""
     escaped = _xpath_literal(name)
     return (
-        f"//span[contains(@class, 'project-button-title')"
-        f" and normalize-space(string()) = {escaped}]"
-        f"/ancestor::project-button//a[contains(@href, '/notebook/')]"
-    )
+        "//span[contains(@class, 'project-button-title') and normalize-space(string()) = {0}]"
+        "/ancestor::project-button//a[contains(@href, '/notebook/')]"
+    ).format(escaped)
 
 
 def _xpath_literal(text: str) -> str:
     """Safely embed arbitrary text as an XPath string literal."""
     if "'" not in text:
-        return f"'{text}'"
+        return "'{0}'".format(text)
     if '"' not in text:
-        return f'"{text}"'
+        return '"{0}"'.format(text)
     parts = text.split("'")
-    return "concat(" + ", \"'\", ".join(f"'{p}'" for p in parts) + ")"
+    return "concat(" + ', "\'", '.join("'{0}'".format(part) for part in parts) + ")"
 
 
-# --- Create-new-notebook targets ----------------------------------------
-# Two visual variants ship on the home page:
-#   1. Toolbar button: `<button class="create-new-button">` with
-#      visible label "新建" / "New" inside a `.create-new-label` span
-#      and an `aria-label` matching the full localized string.
-#   2. Grid card: `<mat-card class="create-new-action-button">` with
-#      role=button and visible text "建立新的筆記本" / "Create new
-#      notebook" inside a `.mat-title-large` span.
-# Both route to the same create flow. Try the grid card first (more
-# visible, fewer overlapping tooltips), fall back to the toolbar.
 CREATE_NEW_GRID_CARD_CSS = "mat-card.create-new-action-button"
 CREATE_NEW_TOOLBAR_BUTTON_CSS = "button.create-new-button"
 CREATE_NEW_BUTTON_TEXTS = _localized_text("create_new_notebook")
 
-
-# --- Notebook title textbox (shown after creating a new notebook) -----
-# Verified 2026-04-11: the rename element is a regular `<input>` with
-# class `title-input mat-title-large`, wrapped by a custom element
-# `<editable-project-title>`. The sibling `.title-label-inner` shows
-# the current title when the input is blurred, but it is not the
-# editable element. Fill the `input.title-input` directly and press
-# Enter to commit.
 NOTEBOOK_TITLE_INPUT_CSS = "input.title-input"
-NOTEBOOK_TITLE_EDITABLE_CSS = "input.title-input"  # legacy alias
-NOTEBOOK_TITLE_TEXTBOX_ROLE = ("textbox", None)  # legacy alias
+NOTEBOOK_TITLE_EDITABLE_CSS = "input.title-input"
+NOTEBOOK_TITLE_TEXTBOX_ROLE = ("textbox", None)
 
-
-# --- Inside a notebook: source panel -----------------------------------
-# Verified against 2026-04-11 live DOM dump from "Behavioral Science &
-# Decision Theory" notebook (zh-TW locale). The add-source control is a
-# Material `mat-stroked-button` sitting inside the left source panel:
-#   <button mat-stroked-button mattooltip="新增來源" aria-label="新增來源"
-#           class="mdc-button ... add-source-button ...">
-# The stable anchors are the semantic class `add-source-button` and the
-# localized aria-label. `source-stretched-button` was an earlier name
-# that no longer exists in the live DOM and is intentionally not listed.
 SOURCE_PANEL_CSS = "source-picker"
 SOURCE_PANEL_CONTENT_CSS = "source-picker .contents"
 ADD_SOURCE_BUTTON_CSS = "button.add-source-button"
 ADD_SOURCE_BUTTON_TEXTS = _localized_text("add_source")
-
-# The upload dialog opens a Material dialog with a hidden file input
-# and a grid of `drop-zone-icon-button` controls, one per source type.
-# The Website / URL one is identified by a child `<mat-icon>link</mat-icon>`
-# (the Material icon name, not the visible text). After clicking it the
-# dialog transitions to a URL-input view with a textarea whose form
-# control name is `urls`, and a primary submit button labeled
-# "插入" / "Insert".
 SOURCE_UPLOAD_FILE_INPUT_CSS = "input[type='file']"
 DROP_ZONE_ICON_BUTTON_CSS = "button.drop-zone-icon-button"
 DROP_ZONE_LINK_ICON_NAME = "link"
@@ -275,26 +263,6 @@ SOURCE_WEBSITE_TAB_TEXTS = _localized_text("website_tab")
 SOURCE_WEBSITE_URL_INPUT_PLACEHOLDERS = _localized_text("url_input_placeholder")
 SOURCE_WEBSITE_INSERT_BUTTON_TEXTS = _localized_text("insert_source_button")
 
-
-# --- Studio panel (generation triggers) --------------------------------
-# Verified against 2026-04-11 live DOM. The right-hand Studio panel is
-# a `<studio-panel>` element containing one `<create-artifact-button>`
-# per generation type, wrapped in `.create-artifact-button-container`.
-# Each container has a distinct color class (blue/green/pink/yellow/
-# cyan/orange) but the STABLE identifier is the `aria-label` on the
-# inner button matching the localized generation name.
-#
-# Layout:
-#   <studio-panel>
-#     <div class="create-artifact-buttons-container">
-#       <div class="create-artifact-button-container">
-#         <create-artifact-button>
-#           <button aria-label="音訊總覽">...</button>
-#   ...
-#
-# While a generation is running, the container gains the class
-# `create-artifact-button-creating` — poll its absence to detect
-# completion.
 STUDIO_PANEL_CSS = "studio-panel"
 STUDIO_PANEL_TEXTS = _localized_text("studio_panel")
 ARTIFACT_BUTTONS_CONTAINER_CSS = ".create-artifact-buttons-container"
@@ -307,64 +275,30 @@ GENERATE_AUDIO_BUTTON_TEXTS = _localized_text("audio_button")
 GENERATE_MIND_MAP_BUTTON_TEXTS = _localized_text("mind_map_button")
 GENERATE_VIDEO_BUTTON_TEXTS = _localized_text("video_button")
 
-# Generation progress indicator. Preferred signal is the
-# `.create-artifact-button-creating` CSS class on the container;
-# the text-based chip is a fallback for locales not yet mapped.
-GENERATION_PROGRESS_CHIP_TEXTS = ("產生中", "Generating", "生成中", "生成")
+GENERATION_PROGRESS_CHIP_TEXTS = ("?Ｙ?銝?", "Generating", "??銝?", "??")
 GENERATION_ARTIFACT_LINK_CSS = "a[href*='/notebook/']"
 ARTIFACT_LIBRARY_EMPTY_STATE_CSS = ".artifact-library-empty-state"
 
-# --- Generated artifact extraction --------------------------------------
-# When a notebook has at least one generated briefing, the chat-panel
-# empty state shows the latest briefing summary inline. The summary text
-# lives in `<div class="summary-content is-rich-chat-ui">` inside
-# `<span class="notebook-summary">`. The accompanying action bar has a
-# Material icon button with the stable class `xap-copy-to-clipboard`
-# (aria-label "複製摘要" / "Copy summary") which fires the same
-# clipboard copy that the user gets in the UI. We prefer reading the
-# DOM directly because it does not need clipboard permission and is
-# locale-independent.
 NOTEBOOK_SUMMARY_CSS = "span.notebook-summary"
 NOTEBOOK_SUMMARY_CONTENT_CSS = "span.notebook-summary .summary-content"
 NOTEBOOK_TITLE_H1_CSS = "h1.notebook-title"
 COPY_SUMMARY_BUTTON_CSS = "button.xap-copy-to-clipboard"
 
-# Each generated artifact is wrapped in `<artifact-library-item>` inside
-# the studio panel. The clickable button has class
-# `artifact-stretched-button` and an `aria-description` matching the
-# localized artifact-type label (e.g. "報告" for Report/Briefing).
-# The visible title sits in `span.artifact-title`. The "更多" overflow
-# menu button is `button.artifact-more-button`.
 ARTIFACT_LIBRARY_ITEM_CSS = "artifact-library-item"
 ARTIFACT_STRETCHED_BUTTON_CSS = "button.artifact-stretched-button"
 ARTIFACT_TITLE_SPAN_CSS = "span.artifact-title"
 ARTIFACT_MORE_BUTTON_CSS = "button.artifact-more-button"
 
-# Preset sub-dialog aria-labels. After clicking a parent artifact tile,
-# NotebookLM opens a sub-dialog with localized preset options. The
-# first entry in each tuple is the default preset to click.
 BRIEFING_PRESETS = _localized_text("briefing_preset")
 AUDIO_PRESETS = _localized_text("audio_preset")
 MIND_MAP_PRESETS = _localized_text("mind_map_preset")
 VIDEO_PRESETS = _localized_text("video_preset")
 
-
-# --- Timeouts (ms) ------------------------------------------------------
 NAV_TIMEOUT_MS = 30_000
 UPLOAD_TIMEOUT_MS = 120_000
 GENERATION_TIMEOUT_MS = 300_000
 BETWEEN_UPLOADS_MS = 2_000
 
-
-# --- Legacy constants kept for backwards compat with pre-v0.4.1 tests --
-# Old code imported ``NOTEBOOK_TILE_BY_NAME_XPATH``,
-# ``CREATE_NEW_NOTEBOOK_BUTTON_ROLE``, ``ADD_SOURCE_BUTTON_ROLE``,
-# ``SOURCE_WEBSITE_TAB_ROLE``, ``SOURCE_WEBSITE_URL_INPUT_PLACEHOLDER``,
-# ``SOURCE_WEBSITE_INSERT_BUTTON_ROLE``, ``SOURCE_LIST_ITEM_ROLE``,
-# ``STUDIO_PANEL_ROLE``, ``GENERATE_*_BUTTON_ROLE``,
-# ``GENERATION_PROGRESS_CHIP_TEXT``, ``GENERATION_COMPLETE_LINK_CSS``.
-# Provide compatible aliases so the client layer keeps working while
-# it is gradually rewritten to use the new (text-list) constants.
 NOTEBOOK_TILE_BY_NAME_XPATH = notebook_tile_xpath_by_name
 CREATE_NEW_NOTEBOOK_BUTTON_ROLE = ("button", CREATE_NEW_BUTTON_TEXTS[0])
 ADD_SOURCE_BUTTON_ROLE = ("button", ADD_SOURCE_BUTTON_TEXTS[0])

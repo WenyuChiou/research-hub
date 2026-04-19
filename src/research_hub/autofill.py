@@ -191,11 +191,12 @@ def _replace_body_sections(
     end = relevance_match.end() + next_match.start() if next_match else len(text)
     prefix = text[:summary_match.start()]
     suffix = text[end:]
-    key_findings_md = "\n".join(f"- {item}" for item in key_findings) if key_findings else "- (none supplied)"
-    replacement = (
-        f"## Summary\n\n{summary or '(no summary)'}\n\n"
-        f"## Key Findings\n\n{key_findings_md}\n\n"
-        f"## Methodology\n\n{methodology or '(no methodology)'}\n\n"
-        f"## Relevance\n\n{relevance or '(no relevance)'}\n\n"
-    )
+    from research_hub.markdown_conventions import summary_section_to_callout
+
+    replacement = summary_section_to_callout(
+        summary=summary,
+        key_findings=key_findings,
+        methodology=methodology,
+        relevance=relevance,
+    ) + "\n"
     return prefix + replacement + suffix.lstrip("\n")

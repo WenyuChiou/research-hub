@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from research_hub.notebooklm.browser import (
+    default_session_dir,
+    default_state_file,
+    launch_nlm_context,
+)
 from research_hub.notebooklm.client import (
     BriefingArtifact,
     NotebookLMClient,
@@ -15,11 +20,7 @@ from research_hub.notebooklm.client import (
     UploadResult,
 )
 from research_hub.notebooklm.selectors import BETWEEN_UPLOADS_MS, NOTEBOOKLM_HOME
-from research_hub.notebooklm.session import (
-    PlaywrightSession,
-    SessionConfig,
-    open_cdp_session,
-)
+from research_hub.notebooklm.session import open_cdp_session as open_cdp_session
 
 BRIEFING_OFF_TOPIC_SECTION = """### Off-topic papers
 
@@ -35,7 +36,7 @@ def _check_session_health(page) -> tuple[bool, str]:
         page.goto(NOTEBOOKLM_HOME)
         page.wait_for_load_state("networkidle")
     except Exception as exc:
-        return False, f"Could not reach NotebookLM home: {exc}"
+        return False, "Could not reach NotebookLM home: {0}".format(exc)
 
     url = page.url or ""
     lowered = url.lower()
@@ -48,8 +49,8 @@ def _check_session_health(page) -> tuple[bool, str]:
         return True, url
     return False, (
         "Saved Google session appears to be expired (landed on "
-        f"{url}). Run `research-hub notebooklm login --cdp` to re-auth."
-    )
+        "{0}). Run `research-hub notebooklm login --cdp` to re-auth."
+    ).format(url)
 
 
 @dataclass
@@ -91,11 +92,74 @@ def _find_latest_bundle(bundles_root: Path, cluster_slug: str) -> Path | None:
     if not bundles_root.exists():
         return None
     candidates = sorted(
-        bundles_root.glob(f"{cluster_slug}-*"),
+        bundles_root.glob("{0}-*".format(cluster_slug)),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
     return candidates[0] if candidates else None
+
+
+def _open_debug_log(research_hub_dir: Path) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = research_hub_dir / ("nlm-debug-{0}.jsonl".format(timestamp))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _log_jsonl(path: Path, event: dict) -> None:
+    payload = dict(event)
+    payload["ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _upload_with_retry(
+    client,
+    entry: dict,
+    log_path: Path,
+    *,
+    max_attempts: int = 3,
+):
+    """Try an upload up to ``max_attempts`` times with exponential backoff."""
+    action = entry.get("action", "?")
+    key = entry.get("pdf_path") or entry.get("url") or entry.get("doi") or ""
+    last_result = None
+    for attempt in range(1, max_attempts + 1):
+        _log_jsonl(
+            log_path,
+            {"kind": "upload_attempt", "attempt": attempt, "action": action, "key": key},
+        )
+        if action == "pdf":
+            result = client.upload_pdf(Path(entry["pdf_path"]))
+        elif action == "url":
+            result = client.upload_url(entry["url"])
+        else:
+            _log_jsonl(log_path, {"kind": "upload_skip", "action": action, "key": key})
+            return None
+        last_result = result
+        if result.success:
+            _log_jsonl(
+                log_path,
+                {"kind": "upload_ok", "attempt": attempt, "action": action, "key": key},
+            )
+            return result
+        _log_jsonl(
+            log_path,
+            {
+                "kind": "upload_fail",
+                "attempt": attempt,
+                "action": action,
+                "key": key,
+                "error": result.error,
+            },
+        )
+        if attempt < max_attempts:
+            backoff_sec = 3 ** (attempt - 1)
+            time.sleep(backoff_sec)
+    return last_result
 
 
 def upload_cluster(
@@ -114,12 +178,23 @@ def upload_cluster(
     bundle_dir = _find_latest_bundle(cfg.research_hub_dir / "bundles", cluster.slug)
     if bundle_dir is None:
         raise FileNotFoundError(
-            f"No bundle found for cluster '{cluster.slug}'. "
-            f"Run `research-hub notebooklm bundle --cluster {cluster.slug}` first."
+            "No bundle found for cluster '{0}'. Run `research-hub notebooklm bundle "
+            "--cluster {0}` first.".format(cluster.slug)
         )
 
     manifest_path = bundle_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    log_path = _open_debug_log(cfg.research_hub_dir)
+    _log_jsonl(
+        log_path,
+        {
+            "kind": "upload_run_start",
+            "cluster_slug": cluster.slug,
+            "manifest_entries": len(manifest.get("entries", [])),
+            "headless": headless,
+            "dry_run": dry_run,
+        },
+    )
 
     cache_path = cfg.research_hub_dir / "nlm_cache.json"
     cache = _load_nlm_cache(cache_path)
@@ -147,18 +222,25 @@ def upload_cluster(
             if planned >= rate_limit_cap:
                 break
         report.notebook_name = notebook_name
+        _log_jsonl(
+            log_path,
+            {
+                "kind": "upload_run_complete",
+                "success_count": report.success_count,
+                "fail_count": report.fail_count,
+                "retry_count": 0,
+                "dry_run": True,
+            },
+        )
         return report
 
-    session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
+    retry_count = 0
+    session_dir = default_session_dir(cfg.research_hub_dir)
     with open_cdp_session(session_dir, headless=headless) as (_, page):
         client = NotebookLMClient(page)
         ok, detail = _check_session_health(page)
         if not ok:
-            raise NotebookLMError(
-                detail,
-                selector="session-health",
-                page_url=page.url,
-            )
+            raise NotebookLMError(detail, selector="session-health", page_url=page.url)
         handle = (
             client.open_or_create_notebook(notebook_name)
             if create_if_missing
@@ -168,6 +250,15 @@ def upload_cluster(
         report.notebook_url = handle.url
         report.notebook_id = handle.notebook_id
         report.notebook_name = handle.name
+        _log_jsonl(
+            log_path,
+            {
+                "kind": "upload_notebook_opened",
+                "notebook_url": handle.url,
+                "notebook_id": handle.notebook_id,
+                "notebook_name": handle.name,
+            },
+        )
 
         uploads = 0
         for entry in manifest.get("entries", []):
@@ -180,16 +271,14 @@ def upload_cluster(
             key = entry.get("pdf_path") or entry.get("url") or entry.get("doi")
             if key in uploaded_sources:
                 report.skipped_already_uploaded += 1
+                _log_jsonl(log_path, {"kind": "upload_cached_skip", "key": key})
                 continue
 
-            if action == "pdf":
-                result = client.upload_pdf(Path(entry["pdf_path"]))
-            elif action == "url":
-                result = client.upload_url(entry["url"])
-            else:
+            result = _upload_with_retry(client, entry, log_path)
+            if result is None:
                 continue
-
             report.uploaded.append(result)
+            retry_count += max(0, _count_attempts_for_key(log_path, str(key)) - 1)
             if result.success:
                 uploaded_sources.add(key)
                 uploads += 1
@@ -212,7 +301,32 @@ def upload_cluster(
             notebooklm_notebook_id=handle.notebook_id,
         )
 
+    _log_jsonl(
+        log_path,
+        {
+            "kind": "upload_run_complete",
+            "success_count": report.success_count,
+            "fail_count": report.fail_count,
+            "retry_count": retry_count,
+        },
+    )
     return report
+
+
+def _count_attempts_for_key(log_path: Path, key: str) -> int:
+    try:
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return 1
+    count = 0
+    for line in lines:
+        try:
+            payload = json.loads(line)
+        except Exception:
+            continue
+        if payload.get("kind") == "upload_attempt" and str(payload.get("key")) == str(key):
+            count += 1
+    return max(count, 1)
 
 
 @dataclass
@@ -230,41 +344,43 @@ def download_briefing_for_cluster(
     *,
     headless: bool = False,
 ) -> DownloadReport:
-    """Open a cluster's notebook, extract the latest briefing text, save it.
-
-    Writes to ``<vault>/.research_hub/artifacts/<cluster_slug>/brief-<UTC>.txt``
-    and updates the cluster's ``nlm_cache.json`` entry with the latest
-    artifact path so future calls (and the dashboard) can find it.
-    """
+    """Open a cluster's notebook, extract the latest briefing text, save it."""
+    log_path = _open_debug_log(cfg.research_hub_dir)
+    _log_jsonl(
+        log_path,
+        {"kind": "download_start", "cluster_slug": cluster.slug, "headless": headless},
+    )
     cache_path = cfg.research_hub_dir / "nlm_cache.json"
     cache = _load_nlm_cache(cache_path)
     cluster_cache = cache.setdefault(cluster.slug, {})
     notebook_name = cluster.notebooklm_notebook or cluster.name
     safe_slug = Path(cluster.slug).name
 
-    session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
+    session_dir = default_session_dir(cfg.research_hub_dir)
     with open_cdp_session(session_dir, headless=headless) as (_, page):
         client = NotebookLMClient(page)
         ok, detail = _check_session_health(page)
         if not ok:
-            raise NotebookLMError(
-                detail,
-                selector="session-health",
-                page_url=page.url,
-            )
+            raise NotebookLMError(detail, selector="session-health", page_url=page.url)
         handle = client.open_notebook_by_name(notebook_name)
+        _log_jsonl(log_path, {"kind": "download_navigate", "notebook_url": handle.url})
         artifact: BriefingArtifact = client.download_briefing(handle)
 
     artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y%m%dT%H%M%SZ")
-    out_path = artifacts_dir / f"brief-{timestamp}.txt"
+    out_path = artifacts_dir / ("brief-{0}.txt".format(timestamp))
     header = (
-        f"# {artifact.notebook_name}\n\n"
-        f"Source: {artifact.notebook_url}\n"
-        f"Downloaded: {timestamp}\n"
-        f"Sources: {artifact.source_count}\n"
+        "# {0}\n\n"
+        "Source: {1}\n"
+        "Downloaded: {2}\n"
+        "Sources: {3}\n"
+    ).format(
+        artifact.notebook_name,
+        artifact.notebook_url,
+        timestamp,
+        artifact.source_count,
     )
     if artifact.titles:
         header += "Saved briefings: " + "; ".join(artifact.titles) + "\n"
@@ -278,6 +394,7 @@ def download_briefing_for_cluster(
         "titles": artifact.titles,
     }
     _save_nlm_cache(cache_path, cache)
+    _log_jsonl(log_path, {"kind": "download_ok", "artifact_path": str(out_path)})
 
     return DownloadReport(
         cluster_slug=cluster.slug,
@@ -289,19 +406,14 @@ def download_briefing_for_cluster(
 
 
 def read_latest_briefing(cluster, cfg) -> str:
-    """Return the most recently downloaded briefing text for a cluster.
-
-    Reads from ``<vault>/.research_hub/artifacts/<cluster_slug>/`` and
-    picks the newest ``brief-*.txt``. Raises FileNotFoundError if no
-    briefing has been downloaded yet.
-    """
+    """Return the most recently downloaded briefing text for a cluster."""
     cluster_slug = cluster if isinstance(cluster, str) else cluster.slug
     safe_slug = Path(cluster_slug).name
     artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
     if not artifacts_dir.exists():
         raise FileNotFoundError(
-            f"No artifacts directory for cluster '{cluster_slug}'. "
-            f"Run `research-hub notebooklm download --cluster {cluster_slug}` first."
+            "No artifacts directory for cluster '{0}'. Run `research-hub notebooklm "
+            "download --cluster {0}` first.".format(cluster_slug)
         )
     candidates = sorted(
         artifacts_dir.glob("brief-*.txt"),
@@ -310,8 +422,8 @@ def read_latest_briefing(cluster, cfg) -> str:
     )
     if not candidates:
         raise FileNotFoundError(
-            f"No brief-*.txt files in {artifacts_dir}. "
-            f"Run `research-hub notebooklm download --cluster {cluster_slug}` first."
+            "No brief-*.txt files in {0}. Run `research-hub notebooklm download "
+            "--cluster {1}` first.".format(artifacts_dir, cluster_slug)
         )
     return candidates[0].read_text(encoding="utf-8")
 
@@ -324,21 +436,22 @@ def generate_artifact(
     headless: bool = False,
 ) -> str:
     """Trigger a NotebookLM generation and return the artifact URL."""
+    log_path = _open_debug_log(cfg.research_hub_dir)
+    _log_jsonl(
+        log_path,
+        {"kind": "generate_start", "cluster_slug": cluster.slug, "kind_name": kind, "headless": headless},
+    )
     cache_path = cfg.research_hub_dir / "nlm_cache.json"
     cache = _load_nlm_cache(cache_path)
     cluster_cache = cache.setdefault(cluster.slug, {})
     notebook_name = cluster.notebooklm_notebook or cluster.name
 
-    session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
+    session_dir = default_session_dir(cfg.research_hub_dir)
     with open_cdp_session(session_dir, headless=headless) as (_, page):
         client = NotebookLMClient(page)
         ok, detail = _check_session_health(page)
         if not ok:
-            raise NotebookLMError(
-                detail,
-                selector="session-health",
-                page_url=page.url,
-            )
+            raise NotebookLMError(detail, selector="session-health", page_url=page.url)
         client.open_or_create_notebook(notebook_name)
 
         if kind == "brief":
@@ -354,8 +467,9 @@ def generate_artifact(
             url = client.trigger_video_overview()
             cluster_cache["video_url"] = url
         else:
-            raise ValueError(f"Unknown generation kind: {kind}")
+            raise ValueError("Unknown generation kind: {0}".format(kind))
 
         cluster_cache["last_synced"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         _save_nlm_cache(cache_path, cache)
+        _log_jsonl(log_path, {"kind": "generate_ok", "kind_name": kind, "url": url})
         return url

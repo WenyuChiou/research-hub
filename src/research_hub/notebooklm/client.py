@@ -256,8 +256,12 @@ class NotebookLMClient:
                 self.page.locator(DROP_ZONE_ICON_BUTTON_CSS).first.wait_for(
                     state="detached", timeout=30_000
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                raise NotebookLMError(
+                    "Upload dialog did not close: {0}".format(exc),
+                    selector=DROP_ZONE_ICON_BUTTON_CSS,
+                    page_url=self.page.url,
+                ) from exc
 
             self.page.wait_for_timeout(BETWEEN_UPLOADS_MS)
             return UploadResult(source_kind="pdf", path_or_url=str(pdf_path), success=True)
@@ -331,8 +335,12 @@ class NotebookLMClient:
                 self.page.locator(URL_INPUT_TEXTAREA_CSS).first.wait_for(
                     state="detached", timeout=15_000
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                raise NotebookLMError(
+                    "URL dialog did not close: {0}".format(exc),
+                    selector=URL_INPUT_TEXTAREA_CSS,
+                    page_url=self.page.url,
+                ) from exc
 
             self.page.wait_for_timeout(BETWEEN_UPLOADS_MS)
             return UploadResult(source_kind="url", path_or_url=url, success=True)

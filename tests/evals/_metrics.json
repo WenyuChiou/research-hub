@@ -1,1 +1,18 @@
-{}
+{
+  "recall_at_20": {
+    "LLM agent software engineering": 0.0
+  },
+  "recall_at_50": {
+    "LLM agent software engineering": 0.05
+  },
+  "rank_stability": {
+    "LLM agent software engineering": 1.0,
+    "SWE-bench issue resolution": 1.0,
+    "agent computer interface code generation": 1.0
+  },
+  "confidence_precision": {
+    "low": 0.0,
+    "mid": 0.045454545454545456,
+    "high": 0.0
+  }
+}

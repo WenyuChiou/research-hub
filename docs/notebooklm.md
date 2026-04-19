@@ -1,5 +1,13 @@
 # NotebookLM Automation in v0.4.1
 
+## Attribution
+
+The v0.42 browser foundation and ask-flow selector patterns are adapted from
+[PleasePrompto/notebooklm-skill](https://github.com/PleasePrompto/notebooklm-skill)
+(MIT). `research-hub` does not vendor that package; it adapts the Chrome
+launch arguments, persistent-session cookie replay pattern, and streaming-answer
+stability polling into its own NotebookLM modules.
+
 ## Why automation, not an API
 
 NotebookLM does not expose a public REST API for personal Google

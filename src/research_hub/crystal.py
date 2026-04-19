@@ -57,6 +57,9 @@ class Crystal:
     see_also: list[str] = field(default_factory=list)
 
     def to_markdown(self) -> str:
+        from research_hub.markdown_conventions import wrap_callout
+
+        tldr_body = wrap_callout("abstract", self.tldr.strip(), block_id="tldr")
         lines = [
             "---",
             "type: crystal",
@@ -74,7 +77,7 @@ class Crystal:
             "",
             "## TL;DR",
             "",
-            self.tldr.strip(),
+            tldr_body.rstrip(),
             "",
             "## Gist",
             "",
@@ -104,6 +107,8 @@ class Crystal:
 
     @classmethod
     def from_markdown(cls, text: str) -> Crystal:
+        from research_hub.markdown_conventions import unwrap_callout
+
         if not text.startswith("---\n"):
             raise ValueError("crystal markdown missing frontmatter")
         end = text.index("\n---\n", 4)
@@ -113,7 +118,7 @@ class Crystal:
             cluster_slug=str(fm.get("cluster", "") or ""),
             question_slug=str(fm.get("question_slug", "") or ""),
             question=str(fm.get("question", "") or "").replace('\\"', '"').replace("\\\\", "\\"),
-            tldr=_extract_section(body, "TL;DR"),
+            tldr=unwrap_callout(_extract_section(body, "TL;DR")).strip(),
             gist=_extract_section(body, "Gist"),
             full=_extract_section(body, "Full answer"),
             evidence=_extract_evidence(body),

@@ -1546,6 +1546,51 @@ def _vault_graph_colors(refresh: bool) -> int:
     return 0
 
 
+def _vault_polish_markdown(*, cluster: str | None, dry_run: bool) -> int:
+    """Upgrade paper notes to v0.42 callout + block-ID conventions."""
+    from research_hub.markdown_conventions import upgrade_paper_body
+
+    cfg = get_config()
+    raw_root = cfg.raw
+    if not raw_root.exists():
+        print(f"  [WARN] raw folder not found: {raw_root}")
+        return 1
+    candidates: list[Path] = []
+    if cluster:
+        target = raw_root / cluster
+        if not target.exists():
+            print(f"  [ERR] cluster folder not found: {target}")
+            return 1
+        candidates.extend(target.rglob("*.md"))
+    else:
+        candidates.extend(raw_root.rglob("*.md"))
+
+    changed = 0
+    scanned = 0
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        scanned += 1
+        upgraded = upgrade_paper_body(text)
+        if upgraded == text:
+            continue
+        changed += 1
+        rel = path.relative_to(raw_root)
+        if dry_run:
+            print(f"  [would upgrade] {rel}")
+        else:
+            path.write_text(upgraded, encoding="utf-8")
+            print(f"  [upgraded]    {rel}")
+
+    verb = "would upgrade" if dry_run else "upgraded"
+    print(f"\n{scanned} note(s) scanned, {changed} {verb}.")
+    if dry_run and changed:
+        print("Run again with --apply to write changes.")
+    return 0
+
+
 def _load_zotero_if_configured():
     try:
         from research_hub.zotero.client import get_client
@@ -1741,6 +1786,31 @@ def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
     for kind in kinds:
         url = generate_artifact(cluster, cfg, kind=kind, headless=headless)
         print(f"{kind}: {url}")
+    return 0
+
+
+def _nlm_ask(cluster_slug: str, *, question: str, headless: bool, timeout_sec: int) -> int:
+    from research_hub.notebooklm.ask import ask_cluster_notebook
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        print(f"  [ERR] Cluster not found: {cluster_slug}")
+        return 1
+    result = ask_cluster_notebook(
+        cluster,
+        cfg,
+        question=question,
+        headless=headless,
+        timeout_sec=timeout_sec,
+    )
+    if not result.ok:
+        print(f"  [ERR] {result.error}")
+        return 1
+    print(result.answer)
+    print()
+    print(f"  Saved: {result.artifact_path}  ({result.latency_seconds:.1f}s)")
     return 0
 
 
@@ -2706,6 +2776,27 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Rebuild research-hub-managed graph color groups",
     )
+    vault_polish = vault_subparsers.add_parser(
+        "polish-markdown",
+        help="Upgrade paper notes to v0.42 Obsidian callout + block-ID conventions",
+    )
+    vault_polish.add_argument(
+        "--cluster",
+        default=None,
+        help="Restrict to a single cluster slug (default: all clusters)",
+    )
+    vault_polish.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="Report changes without writing (default)",
+    )
+    vault_polish.add_argument(
+        "--apply",
+        dest="dry_run",
+        action="store_false",
+        help="Actually write changes to disk",
+    )
 
     migrate_parser = subparsers.add_parser(
         "migrate-yaml", help="Patch legacy notes to v0.3.x YAML spec"
@@ -2878,6 +2969,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     nlm_generate.add_argument("--headless", action="store_true", default=False)
     nlm_generate.add_argument("--visible", dest="headless", action="store_false")
+    nlm_ask = nlm_sub.add_parser(
+        "ask",
+        help="Ask an ad-hoc question against a cluster's NotebookLM notebook",
+    )
+    nlm_ask.add_argument("--cluster", required=True)
+    nlm_ask.add_argument("--question", required=True)
+    nlm_ask.add_argument("--headless", action="store_true", default=True)
+    nlm_ask.add_argument("--visible", dest="headless", action="store_false")
+    nlm_ask.add_argument("--timeout", type=int, default=120)
 
     fit_parser = subparsers.add_parser("fit-check", help="Multi-gate fit-check for clusters")
     fit_sub = fit_parser.add_subparsers(dest="fit_check_command")
@@ -3506,6 +3606,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "vault":
         if args.vault_command == "graph-colors":
             return _vault_graph_colors(refresh=args.refresh)
+        if args.vault_command == "polish-markdown":
+            return _vault_polish_markdown(cluster=args.cluster, dry_run=args.dry_run)
     if args.command == "sync":
         if args.sync_command == "status":
             return _sync_status(cluster_slug=args.cluster)
@@ -3531,13 +3633,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.notebooklm_command == "login":
             from pathlib import Path as _Path
 
-            from research_hub.notebooklm.session import (
-                login_interactive,
-                login_interactive_cdp,
-            )
+            from research_hub.notebooklm.browser import default_session_dir, default_state_file, login_nlm
+            from research_hub.notebooklm.session import login_interactive, login_interactive_cdp
 
             cfg = get_config()
-            session_dir = cfg.research_hub_dir / "nlm_sessions" / "default"
+            session_dir = default_session_dir(cfg.research_hub_dir)
             if args.cdp:
                 return login_interactive_cdp(
                     session_dir,
@@ -3546,6 +3646,12 @@ def main(argv: list[str] | None = None) -> int:
                     keep_open=args.keep_open,
                 )
             chrome_path = _Path(args.chrome_profile_path) if args.chrome_profile_path else None
+            if not args.from_chrome_profile and not args.use_system_chrome and not chrome_path:
+                return login_nlm(
+                    session_dir,
+                    state_file=default_state_file(cfg.research_hub_dir),
+                    timeout_sec=args.timeout,
+                )
             return login_interactive(
                 session_dir,
                 use_system_chrome=args.use_system_chrome,
@@ -3564,6 +3670,13 @@ def main(argv: list[str] | None = None) -> int:
             return _nlm_read_briefing(args.cluster)
         if args.notebooklm_command == "generate":
             return _nlm_generate(args.cluster, args.type, args.headless)
+        if args.notebooklm_command == "ask":
+            return _nlm_ask(
+                args.cluster,
+                question=args.question,
+                headless=args.headless,
+                timeout_sec=args.timeout,
+            )
 
     parser.error(f"Unknown command: {args.command}")
     return 2

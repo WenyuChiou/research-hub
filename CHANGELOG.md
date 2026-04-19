@@ -1,5 +1,91 @@
 # Changelog
 
+## Unreleased
+
+- NotebookLM v0.42 browser launcher and `ask` flow adapt patterns from
+  PleasePrompto/notebooklm-skill (MIT), including the stealth Chrome launch
+  configuration and stability-polling Q&A flow.
+
+## v0.42.0 (2026-04-19)
+
+**NotebookLM reliability rewrite + `ask` command + Obsidian callout/block-ID conventions.**
+
+User pain: **"從 Obsidian 到 NotebookLM 總是很卡 ... 很多次都沒有辦法把資料傳到 NotebookLM"** — load-bearing product complaint. This release targets it head-on.
+
+### Changed — NotebookLM browser layer (Track A)
+
+Migrated the entire NLM automation layer from stock `playwright` + CDP-attach to [patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright) (stealth-patched fork) with a persistent Chrome context. Root-cause fixes for silent upload failures:
+
+- **Anti-automation flag.** `--disable-blink-features=AutomationControlled` + `ignore_default_args=["--enable-automation"]`. Without these, Google's NotebookLM frontend detects `navigator.webdriver=true` and silently rejects uploads.
+- **Real Chrome, not Chromium.** `channel="chrome"` — Gemini-backed products work significantly better against real Chrome.
+- **Patchright stealth patches.** Drop-in fork of Playwright. No code change beyond import swap.
+- **Cookie injection workaround** for [Playwright bug #36139](https://github.com/microsoft/playwright/issues/36139). Cookies persist to `.research_hub/nlm_sessions/state.json` and are re-injected on each launch.
+- **Retry logic + structured JSONL logging.** Every per-paper upload retries up to 3 times (1 s → 3 s → 9 s backoff). All attempts land in `.research_hub/nlm-debug-<UTC>.jsonl`. No more silent skip.
+- **Extended locale fallback.** Added `zh-CN, ko, es, fr, de` aria-label variants for all studio-panel buttons (prev: only zh-TW/en/ja).
+- **Dialog close hardening.** `client.py` dialog detach timeouts now raise `NotebookLMError` instead of swallowing — outer retry wrapper sees the failure and backs off.
+
+Significant patterns adapted (with attribution) from [PleasePrompto/notebooklm-skill](https://github.com/PleasePrompto/notebooklm-skill) (MIT, 5.9k⭐). We do not vendor; we adapt the launch-args + auth-persistence + stable-polling idioms. Source comments credit both.
+
+Dependency: `pip install research-hub-pipeline[playwright]` now installs `patchright>=1.55` (was `playwright>=1.40`). Existing users run the same command — the extra name didn't change.
+
+### Added — `research-hub notebooklm ask` + MCP tool `ask_cluster_notebooklm` (Track B)
+
+Ad-hoc Q&A against an already-uploaded cluster's NotebookLM notebook.
+
+```bash
+research-hub notebooklm ask \
+    --cluster llm-evaluation-harness \
+    --question "Which paper proposes search over memory programs?"
+```
+
+- Looks up `cluster.notebooklm_notebook_url` from `clusters.yaml` (set during prior `upload`)
+- Types the question with randomized 25–75 ms/char human-like cadence
+- Polls response selectors with a 3-read stability quorum
+- Detects NotebookLM's `thinking-message` state to pause polling during generation
+- 120 s timeout per question
+- Saves to `.research_hub/artifacts/<slug>/ask-<UTC>.md` with question header + latency
+- Returns to stdout
+
+MCP tool `ask_cluster_notebooklm(cluster, question)` exposes the same flow to Claude Desktop.
+
+### Added — Obsidian callout + block-ID conventions (Track C)
+
+Adopted the [kepano/obsidian-skills/obsidian-markdown](https://github.com/kepano/obsidian-skills) conventions (MIT, by Steph Ango / Obsidian CEO):
+
+- **Paper notes.** `## Summary` / `## Key Findings` / `## Methodology` / `## Relevance` sections render as `> [!abstract]` / `> [!success]` / `> [!info]` / `> [!note]` callouts with `^summary` / `^findings` / `^methodology` / `^relevance` block IDs. Section heading anchors stay clean so every existing regex extractor continues to work.
+- **Cluster overview template.** TL;DR → `> [!abstract]` (with `^tldr`); Core question → `> [!question]`; Open problems → `> [!warning]`.
+- **Crystal template.** TL;DR wrapped in `> [!abstract]`. Round-trip preserved: `Crystal.from_markdown` unwraps callouts idempotently.
+- **NEW `research-hub vault polish-markdown [--cluster X] [--apply]`** — walks existing paper notes and upgrades legacy plain-paragraph sections to the new callout format. Dry-run by default. Idempotent.
+
+### Changed — file structure
+
+- NEW `src/research_hub/notebooklm/browser.py` (patchright launcher + state.json helpers)
+- NEW `src/research_hub/notebooklm/ask.py` (Q&A flow)
+- NEW `src/research_hub/markdown_conventions.py` (callout helpers, upgrade script)
+- `src/research_hub/notebooklm/cdp_launcher.py` — deprecated shim; raises `NotImplementedError` with a pointer to `browser.py`
+- `src/research_hub/notebooklm/session.py` — thin shim routing legacy `open_cdp_session` / `login_interactive*` calls to `browser.launch_nlm_context`
+
+### Verification
+
+```bash
+research-hub notebooklm login                          # visible Chrome opens; state.json written
+research-hub notebooklm bundle --cluster X
+research-hub notebooklm upload --cluster X             # retry log at .research_hub/nlm-debug-*.jsonl
+research-hub notebooklm ask --cluster X --question "?" # ~60 s round-trip
+research-hub vault polish-markdown --cluster X --apply
+```
+
+### Notes
+
+- Obsidian Bases (`.base` file) auto-generation per cluster — deferred to v0.43.
+- JSON Canvas (`.canvas`) citation-graph export — deferred to v0.43.
+- `readability-lxml → defuddle` — defuddle is NPM-only; v0.43 will evaluate Python alternatives (trafilatura/newspaper3k).
+- zh-TW release notes written directly by Claude (Gemini Windows retry declined per user decision).
+
+繁體中文 release announcement: [docs/release-notes-v0.42.zh-TW.md](docs/release-notes-v0.42.zh-TW.md).
+
+---
+
 ## v0.41.1 (2026-04-19)
 
 **Python 3.10/3.11 syntax fix — Codex used PEP 701 f-string syntax (3.12+).**

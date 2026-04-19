@@ -1908,6 +1908,50 @@ def notebooklm_download(
         return _tool_error(exc)
 
 
+@mcp.tool()
+def ask_cluster_notebooklm(
+    cluster: str,
+    question: str,
+    headless: bool = True,
+    timeout_sec: int = 120,
+) -> dict[str, Any]:
+    """Ask an ad-hoc question against a cluster's NotebookLM notebook."""
+    cluster = _validate_mcp_args(cluster=cluster)["cluster"]
+    try:
+        from research_hub.clusters import ClusterRegistry
+        from research_hub.notebooklm.ask import ask_cluster_notebook
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        cluster_obj = registry.get(cluster)
+        if cluster_obj is None:
+            return {
+                "ok": False,
+                "answer": "",
+                "artifact_path": "",
+                "latency_seconds": 0.0,
+                "hint": "Run: research-hub clusters list",
+            }
+        result = ask_cluster_notebook(
+            cluster_obj,
+            cfg,
+            question=question,
+            headless=headless,
+            timeout_sec=timeout_sec,
+        )
+        payload = {
+            "ok": result.ok,
+            "answer": result.answer,
+            "artifact_path": str(result.artifact_path) if result.artifact_path else "",
+            "latency_seconds": result.latency_seconds,
+        }
+        if not result.ok:
+            payload["hint"] = result.error
+        return payload
+    except Exception as exc:  # pragma: no cover
+        return _tool_error(exc)
+
+
 # ---------------------------------------------------------------------------
 # v0.33 Task-level workflow wrappers (Codex Phase 3)
 # ---------------------------------------------------------------------------

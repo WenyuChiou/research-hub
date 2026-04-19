@@ -82,6 +82,7 @@ EXPECTED_MAPPINGS = {
     "notebooklm_upload": "notebooklm upload",
     "notebooklm_generate": "notebooklm generate",
     "notebooklm_download": "notebooklm download",
+    "ask_cluster_notebooklm": "notebooklm ask",
     "ask_cluster": "ask",
     "brief_cluster": "mcp-only",
     "sync_cluster": "mcp-only",

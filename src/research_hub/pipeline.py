@@ -237,16 +237,13 @@ def _render_obsidian_note(
     )
     if fit_warning:
         content = content.replace('verified_at: "', 'fit_warning: true\nverified_at: "', 1)
-    content += (
-        "\n## Summary\n\n"
-        + pp["summary"]
-        + "\n\n## Key Findings\n\n"
-        + "".join("- " + finding + "\n" for finding in pp["key_findings"])
-        + "\n## Methodology\n\n"
-        + pp["methodology"]
-        + "\n\n## Relevance\n\n"
-        + pp["relevance"]
-        + "\n"
+    from research_hub.markdown_conventions import summary_section_to_callout
+
+    content += "\n" + summary_section_to_callout(
+        summary=pp["summary"],
+        key_findings=pp["key_findings"],
+        methodology=pp["methodology"],
+        relevance=pp["relevance"],
     )
     return content
 

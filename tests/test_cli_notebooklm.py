@@ -18,6 +18,11 @@ def test_build_parser_accepts_notebooklm_upload_and_generate_flags():
     assert generate_args.type == "all"
     assert generate_args.headless is False
 
+    ask_args = build_parser().parse_args(["notebooklm", "ask", "--cluster", "alpha", "--question", "Hello?"])
+    assert ask_args.notebooklm_command == "ask"
+    assert ask_args.question == "Hello?"
+    assert ask_args.headless is True
+
 
 def test_main_routes_notebooklm_upload_and_generate(monkeypatch, mock_require_config):
     from research_hub import cli
@@ -26,10 +31,13 @@ def test_main_routes_notebooklm_upload_and_generate(monkeypatch, mock_require_co
 
     monkeypatch.setattr(cli, "_nlm_upload", lambda cluster, dry_run, headless, create_if_missing: calls.append(("upload", cluster, dry_run, headless, create_if_missing)) or 0)
     monkeypatch.setattr(cli, "_nlm_generate", lambda cluster, artifact_type, headless: calls.append(("generate", cluster, artifact_type, headless)) or 0)
+    monkeypatch.setattr(cli, "_nlm_ask", lambda cluster, *, question, headless, timeout_sec: calls.append(("ask", cluster, question, headless, timeout_sec)) or 0)
 
     assert cli.main(["notebooklm", "upload", "--cluster", "alpha", "--dry-run"]) == 0
     assert cli.main(["notebooklm", "generate", "--cluster", "alpha", "--type", "mind-map"]) == 0
+    assert cli.main(["notebooklm", "ask", "--cluster", "alpha", "--question", "What?"]) == 0
     assert calls == [
         ("upload", "alpha", True, False, True),
         ("generate", "alpha", "mind-map", False),
+        ("ask", "alpha", "What?", True, 120),
     ]

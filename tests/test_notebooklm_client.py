@@ -66,11 +66,18 @@ class StubLocator:
     def press(self, key):
         self.pressed = key
 
+    def type(self, text, delay=None):
+        self.filled_with = (self.filled_with or "") + text
+
     def set_input_files(self, path):
         self.set_files = path
 
     @property
     def first(self):
+        return self
+
+    @property
+    def last(self):
         return self
 
     def all(self):
@@ -299,6 +306,7 @@ def test_upload_url_clicks_website_tab_then_insert():
     insert_button = StubLocator()
     url_input = StubLocator()
     page.locators["button.add-source-button"] = add_source
+    page.locators['textarea[formcontrolname="urls"]'] = url_input
     page.set_role("tab", "Website", website_tab)
     page.set_role("button", "Insert", insert_button)
     page.set_placeholder("Paste URL", url_input)
@@ -325,7 +333,7 @@ def test_upload_url_failure_wraps_exception():
 def test_trigger_briefing_returns_page_url():
     page = StubPage()
     page.url = "https://notebooklm.google.com/notebook/abc"
-    page.locators['.create-artifact-button-container[aria-label="報告"]'] = StubLocator()
+    page.locators['.create-artifact-button-container[aria-label="Report"]'] = StubLocator()
 
     url = NotebookLMClient(page).trigger_briefing()
 
@@ -342,7 +350,7 @@ def test_trigger_briefing_raises_on_no_button():
 def test_trigger_audio_returns_page_url():
     page = StubPage()
     page.url = "https://notebooklm.google.com/notebook/xyz"
-    page.locators['.create-artifact-button-container[aria-label="語音摘要"]'] = StubLocator()
+    page.locators['.create-artifact-button-container[aria-label="Audio Overview"]'] = StubLocator()
 
     url = NotebookLMClient(page).trigger_audio_overview()
 
@@ -575,3 +583,86 @@ def test_client_download_briefing_returns_dom_text(monkeypatch):
     assert artifact.text == "Summary body."
     assert artifact.titles == ["Briefing One"]
     assert artifact.source_count == 4
+
+
+def test_upload_pdf_returns_failure_when_dialog_does_not_close(tmp_path):
+    page = StubPage()
+    page.locators["button.drop-zone-icon-button"] = StubLocator(click_raises=RuntimeError("stuck"))
+    page.locators["button.add-source-button"] = StubLocator()
+
+    result = NotebookLMClient(page).upload_pdf(tmp_path / "paper.pdf")
+
+    assert result.success is False
+    assert "stuck" in result.error
+
+
+def test_upload_url_returns_failure_when_dialog_does_not_close():
+    page = StubPage()
+    page.locators["button.add-source-button"] = StubLocator()
+    page.locators["button.drop-zone-icon-button"] = StubLocator()
+    page.locators['textarea[formcontrolname="urls"]'] = StubLocator()
+
+    def _broken_wait(state=None, timeout=None):
+        raise RuntimeError("still open")
+
+    page.locators['textarea[formcontrolname="urls"]'].wait_for = _broken_wait
+    result = NotebookLMClient(page).upload_url("https://example.com")
+    assert result.success is False
+    assert "still open" in result.error
+
+
+def test_open_cdp_session_shim_yields_stub_page(tmp_path, monkeypatch):
+    from research_hub.notebooklm import session as session_module
+
+    @contextmanager
+    def fake_launch(**kwargs):
+        yield object(), StubPage()
+
+    monkeypatch.setattr(session_module, "launch_nlm_context", fake_launch)
+    with session_module.open_cdp_session(tmp_path / "session") as (_, page):
+        assert isinstance(page, StubPage)
+
+
+def test_upload_cluster_records_retry_count_in_debug_log(tmp_path, monkeypatch):
+    from research_hub.notebooklm.client import UploadResult
+
+    cfg = StubCfg(tmp_path)
+    cfg.research_hub_dir.mkdir(parents=True)
+    bundle_dir = cfg.research_hub_dir / "bundles" / "alpha-20260411T000000Z"
+    bundle_dir.mkdir(parents=True)
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_bytes(b"pdf")
+    (bundle_dir / "manifest.json").write_text(
+        json.dumps({"entries": [{"action": "pdf", "pdf_path": str(pdf_path)}]}),
+        encoding="utf-8",
+    )
+    cluster = Cluster(slug="alpha", name="Alpha", notebooklm_notebook="Alpha Notebook")
+    _write_cluster(cfg, cluster)
+
+    class FakeClient:
+        def __init__(self, page):
+            self.calls = 0
+
+        def open_or_create_notebook(self, name):
+            return type("Handle", (), {"url": "https://notebooklm.google.com/notebook/abc", "notebook_id": "abc", "name": name})()
+
+        def upload_pdf(self, path):
+            self.calls += 1
+            if self.calls == 1:
+                return UploadResult(source_kind="pdf", path_or_url=str(path), success=False, error="retry me")
+            return UploadResult(source_kind="pdf", path_or_url=str(path), success=True)
+
+    @contextmanager
+    def fake_open(*args, **kwargs):
+        yield object(), StubPage()
+
+    monkeypatch.setattr("research_hub.notebooklm.upload.open_cdp_session", fake_open)
+    monkeypatch.setattr("research_hub.notebooklm.upload.NotebookLMClient", FakeClient)
+    monkeypatch.setattr("research_hub.notebooklm.upload._check_session_health", lambda page: (True, "ok"))
+    monkeypatch.setattr("research_hub.notebooklm.upload.time.sleep", lambda _: None)
+
+    report = upload_cluster(cluster, cfg, dry_run=False)
+    assert report.success_count == 1
+    log_path = sorted(cfg.research_hub_dir.glob("nlm-debug-*.jsonl"))[-1]
+    lines = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert lines[-1]["retry_count"] == 1
