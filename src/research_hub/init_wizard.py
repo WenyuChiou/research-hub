@@ -132,11 +132,33 @@ def run_init(
             if response.status_code == 200:
                 print("  Zotero credentials: OK")
             else:
-                print(
-                    f"  Zotero credentials: returned {response.status_code} (may still work)"
-                )
+                print(f"  Zotero credentials: returned {response.status_code}")
+                if interactive:
+                    choice = input("    [r]etry / [c]ontinue offline / [a]bort? ").strip().lower() or "c"
+                    if choice.startswith("a"):
+                        print("  Aborted by user.")
+                        return 1
+                    if choice.startswith("r"):
+                        zotero_key = input("    Re-enter Zotero API key: ").strip() or zotero_key
+                        zotero_library_id = input("    Re-enter Zotero library ID: ").strip() or zotero_library_id
+                        response2 = requests.head(
+                            f"https://api.zotero.org/users/{zotero_library_id}/items?limit=1",
+                            headers={"Zotero-API-Key": zotero_key},
+                            timeout=5,
+                        )
+                        if response2.status_code == 200:
+                            print("    Zotero credentials: OK")
+                        else:
+                            print(
+                                f"    Still {response2.status_code}; continuing offline. "
+                                "Run `research-hub init` again to retry."
+                            )
         except Exception as exc:
-            print(f"  Zotero credentials: could not verify ({exc})")
+            print(f"  Zotero credentials: could not reach api.zotero.org ({exc})")
+            if interactive:
+                choice = input("    [c]ontinue offline / [a]bort? ").strip().lower() or "c"
+                if choice.startswith("a"):
+                    return 1
 
     config_path = get_default_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)

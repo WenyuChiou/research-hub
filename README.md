@@ -185,16 +185,16 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 | **NotebookLM** | `notebooklm bundle/upload/generate/download` | Browser-automated NLM flows (CDP attach) |
 | **Write** | `quote` / `compose-draft` / `cite` | Quote capture, markdown draft assembly, BibTeX export |
 
-## Four personas
+## Personas + install commands
 
-| Persona | Install | Zotero? | Best for |
-|---|---|---|---|
-| **Researcher** (default) | `pip install research-hub-pipeline[playwright]` | Yes | PhD STEM literature reviews |
-| **Analyst** | `research-hub init --persona analyst` | No — Obsidian only | Industry research, white papers, technical docs |
-| **Humanities** | `research-hub init` + quote-first workflow | Yes | Books, talks, archives, quote-heavy reading |
-| **Internal KM** | `research-hub init --persona analyst` + import-folder | No — Obsidian only | Policies, mixed internal docs, vendor notes |
+| Persona | Install | Init |
+|---|---|---|
+| **Researcher** (PhD STEM, default) | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init` |
+| **Humanities** (quote-heavy, uses Zotero) | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init --persona humanities` |
+| **Analyst** (industry, no Zotero) | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona analyst` |
+| **Internal KM** (lab/company, mixed file types) | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona internal` |
 
-All 4 personas now share the same dashboard, MCP server, and crystal system, and the test matrix covers cluster-integrity flows across each persona.
+All four personas share the same dashboard, MCP server, crystal system, and cluster integrity tools. The dashboard auto-adapts vocabulary and hides irrelevant features per persona (see `docs/personas.md`).
 
 ## For developers
 

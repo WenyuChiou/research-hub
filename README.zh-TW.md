@@ -184,14 +184,16 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 | **NotebookLM** | `notebooklm bundle/upload/generate/download` | 瀏覽器自動化 NLM 流程(CDP attach) |
 | **寫作** | `quote` / `compose-draft` / `cite` | 引言擷取、markdown 草稿組裝、BibTeX 匯出 |
 
-## 兩種角色
+## Personas 與安裝指令
 
-| 角色 | 安裝 | 需要 Zotero? | 適合 |
-|---|---|---|---|
-| **研究者**(預設) | `pip install research-hub-pipeline[playwright]` | 是 | PhD 學生、學術文獻回顧 |
-| **分析師** | `research-hub init --persona analyst` | 否 — 只用 Obsidian | 業界研究、白皮書、技術文件 |
+| 角色 | 安裝 | 初始化 |
+|---|---|---|
+| **研究者**（PhD STEM，預設） | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init` |
+| **人文研究者**（重視引文與摘錄，使用 Zotero） | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init --persona humanities` |
+| **分析師**（業界研究，不用 Zotero） | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona analyst` |
+| **內部知識管理**（實驗室／公司，混合檔案類型） | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona internal` |
 
-兩種角色都有同樣的 dashboard、MCP server、crystal 系統。
+四種角色共用同一套 dashboard、MCP server、crystal 系統與 cluster integrity 工具。Dashboard 會依 persona 自動調整詞彙並隱藏不相關功能（見 `docs/personas.md`）。
 
 ## 給開發者
 

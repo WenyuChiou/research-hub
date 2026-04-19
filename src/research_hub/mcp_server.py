@@ -69,6 +69,28 @@ def _tool_error(exc: Exception) -> dict[str, str]:
     return {"error": str(exc)}
 
 
+def _entrypoint_tool_error(exc: Exception, cluster_slug: str | None = None) -> dict[str, object]:
+    if isinstance(exc, FileNotFoundError):
+        return {
+            "ok": False,
+            "error": "vault not initialized",
+            "hint": "Run: research-hub init",
+            "details": str(exc),
+        }
+    if isinstance(exc, KeyError):
+        cluster_name = cluster_slug or str(exc).strip("'")
+        return {
+            "ok": False,
+            "error": f"cluster not found: {cluster_name}",
+            "hint": f"Run: research-hub clusters new --query '{cluster_name}'",
+        }
+    return {
+        "ok": False,
+        "error": str(exc),
+        "hint": "Check vault state with: research-hub doctor",
+    }
+
+
 def _validate_mcp_args(**kwargs: object) -> dict[str, object]:
     validated: dict[str, object] = {}
     for field, value in kwargs.items():
@@ -424,7 +446,7 @@ def summarize_rebind_status() -> dict:
             "stuck": total_orphans - len(proposals),
         }
     except Exception as exc:
-        return _tool_error(exc)
+        return _entrypoint_tool_error(exc)
 
 
 @mcp.tool()
@@ -1032,7 +1054,7 @@ def list_crystals(cluster_slug: str) -> dict:
             ],
         }
     except Exception as exc:
-        return _tool_error(exc)
+        return _entrypoint_tool_error(exc, str(cluster_slug))
 
 
 @mcp.tool()
@@ -1065,7 +1087,7 @@ def read_crystal(cluster_slug: str, crystal_slug: str, level: str = "gist") -> d
             "see_also": item.see_also,
         }
     except Exception as exc:
-        return _tool_error(exc)
+        return _entrypoint_tool_error(exc, str(cluster_slug))
 
 
 @mcp.tool()
@@ -1906,10 +1928,22 @@ def ask_cluster(
     """
     try:
         from research_hub.workflows import ask_cluster as _impl
-        cfg = require_config()
-        return _impl(cfg, cluster_slug, question=question, detail=detail)
+        cfg = get_config()
+        result = _impl(cfg, cluster_slug, question=question, detail=detail)
+        if isinstance(result, dict) and result.get("ok") is False and "hint" not in result:
+            message = str(result.get("error", ""))
+            if "unknown cluster" in message or "cluster not found" in message:
+                return _entrypoint_tool_error(KeyError(cluster_slug), cluster_slug)
+            if "not initialized" in message or "No such file" in message:
+                return _entrypoint_tool_error(FileNotFoundError(message), cluster_slug)
+            return {
+                "ok": False,
+                "error": message,
+                "hint": "Check vault state with: research-hub doctor",
+            }
+        return result
     except Exception as exc:  # pragma: no cover
-        return _tool_error(exc)
+        return _entrypoint_tool_error(exc, cluster_slug)
 
 
 @mcp.tool()

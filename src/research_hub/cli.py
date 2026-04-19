@@ -703,6 +703,53 @@ def _import_folder_command(args) -> int:
     return 0 if report.failed_count == 0 else 1
 
 
+def _import_folder_dep_precheck(args) -> int | None:
+    import importlib
+
+    target = Path(args.folder).expanduser().resolve()
+    if not target.exists() or not target.is_dir():
+        print(f"ERROR: not a directory: {target}", file=sys.stderr)
+        return 2
+
+    selected_extensions = {
+        item.strip().lower().lstrip(".")
+        for item in args.extensions.split(",")
+        if item.strip()
+    }
+    discovered_extensions = {
+        path.suffix.lower()
+        for path in target.rglob("*")
+        if path.is_file() and path.suffix
+    }
+    if selected_extensions:
+        discovered_extensions = {
+            suffix for suffix in discovered_extensions if suffix.lstrip(".") in selected_extensions
+        }
+    if not discovered_extensions:
+        return None
+
+    def _has_module(name: str) -> bool:
+        try:
+            return importlib.import_module(name) is not None
+        except ImportError:
+            return False
+
+    missing_deps: list[str] = []
+    if ".pdf" in discovered_extensions and not _has_module("pdfplumber"):
+        missing_deps.append("pdfplumber (for PDF)")
+    if ".docx" in discovered_extensions and not _has_module("docx"):
+        missing_deps.append("python-docx (for DOCX)")
+    if missing_deps:
+        print(
+            "ERROR: missing extras for file types in this folder:\n"
+            f"  {', '.join(missing_deps)}\n"
+            "  Install: pip install 'research-hub-pipeline[import]'",
+            file=sys.stderr,
+        )
+        return 2
+    return None
+
+
 def _synthesize(cluster: str | None, graph_colors: bool) -> int:
     from research_hub.vault.graph_config import refresh_graph_from_vault
     from research_hub.vault.synthesis import synthesize_all_clusters, synthesize_cluster
@@ -3074,6 +3121,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"auto-labeled {len(result['tagged'])} paper(s) as deprecated from fit-check sidecar")
         return rc
     if args.command == "import-folder":
+        dep_error = _import_folder_dep_precheck(args)
+        if dep_error is not None:
+            return dep_error
         return _import_folder_command(args)
     if args.command == "fit-check":
         if args.fit_check_command == "emit":

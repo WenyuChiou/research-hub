@@ -234,7 +234,7 @@ def test_init_zotero_validation_failure(tmp_path, monkeypatch, capsys):
         )
         == 0
     )
-    assert "could not verify" in capsys.readouterr().out
+    assert "could not reach api.zotero.org" in capsys.readouterr().out
 
 
 def test_init_chrome_detected(tmp_path, monkeypatch, capsys):
