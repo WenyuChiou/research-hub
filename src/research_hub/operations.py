@@ -11,6 +11,8 @@ from research_hub.config import get_config
 from research_hub.dedup import DedupIndex, normalize_doi
 
 VALID_STATUSES = {"unread", "reading", "deep-read", "cited"}
+_ARXIV_ID_RE = re.compile(r"^\d{4}\.\d{4,6}(?:v\d+)?$")
+_ARXIV_DOI_RE = re.compile(r"^10\.48550/arxiv\.(\d{4}\.\d{4,6}(?:v\d+)?)$", re.IGNORECASE)
 
 
 def _read_frontmatter_text(md_path: Path) -> tuple[str, str, str] | None:
@@ -160,6 +162,16 @@ def note_matches_query(md_path: Path, query: str) -> bool:
     return overlap >= 2
 
 
+def _extract_arxiv_identifier(identifier: str) -> str:
+    text = (identifier or "").strip()
+    doi_match = _ARXIV_DOI_RE.fullmatch(text)
+    if doi_match:
+        return doi_match.group(1)
+    if _ARXIV_ID_RE.fullmatch(text):
+        return text
+    return ""
+
+
 def add_paper(
     identifier: str,
     cluster: str | None = None,
@@ -173,17 +185,32 @@ def add_paper(
     import requests
 
     from research_hub.pipeline import run_pipeline
-    from research_hub.search import SemanticScholarClient
+    from research_hub.search import ArxivBackend, SemanticScholarClient
+    from research_hub.search.semantic_scholar import RateLimitError
 
     cfg = get_config()
     s2 = SemanticScholarClient()
-    resolved_identifier = (
-        f"ArXiv:{identifier}"
-        if re.fullmatch(r"\d{4}\.\d{4,5}(?:v\d+)?", identifier)
-        else identifier
-    )
-    paper = s2.get_paper(resolved_identifier)
+    arxiv_id = _extract_arxiv_identifier(identifier)
+    resolved_identifier = f"ArXiv:{arxiv_id}" if arxiv_id else identifier
+    paper = None
+    s2_failed = False
+    try:
+        paper = s2.get_paper(resolved_identifier)
+    except RateLimitError:
+        s2_failed = True
+
+    if paper is None and arxiv_id:
+        paper = ArxivBackend().get_paper(arxiv_id)
+
     if paper is None:
+        if arxiv_id:
+            return {
+                "status": "error",
+                "reason": (
+                    f"Could not resolve {identifier} via Semantic Scholar"
+                    f"{' (rate limited)' if s2_failed else ''} or arXiv"
+                ),
+            }
         return {
             "status": "error",
             "reason": f"Could not resolve {identifier} via Semantic Scholar",
@@ -237,7 +264,9 @@ def add_paper(
     title_slug = re.sub(r"[^a-z0-9]+", "-", paper.title.lower()).strip("-")[:60]
     slug = f"{last_clean}{paper.year}-{title_slug}"
     abstract = paper.abstract or ""
-    doi = paper.doi or identifier
+    paper_arxiv_id = str(getattr(paper, "arxiv_id", "") or "")
+    derived_doi = f"10.48550/arxiv.{paper_arxiv_id}" if paper_arxiv_id else ""
+    doi = paper.doi or derived_doi or identifier
     url = paper.url or (f"https://doi.org/{paper.doi}" if paper.doi else "")
     entry = {
         "title": html.unescape(paper.title),

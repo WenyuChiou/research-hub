@@ -216,3 +216,68 @@ def test_doctor_exit_code_zero_if_only_warns(tmp_path, monkeypatch):
 
     assert all(result.status != "FAIL" for result in results)
     assert print_doctor_report(results) == 0
+
+
+def _write_note(root, rel_path: str, frontmatter: str, body: str = ""):
+    path = root / "raw" / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\n{frontmatter}\n---\n\n"
+        f"{body or '## Summary\nx\n\n## Key Findings\n- x\n\n## Methodology\nx\n\n## Relevance\nx\n'}",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_doctor_new_paper_without_doi_is_fail(tmp_path, monkeypatch):
+    from research_hub.doctor import check_frontmatter_completeness
+    from research_hub import config as hub_config
+
+    root, _ = _write_config(tmp_path, monkeypatch)
+    _write_note(
+        root,
+        "agents/new-paper.md",
+        'title: "New"\nauthors: "Doe"\nyear: "2026"\ntopic_cluster: "agents"\nstatus: "unread"\ningested_at: "2026-04-19T00:00:00Z"',
+    )
+    cfg = hub_config.get_config()
+
+    result = check_frontmatter_completeness(cfg)
+
+    assert result.status == "FAIL"
+    assert "recent papers should have DOI" in result.message
+
+
+def test_doctor_pre_2000_missing_doi_is_warn(tmp_path, monkeypatch):
+    from research_hub.doctor import check_frontmatter_completeness
+    from research_hub import config as hub_config
+
+    root, _ = _write_config(tmp_path, monkeypatch)
+    _write_note(
+        root,
+        "agents/bandura-1977.md",
+        'title: "Bandura"\nauthors: "Bandura"\nyear: "1977"\ntopic_cluster: "agents"\nstatus: "unread"\ningested_at: "2026-04-19T00:00:00Z"',
+    )
+    cfg = hub_config.get_config()
+
+    result = check_frontmatter_completeness(cfg)
+
+    assert result.status == "WARN"
+    assert "legacy papers without DOI expected" in result.message
+
+
+def test_doctor_migration_missing_doi_is_warn(tmp_path, monkeypatch):
+    from research_hub.doctor import check_frontmatter_completeness
+    from research_hub import config as hub_config
+
+    root, _ = _write_config(tmp_path, monkeypatch)
+    _write_note(
+        root,
+        "agents/migrated-paper.md",
+        'title: "Migrated"\nauthors: "Doe"\nyear: "2024"\ntopic_cluster: "agents"\nstatus: "unread"\ningested_at: "2026-04-19T00:00:00Z"\ningestion_source: "pre-v0.3.0-migration"',
+    )
+    cfg = hub_config.get_config()
+
+    result = check_frontmatter_completeness(cfg)
+
+    assert result.status == "WARN"
+    assert "legacy papers without DOI expected" in result.message

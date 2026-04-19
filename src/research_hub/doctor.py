@@ -25,9 +25,11 @@ class CheckResult:
 def check_frontmatter_completeness(cfg) -> CheckResult:
     """Validate paper-note frontmatter and required body sections across the vault."""
     from research_hub.paper_schema import validate_paper_note
+    from research_hub.topic import _parse_frontmatter
 
     bad: list[str] = []
     warn: list[str] = []
+    legacy_missing_doi: list[str] = []
     total = 0
 
     for note in sorted(Path(cfg.raw).rglob("*.md")):
@@ -39,7 +41,15 @@ def check_frontmatter_completeness(cfg) -> CheckResult:
         result = validate_paper_note(note)
         rel = note.relative_to(cfg.raw)
         if result.severity == "fail":
-            bad.append(f"{rel}: missing {result.missing_frontmatter}")
+            meta = _parse_frontmatter(note.read_text(encoding="utf-8"))
+            missing = list(result.missing_frontmatter)
+            if "doi" in missing and _is_expected_legacy_missing_doi(note, meta):
+                missing.remove("doi")
+                legacy_missing_doi.append(str(rel))
+            if missing:
+                bad.append(f"{rel}: missing {missing}")
+            elif legacy_missing_doi and rel.as_posix() == legacy_missing_doi[-1]:
+                continue
         elif result.severity == "warn":
             warn.append(f"{rel}: empty={result.empty_sections} todo={result.todo_placeholders}")
 
@@ -47,21 +57,47 @@ def check_frontmatter_completeness(cfg) -> CheckResult:
         return CheckResult(
             name="frontmatter_completeness",
             status="FAIL",
-            message=f"{len(bad)} of {total} notes missing required frontmatter",
-            remedy="Examples: " + "; ".join(bad[:3]),
+            message=(
+                f"{len(bad)} FAIL (recent papers should have DOI or other required frontmatter)"
+                + (
+                    f", {len(legacy_missing_doi)} WARN (legacy papers without DOI expected)"
+                    if legacy_missing_doi
+                    else ""
+                )
+            ),
+            remedy="Examples: " + "; ".join((bad + legacy_missing_doi)[:3]),
         )
-    if warn:
+    if legacy_missing_doi or warn:
+        warn_examples = [f"{item}: missing ['doi']" for item in legacy_missing_doi] + warn
+        message_parts = []
+        if legacy_missing_doi:
+            message_parts.append(
+                f"{len(legacy_missing_doi)} WARN (legacy papers without DOI expected)"
+            )
+        if warn:
+            message_parts.append(
+                f"{len(warn)} WARN (empty sections or TODO placeholders)"
+            )
         return CheckResult(
             name="frontmatter_completeness",
             status="WARN",
-            message=f"{len(warn)} of {total} notes have empty sections or TODO placeholders",
-            remedy="Examples: " + "; ".join(warn[:3]),
+            message=", ".join(message_parts),
+            remedy="Examples: " + "; ".join(warn_examples[:3]),
         )
     return CheckResult(
         name="frontmatter_completeness",
         status="OK",
         message=f"All {total} paper notes pass frontmatter validation",
     )
+
+
+def _is_expected_legacy_missing_doi(note: Path, meta: dict[str, str | list[str]]) -> bool:
+    if str(meta.get("ingestion_source", "") or "").strip() == "pre-v0.3.0-migration":
+        return True
+    year_text = str(meta.get("year", "") or "").strip()
+    if not year_text.isdigit() or int(year_text) >= 2000:
+        return False
+    return re.search(r"\d{4}\.\d{4,6}", note.stem) is None
 
 
 def _load_config_json(config_path: Path | None) -> dict:

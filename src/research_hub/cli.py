@@ -626,6 +626,32 @@ def _cmd_memory(args, cfg) -> int:
 
 
 def _paper_command(args) -> int:
+    if args.paper_command == "lookup-doi":
+        from research_hub.doi_lookup import batch_lookup_missing_dois, lookup_doi_for_slug
+
+        cfg = get_config()
+        if args.batch:
+            if not args.cluster:
+                print("--batch requires --cluster", file=sys.stderr)
+                return 2
+            result = batch_lookup_missing_dois(cfg, args.cluster)
+            updated = sum(1 for item in result["results"] if item.get("status") == "updated")
+            print(f"updated: {updated}")
+            print(f"log: {result['log_path']}")
+            return 0
+        if not args.slug:
+            print("Usage: research-hub paper lookup-doi <slug>", file=sys.stderr)
+            return 2
+        try:
+            result = lookup_doi_for_slug(cfg, args.slug)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if result["status"] == "updated":
+            print(f"updated: {result['slug']} -> {result['doi']}")
+            return 0
+        print(f"{result['slug']}: {result.get('reason', result['status'])}")
+        return 1 if result["status"] == "no-match" else 0
     if args.paper_command == "prune":
         from research_hub.paper import prune_cluster
 
@@ -1070,6 +1096,12 @@ def _emit_papers_input_json(results: list, cluster_slug: str | None) -> None:
     from research_hub.discover import _to_papers_input
 
     papers = _to_papers_input([asdict(result) for result in results], cluster_slug)
+    for paper, result in zip(papers, results):
+        arxiv_id = str(getattr(result, "arxiv_id", "") or "")
+        if arxiv_id:
+            paper["arxiv_id"] = arxiv_id
+            if not paper.get("doi"):
+                paper["doi"] = f"10.48550/arxiv.{arxiv_id}"
     print(json.dumps(papers, indent=2, ensure_ascii=False))
 
 
@@ -1988,6 +2020,14 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--definition", help="Pre-fill cluster definition")
 
     subparsers.add_parser("doctor", help="Health check for research-hub installation")
+    doctor_parser = next(
+        action for action in subparsers.choices.values() if action.prog.endswith(" doctor")
+    )
+    doctor_parser.add_argument(
+        "--autofix",
+        action="store_true",
+        help="Backfill mechanical frontmatter gaps before running checks",
+    )
 
     config_parser = subparsers.add_parser("config", help="Config maintenance commands")
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
@@ -2917,6 +2957,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     paper_parser = subparsers.add_parser("paper", help="Paper curation operations")
     paper_sub = paper_parser.add_subparsers(dest="paper_command")
+    lookup_doi_p = paper_sub.add_parser("lookup-doi", help="Look up and write DOI metadata from Crossref")
+    lookup_doi_p.add_argument("slug", nargs="?", help="Paper slug (omit with --batch)")
+    lookup_doi_p.add_argument("--cluster", help="Cluster slug for --batch mode")
+    lookup_doi_p.add_argument("--batch", action="store_true", help="Process every paper missing DOI in a cluster")
     prune_p = paper_sub.add_parser("prune", help="Move or delete labeled papers")
     prune_p.add_argument("--cluster", required=True)
     prune_p.add_argument("--label", default="deprecated")
@@ -3049,7 +3093,17 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "doctor":
         from research_hub.doctor import print_doctor_report, run_doctor
+        from research_hub.vault_autofix import run_autofix
 
+        if getattr(args, "autofix", False):
+            summary = run_autofix(get_config())
+            print(
+                "[autofix] "
+                f"topic_cluster={summary['topic_cluster']} "
+                f"ingested_at={summary['ingested_at']} "
+                f"doi_derived={summary['doi_derived']} "
+                f"skipped_no_cluster={summary['skipped_no_cluster']}"
+            )
         return print_doctor_report(run_doctor())
     if args.command == "config":
         if args.config_command == "encrypt-secrets":

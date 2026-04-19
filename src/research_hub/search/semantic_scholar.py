@@ -18,6 +18,10 @@ DEFAULT_FIELDS = (
 )
 
 
+class RateLimitError(RuntimeError):
+    """Semantic Scholar returned HTTP 429."""
+
+
 class SemanticScholarClient:
     """Thin Semantic Scholar REST client with polite throttling."""
 
@@ -92,6 +96,8 @@ class SemanticScholarClient:
             )
         except requests.exceptions.RequestException:
             return None
+        if response.status_code == 429:
+            raise RateLimitError("Semantic Scholar rate-limited (HTTP 429)")
         if response.status_code != 200:
             return None
         try:

@@ -290,11 +290,18 @@ def run_pipeline(
     del no_fit_check_auto_labels
     cfg = get_config()
     kb = str(cfg.root)
-    collection_key = cfg.zotero_default_collection
     no_zotero = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in ("1", "true", "yes")
+    clusters = ClusterRegistry(cfg.clusters_file)
+    cluster_obj = clusters.get(cluster_slug) if cluster_slug else None
+    collection_key = (
+        cluster_obj.zotero_collection_key
+        if cluster_obj and cluster_obj.zotero_collection_key
+        else cfg.zotero_default_collection
+    )
     if collection_key is None and not dry_run and not no_zotero:
         raise RuntimeError(
-            "Set zotero.default_collection in config.json or "
+            "Set cluster.zotero_collection_key for this cluster, zotero.default_collection "
+            "in config.json, or "
             "RESEARCH_HUB_DEFAULT_COLLECTION env var. "
             "Or set RESEARCH_HUB_NO_ZOTERO=1 to skip Zotero entirely "
             "(data analyst mode: Obsidian + NotebookLM only)."
@@ -308,11 +315,9 @@ def run_pipeline(
         if collection_key is not None
         else "<unconfigured>"
     )
-    clusters = ClusterRegistry(cfg.clusters_file)
     if cluster_slug is not None and clusters.get(cluster_slug) is None:
         raise ValueError("Cluster not found - use 'research-hub clusters new' first")
     if query is None and cluster_slug is not None:
-        cluster_obj = clusters.get(cluster_slug)
         if cluster_obj is not None and cluster_obj.first_query:
             query = cluster_obj.first_query
     manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
@@ -343,6 +348,13 @@ def run_pipeline(
 
         with papers_json.open("r", encoding="utf-8") as file_obj:
             papers = json.load(file_obj)
+        if isinstance(papers, dict) and "papers" in papers:
+            papers = papers["papers"]
+        if not isinstance(papers, list):
+            raise ValueError(
+                "papers_input.json must be either a top-level JSON array or "
+                'an object like {"papers": [...]}'
+            )
         p(f"Loaded {len(papers)} papers")
 
         if not no_zotero:
