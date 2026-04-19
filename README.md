@@ -1,42 +1,52 @@
 # research-hub
 
+> **Build your research cluster once. Ask AI about it thousands of times.**
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Tests](https://img.shields.io/badge/tests-1423%20passing-brightgreen.svg)](docs/audit_v0.41.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![CI: Linux · macOS · Windows](https://img.shields.io/badge/CI-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-blue)](.github/workflows/ci.yml)
 
 繁體中文說明 → [README.zh-TW.md](README.zh-TW.md)
 
-![Dashboard Overview](docs/images/dashboard-overview.png)
+![Dashboard Overview](docs/images/dashboard-overview-researcher.png)
 
 ---
 
-## What this is
+## The 10-minute story
 
-A CLI + MCP server that does three things at once:
+Say you want to get up to speed on **"harness engineering for LLM agents"** — a subfield that barely existed 6 months ago. Traditional workflow: search arXiv, skim abstracts, manually note key claims, fight Obsidian, occasionally wish you had a RAG. 2 hours.
 
-1. **Ingest** academic papers into Zotero (citations) + Obsidian (structured notes) + NotebookLM (briefings) — one command.
-2. **Organize** papers into clusters, sub-topics, and an Obsidian graph coloured by research label.
-3. **Serve** 60 MCP tools so Claude Code / Codex / any MCP-compatible AI can drive the whole thing.
+research-hub workflow:
 
-Built for PhD students and research teams who already use AI agents daily and don't want to context-switch between six tabs.
+```bash
+research-hub clusters new --query "LLM evaluation harness" --slug llm-evaluation-harness
+research-hub search "language model evaluation harness" --to-papers-input \
+    --cluster llm-evaluation-harness > papers.json
+research-hub ingest --cluster llm-evaluation-harness --no-verify
+```
 
-## Source code vs vault
+3 minutes later your vault has 6 key papers with structured notes. 2 more minutes: generate the AI summary layer (**crystals**) and the structured entity/claim registry (**memory**):
 
-research-hub has two separate locations on your computer. This is intentional:
+```bash
+research-hub crystal emit --cluster llm-evaluation-harness > prompt.md
+# (paste prompt to Claude/GPT, save response as crystals.json)
+research-hub crystal apply --cluster llm-evaluation-harness --scored crystals.json
 
-| | Source code | Vault |
-|---|---|---|
-| **What** | The Python package + CLI | Your research data |
-| **Where** | `site-packages/research_hub/` (managed by pip) | `~/knowledge-base/` (default, you choose during `init`) |
-| **Contains** | CLI, MCP server, dashboard renderer | Paper notes, Obsidian graph, crystals, Zotero sync |
-| **Shared?** | Yes — same package for every user | No — each user has their own vault |
+research-hub memory emit  --cluster llm-evaluation-harness > mem-prompt.md
+research-hub memory apply --cluster llm-evaluation-harness --scored memory.json
+```
 
-After `pip install`, run `research-hub init` to create your vault. If you already have an Obsidian vault, point `init` at it — research-hub adds its folders alongside your existing notes without overwriting anything.
+Now open Claude Desktop and ask:
 
-Run `research-hub where` at any time to see exactly where your config and vault live.
+> **You:** "What's the current SOTA in LLM evaluation harness?"
+> **Claude (via MCP):** calls `read_crystal("llm-evaluation-harness", "sota-and-open-problems")` → gets a pre-written 180-word answer with paper citations. **~1 KB read, 0 abstracts fetched at query time.**
+
+That pre-written answer is a **crystal**. You paid the reasoning cost once; every subsequent question is ~1 KB of cached analysis. See [`hub/llm-evaluation-harness/crystals/`](hub/llm-evaluation-harness/crystals/) in your vault for the 10 canonical Q&As generated above.
+
+---
 
 ## What makes it different
 
@@ -44,61 +54,74 @@ Run `research-hub where` at any time to see exactly where your config and vault 
 
 Every RAG system, including Karpathy's "LLM wiki", still assembles context at query time. research-hub's answer: **store the AI's reasoning, not the inputs**.
 
-For each research cluster, you generate ~10 canonical Q→A "crystals" once (via emit/apply, using any LLM you like). When an AI agent asks "what's the SOTA in X?", it reads a pre-written 100-word paragraph — not 20 paper abstracts.
+For each cluster you generate ~10 canonical Q→A crystals once, using any LLM you like. When an AI agent later asks "what's the SOTA in X?", it reads a pre-written paragraph — not 20 paper abstracts. **Token cost per query: ~1 KB (crystal read) vs ~30 KB (cluster digest). 30× compression.**
 
-```bash
-research-hub crystal emit --cluster llm-agents-software-engineering > prompt.md
-# Feed prompt.md to Claude/GPT/Gemini, save answer as crystals.json
-research-hub crystal apply --cluster llm-agents-software-engineering --scored crystals.json
-```
-
-Token cost per cluster-level query: **~1 KB** (crystal read) vs ~30 KB (cluster digest). 30× compression without losing quality, because the quality was pre-computed.
+Because the quality was pre-computed, it doesn't degrade at query time. See the [harness-engineering example crystals](hub/llm-evaluation-harness/crystals/) — one folder, 10 Q&As answering "what is this field?", "what are the main threads?", "where do experts disagree?", "what's SOTA?", etc.
 
 [→ Why this is not RAG](docs/anti-rag.md)
 
-### 2. Live dashboard with direct execution (v0.27)
+### 2. Structured memory layer — entities, claims, methods (v0.36)
+
+Crystals store prose. **Memory** stores the underlying structure: named entities (benchmarks, models, concepts), typed claims with confidence + supporting papers, and method taxonomies. For the harness cluster:
+
+```
+hub/llm-evaluation-harness/memory.json
+├── 14 entities  (vla-eval, SafeHarness, M*, LIBERO, SEC-bench, ...)
+├── 12 claims    ("Harness is locus of progress", "Specialized beats generic +22%", ...)
+└── 7 methods    (reflective code evolution, lifecycle-integrated defense, ...)
+```
+
+AI agents query entities via `list_entities`, claims via `list_claims(min_confidence="high")`, methods via `list_methods`. No RAG over prose — structured lookup over structured data.
+
+### 3. 4 personas, 1 codebase, dashboard adapts (v0.38)
+
+Same vault, 4 rendered dashboards:
+
+| Persona | Install | Dashboard vocabulary | Hidden tabs |
+|---|---|---|---|
+| **Researcher** (PhD STEM, Zotero) | `pip install research-hub-pipeline[playwright,secrets]` | Cluster / Crystal / Paper / Citation graph | (none) |
+| **Humanities** (Zotero, quote-heavy) | `pip install research-hub-pipeline[playwright,secrets]` | Theme / Synthesis / Source | (none) |
+| **Analyst** (industry, no Zotero) | `pip install research-hub-pipeline[import,secrets]` | Topic / AI Brief / Document | Diagnostics, Bind-Zotero |
+| **Internal KM** (lab / company) | `pip install research-hub-pipeline[import,secrets]` | Project area / AI Brief / Document | Diagnostics, Bind-Zotero |
+
+Side-by-side screenshots: [`docs/personas.md`](docs/personas.md). [Your first 10 minutes guide →](docs/first-10-minutes.md)
+
+### 4. Live dashboard with direct execution (v0.27)
 
 ```bash
 research-hub serve --dashboard
 ```
 
-Opens a localhost HTTP dashboard at `http://127.0.0.1:8765/`. Every Manage-tab button **directly executes** the CLI command instead of copying to clipboard. Vault changes push to the browser via Server-Sent Events. Fallback to static clipboard mode when the server isn't running.
+Localhost HTTP dashboard at `http://127.0.0.1:8765/`. Every Manage-tab button **directly executes** the CLI command. Vault changes push via Server-Sent Events. Fallback to static clipboard mode when the server isn't running.
 
-![Live dashboard](docs/images/dashboard-manage-live.png)
+### 5. Cluster integrity + 100% orphan coverage (v0.37 + v0.39)
 
-### 3. Obsidian graph auto-coloured by label (v0.27)
-
-```bash
-research-hub vault graph-colors --refresh
-```
-
-Writes 14 colour groups to `.obsidian/graph.json`: 5 per cluster path + 9 per paper label (`seed`, `core`, `method`, `benchmark`, `survey`, `application`, `tangential`, `deprecated`, `archived`). Every `research-hub dashboard` run auto-refreshes them. Open Obsidian Graph View — your vault is visually structured by meaning, not just file tree.
-
-![Obsidian Graph coloured by label](docs/images/obsidian-graph.png)
-
-### 4. Sub-topic-aware Library + citation-graph cluster split (v0.27)
-
-Big clusters (331 papers?) don't render as a flat list anymore. They're grouped by sub-topic, each expandable. And if your cluster has no sub-topics yet:
+Papers drift, rebind v2 catches it. On the maintainer's 1063-orphan vault: 33% → **100% coverage** via 8-heuristic chain + auto-create-from-folder proposals.
 
 ```bash
-research-hub clusters analyze --cluster my-big-cluster --split-suggestion
+research-hub doctor                       # catches 12+ classes of drift
+research-hub clusters rebind --emit       # proposes 80%+ assignments
+research-hub clusters rebind --apply report.md --auto-create-new
 ```
 
-Uses Semantic Scholar citation graph + networkx community detection to suggest 3-8 coherent sub-topics. Writes a markdown report you review before running `topic apply-assignments`.
-
-![Library tab with sub-topics](docs/images/dashboard-library-subtopic.png)
+[→ 6 failure modes × 4 personas mitigation matrix](docs/cluster-integrity.md)
 
 ---
 
 ## Install
 
 ```bash
-pip install research-hub-pipeline
-research-hub init              # interactive config + vault layout
+# Researcher / Humanities (use Zotero + NotebookLM)
+pip install research-hub-pipeline[playwright,secrets]
+
+# Analyst / Internal KM (no Zotero, import local files)
+pip install research-hub-pipeline[import,secrets]
+
+research-hub init              # 4-option interactive persona prompt
 research-hub serve --dashboard # opens browser
 ```
 
-Python 3.10+. No OpenAI/Anthropic API key required — research-hub is provider-agnostic (all AI generation uses emit/apply pattern; you feed prompts to your own AI).
+Python 3.10+. **No OpenAI/Anthropic API key required** — research-hub is provider-agnostic (all AI generation uses emit/apply pattern; you feed prompts to your own AI).
 
 ## For Claude Code / Claude Desktop users
 
@@ -115,34 +138,15 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
+60 MCP tools cover: paper ingest, cluster CRUD, labels, quotes, draft composition, citation graph, NotebookLM, crystal generation, fit-check, autofill, cluster memory, cluster rebind workflows.
+
 Then talk to Claude:
 
-> "Claude, add arxiv 2310.06770 to a new cluster called LLM-SE"
-> "Claude, generate crystals for the LLM-SE cluster"
-> "Claude, what's this cluster about?" → Claude calls `list_crystals` + `read_crystal` → gets the pre-written 100-word answer
+> "Claude, what's in my llm-evaluation-harness cluster?" → `read_crystal("what-is-this-field")` → 180-word answer
+> "Claude, which claims have high confidence?" → `list_claims(cluster="llm-evaluation-harness", min_confidence="high")` → 10 structured claims with paper refs
+> "Claude, add arxiv 2310.06770 to LLM-SE cluster" → `add_paper(...)` → Zotero + Obsidian + NotebookLM entries
 
-60 MCP tools cover: paper ingest, cluster CRUD, labels, quotes, draft composition, citation graph, NotebookLM, crystal generation, fit-check, autofill, cluster memory, and cluster rebind workflows.
-
-## Quickstart (5 commands)
-
-```bash
-# 1. Initialize vault
-research-hub init
-
-# 2. Ingest one paper
-research-hub add 10.48550/arxiv.2310.06770 --cluster llm-agents
-
-# 3. Open live dashboard
-research-hub serve --dashboard
-
-# 4. Generate crystals once you have a few papers
-research-hub crystal emit --cluster llm-agents > prompt.md
-# (feed prompt.md to your AI, save response as crystals.json)
-research-hub crystal apply --cluster llm-agents --scored crystals.json
-
-# 5. Ask your AI questions — it reads crystals, not papers
-# (via Claude Desktop MCP, or any MCP-compatible client)
-```
+---
 
 ## Status
 
@@ -155,17 +159,17 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Architecture docs
 
-- [MCP tools reference](docs/mcp-tools.md) — all 50+ tools categorized + signatures
+- [Your first 10 minutes](docs/first-10-minutes.md) — guided tour for each of the 4 personas
+- [User personas](docs/personas.md) — 4 persona profiles with per-persona feature matrix
+- [Cluster integrity](docs/cluster-integrity.md) — 6 failure modes + mitigation matrix across all 4 personas
+- [MCP tools reference](docs/mcp-tools.md) — all 60 tools categorized + signatures
 - [Example Claude Desktop flow](docs/example-claude-mcp-flow.md) — worked example: ingest → crystallize → query
 - [Import folder](docs/import-folder.md) — local file ingest for analyst persona (PDF/DOCX/MD/TXT/URL)
 - [Anti-RAG crystals](docs/anti-rag.md) — why pre-computed Q→A beats retrieval
 - [Upgrade guide](UPGRADE.md) — migrating from older versions
-- [Your first 10 minutes](docs/first-10-minutes.md) — guided tour for each of the 4 personas
-- [User personas](docs/personas.md) — 4 persona profiles (PhD STEM / industry / humanities / internal KM) with per-persona feature matrix
-- [Cluster integrity](docs/cluster-integrity.md) — 6 failure modes + mitigation matrix across all 4 personas
-- [Task-level workflows](docs/task-workflows.md) — v0.33+ 5 MCP wrappers (ask/brief/sync/compose/collect) that collapse 3-4 call sequences into 1
-- [Screenshot workflow](docs/screenshot-workflow.md) — re-render any dashboard tab via `dashboard --screenshot` CLI
-- [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.34.md`
+- [Task-level workflows](docs/task-workflows.md) — v0.33+ 5 MCP wrappers (ask/brief/sync/compose/collect)
+- [Screenshot workflow](docs/screenshot-workflow.md) — re-render any dashboard tab
+- [Audit reports](docs/) — `audit_v0.26.md` … `audit_v0.41.md`
 - [NotebookLM setup](docs/notebooklm.md) — CDP attach flow + troubleshooting
 - [Papers input schema](docs/papers_input_schema.md) — ingestion pipeline reference
 
@@ -173,29 +177,19 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 | Stage | Command | What it does |
 |---|---|---|
-| **Init** | `init` / `doctor` | First-time config + health check |
+| **Init** | `init` / `doctor` | First-time config + health check (doctor has 12+ checks, `--autofix` for mechanical backfills) |
 | **Find** | `search` / `verify` / `discover new` | Multi-backend paper search + DOI resolution + AI-scored discovery |
-| **Ingest** | `add` / `ingest` | One-shot or bulk paper ingest into Zotero + Obsidian |
-| **Organize** | `clusters new/list/show/bind/merge/split/rename/delete` | Cluster CRUD |
+| **Ingest** | `add` / `ingest` / `import-folder` | One-shot or bulk paper ingest into Zotero + Obsidian |
+| **Organize** | `clusters new/list/show/bind/merge/split/rename/delete/rebind/scaffold-missing` | Cluster CRUD + 8-heuristic rebind + hub scaffolding |
 | **Topic** | `topic scaffold/propose/assign/build` | Sub-topic notes from `subtopics:` frontmatter |
-| **Label** | `label` / `find --label` / `paper prune` | Canonical label vocabulary (seed/core/method/...) |
+| **Label** | `label` / `find --label` / `paper prune` / `paper lookup-doi` | Canonical label vocabulary + Crossref DOI backfill |
 | **Crystal** | `crystal emit/apply/list/read/check` | Pre-computed canonical Q→A answers |
+| **Memory** | `memory emit/apply/list/read` | Structured entities/claims/methods registry |
 | **Analyze** | `clusters analyze --split-suggestion` | Citation-graph community detection for big clusters |
 | **Sync** | `sync status` / `pipeline repair` | Detect + repair Zotero ↔ Obsidian drift |
 | **Dashboard** | `dashboard` / `serve --dashboard` / `vault graph-colors` | Static HTML or live HTTP server + auto-refresh Obsidian graph |
 | **NotebookLM** | `notebooklm bundle/upload/generate/download` | Browser-automated NLM flows (CDP attach) |
 | **Write** | `quote` / `compose-draft` / `cite` | Quote capture, markdown draft assembly, BibTeX export |
-
-## Personas + install commands
-
-| Persona | Install | Init |
-|---|---|---|
-| **Researcher** (PhD STEM, default) | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init` |
-| **Humanities** (quote-heavy, uses Zotero) | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init --persona humanities` |
-| **Analyst** (industry, no Zotero) | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona analyst` |
-| **Internal KM** (lab/company, mixed file types) | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona internal` |
-
-All four personas share the same dashboard, MCP server, crystal system, and cluster integrity tools. The dashboard auto-adapts vocabulary and hides irrelevant features per persona (see `docs/personas.md`).
 
 ## For developers
 
@@ -205,6 +199,8 @@ cd research-hub
 pip install -e '.[dev,playwright]'
 python -m pytest -q  # 1423 passing
 ```
+
+Contributing: see [CONTRIBUTING.md](CONTRIBUTING.md). Reporting security issues: see [SECURITY.md](.github/SECURITY.md).
 
 Package name on PyPI: **research-hub-pipeline**
 CLI entry point: **research-hub**
