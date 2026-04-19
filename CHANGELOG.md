@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.45.0 (2026-04-19)
+
+**Critical fix: `notebooklm generate` overlay dismissal. Plus 3 v0.43 scaffolding completions.**
+
+Live NLM push on the 11-paper harness cluster after v0.44 ship exposed a real bug: `research-hub notebooklm generate --type brief` failed with "Generation button not found". Root cause: `_trigger_and_wait` in `client.py` searches the studio panel without dismissing NotebookLM's `cdk-overlay-backdrop-showing` overlay first. v0.42 `ask.py` had the fix; `generate` / `download_briefing` / `open_notebook_by_name` paths never got it.
+
+### Fixed — NLM overlay dismissal
+
+- Lifted `_dismiss_overlay` from `ask.py` into shared `notebooklm/browser.py::dismiss_overlay`
+- `NotebookLMClient.open_notebook_by_name` calls it after the tile click (catches first-load onboarding popup)
+- `_trigger_and_wait` calls it before searching the studio panel (catches add-source dialog from `?addSource=true` URLs)
+- `download_briefing` calls it before reading summary content
+- 4 new tests + ask.py refactored to use the shared helper
+
+### Added — auto `.base` refresh on ingest + topic build
+
+After successful `research-hub ingest --cluster X` or `research-hub topic build --cluster X`, the cluster's `hub/X/X.base` file is automatically refreshed via `write_cluster_base(... force=True)`. Non-fatal — if the refresh fails, the underlying command still returns 0 with a logged warning. Closes the v0.43 gap where new papers required a manual `bases emit --force`.
+
+### Added — Crystal `See also` routes through `wikilink()`
+
+Byte-identical refactor — `[[crystals/<slug>|<question>]]` now built via the v0.43 helper. Centralizes wikilink rendering for consistency.
+
+### Added — `doctor` detects missing defuddle CLI
+
+`research-hub doctor` emits an `INFO`-level note when `defuddle` binary not on PATH, with the install hint `npm install -g defuddle-cli`. Detection only — never auto-installs.
+
+### Stats
+
+- Tests: 1508 → **1520 passing** (+12)
+- LOC delta: ~+200
+- Files: `notebooklm/{browser,client,ask}.py`, `crystal.py`, `pipeline.py`, `topic.py`, `doctor.py`, 4 test files
+
+### Verification (live)
+
+```bash
+research-hub notebooklm generate --cluster llm-evaluation-harness --type brief
+# Expected: completes without "Generation button not found" error
+```
+
+繁體中文 release announcement: [docs/release-notes-v0.45.zh-TW.md](docs/release-notes-v0.45.zh-TW.md).
+
+---
+
 ## v0.44.0 (2026-04-19)
 
 **Dashboard UI completeness — finally surfaces v0.42 + v0.43 features as buttons. README walkthrough so users actually know how to use the dashboard.**

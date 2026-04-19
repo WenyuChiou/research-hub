@@ -1,7 +1,9 @@
 """v0.43 - obsidian-bases tests."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import yaml
@@ -132,3 +134,132 @@ def test_mcp_emit_cluster_base(monkeypatch, tmp_path):
     assert "x.base" in result["path"]
     assert result["bytes"] > 0
     assert result["action"] in {"created", "exists"}
+
+
+def test_run_pipeline_refreshes_base_on_success(monkeypatch, tmp_path):
+    from research_hub import pipeline
+
+    cfg = SimpleNamespace(
+        root=tmp_path,
+        raw=tmp_path / "raw",
+        hub=tmp_path / "hub",
+        logs=tmp_path / "logs",
+        research_hub_dir=tmp_path / ".research_hub",
+        clusters_file=tmp_path / ".research_hub" / "clusters.yaml",
+        zotero_default_collection="COLL",
+        zotero_collections={"COLL": {"name": "Collection"}},
+        zotero_library_id="123",
+    )
+    for path in (cfg.raw, cfg.hub, cfg.logs, cfg.research_hub_dir):
+        path.mkdir(parents=True, exist_ok=True)
+    (cfg.root / "papers_input.json").write_text("[]", encoding="utf-8")
+
+    cluster = SimpleNamespace(
+        slug="alpha",
+        name="Alpha",
+        obsidian_subfolder="alpha",
+        zotero_collection_key="COLL",
+        first_query="",
+    )
+    monkeypatch.setenv("RESEARCH_HUB_NO_ZOTERO", "1")
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(
+        pipeline,
+        "ClusterRegistry",
+        lambda path: SimpleNamespace(get=lambda slug: cluster if slug == "alpha" else None),
+    )
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *args, **kwargs: SimpleNamespace(save=lambda path: None))
+    monkeypatch.setattr(pipeline, "Manifest", lambda path: SimpleNamespace(append=lambda entry: None))
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "research_hub.obsidian_bases.write_cluster_base",
+        lambda **kwargs: (calls.append(kwargs) or (Path(kwargs["hub_root"]) / kwargs["cluster_slug"] / "alpha.base", True)),
+    )
+
+    assert pipeline.run_pipeline(dry_run=False, cluster_slug="alpha", verify=False) == 0
+    assert calls and calls[0]["cluster_slug"] == "alpha"
+    assert calls[0]["force"] is True
+
+
+def test_run_pipeline_base_refresh_failure_is_non_fatal(monkeypatch, tmp_path):
+    from research_hub import pipeline
+
+    cfg = SimpleNamespace(
+        root=tmp_path,
+        raw=tmp_path / "raw",
+        hub=tmp_path / "hub",
+        logs=tmp_path / "logs",
+        research_hub_dir=tmp_path / ".research_hub",
+        clusters_file=tmp_path / ".research_hub" / "clusters.yaml",
+        zotero_default_collection="COLL",
+        zotero_collections={"COLL": {"name": "Collection"}},
+        zotero_library_id="123",
+    )
+    for path in (cfg.raw, cfg.hub, cfg.logs, cfg.research_hub_dir):
+        path.mkdir(parents=True, exist_ok=True)
+    (cfg.root / "papers_input.json").write_text("[]", encoding="utf-8")
+
+    cluster = SimpleNamespace(
+        slug="alpha",
+        name="Alpha",
+        obsidian_subfolder="alpha",
+        zotero_collection_key="COLL",
+        first_query="",
+    )
+    monkeypatch.setenv("RESEARCH_HUB_NO_ZOTERO", "1")
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(
+        pipeline,
+        "ClusterRegistry",
+        lambda path: SimpleNamespace(get=lambda slug: cluster if slug == "alpha" else None),
+    )
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *args, **kwargs: SimpleNamespace(save=lambda path: None))
+    monkeypatch.setattr(pipeline, "Manifest", lambda path: SimpleNamespace(append=lambda entry: None))
+    monkeypatch.setattr(
+        "research_hub.obsidian_bases.write_cluster_base",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("no base")),
+    )
+
+    assert pipeline.run_pipeline(dry_run=False, cluster_slug="alpha", verify=False) == 0
+
+
+def test_topic_build_refreshes_base(monkeypatch, tmp_path):
+    from research_hub import topic
+
+    cfg = SimpleNamespace(
+        raw=tmp_path / "raw",
+        hub=tmp_path / "hub",
+        clusters_file=tmp_path / ".research_hub" / "clusters.yaml",
+    )
+    (cfg.raw / "alpha").mkdir(parents=True, exist_ok=True)
+    cfg.hub.mkdir(parents=True, exist_ok=True)
+    note = cfg.raw / "alpha" / "paper-a.md"
+    note.write_text(
+        "---\n"
+        'title: "Paper A"\n'
+        'authors: "Doe, Jane"\n'
+        'year: "2024"\n'
+        'doi: "10.1/a"\n'
+        "subtopics:\n"
+        "  - benchmarks\n"
+        "---\n\n"
+        "## Abstract\n\nA.\n",
+        encoding="utf-8",
+    )
+
+    cluster = SimpleNamespace(slug="alpha", name="Alpha", obsidian_subfolder="alpha")
+    monkeypatch.setattr(
+        "research_hub.clusters.ClusterRegistry",
+        lambda path: SimpleNamespace(get=lambda slug: cluster if slug == "alpha" else None),
+    )
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "research_hub.obsidian_bases.write_cluster_base",
+        lambda **kwargs: (calls.append(kwargs) or (Path(kwargs["hub_root"]) / kwargs["cluster_slug"] / "alpha.base", True)),
+    )
+
+    written = topic.build_subtopic_notes(cfg, "alpha")
+
+    assert written
+    assert calls and calls[0]["cluster_slug"] == "alpha"
+    assert calls[0]["force"] is True

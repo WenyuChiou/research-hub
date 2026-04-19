@@ -98,7 +98,7 @@ class Crystal:
             lines.extend(["## See also", ""])
             for slug in self.see_also:
                 label = next((q["question"] for q in CANONICAL_QUESTIONS if q["slug"] == slug), slug)
-                lines.append(f"- [[crystals/{slug}|{label}]]")
+                lines.append("- " + _wikilink("crystals/" + slug, display=label))
             lines.append("")
         return "\n".join(lines)
 

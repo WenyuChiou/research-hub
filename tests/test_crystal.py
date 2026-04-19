@@ -222,6 +222,37 @@ def test_crystal_see_also_populated_with_sibling_slugs(tmp_path):
     assert "key-concepts" in crystal.read_crystal(cfg, "test", "what-is-this-field").see_also
 
 
+def test_see_also_routes_through_wikilink():
+    c = Crystal(
+        cluster_slug="test",
+        question_slug="q1",
+        question="What?",
+        tldr="",
+        gist="",
+        full="",
+        see_also=["what-is-this-field", "main-threads"],
+    )
+
+    text = c.to_markdown()
+
+    assert "[[crystals/what-is-this-field|What is this research area about?]]" in text
+    assert "[[crystals/main-threads|What are the 3-5 main research threads or schools of thought?]]" in text
+
+
+def test_see_also_unknown_slug_falls_back_to_slug_display():
+    c = Crystal(
+        cluster_slug="test",
+        question_slug="q1",
+        question="What?",
+        tldr="",
+        gist="",
+        full="",
+        see_also=["custom-question"],
+    )
+
+    assert "[[crystals/custom-question|custom-question]]" in c.to_markdown()
+
+
 def test_emit_prompt_handles_missing_overview_gracefully(tmp_path):
     cfg = _StubConfig(tmp_path / "vault")
     ClusterRegistry(cfg.clusters_file).create(query="test", name="Test", slug="test")

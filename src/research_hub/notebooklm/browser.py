@@ -141,6 +141,22 @@ def default_state_file(research_hub_dir: Path) -> Path:
     return research_hub_dir / "nlm_sessions" / "state.json"
 
 
+def dismiss_overlay(page, *, max_escapes: int = 3) -> None:
+    """Dismiss NotebookLM dialog backdrops that block page interaction."""
+    for _ in range(max_escapes):
+        backdrop = page.locator(".cdk-overlay-backdrop-showing").first
+        try:
+            if backdrop.count() == 0:
+                return
+        except Exception:
+            return
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(300)
+        except Exception:
+            return
+
+
 def login_nlm(
     user_data_dir: Path,
     *,

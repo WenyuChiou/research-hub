@@ -84,6 +84,10 @@ def test_doctor_all_green(tmp_path, monkeypatch, capsys):
         "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
         lambda: "C:/Chrome/chrome.exe",
     )
+    monkeypatch.setattr(
+        "research_hub.defuddle_extract.find_defuddle_binary",
+        lambda: "C:/npm/defuddle.cmd",
+    )
 
     results = run_doctor()
 
@@ -288,3 +292,57 @@ def test_doctor_migration_missing_doi_is_warn(tmp_path, monkeypatch):
 
     assert result.status == "WARN"
     assert "legacy papers without DOI expected" in result.message
+
+
+def test_doctor_detects_defuddle_installed(monkeypatch):
+    from research_hub.doctor import check_defuddle_cli
+
+    monkeypatch.setattr(
+        "research_hub.defuddle_extract.find_defuddle_binary",
+        lambda: "/usr/local/bin/defuddle",
+    )
+
+    result = check_defuddle_cli()
+
+    assert result.status == "OK"
+    assert "available" in result.message
+
+
+def test_doctor_detects_defuddle_missing(monkeypatch):
+    from research_hub.doctor import check_defuddle_cli
+
+    monkeypatch.setattr(
+        "research_hub.defuddle_extract.find_defuddle_binary",
+        lambda: None,
+    )
+
+    result = check_defuddle_cli()
+
+    assert result.status == "INFO"
+    assert "defuddle-cli" in result.message
+    assert "npm install" in result.message
+
+
+def test_doctor_output_mentions_defuddle_check(tmp_path, monkeypatch, capsys):
+    from research_hub.doctor import print_doctor_report, run_doctor
+
+    _write_config(tmp_path, monkeypatch)
+    monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
+    monkeypatch.setattr(
+        "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
+        lambda: "C:/Chrome/chrome.exe",
+    )
+    monkeypatch.setattr(
+        "research_hub.defuddle_extract.find_defuddle_binary",
+        lambda: "C:/npm/defuddle.cmd",
+    )
+    monkeypatch.setattr(
+        "research_hub.defuddle_extract.find_defuddle_binary",
+        lambda: None,
+    )
+
+    results = run_doctor()
+
+    assert any(result.name == "defuddle_cli" and result.status == "INFO" for result in results)
+    assert print_doctor_report(results) == 0
+    assert "defuddle_cli" in capsys.readouterr().out

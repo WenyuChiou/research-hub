@@ -114,6 +114,12 @@ class StubPage:
         self.role_rules: list = []
         self.placeholder_rules: list = []
         self.wait_for_function_calls = []
+        self.escape_presses: list[str] = []
+        self.keyboard = type(
+            "_Keyboard",
+            (),
+            {"press": lambda keyboard_self, key: self.escape_presses.append(key)},
+        )()
 
     def goto(self, url):
         self.goto_calls.append(url)
@@ -249,6 +255,38 @@ def test_parse_notebook_id_extracts_uuid():
     assert _parse_notebook_id("https://notebooklm.google.com/notebook/abc-123?x=1") == "abc-123"
 
 
+def test_dismiss_overlay_presses_escape_when_backdrop_present():
+    from research_hub.notebooklm.browser import dismiss_overlay
+
+    counts = iter([1, 1, 0])
+
+    class _Backdrop:
+        @property
+        def first(self):
+            return self
+
+        def count(self):
+            return next(counts)
+
+    page = StubPage()
+    page.locators[".cdk-overlay-backdrop-showing"] = _Backdrop()
+
+    dismiss_overlay(page)
+
+    assert page.escape_presses == ["Escape", "Escape"]
+
+
+def test_dismiss_overlay_noop_when_no_backdrop():
+    from research_hub.notebooklm.browser import dismiss_overlay
+
+    page = StubPage()
+    page.locators[".cdk-overlay-backdrop-showing"] = StubLocator(count=0)
+
+    dismiss_overlay(page)
+
+    assert page.escape_presses == []
+
+
 def test_create_notebook_happy_path():
     page = StubPage()
     create_button = StubLocator(
@@ -334,10 +372,44 @@ def test_trigger_briefing_returns_page_url():
     page = StubPage()
     page.url = "https://notebooklm.google.com/notebook/abc"
     page.locators['.create-artifact-button-container[aria-label="Report"]'] = StubLocator()
+    page.locators[".cdk-overlay-backdrop-showing"] = StubLocator(count=0)
 
     url = NotebookLMClient(page).trigger_briefing()
 
     assert url == "https://notebooklm.google.com/notebook/abc"
+
+
+def test_trigger_and_wait_dismisses_overlay_before_button_search():
+    counts = iter([1, 0])
+    call_order: list[str] = []
+
+    class _Backdrop:
+        @property
+        def first(self):
+            return self
+
+        def count(self):
+            return next(counts)
+
+    class _Artifact(StubLocator):
+        def wait_for(self, state=None, timeout=None):
+            call_order.append("wait_for_button")
+            return None
+
+    page = StubPage()
+    page.url = "https://notebooklm.google.com/notebook/abc"
+    page.locators[".cdk-overlay-backdrop-showing"] = _Backdrop()
+    page.keyboard = type(
+        "_Keyboard",
+        (),
+        {"press": lambda keyboard_self, key: call_order.append("escape")},
+    )()
+    page.locators['.create-artifact-button-container[aria-label="Report"]'] = _Artifact()
+
+    url = NotebookLMClient(page).trigger_briefing()
+
+    assert url == "https://notebooklm.google.com/notebook/abc"
+    assert call_order[:2] == ["escape", "wait_for_button"]
 
 
 def test_trigger_briefing_raises_on_no_button():
@@ -583,6 +655,58 @@ def test_client_download_briefing_returns_dom_text(monkeypatch):
     assert artifact.text == "Summary body."
     assert artifact.titles == ["Briefing One"]
     assert artifact.source_count == 4
+
+
+def test_download_briefing_dismisses_overlay():
+    from research_hub.notebooklm.client import NotebookHandle
+
+    call_order: list[str] = []
+    counts = iter([1, 0])
+
+    class _Backdrop:
+        @property
+        def first(self):
+            return self
+
+        def count(self):
+            return next(counts)
+
+    class _Summary(StubLocator):
+        def wait_for(self, state=None, timeout=None):
+            call_order.append("summary_wait")
+            return None
+
+    summary_locator = _Summary(text="Summary body")
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.url = "https://notebooklm.google.com/notebook/xyz"
+            self.keyboard = type(
+                "_Keyboard",
+                (),
+                {"press": lambda keyboard_self, key: call_order.append("escape")},
+            )()
+
+        def locator(self, selector):
+            if selector == ".cdk-overlay-backdrop-showing":
+                return _Backdrop()
+            if "summary-content" in selector:
+                return summary_locator
+            if "artifact-title" in selector:
+                return type("_AllList", (), {"all": lambda self: []})()
+            return StubLocator()
+
+        def evaluate(self, expression):
+            return 0
+
+        def wait_for_timeout(self, ms):
+            return None
+
+    client = NotebookLMClient(FakePage())
+    artifact = client.download_briefing(NotebookHandle(name="N", url="u", notebook_id="id"))
+
+    assert artifact.text == "Summary body"
+    assert call_order == ["escape", "summary_wait"]
 
 
 def test_upload_pdf_returns_failure_when_dialog_does_not_close(tmp_path):

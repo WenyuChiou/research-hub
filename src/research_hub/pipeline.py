@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import time
@@ -22,6 +23,7 @@ from research_hub.zotero.fetch import make_raw_md
 REQUIRED_FIELDS_CORE = ["title", "doi", "authors", "year"]
 REQUIRED_FIELDS_ZOTERO = ["abstract", "journal"]
 REQUIRED_FIELDS_NOTE = ["summary", "key_findings", "methodology", "relevance"]
+logger = logging.getLogger(__name__)
 
 
 def _slugify(text: str) -> str:
@@ -775,7 +777,24 @@ def run_pipeline(
             p(f"Errors logged: {errors_log}")
         p(f"JSON: {out_path}\n=== DONE ===")
 
+    if cluster_obj is not None:
+        _refresh_cluster_base(cfg, cluster_obj)
     return 0
+
+
+def _refresh_cluster_base(cfg, cluster) -> None:
+    from research_hub.obsidian_bases import write_cluster_base
+
+    try:
+        write_cluster_base(
+            hub_root=Path(cfg.hub),
+            cluster_slug=cluster.slug,
+            cluster_name=cluster.name,
+            obsidian_subfolder=cluster.obsidian_subfolder,
+            force=True,
+        )
+    except Exception as exc:
+        logger.warning("Could not refresh .base for %s: %s", cluster.slug, exc)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -306,6 +306,21 @@ def check_quote_orphan(cfg) -> CheckResult:
     return CheckResult("quote/orphan", "OK", f"All {quote_count} quotes reference live papers")
 
 
+def check_defuddle_cli() -> CheckResult:
+    """Report whether the optional defuddle CLI is available."""
+    try:
+        from research_hub.defuddle_extract import find_defuddle_binary
+    except ImportError:
+        return CheckResult("defuddle_cli", "INFO", "defuddle module not present (older install?)")
+    if find_defuddle_binary():
+        return CheckResult("defuddle_cli", "OK", "defuddle CLI available")
+    return CheckResult(
+        "defuddle_cli",
+        "INFO",
+        "defuddle CLI not installed. URL imports fall back to readability-lxml (unmaintained). Install with: `npm install -g defuddle-cli`",
+    )
+
+
 def run_doctor() -> list[CheckResult]:
     """Run all health checks and return results."""
     from research_hub.config import _resolve_config_path, get_config
@@ -695,6 +710,10 @@ def run_doctor() -> list[CheckResult]:
         results.append(CheckResult("nlm_session", "WARN", "Could not check"))
 
     if cfg is not None:
+        try:
+            results.append(check_defuddle_cli())
+        except Exception as exc:
+            results.append(CheckResult("defuddle_cli", "WARN", f"Could not check: {exc}"))
         for check in (
             check_cluster_missing_dir,
             check_cluster_orphan_papers,
@@ -714,7 +733,7 @@ def print_doctor_report(results: list[CheckResult]) -> int:
     """Print the report and return exit code (0 = no FAIL, 1 = has FAIL)."""
     has_fail = False
     for result in results:
-        icon = {"OK": "OK", "WARN": "!!", "FAIL": "XX"}[result.status]
+        icon = {"OK": "OK", "INFO": "ii", "WARN": "!!", "FAIL": "XX"}[result.status]
         line = f"  [{icon}] {result.name}: {result.message}"
         if result.details:
             line += f"\n        {result.details}"

@@ -536,7 +536,23 @@ def build_subtopic_notes(cfg, cluster_slug: str) -> list[Path]:
             )
         written.append(path)
 
+    _refresh_cluster_base(cfg, cluster)
     return written
+
+
+def _refresh_cluster_base(cfg, cluster) -> None:
+    from research_hub.obsidian_bases import write_cluster_base
+
+    try:
+        write_cluster_base(
+            hub_root=Path(cfg.hub),
+            cluster_slug=cluster.slug,
+            cluster_name=cluster.name,
+            obsidian_subfolder=cluster.obsidian_subfolder,
+            force=True,
+        )
+    except Exception as exc:
+        logger.warning("Could not refresh .base for %s: %s", cluster.slug, exc)
 
 
 def list_subtopics(cfg, cluster_slug: str) -> list[SubtopicDescriptor]:

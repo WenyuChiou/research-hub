@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from research_hub.notebooklm.browser import (
+    dismiss_overlay,
     default_session_dir,
     default_state_file,
     launch_nlm_context,
@@ -227,7 +228,7 @@ def ask_cluster_notebook(
                 page.wait_for_load_state("networkidle", timeout=10_000)
             except Exception:
                 pass
-            _dismiss_overlay(page)
+            dismiss_overlay(page)
             query_selector = _find_query_input(page)
             _log_jsonl(debug_log, {"kind": "ask_input_found", "selector": query_selector})
             _human_type(page, query_selector, question)

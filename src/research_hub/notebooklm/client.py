@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from research_hub.notebooklm.browser import dismiss_overlay
 from research_hub.notebooklm.selectors import (
     ADD_SOURCE_BUTTON_CSS,
     ADD_SOURCE_BUTTON_TEXTS,
@@ -132,6 +133,7 @@ class NotebookLMClient:
             )
         except Exception:
             pass
+        dismiss_overlay(self.page)
         return NotebookHandle(name=name, url=self.page.url, notebook_id=_parse_notebook_id(self.page.url))
 
     def create_notebook(self, name: str) -> NotebookHandle:
@@ -421,6 +423,7 @@ class NotebookLMClient:
         preset_texts: tuple[str, ...] = (),
     ) -> str:
         """Click an artifact tile, optionally pick a preset, and wait for completion."""
+        dismiss_overlay(self.page)
         container = self._find_artifact_container(label_texts)
         if container is None:
             raise NotebookLMError(
@@ -453,6 +456,7 @@ class NotebookLMClient:
         ``open_notebook_by_name`` (which waits for the notebook view to
         mount) before calling this method.
         """
+        dismiss_overlay(self.page)
         summary = self.page.locator(NOTEBOOK_SUMMARY_CONTENT_CSS).first
         try:
             summary.wait_for(state="attached", timeout=15_000)
