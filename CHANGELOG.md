@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.47.0 (2026-04-19)
+
+**Lazy mode reaches AI: `auto`/`cleanup`/`tidy` now exposed as MCP tools.** Closes the v0.46 gap where Claude Desktop / Claude Code users still had to invoke 7 individual MCP calls to replicate the lazy CLI commands.
+
+Now the conversation is literally:
+> "Claude, research harness engineering for me"
+
+Claude calls `auto_research_topic(topic="harness engineering")` once. Done.
+
+### Added — 3 new MCP tools
+
+- `auto_research_topic(topic, ...)` — wraps `auto.auto_pipeline`. Returns structured report with `cluster_slug`, `papers_ingested`, `notebook_url`, `brief_path`, `steps[]`.
+- `cleanup_garbage(bundles, debug_logs, artifacts, everything, apply, ...)` — wraps `cleanup.collect_garbage`. Returns `{total_bytes, files_deleted, candidates[]}`.
+- `tidy_vault(apply_cleanup)` — wraps `tidy.run_tidy`. Returns `{steps[], total_duration_sec, cleanup_preview_bytes}`.
+
+All 3 honor `apply` / `dry_run` semantics from their CLI counterparts. Default mode is preview-safe.
+
+### Stats
+
+- MCP tools: 78 → **81**
+- Tests: 1539 → **1547** (+8: 5 new + 3 consistency mappings)
+
+### Why ship a separate v0.47 instead of folding into v0.46
+
+v0.46 added the CLI but left MCP behind — answer to "can the AI just talk to research-hub?" was technically "yes but burns context". v0.47 makes it actually one MCP call. Small enough to ship same day; big enough to deserve its own version because it changes the conversational UX.
+
+### Onboarding flow (post-v0.47)
+
+```bash
+# One-time setup (under 60 s)
+pip install research-hub-pipeline[playwright,secrets]
+research-hub init                  # interactive: picks persona + Zotero
+research-hub notebooklm login      # one-time Google sign-in
+```
+
+Add to `claude_desktop_config.json`:
+```json
+{ "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+```
+
+Then in Claude Desktop:
+> "Claude, find me 5 papers on agent-based modeling and put them in a notebook"
+
+Claude calls `auto_research_topic(topic="agent-based modeling", max_papers=5)` → returns 5 papers ingested + brief URL in ~50 s.
+
+---
+
 ## v0.46.0 (2026-04-19)
 
 **Lazy mode — 4 one-line commands replace the 7+ command longhand workflow. Plus `cleanup` becomes a real garbage collector and `doctor` chrome check finally works.**

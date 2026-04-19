@@ -2061,6 +2061,136 @@ def emit_cluster_base(cluster_slug: str, force: bool = False) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+# v0.47 — Lazy mode MCP tools so AI can drive the whole pipeline in one call.
+# Mirrors the v0.46 CLI commands `auto`, `cleanup`, `tidy`.
+
+@mcp.tool()
+def auto_research_topic(
+    topic: str,
+    cluster_slug: str = "",
+    cluster_name: str = "",
+    max_papers: int = 8,
+    do_nlm: bool = True,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """One-shot research pipeline: search + ingest + NotebookLM brief.
+
+    Slugifies ``topic`` into a cluster (or reuses ``cluster_slug``), searches
+    arXiv + Semantic Scholar, ingests papers into Zotero + Obsidian, then
+    bundles + uploads + generates + downloads a NotebookLM brief.
+
+    Use when: user says "research X for me" or "find papers on X".
+
+    Returns ``{ok, cluster_slug, papers_ingested, notebook_url,
+    brief_path, total_duration_sec, error}``.
+    """
+    try:
+        from research_hub.auto import auto_pipeline
+
+        report = auto_pipeline(
+            topic,
+            cluster_slug=cluster_slug or None,
+            cluster_name=cluster_name or None,
+            max_papers=max_papers,
+            do_nlm=do_nlm,
+            dry_run=dry_run,
+            print_progress=False,
+        )
+        return {
+            "ok": report.ok,
+            "cluster_slug": report.cluster_slug,
+            "cluster_created": report.cluster_created,
+            "papers_ingested": report.papers_ingested,
+            "nlm_uploaded": report.nlm_uploaded,
+            "notebook_url": report.notebook_url,
+            "brief_path": str(report.brief_path) if report.brief_path else None,
+            "total_duration_sec": report.total_duration_sec,
+            "steps": [{"name": s.name, "ok": s.ok, "detail": s.detail} for s in report.steps],
+            "error": report.error if not report.ok else "",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def cleanup_garbage(
+    bundles: bool = False,
+    debug_logs: bool = False,
+    artifacts: bool = False,
+    everything: bool = False,
+    keep_bundles: int = 2,
+    debug_older_than_days: int = 30,
+    keep_artifacts: int = 10,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Garbage-collect accumulated research-hub files (v0.46+).
+
+    Pass ``everything=True`` for the common case (bundles + debug logs +
+    artifacts). Default mode lists candidates without deleting; pass
+    ``apply=True`` to actually remove.
+
+    Use when: user says "clean up", "free disk space", or "GC the vault".
+
+    Returns ``{ok, total_bytes, files_deleted, dirs_deleted, candidates}``.
+    """
+    try:
+        from research_hub.cleanup import collect_garbage, format_bytes
+
+        cfg = get_config()
+        do_b = bundles or everything
+        do_d = debug_logs or everything
+        do_a = artifacts or everything
+        report = collect_garbage(
+            cfg,
+            do_bundles=do_b,
+            do_debug_logs=do_d,
+            do_artifacts=do_a,
+            keep_bundles=keep_bundles,
+            debug_older_than_days=debug_older_than_days,
+            keep_artifacts=keep_artifacts,
+            apply=apply,
+        )
+        return {
+            "ok": True,
+            "total_bytes": report.total_bytes,
+            "total_human": format_bytes(report.total_bytes),
+            "files_deleted": report.files_deleted,
+            "dirs_deleted": report.dirs_deleted,
+            "applied": report.apply,
+            "candidates": (
+                [{"kind": "bundle", "path": str(c.path), "bytes": c.size_bytes} for c in report.bundles]
+                + [{"kind": "debug_log", "path": str(c.path), "bytes": c.size_bytes} for c in report.debug_logs]
+                + [{"kind": "artifact", "path": str(c.path), "bytes": c.size_bytes} for c in report.artifacts]
+            ),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def tidy_vault(apply_cleanup: bool = False) -> dict[str, Any]:
+    """One-shot vault maintenance: doctor autofix + dedup rebuild + bases refresh + cleanup preview.
+
+    Each sub-step is non-fatal — failures logged but don't abort the others.
+
+    Use when: user says "tidy", "maintenance", "vault health check".
+
+    Returns ``{ok, steps, total_duration_sec, cleanup_preview_bytes}``.
+    """
+    try:
+        from research_hub.tidy import run_tidy
+
+        report = run_tidy(apply_cleanup=apply_cleanup, print_progress=False)
+        return {
+            "ok": all(s.ok for s in report.steps),
+            "steps": [{"name": s.name, "ok": s.ok, "detail": s.detail} for s in report.steps],
+            "total_duration_sec": report.total_duration_sec,
+            "cleanup_preview_bytes": report.cleanup_preview_bytes,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @mcp.tool()
 def collect_to_cluster(
     source: str,

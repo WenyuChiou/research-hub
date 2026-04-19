@@ -88,6 +88,9 @@ EXPECTED_MAPPINGS = {
     "sync_cluster": "mcp-only",
     "compose_brief_draft": "mcp-only",
     "emit_cluster_base": "bases emit",
+    "auto_research_topic": "auto",
+    "cleanup_garbage": "cleanup",
+    "tidy_vault": "tidy",
     "collect_to_cluster": "mcp-only",
 }
 
