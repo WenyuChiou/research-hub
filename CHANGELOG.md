@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.40.1 (2026-04-19)
+
+**First multi-OS CI run exposed 2 test-infrastructure bugs (production code unchanged).**
+
+v0.40.0's CI added Windows + macOS matrix jobs for the first time. As expected with new platform coverage, 2 test infrastructure issues surfaced:
+
+1. **`test_v040_*` tests not covered by autouse `_auto_mock_require_config`** fixture. The conftest pattern matcher only matched up to `test_v034_*.py` (added in v0.37.3). v0.40 tests called `cli.main(["import-folder", ...])` and hit `require_config()` which raised `SystemExit(1)` because CI runners have no config.json. Fix: regex pattern matches all `test_v0NN_*` files.
+
+2. **Windows CI runners trip the v0.30 "vault must be under HOME" guard** because workspace is on `D:\` but HOME is on `C:\Users\runneradmin`. Tests using `tmp_path`-based `RESEARCH_HUB_ROOT` now auto-set `RESEARCH_HUB_ALLOW_EXTERNAL_ROOT=1` via the same conftest autouse fixture.
+
+Both fixes are 5-line changes in `tests/conftest.py`. No production code modified. 1402 tests still pass.
+
+---
+
 ## v0.40.0 (2026-04-19)
 
 **Production readiness — go-live audit fixes. 1387 → 1402 tests (+15). Multi-OS CI (Linux/Win/macOS).**

@@ -99,13 +99,12 @@ def _auto_mock_require_config(request, monkeypatch):
       hits require_config() in the dispatcher)
     """
     fspath = str(request.node.fspath).replace("\\", "/")
+    # v0.40.1: extended to all test_v0NN_*.py files (was: only up to v034).
+    # Use a regex-style match instead of enumerating each version.
+    import re as _re
     needs_mock = (
         "/tests/test_cli_" in fspath
-        or "/tests/test_v030_" in fspath
-        or "/tests/test_v031_" in fspath
-        or "/tests/test_v032_" in fspath
-        or "/tests/test_v033_" in fspath
-        or "/tests/test_v034_" in fspath
+        or bool(_re.search(r"/tests/test_v0\d+_", fspath))
     )
     if not needs_mock:
         return
@@ -114,3 +113,7 @@ def _auto_mock_require_config(request, monkeypatch):
     # and skips require_config(). Replacing require_config itself would break
     # that detection because lambda has different __globals__.
     monkeypatch.setattr("research_hub.cli.get_config", lambda: None, raising=False)
+    # v0.40.1: Windows CI runners have HOME=C:\Users\runneradmin and workspace
+    # on D:\, so any test using tmp_path-based RESEARCH_HUB_ROOT trips the
+    # v0.30 "vault must be under HOME" guard. Allow external roots in tests.
+    monkeypatch.setenv("RESEARCH_HUB_ALLOW_EXTERNAL_ROOT", "1")
