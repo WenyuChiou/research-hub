@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.41.0 (2026-04-19)
+
+**Real-world friction fixes — 4 ingest + 3 vault hygiene CLIs. 1402 → 1423 tests (+21).**
+
+After v0.40.2 ship, ran end-to-end test (create cluster → search arXiv → ingest 6 LLM-eval-harness papers → push to NotebookLM). Hit 4 distinct ingest pipeline bugs. Separately, vault frontmatter audit found 1069/1096 notes had issues — wrote ad-hoc Python scripts that cut to 544 in 5 minutes; productionized those into proper CLIs.
+
+7 fixes shipped together. Codex executed in 1 brief.
+
+### Added — Ingest pipeline (4 fixes)
+
+- **F1 — `add` falls back to arXiv API when Semantic Scholar rate-limits.** S2 returns 429 → previously failed with no recourse. Now arXiv-shaped DOIs (`10.48550/arxiv.YYMM.NNNNN`) auto-retry via arXiv's metadata API.
+- **F2 — `search --to-papers-input` preserves `arxiv_id` and auto-derives `doi`.** Previously dropped arxiv_id; user had to manually backfill DOIs to ingest. Now arXiv papers come out ingest-ready.
+- **F3 — `papers_input.json` accepts both top-level array AND `{"papers": [...]}` shape.** `search --to-papers-input` outputs the wrapped shape; `ingest` expected the array. AttributeError on iteration. Now auto-normalize.
+- **F4 — `RESEARCH_HUB_DEFAULT_COLLECTION` not required when cluster has its own `zotero_collection_key`.** Cluster-bound key takes priority; env var is fallback for unbound clusters.
+
+### Added — Vault hygiene (3 CLIs)
+
+- **V1 — NEW `research-hub doctor --autofix`** for mechanical backfills:
+  - Empty `topic_cluster: ""` → folder name → cluster slug lookup
+  - Missing `ingested_at:` → file mtime in ISO 8601 UTC
+  - Missing `doi:` AND filename has arxiv-shaped slug → derive `10.48550/arxiv.<id>`
+  - Idempotent. Prints summary like `[autofix] topic_cluster=N ingested_at=N doi_derived=N`
+- **V2 — Doctor `frontmatter_completeness` distinguishes legacy vs new papers.** Pre-2000 papers AND `ingestion_source: pre-v0.3.0-migration` papers get WARN (not FAIL) for missing DOI. Recent papers still FAIL. Output now reads `316 FAIL (recent papers should have DOI), 324 WARN (legacy papers without DOI expected)`.
+- **V3 — NEW `research-hub paper lookup-doi <slug>`** for one-off Crossref lookups. Free API (~1 req/sec). Bulk mode: `--cluster X --batch` walks every paper missing DOI in the cluster.
+
+### Stats
+
+- Tests: 1402 → 1423 (+21: 18 from brief + 3 from Codex extras)
+- New files: 5 test files + `vault_autofix.py` + `doi_lookup.py`
+- Modified: `cli.py`, `operations.py`, `pipeline.py`, `doctor.py`
+- LOC delta: ~+450
+
+### Reflection
+
+7 fixes — none invented. Each came from actually using the tool (4 from ingest test, 3 from vault audit). v0.40 multi-OS CI exposed Windows path issues; v0.41 ingest run exposed schema mismatches. **The cycle works**: ship → use → fix what hurts.
+
+繁體中文 release announcement: [docs/release-notes-v0.41.zh-TW.md](docs/release-notes-v0.41.zh-TW.md).
+
+### Notes
+
+- Gemini CLI (zh-TW release notes) hit a Windows AttachConsole / non-interactive shell bug; Claude wrote the zh-TW notes as fallback (per `feedback_gemini_cli_invocation` global rule)
+- Codex executed cleanly on first try; no stalls
+
+---
+
 ## v0.40.2 (2026-04-19)
 
 **v0.40.1's narrow regex didn't catch `test_config.py` — make `RESEARCH_HUB_ALLOW_EXTERNAL_ROOT` global for tests.**
