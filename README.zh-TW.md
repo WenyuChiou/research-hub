@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM 三合一，專為 AI agent 打造。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1423%20passing-brightgreen.svg)](docs/audit_v0.41.md)
+[![Tests](https://img.shields.io/badge/tests-1520%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -19,7 +19,7 @@ English → [README.md](README.md)
 
 1. **Ingest** — 一行指令把學術論文收進 Zotero(引用管理)+ Obsidian(結構化筆記)+ NotebookLM(AI 簡報)。
 2. **Organize** — 論文自動分到 cluster、sub-topic,Obsidian graph 按 research label 上色。
-3. **Serve** — 提供 60 個 MCP tools,讓 Claude Code / Codex / 任何相容 MCP 的 AI 可以直接驅動整個流程。
+3. **Serve** — 提供 **78 個 MCP tools**,讓 Claude Code / Codex / 任何相容 MCP 的 AI 可以直接驅動整個流程(含 v0.42 的 NotebookLM `ask`、v0.43 的 `emit_cluster_base` Bases dashboard 產生器)。
 
 設計給每天都在用 AI agent 的 PhD 學生跟研究團隊,不想在六個分頁之間切來切去的人。
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 目前狀態
 
-- **最新版本**: v0.41.0 (2026-04-19)
-- **測試**: 1423 passing, 15 skipped, 3 xfailed (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12)
+- **最新版本**: v0.45.0 (2026-04-19) — 詳見 [`CHANGELOG.md`](CHANGELOG.md)
+- **測試**: 1520 passing, 15 skipped, 2 xfailed (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12)
 - **平台**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **相依**: `pyzotero`、`pyyaml`、`requests`、`rapidfuzz`、`networkx`、`platformdirs`(都是 pure-Python)
@@ -165,7 +165,9 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 - [Task-level workflows](docs/task-workflows.md) — v0.33+ 5 個 MCP 包裝器（ask/brief/sync/compose/collect），把 3-4 次呼叫序列收斂成 1 次
 - [Screenshot 流程](docs/screenshot-workflow.md) — 用 `dashboard --screenshot` CLI 重拍任何 dashboard tab
 - [Audit 報告](docs/) — `audit_v0.26.md` … `audit_v0.33.md`
-- [NotebookLM 設定](docs/notebooklm.md) — CDP attach 流程 + 疑難排解
+- [NotebookLM 設定](docs/notebooklm.md) + [疑難排解](docs/notebooklm-troubleshooting.md) — patchright + persistent Chrome (v0.42+)
+- [Dashboard 走查](docs/dashboard-walkthrough.md) — tab-by-tab 導覽,含 persona 食譜 (v0.44)
+- [v0.43 驗證 log](docs/validation_v0.43.md) — 11 篇 NotebookLM 壓力測 + 雙軌 ask 交叉驗證
 - [Papers input schema](docs/papers_input_schema.md) — ingest 管線參考
 
 ## 指令速查
@@ -182,7 +184,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 | **分析** | `clusters analyze --split-suggestion` | 大 cluster 的 citation graph 自動分群 |
 | **同步** | `sync status` / `pipeline repair` | 偵測並修復 Zotero ↔ Obsidian 偏差 |
 | **Dashboard** | `dashboard` / `serve --dashboard` / `vault graph-colors` | 靜態 HTML / live HTTP server / Obsidian graph 上色 |
-| **NotebookLM** | `notebooklm bundle/upload/generate/download` | 瀏覽器自動化 NLM 流程(CDP attach) |
+| **NotebookLM** | `notebooklm bundle/upload/generate/download/ask` | 瀏覽器自動化 NLM 流程(v0.42 patchright + persistent Chrome)。`ask` 是 v0.42 新加的即時 Q&A |
+| **Obsidian** | `vault polish-markdown` / `bases emit` | v0.42 callout/block-ID 排版升級。v0.43 自動產生 cluster `.base` dashboard(v0.45 起 `ingest`/`topic build` 後自動刷新) |
 | **寫作** | `quote` / `compose-draft` / `cite` | 引言擷取、markdown 草稿組裝、BibTeX 匯出 |
 
 ## Personas 與安裝指令
@@ -202,7 +205,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1423 passing
+python -m pytest -q  # 1520 passing
 ```
 
 PyPI 套件名稱: **research-hub-pipeline**

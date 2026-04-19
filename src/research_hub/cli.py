@@ -2080,6 +2080,61 @@ def _migrate_yaml(
     return 0
 
 
+def _auto(*, topic, cluster_slug, cluster_name, max_papers, do_nlm, dry_run) -> int:
+    from research_hub.auto import auto_pipeline
+
+    report = auto_pipeline(
+        topic,
+        cluster_slug=cluster_slug,
+        cluster_name=cluster_name,
+        max_papers=max_papers,
+        do_nlm=do_nlm,
+        dry_run=dry_run,
+        print_progress=True,
+    )
+    if not report.ok:
+        print(f"  [ERR] {report.error}")
+        return 1
+    print(f"\nDone in {report.total_duration_sec:.1f}s.")
+    if report.brief_path:
+        print(f"  brief: {report.brief_path}")
+    if report.notebook_url:
+        print(f"  notebook: {report.notebook_url}")
+    return 0
+
+
+def _cleanup_gc(*, do_bundles, do_debug, do_artifacts,
+                keep_bundles, debug_older_than_days, keep_artifacts, apply) -> int:
+    from research_hub.cleanup import collect_garbage, format_bytes
+
+    cfg = get_config()
+    report = collect_garbage(
+        cfg,
+        do_bundles=do_bundles,
+        do_debug_logs=do_debug,
+        do_artifacts=do_artifacts,
+        keep_bundles=keep_bundles,
+        debug_older_than_days=debug_older_than_days,
+        keep_artifacts=keep_artifacts,
+        apply=apply,
+    )
+    verb = "Deleted" if apply else "Would delete"
+    print(f"{verb} {report.dirs_deleted} dirs + {report.files_deleted} files "
+          f"({format_bytes(report.total_bytes)}):")
+    for candidate in report.bundles:
+        print(f"  bundle:    {candidate.cluster}/{candidate.path.name}  "
+              f"({format_bytes(candidate.size_bytes)})")
+    for candidate in report.debug_logs:
+        print(f"  debug:     {candidate.path.name}  "
+              f"({format_bytes(candidate.size_bytes)})")
+    for candidate in report.artifacts:
+        print(f"  artifact:  {candidate.cluster}/{candidate.path.name}  "
+              f"({format_bytes(candidate.size_bytes)})")
+    if not apply and report.total_bytes > 0:
+        print("\nRun with --apply to actually delete.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="research-hub",
@@ -2127,6 +2182,16 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--name", help="Pre-fill cluster display name")
     init_parser.add_argument("--query", help="Pre-fill search query")
     init_parser.add_argument("--definition", help="Pre-fill cluster definition")
+
+    tidy_parser = subparsers.add_parser(
+        "tidy",
+        help="One-shot maintenance: doctor autofix + dedup rebuild + bases refresh + cleanup preview (v0.46)",
+    )
+    tidy_parser.add_argument(
+        "--apply-cleanup",
+        action="store_true",
+        help="Apply the cleanup preview (default: dry-run only)",
+    )
 
     subparsers.add_parser("doctor", help="Health check for research-hub installation")
     doctor_parser = next(
@@ -2247,6 +2312,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Bypass Zotero library duplicate blocking and allow re-ingest",
     )
+
+    auto_parser = subparsers.add_parser(
+        "auto",
+        help="One-command pipeline: topic ??cluster ??search ??ingest ??NotebookLM",
+    )
+    auto_parser.add_argument("topic", help="Free-text topic to search for")
+    auto_parser.add_argument("--cluster", default=None,
+                             help="Use existing cluster slug instead of slugifying topic")
+    auto_parser.add_argument("--cluster-name", default=None,
+                             help="Display name for new cluster (default: title-case of topic)")
+    auto_parser.add_argument("--max-papers", type=int, default=8)
+    auto_parser.add_argument("--no-nlm", action="store_true",
+                             help="Skip NotebookLM bundle/upload/generate/download")
+    auto_parser.add_argument("--dry-run", action="store_true",
+                             help="Print plan without executing")
 
     ingest_parser = subparsers.add_parser("ingest", help="Run ingestion")
     ingest_parser.add_argument("--cluster", default=None, help="Cluster slug for ingestion")
@@ -2890,12 +2970,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional author surname(s) when --paper is used (can repeat)",
     )
 
-    cleanup_parser = subparsers.add_parser(
-        "cleanup", help="Deduplicate wikilinks across hub pages"
-    )
-    cleanup_parser.add_argument(
-        "--dry-run", action="store_true", help="Report without writing"
-    )
+    cleanup_parser = subparsers.add_parser("cleanup", help="GC accumulated files (v0.46) + wikilink dedup")
+    cleanup_parser.add_argument("--bundles", action="store_true",
+                                help="GC stale .research_hub/bundles/ dirs")
+    cleanup_parser.add_argument("--keep-bundles", type=int, default=2,
+                                help="Per-cluster bundle dirs to keep (default 2)")
+    cleanup_parser.add_argument("--debug-logs", action="store_true",
+                                help="GC nlm-debug-*.jsonl older than --debug-older-than days")
+    cleanup_parser.add_argument("--debug-older-than", type=int, default=30,
+                                help="Delete debug logs older than N days (default 30)")
+    cleanup_parser.add_argument("--artifacts", action="store_true",
+                                help="GC ask-*.md / brief-*.txt beyond --keep-artifacts")
+    cleanup_parser.add_argument("--keep-artifacts", type=int, default=10)
+    cleanup_parser.add_argument("--all", action="store_true",
+                                help="Shorthand for --bundles --debug-logs --artifacts")
+    cleanup_parser.add_argument("--wikilinks", action="store_true",
+                                help="(v0.45 behaviour) De-dupe wikilinks in hub pages")
+    cleanup_parser.add_argument("--dry-run", action="store_true", default=True,
+                                help="Report without deleting (default)")
+    cleanup_parser.add_argument("--apply", dest="dry_run", action="store_false",
+                                help="Actually delete files")
 
     synth_parser = subparsers.add_parser(
         "synthesize", help="Generate cluster synthesis pages"
@@ -3237,6 +3331,13 @@ def main(argv: list[str] | None = None) -> int:
             non_interactive=args.non_interactive,
             persona=args.persona,
         )
+    if args.command == "tidy":
+        from research_hub.tidy import run_tidy
+
+        report = run_tidy(apply_cleanup=args.apply_cleanup, print_progress=True)
+        failed = [s for s in report.steps if not s.ok]
+        return 0 if not failed else 1
+
     if args.command == "doctor":
         from research_hub.doctor import print_doctor_report, run_doctor
         from research_hub.vault_autofix import run_autofix
@@ -3302,6 +3403,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         cfg = get_config()
         return _cmd_serve(args, cfg)
+    if args.command == "auto":
+        return _auto(
+            topic=args.topic,
+            cluster_slug=args.cluster,
+            cluster_name=args.cluster_name,
+            max_papers=args.max_papers,
+            do_nlm=not args.no_nlm,
+            dry_run=args.dry_run,
+        )
     if args.command == "ingest":
         rc = run_pipeline(
             dry_run=args.dry_run,
@@ -3679,7 +3789,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "verify":
         return _verify(args)
     if args.command == "cleanup":
-        return _cleanup_hub(dry_run=args.dry_run)
+        if args.wikilinks:
+            return _cleanup_hub(dry_run=args.dry_run)
+        do_bundles = args.bundles or args.all
+        do_debug = args.debug_logs or args.all
+        do_artifacts = args.artifacts or args.all
+        if not (do_bundles or do_debug or do_artifacts):
+            # Backwards-compat: bare `cleanup` keeps doing the wikilink dedup
+            return _cleanup_hub(dry_run=args.dry_run)
+        return _cleanup_gc(
+            do_bundles=do_bundles,
+            do_debug=do_debug,
+            do_artifacts=do_artifacts,
+            keep_bundles=args.keep_bundles,
+            debug_older_than_days=args.debug_older_than,
+            keep_artifacts=args.keep_artifacts,
+            apply=not args.dry_run,
+        )
     if args.command == "synthesize":
         return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
     if args.command == "notebooklm":

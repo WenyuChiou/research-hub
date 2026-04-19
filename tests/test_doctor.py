@@ -173,18 +173,34 @@ def test_doctor_zotero_unreachable(tmp_path, monkeypatch):
 
 
 def test_doctor_chrome_not_found(tmp_path, monkeypatch):
+    """v0.46: chrome check uses patchright probe (A4). Returns INFO when launch fails."""
     from research_hub.doctor import run_doctor
+    import patchright.sync_api as _patchright_api
 
     _write_config(tmp_path, monkeypatch)
     monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
-    monkeypatch.setattr(
-        "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
-        lambda: None,
-    )
+
+    class _FakeChromium:
+        def launch(self, *args, **kwargs):
+            raise RuntimeError("simulated chrome not installed")
+
+    class _FakePlaywright:
+        chromium = _FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(_patchright_api, "sync_playwright", lambda: _FakePlaywright())
 
     results = run_doctor()
 
-    assert any(result.name == "chrome" and result.status == "WARN" for result in results)
+    assert any(
+        result.name == "chrome" and result.status == "INFO"
+        for result in results
+    )
 
 
 def test_doctor_no_nlm_session(tmp_path, monkeypatch):

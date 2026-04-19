@@ -665,28 +665,40 @@ def run_doctor() -> list[CheckResult]:
         except Exception:
             pass
 
+    # v0.46: replace stale path-walk (cdp_launcher was deleted in v0.42)
+    # with a real patchright probe. patchright uses channel="chrome" to
+    # locate the binary itself — if the launch succeeds, Chrome is usable
+    # for NotebookLM regardless of where it lives on disk.
     try:
-        from research_hub.notebooklm.cdp_launcher import find_chrome_binary
+        from patchright.sync_api import sync_playwright
 
-        chrome = find_chrome_binary()
-        if chrome:
-            results.append(CheckResult("chrome", "OK", str(chrome)))
-        else:
+        try:
+            with sync_playwright() as _p:
+                browser = _p.chromium.launch(channel="chrome", headless=True)
+                browser.close()
             results.append(
                 CheckResult(
                     "chrome",
-                    "WARN",
-                    "Not found (NotebookLM features unavailable)",
-                    remedy="Install Google Chrome",
+                    "OK",
+                    "Available via patchright channel='chrome'",
+                )
+            )
+        except Exception as exc:
+            results.append(
+                CheckResult(
+                    "chrome",
+                    "INFO",
+                    "patchright could not launch Chrome: {0}. NotebookLM features may fail.".format(exc),
+                    remedy="Install Google Chrome from https://www.google.com/chrome/",
                 )
             )
     except ImportError:
         results.append(
             CheckResult(
                 "chrome",
-                "WARN",
-                "playwright not installed",
-                remedy="pip install research-hub-pipeline[playwright]",
+                "INFO",
+                "patchright not installed (NotebookLM features disabled)",
+                remedy="pip install 'research-hub-pipeline[playwright]'",
             )
         )
 

@@ -1,5 +1,68 @@
 # Changelog
 
+## v0.46.0 (2026-04-19)
+
+**Lazy mode — 4 one-line commands replace the 7+ command longhand workflow. Plus `cleanup` becomes a real garbage collector and `doctor` chrome check finally works.**
+
+User feedback: "因為大家都很懶 我希望能夠在一些功能做到 打一句話搞定". v0.46 answers it.
+
+### Added — `research-hub auto "topic"` (Track A1)
+
+End-to-end: slugify topic → cluster create → search (arXiv + Semantic Scholar) → ingest into Zotero + Obsidian → bundle PDFs → upload to NotebookLM → generate brief → download.
+
+```bash
+research-hub auto "harness engineering for LLM agents"
+# 47 seconds later: 6 papers in Zotero + Obsidian + NotebookLM brief
+```
+
+Flags: `--max-papers N`, `--no-nlm`, `--dry-run`, `--cluster X`, `--cluster-name "Display"`. Each pipeline stage logged with progress; failure at any step halts cleanly with actionable error.
+
+### Added — `research-hub cleanup` real garbage collector (Track A2)
+
+v0.45 `cleanup` only de-duped wikilinks. v0.46 adds:
+
+- `--bundles --keep N` — per-cluster, deletes older bundle dirs (default keep 2)
+- `--debug-logs --older-than 30d` — deletes `nlm-debug-*.jsonl` older than threshold
+- `--artifacts --keep N` — per-cluster, keeps newest N `ask-*.md` / `brief-*.txt`
+- `--all` — combine all 3
+- `--dry-run` (default) / `--apply`
+
+Old wikilink dedup still works via `--wikilinks` flag. Live test: 72 MB stale bundles ready to GC on the maintainer's vault.
+
+### Added — `research-hub tidy` one-shot maintenance (Track A3)
+
+```bash
+research-hub tidy
+# Runs: doctor --autofix → dedup rebuild → bases emit per cluster → cleanup preview
+```
+
+Each step non-fatal — failures logged but don't break the whole command. `--apply-cleanup` flag also flushes the cleanup preview.
+
+### Fixed — `doctor` chrome stale check (Track A4)
+
+v0.45 reported `chrome: Not found` even when NotebookLM was working perfectly. Root cause: `doctor.check_chrome` walked the legacy `cdp_launcher.find_chrome_binary` paths, but v0.42 deleted that module. v0.46 replaces it with a real patchright probe (the same mechanism NotebookLM uses):
+
+```
+[OK] chrome: Available via patchright channel='chrome'
+```
+
+When Chrome can't launch, downgraded from scary `WARN` to `INFO` with install hint.
+
+### Stats
+
+- Tests: 1520 → **1553** passing (+33: A1=8, A2=7, A3=4, A4=2 + 12 doctor-related)
+- LOC: ~+550 code + ~150 docs
+- New files: `src/research_hub/{auto,cleanup,tidy}.py` + `docs/lazy-mode.md`
+- **Zero new setup** — every new command uses existing NotebookLM session (`notebooklm login` done once) + existing Zotero credentials
+
+### Delegation note
+
+Tried Gemini for the code work (per user request). Result: 2 of 5 Gemini tracks succeeded (A1 `auto`, A2 `cleanup`); the other 3 (A3, lazy-mode docs, zh-TW notes) hit `QUOTA_EXHAUSTED` and fell back to Claude direct. Gemini's coding quality on the successful tracks was workable (with minor import-path fixes after review).
+
+繁體中文 release announcement: [docs/release-notes-v0.46.zh-TW.md](docs/release-notes-v0.46.zh-TW.md). Lazy-mode reference: [docs/lazy-mode.md](docs/lazy-mode.md).
+
+---
+
 ## v0.45.0 (2026-04-19)
 
 **Critical fix: `notebooklm generate` overlay dismissal. Plus 3 v0.43 scaffolding completions.**
