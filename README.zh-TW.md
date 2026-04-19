@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM 三合一，專為 AI agent 打造。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1369%20passing-brightgreen.svg)](docs/audit_v0.38.md)
+[![Tests](https://img.shields.io/badge/tests-1387%20passing-brightgreen.svg)](docs/audit_v0.39.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 目前狀態
 
-- **最新版本**: v0.38.0 (2026-04-18)
-- **測試**: 1369 passing, 15 skipped, 3 xfailed
+- **最新版本**: v0.39.0 (2026-04-18)
+- **測試**: 1387 passing, 15 skipped, 3 xfailed
 - **平台**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **相依**: `pyzotero`、`pyyaml`、`requests`、`rapidfuzz`、`networkx`、`platformdirs`(都是 pure-Python)
@@ -199,7 +199,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1369 passing
+python -m pytest -q  # 1387 passing
 ```
 
 PyPI 套件名稱: **research-hub-pipeline**

@@ -1,5 +1,56 @@
 # Changelog
 
+## v0.39.0 (2026-04-18)
+
+**Cluster rebind v2 — coverage 33% → 100% on real vault. 1369 → 1387 tests (+18). 4 new MCP tools (56 → 60).**
+
+v0.37 shipped `clusters rebind --emit` but on Wenyu's restored 1094-paper vault it only proposed 347 of 1063 orphan papers (33%). The other 716 had no heuristic match. v0.39 closes that gap: **646 proposals to existing clusters + 417 absorbed by 6 auto-create-from-folder proposals = 1063/1063 (100%) covered.**
+
+Full release report: [docs/audit_v0.39.md](docs/audit_v0.39.md).
+
+### Added — 3 new heuristics in `_propose_cluster()`
+
+Inserted in priority order between existing heuristics (8 total now):
+- **H2: `topic_cluster:` field with non-empty value → HIGH** — fixes silent failure: many legacy papers had `topic_cluster:` set but the original heuristic only checked `cluster:` field
+- **H4: Zotero collection NAME match → HIGH (exact) / MEDIUM (substring)** — Wenyu's vault uses readable collection names like `"LLM AI agent"`, `"Social capital"`, not 8-char Zotero keys; matches against cluster name + seed_keywords
+- **H5: tag-to-seed_keywords Jaccard overlap** — extracts semantic tokens from tags (strips `research/`, `method/` prefixes), computes overlap with cluster seed_keywords. Score ≥ 0.5 → MEDIUM, ≥ 0.3 → LOW
+
+### Added — Auto-create-from-folder
+
+`emit_rebind_prompt()` now scans for topic folders with ≥ 5 unmatched orphan papers and proposes new clusters:
+- `slug` = kebab-case of folder name (`Behavioral-Theory` → `behavioral-theory`)
+- `name` = title-case
+- `seed_keywords` = top 5 most common semantic tag tokens
+
+Apply with `--auto-create-new` flag (opt-in; without it, new-cluster proposals are reported but skipped).
+
+### Added — 4 MCP tools (56 → 60)
+
+Closes the v0.37 gap that left rebind CLI-only:
+- `propose_cluster_rebind(cluster_slug)` — returns JSON proposals
+- `apply_cluster_rebind(report_path, dry_run, auto_create_new)` — executes
+- `list_orphan_papers(folder)` — lists unbound papers
+- `summarize_rebind_status()` — high-level: total / proposed / stuck / would-create-clusters
+
+### Live verification (Wenyu's vault, 1063 orphans)
+
+| | v0.37 | v0.39 |
+|---|---|---|
+| Proposed to existing clusters | 347 (33%) | 646 (61%) |
+| Absorbed by auto-create | — | 417 (39%) |
+| **Total path forward** | **347 / 1063** | **1063 / 1063 (100%)** |
+
+6 auto-create proposals: `abm-theories` (7), `behavioral-theory` (20), `benchmarking` (8), `general-reference` (17), `survey` (289), `traditional-abm` (76).
+
+### Stats
+
+- Tests: 1369 → 1387 (+18: heuristics=8, autocreate=5, mcp=5)
+- Files modified: `cluster_rebind.py`, `cli.py`, `mcp_server.py`, README ×2
+- New files: 3 test files
+- LOC delta: ~+500
+
+---
+
 ## v0.38.1 (2026-04-18)
 
 **Health badge UX polish — caught after reviewing v0.38.0 screenshots myself.**
