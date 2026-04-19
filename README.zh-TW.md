@@ -1,106 +1,41 @@
 # research-hub
 
-> Zotero + Obsidian + NotebookLM 三合一，專為 AI agent 打造。
+> **打一句話進去。Cluster + 論文 + AI 簡報出來。約 50 秒。**
+> Zotero + Obsidian + NotebookLM 三合一,專為 AI agent 打造 — **不需要 OpenAI/Anthropic API key**。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1520%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1547%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![MCP tools](https://img.shields.io/badge/MCP%20tools-81-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![CI: Linux · macOS · Windows](https://img.shields.io/badge/CI-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-blue)](.github/workflows/ci.yml)
 
 English → [README.md](README.md)
 
-![Dashboard 總覽](docs/images/dashboard-overview.png)
-
 ---
 
-## 這是什麼
+## ⚡ 安裝 + 第一次跑(60 秒)
 
-一個 CLI + MCP server,同時做三件事:
+```bash
+pip install research-hub-pipeline[playwright,secrets]
+research-hub init                                          # 互動式:選 persona + Zotero/NLM
+research-hub notebooklm login                              # 一次性 Google 登入
+research-hub auto "harness engineering for LLM agents"     # 完成 — 50 秒後拿到 8 篇論文 + 一份 brief
+```
 
-1. **Ingest** — 一行指令把學術論文收進 Zotero(引用管理)+ Obsidian(結構化筆記)+ NotebookLM(AI 簡報)。
-2. **Organize** — 論文自動分到 cluster、sub-topic,Obsidian graph 按 research label 上色。
-3. **Serve** — 提供 **78 個 MCP tools**,讓 Claude Code / Codex / 任何相容 MCP 的 AI 可以直接驅動整個流程(含 v0.42 的 NotebookLM `ask`、v0.43 的 `emit_cluster_base` Bases dashboard 產生器)。
+**裝完之後三條路任你選:**
 
-設計給每天都在用 AI agent 的 PhD 學生跟研究團隊,不想在六個分頁之間切來切去的人。
-
-## Source code vs Vault(兩個不同的東西)
-
-research-hub 在你電腦上有兩個分開的位置,這是刻意的設計:
-
-| | Source code (程式碼) | Vault (你的資料庫) |
+| 路徑 | 你做的事 | 背後跑的 |
 |---|---|---|
-| **是什麼** | Python 套件 + CLI 工具 | 你的研究資料 |
-| **在哪裡** | `site-packages/research_hub/`(pip 管理) | `~/knowledge-base/`(預設,`init` 時你自己選) |
-| **裡面有** | CLI, MCP server, dashboard 產生器 | 論文筆記, Obsidian graph, crystals, Zotero 同步 |
-| **多人共用?** | 是 — 每個人裝同一個 pip package | 否 — 每個人自己的 vault |
+| **🤖 跟 Claude 講話**(推薦) | 「Claude,幫我研究 harness engineering」 | Claude 透過 MCP 呼叫 `auto_research_topic(...)` — 一個工具呼叫 |
+| **💻 一行 CLI** | `research-hub auto "topic"` | 同一個 orchestrator,直接呼叫 |
+| **🖱 Dashboard 點按鈕** | `research-hub serve --dashboard` → Manage tab | 同樣的動作,改成按鈕驅動 |
 
-`pip install` 之後跑 `research-hub init` 建立你的 vault。如果你已經有 Obsidian vault,`init` 指到那個路徑就好 — research-hub 會把它的資料夾加在你現有筆記旁邊,不會覆蓋。
-
-隨時跑 `research-hub where` 查看你的 config 跟 vault 路徑。
-
-## 跟其他工具的差別
-
-### 1. Crystals — 預先運算好的答案,不是 lazy retrieval (v0.28)
-
-所有 RAG 系統(包括 Karpathy 的 "LLM wiki")都還是在查詢時才把資料拼湊起來。research-hub 的答案是:**儲存 AI 的推理結果,而不是原料**。
-
-對每個 research cluster,你預先讓 AI 回答約 10 個標準問題(用 emit/apply 模式,你可以用任何 LLM),結果存成 crystal 檔案。之後 AI agent 再問「這個領域現在的 SOTA 是什麼?」時,它讀的是預先寫好的 100 字答案 — 而不是 20 篇論文的 abstract。
-
-```bash
-research-hub crystal emit --cluster llm-agents-software-engineering > prompt.md
-# 把 prompt.md 給 Claude/GPT/Gemini 回答,存成 crystals.json
-research-hub crystal apply --cluster llm-agents-software-engineering --scored crystals.json
-```
-
-每次 cluster 層級查詢的 token 成本:**~1 KB**(讀 crystal) vs ~30 KB(cluster digest)。**30 倍壓縮**,而且品質不會掉,因為品質在生成時就已經決定了。
-
-[→ 為什麼這不是 RAG(中文版)](docs/anti-rag.zh-TW.md)
-
-### 2. 即時互動 dashboard,可直接執行 (v0.27)
-
-```bash
-research-hub serve --dashboard
-```
-
-在 `http://127.0.0.1:8765/` 開一個 localhost HTTP dashboard。Manage tab 的每一個按鈕都是**直接執行** CLI 指令,不再只是 copy 到剪貼簿。Vault 有任何變動都透過 Server-Sent Events 推送到瀏覽器。沒開 server 時自動 fallback 到靜態 copy 模式。
-
-![即時 dashboard](docs/images/dashboard-manage-live.png)
-
-### 3. Obsidian graph 自動按 label 上色 (v0.27)
-
-```bash
-research-hub vault graph-colors --refresh
-```
-
-寫入 14 個顏色群組到 `.obsidian/graph.json`:5 個 cluster 路徑 + 9 個論文 label(`seed`、`core`、`method`、`benchmark`、`survey`、`application`、`tangential`、`deprecated`、`archived`)。每次 `research-hub dashboard` 都會自動刷新。打開 Obsidian Graph View — 你的 vault 是按「意義」視覺化,不是按檔案樹。
-
-![Obsidian Graph 按 label 上色](docs/images/obsidian-graph.png)
-
-### 4. 分 sub-topic 的 Library + citation graph 自動分群 (v0.27)
-
-很大的 cluster(331 篇論文?)不再是扁平清單。它會按 sub-topic 分組、每個可展開。如果你的 cluster 還沒有 sub-topic:
-
-```bash
-research-hub clusters analyze --cluster my-big-cluster --split-suggestion
-```
-
-用 Semantic Scholar citation graph + networkx community detection,建議 3-8 個有意義的 sub-topic。產出 markdown 報告,你 review 後再執行 `topic apply-assignments`。
-
-![Library tab 分 sub-topic](docs/images/dashboard-library-subtopic.png)
+三條路驅動的是**同一個** orchestrator。手在哪就用哪個。
 
 ---
 
-## 安裝
-
-```bash
-pip install research-hub-pipeline
-research-hub init              # 互動式設定
-research-hub serve --dashboard # 自動開瀏覽器
-```
-
-Python 3.10+。**不需要 OpenAI/Anthropic API key** — research-hub 完全 provider-agnostic,所有 AI 生成都走 emit/apply 模式(你把 prompt 給自己的 AI)。
-
-## 給 Claude Code / Claude Desktop 使用者
+## 🤖 跟 Claude 對話 — 30 秒設定
 
 加到 `claude_desktop_config.json`:
 
@@ -115,102 +50,148 @@ Python 3.10+。**不需要 OpenAI/Anthropic API key** — research-hub 完全 pr
 }
 ```
 
-然後跟 Claude 講話:
+重啟 Claude Desktop。然後:
 
-> 「Claude,把 arxiv 2310.06770 加到新的 cluster 叫 LLM-SE」
-> 「Claude,幫 LLM-SE cluster 產 crystals」
-> 「Claude,這個 cluster 在講什麼?」→ Claude 呼叫 `list_crystals` + `read_crystal` → 拿到預先寫好的 100 字答案
+> **你:**「Claude,幫我找 5 篇 agent-based modeling 的論文,放到一個 notebook 裡。」
+> **Claude:** *呼叫 `auto_research_topic(topic="agent-based modeling", max_papers=5)`* → 5 篇論文 + NotebookLM brief 連結 — 約 50 秒。
 
-60 個 MCP tools 涵蓋:論文 ingest、cluster CRUD、labels、quotes、draft 組裝、citation graph、NotebookLM、crystal 生成、fit-check、autofill、cluster memory，以及 cluster rebind 工作流。
+> **你:**「我的 llm-evaluation-harness cluster 現在 SOTA 是什麼?」
+> **Claude:** *呼叫 `read_crystal("llm-evaluation-harness", "sota-and-open-problems")`* → 180 字預先寫好的答案,附引用。**讀取 ~1 KB,查詢時 0 篇 abstract 被重新讀取。**
 
-## 五行指令快速上手
+**總共 81 個 MCP tools** — 完整參考: [`docs/mcp-tools.md`](docs/mcp-tools.md)。最大的幾個:
+
+| Tool | 取代了什麼 |
+|---|---|
+| `auto_research_topic(topic)` | 7 步驟 CLI 流程(search → ingest → bundle → upload → generate → download) |
+| `cleanup_garbage(everything=True)` | 手動 `du -sh .research_hub/bundles/*` + `rm -rf` |
+| `tidy_vault()` | `doctor --autofix` + `dedup rebuild` + `bases emit --force` + cleanup preview |
+| `ask_cluster_notebooklm(cluster, question)` | 開 NotebookLM 分頁、貼問題、複製答案 |
+| `read_crystal(cluster, slot)` | 重新讀 20 篇 abstract 來回答同一個問題 |
+| `list_claims(cluster, min_confidence)` | 翻 hub overview 希望 claim 在對的段落裡 |
+| `add_paper(arxiv_id, cluster)` | 手動 Zotero add → 手動 Obsidian 筆記 → 手動 NotebookLM 上傳 |
+
+---
+
+## 📊 一張表看完所有功能
+
+| 能力 | 指令(或 MCP tool) | 說明 |
+|---|---|---|
+| **Lazy mode** — 一句話進,brief 出 | `auto "topic"` / `auto_research_topic` | search → ingest → NLM brief,約 50 秒 |
+| **Lazy maintenance** | `tidy` / `tidy_vault` | doctor + dedup + bases + cleanup preview |
+| **GC 累積垃圾** | `cleanup --all --apply` / `cleanup_garbage` | bundles + debug logs + 過期 artifacts |
+| **臨時 NLM Q&A** | `ask --cluster X "Q?"` / `ask_cluster_notebooklm` | 雙後端(NLM + crystal cache) |
+| **預先運算 crystals** | `crystal emit / apply` | 每個 cluster 約 10 個標準 Q→A,每答案約 1 KB |
+| **結構化 memory** | `memory emit / apply` + `list_entities/claims/methods` | 型別化 entity、有信心度的 claim、method taxonomy |
+| **Live dashboard** | `serve --dashboard` | 6 個 tab、persona-aware、Manage tab 按鈕直接執行 CLI |
+| **4 personas、1 套程式** | `RESEARCH_HUB_PERSONA=researcher\|humanities\|analyst\|internal` | 詞彙跟隱藏 tab 自動適配 |
+| **100% orphan coverage** | `clusters rebind --emit` 然後 `--apply` | 8-heuristic 鏈、auto-create-from-folder 提案 |
+| **健康檢查(12+ 項)** | `doctor` / `doctor --autofix` | 機械式 backfill、patchright Chrome 檢測 |
+| **Multi-backend search** | `search "query"` | arXiv + Semantic Scholar(預設)+ Crossref DOI 查詢 |
+| **Cluster autosplit** | `clusters analyze --split-suggestion` | networkx greedy modularity 跑在引用圖上 |
+| **Obsidian Bases dashboard** | `bases emit` / `emit_cluster_base` | 每個 cluster 自動產出 `.base`(ingest 時自動更新) |
+| **NotebookLM 上傳** | `notebooklm upload --cluster X` | patchright + persistent Chrome(無 API key、無 quota) |
+| **引用圖** | `vault graph-colors` | networkx + Obsidian graph view 上色 |
+| **本機檔案匯入** | `import-folder /path` | PDF / DOCX / MD / TXT / URL(analyst persona) |
+
+[→ 完整 lazy-mode 指南](docs/lazy-mode.md) · [→ 所有指令](docs/dashboard-walkthrough.md) · [→ MCP 參考](docs/mcp-tools.md)
+
+---
+
+## 🖥 Dashboard 長什麼樣
+
+`research-hub serve --dashboard` 會開 `http://127.0.0.1:8765/` — 六個 tab,跟 CLI 看到的是同一份資料。
+
+| | |
+|---|---|
+| ![Overview](docs/images/dashboard-overview.png) | ![Library](docs/images/dashboard-library-subtopic.png) |
+| **Overview** — treemap + storage map + 最近活動 + crystals 覆蓋率 | **Library** — cluster 鑽到 sub-topic + 每篇論文一列 |
+| ![Briefings](docs/images/dashboard-crystals.png) | ![Diagnostics](docs/images/dashboard-diagnostics.png) |
+| **Briefings** — NotebookLM brief 預覽 + artifact 連結 | **Diagnostics** — 健康狀態 + drift 警告(v0.48 已按 kind 分組) |
+| ![Manage](docs/images/dashboard-manage-live.png) | ![Writing](docs/images/dashboard-writing.png) |
+| **Manage** — 每個 CLI 動作都是按鈕(rename / merge / split / NLM upload / ask / polish-markdown / bases emit) | **Writing** — 引文採集 + 草稿合成 + BibTeX 匯出 |
+
+[→ Dashboard 完整導覽](docs/dashboard-walkthrough.md) · [→ 4 個 persona 變體](docs/personas.md)
+
+---
+
+## 🧠 跟其他工具的差別
+
+### 1. 預先運算好的答案,不是 lazy retrieval
+
+所有 RAG 系統都還是在查詢時才把資料拼湊起來。research-hub 的答案是:**儲存 AI 的推理結果,而不是原料**。
+
+對每個 cluster,你預先讓 AI(任何 LLM 都行)回答約 10 個標準問題,存成 **crystal**。之後 AI agent 再問「SOTA 是什麼?」時,讀的是預先寫好的段落(~1 KB),不是 20 篇 abstract(~30 KB)— **30× 壓縮**,品質不會在查詢時降級。底層的 **memory layer** 存放 crystal 引用的結構化內容:具型別的 entity、有信心度標記的 claim、method taxonomy。AI agent 用 `list_entities`、`list_claims(min_confidence="high")`、`list_methods` 查詢 — 結構化資料的結構化查詢,沒有 RAG。
+
+範例 cluster: [`hub/llm-evaluation-harness/`](hub/llm-evaluation-harness/) 有 10 crystals + 14 entities + 12 claims + 7 methods。[→ 為什麼這不是 RAG](docs/anti-rag.md)
+
+### 2. 三個操作介面、一個 orchestrator
+
+CLI、dashboard 按鈕、MCP tools 全部呼叫同一個 Python orchestrator。沒有「REST 模式」或「API 模式」會有不同行為。在 shell 能做的事,Claude 也能透過 MCP 做,反過來也是。
+
+### 3. Provider-agnostic by design
+
+**不需要 OpenAI / Anthropic API key**。所有 AI 生成都用 `emit` / `apply` 模式: `emit` 把獨立完整的 prompt 印到 stdout,你貼到自己選的 AI(Claude、GPT、Gemini、本機模型),`apply` 把 JSON 回應收進去。NotebookLM 用你自己已登入的 Chrome 跑瀏覽器自動化 — 沒有 quota、沒有按 token 計費。
+
+---
+
+## 📦 安裝變體
 
 ```bash
-# 1. 初始化 vault
-research-hub init
+# Researcher / Humanities(用 Zotero + NotebookLM)
+pip install research-hub-pipeline[playwright,secrets]
 
-# 2. Ingest 一篇論文
-research-hub add 10.48550/arxiv.2310.06770 --cluster llm-agents
+# Analyst / Internal KM(不用 Zotero,匯入本機檔案)
+pip install research-hub-pipeline[import,secrets]
 
-# 3. 開 live dashboard
-research-hub serve --dashboard
-
-# 4. 有幾篇論文後,產生 crystals
-research-hub crystal emit --cluster llm-agents > prompt.md
-# (把 prompt.md 給你的 AI 回答,存成 crystals.json)
-research-hub crystal apply --cluster llm-agents --scored crystals.json
-
-# 5. AI 查詢時直接讀 crystals,不用讀論文
-# (透過 Claude Desktop MCP,或任何相容 MCP 的 client)
+# 開發用全套
+pip install -e '.[dev,playwright,import,secrets,mcp]'
 ```
 
-## 目前狀態
+Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 
-- **最新版本**: v0.45.0 (2026-04-19) — 詳見 [`CHANGELOG.md`](CHANGELOG.md)
-- **測試**: 1520 passing, 15 skipped, 2 xfailed (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12)
-- **平台**: Windows, macOS, Linux
-- **Python**: 3.10+
-- **相依**: `pyzotero`、`pyyaml`、`requests`、`rapidfuzz`、`networkx`、`platformdirs`(都是 pure-Python)
-- **選用**: `playwright` extra(NotebookLM 瀏覽器自動化)
+---
 
-## 架構文件
+## 📚 文件
 
-- [MCP tools 參考](docs/mcp-tools.md) — 60 tools 完整列表
-- [前 10 分鐘上手](docs/first-10-minutes.md) — 4 個 persona 各自的引導教學
-- [Cluster integrity](docs/cluster-integrity.md) — 6 種失敗模式與 4 persona 緩解矩陣
-- [Claude Desktop 示範流程](docs/example-claude-mcp-flow.md) — 從 ingest → crystallize → query 的具體例子
-- [本地檔案匯入](docs/import-folder.zh-TW.md) — 給 analyst persona 的 import-folder 指南（PDF/DOCX/MD/TXT/URL）
-- [Anti-RAG crystals(為什麼不用 RAG)](docs/anti-rag.zh-TW.md) — 繁中完整版
-- [升級指南](UPGRADE.md) — 從舊版本升級的注意事項
-- [Task-level workflows](docs/task-workflows.md) — v0.33+ 5 個 MCP 包裝器（ask/brief/sync/compose/collect），把 3-4 次呼叫序列收斂成 1 次
-- [Screenshot 流程](docs/screenshot-workflow.md) — 用 `dashboard --screenshot` CLI 重拍任何 dashboard tab
-- [Audit 報告](docs/) — `audit_v0.26.md` … `audit_v0.33.md`
-- [NotebookLM 設定](docs/notebooklm.md) + [疑難排解](docs/notebooklm-troubleshooting.md) — patchright + persistent Chrome (v0.42+)
-- [Dashboard 走查](docs/dashboard-walkthrough.md) — tab-by-tab 導覽,含 persona 食譜 (v0.44)
-- [v0.43 驗證 log](docs/validation_v0.43.md) — 11 篇 NotebookLM 壓力測 + 雙軌 ask 交叉驗證
-- [Papers input schema](docs/papers_input_schema.md) — ingest 管線參考
+| | |
+|---|---|
+| [前 10 分鐘](docs/first-10-minutes.md) | 4 個 persona 各自的引導 |
+| [Lazy-mode 參考](docs/lazy-mode.md) | 4 個一句話指令 |
+| [Dashboard 完整導覽](docs/dashboard-walkthrough.md) | 每個 tab 配 persona 用法 |
+| [MCP tools 參考](docs/mcp-tools.md) | 81 個 tool 分類 + 簽名 |
+| [Personas](docs/personas.md) | 4 個 persona profile + 功能矩陣 |
+| [Cluster integrity](docs/cluster-integrity.md) | 6 個 failure mode × 4 personas |
+| [Anti-RAG / crystals](docs/anti-rag.md) | 為什麼預先運算贏 retrieval |
+| [NotebookLM 設定](docs/notebooklm.md) + [疑難排解](docs/notebooklm-troubleshooting.md) | patchright + persistent Chrome(v0.42+) |
+| [Import folder](docs/import-folder.md) | 本機 PDF/DOCX/MD/TXT/URL 匯入 |
+| [Papers input schema](docs/papers_input_schema.md) | Ingestion pipeline 參考 |
+| [升級指南](UPGRADE.md) | 從舊版本升上來 |
+| [Audit 報告](docs/) | `audit_v0.26.md` … `audit_v0.45.md` |
+| [CHANGELOG](CHANGELOG.md) | 每個版本的 release note |
 
-## 指令速查
+---
 
-| 階段 | 指令 | 用途 |
-|---|---|---|
-| **初始化** | `init` / `doctor` | 首次設定 + 健康檢查 |
-| **搜尋** | `search` / `verify` / `discover new` | 多後端論文搜尋 + DOI 驗證 + AI 評分 |
-| **收錄** | `add` / `ingest` | 單篇或批次收錄到 Zotero + Obsidian |
-| **整理** | `clusters new/list/show/bind/merge/split/rename/delete` | Cluster CRUD |
-| **主題** | `topic scaffold/propose/assign/build` | 從 `subtopics:` frontmatter 生成 sub-topic 筆記 |
-| **標籤** | `label` / `find --label` / `paper prune` | 9 值 label 字典(seed/core/method...) |
-| **Crystal** | `crystal emit/apply/list/read/check` | 預運算的標準 Q→A 答案 |
-| **分析** | `clusters analyze --split-suggestion` | 大 cluster 的 citation graph 自動分群 |
-| **同步** | `sync status` / `pipeline repair` | 偵測並修復 Zotero ↔ Obsidian 偏差 |
-| **Dashboard** | `dashboard` / `serve --dashboard` / `vault graph-colors` | 靜態 HTML / live HTTP server / Obsidian graph 上色 |
-| **NotebookLM** | `notebooklm bundle/upload/generate/download/ask` | 瀏覽器自動化 NLM 流程(v0.42 patchright + persistent Chrome)。`ask` 是 v0.42 新加的即時 Q&A |
-| **Obsidian** | `vault polish-markdown` / `bases emit` | v0.42 callout/block-ID 排版升級。v0.43 自動產生 cluster `.base` dashboard(v0.45 起 `ingest`/`topic build` 後自動刷新) |
-| **寫作** | `quote` / `compose-draft` / `cite` | 引言擷取、markdown 草稿組裝、BibTeX 匯出 |
+## 🛠 狀態
 
-## Personas 與安裝指令
+- **最新**: v0.48.0(2026-04-19)— diagnostics 密度重設計,見 [`CHANGELOG.md`](CHANGELOG.md)
+- **測試**: fast suite 1547 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **MCP tools**: 81 個(v0.47 把 auto / cleanup / tidy 加進 MCP)
+- **依賴**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs`(全部純 Python)
+- **可選 extras**: `[playwright]` 給 NotebookLM、`[import]` 給本機檔案匯入、`[secrets]` 給 OS keyring
 
-| 角色 | 安裝 | 初始化 |
-|---|---|---|
-| **研究者**（PhD STEM，預設） | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init` |
-| **人文研究者**（重視引文與摘錄，使用 Zotero） | `pip install research-hub-pipeline[playwright,secrets]` | `research-hub init --persona humanities` |
-| **分析師**（業界研究，不用 Zotero） | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona analyst` |
-| **內部知識管理**（實驗室／公司，混合檔案類型） | `pip install research-hub-pipeline[import,secrets]` | `research-hub init --persona internal` |
-
-四種角色共用同一套 dashboard、MCP server、crystal 系統與 cluster integrity 工具。Dashboard 會依 persona 自動調整詞彙並隱藏不相關功能（見 `docs/personas.md`）。
-
-## 給開發者
+## 👩‍💻 開發者用
 
 ```bash
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1520 passing
+python -m pytest -q                     # 1547 passing
 ```
 
-PyPI 套件名稱: **research-hub-pipeline**
-CLI 入口: **research-hub**
+貢獻: [CONTRIBUTING.md](CONTRIBUTING.md)。安全性: [SECURITY.md](.github/SECURITY.md)。
 
-## License
+PyPI 套件名: **research-hub-pipeline** · CLI 進入點: **research-hub**
 
-MIT。見 [LICENSE](LICENSE)。
+## 授權
+
+MIT。詳見 [LICENSE](LICENSE)。
