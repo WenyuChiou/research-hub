@@ -98,70 +98,36 @@ That pre-written answer is a **crystal**. You paid the reasoning cost once; ever
 
 ## What makes it different
 
-### 1. Crystals — pre-computed answers, not lazy retrieval (v0.28)
+### 1. Pre-computed answers, not lazy retrieval
 
-Every RAG system, including Karpathy's "LLM wiki", still assembles context at query time. research-hub's answer: **store the AI's reasoning, not the inputs**.
+Every RAG system still assembles context at query time. research-hub's answer: **store the AI's reasoning, not the inputs**.
 
-For each cluster you generate ~10 canonical Q→A crystals once, using any LLM you like. When an AI agent later asks "what's the SOTA in X?", it reads a pre-written paragraph — not 20 paper abstracts. **Token cost per query: ~1 KB (crystal read) vs ~30 KB (cluster digest). 30× compression.**
+For each cluster you generate ~10 canonical Q→A **crystals** once with any LLM. Later queries read a pre-written paragraph (~1 KB), not 20 paper abstracts (~30 KB) — **30× compression** with quality that doesn't degrade at query time. Underneath, a structured **memory layer** holds the entities, typed claims with confidence, and method taxonomies that crystals reference. AI agents query via `list_entities`, `list_claims(min_confidence="high")`, `list_methods` — no RAG over prose, structured lookup over structured data.
 
-Because the quality was pre-computed, it doesn't degrade at query time. See the [harness-engineering example crystals](hub/llm-evaluation-harness/crystals/) — one folder, 10 Q&As answering "what is this field?", "what are the main threads?", "where do experts disagree?", "what's SOTA?", etc.
+Example cluster: [`hub/llm-evaluation-harness/`](hub/llm-evaluation-harness/) has 10 crystals + 14 entities + 12 claims + 7 methods, all generated once. [→ Why this is not RAG](docs/anti-rag.md)
 
-[→ Why this is not RAG](docs/anti-rag.md)
-
-### 2. Structured memory layer — entities, claims, methods (v0.36)
-
-Crystals store prose. **Memory** stores the underlying structure: named entities (benchmarks, models, concepts), typed claims with confidence + supporting papers, and method taxonomies. For the harness cluster:
-
-```
-hub/llm-evaluation-harness/memory.json
-├── 14 entities  (vla-eval, SafeHarness, M*, LIBERO, SEC-bench, ...)
-├── 12 claims    ("Harness is locus of progress", "Specialized beats generic +22%", ...)
-└── 7 methods    (reflective code evolution, lifecycle-integrated defense, ...)
-```
-
-AI agents query entities via `list_entities`, claims via `list_claims(min_confidence="high")`, methods via `list_methods`. No RAG over prose — structured lookup over structured data.
-
-### 3. 4 personas, 1 codebase, dashboard adapts (v0.38)
-
-Same vault, 4 rendered dashboards:
-
-| Persona | Install | Dashboard vocabulary | Hidden tabs |
-|---|---|---|---|
-| **Researcher** (PhD STEM, Zotero) | `pip install research-hub-pipeline[playwright,secrets]` | Cluster / Crystal / Paper / Citation graph | (none) |
-| **Humanities** (Zotero, quote-heavy) | `pip install research-hub-pipeline[playwright,secrets]` | Theme / Synthesis / Source | (none) |
-| **Analyst** (industry, no Zotero) | `pip install research-hub-pipeline[import,secrets]` | Topic / AI Brief / Document | Diagnostics, Bind-Zotero |
-| **Internal KM** (lab / company) | `pip install research-hub-pipeline[import,secrets]` | Project area / AI Brief / Document | Diagnostics, Bind-Zotero |
-
-Side-by-side screenshots: [`docs/personas.md`](docs/personas.md). [Your first 10 minutes guide →](docs/first-10-minutes.md)
-
-### 4. Live dashboard with direct execution (v0.27, expanded v0.42/v0.43/v0.44)
+### 2. Live dashboard, 4 personas, direct execution
 
 ```bash
-research-hub serve --dashboard
+research-hub serve --dashboard      # http://127.0.0.1:8765/
 ```
 
-Localhost HTTP dashboard at `http://127.0.0.1:8765/`. Every Manage-tab button **directly executes** the CLI — no copy-paste.
+Same vault, 4 rendered dashboards (researcher / humanities / analyst / internal-KM) — vocabulary and hidden tabs adapt per persona. Six tabs: Overview, Library, Briefings, Writing, Diagnostics, Manage. Every Manage-tab button **directly executes** the CLI — no copy-paste. Diagnostics groups identical alerts (e.g. 36 Zotero orphans → one card with `×36` badge), so noise stays low even on a multi-thousand-paper vault.
 
-**5 tabs**:
-- **Overview** — treemap + storage map + recent additions
-- **Library** — cluster cards with paper rows
-- **Briefings** — NotebookLM brief preview + artifact links
-- **Diagnostics** — health badges + drift alerts
-- **Manage** — per-cluster actions (rename / merge / split / NLM upload / NLM ask / polish-markdown / bases emit)
+[→ Dashboard walkthrough](docs/dashboard-walkthrough.md) · [→ Persona screenshots](docs/personas.md) · [→ First 10 minutes](docs/first-10-minutes.md)
 
-[→ Full dashboard walkthrough](docs/dashboard-walkthrough.md)
+### 3. Cluster integrity + lazy-mode maintenance
 
-### 5. Cluster integrity + 100% orphan coverage (v0.37 + v0.39)
-
-Papers drift, rebind v2 catches it. On the maintainer's 1063-orphan vault: 33% → **100% coverage** via 8-heuristic chain + auto-create-from-folder proposals.
+Papers drift, rebind v2 catches it. On the maintainer's 1063-orphan vault: 33% → **100% coverage** via an 8-heuristic chain + auto-create-from-folder proposals. For day-to-day upkeep, four lazy commands take over:
 
 ```bash
-research-hub doctor                       # catches 12+ classes of drift
-research-hub clusters rebind --emit       # proposes 80%+ assignments
-research-hub clusters rebind --apply report.md --auto-create-new
+research-hub auto "harness engineering for LLM agents"   # search → ingest → NLM brief, ~50s
+research-hub tidy                                        # doctor + dedup + bases + cleanup preview
+research-hub clean --all --apply                         # GC stale bundles / debug logs / artifacts
+research-hub ask llm-evaluation-harness "what's SOTA?"   # cached crystal answer (~1 KB)
 ```
 
-[→ 6 failure modes × 4 personas mitigation matrix](docs/cluster-integrity.md)
+All four are also exposed as MCP tools in v0.47 — talk to Claude Desktop, no shell needed. [→ Lazy mode reference](docs/lazy-mode.md) · [→ Cluster integrity matrix](docs/cluster-integrity.md)
 
 ---
 

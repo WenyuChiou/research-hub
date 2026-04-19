@@ -55,6 +55,20 @@ def _attr(obj: object, name: str, default: object = "") -> object:
     return getattr(obj, name, default)
 
 
+def _norm_status(value: object) -> str:
+    """Normalize doctor status (OK/INFO/WARN/FAIL/!!/ii/XX) to lowercase tier."""
+    text = str(value or "OK").strip().upper()
+    if text in ("OK", "PASS"):
+        return "ok"
+    if text in ("INFO", "II"):
+        return "info"
+    if text in ("WARN", "WARNING", "!!"):
+        return "warn"
+    if text in ("FAIL", "ERROR", "XX"):
+        return "fail"
+    return text.lower() or "ok"
+
+
 def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -1232,17 +1246,40 @@ class DiagnosticsSection(DashboardSection):
     def _health_block(self, badges: list) -> str:
         if not badges:
             return '<p class="diag-empty">No health checks available.</p>'
-        rows = "".join(self._health_row(b) for b in badges)
-        return f'<ul class="health-list">{rows}</ul>'
+        # v0.48: count summary + collapse OK rows behind a toggle so the
+        # tab no longer reads as a wall-of-cards.
+        ok_badges = [b for b in badges if _norm_status(_attr(b, "status", "OK")) == "ok"]
+        attention_badges = [b for b in badges if _norm_status(_attr(b, "status", "OK")) != "ok"]
+        attention_rows = "".join(self._health_row(b) for b in attention_badges)
+        ok_rows = "".join(self._health_row(b) for b in ok_badges)
+        summary = (
+            f'<p class="health-summary-counts">'
+            f'<span class="badge-ok">{len(ok_badges)} OK</span>'
+            f'<span class="badge-attention">{len(attention_badges)} need attention</span>'
+            f'</p>'
+        )
+        attention_html = (
+            f'<ul class="health-list health-list-attention">{attention_rows}</ul>'
+            if attention_badges
+            else '<p class="diag-empty">All checks pass — nothing needs attention.</p>'
+        )
+        ok_html = ""
+        if ok_badges:
+            ok_html = (
+                f'<details class="health-ok-fold"><summary>Show {len(ok_badges)} passing checks</summary>'
+                f'<ul class="health-list health-list-ok">{ok_rows}</ul>'
+                f'</details>'
+            )
+        return summary + attention_html + ok_html
 
     def _health_row(self, badge) -> str:
         subsystem = html_escape(_attr(badge, "subsystem", "") or "")
         status = str(_attr(badge, "status", "OK") or "OK")
         summary = html_escape(_attr(badge, "summary", "") or "")
         return (
-            f'<li class="health-row health-{status.lower()}">'
-            f'<strong class="health-name">{subsystem}</strong>'
+            f'<li class="health-row health-{status.lower()}" data-status="{_norm_status(status)}">'
             f'<span class="health-status">{html_escape(status)}</span>'
+            f'<strong class="health-name">{subsystem}</strong>'
             f'<span class="health-summary">{summary}</span>'
             f'</li>'
         )
@@ -1250,27 +1287,68 @@ class DiagnosticsSection(DashboardSection):
     def _drift_block(self, alerts: list) -> str:
         if not alerts:
             return '<p class="diag-empty">No drift detected.</p>'
-        return "".join(self._drift_card(a) for a in alerts)
+        # v0.48: group alerts by kind so 36 identical "zotero_orphan" entries
+        # collapse to one card showing the count + a sample list.
+        groups: dict[str, list] = {}
+        order: list[str] = []
+        for a in alerts:
+            k = str(_attr(a, "kind", "") or "")
+            if k not in groups:
+                order.append(k)
+                groups[k] = []
+            groups[k].append(a)
+        return "".join(self._drift_group_card(k, groups[k]) for k in order)
 
-    def _drift_card(self, alert) -> str:
-        kind = html_escape(_attr(alert, "kind", "") or "")
-        severity = html_escape(str(_attr(alert, "severity", "WARN") or "WARN").lower())
-        title = html_escape(_attr(alert, "title", "") or "")
-        description = html_escape(_attr(alert, "description", "") or "")
-        fix_command = html_escape(_attr(alert, "fix_command", "") or "")
-        sample_paths = list(_attr(alert, "sample_paths", []) or [])
+    def _drift_group_card(self, kind: str, alerts: list) -> str:
+        first = alerts[0]
+        count = len(alerts)
+        severity = html_escape(str(_attr(first, "severity", "WARN") or "WARN").lower())
+        title = html_escape(_attr(first, "title", "") or "")
+        description = html_escape(_attr(first, "description", "") or "")
+        fix_command = html_escape(_attr(first, "fix_command", "") or "")
+        # collect sample paths across all alerts in the group
+        all_paths: list[str] = []
+        for a in alerts:
+            for p in (_attr(a, "sample_paths", []) or []):
+                all_paths.append(str(p))
+        # de-dup while preserving order
+        seen: set[str] = set()
+        uniq_paths: list[str] = []
+        for p in all_paths:
+            if p in seen:
+                continue
+            seen.add(p)
+            uniq_paths.append(p)
         sample_html = ""
-        if sample_paths:
-            sample_lis = "".join(f"<li><code>{html_escape(p)}</code></li>" for p in sample_paths[:5])
-            sample_html = f'<ol class="sample-paths">{sample_lis}</ol>'
+        if uniq_paths:
+            head = uniq_paths[:5]
+            sample_lis = "".join(f"<li><code>{html_escape(p)}</code></li>" for p in head)
+            extra = ""
+            if len(uniq_paths) > 5:
+                more = uniq_paths[5:25]
+                extra_lis = "".join(f"<li><code>{html_escape(p)}</code></li>" for p in more)
+                hidden = max(0, len(uniq_paths) - 25)
+                extra = (
+                    f'<details class="drift-more">'
+                    f'<summary>Show {len(uniq_paths) - 5} more</summary>'
+                    f'<ol class="sample-paths">{extra_lis}</ol>'
+                    + (f'<p class="drift-truncated">…and {hidden} more not shown.</p>' if hidden else "")
+                    + '</details>'
+                )
+            sample_html = f'<ol class="sample-paths">{sample_lis}</ol>{extra}'
+        count_badge = (
+            f'<span class="drift-count" title="{count} alerts of this kind">×{count}</span>'
+            if count > 1
+            else ""
+        )
         copy_btn = ""
         if fix_command:
             copy_btn = (
                 f'<button type="button" class="copy-cmd-btn" data-text="{fix_command}">Copy fix command</button>'
             )
         return f"""
-        <div class="drift-card drift-{severity}" data-kind="{kind}">
-          <h3>{title}</h3>
+        <div class="drift-card drift-{severity}" data-kind="{html_escape(kind)}">
+          <h3>{title}{count_badge}</h3>
           <p>{description}</p>
           {sample_html}
           <div class="drift-actions">{copy_btn}</div>

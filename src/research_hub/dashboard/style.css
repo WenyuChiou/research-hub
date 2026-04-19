@@ -386,13 +386,40 @@ section {
 
 .briefing-grid, .diag-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 
-.briefing-card, .drift-card {
+.briefing-card {
   border: 1px solid var(--border);
   border-radius: 18px;
   padding: var(--space-lg);
   display: grid;
   gap: var(--space-md);
 }
+
+.drift-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: var(--space-sm) var(--space-md);
+  display: grid;
+  gap: var(--space-2xs);
+  font-size: var(--text-sm);
+}
+.drift-card h3 { margin: 0; font-size: var(--text-sm); display: flex; align-items: center; gap: var(--space-xs); }
+.drift-card p  { margin: 0; font-size: var(--text-xs); }
+.drift-card .sample-paths { font-size: var(--text-xs); margin: 0; padding-left: var(--space-md); }
+.drift-card .copy-cmd-btn { font-size: var(--text-xs); }
+.drift-card .drift-count {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.drift-card .drift-more { font-size: var(--text-xs); }
+.drift-card .drift-more > summary { cursor: pointer; color: var(--fg-mute); }
+.drift-card .drift-more > summary:hover { color: var(--fg); }
+.drift-card .drift-truncated { margin: var(--space-2xs) 0 0; color: var(--fg-mute); font-style: italic; }
 
 .briefing-card header, .diag-health, .diag-drift { display: grid; gap: var(--space-xs); }
 .diag-health ul, .sample-paths { margin: 0; padding-left: var(--space-lg); display: grid; gap: var(--space-xs); }
@@ -743,31 +770,85 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .diag-grid { grid-template-columns: 1fr; gap: var(--space-lg); }
 @container (min-width: 900px) { .diag-grid { grid-template-columns: 1fr 1fr; } }
 
-.health-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-xs); }
+/* v0.48: count summary at top of health card */
+.health-summary-counts {
+  display: flex;
+  gap: var(--space-xs);
+  margin: 0 0 var(--space-sm);
+  font-size: var(--text-xs);
+}
+.health-summary-counts .badge-ok,
+.health-summary-counts .badge-attention {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.health-summary-counts .badge-ok {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+.health-summary-counts .badge-attention {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+
+.health-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2xs); }
 
 .health-row {
   display: grid;
-  grid-template-columns: 110px 70px 1fr;
+  grid-template-columns: 60px 1fr;
   gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  border-radius: 12px;
+  align-items: baseline;
+  padding: var(--space-2xs) var(--space-sm);
+  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  font-size: var(--text-xs);
+}
+.health-list-attention .health-row {
   background: var(--surface-2);
   border: 1px solid var(--border);
 }
-
-.health-row .health-name { font-weight: 600; text-transform: capitalize; }
+.health-row .health-name {
+  font-weight: 600;
+  text-transform: capitalize;
+  font-size: var(--text-sm);
+}
 .health-row .health-status {
-  font-size: var(--text-xs);
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  align-self: center;
 }
-.health-row .health-summary { color: var(--fg-mute); font-size: var(--text-xs); align-self: center; }
-.health-row.health-ok    .health-status { color: var(--ok); }
-.health-row.health-warn  .health-status { color: var(--warn); }
-.health-row.health-fail  .health-status { color: var(--fail); }
+.health-row .health-summary {
+  grid-column: 2;
+  color: var(--fg-mute);
+  font-size: var(--text-xs);
+}
+.health-row[data-status="ok"]   .health-status { color: var(--ok); }
+.health-row[data-status="info"] .health-status { color: var(--fg-mute); }
+.health-row[data-status="warn"] .health-status { color: var(--warn); }
+.health-row[data-status="fail"] .health-status { color: var(--fail); }
+.health-list-attention .health-row[data-status="warn"] { border-left-color: var(--warn); }
+.health-list-attention .health-row[data-status="fail"] { border-left-color: var(--fail); }
+.health-list-attention .health-row[data-status="info"] { border-left-color: color-mix(in srgb, var(--fg-mute) 40%, transparent); }
 
-.diag-empty { color: var(--fg-mute); font-style: italic; margin: 0; }
+.health-ok-fold {
+  margin-top: var(--space-sm);
+  font-size: var(--text-xs);
+}
+.health-ok-fold > summary {
+  cursor: pointer;
+  color: var(--fg-mute);
+  padding: var(--space-2xs) 0;
+  list-style: revert;
+}
+.health-ok-fold > summary:hover { color: var(--fg); }
+.health-ok-fold .health-list { margin-top: var(--space-xs); }
+
+.diag-empty { color: var(--fg-mute); font-style: italic; margin: 0; font-size: var(--text-sm); }
 
 /* Manage tab */
 .manage-intro h2 { font-size: var(--text-md); margin: 0; }
@@ -1127,8 +1208,8 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .drift-card.drift-warn { border-left: 3px solid var(--warn); }
 .drift-card.drift-fail { border-left: 3px solid var(--fail); }
 
-/* Health row backgrounds in light mode */
-.health-row { background: var(--surface-2); }
+/* Health row backgrounds in light mode (only attention rows have a fill) */
+.health-list-attention .health-row { background: var(--surface-2); }
 
 /* Recent feed slimmer borders on light bg */
 .recent-item { border-bottom-color: var(--border); }

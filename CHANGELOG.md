@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.48.0 (2026-04-19)
+
+**Diagnostics density redesign + post-B1 screenshot refresh + README condensed to 3 differentiators.** All visual / docs polish — no API changes.
+
+User feedback driving this release:
+> "錯誤訊息 不應該放那麼大吧 截圖也要想一下 還有使用者一定都想要用最簡單的方式得到最多功能"
+> ("Error messages shouldn't be that prominent; think about screenshots; users want max functionality with min effort.")
+
+### Changed — Diagnostics tab no longer reads as a wall of cards
+
+Before v0.48, every drift alert rendered as a full-width padded card. A vault with 36 zotero-orphan + 20 stale-crystal alerts produced 56 nearly-identical cards stacked vertically — visually overwhelming and out of proportion to severity.
+
+- **Health card**: count summary (`12 OK · 3 need attention`) at top; OK rows collapsed behind a `<details>` fold; only attention rows shown by default. Per-row layout slimmed (no card chrome on OK rows, just a colored left-border on attention rows).
+- **Drift card grouping**: alerts of the same `kind` collapse into one card with a `×N` count badge in the title. Sample paths from all alerts in the group de-duplicated and shown as a 5-item list with a `Show N more` fold (capped at 25 visible, `…and X more not shown` footer beyond that).
+- **Drift card chrome**: padding `lg→sm/md`, font `text-sm`, h3 `text-sm`, sample-paths `text-xs`. The card is still distinct (border + severity left-stripe) but no longer dwarfs surrounding content.
+
+Net: 59-alert vault renders as ~5 grouped cards instead of 59. Diagnostics tab now scrolls one screen.
+
+### Changed — Hero screenshots regenerated post-B1
+
+The v0.46 B1 rebind cleared 315 orphan papers (315 → 0). v0.45-era screenshots still showed the pre-rebind state with mega-clusters and "X orphan papers" warnings. v0.48 regenerates all six tab screenshots (`docs/images/dashboard-{overview,library,briefings,writing,diagnostics,manage}.png`) from the cleaned vault.
+
+### Changed — README "What makes it different" 5 → 3 sections
+
+Per the lazy-user theme, condensed five differentiators into three:
+1. Pre-computed answers (crystals + memory layer combined)
+2. Live dashboard, 4 personas, direct execution
+3. Cluster integrity + lazy-mode maintenance (auto/tidy/clean/ask)
+
+Removes ~60 lines of headings/sub-sections without losing any feature mentions.
+
+### Stats
+
+- Tests: 1547 → **1547** (no test changes — pure UI/CSS/markdown)
+- MCP tools: 81 (unchanged)
+- Diagnostics tab DOM nodes: ~250 → ~80 on a 59-alert vault
+
+### Install
+
+```bash
+pip install --upgrade research-hub-pipeline[playwright,secrets]
+```
+
+Existing v0.42–v0.47 users upgrade in place.
+
 ## v0.47.0 (2026-04-19)
 
 **Lazy mode reaches AI: `auto`/`cleanup`/`tidy` now exposed as MCP tools.** Closes the v0.46 gap where Claude Desktop / Claude Code users still had to invoke 7 individual MCP calls to replicate the lazy CLI commands.
