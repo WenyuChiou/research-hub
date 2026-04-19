@@ -145,7 +145,9 @@ def test_briefings_artifact_tile_renders_single_artifact():
         nlm_artifacts=[
             NLMArtifactRecord(
                 kind="brief",
-                path="C:/tmp/brief.txt",
+                # Use a per-OS absolute path so Path.as_uri() works on
+                # Linux + macOS as well as Windows.
+                path=("C:/tmp/brief.txt" if __import__("sys").platform == "win32" else "/tmp/brief.txt"),
                 downloaded_at="2026-04-19T12:00:00Z",
                 char_count=1243,
                 notebook_url="https://notebooklm.google.com/notebook/harness",
