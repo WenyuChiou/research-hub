@@ -218,12 +218,19 @@ def test_doctor_exit_code_zero_if_only_warns(tmp_path, monkeypatch):
     assert print_doctor_report(results) == 0
 
 
+_DEFAULT_BODY = (
+    "## Summary\nx\n\n"
+    "## Key Findings\n- x\n\n"
+    "## Methodology\nx\n\n"
+    "## Relevance\nx\n"
+)
+
+
 def _write_note(root, rel_path: str, frontmatter: str, body: str = ""):
     path = root / "raw" / rel_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"---\n{frontmatter}\n---\n\n"
-        f"{body or '## Summary\nx\n\n## Key Findings\n- x\n\n## Methodology\nx\n\n## Relevance\nx\n'}",
+        f"---\n{frontmatter}\n---\n\n{body or _DEFAULT_BODY}",
         encoding="utf-8",
     )
     return path

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.41.1 (2026-04-19)
+
+**Python 3.10/3.11 syntax fix — Codex used PEP 701 f-string syntax (3.12+).**
+
+`tests/test_doctor.py:226` had `f"{body or '## Summary\nx\n\n...'}"` — backslash inside f-string expression. Allowed by Python 3.12+ (PEP 701) but SyntaxError on 3.10/3.11. CI multi-OS matrix caught it on 6 of 9 jobs.
+
+Fix: extracted the default body to a module-level constant `_DEFAULT_BODY`, referenced as `f"...{body or _DEFAULT_BODY}"`. Local Python 3.14 didn't catch this; only multi-OS CI did.
+
+3 lines in `tests/test_doctor.py`. No production code touched. 1423 tests still pass.
+
+---
+
 ## v0.41.0 (2026-04-19)
 
 **Real-world friction fixes — 4 ingest + 3 vault hygiene CLIs. 1402 → 1423 tests (+21).**
