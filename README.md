@@ -3,7 +3,7 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1387%20passing-brightgreen.svg)](docs/audit_v0.39.md)
+[![Tests](https://img.shields.io/badge/tests-1402%20passing-brightgreen.svg)](docs/audit_v0.40.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -146,8 +146,8 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## Status
 
-- **Latest**: v0.39.0 (2026-04-18)
-- **Tests**: 1387 passing, 15 skipped, 3 xfailed
+- **Latest**: v0.40.0 (2026-04-19)
+- **Tests**: 1402 passing, 15 skipped, 2 xfailed (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12)
 - **Platforms**: Windows, macOS, Linux
 - **Python**: 3.10+
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
@@ -160,6 +160,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 - [Import folder](docs/import-folder.md) — local file ingest for analyst persona (PDF/DOCX/MD/TXT/URL)
 - [Anti-RAG crystals](docs/anti-rag.md) — why pre-computed Q→A beats retrieval
 - [Upgrade guide](UPGRADE.md) — migrating from older versions
+- [Your first 10 minutes](docs/first-10-minutes.md) — guided tour for each of the 4 personas
 - [User personas](docs/personas.md) — 4 persona profiles (PhD STEM / industry / humanities / internal KM) with per-persona feature matrix
 - [Cluster integrity](docs/cluster-integrity.md) — 6 failure modes + mitigation matrix across all 4 personas
 - [Task-level workflows](docs/task-workflows.md) — v0.33+ 5 MCP wrappers (ask/brief/sync/compose/collect) that collapse 3-4 call sequences into 1
@@ -202,7 +203,7 @@ All four personas share the same dashboard, MCP server, crystal system, and clus
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q  # 1387 passing
+python -m pytest -q  # 1402 passing
 ```
 
 Package name on PyPI: **research-hub-pipeline**

@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.40.0 (2026-04-19)
+
+**Production readiness — go-live audit fixes. 1387 → 1402 tests (+15). Multi-OS CI (Linux/Win/macOS).**
+
+3 parallel Explore agents audited the system across architecture, user experience, and community readiness axes. 15 distinct gaps found. v0.40 closes the top tier:
+
+- **Cluster hub auto-scaffold** — `ClusterRegistry.create()` now creates hub/<slug>/ structure (overview + crystals/ + memory.json) automatically. Closes the user-discovered gap from v0.39 where 6 of 7 rebound clusters had no hub directory.
+- **Onboarding hardening** — README persona table now shows the required pip extras per persona; init wizard prompts on Zotero validation failure; import-folder fails fast on missing deps; MCP tools return structured errors on empty vaults.
+- **Repo polish** — multi-OS CI matrix (Linux + Windows + macOS), SECURITY.md, CODE_OF_CONDUCT.md, ISSUE/PR templates, NEW `docs/first-10-minutes.md` per-persona guided tour.
+
+Full release report: [docs/audit_v0.40.md](docs/audit_v0.40.md).
+
+### Added — Cluster hub auto-scaffold (Track A)
+
+NEW `src/research_hub/topic.py::scaffold_cluster_hub(cfg, slug)` — creates the full hub/<slug>/ structure:
+- `hub/<slug>/00_overview.md` (overview template)
+- `hub/<slug>/crystals/` (empty dir)
+- `hub/<slug>/memory.json` (empty entities/claims/methods registry)
+
+Wired into `ClusterRegistry.create()` so EVERY new cluster gets it automatically (best-effort with try/except — doesn't block cluster creation if scaffold fails). `cluster_rebind._apply_new_cluster_proposals` also explicitly calls scaffolding (defense in depth).
+
+NEW CLI: `research-hub clusters scaffold-missing` — backfills clusters that have no hub directory (idempotent). For Wenyu's vault: scaffolded 7 of 7 clusters.
+
+6 tests in `tests/test_v040_hub_scaffold.py`.
+
+### Added — Onboarding hardening (Track B)
+
+**B1**: README persona table (EN + zh-TW) now shows the FULL install command per persona:
+- Researcher / Humanities: `pip install research-hub-pipeline[playwright,secrets]`
+- Analyst / Internal: `pip install research-hub-pipeline[import,secrets]`
+
+**B2**: `docs/onboarding.md` rewritten — removed v0.19-stale `--field` references, added per-persona quickstarts (4 mini-tutorials), vault layout diagram.
+
+**B3**: Init wizard now PROMPTS on Zotero validation failure — `[r]etry / [c]ontinue offline / [a]bort` instead of silent "may still work".
+
+**B4** (already done by Track A's encrypt() call): Init wizard auto-encrypts Zotero key before writing config.json (no plaintext-on-disk window).
+
+**B5**: `import-folder` does dependency precheck at CLI dispatch time. PDFs require `[import]` extra; missing fails with clear remedy BEFORE starting the import.
+
+**B6**: MCP top-level tools (`ask_cluster`, `summarize_rebind_status`, `list_orphan_papers`, etc.) wrap body in try/except returning structured `{ok:false, error, hint}` on empty-vault / missing-cluster / crash modes. Claude Desktop now sees actionable errors.
+
+10 tests in `tests/test_v040_onboarding.py`.
+
+### Added — Repo polish (Track C)
+
+- `.github/workflows/ci.yml`: matrix expanded from `ubuntu-latest` only to `[ubuntu-latest, windows-latest, macos-latest]` × `[3.10, 3.11, 3.12]` = 9 jobs. `fail-fast: false` so one platform's failure doesn't mask others. `-m "not slow"` filter so live-vault test doesn't false-fail on CI runners.
+- `.github/SECURITY.md` — vulnerability reporting policy (private email, 5-day SLA, 30-day disclosure).
+- `.github/CODE_OF_CONDUCT.md` — Contributor Covenant 2.1.
+- `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` — structured issue templates with persona checkbox + doctor output prompt.
+- `.github/pull_request_template.md` — PR checklist with persona impact matrix + multi-OS CI requirement.
+- NEW `docs/first-10-minutes.md` — guided tour for each of 4 personas with vault layout diagram, install command, init flow, first useful action, dashboard preview.
+- README + zh-TW link to first-10-minutes.md.
+
+### Stats
+
+- Tests: 1387 → 1402 (+15: 6 scaffold + 9 onboarding)
+- Files modified: pyproject, CHANGELOG, README ×2, ci.yml, init_wizard, cli, mcp_server, importer, clusters, topic, cluster_rebind
+- New files: 7 (scaffold_cluster_hub, 2 test files, 5 repo policy files, first-10-minutes.md, audit doc)
+- Multi-OS CI: 1 → 9 jobs
+
+---
+
 ## v0.39.0 (2026-04-18)
 
 **Cluster rebind v2 — coverage 33% → 100% on real vault. 1369 → 1387 tests (+18). 4 new MCP tools (56 → 60).**

@@ -10,9 +10,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
@@ -26,11 +28,11 @@ jobs:
         run: pip install -e '.[mcp,dev]'
 
       - name: Run tests
-        run: pytest -q --maxfail=3
+        run: pytest -q --maxfail=3 -m "not slow"
 
       - name: Coverage
-        if: matrix.python-version == '3.12'
-        run: pytest --cov=research_hub --cov-report=term-missing
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
+        run: pytest --cov=research_hub --cov-report=term-missing -m "not slow"
 
   stress-tests:
     runs-on: ubuntu-latest
