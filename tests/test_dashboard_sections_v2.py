@@ -383,7 +383,7 @@ def test_briefings_renders_inline_preview():
     assert "Show preview" in html
     assert "Preview body" in html
     assert "Copy full text" in html
-    assert "↗ Open in NotebookLM" in html
+    assert "Open in NotebookLM" in html
 
 
 def test_briefings_empty_state():
@@ -431,14 +431,17 @@ def test_manage_section_renders_form_per_cluster():
         _data(clusters=[_cluster()], total_clusters=1, total_papers=1)
     )
     assert 'class="manage-card"' in html
-    # Six manage forms per cluster
-    assert html.count('class="manage-form"') == 6
+    # Original six forms plus seven v0.42/v0.43 action forms
+    assert html.count('class="manage-form"') == 13
     assert 'data-action="rename"' in html
     assert 'data-action="merge"' in html
     assert 'data-action="split"' in html
     assert 'data-action="bind-zotero"' in html
     assert 'data-action="bind-nlm"' in html
     assert 'data-action="delete"' in html
+    assert 'data-action="notebooklm-ask"' in html
+    assert 'data-action="vault-polish-markdown"' in html
+    assert 'data-action="bases-emit"' in html
 
 
 def test_manage_section_includes_other_clusters_in_merge_dropdown():

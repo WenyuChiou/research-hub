@@ -258,6 +258,29 @@ def _render_cross_cluster_labels(
     )
 
 
+def _format_char_count(value: object) -> str:
+    try:
+        return f"{int(value or 0):,}"
+    except (TypeError, ValueError):
+        return "0"
+
+
+def _artifact_kind_label(kind: str) -> str:
+    labels = {
+        "brief": "brief",
+        "audio": "audio",
+        "mind_map": "mind map",
+        "video": "video",
+    }
+    return labels.get(kind, kind.replace("_", " "))
+
+
+def _downloaded_date_label(value: str) -> str:
+    if not value:
+        return "not downloaded"
+    return value.split("T", 1)[0]
+
+
 # --- base ---------------------------------------------------------------
 
 
@@ -1019,8 +1042,16 @@ class BriefingsSection(DashboardSection):
     def render(self, data) -> str:
         if self.id not in visible_tabs(_persona(data)):
             return ""
+        clusters = list(_attr(data, "clusters", []) or [])
         briefings = list(_attr(data, "briefings", []) or [])
-        if not briefings:
+        if not clusters and briefings:
+            cards = "".join(self._briefing_card(briefing) for briefing in briefings)
+            return f"""
+        <section id="tab-briefings" class="dash-panel dash-panel-briefings" role="tabpanel">
+          <div class="briefing-grid">{cards}</div>
+        </section>
+        """
+        if not clusters:
             return """
         <section id="tab-briefings" class="dash-panel dash-panel-briefings" role="tabpanel">
           <p class="empty-state">No briefings downloaded yet. Generate one with
@@ -1029,7 +1060,7 @@ class BriefingsSection(DashboardSection):
             <code>research-hub notebooklm download --cluster &lt;slug&gt;</code>.</p>
         </section>
         """
-        cards = "".join(self._briefing_card(b) for b in briefings)
+        cards = "".join(self._cluster_briefing_card(cluster) for cluster in clusters)
         return f"""
         <section id="tab-briefings" class="dash-panel dash-panel-briefings" role="tabpanel">
           <div class="briefing-grid">{cards}</div>
@@ -1047,7 +1078,7 @@ class BriefingsSection(DashboardSection):
         if notebook_url:
             open_link = (
                 f'<a class="btn-primary" href="{html_escape(notebook_url)}" '
-                f'target="_blank" rel="noreferrer noopener">↗ Open in NotebookLM</a>'
+                f'target="_blank" rel="noreferrer noopener">??Open in NotebookLM</a>'
             )
         return f"""
         <article class="briefing-card">
@@ -1065,6 +1096,98 @@ class BriefingsSection(DashboardSection):
           </details>
         </article>
         """
+
+    def _cluster_briefing_card(self, cluster) -> str:
+        briefing = _attr(cluster, "briefing", None)
+        cluster_slug = str(_attr(cluster, "slug", "") or "")
+        cluster_name = html_escape(_attr(cluster, "name", "") or cluster_slug)
+        artifacts_html = self._artifact_tile(cluster)
+        if briefing is None:
+            return f"""
+        <article class="briefing-card briefing-card--empty" data-cluster="{html_escape(cluster_slug)}">
+          <header>
+            <h3>{cluster_name}</h3>
+            <span class="briefing-meta">No downloaded brief yet</span>
+          </header>
+          <p class="briefing-preview">Generate a briefing in NotebookLM, then download it back into the vault to preview it here.</p>
+          {artifacts_html}
+        </article>
+        """
+        cluster_name = html_escape(_attr(briefing, "cluster_name", ""))
+        char_count = int(_attr(briefing, "char_count", 0) or 0)
+        downloaded_at = html_escape(_relative_time(str(_attr(briefing, "downloaded_at", "") or "")))
+        preview = html_escape(_attr(briefing, "preview_text", ""))
+        full = html_escape(_attr(briefing, "full_text", ""))
+        notebook_url = str(_attr(briefing, "notebook_url", "") or "")
+        open_link = ""
+        if notebook_url:
+            open_link = (
+                f'<a class="btn-primary" href="{html_escape(notebook_url)}" '
+                f'target="_blank" rel="noreferrer noopener">↗ Open in NotebookLM</a>'
+            )
+        return f"""
+        <article class="briefing-card" data-cluster="{html_escape(cluster_slug)}">
+          <header>
+            <h3>{cluster_name}</h3>
+            <span class="briefing-meta">{char_count} chars · {downloaded_at}</span>
+          </header>
+          <details>
+            <summary>Show preview</summary>
+            <p class="briefing-preview">{preview}</p>
+            <div class="briefing-actions">
+              {open_link}
+              <button class="copy-brief-btn" type="button" data-text="{full}">Copy full text</button>
+            </div>
+          </details>
+          {artifacts_html}
+        </article>
+        """
+
+    def _artifact_tile(self, cluster) -> str:
+        slug = str(_attr(cluster, "slug", "") or "")
+        artifacts = list(_attr(cluster, "nlm_artifacts", []) or [])
+        if not artifacts:
+            return f"""
+        <section class="briefing-artifact-tile">
+          <h4>NotebookLM artifacts</h4>
+          <p class="briefing-artifact-empty">No downloaded artifacts yet.</p>
+          <form class="manage-form" action="javascript:void(0)" data-action="notebooklm-download" data-slug="{html_escape(slug)}">
+            <button type="button" class="manage-build-btn">Download brief</button>
+          </form>
+        </section>
+        """
+        rows: list[str] = []
+        for artifact in artifacts:
+            kind = str(_attr(artifact, "kind", "") or "")
+            path = str(_attr(artifact, "path", "") or "")
+            notebook_url = str(_attr(artifact, "notebook_url", "") or "")
+            open_links: list[str] = []
+            if notebook_url:
+                open_links.append(
+                    f'<a class="binding-link" href="{html_escape(notebook_url)}" target="_blank" rel="noreferrer noopener">open in NLM</a>'
+                )
+            if path:
+                open_links.append(
+                    f'<a class="binding-link" href="{html_escape(Path(path).as_uri())}" target="_blank" rel="noreferrer noopener">open .txt</a>'
+                )
+            open_html = " ".join(open_links) if open_links else '<span class="muted">n/a</span>'
+            rows.append(
+                "<tr>"
+                f"<td>{html_escape(_artifact_kind_label(kind))}</td>"
+                f"<td>{html_escape(_downloaded_date_label(str(_attr(artifact, 'downloaded_at', '') or '')))}</td>"
+                f"<td>{html_escape(_format_char_count(_attr(artifact, 'char_count', 0)))}</td>"
+                f"<td>{open_html}</td>"
+                "</tr>"
+            )
+        return (
+            '<section class="briefing-artifact-tile">'
+            "<h4>NotebookLM artifacts</h4>"
+            '<table class="briefing-artifact-table">'
+            "<thead><tr><th>Artifact</th><th>Downloaded</th><th>Char count</th><th>Open</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            "</table>"
+            "</section>"
+        )
 
 
 # --- DiagnosticsSection -------------------------------------------------
@@ -1235,6 +1358,69 @@ class ManageSection(DashboardSection):
             <label>Bind NotebookLM notebook name <input type="text" name="notebooklm" placeholder="My Notebook"></label>
             <button type="button" class="manage-build-btn">Copy bind command</button>
           </form>
+
+          <section class="manage-actions-v044">
+            <h4>v0.42 / v0.43 actions</h4>
+
+            <details class="manage-actions-v042">
+              <summary>NotebookLM (v0.42)</summary>
+
+              <form class="manage-form" action="javascript:void(0)" data-action="notebooklm-bundle" data-slug="{slug}">
+                <button type="button" class="manage-build-btn">Bundle papers</button>
+                <small>Collect all paper PDFs into a NotebookLM-ready bundle.</small>
+              </form>
+
+              <form class="manage-form" action="javascript:void(0)" data-action="notebooklm-upload" data-slug="{slug}">
+                <label><input type="checkbox" name="visible"> Show browser window</label>
+                <button type="button" class="manage-build-btn">Upload to NotebookLM</button>
+                <small>Sends the latest bundle's PDFs to your NotebookLM notebook. Requires <code>notebooklm login</code> done once.</small>
+              </form>
+
+              <form class="manage-form" action="javascript:void(0)" data-action="notebooklm-generate" data-slug="{slug}">
+                <label>Artifact type
+                  <select name="kind">
+                    <option value="brief">Briefing doc</option>
+                    <option value="audio">Audio overview</option>
+                    <option value="mind_map">Mind map</option>
+                    <option value="video">Video overview</option>
+                  </select>
+                </label>
+                <button type="button" class="manage-build-btn">Generate artifact</button>
+              </form>
+
+              <form class="manage-form" action="javascript:void(0)" data-action="notebooklm-download" data-slug="{slug}">
+                <input type="hidden" name="kind" value="brief">
+                <button type="button" class="manage-build-btn">Download brief</button>
+                <small>Pulls the latest brief into <code>.research_hub/artifacts/{slug}/</code>.</small>
+              </form>
+
+              <form class="manage-form" action="javascript:void(0)" data-action="notebooklm-ask" data-slug="{slug}">
+                <label>Question
+                  <textarea name="question" rows="2" placeholder="Ask the notebook a question..." required></textarea>
+                </label>
+                <label>Timeout (seconds)
+                  <input type="number" name="timeout" placeholder="120" min="30" max="300">
+                </label>
+                <button type="button" class="manage-build-btn">Ask NotebookLM</button>
+              </form>
+            </details>
+
+            <details class="manage-actions-v043">
+              <summary>Obsidian (v0.42 + v0.43)</summary>
+
+              <form class="manage-form" action="javascript:void(0)" data-action="vault-polish-markdown" data-slug="{slug}">
+                <label><input type="checkbox" name="apply"> Apply (uncheck for dry-run)</label>
+                <button type="button" class="manage-build-btn">Polish markdown</button>
+                <small>Upgrade paper notes to the newer callout and block-ID conventions.</small>
+              </form>
+
+              <form class="manage-form" action="javascript:void(0)" data-action="bases-emit" data-slug="{slug}">
+                <label><input type="checkbox" name="force"> Overwrite existing</label>
+                <button type="button" class="manage-build-btn">Emit .base dashboard</button>
+                <small>Generate <code>hub/{slug}/{slug}.base</code> with the standard 4 views and formulas.</small>
+              </form>
+            </details>
+          </section>
 
           <form class="manage-form" action="javascript:void(0)" data-action="delete" data-slug="{slug}">
             <button type="button" class="manage-build-btn manage-danger">Copy delete dry-run command</button>

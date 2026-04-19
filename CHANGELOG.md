@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.44.0 (2026-04-19)
+
+**Dashboard UI completeness — finally surfaces v0.42 + v0.43 features as buttons. README walkthrough so users actually know how to use the dashboard.**
+
+Post-v0.43 audit found the dashboard was half-baked: `executor.py` whitelist was extended in v0.42 to accept `notebooklm-bundle/upload/generate/download` actions, but the Manage-tab buttons + JS handlers were never added. So the executor accepted commands no UI emitted. v0.43's `ask` / `polish-markdown` / `bases-emit` weren't even in the whitelist. Plus README pointed at `serve --dashboard` with one line of guidance, no walkthrough.
+
+**Constraint**: zero new setup. Every new button uses the existing NotebookLM session (`notebooklm login`) + existing Zotero credentials. No env vars, no API keys.
+
+### Added — 7 Manage tab actions
+
+Per-cluster forms in the Manage tab now drive:
+
+- **NotebookLM (v0.42)** — `bundle` / `upload` / `generate brief|audio|mind_map|video` / `download brief` / `ask` (with question textarea + timeout)
+- **Obsidian (v0.42 + v0.43)** — `vault polish-markdown` (dry-run / apply toggle) / `bases emit` (force toggle)
+
+Each form: live executor in server mode (`serve --dashboard`), clipboard copy in static mode (`dashboard`).
+
+### Added — NotebookLM artifacts tile
+
+Per-cluster NotebookLM Library sub-tile reads `nlm_cache.json::artifacts` and lists what's been downloaded (brief / audio / mind_map / video) with deep-links to NotebookLM + the local artifact file. If empty: 1-click download button.
+
+### Added — `docs/dashboard-walkthrough.md`
+
+Full UI walkthrough: tab-by-tab tour, persona-specific daily workflow recipes, per-button explanation for the 7 new v0.42/v0.43 actions, troubleshooting links. README's `serve --dashboard` section now points here.
+
+### Stats
+
+- Tests: 1492 → 1507+
+- LOC: ~+480 + ~150 docs
+- Files: `dashboard/{executor,manage_commands,sections,script.js}.py/.js` + `README.md` + new `docs/dashboard-walkthrough.md` + `tests/test_v044_dashboard_actions.py`
+
+繁體中文 release announcement: [docs/release-notes-v0.44.zh-TW.md](docs/release-notes-v0.44.zh-TW.md).
+
+---
+
 ## v0.43.0 (2026-04-19)
 
 **[kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) integration: defuddle URL extraction, full Obsidian Flavored Markdown helpers, auto-generated Obsidian Bases dashboards per cluster.**

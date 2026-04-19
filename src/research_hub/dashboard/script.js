@@ -468,6 +468,41 @@
         }
         return `research-hub clusters bind ${shellQuote(slug)} --notebooklm ${shellQuote(nb)}`;
       }
+      case "notebooklm-bundle":
+        return `research-hub notebooklm bundle --cluster ${shellQuote(slug)}`;
+      case "notebooklm-upload":
+        return `research-hub notebooklm upload --cluster ${shellQuote(slug)} ${(data.get("visible") ? "--visible" : "--headless")}`;
+      case "notebooklm-generate": {
+        const kind = (data.get("kind") || "brief").trim();
+        if (!["brief", "audio", "mind_map", "video"].includes(kind)) {
+          return null;
+        }
+        const cliKind = kind === "mind_map" ? "mind-map" : kind;
+        return `research-hub notebooklm generate --cluster ${shellQuote(slug)} --type ${cliKind}`;
+      }
+      case "notebooklm-download": {
+        const kind = (data.get("kind") || "brief").trim();
+        if (kind !== "brief") {
+          return null;
+        }
+        return `research-hub notebooklm download --cluster ${shellQuote(slug)} --type ${kind}`;
+      }
+      case "notebooklm-ask": {
+        const question = (data.get("question") || "").trim();
+        const timeout = (data.get("timeout") || "").trim();
+        if (!question) {
+          return null;
+        }
+        let command = `research-hub notebooklm ask --cluster ${shellQuote(slug)} --question ${shellQuote(question)}`;
+        if (/^\d+$/.test(timeout)) {
+          command += ` --timeout ${timeout}`;
+        }
+        return command;
+      }
+      case "vault-polish-markdown":
+        return `research-hub vault polish-markdown --cluster ${shellQuote(slug)}${data.get("apply") ? " --apply" : ""}`;
+      case "bases-emit":
+        return `research-hub bases emit --cluster ${shellQuote(slug)}${data.get("force") ? " --force" : ""}`;
       case "delete":
         return `research-hub clusters delete ${shellQuote(slug)} --dry-run`;
       default:
@@ -492,6 +527,23 @@
         return { zotero: (data.get("zotero") || "").trim() };
       case "bind-nlm":
         return { notebooklm: (data.get("notebooklm") || "").trim() };
+      case "notebooklm-bundle":
+        return {};
+      case "notebooklm-upload":
+        return { visible: !!data.get("visible") };
+      case "notebooklm-generate":
+        return { kind: (data.get("kind") || "brief").trim() };
+      case "notebooklm-download":
+        return { kind: (data.get("kind") || "brief").trim() };
+      case "notebooklm-ask":
+        return {
+          question: (data.get("question") || "").trim(),
+          timeout: (data.get("timeout") || "").trim()
+        };
+      case "vault-polish-markdown":
+        return { apply: !!data.get("apply") };
+      case "bases-emit":
+        return { force: !!data.get("force") };
       case "delete":
         return {};
       default:
@@ -729,6 +781,13 @@
             split: "Copy split command",
             "bind-zotero": "Copy bind command",
             "bind-nlm": "Copy bind command",
+            "notebooklm-bundle": "Bundle papers",
+            "notebooklm-upload": "Upload to NotebookLM",
+            "notebooklm-generate": "Generate artifact",
+            "notebooklm-download": "Download brief",
+            "notebooklm-ask": "Ask NotebookLM",
+            "vault-polish-markdown": "Polish markdown",
+            "bases-emit": "Emit .base dashboard",
             delete: "Copy delete dry-run command"
           };
           button.textContent = labels[form.dataset.action] || "Copy command";

@@ -22,6 +22,7 @@ from research_hub.dashboard.types import (
     CrystalSummary,
     DashboardData,
     HealthBadge,
+    NLMArtifactRecord,
     PaperRow,
     Quote,
 )
@@ -146,6 +147,38 @@ def _doctor_subsystem(name: str) -> str:
     return "obsidian"
 
 
+def _cluster_nlm_artifacts(cluster_cache: dict, notebook_url: str) -> list[NLMArtifactRecord]:
+    artifacts = cluster_cache.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    artifact_urls = {
+        "brief": str(cluster_cache.get("briefing_url", "") or notebook_url or ""),
+        "audio": str(cluster_cache.get("audio_url", "") or notebook_url or ""),
+        "mind_map": str(cluster_cache.get("mind_map_url", "") or notebook_url or ""),
+        "video": str(cluster_cache.get("video_url", "") or notebook_url or ""),
+    }
+    records: list[NLMArtifactRecord] = []
+    for kind in ("brief", "audio", "mind_map", "video"):
+        meta = artifacts.get(kind, {})
+        if not isinstance(meta, dict):
+            meta = {}
+        path = str(meta.get("path", "") or "")
+        downloaded_at = str(meta.get("downloaded_at", "") or "")
+        char_count = int(meta.get("char_count", 0) or 0)
+        url = artifact_urls.get(kind, "")
+        if path or downloaded_at or char_count or url:
+            records.append(
+                NLMArtifactRecord(
+                    kind=kind,
+                    path=path,
+                    downloaded_at=downloaded_at,
+                    char_count=char_count,
+                    notebook_url=url,
+                )
+            )
+    return records
+
+
 def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     """Walk the vault and build the full DashboardData snapshot."""
     persona = _detect_persona(cfg, zot)
@@ -247,6 +280,10 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 has_overview=overview_path(cfg, cluster.slug).exists(),
                 subtopic_count=len(list_subtopics(cfg, cluster.slug)),
                 briefing=briefing,
+                nlm_artifacts=_cluster_nlm_artifacts(
+                    cluster_cache,
+                    cluster.notebooklm_notebook_url or str(cluster_cache.get("notebook_url", "")),
+                ),
                 label_counts=label_counts,
                 archived_count=archived_count,
                 archived_papers=archived_papers,

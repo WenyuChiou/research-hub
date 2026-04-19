@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 
-Persona = Literal["researcher", "analyst"]
+Persona = Literal["researcher", "analyst", "humanities", "internal"]
 ReadingStatus = Literal["unread", "reading", "deep-read", "cited"]
 HealthStatus = Literal["OK", "WARN", "FAIL"]
 DriftKind = Literal[
@@ -70,6 +70,17 @@ class BriefingPreview:
 
 
 @dataclass
+class NLMArtifactRecord:
+    """One NotebookLM artifact entry for a cluster."""
+
+    kind: str
+    path: str = ""
+    downloaded_at: str = ""
+    char_count: int = 0
+    notebook_url: str = ""
+
+
+@dataclass
 class ClusterCard:
     """One cluster, populated with its papers and per-system status."""
 
@@ -87,6 +98,7 @@ class ClusterCard:
     subtopic_count: int = 0
     cluster_bibtex: str = ""  # pre-rendered .bib for the cluster batch download
     briefing: BriefingPreview | None = None
+    nlm_artifacts: list[NLMArtifactRecord] = field(default_factory=list)
     label_counts: dict[str, int] = field(default_factory=dict)
     archived_count: int = 0
     archived_papers: list[dict[str, object]] = field(default_factory=list)

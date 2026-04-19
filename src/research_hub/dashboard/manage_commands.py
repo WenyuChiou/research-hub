@@ -61,6 +61,51 @@ def build_manage_command(action: str, slug: str, **fields) -> str | None:
         return f"research-hub clusters bind {shell_quote(slug)} --notebooklm {shell_quote(notebooklm)}"
     if action == "delete":
         return f"research-hub clusters delete {shell_quote(slug)} --dry-run"
+    if action == "notebooklm-bundle":
+        return f"research-hub notebooklm bundle --cluster {shell_quote(slug)}"
+    if action == "notebooklm-upload":
+        visible = bool(fields.get("visible", False))
+        cmd = f"research-hub notebooklm upload --cluster {shell_quote(slug)}"
+        if visible:
+            cmd += " --visible"
+        else:
+            cmd += " --headless"
+        return cmd
+    if action == "notebooklm-generate":
+        kind = str(fields.get("kind", "brief") or "brief").strip()
+        if kind not in {"brief", "audio", "mind_map", "video"}:
+            return None
+        cli_kind = "mind-map" if kind == "mind_map" else kind
+        return f"research-hub notebooklm generate --cluster {shell_quote(slug)} --type {cli_kind}"
+    if action == "notebooklm-download":
+        kind = str(fields.get("kind", "brief") or "brief").strip()
+        if kind != "brief":
+            return None
+        return f"research-hub notebooklm download --cluster {shell_quote(slug)} --type {kind}"
+    if action == "notebooklm-ask":
+        question = str(fields.get("question", "") or "").strip()
+        if not question:
+            return None
+        cmd = (
+            f"research-hub notebooklm ask --cluster {shell_quote(slug)} "
+            f"--question {shell_quote(question)}"
+        )
+        timeout = str(fields.get("timeout", "") or "").strip()
+        if timeout.isdigit():
+            cmd += f" --timeout {timeout}"
+        return cmd
+    if action == "vault-polish-markdown":
+        apply = bool(fields.get("apply", False))
+        cmd = f"research-hub vault polish-markdown --cluster {shell_quote(slug)}"
+        if apply:
+            cmd += " --apply"
+        return cmd
+    if action == "bases-emit":
+        force = bool(fields.get("force", False))
+        cmd = f"research-hub bases emit --cluster {shell_quote(slug)}"
+        if force:
+            cmd += " --force"
+        return cmd
     raise ValueError(f"unknown action: {action!r}")
 
 

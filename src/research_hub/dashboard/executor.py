@@ -34,6 +34,9 @@ ALLOWED_ACTIONS = frozenset(
         "notebooklm-upload",
         "notebooklm-generate",
         "notebooklm-download",
+        "notebooklm-ask",
+        "vault-polish-markdown",
+        "bases-emit",
         "discover-new",
         "discover-continue",
         "autofill-apply",
@@ -80,9 +83,28 @@ def _tokenize_builder_output(cmd_str: str | None, *, action: str) -> list[str]:
 def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -> list[str]:
     base = [sys.executable, "-m", "research_hub"]
 
-    if action in {"rename", "merge", "split", "bind-zotero", "bind-nlm", "delete"}:
+    manage_actions = {
+        "rename",
+        "merge",
+        "split",
+        "bind-zotero",
+        "bind-nlm",
+        "delete",
+        "notebooklm-bundle",
+        "notebooklm-upload",
+        "notebooklm-generate",
+        "notebooklm-download",
+        "notebooklm-ask",
+        "vault-polish-markdown",
+        "bases-emit",
+    }
+    if action in manage_actions:
+        effective_slug = slug or str(fields.get("cluster_slug", "") or "")
+        builder_fields = dict(fields)
+        if "type" in builder_fields and "kind" not in builder_fields:
+            builder_fields["kind"] = builder_fields["type"]
         return _tokenize_builder_output(
-            build_manage_command(action, slug or "", **fields),
+            build_manage_command(action, effective_slug, **builder_fields),
             action=action,
         )
 
@@ -126,37 +148,6 @@ def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -
         args = base + ["pipeline", "repair", "--cluster", str(fields["cluster_slug"])]
         args.append("--execute" if fields.get("execute") else "--dry-run")
         return args
-    if action == "notebooklm-bundle":
-        args = base + ["notebooklm", "bundle", "--cluster", str(fields["cluster_slug"])]
-        if fields.get("download_pdfs"):
-            args.append("--download-pdfs")
-        return args
-    if action == "notebooklm-upload":
-        return base + [
-            "notebooklm",
-            "upload",
-            "--cluster",
-            str(fields["cluster_slug"]),
-            "--create-if-missing",
-        ]
-    if action == "notebooklm-generate":
-        return base + [
-            "notebooklm",
-            "generate",
-            "--cluster",
-            str(fields["cluster_slug"]),
-            "--type",
-            str(fields.get("type", "brief") or "brief"),
-        ]
-    if action == "notebooklm-download":
-        return base + [
-            "notebooklm",
-            "download",
-            "--cluster",
-            str(fields["cluster_slug"]),
-            "--type",
-            str(fields.get("type", "brief") or "brief"),
-        ]
     if action == "discover-new":
         args = base + ["discover", "new", "--cluster", str(fields["cluster_slug"])]
         if fields.get("query"):
