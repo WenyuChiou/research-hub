@@ -277,6 +277,67 @@ def scaffold_overview(cfg, cluster_slug: str, *, force: bool = False) -> Path:
     return path
 
 
+def scaffold_cluster_hub(cfg, cluster_slug: str, *, force: bool = False) -> dict[str, str]:
+    """Create the full hub/<slug>/ scaffold for a cluster."""
+    import json
+
+    from research_hub.clusters import ClusterRegistry
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"unknown cluster: {cluster_slug}")
+
+    summary = {
+        "cluster_slug": cluster_slug,
+        "overview": "skipped",
+        "crystals_dir": "skipped",
+        "memory_json": "skipped",
+    }
+
+    path = overview_path(cfg, cluster_slug)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not force:
+        summary["overview"] = "exists"
+    else:
+        path.write_text(
+            OVERVIEW_TEMPLATE.format(cluster_slug=cluster_slug, cluster_title=cluster.name),
+            encoding="utf-8",
+        )
+        summary["overview"] = "created"
+
+    crystals_dir = hub_cluster_dir(cfg, cluster_slug) / "crystals"
+    if crystals_dir.exists():
+        summary["crystals_dir"] = "exists"
+    else:
+        crystals_dir.mkdir(parents=True, exist_ok=True)
+        summary["crystals_dir"] = "created"
+
+    memory_path = hub_cluster_dir(cfg, cluster_slug) / "memory.json"
+    if memory_path.exists():
+        summary["memory_json"] = "exists"
+    else:
+        memory_path.write_text(
+            json.dumps(
+                {
+                    "cluster_slug": cluster_slug,
+                    "entities": [],
+                    "claims": [],
+                    "methods": [],
+                    "based_on_papers": [],
+                    "based_on_paper_count": 0,
+                    "last_generated": "",
+                    "generator": "scaffold",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        summary["memory_json"] = "created"
+
+    return summary
+
+
 def read_overview(cfg, cluster_slug: str) -> str | None:
     """Return overview markdown or None if it does not exist."""
     path = overview_path(cfg, cluster_slug)

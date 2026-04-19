@@ -295,6 +295,31 @@ def _clusters_split(source: str, query: str, new_name: str) -> int:
     return 0
 
 
+def _clusters_scaffold_missing() -> int:
+    cfg = require_config()
+    from research_hub.topic import scaffold_cluster_hub
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    summaries: list[dict[str, str]] = []
+    for cluster in registry.list():
+        try:
+            summaries.append(scaffold_cluster_hub(cfg, cluster.slug))
+        except Exception as exc:
+            print(f"  ! {cluster.slug}: {exc}", file=sys.stderr)
+    created_count = sum(
+        1
+        for summary in summaries
+        if summary.get("overview") == "created"
+        or summary.get("crystals_dir") == "created"
+        or summary.get("memory_json") == "created"
+    )
+    print(
+        f"Scaffolded {created_count} of {len(summaries)} clusters "
+        "(others already had complete hub structure)."
+    )
+    return 0
+
+
 def _cmd_clusters_analyze(args, cfg) -> int:
     from research_hub.analyze import render_split_suggestion_markdown, suggest_split
 
@@ -2196,6 +2221,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Actually move files (default is dry-run)",
     )
+    clusters_subparsers.add_parser(
+        "scaffold-missing",
+        help="Find clusters with no hub/<slug>/ scaffold and create it. Idempotent.",
+    )
 
     topic_parser = subparsers.add_parser(
         "topic",
@@ -3147,6 +3176,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 0 if not result.errors else 1
             print("Specify --emit or --apply <path>", file=sys.stderr)
             return 2
+        if args.clusters_command == "scaffold-missing":
+            return _clusters_scaffold_missing()
     if args.command == "topic":
         from research_hub.topic import (
             SubtopicProposal,

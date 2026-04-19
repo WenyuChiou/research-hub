@@ -252,9 +252,8 @@ def test_cli_topic_scaffold_writes_structured_template(tmp_path, monkeypatch):
     ClusterRegistry(cfg.clusters_file).create(query="agents", name="Agents", slug="agents")
     monkeypatch.setattr("research_hub.cli.get_config", lambda: cfg)
 
-    rc = main(["topic", "scaffold", "--cluster", "agents"])
+    rc = main(["topic", "scaffold", "--cluster", "agents", "--force"])
 
     assert rc == 0
     content = (cfg.hub / "agents" / "00_overview.md").read_text(encoding="utf-8")
     assert "## TL;DR" in content
-

@@ -8,6 +8,7 @@ import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 
 from research_hub.config import get_config
 from research_hub.operations import _update_frontmatter_field, move_paper, note_matches_query
@@ -145,6 +146,11 @@ class ClusterRegistry:
             cfg = get_config()
         except Exception:
             return
+        try:
+            if Path(cfg.clusters_file).resolve() != self.path.resolve():
+                return
+        except Exception:
+            return
         if not hasattr(cfg, "root"):
             return
         try:
@@ -162,7 +168,10 @@ class ClusterRegistry:
         seed_keywords: list[str] | None = None,
         **kwargs,
     ) -> Cluster:
-        """Create a cluster from a query or return the existing one."""
+        """Create a cluster from a query or return the existing one.
+
+        Also scaffolds hub/<slug>/ on first creation.
+        """
         final_slug = (slug or slugify(query)).strip().lower()
         if final_slug in self.clusters:
             return self.clusters[final_slug]
@@ -180,6 +189,22 @@ class ClusterRegistry:
         self.clusters[final_slug] = cluster
         self.save()
         self._refresh_graph_if_possible()
+        try:
+            from research_hub.topic import scaffold_cluster_hub
+
+            cfg = get_config()
+            if Path(cfg.clusters_file).resolve() != self.path.resolve():
+                root = self.path.parent.parent
+                cfg = SimpleNamespace(
+                    root=root,
+                    raw=root / "raw",
+                    hub=root / "hub",
+                    research_hub_dir=self.path.parent,
+                    clusters_file=self.path,
+                )
+            scaffold_cluster_hub(cfg, final_slug)
+        except Exception as exc:
+            logger.warning("hub scaffold failed for cluster %s: %s", final_slug, exc)
         return cluster
 
     def bind(

@@ -397,6 +397,8 @@ def _parse_new_cluster_proposals(report_path: Path) -> list[NewClusterProposal]:
 
 
 def _apply_new_cluster_proposals(cfg, registry, proposals, result, log_path: Path, *, dry_run: bool) -> None:
+    from research_hub.topic import scaffold_cluster_hub
+
     for proposal in proposals:
         cluster = registry.get(proposal.slug)
         if cluster is None:
@@ -409,6 +411,10 @@ def _apply_new_cluster_proposals(cfg, registry, proposals, result, log_path: Pat
                     slug=proposal.slug,
                     seed_keywords=proposal.seed_keywords,
                 )
+                try:
+                    scaffold_cluster_hub(cfg, proposal.slug)
+                except Exception as exc:
+                    logger.warning("hub scaffold failed for new cluster %s: %s", proposal.slug, exc)
                 _append_log(log_path, f"CREATED: cluster {proposal.slug} from folder {proposal.source_folder}")
         source_dir = safe_join(Path(cfg.raw), proposal.source_folder)
         target_dir_hint = Path(cfg.raw) / proposal.obsidian_subfolder

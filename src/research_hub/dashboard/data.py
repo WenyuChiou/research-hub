@@ -302,8 +302,11 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
         staleness = {}
         if crystal_module is not None:
             try:
-                crystals = list(crystal_module.list_crystals(cfg, cluster.slug))
-                staleness = dict(crystal_module.check_staleness(cfg, cluster.slug) or {})
+                crystal_base = Path(cfg.hub) / cluster.slug / "crystals"
+                has_crystal_files = crystal_base.exists() and next(crystal_base.glob("*.md"), None) is not None
+                if has_crystal_files:
+                    crystals = list(crystal_module.list_crystals(cfg, cluster.slug))
+                    staleness = dict(crystal_module.check_staleness(cfg, cluster.slug) or {}) if crystals else {}
             except Exception as exc:
                 logger.warning("crystal summary failed for %s: %s", cluster.slug, exc)
                 crystals = []

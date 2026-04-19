@@ -88,6 +88,7 @@ def test_memory_read_cli_missing_returns_nonzero(tmp_path, capsys, monkeypatch):
     from research_hub.cli import main
 
     cfg, _ = make_persona_vault(tmp_path, persona="A")
+    (cfg.hub / "persona-a-test" / "memory.json").unlink()
     monkeypatch.setattr("research_hub.cli.get_config", lambda: cfg)
     rc = main(["memory", "read", "--cluster", "persona-a-test"])
     err = capsys.readouterr().err

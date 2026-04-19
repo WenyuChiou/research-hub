@@ -73,7 +73,7 @@ def test_cli_topic_scaffold_creates_file(tmp_path, monkeypatch, capsys):
     cfg = _setup_topic_cfg(tmp_path)
     monkeypatch.setattr("research_hub.cli.get_config", lambda: cfg)
 
-    assert main(["topic", "scaffold", "--cluster", "agents"]) == 0
+    assert main(["topic", "scaffold", "--cluster", "agents", "--force"]) == 0
 
     out = capsys.readouterr().out
     assert "wrote" in out
@@ -100,6 +100,7 @@ def test_cli_topic_digest_prints_to_stdout_when_no_out(tmp_path, monkeypatch, ca
 
 def test_cli_topic_show_returns_1_when_missing_overview(tmp_path, monkeypatch, capsys):
     cfg = _setup_topic_cfg(tmp_path)
+    (cfg.hub / "agents" / "00_overview.md").unlink()
     monkeypatch.setattr("research_hub.cli.get_config", lambda: cfg)
 
     assert main(["topic", "show", "--cluster", "agents"]) == 1

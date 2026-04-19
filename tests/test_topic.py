@@ -30,6 +30,9 @@ class StubConfig:
 def _cfg(tmp_path: Path) -> StubConfig:
     cfg = StubConfig(tmp_path / "vault")
     ClusterRegistry(cfg.clusters_file).create(query="my cluster", name="My Cluster", slug="my-cluster")
+    overview = cfg.hub / "my-cluster" / OVERVIEW_FILENAME
+    if overview.exists():
+        overview.unlink()
     return cfg
 
 

@@ -225,6 +225,7 @@ def test_crystal_see_also_populated_with_sibling_slugs(tmp_path):
 def test_emit_prompt_handles_missing_overview_gracefully(tmp_path):
     cfg = _StubConfig(tmp_path / "vault")
     ClusterRegistry(cfg.clusters_file).create(query="test", name="Test", slug="test")
+    (cfg.hub / "test" / "00_overview.md").unlink()
     (cfg.raw / "test").mkdir(parents=True)
     (cfg.raw / "test" / "paper-a.md").write_text("---\ntitle: \"A\"\ndoi: \"10.1/a\"\ntopic_cluster: test\n---\n\n## Summary\nx\n", encoding="utf-8")
     assert "(no definition" in crystal.emit_crystal_prompt(cfg, "test")

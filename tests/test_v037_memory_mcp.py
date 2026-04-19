@@ -63,6 +63,7 @@ def test_mcp_read_cluster_memory_missing_returns_found_false(tmp_path, monkeypat
     from research_hub import mcp_server
 
     cfg, _ = make_persona_vault(tmp_path, persona="A")
+    (cfg.hub / "persona-a-test" / "memory.json").unlink()
     monkeypatch.setattr("research_hub.mcp_server.get_config", lambda: cfg)
     result = _get_mcp_tool(mcp_server.mcp, "read_cluster_memory").fn(cluster="persona-a-test")
     assert result["found"] is False

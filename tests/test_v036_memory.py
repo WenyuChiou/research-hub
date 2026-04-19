@@ -222,6 +222,7 @@ def test_read_memory_returns_none_when_missing(tmp_path):
     from research_hub.memory import read_memory
 
     cfg, cluster_slug = _seed_vault(tmp_path)
+    (cfg.hub / cluster_slug / "memory.json").unlink()
     assert read_memory(cfg, cluster_slug) is None
 
 
