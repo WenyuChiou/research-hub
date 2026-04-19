@@ -2187,6 +2187,11 @@ def build_parser() -> argparse.ArgumentParser:
     rebind_parser.add_argument("--emit", action="store_true", help="Emit a rebind proposal report to stdout")
     rebind_parser.add_argument("--apply", type=Path, help="Apply moves from a previously emitted report file")
     rebind_parser.add_argument(
+        "--auto-create-new",
+        action="store_true",
+        help="When applying, also create NEW clusters proposed in the report from topic folders with >=5 orphans",
+    )
+    rebind_parser.add_argument(
         "--no-dry-run",
         action="store_true",
         help="Actually move files (default is dry-run)",
@@ -3127,7 +3132,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(emit_rebind_prompt(cfg))
                 return 0
             if args.apply:
-                result = apply_rebind(cfg, args.apply, dry_run=not args.no_dry_run)
+                result = apply_rebind(
+                    cfg,
+                    args.apply,
+                    dry_run=not args.no_dry_run,
+                    auto_create_new=args.auto_create_new,
+                )
                 mode = "DRY-RUN" if not args.no_dry_run else "APPLIED"
                 print(
                     f"[{mode}] moved={len(result.moved)} skipped={len(result.skipped)} errors={len(result.errors)}"

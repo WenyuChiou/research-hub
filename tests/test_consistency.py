@@ -17,6 +17,10 @@ EXPECTED_MAPPINGS = {
     "suggest_integration": "suggest",
     "list_clusters": "clusters list",
     "show_cluster": "clusters show",
+    "propose_cluster_rebind": "clusters rebind --emit",
+    "apply_cluster_rebind": "clusters rebind --apply",
+    "list_orphan_papers": "mcp-only",
+    "summarize_rebind_status": "mcp-only",
     "export_citation": "cite",
     "build_citation": "cite --inline/--markdown",
     "run_doctor": "doctor",
@@ -105,4 +109,4 @@ def test_no_orphaned_mappings():
 
 
 def test_mcp_tool_count_at_least_18():
-    assert len(_list_mcp_tool_names(mcp)) >= 56
+    assert len(_list_mcp_tool_names(mcp)) >= 60

@@ -19,7 +19,7 @@ English → [README.md](README.md)
 
 1. **Ingest** — 一行指令把學術論文收進 Zotero(引用管理)+ Obsidian(結構化筆記)+ NotebookLM(AI 簡報)。
 2. **Organize** — 論文自動分到 cluster、sub-topic,Obsidian graph 按 research label 上色。
-3. **Serve** — 提供 56 個 MCP tools,讓 Claude Code / Codex / 任何相容 MCP 的 AI 可以直接驅動整個流程。
+3. **Serve** — 提供 60 個 MCP tools,讓 Claude Code / Codex / 任何相容 MCP 的 AI 可以直接驅動整個流程。
 
 設計給每天都在用 AI agent 的 PhD 學生跟研究團隊,不想在六個分頁之間切來切去的人。
 
@@ -121,7 +121,7 @@ Python 3.10+。**不需要 OpenAI/Anthropic API key** — research-hub 完全 pr
 > 「Claude,幫 LLM-SE cluster 產 crystals」
 > 「Claude,這個 cluster 在講什麼?」→ Claude 呼叫 `list_crystals` + `read_crystal` → 拿到預先寫好的 100 字答案
 
-56 個 MCP tools 涵蓋:論文 ingest、cluster CRUD、labels、quotes、draft 組裝、citation graph、NotebookLM、crystal 生成、fit-check、autofill、cluster memory。
+60 個 MCP tools 涵蓋:論文 ingest、cluster CRUD、labels、quotes、draft 組裝、citation graph、NotebookLM、crystal 生成、fit-check、autofill、cluster memory，以及 cluster rebind 工作流。
 
 ## 五行指令快速上手
 
@@ -155,7 +155,7 @@ research-hub crystal apply --cluster llm-agents --scored crystals.json
 
 ## 架構文件
 
-- [MCP tools 參考](docs/mcp-tools.md) — 56 tools 完整列表
+- [MCP tools 參考](docs/mcp-tools.md) — 60 tools 完整列表
 - [Cluster integrity](docs/cluster-integrity.md) — 6 種失敗模式與 4 persona 緩解矩陣
 - [Claude Desktop 示範流程](docs/example-claude-mcp-flow.md) — 從 ingest → crystallize → query 的具體例子
 - [本地檔案匯入](docs/import-folder.zh-TW.md) — 給 analyst persona 的 import-folder 指南（PDF/DOCX/MD/TXT/URL）

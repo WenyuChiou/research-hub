@@ -19,6 +19,7 @@ Claude Desktop config (~/.claude/claude_desktop_config.json):
 from __future__ import annotations
 
 from dataclasses import asdict
+import json
 import re
 from typing import Any, Callable
 
@@ -333,6 +334,96 @@ def export_citation(
             _cite(identifier, cluster, format, None)
         return buf.getvalue()
     except Exception as exc:  # pragma: no cover - exercised via failure tests
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def propose_cluster_rebind(cluster_slug: str = "") -> dict:
+    """Propose moves to bind orphan papers to clusters. Returns the rebind report."""
+    try:
+        if cluster_slug:
+            cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+        from research_hub.cluster_rebind import emit_rebind_prompt
+
+        cfg = get_config()
+        report = emit_rebind_prompt(cfg)
+        move_match = re.search(r"## Proposed moves .*?```json\s*\n(.*?)\n```", report, re.DOTALL)
+        moves = json.loads(move_match.group(1)) if move_match else []
+        if cluster_slug:
+            moves = [move for move in moves if cluster_slug in str(move.get("dst", ""))]
+        return {"cluster": cluster_slug or "(all)", "count": len(moves), "moves": moves}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def apply_cluster_rebind(report_path: str, dry_run: bool = True, auto_create_new: bool = False) -> dict:
+    """Apply rebind moves from a previously emitted report file. Default: dry-run."""
+    try:
+        from pathlib import Path
+
+        from research_hub.cluster_rebind import apply_rebind
+
+        cfg = get_config()
+        result = apply_rebind(cfg, Path(report_path), dry_run=dry_run, auto_create_new=auto_create_new)
+        return {
+            "moved": len(result.moved),
+            "skipped": len(result.skipped),
+            "errors": len(result.errors),
+            "log_path": result.log_path,
+            "dry_run": dry_run,
+        }
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def list_orphan_papers(folder: str = "") -> dict:
+    """List paper notes in raw/ that aren't bound to any cluster. Filter by folder if given."""
+    try:
+        from research_hub.clusters import ClusterRegistry
+
+        cfg = get_config()
+        registry = ClusterRegistry(cfg.clusters_file)
+        bound_dirs = {(cluster.obsidian_subfolder or cluster.slug) for cluster in registry.list()}
+        orphans: list[str] = []
+        if cfg.raw.exists():
+            for sub in cfg.raw.iterdir():
+                if not sub.is_dir() or sub.name.startswith(".") or sub.name in {"pdfs", "attachments"}:
+                    continue
+                if sub.name in bound_dirs:
+                    continue
+                if folder and sub.name != folder:
+                    continue
+                for md in sub.glob("*.md"):
+                    orphans.append(md.relative_to(cfg.raw).as_posix())
+        return {"folder": folder or "(all)", "count": len(orphans), "papers": orphans[:200]}
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def summarize_rebind_status() -> dict:
+    """High-level rebind status: total orphans, proposed, stuck, would-create-clusters."""
+    try:
+        from research_hub.cluster_rebind import emit_rebind_prompt
+
+        cfg = get_config()
+        report = emit_rebind_prompt(cfg)
+        move_match = re.search(r"## Proposed moves .*?```json\s*\n(.*?)\n```", report, re.DOTALL)
+        proposals = json.loads(move_match.group(1)) if move_match else []
+        new_cluster_match = re.search(r"new_cluster_proposals\s*```json\s*\n(.*?)\n```", report, re.DOTALL)
+        new_clusters = json.loads(new_cluster_match.group(1)) if new_cluster_match else []
+        orphan_tool = list_orphan_papers
+        list_result = orphan_tool.fn() if hasattr(orphan_tool, "fn") else orphan_tool()
+        total_orphans = int(list_result.get("count", 0))
+        return {
+            "total_orphans": total_orphans,
+            "proposed_to_existing_clusters": len(proposals),
+            "new_clusters_proposed": len(new_clusters),
+            "stuck": total_orphans - len(proposals),
+        }
+    except Exception as exc:
         return _tool_error(exc)
 
 

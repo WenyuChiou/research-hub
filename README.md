@@ -19,7 +19,7 @@ A CLI + MCP server that does three things at once:
 
 1. **Ingest** academic papers into Zotero (citations) + Obsidian (structured notes) + NotebookLM (briefings) — one command.
 2. **Organize** papers into clusters, sub-topics, and an Obsidian graph coloured by research label.
-3. **Serve** 56 MCP tools so Claude Code / Codex / any MCP-compatible AI can drive the whole thing.
+3. **Serve** 60 MCP tools so Claude Code / Codex / any MCP-compatible AI can drive the whole thing.
 
 Built for PhD students and research teams who already use AI agents daily and don't want to context-switch between six tabs.
 
@@ -121,7 +121,7 @@ Then talk to Claude:
 > "Claude, generate crystals for the LLM-SE cluster"
 > "Claude, what's this cluster about?" → Claude calls `list_crystals` + `read_crystal` → gets the pre-written 100-word answer
 
-56 MCP tools cover: paper ingest, cluster CRUD, labels, quotes, draft composition, citation graph, NotebookLM, crystal generation, fit-check, autofill, and cluster memory.
+60 MCP tools cover: paper ingest, cluster CRUD, labels, quotes, draft composition, citation graph, NotebookLM, crystal generation, fit-check, autofill, cluster memory, and cluster rebind workflows.
 
 ## Quickstart (5 commands)
 

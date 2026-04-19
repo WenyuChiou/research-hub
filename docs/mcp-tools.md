@@ -260,6 +260,6 @@ If a tool errors with `ValidationError`, your slug is malformed — clean it (lo
 
 ---
 
-## Total tool count: 56
+## Total tool count: 60
 
 See `src/research_hub/mcp_server.py` for the source of truth.
