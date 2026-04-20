@@ -17,8 +17,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
     """Return all known localized strings for ``key``."""
     table: dict[str, dict[str, tuple[str, ...]]] = {
         "create_new_notebook": {
-            "zh-TW": ("撱箇??啁?蝑???", "?啣遣"),
-            "zh-CN": ("创建新笔记本", "新建笔记本", "+ 新建"),
+            "zh-TW": ("建立新的記事本", "建立", "新建記事本"),
+            "zh-CN": ("新建笔记本", "新建", "创建"),
             "en": ("Create new notebook", "New notebook", "+ New"),
             "ja": ("新しいノートブックを作成", "新規"),
             "ko": ("새 노트북 만들기", "새 노트북"),
@@ -27,8 +27,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Neues Notebook erstellen", "Neues Notebook"),
         },
         "add_source": {
-            "zh-TW": ("?啣?靘?",),
-            "zh-CN": ("添加来源", "添加资料", "瘛餃??交?"),
+            "zh-TW": ("新增來源", "新增資料來源", "新增資料"),
+            "zh-CN": ("添加来源", "添加资料来源", "添加资料"),
             "en": ("Add source",),
             "ja": ("ソースを追加",),
             "ko": ("소스 추가",),
@@ -37,8 +37,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Quelle hinzufugen",),
         },
         "website_tab": {
-            "zh-TW": ("蝬脩?", "蝬脣?"),
-            "zh-CN": ("网站", "网址", "链接"),
+            "zh-TW": ("網站", "網址"),
+            "zh-CN": ("网站", "网址"),
             "en": ("Website", "URL", "Link"),
             "ja": ("ウェブサイト", "URL", "リンク"),
             "ko": ("웹사이트", "URL", "링크"),
@@ -47,8 +47,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Webseite", "URL", "Link"),
         },
         "url_input_placeholder": {
-            "zh-TW": ("鞎潔?蝬脣?", "頛詨蝬脣?"),
-            "zh-CN": ("粘贴网址", "输入网址", "Paste URL"),
+            "zh-TW": ("貼上網址", "輸入網址"),
+            "zh-CN": ("粘贴网址", "输入网址"),
             "en": ("Paste URL", "Enter URL"),
             "ja": ("URLを貼り付け", "URLを入力"),
             "ko": ("URL 붙여넣기", "URL 입력"),
@@ -57,8 +57,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("URL einfugen", "URL eingeben"),
         },
         "insert_source_button": {
-            "zh-TW": ("?", "?啣?"),
-            "zh-CN": ("插入", "添加", "?"),
+            "zh-TW": ("插入", "新增"),
+            "zh-CN": ("插入", "添加"),
             "en": ("Insert", "Add"),
             "ja": ("挿入", "追加"),
             "ko": ("삽입", "추가"),
@@ -67,8 +67,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Einfugen", "Hinzufugen"),
         },
         "studio_panel": {
-            "zh-TW": ("Studio", "撌乩?摰?"),
-            "zh-CN": ("Studio", "工作室"),
+            "zh-TW": ("Studio", "工作室", "已生成的內容"),
+            "zh-CN": ("Studio", "工作室", "已生成的内容"),
             "en": ("Studio",),
             "ja": ("Studio",),
             "ko": ("Studio", "스튜디오"),
@@ -77,8 +77,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Studio",),
         },
         "briefing_button": {
-            "zh-TW": ("?勗?", "蝪∪?辣", "憭抒雇"),
-            "zh-CN": ("报告", "简报文档", "?亙?", "???﹝"),
+            "zh-TW": ("報告", "簡介文件", "簡報文件", "Briefing doc"),
+            "zh-CN": ("报告", "简报文档", "简介文档", "Briefing doc"),
             "en": ("Report", "Briefing doc", "Briefing document"),
             "ja": ("レポート", "ブリーフィング ドキュメント"),
             "ko": ("보고서", "브리핑 문서"),
@@ -87,8 +87,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Bericht", "Briefing-Dokument"),
         },
         "audio_button": {
-            "zh-TW": ("隤??", "?唾?蝮質汗", "?唾???"),
-            "zh-CN": ("音频概览", "语音概览", "霂剝??"),
+            "zh-TW": ("語音摘要", "語音概覽", "語音", "Audio Overview"),
+            "zh-CN": ("语音概览", "音频概览", "语音", "Audio Overview"),
             "en": ("Audio Overview", "Audio overview"),
             "ja": ("音声概要",),
             "ko": ("오디오 개요",),
@@ -97,8 +97,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Audio-Uberblick",),
         },
         "mind_map_button": {
-            "zh-TW": ("敹??",),
-            "zh-CN": ("思维导图", "?輕撖澆"),
+            "zh-TW": ("心智圖", "Mind map"),
+            "zh-CN": ("思维导图", "Mind map"),
             "en": ("Mind map", "Mind Map"),
             "ja": ("マインドマップ",),
             "ko": ("마인드맵",),
@@ -107,8 +107,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Mindmap",),
         },
         "video_button": {
-            "zh-TW": ("敶梁???", "敶梁?蝮質汗"),
-            "zh-CN": ("视频概览", "閫?璁?"),
+            "zh-TW": ("影片摘要", "影片概覽", "影片", "Video Overview"),
+            "zh-CN": ("视频概览", "视频", "Video Overview"),
             "en": ("Video Overview", "Video overview"),
             "ja": ("動画概要",),
             "ko": ("비디오 개요",),
@@ -167,8 +167,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Infografik",),
         },
         "briefing_preset": {
-            "zh-TW": ("蝪∩??辣", "????", "蝬脰???"),
-            "zh-CN": ("摘要", "学习指南", "博客文章"),
+            "zh-TW": ("簡介文件", "研讀指南", "網誌文章"),
+            "zh-CN": ("简介文档", "学习指南", "博客文章"),
             "en": ("Brief", "Study guide", "Blog post"),
             "ja": ("概要", "学習ガイド", "ブログ記事"),
             "ko": ("요약", "학습 가이드", "블로그 게시물"),
@@ -177,8 +177,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Kurzfassung", "Lernhilfe", "Blogbeitrag"),
         },
         "audio_preset": {
-            "zh-TW": ("隤??",),
-            "zh-CN": ("音频概览", "霂剝??"),
+            "zh-TW": ("語音", "語音概覽"),
+            "zh-CN": ("语音", "语音概览"),
             "en": ("Audio Overview",),
             "ja": ("音声概要",),
             "ko": ("오디오 개요",),
@@ -187,8 +187,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Audio-Uberblick",),
         },
         "mind_map_preset": {
-            "zh-TW": ("敹??",),
-            "zh-CN": ("思维导图", "?輕撖澆"),
+            "zh-TW": ("心智圖"),
+            "zh-CN": ("思维导图"),
             "en": ("Mind map",),
             "ja": ("マインドマップ",),
             "ko": ("마인드맵",),
@@ -197,8 +197,8 @@ def _localized_text(key: str) -> tuple[str, ...]:
             "de": ("Mindmap",),
         },
         "video_preset": {
-            "zh-TW": ("敶梁???",),
-            "zh-CN": ("视频概览", "閫?璁?"),
+            "zh-TW": ("影片摘要", "影片概覽"),
+            "zh-CN": ("视频概览", "视频"),
             "en": ("Video Overview",),
             "ja": ("動画概要",),
             "ko": ("비디오 개요",),

@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.49.5 (2026-04-20)
+
+**Root-causes the recurring `Generation button not found: briefing` NotebookLM error.**
+
+### Fixed — corrupted CJK selectors silently broke every NLM operation on Chinese-locale browsers
+
+`src/research_hub/notebooklm/selectors.py` had **all 28 CJK selector entries** corrupted into mojibake at some point in the dev history. Examples of what the file actually contained vs what NotebookLM's UI emits:
+
+| Selector | What was in the file | What NotebookLM actually emits |
+|---|---|---|
+| `briefing_button` zh-TW | `"?勗?", "蝪∪?辣", "憭抒雇"` | `"報告", "簡介文件"` |
+| `audio_button` zh-TW | `"隤??", "?唾?蝮質汗"` | `"語音摘要", "語音概覽"` |
+| `mind_map_button` zh-TW | `"敹??"` | `"心智圖"` |
+| `briefing_preset` zh-TW | `"蝪∩??辣", "????"` | `"簡介文件", "研讀指南"` |
+
+When the user's NotebookLM UI was in zh-TW (Wenyu's locale), `_find_artifact_container` looped through `("?勗?", "蝪∪?辣", "憭抒雇")` looking for a CSS-selected `[aria-label="<text>"]` and never matched anything, since the real aria-label was `"報告"`. Result: every NLM `generate` / `upload` / source-add operation on a Chinese browser failed with the misleading `Generation button not found: briefing`.
+
+This is the exact regression that v0.45 thought it had fixed via the overlay-dismiss helper — but the overlay was never the root cause; the selectors themselves never matched any element. The `--with-crystals` flow that v0.49 added masked the impact since crystals don't need the brief, but anyone trying to actually use NotebookLM on a CJK locale was silently failing.
+
+Fix: rebuilt all 28 zh-TW + zh-CN selector tuples with the correct UTF-8 strings + appended English fallbacks (`"Briefing doc"`, `"Audio Overview"`, `"Mind map"`, etc.) so the selectors stay matchable even when Google A/B-tests the locale. End-to-end retry on the maintainer's vault: `notebooklm generate --type brief` now succeeds and returns a real notebook URL; `notebooklm download` writes the brief file.
+
+### Verified
+
+```
+$ research-hub notebooklm generate --cluster <slug> --type brief
+brief: https://notebooklm.google.com/notebook/99866b50-3b71-4d84-9e19-7682bbc85e2d
+
+$ research-hub notebooklm download --cluster <slug> --type brief
+Saved: .research_hub/artifacts/<slug>/brief-20260420T020640Z.txt
+  notebook: Llm Agents For Agent-Based Modeling And Social Simulation
+```
+
+(The downloaded file initially contained `"正在生成報告..."` — a Chinese placeholder string — which itself confirms the new selectors are talking to the real zh-TW UI and the system is correctly reading what NotebookLM serves.)
+
+### Stats
+
+- Tests: 1541 (no new tests in this release; the bug class is untestable in CI without a real browser session)
+- Bugs fixed by inventory pass since v0.49.0: **12**
+
 ## v0.49.4 (2026-04-19)
 
 **`auto` end-to-end actually works now: 4 latent bugs unblocked + Zotero collection auto-created.** Caught by trying to use the lazy-mode flow on a fresh topic ("LLM agents for agent-based modeling").
