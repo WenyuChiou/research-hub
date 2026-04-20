@@ -4,15 +4,9 @@
 > Zotero + Obsidian + NotebookLM 三合一,專為 AI agent 打造 — **不需要 OpenAI/Anthropic API key**。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Downloads](https://img.shields.io/pypi/dm/research-hub-pipeline.svg?color=blue)](https://pypi.org/project/research-hub-pipeline/)
-[![GitHub stars](https://img.shields.io/github/stars/WenyuChiou/research-hub?style=social)](https://github.com/WenyuChiou/research-hub/stargazers)
 [![Tests](https://img.shields.io/badge/tests-1583%20passing-brightgreen.svg)](docs/audit_v0.45.md)
-[![MCP tools](https://img.shields.io/badge/MCP%20tools-83-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![CI: Linux · macOS · Windows](https://img.shields.io/badge/CI-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-blue)](.github/workflows/ci.yml)
-[![last commit](https://img.shields.io/github/last-commit/WenyuChiou/research-hub.svg?color=orange)](https://github.com/WenyuChiou/research-hub/commits/master)
-[![GitHub issues](https://img.shields.io/github/issues/WenyuChiou/research-hub.svg)](https://github.com/WenyuChiou/research-hub/issues)
 
 English → [README.md](README.md)
 
@@ -62,19 +56,18 @@ research-hub plan "我想學 harness engineering"
 
 ---
 
-## 🎬 30 秒實測(真實終端錄影 GIF)
+## 🎬 30 秒實測 — 完整 user journey
 
-![lazy-mode demo](docs/images/lazy-mode-demo.gif)
+![demo: 問 Claude → auto pipeline → 儀表板 → cached query](docs/images/lazy-mode-demo.gif)
 
-GIF 裡 3 個指令都是維護者機器上**真實跑出來的輸出**：
+4 個場景,1280×760,真實資料:
 
-1. **`plan`** — 把意圖整理成可執行 plan(毫秒級啟發式,不打 LLM)
-2. **`ask`** — 從預先運算的 crystal 拿答案,<1 秒(crystal 產一次後永遠 0 token)
-3. **`websearch`** — 用 DDG fallback 做通用網路搜尋,不用 API key
+1. **跟 Claude Desktop 對話**: 「Claude,幫我研究 harness engineering」。Claude 透過 MCP 呼叫 `plan_research_workflow` 確認計畫,再啟動 `auto_research_topic`。
+2. **`auto` pipeline 跑完**: 9 個階段(cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals)187 秒完成。Windows zh-TW 機器上的真實輸出。
+3. **儀表板打開** `http://127.0.0.1:8765/` — 12 個 cluster,每個動作都是按鈕,跟 MCP 看到同一份資料。
+4. **Cached query <1 秒**: `ask harness-engineering "SOTA?"` 讀預先算好的 crystal,~1 KB、0 token。
 
-第一次跑 `auto "topic" --with-crystals` 大約 3 分鐘 + 約 2,400 tokens(用 claude/codex/gemini 訂閱 CLI = $0)。之後對這 cluster 的查詢都是 <1 秒 cached read,**0 token**。
-
-GIF 怎麼產的: 見 `docs/demo/build_demo_gif.py` — 純 Python + PIL,不用 ffmpeg/asciinema。vault 有更新就重跑 refresh。
+自己用你的 vault 跑一個: `python docs/demo/build_demo_gif.py`(純 Python + Pillow,不用 ffmpeg)。
 
 **裝完之後三條路任你選:**
 

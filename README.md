@@ -4,15 +4,9 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents — no API key required.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Downloads](https://img.shields.io/pypi/dm/research-hub-pipeline.svg?color=blue)](https://pypi.org/project/research-hub-pipeline/)
-[![GitHub stars](https://img.shields.io/github/stars/WenyuChiou/research-hub?style=social)](https://github.com/WenyuChiou/research-hub/stargazers)
 [![Tests](https://img.shields.io/badge/tests-1583%20passing-brightgreen.svg)](docs/audit_v0.45.md)
-[![MCP tools](https://img.shields.io/badge/MCP%20tools-83-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![CI: Linux · macOS · Windows](https://img.shields.io/badge/CI-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-blue)](.github/workflows/ci.yml)
-[![last commit](https://img.shields.io/github/last-commit/WenyuChiou/research-hub.svg?color=orange)](https://github.com/WenyuChiou/research-hub/commits/master)
-[![GitHub issues](https://img.shields.io/github/issues/WenyuChiou/research-hub.svg)](https://github.com/WenyuChiou/research-hub/issues)
 
 繁體中文 → [README.zh-TW.md](README.zh-TW.md)
 
@@ -62,19 +56,18 @@ If a supported LLM CLI is on your PATH, `--with-crystals` runs the crystal gener
 
 ---
 
-## 🎬 30-second demo
+## 🎬 30-second demo — the whole user journey
 
-![lazy-mode demo: plan, ask, websearch in real time](docs/images/lazy-mode-demo.gif)
+![demo: ask Claude → auto pipeline runs → live dashboard → cached query](docs/images/lazy-mode-demo.gif)
 
-The three commands above are **real captured terminal output** from the maintainer's Windows zh-TW vault:
+Four scenes, 1280×760, real captured data:
 
-1. **`plan`** — turn freeform intent into a confirmed workflow (~ms heuristics, no LLM).
-2. **`ask`** — pre-computed crystal answer in <1 s (zero LLM tokens after the one-time crystal generation).
-3. **`websearch`** — generic web search via DDG fallback; no API key required.
+1. **Talk to Claude Desktop**: "Claude, research harness engineering for me."  Claude calls `plan_research_workflow` via MCP, confirms the plan, then fires `auto_research_topic`.
+2. **`auto` pipeline runs**: 9 stages (cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals) finish in 187 s. Real output from a Windows zh-TW box.
+3. **Live dashboard opens** at `http://127.0.0.1:8765/` — 12 clusters, every action is a button, same data the MCP sees.
+4. **Cached query in <1 s**: `ask harness-engineering "SOTA?"` reads a pre-computed crystal. ~1 KB, 0 tokens.
 
-The first time you run `auto "topic" --with-crystals`, the full pipeline takes ~3 minutes and burns ~2,400 tokens (free with claude/codex/gemini CLI subscriptions). After that, every subsequent question against the cluster is a sub-second cached read at zero token cost.
-
-How the GIF was made: see `docs/demo/build_demo_gif.py` — pure Python + PIL, no ffmpeg / asciinema. Re-run after vault updates to refresh.
+Build the GIF yourself from your own vault: `python docs/demo/build_demo_gif.py` (pure Python + Pillow, no ffmpeg).
 
 **Two ways to drive it after install:**
 
