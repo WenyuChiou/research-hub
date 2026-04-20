@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.53.2 (2026-04-20)
+
+**Two real-vault clicking bugs caught while the user actually used the dashboard.**
+
+### Fixed — "open .txt" link on the NotebookLM-artifacts table opened a blank tab
+
+The dashboard generated `href="file:///C:/Users/.../brief-*.txt"` for the brief-download tile. Modern browsers (Chrome / Firefox / Edge) **silently block file:// links from http:// origin pages** as a mixed-protocol security policy. Click → blank tab → user thinks the brief is empty.
+
+The brief content was always there (1322 bytes verified on disk); the link was just unreachable.
+
+Fix: added `GET /artifact?path=<rel-or-abs>` to the dashboard HTTP server. Resolves the requested path against `cfg.root`, rejects anything that escapes the vault (path-traversal protection), serves the file with appropriate `Content-Type` (`text/plain; charset=utf-8` for `.txt/.md/.json/.log/.yaml`, `text/html` for `.html`, `application/pdf` for `.pdf`). The dashboard now generates `href="/artifact?path=<encoded>"` instead of `file:///`.
+
+### Fixed — `clusters-analyze` Manage-tab button always crashed
+
+`KeyError: 'cluster_slug'` every time. The handler in `executor.py` read `fields["cluster_slug"]` but the dashboard never set that key — every other action in the same file uses the dedicated `slug` argument instead. Mocked tests didn't catch it because they only verified the action name was on the whitelist, not the argument-shape.
+
+Fix: read the slug from the `slug` arg first, then fall back to legacy `fields["cluster_slug"]` / `fields["cluster"]`, raise a clear ValueError if neither is set.
+
+### Manage-tab audit (transparent honesty)
+
+User asked: have you tested every Manage button? Honest answer: now, mostly yes.
+
+Argument-shape smoke across all 26 Manage actions: 21 build correctly with a representative `fields` dict; 5 require action-specific fields not in the smoke dict (bind-nlm wants `notebook_url`, bind-zotero wants `collection_key`, mark wants `status`, merge wants `source_clusters`, split wants `target_cluster`). Those 5 will work when the dashboard sends the right fields — they're just rejecting the smoke test's fake fields, which is correct behavior.
+
+Real end-to-end execute (non-destructive only): `bases-emit`, `vault-polish-markdown`, `clusters-analyze` (after fix), `dashboard`, `rename` all return rc=0 with real output on the maintainer's vault.
+
+### Stats
+
+- Tests: 1585 → 1585 (no test changes; bugs are wiring issues caught by real-server smoke that mocked tests missed)
+- Files: `dashboard/http_server.py` (+55 LOC for `/artifact` endpoint), `dashboard/sections.py` (4 LOC link-shape change), `dashboard/executor.py` (+5 LOC for the slug-arg fallback)
+
 ## v0.53.1 (2026-04-20)
 
 **Two doctor false-positive fixes** that were nagging real users on the Diagnostics tab.

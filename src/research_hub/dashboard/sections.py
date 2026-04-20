@@ -1181,8 +1181,13 @@ class BriefingsSection(DashboardSection):
                     f'<a class="binding-link" href="{html_escape(notebook_url)}" target="_blank" rel="noreferrer noopener">open in NLM</a>'
                 )
             if path:
+                # v0.53.2: use the dashboard's /artifact endpoint instead of
+                # file:///. Modern browsers block file:// links from http://
+                # origin pages (silent failure -> blank tab).
+                from urllib.parse import quote
+                href = f"/artifact?path={quote(str(path), safe='')}"
                 open_links.append(
-                    f'<a class="binding-link" href="{html_escape(Path(path).as_uri())}" target="_blank" rel="noreferrer noopener">open .txt</a>'
+                    f'<a class="binding-link" href="{html_escape(href)}" target="_blank" rel="noreferrer noopener">open .txt</a>'
                 )
             open_html = " ".join(open_links) if open_links else '<span class="muted">n/a</span>'
             rows.append(

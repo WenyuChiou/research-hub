@@ -172,11 +172,18 @@ def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -
             str(fields["scored"]),
         ]
     if action == "clusters-analyze":
+        # v0.53.2: read the cluster slug from the dedicated `slug` arg
+        # (matching every other action in this file). The old code read
+        # fields["cluster_slug"] which the dashboard never actually sets,
+        # so the Manage-tab button always crashed with KeyError.
+        target = slug or (fields or {}).get("cluster_slug") or (fields or {}).get("cluster")
+        if not target:
+            raise ValueError("clusters-analyze requires a cluster slug")
         return base + [
             "clusters",
             "analyze",
             "--cluster",
-            str(fields["cluster_slug"]),
+            str(target),
             "--split-suggestion",
         ]
 

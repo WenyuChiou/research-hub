@@ -87,6 +87,55 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _serve_artifact(self, raw_target: str) -> None:
+        """Serve an artifact file from inside the vault root, with safety check.
+
+        v0.53.2: replaces the dashboard's old `file:///C:/...` href which
+        modern browsers refuse to follow from an http:// page (mixed
+        protocol, blocked silently). Now the dashboard links to
+        `/artifact?path=<rel>` and the server reads the file safely.
+
+        Path is treated as either an absolute path inside cfg.root or a
+        relative path resolved against cfg.root. Anything resolving
+        OUTSIDE cfg.root is rejected with 403 to prevent path traversal.
+        """
+        if not raw_target:
+            self._write_json(400, {"error": "missing path"})
+            return
+        try:
+            from urllib.parse import unquote
+            target = Path(unquote(raw_target))
+            if not target.is_absolute():
+                target = (Path(self.cfg.root) / target).resolve()
+            else:
+                target = target.resolve()
+            vault_root = Path(self.cfg.root).resolve()
+            try:
+                target.relative_to(vault_root)
+            except ValueError:
+                self._write_json(403, {"error": "path is outside the vault"})
+                return
+            if not target.exists() or not target.is_file():
+                self._write_json(404, {"error": "file not found"})
+                return
+            if target.suffix.lower() in {".txt", ".md", ".json", ".log", ".yaml", ".yml"}:
+                ctype = "text/plain; charset=utf-8"
+            elif target.suffix.lower() == ".html":
+                ctype = "text/html; charset=utf-8"
+            elif target.suffix.lower() == ".pdf":
+                ctype = "application/pdf"
+            else:
+                ctype = "application/octet-stream"
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as exc:
+            self._write_json(500, {"error": f"could not serve artifact: {exc}"})
+
     def _api_v1_headers(self, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
             "Access-Control-Allow-Origin": "*",
@@ -240,6 +289,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         if path == "/healthz":
             self._write_json(200, {"ok": True, "version": self.version, "mode": "live"})
+            return
+
+        if path == "/artifact":
+            # v0.53.2: serve files inside the vault over HTTP so the dashboard
+            # can link to them. Browsers block file:// hrefs from http://
+            # pages (mixed-protocol security), which made "open .txt" appear
+            # blank. Path is taken from query string; we resolve + verify it
+            # stays inside cfg.root before serving.
+            from urllib.parse import parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            raw_target = (qs.get("path") or [""])[0]
+            try:
+                self._serve_artifact(raw_target)
+            except Exception as exc:
+                logger.exception("artifact serve failed")
+                self._write_json(500, {"error": str(exc)})
             return
 
         if path == "/api/state":
