@@ -2329,6 +2329,14 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--dry-run", action="store_true",
                              help="Print plan without executing")
 
+    plan_parser = subparsers.add_parser(
+        "plan",
+        help="Convert a freeform intent into a structured auto-pipeline plan (no execution)",
+    )
+    plan_parser.add_argument("intent", help="Freeform user intent (e.g., 'I want to learn harness engineering')")
+    plan_parser.add_argument("--json", action="store_true",
+                             help="Print plan as JSON instead of human-readable text")
+
     ingest_parser = subparsers.add_parser("ingest", help="Run ingestion")
     ingest_parser.add_argument("--cluster", default=None, help="Cluster slug for ingestion")
     ingest_parser.add_argument("--query", default=None, help="Query text")
@@ -3404,6 +3412,47 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         cfg = get_config()
         return _cmd_serve(args, cfg)
+    if args.command == "plan":
+        from research_hub.planner import plan_to_dict, plan_workflow
+        try:
+            cfg = get_config()
+        except Exception:
+            cfg = None
+        plan = plan_workflow(args.intent, cfg=cfg)
+        if args.json:
+            import json as _json
+            print(_json.dumps(plan_to_dict(plan), ensure_ascii=False, indent=2))
+            return 0
+        print()
+        print(f"  intent: {plan.intent_summary}")
+        print()
+        print(f"  suggested topic:    {plan.suggested_topic}")
+        print(f"  suggested cluster:  {plan.suggested_cluster_slug}")
+        print(f"  max_papers:         {plan.suggested_max_papers}")
+        print(f"  do_nlm:             {plan.suggested_do_nlm}")
+        print(f"  do_crystals:        {plan.suggested_do_crystals}")
+        print(f"  persona:            {plan.suggested_persona}")
+        print(f"  est. duration:      ~{plan.estimated_duration_sec}s")
+        if plan.existing_cluster_match:
+            print(f"  existing cluster:   {plan.existing_cluster_match} ({plan.existing_cluster_paper_count} papers)")
+        for w in plan.warnings:
+            print(f"  [WARN] {w}")
+        if plan.clarifying_questions:
+            print()
+            print("  Please confirm before running:")
+            for i, q in enumerate(plan.clarifying_questions, 1):
+                print(f"    {i}. {q}")
+        print()
+        args_flat = plan.next_call.get("args", {})
+        cluster_arg = f'--cluster {args_flat["cluster_slug"]} ' if args_flat.get("cluster_slug") else ""
+        crystals_arg = "--with-crystals " if args_flat.get("do_crystals") else ""
+        no_nlm_arg = "--no-nlm " if not args_flat.get("do_nlm", True) else ""
+        print("  When ready, run:")
+        print(f'    research-hub auto "{args_flat.get("topic", "")}" '
+              f'{cluster_arg}--max-papers {args_flat.get("max_papers", 8)} '
+              f'{no_nlm_arg}{crystals_arg}'.rstrip())
+        print()
+        return 0
     if args.command == "auto":
         return _auto(
             topic=args.topic,

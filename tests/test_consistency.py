@@ -91,6 +91,7 @@ EXPECTED_MAPPINGS = {
     "auto_research_topic": "auto",
     "cleanup_garbage": "cleanup",
     "tidy_vault": "tidy",
+    "plan_research_workflow": "plan",
     "collect_to_cluster": "mcp-only",
 }
 

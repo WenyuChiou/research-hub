@@ -1,5 +1,74 @@
 # Changelog
 
+## v0.50.0 (2026-04-20)
+
+**Intent planner: AI agents (and humans) ask before acting.** New `plan` flow turns a freeform user intent into a confirmed, executable workflow before `auto` fires.
+
+### Why
+
+Lazy mode (`auto "topic"`) jumps straight to execution: it picks search depth, NLM yes/no, crystals yes/no, cluster slug — all from a one-line topic. That's great when the user knows exactly what they want, terrible when they don't. v0.50 closes the loop with a two-step pattern:
+
+1. **Plan** — convert intent → structured plan + clarifying questions (no execution).
+2. **Confirm + Execute** — user (or AI) reviews, tweaks, then calls `auto`.
+
+### Added — `research-hub plan "intent"` CLI
+
+```
+$ research-hub plan "I want to learn harness engineering"
+
+  intent: You want to research "harness engineering"
+  suggested topic:    harness engineering
+  suggested cluster:  harness-engineering
+  max_papers:         8
+  do_nlm:             True
+  do_crystals:        True       ← auto-detected: claude on PATH + "learn" intent
+  est. duration:      ~196s
+
+  Please confirm before running:
+    1. Search depth: 8 papers OK, or do you want more / fewer?
+    2. Generate NotebookLM brief? Adds ~60s.
+    3. I'll auto-generate crystals using 'claude'. Adds ~90s. Say 'no crystals' to skip.
+
+  When ready, run:
+    research-hub auto "harness engineering" --max-papers 8 --with-crystals
+```
+
+`--json` flag for programmatic callers.
+
+### Added — `plan_research_workflow` MCP tool
+
+So Claude Desktop / Cursor / any MCP host can call **plan first, auto second**:
+
+```
+You: "Claude, research ABM for my dissertation"
+Claude: [calls plan_research_workflow] → presents plan with max_papers=25
+You: "make it 15"
+Claude: [calls auto_research_topic with adjusted args]
+```
+
+This is the explicit "ask clarifying questions before acting" protocol the previous lazy-mode design was missing.
+
+### Heuristics in the planner
+
+Pure functions, no LLM call. Fast (~ms) so it's safe to call before every `auto`:
+
+- **Prefix stripping** (looped): "I want to learn about X" → "X". Handles 26 EN + zh-TW prefixes.
+- **Depth detection**: keywords like "thesis", "dissertation", "deep dive", "literature review" → max_papers=20-25 (default 8).
+- **Intent classification**: "learn / study / understand / 學習" → flags as learning topic → recommends crystals if a CLI is on PATH.
+- **NLM/Zotero opt-out detection**: phrases like "no NotebookLM", "without Zotero", "skip NLM" → adjust suggested args + persona.
+- **Cluster collision check**: token-overlap heuristic against existing clusters; suggests reusing if ≥60% overlap (with paper count).
+- **Duration estimate**: rough but useful (`30s baseline + 60s NLM + 90s crystals + 2s/paper`).
+
+### Stats
+
+- Tests: 1541 → **1552** (+11 in `tests/test_v050_planner.py`)
+- MCP tools: 81 → **82** (added `plan_research_workflow`)
+- New files: `src/research_hub/planner.py` (~190 LOC), `tests/test_v050_planner.py` (~135 LOC)
+
+### Backward compat
+
+Pure addition. Existing `auto` / `tidy` / `cleanup` / `ask` calls unchanged.
+
 ## v0.49.5 (2026-04-20)
 
 **Root-causes the recurring `Generation button not found: briefing` NotebookLM error.**

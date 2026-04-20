@@ -2120,6 +2120,48 @@ def auto_research_topic(
 
 
 @mcp.tool()
+def plan_research_workflow(user_intent: str) -> dict[str, Any]:
+    """Convert a freeform user intent into a structured research plan.
+
+    **Call this BEFORE auto_research_topic when the user's request is vague,
+    ambitious, or could collide with an existing cluster.** Returns a
+    suggested topic + search depth + NLM/crystals choices + clarifying
+    questions for you to confirm with the user.
+
+    Use when the user says things like:
+      "I want to learn about X"
+      "research X for my dissertation"
+      "find recent papers on X"
+      "ingest X but skip NotebookLM"
+
+    The plan includes:
+      - intent_summary: rephrased one-line restatement (confirm with user)
+      - suggested_topic / cluster_slug
+      - suggested_max_papers (auto-tuned: 25 for thesis, 8 default, etc.)
+      - suggested_do_nlm / do_crystals (with detected CLI awareness)
+      - existing_cluster_match: warns if a similar cluster already exists
+      - clarifying_questions: ask these BEFORE calling auto_research_topic
+      - next_call: ready-to-execute auto_research_topic args after confirmation
+      - estimated_duration_sec: rough time estimate
+
+    After presenting the plan + getting user confirmation, call
+    auto_research_topic with the plan's suggested args.
+    """
+    try:
+        from research_hub.config import get_config
+        from research_hub.planner import plan_to_dict, plan_workflow
+
+        try:
+            cfg = get_config()
+        except Exception:
+            cfg = None  # plan still works without cfg, just no collision check
+        plan = plan_workflow(user_intent, cfg=cfg)
+        return {"ok": True, **plan_to_dict(plan)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
 def cleanup_garbage(
     bundles: bool = False,
     debug_logs: bool = False,
