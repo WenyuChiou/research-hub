@@ -1429,6 +1429,7 @@ def _dashboard(
 
 
 def _cmd_serve(args, cfg) -> int:
+    api_token = (getattr(args, "api_token", "") or os.environ.get("RESEARCH_HUB_API_TOKEN", "")).strip() or None
     if args.dashboard and args.allow_external:
         print("+" + "-" * 62 + "+")
         print("| DASHBOARD BOUND TO 0.0.0.0" + " " * 34 + "|")
@@ -1455,6 +1456,7 @@ def _cmd_serve(args, cfg) -> int:
             port=args.port,
             allow_external=args.allow_external,
             open_browser=not args.no_browser,
+            api_token=api_token,
         )
         return 0
 
@@ -2362,6 +2364,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow binding non-loopback host (power-user only)",
     )
     serve_parser.add_argument("--no-browser", action="store_true")
+    serve_parser.add_argument(
+        "--api-token",
+        default="",
+        help=(
+            "Bearer token required for /api/v1/* requests. "
+            "Falls back to RESEARCH_HUB_API_TOKEN. "
+            "Without a token, the REST API is restricted to 127.0.0.1 only."
+        ),
+    )
     serve_parser.add_argument(
         "--yes",
         action="store_true",

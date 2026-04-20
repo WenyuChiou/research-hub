@@ -6,7 +6,7 @@
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Downloads](https://img.shields.io/pypi/dm/research-hub-pipeline.svg?color=blue)](https://pypi.org/project/research-hub-pipeline/)
 [![GitHub stars](https://img.shields.io/github/stars/WenyuChiou/research-hub?style=social)](https://github.com/WenyuChiou/research-hub/stargazers)
-[![Tests](https://img.shields.io/badge/tests-1569%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1583%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![MCP tools](https://img.shields.io/badge/MCP%20tools-83-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -267,9 +267,10 @@ For everything else: `research-hub doctor --autofix` repairs the common mechanic
 
 ## 🛠 Status
 
-- **Latest**: v0.51.0 (2026-04-20) — generic `websearch` backend (Tavily / Brave / Google CSE / DDG) + planner field auto-detection so bio/med queries pick `pubmed` instead of arxiv. See [`CHANGELOG.md`](CHANGELOG.md).
-- **Tests**: 1569 passing on the fast suite (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **Latest**: v0.52.0 (2026-04-20) — REST JSON API at `/api/v1/*` with bearer-token auth + CORS so any HTTP client (Claude.ai web, ChatGPT, OpenAI Custom GPT, browser-based AIs) can call research-hub directly. See [`CHANGELOG.md`](CHANGELOG.md).
+- **Tests**: 1583 passing on the fast suite (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
 - **MCP tools**: 83 (v0.47 auto/cleanup/tidy; v0.49 extended `auto_research_topic`; v0.50 added `plan_research_workflow`; v0.51 added `web_search`)
+- **REST endpoints**: 12 at `/api/v1/*` covering health / clusters / crystals / search / websearch / plan / ask / auto (async via job queue)
 - **End-to-end verified**: as of v0.49.5, the full lazy-mode flow — `auto "topic" --with-crystals` → search → ingest → NotebookLM brief → cached AI answers — is verified working on a Windows zh-TW machine with the real `claude` CLI. See [`CHANGELOG.md`](CHANGELOG.md) v0.49.4 for the full per-stage results table.
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
 - **Optional**: `[playwright]` for NotebookLM, `[import]` for local file ingest, `[secrets]` for OS-keyring credential storage
@@ -280,7 +281,7 @@ For everything else: `research-hub doctor --autofix` repairs the common mechanic
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1569 passing
+python -m pytest -q                     # 1583 passing
 ```
 
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Security: [SECURITY.md](.github/SECURITY.md).

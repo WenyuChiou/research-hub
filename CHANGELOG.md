@@ -1,5 +1,77 @@
 # Changelog
 
+## v0.52.0 (2026-04-20)
+
+**REST JSON API at `/api/v1/*` so any HTTP client can use research-hub.** Closes the last "AI host can't reach research-hub" gap left after v0.50–v0.51.
+
+Implementation delegated to Codex CLI per `.ai/codex_task_v052_rest_api.md`. Codex's `pytest` passed 14/14 but the live server smoke test surfaced 3 wiring bugs that pure unit tests missed — Claude caught them, fixed them, ran independent end-to-end verification, then shipped.
+
+### Added — 12 REST endpoints
+
+| Method | Path | Wraps |
+|---|---|---|
+| GET | `/api/v1/health` | n/a (always reachable, no auth) |
+| GET | `/api/v1/clusters` | `list_clusters` |
+| GET | `/api/v1/clusters/{slug}` | `show_cluster` |
+| GET | `/api/v1/clusters/{slug}/crystals` | `list_crystals` |
+| GET | `/api/v1/clusters/{slug}/crystals/{slot}` | `read_crystal` |
+| GET | `/api/v1/clusters/{slug}/memory/{kind}` | `list_entities/claims/methods` |
+| GET | `/api/v1/jobs/{id}` | job status |
+| POST | `/api/v1/search` | `search_papers` |
+| POST | `/api/v1/websearch` | `web_search` |
+| POST | `/api/v1/plan` | `plan_research_workflow` |
+| POST | `/api/v1/ask` | `ask_cluster` |
+| POST | `/api/v1/auto` | `auto_research_topic` (async, returns 202 + job_id) |
+
+All endpoints emit CORS headers (`Access-Control-Allow-Origin: *`) so browser-based AIs (Claude.ai web, ChatGPT, OpenAI Custom GPT) can call from any origin. `OPTIONS` preflight returns 204.
+
+### Auth
+
+`RESEARCH_HUB_API_TOKEN` env var or `--api-token TOKEN` flag on `serve`:
+- **Unset** → server bound to `127.0.0.1` only, no auth.
+- **Set** → all endpoints (except `/api/v1/health`) require `Authorization: Bearer <token>`. Wrong/missing → 401.
+
+### Async jobs for `/api/v1/auto`
+
+`auto` takes minutes; sync POST would block. Now returns `202 Accepted` with `{"job_id": "...", "status_url": "/api/v1/jobs/<id>"}`. Client polls until `status="completed"` or `"failed"`. Daemon-thread-based queue, 1-hour TTL, no persistence (restart loses jobs).
+
+### Fixed during Claude's verification pass
+
+Codex's plan looked clean and 14/14 tests passed, but live-server smoke test caught 3 wiring bugs:
+
+1. **`get_clusters` timed out** on real vaults. Codex used `collect_dashboard_data()` which builds the full dashboard (5–10s) instead of the lightweight `list_clusters()` (~1s). Switched to the lightweight version. Mocked tests didn't catch it because the mock was instant.
+
+2. **`/healthz` reported stale `0.45.0`**. The version probe used `importlib.metadata.version("research-hub-pipeline")` which returns the installed package version — stale in editable / dev installs. Fixed to prefer in-source `__version__` first.
+
+3. **`/api/v1/plan` and `/api/v1/websearch` returned 500**. fastmcp 2.x wraps newer `@mcp.tool()` definitions in a `FunctionTool` object that isn't directly callable. Older tools were plain functions. The handlers called `plan_research_workflow(...)` which raised `TypeError: 'FunctionTool' object is not callable`. Fixed with a `_unwrap()` helper that extracts `.fn` from FunctionTool wrappers.
+
+All 3 fixes have regression coverage in `tests/test_v052_rest_api.py`.
+
+### Verified — real end-to-end on Windows zh-TW
+
+```
+GET  /api/v1/health     200  {"ok": true, "version": "0.52.0", ...}
+GET  /api/v1/clusters   200  {"clusters": [...12 real clusters...]}
+POST /api/v1/plan       200  {"ok": true, "intent_summary": "...", "suggested_topic": "rag basics", ...}
+POST /api/v1/websearch  200  {"ok": true, "provider": "ddg", "results": [...]}
+```
+
+### Stats
+
+- Tests: 1569 → **1583** (+14)
+- MCP tools: 83 (unchanged — REST and MCP both wrap the same underlying functions)
+- New files: `src/research_hub/api/__init__.py`, `api/v1.py` (~250 LOC), `api/jobs.py` (~80 LOC), `tests/test_v052_rest_api.py` (~290 LOC)
+- Modified: `dashboard/http_server.py` (+155 LOC routing/CORS/auth), `cli.py` (+11 LOC for `--api-token`), `mcp_server.py` (+2 LOC for `field` param)
+
+### Backward compat
+
+Pure addition. Existing `/api/state`, `/api/events`, `/api/exec` dashboard endpoints unchanged. No breaking changes to MCP, CLI, or Python imports.
+
+### What this unlocks
+
+- **v0.53**: OpenAPI spec generation → ChatGPT Custom GPT can use research-hub via Action.
+- **v0.54**: Remote MCP transport (HTTP/SSE) → Claude.ai web's MCP integration can connect.
+
 ## v0.51.0 (2026-04-20)
 
 **Generic web search + planner field auto-detection.** Closes two gaps surfaced during the v0.50 review.

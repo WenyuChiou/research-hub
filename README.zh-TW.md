@@ -6,7 +6,7 @@
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Downloads](https://img.shields.io/pypi/dm/research-hub-pipeline.svg?color=blue)](https://pypi.org/project/research-hub-pipeline/)
 [![GitHub stars](https://img.shields.io/github/stars/WenyuChiou/research-hub?style=social)](https://github.com/WenyuChiou/research-hub/stargazers)
-[![Tests](https://img.shields.io/badge/tests-1569%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1583%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![MCP tools](https://img.shields.io/badge/MCP%20tools-83-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -267,9 +267,10 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 
 ## 🛠 狀態
 
-- **最新**: v0.51.0(2026-04-20)— 通用 `websearch` backend(Tavily / Brave / Google CSE / DDG)+ planner 自動偵測領域,讓 bio/med 查詢挑 pubmed 而不是 arxiv。見 [`CHANGELOG.md`](CHANGELOG.md)。
-- **測試**: fast suite 1569 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **最新**: v0.52.0(2026-04-20)— REST JSON API 在 `/api/v1/*`(含 bearer token + CORS),browser-only AI(Claude.ai 網頁、ChatGPT、OpenAI Custom GPT)現在能直接 HTTP 呼叫 research-hub。見 [`CHANGELOG.md`](CHANGELOG.md)。
+- **測試**: fast suite 1583 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
 - **MCP tools**: 83 個(v0.47 auto/cleanup/tidy;v0.49 擴充 `auto_research_topic`;v0.50 加 `plan_research_workflow`;v0.51 加 `web_search`)
+- **REST endpoints**: 12 個 at `/api/v1/*`,涵蓋 health/clusters/crystals/search/websearch/plan/ask/auto(auto 是 async 透過 job queue)
 - **End-to-end 實測通過**: v0.49.5 開始,完整 lazy-mode 流程 — `auto "topic" --with-crystals` → 搜尋 → 收論文 → NotebookLM brief → 預先運算 AI 答案 — 在 Windows zh-TW 機器配真實 `claude` CLI 上實測完整跑完。詳見 [`CHANGELOG.md`](CHANGELOG.md) v0.49.4 的 per-stage 結果表。
 - **依賴**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs`(全部純 Python)
 - **可選 extras**: `[playwright]` 給 NotebookLM、`[import]` 給本機檔案匯入、`[secrets]` 給 OS keyring
@@ -280,7 +281,7 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1569 passing
+python -m pytest -q                     # 1583 passing
 ```
 
 貢獻: [CONTRIBUTING.md](CONTRIBUTING.md)。安全性: [SECURITY.md](.github/SECURITY.md)。

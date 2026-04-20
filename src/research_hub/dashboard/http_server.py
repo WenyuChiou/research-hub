@@ -11,6 +11,9 @@ from pathlib import Path
 from queue import Empty
 from urllib.parse import urlparse
 
+from research_hub.api.jobs import JobQueue
+from research_hub.api import v1 as api_v1
+
 from research_hub.dashboard.data import collect_dashboard_data
 from research_hub.dashboard.events import EventBroadcaster, VaultWatcher
 from research_hub.dashboard.executor import execute_action
@@ -37,6 +40,15 @@ def _serialize_dashboard_data(cfg) -> dict:
 
 
 def _resolve_version() -> str:
+    # Prefer the in-source __version__ so editable / dev installs report the
+    # right version. Fall back to the installed-package metadata only if the
+    # in-source attribute is missing (extremely unusual).
+    try:
+        from research_hub import __version__ as _v
+        if _v:
+            return str(_v)
+    except Exception:
+        pass
     try:
         from importlib.metadata import version as _v
         return _v("research-hub-pipeline")
@@ -49,16 +61,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
     broadcaster: EventBroadcaster
     csrf_token = ""
     version = _resolve_version()
+    api_token: str | None = None
+    job_queue = JobQueue()
 
     def log_message(self, format: str, *args) -> None:
         logger.info("%s - %s", self.address_string(), format % args)
 
-    def _write_json(self, status: int, payload: dict) -> None:
+    def _write_json(self, status: int, payload: dict, *, extra_headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -71,8 +87,146 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _api_v1_headers(self, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
+        headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        }
+        if extra_headers:
+            headers.update(extra_headers)
+        return headers
+
+    def _write_api_v1_json(
+        self,
+        status: int,
+        payload: dict,
+        *,
+        extra_headers: dict[str, str] | None = None,
+    ) -> None:
+        self._write_json(status, payload, extra_headers=self._api_v1_headers(extra_headers))
+
+    def _write_api_v1_error(self, status: int, code: str, message: str) -> None:
+        self._write_api_v1_json(status, {"ok": False, "error": message, "code": code})
+
+    def _check_api_v1_auth(self, path: str) -> bool:
+        token = self.api_token
+        if not token or path == "/api/v1/health":
+            return True
+        sent = self.headers.get("Authorization", "")
+        expected = f"Bearer {token}"
+        if sent and secrets.compare_digest(sent, expected):
+            return True
+        self._write_api_v1_error(401, "unauthorized", "Missing or invalid bearer token.")
+        return False
+
+    def _read_json_body(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except ValueError as exc:
+            raise api_v1.ApiError(400, "bad_request", "Invalid Content-Length header.") from exc
+        if length <= 0 or length > 64 * 1024:
+            raise api_v1.ApiError(400, "bad_request", "Request body must be non-empty and under 64 KiB.")
+        try:
+            body = self.rfile.read(length).decode("utf-8")
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise api_v1.ApiError(400, "bad_request", "Malformed JSON request body.") from exc
+        except UnicodeDecodeError as exc:
+            raise api_v1.ApiError(400, "bad_request", "Request body must be UTF-8 JSON.") from exc
+        if not isinstance(payload, dict):
+            raise api_v1.ApiError(400, "bad_request", "Request body must be a JSON object.")
+        return payload
+
+    def _dispatch_api_v1(self, method: str, path: str) -> None:
+        if not self._check_api_v1_auth(path):
+            return
+        try:
+            payload = None
+            if method == "POST":
+                payload = self._read_json_body()
+            result = self._route_api_v1(method, path, payload)
+        except api_v1.ApiError as exc:
+            self._write_api_v1_error(exc.status, exc.code, exc.message)
+            return
+        except Exception:
+            logger.exception("api v1 dispatch failed")
+            self._write_api_v1_error(500, "internal_error", "The server failed to process the request.")
+            return
+
+        body, status, extra_headers = result
+        self._write_api_v1_json(status, body, extra_headers=extra_headers)
+
+    def _route_api_v1(self, method: str, path: str, payload: dict | None) -> tuple[dict, int, dict[str, str] | None]:
+        request = {
+            "cfg": self.cfg,
+            "json": payload,
+            "job_queue": self.job_queue,
+            "method": method,
+            "path": path,
+            "path_params": {},
+        }
+        segments = [segment for segment in path.split("/") if segment]
+        if len(segments) < 3 or segments[0] != "api" or segments[1] != "v1":
+            raise api_v1.ApiError(404, "not_found", "Requested resource was not found.")
+        tail = segments[2:]
+
+        if method == "GET":
+            if tail == ["health"]:
+                return api_v1.get_health(request), 200, None
+            if tail == ["clusters"]:
+                return api_v1.get_clusters(request), 200, None
+            if len(tail) == 2 and tail[0] == "clusters":
+                request["path_params"] = {"slug": tail[1]}
+                return api_v1.get_cluster(request), 200, None
+            if len(tail) == 3 and tail[0] == "clusters" and tail[2] == "crystals":
+                request["path_params"] = {"slug": tail[1]}
+                return api_v1.get_cluster_crystals(request), 200, None
+            if len(tail) == 4 and tail[0] == "clusters" and tail[2] == "crystals":
+                request["path_params"] = {"slug": tail[1], "crystal_slug": tail[3]}
+                return api_v1.get_cluster_crystal(request), 200, None
+            if len(tail) == 4 and tail[0] == "clusters" and tail[2] == "memory":
+                request["path_params"] = {"slug": tail[1], "kind": tail[3]}
+                return api_v1.get_cluster_memory(request), 200, None
+            if len(tail) == 2 and tail[0] == "jobs":
+                request["path_params"] = {"job_id": tail[1]}
+                return api_v1.get_job(request), 200, None
+
+        if method == "POST":
+            if tail == ["search"]:
+                return api_v1.post_search(request), 200, None
+            if tail == ["websearch"]:
+                return api_v1.post_websearch(request), 200, None
+            if tail == ["plan"]:
+                return api_v1.post_plan(request), 200, None
+            if tail == ["ask"]:
+                return api_v1.post_ask(request), 200, None
+            if tail == ["auto"]:
+                result = api_v1.post_auto(request)
+                if isinstance(result, tuple) and len(result) == 3:
+                    return result
+                return result, 202, None
+
+        raise api_v1.ApiError(404, "not_found", "Requested resource was not found.")
+
+    def do_OPTIONS(self) -> None:
+        path = urlparse(self.path).path
+        if path.startswith("/api/v1/"):
+            self.send_response(204)
+            for key, value in self._api_v1_headers().items():
+                self.send_header(key, value)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/api/v1/"):
+            self._dispatch_api_v1("GET", path)
+            return
         if path in {"/", "/index.html"}:
             try:
                 self._write_html(
@@ -130,6 +284,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/api/v1/"):
+            self._dispatch_api_v1("POST", path)
+            return
         if path != "/api/exec":
             self._write_json(404, {"error": "not found"})
             return
@@ -196,9 +353,12 @@ def serve_dashboard(
     port: int = 8765,
     allow_external: bool = False,
     open_browser: bool = True,
+    api_token: str | None = None,
 ) -> None:
     if host != "127.0.0.1" and not allow_external:
         raise ValueError(f"host={host!r} refused: pass --allow-external to bind non-loopback")
+    if not api_token and host != "127.0.0.1":
+        raise ValueError("host must remain 127.0.0.1 when no API token is configured")
 
     broadcaster = EventBroadcaster(maxsize=100, drop_oldest_on_full=True)
     watcher = VaultWatcher(cfg, broadcaster)
@@ -207,6 +367,8 @@ def serve_dashboard(
     DashboardHandler.cfg = cfg
     DashboardHandler.broadcaster = broadcaster
     DashboardHandler.csrf_token = secrets.token_urlsafe(32)
+    DashboardHandler.api_token = api_token
+    DashboardHandler.job_queue = JobQueue()
 
     server = ThreadingHTTPServer((host, port), DashboardHandler)
     logger.info("dashboard server listening on http://%s:%d/", host, port)
