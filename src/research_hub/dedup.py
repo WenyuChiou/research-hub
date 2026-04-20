@@ -140,15 +140,32 @@ class DedupIndex:
         return removed
 
     def rebuild_from_obsidian(self, raw_root: Path) -> "DedupIndex":
-        """Rescan vault notes and rebuild only the Obsidian side of the index."""
+        """Rescan vault notes and rebuild the Obsidian side of the index.
+
+        v0.49.3: also drop ANY hit whose ``obsidian_path`` no longer exists,
+        regardless of ``source``. The original implementation only purged
+        ``source='obsidian'`` hits, which left importer-tagged stale paths
+        behind forever (doctor would warn about them, ``tidy`` couldn't
+        clear them, only manual ``dedup invalidate --path X`` worked).
+        """
+        def _is_alive(hit: "DedupHit") -> bool:
+            # Hits without an obsidian_path (pure-Zotero hits) are always kept.
+            if not hit.obsidian_path:
+                return True
+            return Path(hit.obsidian_path).exists()
+
         for key in list(self.title_to_hits.keys()):
             self.title_to_hits[key] = [
-                hit for hit in self.title_to_hits[key] if hit.source != "obsidian"
+                hit for hit in self.title_to_hits[key]
+                if hit.source != "obsidian" and _is_alive(hit)
             ]
             if not self.title_to_hits[key]:
                 del self.title_to_hits[key]
         for key in list(self.doi_to_hits.keys()):
-            self.doi_to_hits[key] = [hit for hit in self.doi_to_hits[key] if hit.source != "obsidian"]
+            self.doi_to_hits[key] = [
+                hit for hit in self.doi_to_hits[key]
+                if hit.source != "obsidian" and _is_alive(hit)
+            ]
             if not self.doi_to_hits[key]:
                 del self.doi_to_hits[key]
         for hit in build_from_obsidian(raw_root):

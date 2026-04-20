@@ -1102,14 +1102,19 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .debug-banner.is-visible { display: block; }
 
 /* Collapsed health badge (v0.38) - replaces the wall-of-red .debug-banner.
-   Renders as an inline chip in the Overview header that expands on click. */
+   Renders as an inline chip in the Overview header that expands on click.
+   v0.49.3: was border-radius: 999px (pill). When the <details> opened, the
+   inner <ul> + <li> text bumped up against the rounded curve and got
+   visually clipped on the left. Using --radius-md (12px) instead so the
+   text always has clear gutter, and explicitly setting min-width so the
+   collapsed summary doesn't get squeezed by parent flex. */
 .health-badge {
-  display: inline-block;
+  display: block;
   margin: 8px 0 0 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--warn-soft);
   color: oklch(35% 0.10 70);
-  font-size: var(--text-md);  /* v0.38.1: bumped from --text-sm for readability */
+  font-size: var(--text-md);
   border: 1px solid oklch(75% 0.10 70);
   padding: 0;
   overflow: hidden;
@@ -1122,23 +1127,23 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 }
 
 .health-badge-summary {
-  display: inline-flex;
+  display: flex;
   gap: 8px;
   align-items: center;
-  padding: 10px 18px;       /* v0.38.1: was 6px 12px - more clickable target */
+  padding: 10px 16px;
   cursor: pointer;
   list-style: none;
   font-weight: 500;
 }
 
 .health-badge-summary::-webkit-details-marker { display: none; }
-.health-badge-icon { font-size: 1.1em; }
+.health-badge-icon { font-size: 1.1em; flex: none; }
 .health-badge[open] .health-badge-summary { border-bottom: 1px solid var(--border); }
 
 .health-badge-list {
   list-style: none;
   margin: 0;
-  padding: 8px 12px;
+  padding: 10px 16px;
   font-size: var(--text-sm);
 }
 

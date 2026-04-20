@@ -98,3 +98,43 @@ def test_build_from_obsidian_parses_yaml_frontmatter(tmp_path):
     assert len(hits) == 2
     assert hits[0].source == "obsidian"
     assert hits[1].zotero_key is None
+
+
+def test_rebuild_from_obsidian_drops_stale_paths_regardless_of_source(tmp_path):
+    """v0.49.3 regression: rebuild must clear hits whose obsidian_path is gone,
+    even when source != 'obsidian' (e.g., 'importer' from import-folder).
+    The previous filter only purged source='obsidian', leaving dead paths
+    in the index forever.
+    """
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    surviving = raw / "alive.md"
+    surviving.write_text(
+        '---\ntitle: "Alive paper"\ndoi: "10.1/alive"\nzotero-key: "K1"\n---\n',
+        encoding="utf-8",
+    )
+
+    index = DedupIndex()
+    # Pre-existing importer-source hit pointing at a file that no longer exists
+    index.add(DedupHit(
+        source="importer",
+        doi="10.1/dead",
+        title="Stale paper",
+        obsidian_path=str(tmp_path / "deleted-by-user.md"),  # never created
+    ))
+    # Pre-existing zotero-source hit with no obsidian_path (must survive)
+    index.add(DedupHit(
+        source="zotero",
+        doi="10.1/zotero-only",
+        title="Pure-Zotero paper",
+        zotero_key="K2",
+    ))
+
+    index.rebuild_from_obsidian(raw)
+
+    # The stale importer hit should be GONE
+    assert not index.lookup(doi="10.1/dead"), "stale importer hit not purged"
+    # The pure-Zotero hit (no obsidian_path) must be preserved
+    assert index.lookup(doi="10.1/zotero-only"), "pure-Zotero hit was wrongly dropped"
+    # The new alive paper should be indexed
+    assert index.lookup(doi="10.1/alive"), "rebuild did not pick up the alive paper"

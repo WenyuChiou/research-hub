@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.49.3 (2026-04-19)
+
+**2 bugs found by the bug-inventory pass: stale dedup paths + Overview health-badge text clipping.**
+
+### Fixed — `rebuild_from_obsidian` left importer-source stale paths in the index forever
+
+`DedupIndex.rebuild_from_obsidian(raw_root)` only purged hits where `source == "obsidian"`. Hits added by other importers (e.g. `import-folder` writes `source='importer'`) were preserved even when their `obsidian_path` no longer existed on disk. Result: doctor's `dedup_consistency` check kept warning about stale paths even after `tidy` / `dedup rebuild --obsidian-only`. The only way to clear them was manual `dedup invalidate --path X` per file.
+
+Fix: `rebuild_from_obsidian` now also drops any hit whose `obsidian_path` no longer exists, regardless of `source`. Pure-Zotero hits (no `obsidian_path` at all) are still preserved. After the fix, the maintainer's vault title-index dropped from 1101 to 1092 (9 stale entries cleared) and `dedup_consistency` went WARN → OK.
+
+Locked in with `test_rebuild_from_obsidian_drops_stale_paths_regardless_of_source`.
+
+### Fixed — Overview tab health-badge text clipped by pill border-radius
+
+The `<details>` health-badge on the Overview tab used `border-radius: var(--radius-pill)` (999px), which made it pill-shaped. When users clicked to expand, the inner `<ul>` items stretched the container wider/taller than the pill end-caps and the text near the left edge got visually clipped by the rounded curve:
+
+```
+( 1 error, 2 warnings - click to expand
+( config/persona: ...
+( cluster_field:survey: ...
+(rontmatter_completeness: ...     ← first letter of "frontmatter" eaten
+```
+
+Fix: changed to `border-radius: var(--radius-md)` (12px rounded rectangle) and bumped horizontal padding to 16px on both summary and list. Now the text always has clear gutter regardless of how wide the badge gets.
+
+### Stats
+
+- Tests: 1540 → **1541** (+1 dedup regression test for the rebuild fix)
+
 ## v0.49.2 (2026-04-19)
 
 **Hotfix: `tidy` was broken since v0.46 + 2 more cp950 crashes.** Caught by a systematic bug-inventory pass after the v0.49.1 ship.
