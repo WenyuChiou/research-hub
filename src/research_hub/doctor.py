@@ -33,7 +33,13 @@ def check_frontmatter_completeness(cfg) -> CheckResult:
     total = 0
 
     for note in sorted(Path(cfg.raw).rglob("*.md")):
-        if note.name.startswith("00_") or note.name.startswith("index"):
+        # v0.54: skip cluster index files. Old rule only caught "00_*" and
+        # files literally named "index*"; missed "<Cluster>-Index.md" which
+        # is a common topic-overview convention. Now also matches any file
+        # whose stem ends in "-index" (case-insensitive) or "_index".
+        stem_lower = note.stem.lower()
+        if (note.name.startswith("00_") or note.name.startswith("index")
+                or stem_lower.endswith("-index") or stem_lower.endswith("_index")):
             continue
         if "topics" in note.parts:
             continue

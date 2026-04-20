@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.53.1 (2026-04-20)
+
+**Two doctor false-positive fixes** that were nagging real users on the Diagnostics tab.
+
+### Fixed — `cluster_field` was over-eager
+
+The classifier counted bio-field signals from substring matches like `"cell"` inside `"cell phone surveys"` and `"nature"` inside `"nature of community"`. Mixed-discipline clusters (e.g. flood/social/health surveys) kept tripping `WARN: declared field=social but papers look like bio (confidence=0.45)` even though the inferred field was a coin-flip.
+
+Two changes:
+1. **Word-boundary regex** in `doctor_field._FIELD_SIGNALS` matching — now `\bcell\b` won't match `"cellular"` / `"cell phone"`. After the fix, the same `survey` cluster on the maintainer's vault: confidence 0.45 → **0.78**, inferred field `bio` → **social**, status WARN → **OK**.
+2. **Confidence floor of 0.6** before raising a warning. Below that the classifier is essentially guessing, and we shouldn't surface its guesses as actionable.
+
+### Fixed — `frontmatter_completeness` flagged cluster index files as broken papers
+
+`abm-theories/ABM-Theories-Index.md` is a cluster-overview file, not a paper. The doctor's skip rule only matched `00_*` and `index*` filename prefixes, so `*-Index.md` files (a common topic-overview convention) got linted as if they were papers and failed because they have no DOI / authors / year.
+
+Extended the skip rule to also match `*-index` and `*_index` stems (case-insensitive). After the fix, the maintainer's `frontmatter_completeness` went from `FAIL (1 + 323 WARN)` to `WARN (321 + 728)` — no spurious FAIL, only the legitimate "missing DOI" + "TODO placeholder" warnings remain.
+
+### Why this matters
+
+These two warnings dominated the Diagnostics tab on the maintainer's real vault and on any user vault with mixed-discipline clusters or any cluster-index files. Removing the false positives lets the Diagnostics surface only actionable issues.
+
+### Stats
+
+- Tests: 1585 → 1585 (no test changes; the bugs were heuristic over-eagerness, regression coverage to follow once the heuristic shape stabilizes)
+- Files: `src/research_hub/doctor.py` (+5 LOC for the index skip), `src/research_hub/doctor_field.py` (regex compile + threshold)
+
 ## v0.53.0 (2026-04-20)
 
 **Multi-AI skill pack.** research-hub now ships a 2-skill pack that teaches Claude (and any MCP host) how to delegate crystal generation and long pipeline work to Codex or Gemini CLIs when they're on PATH — turning "one AI does everything" into "Claude orchestrates, Codex executes, Gemini handles CJK".
