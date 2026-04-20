@@ -112,6 +112,41 @@ def test_plan_clarifying_questions_always_present():
     assert len(p.clarifying_questions) >= 2  # depth + nlm + crystals/cli
 
 
+def test_plan_detects_bio_field_from_drug_keyword():
+    from research_hub.planner import plan_workflow
+
+    p = plan_workflow("research drug X clinical trial outcomes", detect_llm_cli_fn=_no_cli)
+    assert p.suggested_field == "med"
+
+
+def test_plan_detects_cs_field_from_llm_keyword():
+    from research_hub.planner import plan_workflow
+
+    p = plan_workflow("learn llm agent evaluation", detect_llm_cli_fn=_no_cli)
+    assert p.suggested_field == "cs"
+
+
+def test_plan_detects_no_field_for_generic_intent():
+    from research_hub.planner import plan_workflow
+
+    p = plan_workflow("research broad interdisciplinary trends", detect_llm_cli_fn=_no_cli)
+    assert p.suggested_field is None
+
+
+def test_plan_picks_highest_scoring_field_on_multiple_hits():
+    from research_hub.planner import plan_workflow
+
+    p = plan_workflow("research drug therapy gene protein cell", detect_llm_cli_fn=_no_cli)
+    assert p.suggested_field == "bio"
+
+
+def test_plan_next_call_includes_detected_field():
+    from research_hub.planner import plan_workflow
+
+    p = plan_workflow("research drug X clinical trial outcomes", detect_llm_cli_fn=_no_cli)
+    assert p.next_call["args"]["field"] == "med"
+
+
 def test_mcp_plan_research_workflow_returns_structured(monkeypatch):
     from research_hub import mcp_server as m
     from tests._mcp_helpers import _get_mcp_tool

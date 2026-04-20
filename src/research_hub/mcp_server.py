@@ -190,6 +190,38 @@ def search_papers(
         return _tool_error(exc)
 
 
+@mcp.tool()
+def web_search(query: str, max_results: int = 10, provider: str = "auto") -> dict[str, Any]:
+    """General web search (blog posts / docs / news / GitHub READMEs).
+
+    Use alongside auto_research_topic when the user's need extends beyond
+    peer-reviewed papers and into official docs, engineering blogs, or news.
+    """
+    try:
+        from research_hub.search.websearch import WebSearchBackend, _select_provider
+
+        selected = _select_provider(None if provider == "auto" else provider)
+        backend = WebSearchBackend(provider=None if provider == "auto" else provider)
+        results = backend.search(query, limit=max_results)
+        return {
+            "ok": True,
+            "provider": selected.name,
+            "results": [
+                {
+                    "title": result.title,
+                    "url": result.url,
+                    "abstract": result.abstract,
+                    "venue": result.venue,
+                    "doc_type": result.doc_type,
+                    "year": result.year,
+                }
+                for result in results
+            ],
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "provider": provider, "results": []}
+
+
 def enrich_candidates(
     candidates: list[str],
     backends: list[str] | None = None,

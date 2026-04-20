@@ -16,6 +16,7 @@ from research_hub.search.openalex import OpenAlexBackend
 from research_hub.search.pubmed import PubMedBackend
 from research_hub.search.repec import RepecBackend
 from research_hub.search.semantic_scholar import SemanticScholarClient
+from research_hub.search.websearch import WebSearchBackend
 
 __all__ = [
     "SearchResult",
@@ -33,6 +34,7 @@ __all__ = [
     "NasaAdsBackend",
     "EricBackend",
     "KciBackend",
+    "WebSearchBackend",
     "search_papers",
     "iter_new_results",
     "enrich_candidates",

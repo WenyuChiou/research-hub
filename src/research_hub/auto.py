@@ -24,6 +24,7 @@ from research_hub.notebooklm.upload import (
 )
 from research_hub.pipeline import run_pipeline
 from research_hub.search import search_papers
+from research_hub.search.fallback import FIELD_PRESETS
 
 
 _LLM_CLI_CANDIDATES = ("claude", "codex", "gemini")
@@ -141,6 +142,7 @@ def auto_pipeline(
     cluster_slug: Optional[str] = None,
     cluster_name: Optional[str] = None,
     max_papers: int = 8,
+    field: Optional[str] = None,
     do_nlm: bool = True,
     do_crystals: bool = False,
     llm_cli: Optional[str] = None,
@@ -222,7 +224,10 @@ def auto_pipeline(
 
     # 3 + 4. Search ??papers_input.json
     try:
-        papers = _run_search(topic, max_papers=max_papers, cluster_slug=slug)   
+        search_kwargs = {"max_papers": max_papers, "cluster_slug": slug}
+        if field is not None:
+            search_kwargs["field"] = field
+        papers = _run_search(topic, **search_kwargs)
         report.papers_ingested = len(papers)  # tentative
         _step_log(report, "search", True, _elapsed(started, report), f"{len(papers)} results", print_progress)
     except Exception as exc:
@@ -470,15 +475,16 @@ def _elapsed(started: float, report: AutoReport) -> float:
     return time.time() - started
 
 
-def _run_search(topic: str, *, max_papers: int, cluster_slug: str) -> list[dict]:
+def _run_search(topic: str, *, max_papers: int, cluster_slug: str, field: Optional[str] = None) -> list[dict]:
     """Run arxiv + semantic_scholar search, return papers_input dicts."""       
 
 
     # v0.49.4: search arxiv + semantic-scholar + openalex + crossref so the
     # pipeline survives semantic-scholar rate-limiting and one-backend gaps.
+    backends = list(FIELD_PRESETS[field]) if field else ["arxiv", "semantic-scholar", "openalex", "crossref"]
     results = search_papers(
         topic,
-        backends=["arxiv", "semantic-scholar", "openalex", "crossref"],
+        backends=backends,
         limit=max_papers,
     )
     return _to_papers_input([asdict(r) for r in results], cluster_slug)

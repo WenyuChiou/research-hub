@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -1091,6 +1093,78 @@ def _search(
     return 0
 
 
+def _websearch(
+    query: str,
+    limit: int,
+    *,
+    provider: str,
+    max_age_days: int | None = None,
+    domain: str | None = None,
+    emit_json: bool = False,
+    ingest_into: str | None = None,
+) -> int:
+    from datetime import datetime, timedelta
+
+    from research_hub.search.websearch import WebSearchBackend, _select_provider
+
+    backend = WebSearchBackend(provider=None if provider == "auto" else provider)
+    results = backend.search(query, limit=limit)
+    if domain:
+        domain_lower = domain.lower()
+        results = [result for result in results if result.venue.lower() == domain_lower]
+    if max_age_days is not None:
+        cutoff = datetime.utcnow() - timedelta(days=max_age_days)
+        results = [
+            result for result in results
+            if result.year is None or datetime(result.year, 12, 31) >= cutoff
+        ]
+
+    if ingest_into:
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td)
+            for idx, result in enumerate(results, 1):
+                slug = re.sub(r"[^a-z0-9]+", "-", (result.title or result.url).lower()).strip("-") or f"web-{idx}"
+                (folder / f"{idx:02d}-{slug[:60]}.url").write_text(result.url + "\n", encoding="utf-8")
+            cmd = [
+                sys.executable,
+                "-m",
+                "research_hub.cli",
+                "import-folder",
+                str(folder),
+                "--cluster",
+                ingest_into,
+            ]
+            completed = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", env=os.environ.copy())
+            if completed.returncode != 0:
+                return completed.returncode
+
+    provider_name = _select_provider(None if provider == "auto" else provider).name
+    if emit_json:
+        payload = {
+            "ok": True,
+            "provider": provider_name,
+            "results": [
+                {
+                    "title": result.title,
+                    "url": result.url,
+                    "abstract": result.abstract,
+                    "venue": result.venue,
+                    "doc_type": result.doc_type,
+                    "year": result.year,
+                }
+                for result in results
+            ],
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+
+    print(f"provider={provider_name}")
+    for result in results:
+        year = result.year if result.year is not None else "????"
+        print(f"{result.title}\t{result.url}\t{result.venue}\t{result.doc_type}\t{year}")
+    return 0
+
+
 def _emit_papers_input_json(results: list, cluster_slug: str | None) -> None:
     """Print a flat papers_input.json list to stdout."""
     from research_hub.discover import _to_papers_input
@@ -2080,7 +2154,7 @@ def _migrate_yaml(
     return 0
 
 
-def _auto(*, topic, cluster_slug, cluster_name, max_papers, do_nlm, do_crystals, llm_cli, dry_run) -> int:
+def _auto(*, topic, cluster_slug, cluster_name, max_papers, field, do_nlm, do_crystals, llm_cli, dry_run) -> int:
     from research_hub.auto import auto_pipeline
 
     report = auto_pipeline(
@@ -2088,6 +2162,7 @@ def _auto(*, topic, cluster_slug, cluster_name, max_papers, do_nlm, do_crystals,
         cluster_slug=cluster_slug,
         cluster_name=cluster_name,
         max_papers=max_papers,
+        field=field,
         do_nlm=do_nlm,
         do_crystals=do_crystals,
         llm_cli=llm_cli,
@@ -2320,6 +2395,9 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--cluster-name", default=None,
                              help="Display name for new cluster (default: title-case of topic)")
     auto_parser.add_argument("--max-papers", type=int, default=8)
+    auto_parser.add_argument("--field", default=None,
+                             choices=["cs", "bio", "med", "physics", "math", "social", "econ", "chem", "astro", "edu", "general"],
+                             help="Field preset for backend selection")
     auto_parser.add_argument("--no-nlm", action="store_true",
                              help="Skip NotebookLM bundle/upload/generate/download")
     auto_parser.add_argument("--with-crystals", action="store_true",
@@ -2681,6 +2759,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Treat positional `query` as a newline-or-comma-separated candidate list "
         "(DOIs / arxiv IDs / titles) and resolve each via backend.get_paper. "
         "Use '-' to read candidates from stdin.",
+    )
+
+    websearch_parser = subparsers.add_parser(
+        "websearch",
+        help="Search the general web for docs, blogs, news, and GitHub pages",
+    )
+    websearch_parser.add_argument("query")
+    websearch_parser.add_argument(
+        "--provider",
+        default="auto",
+        choices=["auto", "tavily", "brave", "google_cse", "ddg"],
+    )
+    websearch_parser.add_argument("--limit", type=int, default=10)
+    websearch_parser.add_argument("--max-age-days", type=int, default=None)
+    websearch_parser.add_argument("--domain", default=None)
+    websearch_parser.add_argument("--json", action="store_true")
+    websearch_parser.add_argument(
+        "--ingest-into",
+        default=None,
+        help="Import top hits into the given cluster via temporary .url files",
     )
 
     enrich_parser = subparsers.add_parser(
@@ -3432,6 +3530,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  do_nlm:             {plan.suggested_do_nlm}")
         print(f"  do_crystals:        {plan.suggested_do_crystals}")
         print(f"  persona:            {plan.suggested_persona}")
+        print(f"  field:              {plan.suggested_field or '(auto default)'}")
         print(f"  est. duration:      ~{plan.estimated_duration_sec}s")
         if plan.existing_cluster_match:
             print(f"  existing cluster:   {plan.existing_cluster_match} ({plan.existing_cluster_paper_count} papers)")
@@ -3445,11 +3544,12 @@ def main(argv: list[str] | None = None) -> int:
         print()
         args_flat = plan.next_call.get("args", {})
         cluster_arg = f'--cluster {args_flat["cluster_slug"]} ' if args_flat.get("cluster_slug") else ""
+        field_arg = f'--field {args_flat["field"]} ' if args_flat.get("field") else ""
         crystals_arg = "--with-crystals " if args_flat.get("do_crystals") else ""
         no_nlm_arg = "--no-nlm " if not args_flat.get("do_nlm", True) else ""
         print("  When ready, run:")
         print(f'    research-hub auto "{args_flat.get("topic", "")}" '
-              f'{cluster_arg}--max-papers {args_flat.get("max_papers", 8)} '
+              f'{cluster_arg}{field_arg}--max-papers {args_flat.get("max_papers", 8)} '
               f'{no_nlm_arg}{crystals_arg}'.rstrip())
         print()
         return 0
@@ -3459,6 +3559,7 @@ def main(argv: list[str] | None = None) -> int:
             cluster_slug=args.cluster,
             cluster_name=args.cluster_name,
             max_papers=args.max_papers,
+            field=args.field,
             do_nlm=not args.no_nlm,
             do_crystals=args.with_crystals,
             llm_cli=args.llm_cli,
@@ -3771,6 +3872,16 @@ def main(argv: list[str] | None = None) -> int:
             emit_json=args.json,
             to_papers_input=args.to_papers_input,
             cluster_slug=args.cluster,
+        )
+    if args.command == "websearch":
+        return _websearch(
+            args.query,
+            args.limit,
+            provider=args.provider,
+            max_age_days=args.max_age_days,
+            domain=args.domain,
+            emit_json=args.json,
+            ingest_into=args.ingest_into,
         )
     if args.command == "enrich":
         return _enrich(

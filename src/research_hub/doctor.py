@@ -684,14 +684,31 @@ def run_doctor() -> list[CheckResult]:
                 )
             )
         except Exception as exc:
-            results.append(
-                CheckResult(
-                    "chrome",
-                    "INFO",
-                    "patchright could not launch Chrome: {0}. NotebookLM features may fail.".format(exc),
-                    remedy="Install Google Chrome from https://www.google.com/chrome/",
+            chrome_binary = None
+            if isinstance(exc, PermissionError):
+                try:
+                    from research_hub.notebooklm.cdp_launcher import find_chrome_binary
+
+                    chrome_binary = find_chrome_binary()
+                except Exception:
+                    chrome_binary = None
+            if chrome_binary:
+                results.append(
+                    CheckResult(
+                        "chrome",
+                        "OK",
+                        f"Chrome binary found at {chrome_binary} (launch blocked in current environment)",
+                    )
                 )
-            )
+            else:
+                results.append(
+                    CheckResult(
+                        "chrome",
+                        "INFO",
+                        "patchright could not launch Chrome: {0}. NotebookLM features may fail.".format(exc),
+                        remedy="Install Google Chrome from https://www.google.com/chrome/",
+                    )
+                )
     except ImportError:
         results.append(
             CheckResult(

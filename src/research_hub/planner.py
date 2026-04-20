@@ -61,6 +61,31 @@ _NO_NLM_HINTS = (
     "不用 notebooklm", "不要 notebooklm", "略過 notebooklm",
 )
 
+_FIELD_KEYWORDS = {
+    "bio": (
+        "dna", "rna", "protein", "gene", "genome", "cell", "microbiome",
+        "organism", "ecology", "evolution", "biological", "vaccine",
+    ),
+    "med": (
+        "cancer", "disease", "treatment", "hospital", "patient", "drug",
+        "clinical", "therapy", "pharma", "surgery", "diagnosis",
+    ),
+    "cs": (
+        "algorithm", "machine learning", "llm", "neural", "software",
+        "programming", "compiler", "database", "kubernetes", "rag",
+    ),
+    "physics": ("quantum", "relativity", "particle", "gravity", "plasma", "thermodynamics"),
+    "math": ("theorem", "topology", "algebra", "manifold", "category theory"),
+    "social": (
+        "opinion", "behavior", "social media", "voter", "sociology",
+        "anthropology", "ethnography",
+    ),
+    "econ": ("market", "financial", "monetary", "gdp", "inflation", "interest rate", "economic"),
+    "chem": ("molecule", "synthesis", "catalyst", "polymer", "reaction"),
+    "astro": ("galaxy", "supernova", "exoplanet", "cosmology"),
+    "edu": ("pedagogy", "curriculum", "classroom", "teacher"),
+}
+
 
 @dataclass
 class WorkflowPlan:
@@ -72,6 +97,7 @@ class WorkflowPlan:
     suggested_do_nlm: bool = True
     suggested_do_crystals: bool = False  # opt-in: requires LLM CLI on PATH
     suggested_persona: str = "researcher"
+    suggested_field: Optional[str] = None
     estimated_duration_sec: int = 90
     existing_cluster_match: Optional[str] = None
     existing_cluster_paper_count: int = 0
@@ -145,6 +171,7 @@ def plan_workflow(
     cli_name = detect_llm_cli_fn()
     is_learning = any(kw in intent_lower for kw in _LEARNING_KEYWORDS)
     do_crystals = bool(cli_name) and is_learning
+    detected_field = _detect_field(intent_lower)
 
     # Build clarifying questions for the agent to ask the user
     questions = _clarifying_questions(
@@ -173,6 +200,7 @@ def plan_workflow(
             "max_papers": max_papers,
             "do_nlm": do_nlm,
             "do_crystals": do_crystals,
+            "field": detected_field,
         },
     }
 
@@ -184,6 +212,7 @@ def plan_workflow(
         suggested_do_nlm=do_nlm,
         suggested_do_crystals=do_crystals,
         suggested_persona=persona,
+        suggested_field=detected_field,
         estimated_duration_sec=duration,
         existing_cluster_match=existing_match,
         existing_cluster_paper_count=existing_papers,
@@ -259,6 +288,17 @@ def _paper_count(cfg, slug: str) -> int:
     if not raw_dir.exists():
         return 0
     return len(list(raw_dir.glob("*.md")))
+
+
+def _detect_field(intent_lower: str) -> Optional[str]:
+    scores: dict[str, int] = {}
+    for field, keywords in _FIELD_KEYWORDS.items():
+        n = sum(1 for kw in keywords if kw in intent_lower)
+        if n:
+            scores[field] = n
+    if not scores:
+        return None
+    return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
 
 
 def _clarifying_questions(

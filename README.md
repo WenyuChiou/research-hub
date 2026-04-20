@@ -6,8 +6,8 @@
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Downloads](https://img.shields.io/pypi/dm/research-hub-pipeline.svg?color=blue)](https://pypi.org/project/research-hub-pipeline/)
 [![GitHub stars](https://img.shields.io/github/stars/WenyuChiou/research-hub?style=social)](https://github.com/WenyuChiou/research-hub/stargazers)
-[![Tests](https://img.shields.io/badge/tests-1552%20passing-brightgreen.svg)](docs/audit_v0.45.md)
-[![MCP tools](https://img.shields.io/badge/MCP%20tools-82-blueviolet.svg)](docs/mcp-tools.md)
+[![Tests](https://img.shields.io/badge/tests-1569%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![MCP tools](https://img.shields.io/badge/MCP%20tools-83-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI: Linux · macOS · Windows](https://img.shields.io/badge/CI-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-blue)](.github/workflows/ci.yml)
@@ -178,6 +178,8 @@ Restart Claude Desktop. Then:
 | **NotebookLM upload** | `notebooklm upload --cluster X` | patchright + persistent Chrome (no API key, no quota) |
 | **Citation graph** | `vault graph-colors` | networkx + Obsidian graph view colors |
 | **Local file ingest** | `import-folder /path` | PDF / DOCX / MD / TXT / URL (analyst persona) |
+| **Generic web search** (v0.51) | `websearch "query"` / `web_search` | Tavily / Brave / Google CSE / DDG fallback (no key needed) |
+| **Field auto-detection** (v0.51) | `plan "intent"` → suggested `--field` | bio/med queries pick pubmed; cs queries pick arxiv+s2; etc. |
 
 [→ Full lazy-mode guide](docs/lazy-mode.md) · [→ All commands](docs/dashboard-walkthrough.md) · [→ MCP reference](docs/mcp-tools.md)
 
@@ -298,9 +300,9 @@ For everything else: `research-hub doctor --autofix` repairs the common mechanic
 
 ## 🛠 Status
 
-- **Latest**: v0.50.0 (2026-04-20) — intent planner: `research-hub plan "..."` + `plan_research_workflow` MCP tool turn freeform user intent into a confirmed plan before `auto` fires. See [`CHANGELOG.md`](CHANGELOG.md).
-- **Tests**: 1552 passing on the fast suite (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
-- **MCP tools**: 82 (v0.47 added auto / cleanup / tidy; v0.49 extended `auto_research_topic` with `do_crystals` / `llm_cli`; v0.50 added `plan_research_workflow`)
+- **Latest**: v0.51.0 (2026-04-20) — generic `websearch` backend (Tavily / Brave / Google CSE / DDG) + planner field auto-detection so bio/med queries pick `pubmed` instead of arxiv. See [`CHANGELOG.md`](CHANGELOG.md).
+- **Tests**: 1569 passing on the fast suite (CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **MCP tools**: 83 (v0.47 auto/cleanup/tidy; v0.49 extended `auto_research_topic`; v0.50 added `plan_research_workflow`; v0.51 added `web_search`)
 - **End-to-end verified**: as of v0.49.5, the full lazy-mode flow — `auto "topic" --with-crystals` → search → ingest → NotebookLM brief → cached AI answers — is verified working on a Windows zh-TW machine with the real `claude` CLI. See [`CHANGELOG.md`](CHANGELOG.md) v0.49.4 for the full per-stage results table.
 - **Dependencies**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs` (all pure-Python)
 - **Optional**: `[playwright]` for NotebookLM, `[import]` for local file ingest, `[secrets]` for OS-keyring credential storage
@@ -311,7 +313,7 @@ For everything else: `research-hub doctor --autofix` repairs the common mechanic
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1552 passing
+python -m pytest -q                     # 1569 passing
 ```
 
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Security: [SECURITY.md](.github/SECURITY.md).

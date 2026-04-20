@@ -19,6 +19,7 @@ from research_hub.search.openalex import OpenAlexBackend
 from research_hub.search.pubmed import PubMedBackend
 from research_hub.search.repec import RepecBackend
 from research_hub.search.semantic_scholar import SemanticScholarClient
+from research_hub.search.websearch import WebSearchBackend
 
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ _BACKEND_REGISTRY: dict[str, type[SearchBackend]] = {
     "eric": EricBackend,
     "cinii": CiniiBackend,
     "kci": KciBackend,
+    "websearch": WebSearchBackend,
 }
 
 DEFAULT_BACKENDS = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")

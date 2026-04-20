@@ -1,5 +1,85 @@
 # Changelog
 
+## v0.51.0 (2026-04-20)
+
+**Generic web search + planner field auto-detection.** Closes two gaps surfaced during the v0.50 review.
+
+Implementation delegated to Codex CLI per a structured plan at `.ai/codex_task_v051_websearch.md`. Claude reviewed the diff, ran end-to-end verification on both real DDG search and field detection, then shipped.
+
+### Added — `WebSearchBackend` (Track B)
+
+Most "research" intents need more than peer-reviewed papers. Blog posts, official docs, news articles, GitHub READMEs all matter — and v0.50 had no way to find them. v0.51 fills the gap with a generic web-search backend that auto-selects across 4 providers:
+
+| Provider | Trigger | Notes |
+|---|---|---|
+| **Tavily** | `TAVILY_API_KEY` env | Built for AI agents; 1k/month free |
+| **Brave** | `BRAVE_SEARCH_API_KEY` env | 2k/month free |
+| **Google CSE** | `GOOGLE_CSE_API_KEY` + `GOOGLE_CSE_CX` env | 100/day free |
+| **DuckDuckGo HTML** | (no key) | Best-effort fallback; no API needed |
+
+**Three surfaces:**
+
+```bash
+# CLI
+research-hub websearch "kepano obsidian bases" --limit 10
+research-hub websearch "X" --provider tavily --domain github.com --json
+research-hub websearch "X" --ingest-into <cluster>     # writes .url files + import-folder
+
+# Mix into the existing search dispatcher
+research-hub search "X" --backend arxiv,websearch
+
+# MCP tool for Claude Desktop
+web_search(query="X", max_results=10, provider="auto")
+```
+
+`SearchResult` shape matches the academic backends — `source="web"`, `doc_type` auto-classified from domain (`news` for nytimes/reuters/etc., `blog` for medium/substack, `docs` for github/docs.*, `article` default), `venue` extracted as registered domain.
+
+### Added — Planner field auto-detection (Track A)
+
+`research-hub plan "research drug X clinical trial outcomes"` now suggests `field=med` so when the user runs `auto`, the search uses `pubmed + biorxiv + crossref + semantic-scholar + openalex` (the right databases for clinical research) instead of the arxiv-heavy default.
+
+10 fields detected via keyword-score heuristic: `cs / bio / med / physics / math / social / econ / chem / astro / edu`. Tie-break by alphabetical order.
+
+`auto` accepts a new `--field` CLI flag too, for users who want to override the heuristic.
+
+### Verified — real end-to-end
+
+```
+$ research-hub websearch "kepano obsidian bases" --limit 3 --json
+[
+  { "title": "kepano (Steph Ango) · GitHub",       "venue": "github.com",        "doc_type": "docs",    ... },
+  { "title": "kepano: One of my favorite use ...", "venue": "mastodon.social",   "doc_type": "article", ... },
+  { "title": "Bases Basic: Displaying Notes ...",  "venue": "forum.obsidian.md", "doc_type": "article", ... }
+]
+
+$ research-hub plan "research drug X clinical trial outcomes"
+  field:              med
+  When ready, run: research-hub auto "drug X clinical trial outcomes" --field med ...
+```
+
+### Bonus fix
+
+Codex caught a Windows sandbox `PermissionError` in `doctor.check_chrome` when patchright tried to launch during the broad test run. Tightened to handle that case gracefully.
+
+### Stats
+
+- Tests: 1552 → **1569** (+17: 5 planner field-detection + 12 websearch)
+- MCP tools: 82 → **83** (added `web_search`)
+- New files: `src/research_hub/search/websearch.py` (249 LOC), `tests/test_v051_websearch.py` (248 LOC)
+- Modified: planner.py / auto.py / cli.py / mcp_server.py / search/__init__.py / search/fallback.py / doctor.py / test_consistency.py / test_v050_planner.py
+- Backward compat: pure addition. All existing commands unchanged.
+
+### Delegation pattern (for future contributors)
+
+This release is the first to use the formal Codex delegation pattern documented in the maintainer's CLAUDE.md:
+
+1. Claude writes structured plan file at `.ai/codex_task_v0XX_*.md` with file paths + signatures + test contracts.
+2. Codex executes via `codex exec --full-auto -C <repo> "Read .ai/codex_task_v0XX_*.md and execute every instruction inside"` in background.
+3. Codex writes summary at `.ai/codex_task_v0XX_result.md` before exiting.
+4. Claude reads the result, runs verification, smoke-tests on real data, ships.
+
+Total wall time for v0.51: ~15 min Codex execution + ~5 min Claude review/ship.
+
 ## v0.50.1 (2026-04-20)
 
 **Hotfix: codex / gemini CLI invocation actually works on Windows.** v0.50.0 only verified `claude` CLI end-to-end; codex + gemini failed silently with `FileNotFoundError`.

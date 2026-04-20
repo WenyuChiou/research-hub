@@ -6,8 +6,8 @@
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Downloads](https://img.shields.io/pypi/dm/research-hub-pipeline.svg?color=blue)](https://pypi.org/project/research-hub-pipeline/)
 [![GitHub stars](https://img.shields.io/github/stars/WenyuChiou/research-hub?style=social)](https://github.com/WenyuChiou/research-hub/stargazers)
-[![Tests](https://img.shields.io/badge/tests-1552%20passing-brightgreen.svg)](docs/audit_v0.45.md)
-[![MCP tools](https://img.shields.io/badge/MCP%20tools-82-blueviolet.svg)](docs/mcp-tools.md)
+[![Tests](https://img.shields.io/badge/tests-1569%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![MCP tools](https://img.shields.io/badge/MCP%20tools-83-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI: Linux · macOS · Windows](https://img.shields.io/badge/CI-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-blue)](.github/workflows/ci.yml)
@@ -178,6 +178,8 @@ Next steps (copy-paste any of these):
 | **NotebookLM 上傳** | `notebooklm upload --cluster X` | patchright + persistent Chrome(無 API key、無 quota) |
 | **引用圖** | `vault graph-colors` | networkx + Obsidian graph view 上色 |
 | **本機檔案匯入** | `import-folder /path` | PDF / DOCX / MD / TXT / URL(analyst persona) |
+| **通用網路搜尋**(v0.51) | `websearch "query"` / `web_search` | Tavily / Brave / Google CSE / DDG fallback(不用 key 也能跑) |
+| **領域自動偵測**(v0.51) | `plan "intent"` → 建議 `--field` | bio/med 查詢自動挑 pubmed;cs 自動挑 arxiv+s2 |
 
 [→ 完整 lazy-mode 指南](docs/lazy-mode.md) · [→ 所有指令](docs/dashboard-walkthrough.md) · [→ MCP 參考](docs/mcp-tools.md)
 
@@ -298,9 +300,9 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 
 ## 🛠 狀態
 
-- **最新**: v0.50.0(2026-04-20)— intent planner: `research-hub plan "..."` + `plan_research_workflow` MCP tool,讓 AI 在跑 `auto` 之前先把 user 意圖整理成可執行 plan。見 [`CHANGELOG.md`](CHANGELOG.md)。
-- **測試**: fast suite 1552 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
-- **MCP tools**: 82 個(v0.47 把 auto / cleanup / tidy 加進 MCP;v0.49 把 `auto_research_topic` 擴充 `do_crystals` / `llm_cli`;v0.50 加了 `plan_research_workflow`)
+- **最新**: v0.51.0(2026-04-20)— 通用 `websearch` backend(Tavily / Brave / Google CSE / DDG)+ planner 自動偵測領域,讓 bio/med 查詢挑 pubmed 而不是 arxiv。見 [`CHANGELOG.md`](CHANGELOG.md)。
+- **測試**: fast suite 1569 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **MCP tools**: 83 個(v0.47 auto/cleanup/tidy;v0.49 擴充 `auto_research_topic`;v0.50 加 `plan_research_workflow`;v0.51 加 `web_search`)
 - **End-to-end 實測通過**: v0.49.5 開始,完整 lazy-mode 流程 — `auto "topic" --with-crystals` → 搜尋 → 收論文 → NotebookLM brief → 預先運算 AI 答案 — 在 Windows zh-TW 機器配真實 `claude` CLI 上實測完整跑完。詳見 [`CHANGELOG.md`](CHANGELOG.md) v0.49.4 的 per-stage 結果表。
 - **依賴**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs`(全部純 Python)
 - **可選 extras**: `[playwright]` 給 NotebookLM、`[import]` 給本機檔案匯入、`[secrets]` 給 OS keyring
@@ -311,7 +313,7 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1552 passing
+python -m pytest -q                     # 1569 passing
 ```
 
 貢獻: [CONTRIBUTING.md](CONTRIBUTING.md)。安全性: [SECURITY.md](.github/SECURITY.md)。
