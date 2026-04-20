@@ -173,11 +173,16 @@ def auto_pipeline(
             _step_log(report, "cluster", True, 0.0, f"would create: {slug}", print_progress)
         else:
             display = cluster_name or topic.title()
-            cluster = registry.create(slug=slug, name=display, first_query=topic)
+            cluster = registry.create(query=topic, slug=slug, name=display)
             report.cluster_created = True
             _step_log(report, "cluster", True, 0.0, f"created: {slug}", print_progress)
+            # v0.49.4: also auto-create + bind a Zotero collection so ingest
+            # has somewhere to put papers without manual `clusters bind`.
+            _ensure_zotero_collection(registry, cluster, slug, report, print_progress)
     else:
         _step_log(report, "cluster", True, 0.0, f"existing: {slug}", print_progress)
+        if not dry_run and not getattr(cluster, "zotero_collection_key", None):
+            _ensure_zotero_collection(registry, cluster, slug, report, print_progress)
 
     # Print plan if dry_run; do NOT execute remaining steps
     if dry_run:
@@ -394,6 +399,46 @@ def _print_next_steps(report: AutoReport, slug: str, *, do_crystals: bool) -> No
     print()
 
 
+def _ensure_zotero_collection(registry, cluster, slug: str, report: AutoReport, print_progress: bool) -> None:
+    """Auto-create + bind a Zotero collection so `ingest` has a target.
+
+    Best-effort: skips silently if Zotero is not configured (analyst persona,
+    or RESEARCH_HUB_NO_ZOTERO=1). This keeps the lazy-mode promise that
+    `auto "topic"` can run end-to-end without a manual `clusters bind`.
+    """
+    import os
+    if os.environ.get("RESEARCH_HUB_NO_ZOTERO") == "1":
+        return
+    try:
+        from research_hub.zotero.client import get_client
+        zot = get_client()
+    except Exception as exc:
+        _step_log(report, "zotero.bind", False, 0.0,
+                  f"could not load Zotero client: {exc}", print_progress)
+        return
+    try:
+        # get_client() returns either the dual-client wrapper or pyzotero
+        # Zotero directly. Both expose create_collections() that takes a
+        # list[dict]; pass the minimal {"name": ...} payload only.
+        web = getattr(zot, "web", None) or zot
+        result = web.create_collections([{"name": cluster.name}])
+        # pyzotero returns {"successful": {"0": {"key": "ABC123", ...}}, ...}
+        successful = (result or {}).get("successful", {}) if isinstance(result, dict) else {}
+        first = next(iter(successful.values()), None) if successful else None
+        new_key = (first or {}).get("key") or (first or {}).get("data", {}).get("key")
+        if not new_key:
+            _step_log(report, "zotero.bind", False, 0.0,
+                      f"Zotero create_collection returned no key: {result}", print_progress)
+            return
+        cluster.zotero_collection_key = new_key
+        registry.save()
+        _step_log(report, "zotero.bind", True, 0.0,
+                  f"created collection {new_key} for {slug}", print_progress)
+    except Exception as exc:
+        _step_log(report, "zotero.bind", False, 0.0,
+                  f"create_collection failed: {exc}", print_progress)
+
+
 def _step_log(
     report: AutoReport,
     name: str,
@@ -417,9 +462,11 @@ def _run_search(topic: str, *, max_papers: int, cluster_slug: str) -> list[dict]
     """Run arxiv + semantic_scholar search, return papers_input dicts."""       
 
 
+    # v0.49.4: search arxiv + semantic-scholar + openalex + crossref so the
+    # pipeline survives semantic-scholar rate-limiting and one-backend gaps.
     results = search_papers(
         topic,
-        backends="arxiv,semantic_scholar",
+        backends=["arxiv", "semantic-scholar", "openalex", "crossref"],
         limit=max_papers,
     )
     return _to_papers_input([asdict(r) for r in results], cluster_slug)

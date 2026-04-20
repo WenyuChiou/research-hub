@@ -100,7 +100,7 @@ def test_auto_pipeline_full_run_new_cluster(mock_deps):
     assert report.cluster_slug == "new-topic"
     assert report.cluster_created
     mock_deps["registry_instance"].create.assert_called_with(
-        slug="new-topic", name="New Topic", first_query="New Topic"
+        query="New Topic", slug="new-topic", name="New Topic"
     )
     mock_deps["run_search"].assert_called_with("New Topic", max_papers=5, cluster_slug="new-topic")
     mock_deps["run_pipeline"].assert_called_with(

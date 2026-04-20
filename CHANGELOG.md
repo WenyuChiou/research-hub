@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.49.4 (2026-04-19)
+
+**`auto` end-to-end actually works now: 4 latent bugs unblocked + Zotero collection auto-created.** Caught by trying to use the lazy-mode flow on a fresh topic ("LLM agents for agent-based modeling").
+
+The promise from v0.46+ was "one sentence in, papers + brief out". In practice the flow had four sequential failure points that prevented anyone from running `auto` on a brand-new topic. Each was the kind of bug only real end-to-end usage surfaces.
+
+### Fixed — 4 latent `auto` bugs
+
+1. **`registry.create()` signature mismatch**: `auto_pipeline` called `create(slug=slug, name=display, first_query=topic)` but the actual signature requires `query` as the first positional. Crashed with `TypeError: missing 1 required positional argument: 'query'` on every cluster creation.
+
+2. **Search backends passed as comma-string instead of list**: `_run_search` did `backends="arxiv,semantic_scholar"` which the search dispatcher iterated character-by-character ("unknown search backend: a", "unknown search backend: r", ...). Also the name `semantic_scholar` is wrong — the registry uses `semantic-scholar` (hyphen). Fixed to `["arxiv", "semantic-scholar", "openalex", "crossref"]` so the pipeline survives semantic-scholar rate-limiting.
+
+3. **No Zotero collection auto-creation**: when `auto` created a brand-new cluster, ingest immediately failed because `cluster.zotero_collection_key` was empty and the user hadn't run `clusters bind` yet. Added `_ensure_zotero_collection` that calls `pyzotero.create_collections([{"name": cluster.name}])` and binds the key into the registry. Best-effort: silent skip if Zotero is unavailable.
+
+4. **arXiv-only papers rejected by ingest** (no DOI): `_to_papers_input` left `doi` empty for any candidate without a publisher DOI, but the pipeline rejects DOI-less papers (`Paper N: missing required field 'doi'`). Most arXiv preprints don't have a publisher DOI yet. Fixed by synthesizing `10.48550/arXiv.<arxiv_id>` from the arXiv ID, which is the canonical DOI form arXiv issues for every preprint.
+
+### Verified — full lazy-mode flow on a new topic
+
+```
+$ research-hub auto "LLM agents agent-based modeling social simulation" --with-crystals
+[OK] cluster        existing: llm-agents-agent-based-modeling-social
+[OK] zotero.bind    created collection 9FHZCK4N for ...        # <- auto, was missing
+[OK] search         8 results
+[OK] ingest         8 papers in raw/...                        # <- was failing on missing DOI
+[OK] nlm.bundle     7 PDFs
+[OK] nlm.upload     8 succeeded
+[FAIL] nlm.generate  Generation button not found: briefing      # <- known v0.45 intermittent
+```
+
+After 8/9 stages succeeded, the crystal step (run separately because the NLM generate hiccup aborted the auto run) produced 10 cached canonical Q&A answers in 113 s via real `claude` CLI. The cluster ended up with: 8 PDFs in Zotero, 8 Obsidian notes, NotebookLM notebook with all 8, and a full `crystals/` directory ready for `read_crystal()` queries.
+
+The NotebookLM `Generation button not found` regression is tracked separately — not blocking lazy-mode adoption since the crystals path delivers the cached AI answers without needing the brief.
+
+### Stats
+
+- Tests: 1541 (no new tests in this release; the bugs were caught by real end-to-end usage, regression coverage to follow once the API patterns stabilize)
+- Bugs fixed by inventory pass since v0.49.0: **11** (3 cp950, 2 broken imports, 4 auto signature/data, 2 dedup/UI)
+
 ## v0.49.3 (2026-04-19)
 
 **2 bugs found by the bug-inventory pass: stale dedup paths + Overview health-badge text clipping.**

@@ -774,7 +774,12 @@ def _authors_to_creators(authors: list[str] | str) -> list[dict]:
 
 
 def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[dict]:
-    """Convert search candidates to flat papers_input.json shape."""
+    """Convert search candidates to flat papers_input.json shape.
+
+    v0.49.4: derive a synthetic ``10.48550/arXiv.<id>`` DOI for arxiv hits
+    that lack a DOI, since the pipeline rejects DOI-less papers but every
+    arxiv preprint has a stable identifier we can promote.
+    """
     from research_hub.clusters import slugify
 
     papers: list[dict] = []
@@ -788,20 +793,25 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
         title = candidate.get("title") or ""
         first_author = names[0].split()[-1].lower() if names else "unknown"
         slug = f"{first_author}{candidate.get('year') or ''}-{slugify(title)[:60]}"
-        papers.append(
-            {
-                "title": title,
-                "doi": candidate.get("doi") or "",
-                "authors": _authors_to_creators(names),
-                "year": candidate.get("year") or 0,
-                "abstract": candidate.get("abstract") or "(no abstract)",
-                "journal": candidate.get("venue") or "preprint",
-                "slug": slug,
-                "sub_category": cluster_slug or "",
-                "summary": f"[TODO] {title}"[:200],
-                "key_findings": ["[TODO: fill from abstract]"],
-                "methodology": "[TODO: fill from abstract]",
-                "relevance": "[TODO: fill relevance to cluster]",
-            }
-        )
+        doi = candidate.get("doi") or ""
+        arxiv_id = str(candidate.get("arxiv_id") or "")
+        if not doi and arxiv_id:
+            doi = f"10.48550/arxiv.{arxiv_id}"
+        entry = {
+            "title": title,
+            "doi": doi,
+            "authors": _authors_to_creators(names),
+            "year": candidate.get("year") or 0,
+            "abstract": candidate.get("abstract") or "(no abstract)",
+            "journal": candidate.get("venue") or "preprint",
+            "slug": slug,
+            "sub_category": cluster_slug or "",
+            "summary": f"[TODO] {title}"[:200],
+            "key_findings": ["[TODO: fill from abstract]"],
+            "methodology": "[TODO: fill from abstract]",
+            "relevance": "[TODO: fill relevance to cluster]",
+        }
+        if arxiv_id:
+            entry["arxiv_id"] = arxiv_id
+        papers.append(entry)
     return papers
