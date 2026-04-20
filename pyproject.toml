@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.52.0"
+version = "0.53.0"
 description = "CLI + MCP server for Zotero + Obsidian + NotebookLM research pipelines. Run `research-hub init` after install."
 readme = "README.md"
 license = {text = "MIT"}
@@ -58,6 +58,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/research_hub"]
+# Hatch's default package discovery includes all files under packages/,
+# so src/research_hub/skills_data/**/SKILL.md ships automatically.
 
 [tool.pytest.ini_options]
 markers = [

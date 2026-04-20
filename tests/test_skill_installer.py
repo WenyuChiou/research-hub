@@ -8,12 +8,14 @@ from research_hub import skill_installer
 
 
 def _patch_platform_paths(monkeypatch, home: Path) -> None:
+    """v0.53: PlatformConfig now takes `skills_root` (shared dir for all skills
+    in the pack) instead of `skill_dir` (one dir per skill)."""
     monkeypatch.setitem(
         skill_installer.PLATFORMS,
         "claude-code",
         skill_installer.PlatformConfig(
             name="Claude Code",
-            skill_dir=home / ".claude" / "skills" / "research-hub",
+            skills_root=home / ".claude" / "skills",
         ),
     )
     monkeypatch.setitem(
@@ -21,7 +23,7 @@ def _patch_platform_paths(monkeypatch, home: Path) -> None:
         "codex",
         skill_installer.PlatformConfig(
             name="Codex (OpenAI)",
-            skill_dir=home / ".codex" / "skills" / "research-hub",
+            skills_root=home / ".codex" / "skills",
         ),
     )
     monkeypatch.setitem(
@@ -29,7 +31,7 @@ def _patch_platform_paths(monkeypatch, home: Path) -> None:
         "cursor",
         skill_installer.PlatformConfig(
             name="Cursor",
-            skill_dir=home / ".cursor" / "skills" / "research-hub",
+            skills_root=home / ".cursor" / "skills",
         ),
     )
     monkeypatch.setitem(
@@ -37,27 +39,34 @@ def _patch_platform_paths(monkeypatch, home: Path) -> None:
         "gemini",
         skill_installer.PlatformConfig(
             name="Gemini CLI",
-            skill_dir=home / ".gemini" / "skills" / "research-hub",
+            skills_root=home / ".gemini" / "skills",
         ),
     )
 
 
-def test_install_skill_creates_directory(tmp_path, monkeypatch):
+def test_install_skill_pack_writes_every_pack_member(tmp_path, monkeypatch):
     _patch_platform_paths(monkeypatch, tmp_path)
 
-    installed = Path(skill_installer.install_skill("claude-code"))
+    installed = skill_installer.install_skill("claude-code")
 
-    assert installed == tmp_path / ".claude" / "skills" / "research-hub" / "SKILL.md"
-    assert installed.is_file()
+    # v0.53: returns a list (one entry per skill in SKILL_PACK)
+    assert isinstance(installed, list)
+    assert len(installed) == len(skill_installer.SKILL_PACK)
+    # Each target dir was created with SKILL.md inside
+    for _source, target in skill_installer.SKILL_PACK:
+        dest = tmp_path / ".claude" / "skills" / target / "SKILL.md"
+        assert dest.is_file(), f"missing skill at {dest}"
 
 
 def test_install_skill_content_matches_source(tmp_path, monkeypatch):
     _patch_platform_paths(monkeypatch, tmp_path)
 
-    installed = Path(skill_installer.install_skill("claude-code"))
-    source = skill_installer.get_bundled_skill_path()
+    skill_installer.install_skill("claude-code")
 
-    assert installed.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+    for source_name, target_name in skill_installer.SKILL_PACK:
+        source = skill_installer.get_bundled_skill_path(source_name)
+        dest = tmp_path / ".claude" / "skills" / target_name / "SKILL.md"
+        assert dest.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
 
 
 def test_install_unknown_platform_raises():
@@ -75,9 +84,34 @@ def test_list_platforms_shows_all():
 def test_install_idempotent(tmp_path, monkeypatch):
     _patch_platform_paths(monkeypatch, tmp_path)
 
-    first = Path(skill_installer.install_skill("claude-code"))
-    second = Path(skill_installer.install_skill("claude-code"))
-    source = skill_installer.get_bundled_skill_path()
+    first = skill_installer.install_skill("claude-code")
+    second = skill_installer.install_skill("claude-code")
 
     assert first == second
-    assert second.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+    for path in second:
+        dest = Path(path)
+        assert dest.is_file()
+
+
+def test_list_platforms_reports_true_after_full_pack_install(tmp_path, monkeypatch):
+    """v0.53 regression: list_platforms only reports 'installed' when ALL
+    skills in the pack are present, not just the legacy knowledge-base one."""
+    _patch_platform_paths(monkeypatch, tmp_path)
+
+    before = dict((k, ok) for k, _, ok in skill_installer.list_platforms())
+    assert before["claude-code"] is False
+
+    skill_installer.install_skill("claude-code")
+
+    after = dict((k, ok) for k, _, ok in skill_installer.list_platforms())
+    assert after["claude-code"] is True
+
+
+def test_multi_ai_skill_is_discoverable():
+    """The v0.53 multi-AI skill must be findable from the bundled source."""
+    path = skill_installer.get_bundled_skill_path("research-hub-multi-ai")
+    text = path.read_text(encoding="utf-8")
+    assert "research-hub-multi-ai" in text
+    # Spot-check that the skill mentions the three executors
+    for name in ("Claude", "Codex", "Gemini"):
+        assert name in text

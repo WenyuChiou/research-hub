@@ -1530,8 +1530,14 @@ def _cmd_install(args, cfg=None) -> int:
     if not args.platform:
         print("Specify --platform or use --list to see options.")
         return 1
-    path = install_skill(args.platform)
-    print(f"Installed SKILL.md to {path}")
+    paths = install_skill(args.platform)
+    # v0.53: install_skill now returns a LIST (skill pack), not a single path.
+    # Stay compatible with old callers that expected a string.
+    if isinstance(paths, str):
+        paths = [paths]
+    for p in paths:
+        print(f"Installed {p}")
+    print(f"  -> {len(paths)} skill(s) installed for {args.platform}")
     return 0
 
 

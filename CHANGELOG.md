@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.53.0 (2026-04-20)
+
+**Multi-AI skill pack.** research-hub now ships a 2-skill pack that teaches Claude (and any MCP host) how to delegate crystal generation and long pipeline work to Codex or Gemini CLIs when they're on PATH — turning "one AI does everything" into "Claude orchestrates, Codex executes, Gemini handles CJK".
+
+### Added — `skills_data/research-hub-multi-ai/SKILL.md`
+
+New bundled skill that ships alongside the existing `knowledge-base` skill. Teaches the host AI:
+
+- **When to stay on Claude** (judgment-heavy, short, cache-eligible): `ask_cluster`, `read_crystal`, plan review.
+- **When to delegate to Codex** (long, mechanical): `auto --with-crystals --llm-cli codex` for crystal generation across 8+ papers.
+- **When to delegate to Gemini** (CJK content): same shape but for native-quality Traditional Chinese / Japanese / Korean crystal output.
+- **The `plan_research_workflow` → confirm → `auto_research_topic` protocol** so the AI never blindly kicks off long work without user confirmation.
+- **Token-budget discipline**: always check `ask_cluster` first (returns cached crystal in <1s + 0 tokens) before re-synthesizing.
+
+Full decision tree + concrete command templates + anti-pattern list in `skills_data/research-hub-multi-ai/SKILL.md`.
+
+### Changed — `research-hub install` now installs a skill PACK
+
+`install_skill(platform)` used to copy a single `SKILL.md`. Now copies the full pack (2 skills as of v0.53) into the right per-platform directory:
+
+| Platform | Skill dir layout |
+|---|---|
+| `claude-code` | `~/.claude/skills/research-hub/SKILL.md` + `~/.claude/skills/research-hub-multi-ai/SKILL.md` |
+| `codex` | `~/.codex/skills/research-hub/…` + `~/.codex/skills/research-hub-multi-ai/…` |
+| `cursor` | `~/.cursor/skills/…` (same layout) |
+| `gemini` | `~/.gemini/skills/…` (same layout) |
+
+`install_skill(...)` now returns a **list** of installed paths (was a single string). The old string-returning behavior is preserved via isinstance check in the CLI so external callers don't break.
+
+`list_platforms()` now reports "installed" only when **every** skill in the pack is present, so partial installs after an upgrade are highlighted.
+
+### Wheel packaging
+
+Added `[tool.hatch.build.targets.wheel.force-include]` to bundle `src/research_hub/skills_data/**/SKILL.md` into the installed wheel. Without this, `pip install research-hub-pipeline` would find the skill files missing (they were only in the repo, not the package).
+
+### Why this matters
+
+Before v0.53, every AI host starting fresh with research-hub had to learn the tool use patterns from scratch — often making wrong choices (calling `auto` without `plan` first, burning Claude's token budget on crystals when Codex could do it for free, synthesizing answers from scratch instead of reading cached crystals).
+
+After v0.53, one command (`research-hub install --platform claude-code`) bundles all that guidance into the host's skills directory so the host AI knows the playbook from turn one.
+
+### Stats
+
+- Tests: 1583 → **1585** (+2 regression tests covering the pack-install contract and the multi-AI skill discoverability)
+- New file: `skills/research-hub-multi-ai/SKILL.md` (~230 lines of prose guidance)
+- Modified: `skill_installer.py` (+~40 LOC for pack support), `cli.py` (+4 LOC for list-returning install output), `pyproject.toml` (+2 lines for wheel bundling)
+
+### Backward compat
+
+- Existing `knowledge-base` skill still installed first (matches the old `~/.claude/skills/research-hub/` path).
+- CLI output now shows multiple "Installed …" lines per call; `--list` behavior unchanged at the user-visible level.
+
 ## v0.52.0 (2026-04-20)
 
 **REST JSON API at `/api/v1/*` so any HTTP client can use research-hub.** Closes the last "AI host can't reach research-hub" gap left after v0.50–v0.51.
