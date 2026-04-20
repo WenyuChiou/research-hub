@@ -28,7 +28,52 @@ If your AI can load an MCP tool, run a shell command, or make an HTTP call — i
 
 ---
 
-## Install + first run (≈ 60 seconds)
+## 🤖 Just tell your AI to install it
+
+Don't want to run commands yourself? Copy the block below into any AI chat (Claude Desktop / Claude Code / Cursor / Continue / ChatGPT / Gemini — anything that can run shell commands for you). It's a self-contained setup script the AI will follow step-by-step, pausing to ask you for anything it can't guess (Zotero key, vault path, which MCP host you use).
+
+```text
+Please install research-hub on my machine end-to-end. It's a Python package that
+pipes academic papers into Zotero + Obsidian + NotebookLM and exposes an MCP server.
+
+Do these steps in order. Stop and ask me whenever you need interactive input:
+
+1. Check: `python --version`. If < 3.10, tell me to upgrade first and stop.
+
+2. Install: `pip install research-hub-pipeline[playwright,secrets]`
+
+3. Run `research-hub init`. It will ask me questions — pass them on to me, don't
+   guess. The persona options are `researcher` / `humanities` / `analyst` /
+   `internal`; ask which fits my work. If I don't have a Zotero API key, pause
+   and tell me to get one at https://www.zotero.org/settings/keys.
+
+4. Run `research-hub notebooklm login`. A browser window will open — tell me to
+   complete the Google sign-in.
+
+5. Figure out which AI host I'm using (probably the one you're running in). Edit
+   its MCP config to add:
+     { "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+   Config file locations:
+     - Claude Desktop (macOS):  ~/Library/Application Support/Claude/claude_desktop_config.json
+     - Claude Desktop (Windows): %APPDATA%\Claude\claude_desktop_config.json
+     - Cursor: Settings → MCP Servers
+     - Continue.dev: ~/.continue/config.json
+     - Cline / Roo: VS Code settings under `cline.mcpServers`
+   If unsure, ask me which host I'm talking to you through.
+
+6. Run `research-hub install --platform claude-code` (or `cursor` / `codex` /
+   `gemini` — whichever matches step 5). This copies skill files so future AI
+   interactions know how to use research-hub intelligently.
+
+7. Tell me to restart my AI host, then ask me what topic I want to research first
+   as a smoke test, and run: `research-hub auto "TOPIC" --with-crystals`
+```
+
+That's it. The AI handles everything; you just answer its questions.
+
+---
+
+## Or install manually (≈ 60 seconds)
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]

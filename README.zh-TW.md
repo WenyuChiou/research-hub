@@ -28,7 +28,50 @@ English → [README.md](README.md)
 
 ---
 
-## 安裝 + 第一次跑(約 60 秒)
+## 🤖 直接叫你的 AI 幫你裝
+
+不想自己打指令?把下面這段複製到任何會幫你跑 shell 的 AI(Claude Desktop / Claude Code / Cursor / Continue / ChatGPT / Gemini)就好。它是個自給自足的安裝腳本,AI 會照步驟跑,需要你給東西時會停下來問你(Zotero key、vault 路徑、你用哪個 MCP host 等等)。
+
+```text
+請幫我從頭到尾安裝 research-hub。它是一個 Python 套件,把學術論文
+pipe 進 Zotero + Obsidian + NotebookLM,並提供 MCP server。
+
+依序做這些步驟。需要我互動的地方停下來問我,不要自己編:
+
+1. 檢查: `python --version`。如果 < 3.10,叫我先升級再繼續。
+
+2. 安裝: `pip install research-hub-pipeline[playwright,secrets]`
+
+3. 跑 `research-hub init`。它會問問題,把問題轉給我,不要亂猜。
+   persona 選項有 `researcher` / `humanities` / `analyst` / `internal`;
+   問我哪個適合。如果我沒有 Zotero API key,停下來告訴我去
+   https://www.zotero.org/settings/keys 拿。
+
+4. 跑 `research-hub notebooklm login`。會開瀏覽器 — 告訴我完成 Google 登入。
+
+5. 搞清楚我用哪個 AI host(通常就是你自己)。修改它的 MCP 設定,加入:
+     { "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+   設定檔位置:
+     - Claude Desktop (macOS):  ~/Library/Application Support/Claude/claude_desktop_config.json
+     - Claude Desktop (Windows): %APPDATA%\Claude\claude_desktop_config.json
+     - Cursor: Settings → MCP Servers
+     - Continue.dev: ~/.continue/config.json
+     - Cline / Roo: VS Code 設定裡 `cline.mcpServers`
+   不確定的話問我我現在是透過哪個 host 跟你講話。
+
+6. 跑 `research-hub install --platform claude-code`(或 `cursor` / `codex` /
+   `gemini`,對應步驟 5 的 host)。這會把 skill 檔案複製到 host 的 skills 目錄,
+   讓之後的 AI 對話知道怎麼正確用 research-hub 工具。
+
+7. 叫我重啟 AI host。重啟後,問我要研究什麼主題當煙測,然後跑:
+   `research-hub auto "主題" --with-crystals`
+```
+
+就這樣。AI 全部幫你處理,你只要回答它問你的問題就好。
+
+---
+
+## 或手動安裝(約 60 秒)
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
