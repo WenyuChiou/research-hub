@@ -234,7 +234,7 @@ def watch_dashboard(
         refresh_seconds=refresh_seconds,
         rich_bibtex=rich_bibtex,
     )
-    print(f"  initial render → {out_path}")
+    print(f"  initial render -> {out_path}")
     last = _state_signature()
     try:
         while True:
@@ -250,7 +250,7 @@ def watch_dashboard(
                 from datetime import datetime, timezone
 
                 stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
-                print(f"  [{stamp}] vault changed → re-rendered")
+                print(f"  [{stamp}] vault changed -> re-rendered")
     except KeyboardInterrupt:
         print("\nStopped watching.")
 

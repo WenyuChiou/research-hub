@@ -10,21 +10,30 @@ def _fake_cfg(tmp_path):
     cfg = MagicMock(
         research_hub_dir=tmp_path / ".research_hub",
         hub=tmp_path / "hub",
+        raw=tmp_path / "raw",
         clusters_file=tmp_path / "clusters.yaml",
     )
     cfg.research_hub_dir.mkdir()
+    (tmp_path / "raw").mkdir()
     return cfg
 
 
 def _stub_all(monkeypatch, tmp_path):
     cfg = _fake_cfg(tmp_path)
     monkeypatch.setattr("research_hub.config.get_config", lambda: cfg)
+    # v0.49.2: matches the real API (run_doctor takes no args; autofix is separate).
     monkeypatch.setattr(
         "research_hub.doctor.run_doctor",
-        lambda autofix=False: [MagicMock(status="OK"), MagicMock(status="INFO")],
+        lambda: [MagicMock(status="OK"), MagicMock(status="INFO")],
     )
-    fake_idx = MagicMock(dois={"a", "b"}, titles={"X", "Y", "Z"})
-    monkeypatch.setattr("research_hub.dedup.build_from_obsidian", lambda c: fake_idx)
+    monkeypatch.setattr(
+        "research_hub.vault_autofix.run_autofix",
+        lambda c: {"topic_cluster": 0, "ingested_at": 0, "doi_derived": 0, "skipped_no_cluster": 0},
+    )
+    fake_idx = MagicMock(doi_to_hits={"a": [], "b": []}, title_to_hits={"X": [], "Y": [], "Z": []})
+    fake_idx.rebuild_from_obsidian = MagicMock(return_value=None)
+    fake_idx.save = MagicMock(return_value=None)
+    monkeypatch.setattr("research_hub.dedup.DedupIndex.load", classmethod(lambda cls, p: fake_idx))
     monkeypatch.setattr(
         "research_hub.clusters.ClusterRegistry",
         lambda *a, **kw: MagicMock(list=lambda: []),
@@ -41,6 +50,37 @@ def _stub_all(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("research_hub.cleanup.format_bytes", lambda n: "1.2 KB")
     return cfg
+
+
+def test_tidy_signatures_match_real_api():
+    """v0.49.2 regression: tidy.py must call doctor/dedup with their real signatures.
+
+    The original v0.46 release passed `run_doctor(autofix=True)` and
+    `build_from_obsidian(cfg)` even though both signatures rejected those
+    arguments. Mocked tests didn't catch it because the mocks accepted
+    anything. This test introspects the real signatures so the tidy module
+    has to keep matching them.
+    """
+    import inspect
+
+    from research_hub.doctor import run_doctor
+    from research_hub.dedup import DedupIndex
+    from research_hub.vault_autofix import run_autofix
+
+    # run_doctor should be no-arg
+    assert inspect.signature(run_doctor).parameters == {}, (
+        "run_doctor() must remain no-arg; tidy uses it that way"
+    )
+    # run_autofix should accept a cfg
+    assert "cfg" in inspect.signature(run_autofix).parameters
+
+    # DedupIndex must expose .load, .rebuild_from_obsidian, .save and the
+    # doi_to_hits / title_to_hits dicts that tidy iterates.
+    assert hasattr(DedupIndex, "load")
+    assert hasattr(DedupIndex, "rebuild_from_obsidian")
+    assert hasattr(DedupIndex, "save")
+    fields = {f.name for f in DedupIndex.__dataclass_fields__.values()}
+    assert {"doi_to_hits", "title_to_hits"} <= fields
 
 
 def test_tidy_invokes_all_four_substeps(monkeypatch, tmp_path):

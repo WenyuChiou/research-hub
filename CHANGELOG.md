@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.49.2 (2026-04-19)
+
+**Hotfix: `tidy` was broken since v0.46 + 2 more cp950 crashes.** Caught by a systematic bug-inventory pass after the v0.49.1 ship.
+
+### Fixed — `tidy` doctor + dedup steps both crashed silently
+
+`research-hub tidy` shipped in v0.46 and **never actually ran its `doctor` and `dedup` substeps successfully**. Mocked tests masked it because the mocks accepted the wrong API:
+
+```
+$ research-hub tidy
+[FAIL] doctor   run_doctor() got an unexpected keyword argument 'autofix'
+[FAIL] dedup    'HubConfig' object has no attribute 'exists'
+[OK]   bases    11 clusters refreshed
+[OK]   cleanup  would free 72.0 MB
+```
+
+Three signature mismatches:
+- `run_doctor(autofix=True)` — `run_doctor()` is no-arg; autofix is a separate `vault_autofix.run_autofix(cfg)` call.
+- `build_from_obsidian(cfg)` — wants `Path`, not `HubConfig`. Should use `DedupIndex.load(...).rebuild_from_obsidian(cfg.raw)` which is the same path `cli.py dedup rebuild --obsidian-only` uses.
+- `idx.dois` / `idx.titles` — attributes don't exist; the dataclass fields are `doi_to_hits` / `title_to_hits`.
+
+Fixed by switching to the real APIs. Locked in with a new `test_tidy_signatures_match_real_api` regression test that introspects the live signatures via `inspect.signature()` so future drift is caught immediately.
+
+After the fix, on the maintainer's vault:
+```
+[OK] doctor   28 checks (23 OK, 1 INFO, 3 WARN); autofix backfilled 315 fields
+[OK] dedup    767 DOIs, 1101 titles
+[OK] bases    11 clusters refreshed
+[OK] cleanup  would free 72.0 MB
+```
+
+The autofix stage actually backfilled 315 missing-frontmatter fields on the maintainer's vault on first successful run.
+
+### Fixed — 2 more cp950 crashes in dashboard --watch
+
+`dashboard/__init__.py` printed `→` arrows in two more places (initial render + watch re-render), which would crash `research-hub dashboard --watch` on Windows zh-TW. Replaced with `->`. Now matches the v0.49.1 sweep.
+
+### Verified — full lazy-mode flow works end-to-end on Windows zh-TW
+
+Systematic post-v0.49.1 inventory ran every lazy command + MCP tool against the maintainer's real vault:
+
+| Stage | Result |
+|---|---|
+| `pip install` from PyPI | OK (v0.49.1) |
+| `research-hub doctor` | OK — 23/28 OK, 3 WARN are real vault data issues, not bugs |
+| `research-hub tidy` | **Was broken. Fixed in this release.** |
+| `research-hub cleanup --bundles --dry-run` | OK — identified 72 MB stale bundle |
+| `research-hub ask llm-evaluation-harness "..."` | OK — cached crystal returned in <1 s |
+| `research-hub serve --dashboard` | OK — HTTP 200, 3.2 MB rendered HTML |
+| MCP server tool registration | OK — 81 tools registered, `auto_research_topic` has the new `do_crystals` / `llm_cli` params |
+| Real `claude` CLI invocation | OK — `_invoke_llm_cli` returned valid JSON |
+| Real crystal generation against `claude` CLI | OK — 10 crystal files written for `ai-agent-geopolitics-behavioral-patterns` cluster |
+| `init` first-run readiness check on a real vault | OK — 4 subsystems probed correctly, output cp950-safe |
+
+### Stats
+
+- Tests: 1539 → **1540** (+1 tidy signature regression test)
+- Bugs fixed: 1 critical (tidy), 2 cp950 (dashboard watch)
+- Bugs found via real testing that mocks missed: 4 (cp950 in init/auto, em-dash in init, tidy signatures, dashboard arrow chars)
+
 ## v0.49.1 (2026-04-19)
 
 **Hotfix: cp950 console crash on Windows zh-TW.** Caught by real end-to-end testing of the v0.49.0 release.

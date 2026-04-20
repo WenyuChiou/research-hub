@@ -40,11 +40,13 @@ def run_tidy(*, apply_cleanup: bool = False, print_progress: bool = True) -> Tid
     started = time.time()
     report = TidyReport()
 
-    # 1. doctor --autofix
+    # 1. doctor + autofix (mechanical frontmatter backfills)
     try:
         from research_hub.doctor import run_doctor
+        from research_hub.vault_autofix import run_autofix
 
-        doctor_results = run_doctor(autofix=True)
+        autofix_summary = run_autofix(cfg)
+        doctor_results = run_doctor()
         ok_count = sum(1 for r in doctor_results if getattr(r, "status", "") == "OK")
         info_count = sum(
             1 for r in doctor_results if getattr(r, "status", "") in ("INFO", "ii")
@@ -52,19 +54,25 @@ def run_tidy(*, apply_cleanup: bool = False, print_progress: bool = True) -> Tid
         warn_count = sum(
             1 for r in doctor_results if getattr(r, "status", "") in ("WARN", "!!")
         )
-        detail = "{0} checks, {1} OK, {2} INFO, {3} WARN".format(
-            len(doctor_results), ok_count, info_count, warn_count,
+        autofix_total = sum(int(v or 0) for k, v in autofix_summary.items() if k != "skipped_no_cluster")
+        detail = "{0} checks ({1} OK, {2} INFO, {3} WARN); autofix backfilled {4} fields".format(
+            len(doctor_results), ok_count, info_count, warn_count, autofix_total,
         )
         report.steps.append(TidyStep(name="doctor", ok=True, detail=detail))
     except Exception as exc:
         report.steps.append(TidyStep(name="doctor", ok=False, detail=str(exc)))
 
-    # 2. dedup rebuild
+    # 2. dedup rebuild from Obsidian raw notes
     try:
-        from research_hub.dedup import build_from_obsidian
+        from research_hub.dedup import DedupIndex
 
-        idx = build_from_obsidian(cfg)
-        detail = "{0} DOIs, {1} titles".format(len(idx.dois), len(idx.titles))
+        index_path = cfg.research_hub_dir / "dedup_index.json"
+        index = DedupIndex.load(index_path)
+        index.rebuild_from_obsidian(cfg.raw)
+        index.save(index_path)
+        detail = "{0} DOIs, {1} titles".format(
+            len(index.doi_to_hits), len(index.title_to_hits)
+        )
         report.steps.append(TidyStep(name="dedup", ok=True, detail=detail))
     except Exception as exc:
         report.steps.append(TidyStep(name="dedup", ok=False, detail=str(exc)))
