@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.54.0 (2026-04-20)
+
+**Manage-tab full audit + 5 more `clusters-analyze`-shaped bugs caught.**
+
+v0.53.2 found `clusters-analyze` Manage button always crashed because it read `fields["cluster_slug"]` instead of the dedicated `slug` arg. v0.54 ran the same audit across **every** Manage action and found 5 more identical bugs hiding behind missing test coverage.
+
+Implementation delegated to Codex per `.ai/codex_task_v054_manage_audit.md`. Claude reviewed + verified independently before shipping.
+
+### Fixed — 5 more cluster-scoped Manage buttons that ignored `slug`
+
+Same root cause as `clusters-analyze`: handler read `fields["cluster_slug"]` (which the dashboard never sets) instead of the dedicated `slug` argument. Each one would have crashed with `KeyError: 'cluster_slug'` the moment a real user clicked the button.
+
+| Action | Manage button name |
+|---|---|
+| `topic-build` | "Build topic notes" |
+| `pipeline-repair` | "Repair pipeline" |
+| `discover-new` | "Discover new candidates" |
+| `discover-continue` | "Continue discover" |
+| `autofill-apply` | "Autofill apply" |
+
+All 5 fixed the same way as `clusters-analyze` in v0.53.2: read `slug` first, fall back to legacy `fields["cluster_slug"]` / `fields["cluster"]`, raise a clear `ValueError` if neither is set.
+
+### Added — parametrized regression coverage for **every** Manage action
+
+`tests/test_dashboard_live_server.py` now contains:
+
+- A `_ACTION_CASES` matrix keyed by action name, listing the canonical CLI subcommand tokens + valid `fields` for that action.
+- A guard test that the matrix stays in sync with `executor.ALLOWED_ACTIONS` — adding a new action without adding a test case will fail CI.
+- A parametrized builder test that runs all 26 actions through `_build_command_args` and asserts: returns `list[str]`, has the correct base prefix, contains the canonical subcommand tokens, includes the slug for slug-relevant actions.
+
+Future drift in any Manage button now fires in CI, not in a user's browser.
+
+### Plan template corrections
+
+The required-fields table in the original plan was wrong in 12 places (e.g. `merge` uses `target` not `target_cluster`, `bind-zotero` uses `zotero` not `collection_key`, `vault-polish-markdown` uses `apply` not `dry_run`). Codex corrected these against the live source. The corrections are in `.ai/codex_task_v054_result.md` for reference when shipping similar audits.
+
+### Stats
+
+- Tests: 1585 → **1589** (+4 — the parametrized matrix counts as ~4 distinct test functions, not 26, since pytest-parametrize collapses to 1 test ID per function)
+- Bugs found by audit: **5** (plus the v0.53.2 `clusters-analyze` already-fixed)
+- Files: `dashboard/executor.py` (+25 LOC slug-arg fallback in 5 handlers), `tests/test_dashboard_live_server.py` (+83 LOC matrix + parametrized test)
+
+### Delegation pattern
+
+Same Codex pattern as v0.51 / v0.52:
+1. Claude writes plan file at `.ai/codex_task_v054_manage_audit.md`
+2. Codex runs in background via `codex exec --full-auto`
+3. Codex writes summary at `.ai/codex_task_v054_result.md`
+4. Claude verifies + ships
+
+Wall time: ~5 min Codex execution + ~3 min Claude review/ship.
+
 ## v0.53.2 (2026-04-20)
 
 **Two real-vault clicking bugs caught while the user actually used the dashboard.**

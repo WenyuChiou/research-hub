@@ -8,7 +8,7 @@ import sys
 import tempfile as _tempfile
 import threading as _threading
 
-__version__ = "0.53.2"
+__version__ = "0.54.0"
 
 
 if sys.platform.startswith("win") and "pytest" in sys.modules:

@@ -141,33 +141,48 @@ def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -
             args += ["--papers-input", str(fields["papers_input"])]
         return args
     if action == "topic-build":
-        return base + ["topic", "build", "--cluster", str(fields["cluster_slug"])]
+        target = slug or (fields or {}).get("cluster_slug") or (fields or {}).get("cluster")
+        if not target:
+            raise ValueError("topic-build requires a cluster slug")
+        return base + ["topic", "build", "--cluster", str(target)]
     if action == "dashboard":
         return base + ["dashboard"]
     if action == "pipeline-repair":
-        args = base + ["pipeline", "repair", "--cluster", str(fields["cluster_slug"])]
+        target = slug or (fields or {}).get("cluster_slug") or (fields or {}).get("cluster")
+        if not target:
+            raise ValueError("pipeline-repair requires a cluster slug")
+        args = base + ["pipeline", "repair", "--cluster", str(target)]
         args.append("--execute" if fields.get("execute") else "--dry-run")
         return args
     if action == "discover-new":
-        args = base + ["discover", "new", "--cluster", str(fields["cluster_slug"])]
+        target = slug or (fields or {}).get("cluster_slug") or (fields or {}).get("cluster")
+        if not target:
+            raise ValueError("discover-new requires a cluster slug")
+        args = base + ["discover", "new", "--cluster", str(target)]
         if fields.get("query"):
             args += ["--query", str(fields["query"])]
         return args
     if action == "discover-continue":
+        target = slug or (fields or {}).get("cluster_slug") or (fields or {}).get("cluster")
+        if not target:
+            raise ValueError("discover-continue requires a cluster slug")
         return base + [
             "discover",
             "continue",
             "--cluster",
-            str(fields["cluster_slug"]),
+            str(target),
             "--scored",
             str(fields["scored"]),
         ]
     if action == "autofill-apply":
+        target = slug or (fields or {}).get("cluster_slug") or (fields or {}).get("cluster")
+        if not target:
+            raise ValueError("autofill-apply requires a cluster slug")
         return base + [
             "autofill",
             "apply",
             "--cluster",
-            str(fields["cluster_slug"]),
+            str(target),
             "--scored",
             str(fields["scored"]),
         ]

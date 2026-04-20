@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.53.2"
+version = "0.54.0"
 description = "CLI + MCP server for Zotero + Obsidian + NotebookLM research pipelines. Run `research-hub init` after install."
 readme = "README.md"
 license = {text = "MIT"}
