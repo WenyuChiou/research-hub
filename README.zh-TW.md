@@ -12,47 +12,81 @@ English → [README.md](README.md)
 
 ---
 
-## 📋 開始之前要有什麼
+## 任何 AI host 都能用
 
-| 需要 | 為什麼 | 怎麼弄 |
-|---|---|---|
-| **Python 3.10+** | 整個套件 | `python --version` |
-| **Obsidian**(免費) | research-hub 把筆記寫到 Obsidian 能渲染的 vault 裡 | [obsidian.md](https://obsidian.md) 下載 |
-| **Google 帳號 + NotebookLM** | brief 是它生的 | 去 [notebooklm.google.com](https://notebooklm.google.com) 開通一次 |
-| **Chrome** | patchright 用你本機 Chrome 跑(不用另外申請 API key) | 裝 Chrome — `init` 會自動偵測 |
-| **Zotero 帳號 + API key**(researcher/humanities 才需要) | 跨裝置同步論文 + PDF | [zotero.org/settings/keys](https://www.zotero.org/settings/keys) |
-| (可選)`claude` / `codex` / `gemini` CLI | 要 `auto --with-crystals` 全自動跑完 | 你已經在用哪個 AI CLI 就裝哪個 |
+只要你的 AI 會載 MCP tool、會跑 shell 指令、或會打 HTTP,它就能驅動 research-hub。
 
-`research-hub init` 結尾會跑一次**首次執行就緒檢查**,缺哪個它會直接告訴你 — 不用把這張表背起來。
+| 你的 AI | research-hub 怎麼接 |
+|---|---|
+| **Claude Desktop**(Anthropic 的桌面 app) | MCP stdio via `claude_desktop_config.json` |
+| **Claude Code**(Anthropic 的 terminal / VS Code agent) | MCP stdio — 裝完 research-hub 後直接能用 |
+| **Cursor · Continue.dev · Cline · Roo Code · VS Code Copilot** | 一樣的 MCP 設定,各自 host 有自己的 config 欄位 |
+| **OpenClaw · 其他任何 MCP 相容 host** | MCP stdio |
+| **ChatGPT · Claude.ai 網頁 · Gemini 網頁 · OpenAI Custom GPT** | REST JSON at `/api/v1/*`(bearer token + CORS) |
+| **Codex CLI · Gemini CLI · GPT Code Interpreter · LangChain · AutoGen · CrewAI** | Shell subprocess — 每個指令都支援 `--json` 輸出 |
+| **你自己寫的 Python script** | `from research_hub.auto import auto_pipeline`(任何函式都能 import) |
 
 ---
 
-## ⚡ 安裝 + 第一次跑(60 秒)
+## 安裝 + 第一次跑(約 60 秒)
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub init                                          # 互動式:選 persona + Zotero/NLM + 就緒檢查
-research-hub notebooklm login                              # 一次性 Google 登入
-research-hub auto "harness engineering for LLM agents"     # 完成 — 50 秒後拿到 8 篇論文 + 一份 brief
+research-hub init                          # 互動式:選 persona + Zotero + 就緒檢查
+research-hub notebooklm login              # 一次性 Google 登入
+research-hub auto "你想研究的主題"          # 約 50 秒後拿到論文 + AI brief
 ```
 
-**想要從頭到尾全自動**(search → ingest → NLM brief → 預先運算的 AI 答案)?
+`init` 結尾會跑一次**首次執行就緒檢查**,缺哪個(Obsidian vault、Chrome、Zotero key、LLM CLI)會直接告訴你。如果 `claude` / `codex` / `gemini` CLI 在 PATH 上,加 `--with-crystals` 讓 crystal 也自動生成:
 
 ```bash
-research-hub auto "harness engineering" --with-crystals    # 自動 pipe 給 claude/codex/gemini CLI
+research-hub auto "主題" --with-crystals
 ```
 
-**不確定要怎麼問?先 plan 再 act**(v0.50):
+不確定要怎麼問?先 plan:
 
 ```bash
 research-hub plan "我想學 harness engineering"
-# 印出: 建議 topic、cluster、max_papers(看到 thesis/learn 字眼會自動調整),
-# 警告 cluster 撞名,然後印出可以直接執行的 `auto` 指令。
+# 自動調 max_papers(看到「thesis / 深入」會調大)、偵測領域
+# (bio/med/cs/…)、警告 cluster 撞名,印出可以直接執行的 `auto` 指令。
 ```
 
-用 Claude Desktop 時,只要說「Claude,幫我研究 X」,Claude 會先呼叫 `plan_research_workflow` 跟你確認計畫,再啟動 `auto_research_topic`。
+---
 
-如果支援的 LLM CLI 在你的 PATH 上,`--with-crystals` 會自動跑完 crystal 生成。沒有的話,prompt 會存到 `.research_hub/artifacts/<slug>/crystal-prompt.md`,結尾的 Next Steps 會明確告訴你要把哪個檔案貼到哪。
+## 接到你的 AI host(30 秒,一次性設定)
+
+不論 Claude Desktop / Cursor / Continue.dev / Cline / VS Code Copilot / OpenClaw,MCP 設定都是同樣格式。找到該 host 的 MCP config 檔案,加上:
+
+```json
+{ "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+```
+
+重啟 host。然後直接用自然語言講話 — 下面用 Claude 當例子,對任何 MCP host 都一樣:
+
+> **你:**「幫我找 5 篇 agent-based modeling 的論文放進 notebook」
+> **AI:** *呼叫 `auto_research_topic(topic="agent-based modeling", max_papers=5)`* → 5 篇論文 + NotebookLM brief,約 50 秒。
+
+> **你:**「我的 llm-evaluation-harness cluster 現在 SOTA 是什麼?」
+> **AI:** *呼叫 `read_crystal("llm-evaluation-harness", "sota-and-open-problems")`* → 180 字預先寫好的答案,附引用。**讀 ~1 KB、0 篇 abstract 被重新讀取。**
+
+**總共 83 個 MCP tools** — 完整參考: [`docs/mcp-tools.md`](docs/mcp-tools.md)。最重要的幾個:
+
+| Tool | 取代了什麼 |
+|---|---|
+| `auto_research_topic(topic)` | 7 步驟 CLI 流程(search → ingest → bundle → upload → generate → download) |
+| `plan_research_workflow(intent)` | 猜 max_papers / field / cluster slug |
+| `ask_cluster_notebooklm(cluster, question)` | 開 NotebookLM、貼問題、複製答案 |
+| `read_crystal(cluster, slot)` | 重讀 20 篇 abstract 回答同一個問題 |
+| `web_search(query)` | 手動蒐集 blog/docs/news 連結 |
+| `cleanup_garbage` + `tidy_vault` | `du -sh` + 手動 `rm -rf` + 手動跑 doctor |
+
+**瀏覽器內的 AI**(ChatGPT、Claude.ai 網頁、Custom GPT)不能用 MCP — 改用 REST API:
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/plan \
+     -H 'Content-Type: application/json' \
+     -d '{"intent":"research harness engineering"}'
+```
 
 ---
 
@@ -62,60 +96,13 @@ research-hub plan "我想學 harness engineering"
 
 3 個場景,1280×760,真實資料:
 
-1. **跟 Claude Desktop 對話**: 「Claude,幫我研究 harness engineering」。Claude 透過 MCP 呼叫 `plan_research_workflow` 確認計畫,再啟動 `auto_research_topic`。
+1. **跟你的 AI host 對話**: 「幫我研究 harness engineering」。Host 透過 MCP 呼叫 `plan_research_workflow` 確認計畫,再啟動 `auto_research_topic`。
 2. **`auto` pipeline 跑完**: 9 個階段(cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals)187 秒完成。Windows zh-TW 機器上的真實輸出。
 3. **Cached query <1 秒**: `ask harness-engineering "SOTA?"` 讀預先算好的 crystal,~1 KB、0 token。
 
 儀表板因為畫面密度高,縮進 GIF 會看不清楚,所以直接在下方用完整解析度的 6-tab 截圖網格展示(不再塞進 GIF 動畫)。
 
 自己用你的 vault 跑一個: `python docs/demo/build_demo_gif.py`(純 Python + Pillow,不用 ffmpeg)。
-
-**裝完之後三條路任你選:**
-
-| 路徑 | 你做的事 | 背後跑的 |
-|---|---|---|
-| **🤖 跟 Claude 講話**(推薦) | 「Claude,幫我研究 harness engineering」 | Claude 透過 MCP 呼叫 `auto_research_topic(...)` — 一個工具呼叫 |
-| **💻 一行 CLI** | `research-hub auto "topic"` | 同一個 orchestrator,直接呼叫 |
-| **🖱 Dashboard 點按鈕** | `research-hub serve --dashboard` → Manage tab | 同樣的動作,改成按鈕驅動 |
-
-三條路驅動的是**同一個** orchestrator。手在哪就用哪個。
-
----
-
-## 🤖 跟 Claude 對話 — 30 秒設定
-
-加到 `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "research-hub": {
-      "command": "research-hub",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-重啟 Claude Desktop。然後:
-
-> **你:**「Claude,幫我找 5 篇 agent-based modeling 的論文,放到一個 notebook 裡。」
-> **Claude:** *呼叫 `auto_research_topic(topic="agent-based modeling", max_papers=5)`* → 5 篇論文 + NotebookLM brief 連結 — 約 50 秒。
-
-> **你:**「我的 llm-evaluation-harness cluster 現在 SOTA 是什麼?」
-> **Claude:** *呼叫 `read_crystal("llm-evaluation-harness", "sota-and-open-problems")`* → 180 字預先寫好的答案,附引用。**讀取 ~1 KB,查詢時 0 篇 abstract 被重新讀取。**
-
-**總共 81 個 MCP tools** — 完整參考: [`docs/mcp-tools.md`](docs/mcp-tools.md)。最大的幾個:
-
-| Tool | 取代了什麼 |
-|---|---|
-| `auto_research_topic(topic)` | 7 步驟 CLI 流程(search → ingest → bundle → upload → generate → download) |
-| `cleanup_garbage(everything=True)` | 手動 `du -sh .research_hub/bundles/*` + `rm -rf` |
-| `tidy_vault()` | `doctor --autofix` + `dedup rebuild` + `bases emit --force` + cleanup preview |
-| `ask_cluster_notebooklm(cluster, question)` | 開 NotebookLM 分頁、貼問題、複製答案 |
-| `read_crystal(cluster, slot)` | 重新讀 20 篇 abstract 來回答同一個問題 |
-| `list_claims(cluster, min_confidence)` | 翻 hub overview 希望 claim 在對的段落裡 |
-| `add_paper(arxiv_id, cluster)` | 手動 Zotero add → 手動 Obsidian 筆記 → 手動 NotebookLM 上傳 |
 
 ---
 

@@ -12,47 +12,82 @@
 
 ---
 
-## 📋 Prerequisites (check these first)
+## Works with any AI host
 
-| Need | Why | How |
-|---|---|---|
-| **Python 3.10+** | All package code | `python --version` |
-| **Obsidian** (free) | research-hub writes notes into a vault Obsidian renders | Download at [obsidian.md](https://obsidian.md) |
-| **Google account with NotebookLM** | Powers the brief generation | Visit [notebooklm.google.com](https://notebooklm.google.com) once and accept terms |
-| **Chrome** | patchright drives your local Chrome (no separate API key) | Install Chrome — `init` will probe it |
-| **Zotero account + API key** *(researcher/humanities only)* | Sync papers + PDFs across devices | [zotero.org/settings/keys](https://www.zotero.org/settings/keys) |
-| *(optional)* `claude` / `codex` / `gemini` CLI | Powers `auto --with-crystals` for fully automated runs | Install whichever AI CLI you already use |
+If your AI can load an MCP tool, run a shell command, or make an HTTP call — it can drive research-hub.
 
-`research-hub init` runs a **first-run readiness check** at the end that flags whichever of these is missing — no need to memorize the list.
+| Your AI | How research-hub connects |
+|---|---|
+| **Claude Desktop** (Anthropic's desktop app) | MCP stdio via `claude_desktop_config.json` |
+| **Claude Code** (Anthropic's terminal / VS Code agent) | MCP stdio — already plugged in after install |
+| **Cursor · Continue.dev · Cline · Roo Code · VS Code Copilot** | Same MCP config pattern, each has its own settings entry |
+| **OpenClaw · any other MCP-compatible host** | MCP stdio |
+| **ChatGPT · Claude.ai web · Gemini web · OpenAI Custom GPT** | REST JSON at `/api/v1/*` (bearer-token auth + CORS) |
+| **Codex CLI · Gemini CLI · GPT Code Interpreter · LangChain · AutoGen · CrewAI** | Shell subprocess — every command supports `--json` output |
+| **Your own Python script** | `from research_hub.auto import auto_pipeline` (any function is importable) |
 
 ---
 
-## ⚡ Install + first run (60 seconds total)
+## Install + first run (≈ 60 seconds)
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub init                                          # interactive: persona + Zotero/NLM + readiness check
-research-hub notebooklm login                              # one-time Google sign-in
-research-hub auto "harness engineering for LLM agents"     # done — 50s later you have 8 papers + a brief
+research-hub init                          # interactive: persona + Zotero + readiness check
+research-hub notebooklm login              # one-time Google sign-in
+research-hub auto "topic you care about"   # ~50s later: papers + AI brief land in your vault
 ```
 
-**Want fully automated end-to-end** (search → ingest → NLM brief → cached AI answers)?
+`init` ends with a readiness check that flags anything missing (Obsidian vault, Chrome, Zotero key, LLM CLI). If `claude` / `codex` / `gemini` CLI is on your PATH, add `--with-crystals` to also produce cached AI answers in the same run:
 
 ```bash
-research-hub auto "harness engineering" --with-crystals    # auto-pipes through claude/codex/gemini CLI
+research-hub auto "topic" --with-crystals
 ```
 
-**Not sure what to ask for? Plan first, then act** (v0.50):
+Not sure what to ask for? Plan first:
 
 ```bash
 research-hub plan "I want to learn about harness engineering"
-# Prints: suggested topic, cluster, max_papers (auto-tuned for "thesis"/"learn" intents),
-# warns about existing-cluster collisions, then prints the exact `auto` command to run.
+# Auto-tunes max_papers for "thesis"/"deep dive" intents, detects field
+# (bio/med/cs/…), warns about existing-cluster collisions, prints the
+# exact `auto` command to run next.
 ```
 
-When using Claude Desktop, just say "Claude, research X" and Claude will call `plan_research_workflow` first to confirm the plan with you before kicking off `auto_research_topic`.
+---
 
-If a supported LLM CLI is on your PATH, `--with-crystals` runs the crystal generation step automatically. If not, the prompt is saved to `.research_hub/artifacts/<slug>/crystal-prompt.md` and the Next Steps banner tells you exactly what to paste where.
+## Hook it to your AI host (30 seconds, one-time)
+
+The MCP config is the same shape across hosts. For Claude Desktop / Cursor / Continue.dev / Cline / VS Code Copilot / OpenClaw, add to the host's MCP config file:
+
+```json
+{ "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+```
+
+Restart the host. Then just talk naturally — examples below use Claude but the wording works for any MCP host:
+
+> **You:** "Find me 5 papers on agent-based modeling and put them in a notebook."
+> **AI:** *calls `auto_research_topic(topic="agent-based modeling", max_papers=5)`* → 5 papers ingested + NotebookLM brief URL — ~50 s.
+
+> **You:** "What's the SOTA in my llm-evaluation-harness cluster?"
+> **AI:** *calls `read_crystal("llm-evaluation-harness", "sota-and-open-problems")`* → 180-word pre-written answer with citations. **~1 KB read, 0 abstracts fetched at query time.**
+
+**83 MCP tools** in total — full reference: [`docs/mcp-tools.md`](docs/mcp-tools.md). The big ones:
+
+| Tool | What it replaces |
+|---|---|
+| `auto_research_topic(topic)` | 7-step CLI flow (search → ingest → bundle → upload → generate → download) |
+| `plan_research_workflow(intent)` | Guessing max_papers / field / cluster slug |
+| `ask_cluster_notebooklm(cluster, question)` | Open NotebookLM, paste question, copy answer |
+| `read_crystal(cluster, slot)` | Re-read 20 abstracts to answer the same question again |
+| `web_search(query)` | Hand-curating blog/docs/news links |
+| `cleanup_garbage` + `tidy_vault` | `du -sh .research_hub/bundles/*` + manual `rm -rf` |
+
+Browser-only AIs (ChatGPT, Claude.ai web, Custom GPT) can't use MCP — **use the REST API instead**:
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/plan \
+     -H 'Content-Type: application/json' \
+     -d '{"intent":"research harness engineering"}'
+```
 
 ---
 
@@ -62,7 +97,7 @@ If a supported LLM CLI is on your PATH, `--with-crystals` runs the crystal gener
 
 Three scenes, 1280×760, real captured data:
 
-1. **Talk to Claude Desktop**: "Claude, research harness engineering for me." Claude calls `plan_research_workflow` via MCP, confirms the plan, then fires `auto_research_topic`.
+1. **Talk to your AI host**: "Research harness engineering for me." The host calls `plan_research_workflow` via MCP, confirms the plan, then fires `auto_research_topic`.
 2. **`auto` pipeline runs**: 9 stages (cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals) finish in 187 s. Real output from a Windows zh-TW box.
 3. **Cached query in <1 s**: `ask harness-engineering "SOTA?"` reads a pre-computed crystal. ~1 KB, 0 tokens.
 
@@ -70,56 +105,9 @@ For the live dashboard that the GIF points to — see the 6-tab grid in the next
 
 Build the GIF yourself from your own vault: `python docs/demo/build_demo_gif.py` (pure Python + Pillow, no ffmpeg).
 
-**Two ways to drive it after install:**
-
-| Path | What you do | What runs under the hood |
-|---|---|---|
-| **🤖 Talk to Claude** (recommended) | "Claude, research harness engineering for me" | Claude calls `auto_research_topic(...)` via MCP — one tool call |
-| **💻 One-line CLI** | `research-hub auto "topic"` | Same orchestrator, called directly |
-| **🖱 Click in dashboard** | `research-hub serve --dashboard` → Manage tab | Same actions, button-driven |
-
-All three drive the **same** orchestrator. Pick whichever your hands are on.
-
 ---
 
-## 🤖 Talk to Claude — 30-second setup
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "research-hub": {
-      "command": "research-hub",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-Restart Claude Desktop. Then:
-
-> **You:** "Claude, find me 5 papers on agent-based modeling and put them in a notebook."
-> **Claude:** *calls `auto_research_topic(topic="agent-based modeling", max_papers=5)`* → 5 papers ingested + NotebookLM brief URL — ~50 s.
-
-> **You:** "What's the SOTA in my llm-evaluation-harness cluster?"
-> **Claude:** *calls `read_crystal("llm-evaluation-harness", "sota-and-open-problems")`* → 180-word pre-written answer with citations. **~1 KB read, 0 abstracts fetched at query time.**
-
-**81 MCP tools** in total — full reference: [`docs/mcp-tools.md`](docs/mcp-tools.md). The big ones:
-
-| Tool | What it replaces |
-|---|---|
-| `auto_research_topic(topic)` | 7-step CLI flow (search → ingest → bundle → upload → generate → download) |
-| `cleanup_garbage(everything=True)` | `du -sh .research_hub/bundles/*` + manual `rm -rf` |
-| `tidy_vault()` | `doctor --autofix` + `dedup rebuild` + `bases emit --force` + cleanup preview |
-| `ask_cluster_notebooklm(cluster, question)` | Open NotebookLM tab, paste question, copy answer |
-| `read_crystal(cluster, slot)` | Re-read 20 paper abstracts to answer the same question again |
-| `list_claims(cluster, min_confidence)` | Skim hub overview hoping a claim is in the right paragraph |
-| `add_paper(arxiv_id, cluster)` | Manual Zotero add → manual Obsidian note → manual NotebookLM upload |
-
----
-
-## 📊 At a glance — every feature in one table
+## 📊 Every feature in one table
 
 | Capability | Command (or MCP tool) | Notes |
 |---|---|---|
@@ -148,18 +136,16 @@ Restart Claude Desktop. Then:
 
 ## 🖥 What the dashboard looks like
 
-`research-hub serve --dashboard` opens `http://127.0.0.1:8765/` — six tabs, all driven by the same data your CLI sees.
+`research-hub serve --dashboard` opens `http://127.0.0.1:8765/`. Six tabs in total; the four most important ones shown below at readable scale (hero crops only — full-page renders are in `docs/images/`):
 
 | | |
 |---|---|
-| ![Overview](docs/images/dashboard-overview.png) | ![Library](docs/images/dashboard-library-subtopic.png) |
-| **Overview** — treemap + storage map + recent feed + crystals coverage | **Library** — clusters drilled into sub-topics + per-paper rows |
-| ![Briefings](docs/images/dashboard-crystals.png) | ![Diagnostics](docs/images/dashboard-diagnostics.png) |
-| **Briefings** — NotebookLM brief preview + artifact links | **Diagnostics** — health badges + drift alerts (grouped by kind in v0.48) |
-| ![Manage](docs/images/dashboard-manage-live.png) | ![Writing](docs/images/dashboard-writing.png) |
-| **Manage** — every CLI action as a button (rename / merge / split / NLM upload / ask / polish-markdown / bases emit) | **Writing** — quote capture + draft composer + BibTeX export |
+| ![Overview](docs/images/hero/dashboard-overview.png) | ![Library](docs/images/hero/dashboard-library-subtopic.png) |
+| **Overview** — treemap over clusters + storage map | **Library** — per-cluster drill-down with sub-topics |
+| ![Diagnostics](docs/images/hero/dashboard-diagnostics.png) | ![Manage](docs/images/hero/dashboard-manage-live.png) |
+| **Diagnostics** — health summary + grouped drift alerts (v0.48 density redesign) | **Manage** — every CLI action as a button |
 
-[→ Dashboard walkthrough](docs/dashboard-walkthrough.md) · [→ All 4 persona variants](docs/personas.md)
+Not shown (less unique as first-impression): **Briefings** (NotebookLM brief preview) and **Writing** (quote capture + BibTeX export). Both work the same way — see [→ Dashboard walkthrough](docs/dashboard-walkthrough.md) for the full tour, or [→ All 4 persona variants](docs/personas.md) for analyst/humanities/internal-KM views.
 
 ---
 
