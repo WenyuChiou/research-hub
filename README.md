@@ -4,11 +4,15 @@
 > Zotero + Obsidian + NotebookLM, wired together for AI agents — no API key required.
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
+[![Downloads](https://img.shields.io/pypi/dm/research-hub-pipeline.svg?color=blue)](https://pypi.org/project/research-hub-pipeline/)
+[![GitHub stars](https://img.shields.io/github/stars/WenyuChiou/research-hub?style=social)](https://github.com/WenyuChiou/research-hub/stargazers)
 [![Tests](https://img.shields.io/badge/tests-1541%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![MCP tools](https://img.shields.io/badge/MCP%20tools-81-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI: Linux · macOS · Windows](https://img.shields.io/badge/CI-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-blue)](.github/workflows/ci.yml)
+[![last commit](https://img.shields.io/github/last-commit/WenyuChiou/research-hub.svg?color=orange)](https://github.com/WenyuChiou/research-hub/commits/master)
+[![GitHub issues](https://img.shields.io/github/issues/WenyuChiou/research-hub.svg)](https://github.com/WenyuChiou/research-hub/issues)
 
 繁體中文 → [README.zh-TW.md](README.zh-TW.md)
 
@@ -45,6 +49,55 @@ research-hub auto "harness engineering" --with-crystals    # auto-pipes through 
 ```
 
 If a supported LLM CLI is on your PATH, `--with-crystals` runs the crystal generation step automatically. If not, the prompt is saved to `.research_hub/artifacts/<slug>/crystal-prompt.md` and the Next Steps banner tells you exactly what to paste where.
+
+---
+
+## 🎬 30-second demo (real terminal output, not a mock-up)
+
+This is the actual output from running `research-hub auto "LLM agents agent-based modeling social simulation" --with-crystals` on the maintainer's Windows zh-TW vault during the v0.49.5 verification (full record in [`CHANGELOG.md`](CHANGELOG.md) v0.49.4):
+
+```text
+$ research-hub auto "LLM agents agent-based modeling social simulation" --with-crystals
+[OK] cluster        created: llm-agents-agent-based-modeling-social
+[OK] zotero.bind    created collection 9FHZCK4N for llm-agents-agent-based-modeling-social
+[OK] search         8 results
+[OK] ingest         8 papers in raw/llm-agents-agent-based-modeling-social/
+[OK] nlm.bundle     7 PDFs (24 MB)
+[OK] nlm.upload     8 succeeded
+[OK] nlm.generate   brief generation triggered
+[OK] nlm.download   1893 chars saved
+[OK] crystals       10 crystals via claude
+
+============================================================
+Done in 187s. Cluster: llm-agents-agent-based-modeling-social
+============================================================
+  NotebookLM: https://notebooklm.google.com/notebook/99866b50-3b71-4d84-9e19-7682bbc85e2d
+  Brief:      .research_hub/artifacts/.../brief-20260420T020640Z.txt
+
+Next steps (copy-paste any of these):
+
+  # Read the cached SOTA answer (~1 KB, no LLM call)
+  research-hub crystal read --cluster llm-agents-agent-based-modeling-social \
+                            --slug sota-and-open-problems
+
+  # Ad-hoc Q&A against the uploaded notebook
+  research-hub ask llm-agents-agent-based-modeling-social "what's the main risk?"
+
+  # Or talk to Claude Desktop with the research-hub MCP installed:
+  > "Claude, what's in my llm-agents-agent-based-modeling-social cluster?"
+```
+
+What that single command produced:
+
+| Artifact | Where | Size |
+|---|---|---|
+| 8 paper PDFs | Zotero collection `9FHZCK4N` (auto-created) | 24 MB |
+| 8 Obsidian notes with frontmatter | `raw/llm-agents-agent-based-modeling-social/` | 8 × ~3 KB |
+| NotebookLM notebook with all 8 sources | google.com/notebook/99866b50-... | — |
+| AI brief (downloaded) | `.research_hub/artifacts/.../brief-*.txt` | 1.9 KB |
+| 10 cached canonical Q→A crystals | `hub/llm-agents-agent-based-modeling-social/crystals/` | 10 × ~4 KB |
+
+After this 187 s run, every subsequent question against this cluster reads a cached crystal in under a second — no LLM call, no API quota burn.
 
 **Two ways to drive it after install:**
 
@@ -154,6 +207,29 @@ CLI, dashboard buttons, and MCP tools all call the same Python orchestrator. The
 ### 3. Provider-agnostic by design
 
 **No OpenAI / Anthropic API key required.** All AI generation uses an `emit` / `apply` pattern: `emit` writes a self-contained prompt to stdout, you paste into your AI of choice (Claude, GPT, Gemini, local model), `apply` ingests the JSON response. NotebookLM browser automation uses your own logged-in Chrome — no quota, no per-token billing.
+
+---
+
+## ⚖️ How it compares to the alternatives
+
+Honest, side-by-side. research-hub doesn't replace any of these — it stitches them together so an AI agent can drive them all.
+
+| What you can do | Zotero alone | NotebookLM alone | Generic RAG (LangChain etc.) | Obsidian-Zotero plugin | **research-hub** |
+|---|---|---|---|---|---|
+| Search arXiv + Semantic Scholar in one command | ❌ | ❌ | DIY | ❌ | ✅ `auto "topic"` |
+| One-shot ingest into Zotero **and** Obsidian **and** NotebookLM | ❌ | ❌ | DIY | partial (Z↔O only) | ✅ `auto` |
+| AI brief from your collection | ❌ | ✅ (manual) | DIY | ❌ | ✅ auto-generated |
+| Cached canonical Q→A so the AI doesn't re-RAG every query | ❌ | ❌ | ❌ (RAG re-fetches) | ❌ | ✅ crystals (~1 KB/answer) |
+| Structured memory layer (entities + typed claims + methods) | ❌ | ❌ | unstructured chunks | ❌ | ✅ `list_entities/claims/methods` |
+| Direct AI-agent control via MCP | ❌ | ❌ | DIY MCP server | ❌ | ✅ 81 MCP tools |
+| Live HTML dashboard with action buttons | ❌ | ❌ | ❌ | ❌ | ✅ `serve --dashboard` |
+| Auto-cluster papers + detect drift + auto-rebind orphans | ❌ | ❌ | ❌ | ❌ | ✅ `clusters rebind` |
+| Per-cluster Obsidian Bases dashboard | ❌ | ❌ | ❌ | ❌ | ✅ `bases emit` |
+| **No API key required for AI** | n/a | ✅ | ❌ | n/a | ✅ |
+| **Local-first vault you own** | ✅ (cloud-sync) | ❌ (Google) | depends | ✅ | ✅ |
+| Cost per 1000 queries | n/a | quota-limited | ~$5–50 (token billing) | n/a | **$0** (cached crystals) |
+
+The honest takeaway: research-hub is **only worth it if you already use 2-of-3** Zotero / Obsidian / NotebookLM and want to AI-agentize the workflow. If you only use one, the simpler tools alone are fine.
 
 ---
 
