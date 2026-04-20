@@ -4,7 +4,7 @@
 > Zotero + Obsidian + NotebookLM 三合一,專為 AI agent 打造 — **不需要 OpenAI/Anthropic API key**。
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1537%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1541%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![MCP tools](https://img.shields.io/badge/MCP%20tools-81-blueviolet.svg)](docs/mcp-tools.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -212,9 +212,10 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 
 ## 🛠 狀態
 
-- **最新**: v0.49.0(2026-04-19)— auto Next Steps banner + `--with-crystals` LLM-CLI 橋接 + 首次執行就緒檢查,見 [`CHANGELOG.md`](CHANGELOG.md)
-- **測試**: fast suite 1537 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
+- **最新**: v0.49.5(2026-04-20)— 根除了 NotebookLM 在 CJK 介面下一直炸的「Generation button not found」問題(28 個 selector 亂碼修好),v0.49.0–v0.49.5 累計修了 12 個實際使用才會踩到的 bug。見 [`CHANGELOG.md`](CHANGELOG.md)。
+- **測試**: fast suite 1541 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
 - **MCP tools**: 81 個(v0.47 把 auto / cleanup / tidy 加進 MCP;v0.49 把 `auto_research_topic` 擴充 `do_crystals` / `llm_cli`)
+- **End-to-end 實測通過**: v0.49.5 開始,完整 lazy-mode 流程 — `auto "topic" --with-crystals` → 搜尋 → 收論文 → NotebookLM brief → 預先運算 AI 答案 — 在 Windows zh-TW 機器配真實 `claude` CLI 上實測完整跑完。詳見 [`CHANGELOG.md`](CHANGELOG.md) v0.49.4 的 per-stage 結果表。
 - **依賴**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs`(全部純 Python)
 - **可選 extras**: `[playwright]` 給 NotebookLM、`[import]` 給本機檔案匯入、`[secrets]` 給 OS keyring
 
@@ -224,7 +225,7 @@ Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
 pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1537 passing
+python -m pytest -q                     # 1541 passing
 ```
 
 貢獻: [CONTRIBUTING.md](CONTRIBUTING.md)。安全性: [SECURITY.md](.github/SECURITY.md)。
