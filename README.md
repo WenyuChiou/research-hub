@@ -62,52 +62,19 @@ If a supported LLM CLI is on your PATH, `--with-crystals` runs the crystal gener
 
 ---
 
-## 🎬 30-second demo (real terminal output, not a mock-up)
+## 🎬 30-second demo
 
-This is the actual output from running `research-hub auto "LLM agents agent-based modeling social simulation" --with-crystals` on the maintainer's Windows zh-TW vault during the v0.49.5 verification (full record in [`CHANGELOG.md`](CHANGELOG.md) v0.49.4):
+![lazy-mode demo: plan, ask, websearch in real time](docs/images/lazy-mode-demo.gif)
 
-```text
-$ research-hub auto "LLM agents agent-based modeling social simulation" --with-crystals
-[OK] cluster        created: llm-agents-agent-based-modeling-social
-[OK] zotero.bind    created collection 9FHZCK4N for llm-agents-agent-based-modeling-social
-[OK] search         8 results
-[OK] ingest         8 papers in raw/llm-agents-agent-based-modeling-social/
-[OK] nlm.bundle     7 PDFs (24 MB)
-[OK] nlm.upload     8 succeeded
-[OK] nlm.generate   brief generation triggered
-[OK] nlm.download   1893 chars saved
-[OK] crystals       10 crystals via claude
+The three commands above are **real captured terminal output** from the maintainer's Windows zh-TW vault:
 
-============================================================
-Done in 187s. Cluster: llm-agents-agent-based-modeling-social
-============================================================
-  NotebookLM: https://notebooklm.google.com/notebook/99866b50-3b71-4d84-9e19-7682bbc85e2d
-  Brief:      .research_hub/artifacts/.../brief-20260420T020640Z.txt
+1. **`plan`** — turn freeform intent into a confirmed workflow (~ms heuristics, no LLM).
+2. **`ask`** — pre-computed crystal answer in <1 s (zero LLM tokens after the one-time crystal generation).
+3. **`websearch`** — generic web search via DDG fallback; no API key required.
 
-Next steps (copy-paste any of these):
+The first time you run `auto "topic" --with-crystals`, the full pipeline takes ~3 minutes and burns ~2,400 tokens (free with claude/codex/gemini CLI subscriptions). After that, every subsequent question against the cluster is a sub-second cached read at zero token cost.
 
-  # Read the cached SOTA answer (~1 KB, no LLM call)
-  research-hub crystal read --cluster llm-agents-agent-based-modeling-social \
-                            --slug sota-and-open-problems
-
-  # Ad-hoc Q&A against the uploaded notebook
-  research-hub ask llm-agents-agent-based-modeling-social "what's the main risk?"
-
-  # Or talk to Claude Desktop with the research-hub MCP installed:
-  > "Claude, what's in my llm-agents-agent-based-modeling-social cluster?"
-```
-
-What that single command produced:
-
-| Artifact | Where | Size |
-|---|---|---|
-| 8 paper PDFs | Zotero collection `9FHZCK4N` (auto-created) | 24 MB |
-| 8 Obsidian notes with frontmatter | `raw/llm-agents-agent-based-modeling-social/` | 8 × ~3 KB |
-| NotebookLM notebook with all 8 sources | google.com/notebook/99866b50-... | — |
-| AI brief (downloaded) | `.research_hub/artifacts/.../brief-*.txt` | 1.9 KB |
-| 10 cached canonical Q→A crystals | `hub/llm-agents-agent-based-modeling-social/crystals/` | 10 × ~4 KB |
-
-After this 187 s run, every subsequent question against this cluster reads a cached crystal in under a second — no LLM call, no API quota burn.
+How the GIF was made: see `docs/demo/build_demo_gif.py` — pure Python + PIL, no ffmpeg / asciinema. Re-run after vault updates to refresh.
 
 **Two ways to drive it after install:**
 

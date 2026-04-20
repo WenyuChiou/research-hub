@@ -62,52 +62,19 @@ research-hub plan "我想學 harness engineering"
 
 ---
 
-## 🎬 30 秒實測(真實 terminal 輸出,不是 mock-up)
+## 🎬 30 秒實測(真實終端錄影 GIF)
 
-下面是維護者在 Windows zh-TW 機器上跑 v0.49.5 驗證時,真的執行 `research-hub auto "LLM agents agent-based modeling social simulation" --with-crystals` 的輸出([`CHANGELOG.md`](CHANGELOG.md) v0.49.4 有完整紀錄):
+![lazy-mode demo](docs/images/lazy-mode-demo.gif)
 
-```text
-$ research-hub auto "LLM agents agent-based modeling social simulation" --with-crystals
-[OK] cluster        created: llm-agents-agent-based-modeling-social
-[OK] zotero.bind    created collection 9FHZCK4N for llm-agents-agent-based-modeling-social
-[OK] search         8 results
-[OK] ingest         8 papers in raw/llm-agents-agent-based-modeling-social/
-[OK] nlm.bundle     7 PDFs (24 MB)
-[OK] nlm.upload     8 succeeded
-[OK] nlm.generate   brief generation triggered
-[OK] nlm.download   1893 chars saved
-[OK] crystals       10 crystals via claude
+GIF 裡 3 個指令都是維護者機器上**真實跑出來的輸出**：
 
-============================================================
-Done in 187s. Cluster: llm-agents-agent-based-modeling-social
-============================================================
-  NotebookLM: https://notebooklm.google.com/notebook/99866b50-3b71-4d84-9e19-7682bbc85e2d
-  Brief:      .research_hub/artifacts/.../brief-20260420T020640Z.txt
+1. **`plan`** — 把意圖整理成可執行 plan(毫秒級啟發式,不打 LLM)
+2. **`ask`** — 從預先運算的 crystal 拿答案,<1 秒(crystal 產一次後永遠 0 token)
+3. **`websearch`** — 用 DDG fallback 做通用網路搜尋,不用 API key
 
-Next steps (copy-paste any of these):
+第一次跑 `auto "topic" --with-crystals` 大約 3 分鐘 + 約 2,400 tokens(用 claude/codex/gemini 訂閱 CLI = $0)。之後對這 cluster 的查詢都是 <1 秒 cached read,**0 token**。
 
-  # 讀已快取的 SOTA 答案(~1 KB,不會打 LLM)
-  research-hub crystal read --cluster llm-agents-agent-based-modeling-social \
-                            --slug sota-and-open-problems
-
-  # 對 NotebookLM 上傳的內容做臨時 Q&A
-  research-hub ask llm-agents-agent-based-modeling-social "what's the main risk?"
-
-  # 或直接跟裝了 research-hub MCP 的 Claude Desktop 講話:
-  > "Claude, what's in my llm-agents-agent-based-modeling-social cluster?"
-```
-
-這一個指令幫你產出的東西:
-
-| 產出物 | 位置 | 大小 |
-|---|---|---|
-| 8 篇 PDF | Zotero collection `9FHZCK4N`(自動建立) | 24 MB |
-| 8 個 Obsidian 筆記(含 frontmatter) | `raw/llm-agents-agent-based-modeling-social/` | 8 × ~3 KB |
-| NotebookLM notebook(含 8 個 source) | google.com/notebook/99866b50-... | — |
-| AI brief(下載到本機) | `.research_hub/artifacts/.../brief-*.txt` | 1.9 KB |
-| 10 個預先運算好的 Q→A crystal | `hub/llm-agents-agent-based-modeling-social/crystals/` | 10 × ~4 KB |
-
-跑完這 187 秒之後,**之後每次對這 cluster 的問題都讀 cached crystal,不到 1 秒回答 — 不打 LLM、不消耗 API quota**。
+GIF 怎麼產的: 見 `docs/demo/build_demo_gif.py` — 純 Python + PIL,不用 ffmpeg/asciinema。vault 有更新就重跑 refresh。
 
 **裝完之後三條路任你選:**
 
