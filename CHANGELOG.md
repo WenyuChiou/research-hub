@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.50.1 (2026-04-20)
+
+**Hotfix: codex / gemini CLI invocation actually works on Windows.** v0.50.0 only verified `claude` CLI end-to-end; codex + gemini failed silently with `FileNotFoundError`.
+
+### Fixed
+
+`_invoke_llm_cli("codex"|"gemini")` failed on Windows because subprocess looked for `codex` / `gemini` literally without checking PATHEXT. The npm-installed shims are `codex.cmd` and `gemini.cmd`. Resolved by switching to `shutil.which(cli_name)` to get the full executable path with extension.
+
+Also fixed: `codex` invocation passed the prompt via stdin, but `codex exec` reads it as a positional argument. Restructured the per-CLI dispatch:
+
+| CLI | Invocation | Prompt delivery |
+|---|---|---|
+| `claude` | `claude -p` | stdin |
+| `codex` | `codex exec --full-auto <prompt>` | positional arg |
+| `gemini` | `gemini --approval-mode yolo` | stdin |
+
+### Verified
+
+All three real CLIs round-tripped a tiny prompt and returned `{"ok": true}` on the maintainer's Windows zh-TW box. So `auto --with-crystals --llm-cli {claude,codex,gemini}` is now a real choice across all three providers.
+
+### Token cost (for those wondering "won't this burn my API budget?")
+
+Measured on a real 8-paper cluster:
+
+| | Per-cluster cost |
+|---|---|
+| Input prompt | 4,704 chars ≈ **1,176 tokens** |
+| Output (10 crystals) | ~5,000 chars ≈ **1,250 tokens** |
+| Total roundtrip | **~2,400 tokens** |
+| Claude Pro CLI subscription | **$0** (uses your existing seat) |
+| Codex CLI subscription | **$0** (uses ChatGPT Plus) |
+| Gemini CLI free tier | **$0** (free quota) |
+| Anthropic API direct (Opus 4.6) | ~$0.11 per cluster |
+
+Plus the whole rest of research-hub burns **zero tokens**: `auto` (without `--with-crystals`), `tidy`, `cleanup`, `ask`, `read_crystal`, `list_claims/entities/methods`, `plan_research_workflow`, `serve --dashboard` — all browser automation + cached lookups + heuristics. The crystals you generate ONCE per cluster are queryable from then on at zero token cost.
+
 ## v0.50.0 (2026-04-20)
 
 **Intent planner: AI agents (and humans) ask before acting.** New `plan` flow turns a freeform user intent into a confirmed, executable workflow before `auto` fires.

@@ -43,24 +43,36 @@ def detect_llm_cli() -> Optional[str]:
 
 
 def _invoke_llm_cli(cli_name: str, prompt: str, timeout_sec: float = 180.0) -> str:
-    """Pipe `prompt` through the detected LLM CLI's stdin, capture stdout.
+    """Pipe `prompt` through the detected LLM CLI, capture stdout.
 
     Each CLI has a slightly different non-interactive invocation:
-    - claude:  `claude -p` (prints once, exits)
-    - codex:   `codex exec --full-auto -m gpt-5.4` (reads prompt from stdin)
-    - gemini:  `gemini --approval-mode yolo` (reads prompt from stdin)
+    - claude:  `claude -p` (prompt via stdin)
+    - codex:   `codex exec --full-auto <prompt>` (prompt as positional arg)
+    - gemini:  `gemini --approval-mode yolo` (prompt via stdin)
+
+    v0.50.1: resolve the full executable path via shutil.which() so the
+    Windows npm `.cmd` shims for codex/gemini are found correctly.
+    Without this, subprocess.run("codex", ...) hits FileNotFoundError on
+    Windows because Python doesn't auto-append PATHEXT.
     """
+    resolved = shutil.which(cli_name)
+    if not resolved:
+        raise RuntimeError(f"{cli_name} not on PATH")
     if cli_name == "claude":
-        cmd = ["claude", "-p"]
+        cmd = [resolved, "-p"]
+        stdin_input = prompt
     elif cli_name == "codex":
-        cmd = ["codex", "exec", "--full-auto", "-m", "gpt-5.4"]
+        # codex takes the prompt as a positional argument, not stdin
+        cmd = [resolved, "exec", "--full-auto", prompt]
+        stdin_input = None
     elif cli_name == "gemini":
-        cmd = ["gemini", "--approval-mode", "yolo"]
+        cmd = [resolved, "--approval-mode", "yolo"]
+        stdin_input = prompt
     else:
         raise ValueError(f"unsupported LLM CLI: {cli_name}")
     proc = subprocess.run(
         cmd,
-        input=prompt,
+        input=stdin_input,
         capture_output=True,
         text=True,
         encoding="utf-8",
