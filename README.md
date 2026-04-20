@@ -56,16 +56,17 @@ If a supported LLM CLI is on your PATH, `--with-crystals` runs the crystal gener
 
 ---
 
-## 🎬 30-second demo — the whole user journey
+## 🎬 30-second demo — the CLI / chat flow
 
-![demo: ask Claude → auto pipeline runs → live dashboard → cached query](docs/images/lazy-mode-demo.gif)
+![demo: ask Claude → auto pipeline runs → cached query](docs/images/lazy-mode-demo.gif)
 
-Four scenes, 1280×760, real captured data:
+Three scenes, 1280×760, real captured data:
 
-1. **Talk to Claude Desktop**: "Claude, research harness engineering for me."  Claude calls `plan_research_workflow` via MCP, confirms the plan, then fires `auto_research_topic`.
+1. **Talk to Claude Desktop**: "Claude, research harness engineering for me." Claude calls `plan_research_workflow` via MCP, confirms the plan, then fires `auto_research_topic`.
 2. **`auto` pipeline runs**: 9 stages (cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals) finish in 187 s. Real output from a Windows zh-TW box.
-3. **Live dashboard opens** at `http://127.0.0.1:8765/` — 12 clusters, every action is a button, same data the MCP sees.
-4. **Cached query in <1 s**: `ask harness-engineering "SOTA?"` reads a pre-computed crystal. ~1 KB, 0 tokens.
+3. **Cached query in <1 s**: `ask harness-engineering "SOTA?"` reads a pre-computed crystal. ~1 KB, 0 tokens.
+
+For the live dashboard that the GIF points to — see the 6-tab grid in the next section (the dashboard is dense enough that shrinking it to fit the GIF makes the text unreadable, so it's shown at full resolution below instead).
 
 Build the GIF yourself from your own vault: `python docs/demo/build_demo_gif.py` (pure Python + Pillow, no ffmpeg).
 

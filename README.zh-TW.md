@@ -56,16 +56,17 @@ research-hub plan "我想學 harness engineering"
 
 ---
 
-## 🎬 30 秒實測 — 完整 user journey
+## 🎬 30 秒實測 — CLI / chat 流程
 
-![demo: 問 Claude → auto pipeline → 儀表板 → cached query](docs/images/lazy-mode-demo.gif)
+![demo: 問 Claude → auto pipeline → cached query](docs/images/lazy-mode-demo.gif)
 
-4 個場景,1280×760,真實資料:
+3 個場景,1280×760,真實資料:
 
 1. **跟 Claude Desktop 對話**: 「Claude,幫我研究 harness engineering」。Claude 透過 MCP 呼叫 `plan_research_workflow` 確認計畫,再啟動 `auto_research_topic`。
 2. **`auto` pipeline 跑完**: 9 個階段(cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals)187 秒完成。Windows zh-TW 機器上的真實輸出。
-3. **儀表板打開** `http://127.0.0.1:8765/` — 12 個 cluster,每個動作都是按鈕,跟 MCP 看到同一份資料。
-4. **Cached query <1 秒**: `ask harness-engineering "SOTA?"` 讀預先算好的 crystal,~1 KB、0 token。
+3. **Cached query <1 秒**: `ask harness-engineering "SOTA?"` 讀預先算好的 crystal,~1 KB、0 token。
+
+儀表板因為畫面密度高,縮進 GIF 會看不清楚,所以直接在下方用完整解析度的 6-tab 截圖網格展示(不再塞進 GIF 動畫)。
 
 自己用你的 vault 跑一個: `python docs/demo/build_demo_gif.py`(純 Python + Pillow,不用 ffmpeg)。
 

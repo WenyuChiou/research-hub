@@ -266,23 +266,19 @@ def build_frames():
             for _ in range(hold):
                 frames.append(render_terminal(term_lines))
 
-    # Type the serve command
-    serve_cmd = "$ research-hub serve --dashboard"
-    for i in range(1, len(serve_cmd) + 1, 2):
-        frames.append(render_terminal(term_lines, typed_partial=serve_cmd[:i]))
-    term_lines.append(serve_cmd)
-    term_lines.append("  Serving at http://127.0.0.1:8765")
-    for _ in range(8):
+    # v2 (v0.53): dropped the embedded dashboard screenshot scene -- the
+    # dashboard PNG is 2880x10810, which shrinks to illegible text at
+    # 1280x724. Per-user feedback, the dashboard is better shown as a
+    # separate static 6-tab grid in README (below the GIF) than crammed
+    # into a single GIF frame. The GIF now ends with a pointer to it.
+    term_lines.append("")
+    term_lines.append("  # Live dashboard (screenshot grid below in the README):")
+    term_lines.append("$ research-hub serve --dashboard    # -> http://127.0.0.1:8765")
+    term_lines.append("")
+    for _ in range(14):
         frames.append(render_terminal(term_lines))
 
-    # --- Scene 3: dashboard screenshot ---
-    dash_frame = render_dashboard_scene(
-        overlay_text="Live dashboard  ·  12 clusters  ·  every action is a button  ·  talks to MCP in real time"
-    )
-    for _ in range(45):
-        frames.append(dash_frame)
-
-    # --- Scene 4: cached ask returns instantly ---
+    # --- Scene 3: cached ask returns instantly ---
     term_lines_q: list[str] = [
         "",
         "  # Any subsequent question reads a cached crystal in <1s:",
