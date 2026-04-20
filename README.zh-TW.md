@@ -198,7 +198,7 @@ Next steps (copy-paste any of these):
 
 對每個 cluster,你預先讓 AI(任何 LLM 都行)回答約 10 個標準問題,存成 **crystal**。之後 AI agent 再問「SOTA 是什麼?」時,讀的是預先寫好的段落(~1 KB),不是 20 篇 abstract(~30 KB)— **30× 壓縮**,品質不會在查詢時降級。底層的 **memory layer** 存放 crystal 引用的結構化內容:具型別的 entity、有信心度標記的 claim、method taxonomy。AI agent 用 `list_entities`、`list_claims(min_confidence="high")`、`list_methods` 查詢 — 結構化資料的結構化查詢,沒有 RAG。
 
-範例 cluster: [`hub/llm-evaluation-harness/`](hub/llm-evaluation-harness/) 有 10 crystals + 14 entities + 12 claims + 7 methods。[→ 為什麼這不是 RAG](docs/anti-rag.md)
+維護者 vault 裡的範例 cluster: `hub/llm-evaluation-harness/` 有 10 crystals + 14 entities + 12 claims + 7 methods,全部產生過一次。你跑 `research-hub auto "harness engineering" --with-crystals` 之後,你的 vault 也會長這樣。[→ 為什麼這不是 RAG](docs/anti-rag.md)
 
 ### 2. 三個操作介面、一個 orchestrator
 

@@ -198,7 +198,7 @@ Every RAG system still assembles context at query time. research-hub's answer: *
 
 For each cluster you generate ~10 canonical Q→A **crystals** once with any LLM. Later queries read a pre-written paragraph (~1 KB), not 20 paper abstracts (~30 KB) — **30× compression** with quality that doesn't degrade at query time. Underneath, a structured **memory layer** holds the entities, typed claims with confidence, and method taxonomies that crystals reference. AI agents query via `list_entities`, `list_claims(min_confidence="high")`, `list_methods` — no RAG over prose, structured lookup over structured data.
 
-Example cluster: [`hub/llm-evaluation-harness/`](hub/llm-evaluation-harness/) has 10 crystals + 14 entities + 12 claims + 7 methods. [→ Why this is not RAG](docs/anti-rag.md)
+Example cluster from the maintainer's vault: `hub/llm-evaluation-harness/` has 10 crystals + 14 entities + 12 claims + 7 methods, all generated once. After `research-hub auto "harness engineering" --with-crystals` your own vault will look the same. [→ Why this is not RAG](docs/anti-rag.md)
 
 ### 2. Three control surfaces, one orchestrator
 
