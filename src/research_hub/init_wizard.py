@@ -21,11 +21,11 @@ def _check_first_run_readiness(vault: Path, *, persona: str, has_zotero: bool) -
     """
     rows: list[tuple[str, str, str]] = []
 
-    # Obsidian vault detection (informational — research-hub still works without it)
+    # Obsidian vault detection (informational -- research-hub still works without it)
     if (vault / ".obsidian").exists():
         rows.append(("obsidian", "OK", f"vault detected at {vault}"))
     else:
-        rows.append(("obsidian", "INFO", f"no .obsidian/ in {vault} — open Obsidian once to render"))
+        rows.append(("obsidian", "INFO", f"no .obsidian/ in {vault} -- open Obsidian once to render"))
 
     # patchright + Chrome probe (needed for NotebookLM)
     try:
@@ -39,7 +39,7 @@ def _check_first_run_readiness(vault: Path, *, persona: str, has_zotero: bool) -
         except Exception as exc:
             rows.append(("chrome", "WARN", f"patchright cannot launch Chrome: {str(exc)[:120]}"))
     except ImportError:
-        rows.append(("chrome", "WARN", "patchright not installed — `pip install research-hub-pipeline[playwright]`"))
+        rows.append(("chrome", "WARN", "patchright not installed -- `pip install research-hub-pipeline[playwright]`"))
 
     # Zotero (skip for personas that don't use it)
     if has_zotero:
@@ -47,25 +47,27 @@ def _check_first_run_readiness(vault: Path, *, persona: str, has_zotero: bool) -
     elif persona in {"analyst", "internal"}:
         rows.append(("zotero", "INFO", f"persona={persona} does not use Zotero"))
     else:
-        rows.append(("zotero", "WARN", "no Zotero key — run `research-hub init` again to add"))
+        rows.append(("zotero", "WARN", "no Zotero key -- run `research-hub init` again to add"))
 
-    # LLM CLI for --with-crystals (informational — auto still works without)
+    # LLM CLI for --with-crystals (informational -- auto still works without)
     for cli in ("claude", "codex", "gemini"):
         if shutil.which(cli):
-            rows.append(("llm-cli", "OK", f"`{cli}` on PATH — `auto --with-crystals` will work"))
+            rows.append(("llm-cli", "OK", f"`{cli}` on PATH -- `auto --with-crystals` will work"))
             break
     else:
-        rows.append(("llm-cli", "INFO", "no claude/codex/gemini CLI on PATH — crystals stay manual emit/apply"))
+        rows.append(("llm-cli", "INFO", "no claude/codex/gemini CLI on PATH -- crystals stay manual emit/apply"))
 
     return rows
 
 
 def _print_readiness(rows: list[tuple[str, str, str]]) -> None:
+    # ASCII-only markers so the output survives cp950 / cp1252 stdout encoding
+    # on Windows (UnicodeEncodeError on emoji characters).
     print()
-    print("  ── First-run readiness check ─────────────────────────────")
+    print("  -- First-run readiness check " + "-" * 30)
     for subsystem, status, detail in rows:
-        marker = {"OK": "✅", "INFO": "ℹ️ ", "WARN": "⚠️ "}.get(status, "  ")
-        print(f"  {marker} {subsystem:<10} {status:<5} {detail}")
+        marker = {"OK": "[OK]  ", "INFO": "[INFO]", "WARN": "[WARN]"}.get(status, "[ ?? ]")
+        print(f"  {marker}  {subsystem:<10} {detail}")
     print()
 
 

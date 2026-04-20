@@ -405,7 +405,7 @@ def _step_log(
     result = AutoStepResult(name=name, ok=ok, duration_sec=duration_sec, detail=detail)
     report.steps.append(result)
     if print_progress:
-        symbol = "✅" if ok else "❌"
+        symbol = "[OK]" if ok else "[FAIL]"
         print(f"{symbol} {name:<14} {detail}")
 
 

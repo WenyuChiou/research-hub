@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.49.1 (2026-04-19)
+
+**Hotfix: cp950 console crash on Windows zh-TW.** Caught by real end-to-end testing of the v0.49.0 release.
+
+`research-hub init`'s First-run readiness check used emoji markers (`ℹ️`, `✅`, `⚠️`) and em-dashes that crashed on Windows machines with the default cp950 codepage (Traditional Chinese locale):
+
+```
+UnicodeEncodeError: 'cp950' codec can't encode character '\u2139'
+```
+
+Same issue affected `research-hub auto`'s `_step_log` which used `✅` / `❌`.
+
+Fixed by switching to ASCII-only markers: `[OK]`, `[INFO]`, `[WARN]`, `[FAIL]`, and replacing all em-dashes with `--`. Locked down with two regression tests that explicitly call `.encode("cp950")` on the captured output.
+
+This bug shipped to PyPI in v0.49.0; v0.49.1 fixes it. Anyone on Windows zh-TW (or any non-UTF-8 default codepage) should upgrade.
+
+### Added
+
+- 2 regression tests in `tests/test_v049_auto_polish.py` that fail if any future change reintroduces non-cp950 characters into `_print_readiness` or `_step_log` output.
+
+### Stats
+
+- Tests: 1537 → **1539** (+2 cp950-safety regression tests)
+
 ## v0.49.0 (2026-04-19)
 
 **`auto` becomes truly end-to-end + first-run readiness check.** Closes the v0.48-era gap where new users hit invisible prerequisite walls (Chrome missing, NotebookLM not enabled, Zotero key absent) and where `auto` left users stranded after the brief without telling them what to do next.

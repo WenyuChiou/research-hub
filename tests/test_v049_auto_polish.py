@@ -196,6 +196,48 @@ def test_auto_pipeline_crystal_step_invokes_detected_cli(monkeypatch, tmp_path):
     assert applied["parsed"]["crystals"][0]["slug"] == "what-is-this-field"
 
 
+def test_readiness_output_is_cp950_safe():
+    """v0.49.1 regression: _print_readiness must not emit chars that crash on Windows cp950.
+
+    The original v0.49.0 release used emoji markers (ℹ️, ✅, ⚠️) and em-dashes,
+    which raise UnicodeEncodeError on the default cp950 console encoding used
+    on Windows zh-TW machines. Lock this down with an ASCII-only assertion.
+    """
+    from research_hub.init_wizard import _print_readiness
+    import io
+    rows = [
+        ("obsidian", "OK", "vault detected at C:/foo -- ready"),
+        ("chrome", "WARN", "patchright missing -- install [playwright]"),
+        ("zotero", "INFO", "persona=analyst does not use Zotero"),
+        ("llm-cli", "OK", "`claude` on PATH -- `auto --with-crystals` will work"),
+    ]
+    buf = io.StringIO()
+    import contextlib
+    with contextlib.redirect_stdout(buf):
+        _print_readiness(rows)
+    out = buf.getvalue()
+    # Must encode under cp950 without raising
+    out.encode("cp950")
+    assert "First-run readiness check" in out
+    assert "[OK]" in out
+    assert "[WARN]" in out
+
+
+def test_auto_step_symbols_are_cp950_safe():
+    """v0.49.1 regression: _step_log must not emit emoji that crash cp950 stdout."""
+    from research_hub.auto import _step_log, AutoReport
+    import io, contextlib
+    report = AutoReport(cluster_slug="x", cluster_created=False)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _step_log(report, "search", True, 1.5, "5 results", True)
+        _step_log(report, "ingest", False, 2.5, "boom", True)
+    out = buf.getvalue()
+    out.encode("cp950")
+    assert "[OK]" in out
+    assert "[FAIL]" in out
+
+
 def test_init_wizard_readiness_check_includes_obsidian_chrome_zotero(monkeypatch, tmp_path):
     """The first-run readiness probe should report on the four prerequisites."""
     from research_hub import init_wizard
