@@ -3,16 +3,14 @@
 > **One sentence in. Cluster + papers + AI brief out. ~50 seconds.**
 > Zotero + Obsidian + NotebookLM, wired together for AI agents — no API key required.
 
-![research-hub dashboard](docs/images/hero/dashboard-overview.png)
+![research-hub dashboard demo — real screen recording](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Tests](https://img.shields.io/badge/tests-1661%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-繁體中文 → [README.zh-TW.md](README.zh-TW.md)
-
-📺 **[Watch the 30-second dashboard demo →](docs/demo/dashboard-walkthrough.mp4)**
+繁體中文 → [README.zh-TW.md](README.zh-TW.md) · [Watch the full-res mp4 →](docs/demo/dashboard-walkthrough.mp4)
 
 ---
 

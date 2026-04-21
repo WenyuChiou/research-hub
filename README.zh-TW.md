@@ -3,16 +3,14 @@
 > **打一句話進去。Cluster + 論文 + AI 簡報出來。約 50 秒。**
 > Zotero + Obsidian + NotebookLM 三合一,專為 AI agent 打造 — **不需要 OpenAI/Anthropic API key**。
 
-![research-hub dashboard](docs/images/hero/dashboard-overview.png)
+![research-hub dashboard 實測 GIF](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Tests](https://img.shields.io/badge/tests-1661%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-English → [README.md](README.md)
-
-📺 **[看 30 秒 dashboard 實測影片 →](docs/demo/dashboard-walkthrough.mp4)**
+English → [README.md](README.md) · [看完整解析度 mp4 →](docs/demo/dashboard-walkthrough.mp4)
 
 ---
 
