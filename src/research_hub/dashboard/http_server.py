@@ -136,6 +136,62 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._write_json(500, {"error": f"could not serve artifact: {exc}"})
 
+    def _handle_artifact_delete(self) -> None:
+        """v0.57: delete a single artifact file from inside the vault.
+
+        Same path-traversal protection as `_serve_artifact`. CSRF + origin
+        checks performed inline since this is a mutating operation.
+        """
+        from urllib.parse import parse_qs, unquote
+
+        # Origin + CSRF (mirrors /api/exec)
+        origin = self.headers.get("Origin", "")
+        host_header = self.headers.get("Host", "")
+        allowed_origins = {
+            f"http://{host_header}",
+            f"http://127.0.0.1:{self.server.server_port}",
+        }
+        if origin and origin not in allowed_origins:
+            self._write_json(403, {"ok": False, "error": "origin not allowed"})
+            return
+        sent = self.headers.get("X-CSRF-Token", "")
+        if self.csrf_token and (not sent or not secrets.compare_digest(sent, self.csrf_token)):
+            self._write_json(403, {"ok": False, "error": "csrf token mismatch"})
+            return
+
+        qs = parse_qs(urlparse(self.path).query)
+        raw_target = (qs.get("path") or [""])[0]
+        if not raw_target:
+            self._write_json(400, {"ok": False, "error": "missing path"})
+            return
+        try:
+            target = Path(unquote(raw_target))
+            if not target.is_absolute():
+                target = (Path(self.cfg.root) / target).resolve()
+            else:
+                target = target.resolve()
+            vault_root = Path(self.cfg.root).resolve()
+            try:
+                target.relative_to(vault_root)
+            except ValueError:
+                self._write_json(403, {"ok": False, "error": "path is outside the vault"})
+                return
+            if not target.exists():
+                self._write_json(404, {"ok": False, "error": "file not found"})
+                return
+            if target.is_dir():
+                self._write_json(400, {"ok": False, "error": "refuses to delete directories"})
+                return
+            target.unlink()
+            # Notify dashboards in other tabs that vault state changed.
+            try:
+                self.broadcaster.broadcast({"type": "vault_changed", "reason": "artifact-deleted"})
+            except Exception:
+                pass
+            self._write_json(200, {"ok": True, "deleted": str(target.relative_to(vault_root))})
+        except Exception as exc:
+            self._write_json(500, {"ok": False, "error": f"could not delete artifact: {exc}"})
+
     def _api_v1_headers(self, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
             "Access-Control-Allow-Origin": "*",
@@ -359,6 +415,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path.startswith("/api/v1/"):
             self._dispatch_api_v1("POST", path)
+            return
+        if path == "/artifact-delete":
+            # v0.57: per-artifact delete from the dashboard's NotebookLM
+            # artifacts table. Same CSRF + origin protection as /api/exec
+            # since this also mutates vault state.
+            self._handle_artifact_delete()
             return
         if path != "/api/exec":
             self._write_json(404, {"error": "not found"})

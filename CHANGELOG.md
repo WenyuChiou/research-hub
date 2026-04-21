@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.58.0 (2026-04-21)
+
+**Manage tab UX overhaul** — Codex audit (v0.57) flagged 5 P0 items, this release ships all 5. (v0.57 was an audit-only release with no code-shipped artifact, so no version was published; v0.58 implements the audit's recommendations.)
+
+Codex delegation, 6th consecutive use. Claude reviewed + verified before shipping. 2 real bugs caught during the implementation.
+
+### Added — 5 tracks from the audit
+
+**A. Inline command result drawer.** Click a Manage button → see exactly what happened. The `/api/exec` JSON response now renders inline below the form: command run, duration, return code, stdout (collapsible if long), stderr (red if present), timeout flag. No more "Running… → Done" with no explanation.
+
+**B. Live-mode intro + dynamic Preview/Apply labels.** Old intro text said "dashboard cannot run commands itself" but live mode obviously can. Fixed to describe both modes accurately. Buttons whose checkbox toggles dry-run now switch label dynamically: `Preview polish` ↔ `Apply polish`, `Preview delete` ↔ `Apply delete`, etc.
+
+**C. Shared `<dialog>` confirmation modal.** Replaces inline `confirm()`/`alert()` calls scattered across the v0.57 artifact-delete button + destructive Manage actions (merge / cluster delete / paper remove / archive). One reusable modal in `script.js`, focus-trapped, ESC-to-close, danger-styled when destructive. The artifact-delete button now uses `data-action` + delegated handler (no more inline JS in HTML attributes).
+
+**D. Per-paper row action menu.** Library tab paper rows now have inline `Actions` forms for Archive / Move-to-cluster / Set-label / Set-status / Remove (preview→apply). Each posts to `/api/exec` with the right whitelisted action. No need to drop to terminal for per-paper cleanup anymore.
+
+**E. Manage tab search / sort / filter.** New filter bar above cluster cards: substring search by name/slug; sort by name/paper-count/last-activity/has-unbound-bindings; show-only filter for recent-7-days / unbound-clusters. All client-side. Scaling to 12+ clusters is now usable.
+
+### Fixed — 2 bugs caught during implementation
+
+1. **`/artifact-delete` SSE broadcast was broken**: v0.57 called `broadcaster.publish(...)` but the actual method is `broadcast(...)`. Successful artifact deletes never notified other dashboard tabs. Fixed.
+2. **Test fixture leaked CSRF token**: new artifact-delete tests set `DashboardHandler.csrf_token` as a class attribute, which leaked into other live-server tests. Added a fixture that restores handler globals after each test.
+
+### Stats
+
+- Tests: 1640 → **1661** (+21 across `test_artifact_delete_endpoint.py`, `test_paper_row_actions.py`, extended `test_dashboard_script_logic.py`)
+- New files: 2 test files (~270 LOC total)
+- Modified: `dashboard/{http_server.py, sections.py, script.js, style.css, manage_commands.py}` (~700 net LOC additions)
+
+### Screenshots worth re-taking
+
+- Manage tab static mode → new intro + filter bar
+- Manage tab live mode → inline exec result drawer after a command
+- Briefings tab → delete now triggers shared modal (not browser `confirm()`)
+- Library tab paper rows → new Actions menu
+
+### Cumulative since v0.48 (today's stretch + tomorrow's morning)
+
+- 14 versions shipped (v0.48.0 → v0.58.0; v0.57 was audit-only)
+- 1520 → **1661 tests** (+141)
+- ~50 real bugs fixed across CLI / dashboard / NotebookLM / pipeline / heuristics / executor wiring / UX
+- 6 successful Codex delegations
+- Codex caught: 11 + 1 + 0 + 2 = ~14 bugs the original Claude pass missed
+- Claude smoke-test caught after Codex shipped: ~3 bugs Codex's mocked tests missed
+
 ## v0.56.0 (2026-04-20)
 
 **Full pipeline sweep — every one of the 10 `auto` stages now has e2e regression coverage.** Plus 1 real ingest bug caught.

@@ -889,6 +889,36 @@ class LibrarySection(DashboardSection):
             f'aria-label="Capture quote from {title}">Quote</button>'
         )
         meta_line = authors + ((" · " + year) if year else "")
+        paper_action_menu = f"""
+            <details class="paper-action-menu">
+              <summary>Actions</summary>
+              <form class="paper-action-form" action="javascript:void(0)" data-action="mark" data-slug="{slug}">
+                <input type="hidden" name="status" value="archived">
+                <button type="submit" class="paper-action-submit">Archive</button>
+              </form>
+              <form class="paper-action-form" action="javascript:void(0)" data-action="move" data-slug="{slug}">
+                <label>Move to cluster <input type="text" name="target_cluster" placeholder="target-slug" required></label>
+                <button type="submit" class="paper-action-submit">Move</button>
+              </form>
+              <form class="paper-action-form" action="javascript:void(0)" data-action="label" data-slug="{slug}">
+                <label>Set label <input type="text" name="label" placeholder="seed" required></label>
+                <button type="submit" class="paper-action-submit">Set label</button>
+              </form>
+              <form class="paper-action-form" action="javascript:void(0)" data-action="mark" data-slug="{slug}">
+                <fieldset>
+                  <legend>Set status</legend>
+                  <label><input type="radio" name="status" value="read" checked> read</label>
+                  <label><input type="radio" name="status" value="reading"> reading</label>
+                  <label><input type="radio" name="status" value="archived"> archived</label>
+                </fieldset>
+                <button type="submit" class="paper-action-submit">Set status</button>
+              </form>
+              <form class="paper-action-form paper-action-form--danger" action="javascript:void(0)" data-action="remove" data-slug="{slug}">
+                <label><input type="checkbox" name="apply"> Apply remove</label>
+                <button type="submit" class="paper-action-submit paper-action-danger" data-preview-label="Preview remove" data-apply-label="Apply remove">Preview remove</button>
+              </form>
+            </details>
+        """
         return f"""
         <li class="paper-row"
             data-cluster="{html_escape(cluster_slug)}"
@@ -911,6 +941,7 @@ class LibrarySection(DashboardSection):
                     data-obsidian-path="{obsidian_path}"
                     data-nlm-url=""
                     aria-label="Open {title}">↗ Open</button>
+            {paper_action_menu}
           </div>
         </li>
         """
@@ -1189,6 +1220,15 @@ class BriefingsSection(DashboardSection):
                 open_links.append(
                     f'<a class="binding-link" href="{html_escape(href)}" target="_blank" rel="noreferrer noopener">open .txt</a>'
                 )
+                delete_payload = quote(str(path), safe='')
+                kind_label = _artifact_kind_label(kind)
+                open_links.append(
+                    '<button type="button" class="binding-link binding-link--danger" '
+                    'data-action="delete-artifact" '
+                    f'data-path="{html_escape(delete_payload)}" '
+                    f'data-kind="{html_escape(kind_label)}">'
+                    'delete</button>'
+                )
             open_html = " ".join(open_links) if open_links else '<span class="muted">n/a</span>'
             rows.append(
                 "<tr>"
@@ -1393,8 +1433,28 @@ class ManageSection(DashboardSection):
         <section id="tab-manage" class="dash-panel dash-panel-manage" role="tabpanel">
           <header class="manage-intro">
             <h2>Update categories</h2>
-            <p>Each card builds the exact CLI command for the action. Click <em>Copy</em> and paste into your terminal — the dashboard cannot run commands itself.</p>
+            <p>In live mode (<code>research-hub serve --dashboard</code>), buttons execute commands directly. In static mode, buttons copy the command for you to run in a terminal.</p>
           </header>
+          <div class="manage-filter-bar" aria-label="Manage cluster filters">
+            <label>Search
+              <input type="search" id="manage-search" placeholder="Cluster name or slug">
+            </label>
+            <label>Sort by
+              <select id="manage-sort">
+                <option value="name">Cluster name</option>
+                <option value="paper-count">Paper count</option>
+                <option value="last-activity">Last activity</option>
+                <option value="unbound">Has unbound bindings</option>
+              </select>
+            </label>
+            <label>Show only
+              <select id="manage-show">
+                <option value="all">All clusters</option>
+                <option value="recent">Recently created</option>
+                <option value="unbound">Unbound</option>
+              </select>
+            </label>
+          </div>
           <div class="manage-grid">{cards}</div>
         </section>
         """
@@ -1402,6 +1462,13 @@ class ManageSection(DashboardSection):
     def _manage_card(self, cluster, slug_options: str, persona: str) -> str:
         slug = html_escape(_attr(cluster, "slug", ""))
         name = html_escape(_attr(cluster, "name", ""))
+        paper_count = int(_attr(cluster, "paper_count", 0) or _paper_count(cluster))
+        last_activity = html_escape(_cluster_last_activity(cluster))
+        created_at = html_escape(str(_attr(cluster, "created_at", "") or _attr(cluster, "created", "") or ""))
+        has_unbound = (
+            (not _attr(cluster, "zotero_collection_key", "")) or
+            (not _attr(cluster, "notebooklm_notebook_url", ""))
+        )
         bind_zotero_form = ""
         if _show_bind_zotero_button(type("PersonaView", (), {"persona": persona})()):
             bind_zotero_form = f"""
@@ -1411,7 +1478,13 @@ class ManageSection(DashboardSection):
           </form>
 """
         return f"""
-        <article class="manage-card" data-cluster="{slug}">
+        <article class="manage-card"
+                 data-cluster="{slug}"
+                 data-name="{name}"
+                 data-paper-count="{paper_count}"
+                 data-last-activity="{last_activity}"
+                 data-created-at="{created_at}"
+                 data-unbound="{'1' if has_unbound else '0'}">
           <header><h3>{name}</h3><code>{slug}</code></header>
 
           <form class="manage-form" action="javascript:void(0)" data-action="rename" data-slug="{slug}">
@@ -1493,7 +1566,7 @@ class ManageSection(DashboardSection):
 
               <form class="manage-form" action="javascript:void(0)" data-action="vault-polish-markdown" data-slug="{slug}">
                 <label><input type="checkbox" name="apply"> Apply (uncheck for dry-run)</label>
-                <button type="button" class="manage-build-btn">Polish markdown</button>
+                <button type="button" class="manage-build-btn" data-preview-label="Preview polish" data-apply-label="Apply polish">Preview polish</button>
                 <small>Upgrade paper notes to the newer callout and block-ID conventions.</small>
               </form>
 
@@ -1506,7 +1579,8 @@ class ManageSection(DashboardSection):
           </section>
 
           <form class="manage-form" action="javascript:void(0)" data-action="delete" data-slug="{slug}">
-            <button type="button" class="manage-build-btn manage-danger">Copy delete dry-run command</button>
+            <label><input type="checkbox" name="apply"> Apply delete</label>
+            <button type="button" class="manage-build-btn manage-danger" data-preview-label="Preview delete" data-apply-label="Apply delete">Preview delete</button>
           </form>
         </article>
         """

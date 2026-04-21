@@ -854,6 +854,35 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .manage-intro h2 { font-size: var(--text-md); margin: 0; }
 .manage-intro p { margin: var(--space-2xs) 0 0; color: var(--fg-mute); font-size: var(--text-sm); }
 
+.manage-filter-bar {
+  margin-top: var(--space-lg);
+  display: grid;
+  gap: var(--space-sm);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.manage-filter-bar label {
+  display: grid;
+  gap: var(--space-2xs);
+  color: var(--fg-mute);
+  font-size: var(--text-xs);
+}
+
+.manage-filter-bar input,
+.manage-filter-bar select {
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
 .manage-grid {
   display: grid;
   gap: var(--space-lg);
@@ -1201,6 +1230,146 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 }
 
 .debug-snapshot.is-visible { display: block; }
+
+.exec-result-drawer {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--text-xs);
+}
+
+.exec-result-summary {
+  font-family: "Geist Mono", "JetBrains Mono", monospace;
+  color: var(--fg-strong);
+  overflow-wrap: anywhere;
+}
+
+.exec-result-stdout,
+.exec-result-stderr {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border-radius: 10px;
+  padding: var(--space-xs);
+  background: var(--surface-2);
+}
+
+.exec-result-stderr,
+.exec-result-timeout {
+  color: var(--fail);
+}
+
+.confirm-dialog {
+  width: min(420px, calc(100vw - var(--space-lg)));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-2);
+}
+
+.confirm-dialog::backdrop {
+  background: oklch(0% 0 0 / 0.45);
+}
+
+.confirm-dialog-panel {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+.confirm-dialog-title { font-size: var(--text-md); }
+.confirm-dialog-message { margin: 0; color: var(--fg-mute); }
+.confirm-dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
+
+.confirm-dialog-cancel,
+.confirm-dialog-confirm,
+.paper-action-submit {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: var(--space-2xs) var(--space-md);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+
+.confirm-dialog-confirm {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: oklch(99% 0 0);
+}
+
+.confirm-dialog-confirm--danger,
+.paper-action-danger {
+  background: var(--fail);
+  border-color: var(--fail);
+  color: oklch(99% 0 0);
+}
+
+.paper-action-menu {
+  position: relative;
+  min-width: 180px;
+}
+
+.paper-action-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--text-xs);
+}
+
+.paper-action-menu > summary::-webkit-details-marker { display: none; }
+
+.paper-action-menu[open] {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.paper-action-form {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.paper-action-form label,
+.paper-action-form legend {
+  color: var(--fg-mute);
+  font-size: var(--text-xs);
+}
+
+.paper-action-form input[type="text"] {
+  width: 100%;
+  margin-top: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
+.paper-action-form fieldset {
+  display: grid;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
 
 /* Storage map cell hover for light theme */
 .storage-cell { transition: background 120ms ease; }

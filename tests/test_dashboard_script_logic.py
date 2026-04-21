@@ -106,6 +106,7 @@ def _render_dashboard_html(tmp_path: Path, monkeypatch, *, with_cluster: bool = 
             'research-hub clusters bind foo --notebooklm "https://notebooklm.google.com/notebook/123"',
         ),
         ("delete", "foo", {}, "research-hub clusters delete foo --dry-run"),
+        ("delete", "foo", {"apply": True}, "research-hub clusters delete foo"),
     ],
 )
 def test_build_manage_command(action, slug, fields, expected):
@@ -175,6 +176,41 @@ def test_no_hash_anchor_navigation_in_render():
     script = (Path("src/research_hub/dashboard/script.js")).read_text(encoding="utf-8")
     filtered = "\n".join(line for line in script.splitlines() if not line.strip().startswith("//"))
     assert "window.location.hash =" not in filtered
+
+
+def test_script_has_shared_confirm_dialog_and_artifact_handler():
+    script = Path("src/research_hub/dashboard/script.js").read_text(encoding="utf-8")
+    assert "function confirmAction" in script
+    assert "showModal()" in script
+    assert "delete-artifact" in script
+    assert "window.confirm" not in script
+    assert "alert(" not in script
+
+
+def test_script_has_exec_result_drawer_renderer():
+    script = Path("src/research_hub/dashboard/script.js").read_text(encoding="utf-8")
+    assert "function renderExecResult" in script
+    assert "exec-result-drawer" in script
+    assert "exec-result-stdout" in script
+    assert "exec-result-stderr" in script
+
+
+def test_manage_render_has_live_mode_intro_and_filter_controls(tmp_path, monkeypatch):
+    html = _render_dashboard_html(tmp_path, monkeypatch)
+    assert "buttons execute commands directly" in html
+    assert 'id="manage-search"' in html
+    assert 'id="manage-sort"' in html
+    assert 'id="manage-show"' in html
+    assert 'data-paper-count=' in html
+    assert 'data-unbound=' in html
+
+
+def test_manage_render_has_dynamic_preview_apply_labels(tmp_path, monkeypatch):
+    html = _render_dashboard_html(tmp_path, monkeypatch)
+    assert "Preview polish" in html
+    assert "Apply polish" in html
+    assert "Preview delete" in html
+    assert "Apply delete" in html
 
 
 def test_all_tabs_have_empty_state_rendering(tmp_path, monkeypatch):

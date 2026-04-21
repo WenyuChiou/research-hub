@@ -234,6 +234,125 @@
     });
   }
 
+  function ensureConfirmDialog() {
+    let dialog = doc.getElementById("confirm-action-dialog");
+    if (dialog) {
+      return dialog;
+    }
+    dialog = doc.createElement("dialog");
+    dialog.id = "confirm-action-dialog";
+    dialog.className = "confirm-dialog";
+    dialog.innerHTML = `
+      <form method="dialog" class="confirm-dialog-panel">
+        <h3 class="confirm-dialog-title"></h3>
+        <p class="confirm-dialog-message"></p>
+        <div class="confirm-dialog-actions">
+          <button type="button" class="confirm-dialog-cancel">Cancel</button>
+          <button type="submit" class="confirm-dialog-confirm">Confirm</button>
+        </div>
+      </form>
+    `;
+    doc.body.appendChild(dialog);
+    return dialog;
+  }
+
+  function confirmAction(options) {
+    const dialog = ensureConfirmDialog();
+    const title = dialog.querySelector(".confirm-dialog-title");
+    const message = dialog.querySelector(".confirm-dialog-message");
+    const confirmBtn = dialog.querySelector(".confirm-dialog-confirm");
+    const cancelBtn = dialog.querySelector(".confirm-dialog-cancel");
+    const focusableSelector = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+
+    title.textContent = options.title || "Confirm action";
+    message.textContent = options.message || "Continue?";
+    confirmBtn.textContent = options.confirmLabel || "Confirm";
+    confirmBtn.classList.toggle("confirm-dialog-confirm--danger", !!options.danger);
+    cancelBtn.onclick = function () {
+      dialog.close("cancel");
+    };
+    dialog.onkeydown = function (event) {
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = Array.from(dialog.querySelectorAll(focusableSelector)).filter(function (el) {
+        return !el.disabled && el.offsetParent !== null;
+      });
+      if (!focusable.length) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && doc.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && doc.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog.onsubmit = async function (event) {
+      event.preventDefault();
+      confirmBtn.disabled = true;
+      try {
+        await Promise.resolve((options.onConfirm || function () {})());
+        dialog.close("confirm");
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    };
+    dialog.showModal();
+    confirmBtn.focus();
+  }
+
+  function renderExecResult(anchor, data) {
+    const target = anchor ? (anchor.closest("form") || anchor.parentElement) : null;
+    if (!target || !data) {
+      return;
+    }
+    let drawer = target.querySelector(":scope > .exec-result-drawer");
+    if (!drawer) {
+      drawer = doc.createElement("div");
+      drawer.className = "exec-result-drawer";
+      target.appendChild(drawer);
+    }
+    drawer.replaceChildren();
+    const summary = doc.createElement("div");
+    summary.className = "exec-result-summary";
+    const command = Array.isArray(data.command) ? data.command.join(" ") : "";
+    const duration = typeof data.duration_ms === "number" ? (data.duration_ms / 1000).toFixed(2) : "0.00";
+    summary.textContent = `${command || data.action || "command"} | ${duration}s | rc ${data.returncode ?? "?"}`;
+    drawer.appendChild(summary);
+    if (data.error === "timeout") {
+      const timeout = doc.createElement("p");
+      timeout.className = "exec-result-timeout";
+      timeout.textContent = "Timed out.";
+      drawer.appendChild(timeout);
+    }
+    const stdout = String(data.stdout || "");
+    if (stdout) {
+      const lines = stdout.split(/\r?\n/);
+      const pre = doc.createElement("pre");
+      pre.className = "exec-result-stdout";
+      pre.textContent = stdout;
+      if (lines.length > 20) {
+        const details = doc.createElement("details");
+        const detailsSummary = doc.createElement("summary");
+        detailsSummary.textContent = `stdout (${lines.length} lines)`;
+        details.append(detailsSummary, pre);
+        drawer.appendChild(details);
+      } else {
+        drawer.appendChild(pre);
+      }
+    }
+    if (data.stderr) {
+      const pre = doc.createElement("pre");
+      pre.className = "exec-result-stderr";
+      pre.textContent = String(data.stderr);
+      drawer.appendChild(pre);
+    }
+  }
+
   async function execAction(action, slug, fields, button) {
     if (!LIVE_MODE.active) {
       return false;
@@ -253,6 +372,7 @@
         body: JSON.stringify({ action: action, slug: slug, fields: fields }),
       });
       const data = await response.json();
+      renderExecResult(button, data);
       if (button) {
         button.textContent = data.ok ? "Done" : "Error";
         setTimeout(function () {
@@ -504,7 +624,7 @@
       case "bases-emit":
         return `research-hub bases emit --cluster ${shellQuote(slug)}${data.get("force") ? " --force" : ""}`;
       case "delete":
-        return `research-hub clusters delete ${shellQuote(slug)} --dry-run`;
+        return `research-hub clusters delete ${shellQuote(slug)}${data.get("apply") ? "" : " --dry-run"}`;
       default:
         return null;
     }
@@ -545,10 +665,56 @@
       case "bases-emit":
         return { force: !!data.get("force") };
       case "delete":
-        return {};
+        return { apply: !!data.get("apply") };
       default:
         return {};
     }
+  }
+
+  function buildPaperActionFields(form) {
+    const data = new FormData(form);
+    const action = form.dataset.action;
+    if (action === "move") {
+      return { target_cluster: (data.get("target_cluster") || "").trim() };
+    }
+    if (action === "label") {
+      return { label: (data.get("label") || "").trim() };
+    }
+    if (action === "mark") {
+      return { status: (data.get("status") || "").trim() };
+    }
+    if (action === "remove") {
+      return { dry_run: !data.get("apply") };
+    }
+    return {};
+  }
+
+  function buildPaperActionCommand(form) {
+    const action = form.dataset.action;
+    const slug = form.dataset.slug || "";
+    const fields = buildPaperActionFields(form);
+    if (action === "move") {
+      if (!fields.target_cluster) {
+        return null;
+      }
+      return `research-hub move ${shellQuote(slug)} --to ${shellQuote(fields.target_cluster)}`;
+    }
+    if (action === "label") {
+      if (!fields.label) {
+        return null;
+      }
+      return `research-hub label ${shellQuote(slug)} --set ${shellQuote(fields.label)}`;
+    }
+    if (action === "mark") {
+      if (!fields.status) {
+        return null;
+      }
+      return `research-hub mark ${shellQuote(slug)} --status ${shellQuote(fields.status)}`;
+    }
+    if (action === "remove") {
+      return `research-hub remove ${shellQuote(slug)}${fields.dry_run ? " --dry-run" : ""}`;
+    }
+    return null;
   }
 
   function buildComposeCommand(form) {
@@ -644,6 +810,79 @@
         });
       });
     });
+  }
+
+  function updateApplyButtonLabel(form) {
+    const button = form.querySelector(".manage-build-btn, .paper-action-submit");
+    const checkbox = form.querySelector('input[name="apply"]');
+    if (!button || !checkbox) {
+      return;
+    }
+    const preview = button.dataset.previewLabel;
+    const apply = button.dataset.applyLabel;
+    if (preview && apply) {
+      button.textContent = checkbox.checked ? apply : preview;
+    }
+  }
+
+  function initApplyLabels() {
+    doc.querySelectorAll(".manage-form, .paper-action-form").forEach(function (form) {
+      updateApplyButtonLabel(form);
+      const checkbox = form.querySelector('input[name="apply"]');
+      if (checkbox) {
+        checkbox.addEventListener("change", function () {
+          updateApplyButtonLabel(form);
+        });
+      }
+    });
+  }
+
+  function applyManageFilters() {
+    const search = (doc.getElementById("manage-search")?.value || "").trim().toLowerCase();
+    const sort = doc.getElementById("manage-sort")?.value || "name";
+    const show = doc.getElementById("manage-show")?.value || "all";
+    const grid = doc.querySelector(".manage-grid");
+    if (!grid) {
+      return;
+    }
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    const cards = Array.from(grid.querySelectorAll(".manage-card"));
+    cards.forEach(function (card) {
+      const haystack = `${card.dataset.name || ""} ${card.dataset.cluster || ""}`.toLowerCase();
+      const createdAt = Date.parse(card.dataset.createdAt || "");
+      const isRecent = Number.isFinite(createdAt) && (now - createdAt <= sevenDays);
+      const isUnbound = card.dataset.unbound === "1";
+      const matchesSearch = !search || haystack.includes(search);
+      const matchesShow = show === "all" || (show === "recent" && isRecent) || (show === "unbound" && isUnbound);
+      card.hidden = !(matchesSearch && matchesShow);
+    });
+    cards.sort(function (a, b) {
+      if (sort === "paper-count") {
+        return Number(b.dataset.paperCount || 0) - Number(a.dataset.paperCount || 0);
+      }
+      if (sort === "last-activity") {
+        return (Date.parse(b.dataset.lastActivity || "") || 0) - (Date.parse(a.dataset.lastActivity || "") || 0);
+      }
+      if (sort === "unbound") {
+        return Number(b.dataset.unbound || 0) - Number(a.dataset.unbound || 0);
+      }
+      return (a.dataset.name || a.dataset.cluster || "").localeCompare(b.dataset.name || b.dataset.cluster || "");
+    });
+    cards.forEach(function (card) {
+      grid.appendChild(card);
+    });
+  }
+
+  function initManageFilters() {
+    ["manage-search", "manage-sort", "manage-show"].forEach(function (id) {
+      const control = doc.getElementById(id);
+      if (control) {
+        control.addEventListener("input", applyManageFilters);
+        control.addEventListener("change", applyManageFilters);
+      }
+    });
+    applyManageFilters();
   }
 
   const search = doc.getElementById("vault-search");
@@ -794,6 +1033,22 @@
         }, 1500);
         return;
       }
+      if (["merge", "delete"].includes(form.dataset.action || "") && !button.dataset.confirmed) {
+        confirmAction({
+          title: form.dataset.action === "delete" ? "Delete cluster" : "Merge cluster",
+          message: form.dataset.action === "delete"
+            ? `Delete ${form.dataset.slug || "this cluster"}${form.querySelector('input[name="apply"]')?.checked ? "" : " dry-run preview"}?`
+            : `Merge ${form.dataset.slug || "this cluster"} into the selected cluster?`,
+          confirmLabel: form.dataset.action === "delete" ? "Delete" : "Merge",
+          danger: form.dataset.action === "delete",
+          onConfirm: function () {
+            button.dataset.confirmed = "1";
+            button.click();
+            delete button.dataset.confirmed;
+          }
+        });
+        return;
+      }
       if (LIVE_MODE.active) {
         const ok = await execAction(form.dataset.action || "", form.dataset.slug || null, buildManageFields(form), button);
         if (ok) {
@@ -804,6 +1059,89 @@
       copyText(command, function () {
         showCopiedState(button, original);
       });
+    });
+  });
+
+  doc.addEventListener("click", function (event) {
+    const btn = event.target.closest('[data-action="delete-artifact"]');
+    if (!btn) {
+      return;
+    }
+    event.preventDefault();
+    confirmAction({
+      title: "Delete artifact",
+      message: `Delete this ${btn.dataset.kind || "NotebookLM"} artifact?`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async function () {
+        const original = btn.textContent;
+        btn.textContent = "Deleting...";
+        btn.disabled = true;
+        try {
+          const response = await fetch(`/artifact-delete?path=${btn.dataset.path || ""}`, {
+            method: "POST",
+            headers: { "X-CSRF-Token": csrfToken },
+          });
+          const data = await response.json();
+          if (data.ok) {
+            window.location.reload();
+            return;
+          }
+          btn.textContent = data.error ? `Failed: ${data.error}` : "Delete failed";
+        } catch (_) {
+          btn.textContent = "Delete failed";
+        } finally {
+          setTimeout(function () {
+            btn.textContent = original;
+            btn.disabled = false;
+          }, 2500);
+        }
+      }
+    });
+  });
+
+  doc.querySelectorAll(".paper-action-form").forEach(function (form) {
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      const button = form.querySelector(".paper-action-submit");
+      const command = buildPaperActionCommand(form);
+      if (!command) {
+        if (button) {
+          const original = button.textContent;
+          button.textContent = "Fill the fields first";
+          setTimeout(function () { button.textContent = original; }, 1500);
+        }
+        return false;
+      }
+      const run = async function () {
+        if (LIVE_MODE.active) {
+          const ok = await execAction(form.dataset.action || "", form.dataset.slug || null, buildPaperActionFields(form), button);
+          if (ok) {
+            return;
+          }
+        }
+        if (button) {
+          const original = button.textContent;
+          copyText(command, function () {
+            showCopiedState(button, original);
+          });
+        }
+      };
+      const fields = buildPaperActionFields(form);
+      if ((form.dataset.action === "remove" && !fields.dry_run) || (form.dataset.action === "mark" && fields.status === "archived")) {
+        confirmAction({
+          title: form.dataset.action === "remove" ? "Remove paper" : "Archive paper",
+          message: form.dataset.action === "remove"
+            ? `Remove ${form.dataset.slug || "this paper"} from the vault?`
+            : `Archive ${form.dataset.slug || "this paper"}?`,
+          confirmLabel: form.dataset.action === "remove" ? "Remove" : "Archive",
+          danger: form.dataset.action === "remove",
+          onConfirm: run,
+        });
+      } else {
+        run();
+      }
+      return false;
     });
   });
 
@@ -847,6 +1185,8 @@
 
   handleLabelFilter();
   handleQuoteLabelFilter();
+  initApplyLabels();
+  initManageFilters();
   applyLibraryFilters();
   csrfToken = doc.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
   detectLiveMode();
