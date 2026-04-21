@@ -194,6 +194,19 @@ Not shown (less unique as first-impression): **Briefings** (NotebookLM brief pre
 
 ---
 
+## 📓 Inside Obsidian
+
+The dashboard is one face. The other is what you actually live in: **Obsidian**. Every paper research-hub ingests becomes a real `.md` note with structured frontmatter, and every cluster gets an auto-generated **Bases** dashboard you can browse natively without leaving Obsidian.
+
+| | |
+|---|---|
+| ![Obsidian Bases dashboard for a cluster](docs/images/obsidian-bases-dashboard.png) | ![Single paper note rendered with Properties view](docs/images/obsidian-paper-note.png) |
+| **Cluster Bases dashboard** — auto-generated `.base` per cluster (v0.43+). Sortable / filterable database view of every paper in the cluster, columns auto-built from frontmatter (name / title / year / status / verified / doi). Refreshes on every `ingest` / `topic build`. | **Per-paper note** — every ingested paper has a structured frontmatter block (title / authors / year / journal / doi / zotero-key / collections / tags / ingested_at / topic_cluster / cluster_queries / verified / status). Linkable, searchable, includable in Obsidian Graph view. |
+
+Crystals (the cached AI answers) are also plain Obsidian notes under `hub/<cluster>/crystals/*.md` — fully wikilink-able, included in graph view, queryable by `read_crystal()` MCP tool at zero token cost.
+
+---
+
 ## 🧠 What makes it different
 
 ### 1. Pre-computed answers, not lazy retrieval

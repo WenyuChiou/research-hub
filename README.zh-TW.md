@@ -193,6 +193,19 @@ curl -X POST http://127.0.0.1:8765/api/v1/plan \
 
 ---
 
+## 📓 在 Obsidian 裡長什麼樣
+
+Dashboard 是一面;另一面才是你實際在用的:**Obsidian**。research-hub 收的每一篇論文都變成真正的 `.md` 筆記、含結構化 frontmatter,每個 cluster 還會自動產一個 **Bases** dashboard,你不離開 Obsidian 就能瀏覽。
+
+| | |
+|---|---|
+| ![Cluster Bases dashboard](docs/images/obsidian-bases-dashboard.png) | ![單篇 paper 筆記 (Properties view)](docs/images/obsidian-paper-note.png) |
+| **Cluster Bases dashboard** — 每個 cluster 自動產 `.base`(v0.43+)。可排序/可過濾的論文 database view,欄位從 frontmatter 自動建(name / title / year / status / verified / doi)。每次 `ingest` / `topic build` 自動刷新。 | **單篇 paper 筆記** — 每篇收進來的論文都有結構化 frontmatter(title / authors / year / journal / doi / zotero-key / collections / tags / ingested_at / topic_cluster / cluster_queries / verified / status)。可以 wikilink、可以被 Obsidian graph 收錄、可以全文搜尋。 |
+
+Crystals(預先運算的 AI 答案)也是 Obsidian 原生筆記,放在 `hub/<cluster>/crystals/*.md`,完全可以 wikilink、graph view 看得到、可以透過 `read_crystal()` MCP tool 0 token 查詢。
+
+---
+
 ## 🧠 跟其他工具的差別
 
 ### 1. 預先運算好的答案,不是 lazy retrieval
