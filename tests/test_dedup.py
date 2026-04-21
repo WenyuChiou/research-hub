@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from research_hub.dedup import (
     DedupHit,
     DedupIndex,
@@ -95,9 +97,15 @@ def test_build_from_obsidian_parses_yaml_frontmatter(tmp_path):
 
     hits = build_from_obsidian(raw_dir)
 
+    # v0.60.2: `rglob` iteration order isn't guaranteed across filesystems
+    # (local NTFS returned one.md first; CI Linux/macOS/Windows runners can
+    # return two.md first). Look up by the source file's basename instead
+    # of positional index so the test doesn't depend on ordering.
+    by_path = {Path(h.obsidian_path).stem: h for h in hits}
     assert len(hits) == 2
-    assert hits[0].source == "obsidian"
-    assert hits[1].zotero_key is None
+    assert by_path["one"].source == "obsidian"
+    assert by_path["one"].zotero_key == "KEY1"
+    assert by_path["two"].zotero_key is None
 
 
 def test_rebuild_from_obsidian_drops_stale_paths_regardless_of_source(tmp_path):
