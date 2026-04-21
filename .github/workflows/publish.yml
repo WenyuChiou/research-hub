@@ -31,4 +31,7 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: twine upload dist/*
+        # v0.60.1: --skip-existing so a re-run (or a version already uploaded
+        # manually via PyPI) doesn't 400 the whole CI job. CI still surfaces
+        # other failures (auth, malformed dist, etc.) normally.
+        run: twine upload --skip-existing dist/*
