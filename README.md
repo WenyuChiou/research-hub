@@ -136,19 +136,27 @@ curl -X POST http://127.0.0.1:8765/api/v1/plan \
 
 ---
 
-## 🎬 30-second demo — the CLI / chat flow
+## 🎬 Demo — actual screen recording of the live dashboard
 
-![demo: ask Claude → auto pipeline runs → cached query](docs/images/lazy-mode-demo.gif)
+<video src="docs/demo/dashboard-walkthrough.mp4" controls width="100%" muted loop>
+  Sorry, your browser doesn't render embedded video. <a href="docs/demo/dashboard-walkthrough.mp4">Download the .mp4 (24 MB)</a>.
+</video>
 
-Three scenes, 1280×760, real captured data:
+> If GitHub doesn't render the inline video player above, click [`docs/demo/dashboard-walkthrough.mp4`](docs/demo/dashboard-walkthrough.mp4) to download.
+
+Real screen recording on the maintainer's vault — clicking through the live dashboard at `http://127.0.0.1:8765/` after `research-hub serve --dashboard`. Shows the 6 tabs, Manage-tab buttons, NotebookLM artifact downloads, and the v0.58 inline result drawer in action.
+
+Below that is a static-frame fallback (PIL-rendered) that loops in any markdown viewer that doesn't autoplay video:
+
+![demo: ask AI → auto pipeline runs → cached query](docs/images/lazy-mode-demo.gif)
+
+Three scenes, 1280×760, real captured terminal data:
 
 1. **Talk to your AI host**: "Research harness engineering for me." The host calls `plan_research_workflow` via MCP, confirms the plan, then fires `auto_research_topic`.
-2. **`auto` pipeline runs**: 9 stages (cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals) finish in 187 s. Real output from a Windows zh-TW box.
+2. **`auto` pipeline runs**: 9 stages (cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals) finish in 187 s.
 3. **Cached query in <1 s**: `ask harness-engineering "SOTA?"` reads a pre-computed crystal. ~1 KB, 0 tokens.
 
-For the live dashboard that the GIF points to — see the 6-tab grid in the next section (the dashboard is dense enough that shrinking it to fit the GIF makes the text unreadable, so it's shown at full resolution below instead).
-
-Build the GIF yourself from your own vault: `python docs/demo/build_demo_gif.py` (pure Python + Pillow, no ffmpeg).
+Re-build the GIF yourself: `python docs/demo/build_demo_gif.py`.
 
 ---
 
