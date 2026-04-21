@@ -136,18 +136,27 @@ Full reference: [MCP tools](docs/mcp-tools.md).
 
 ---
 
-## Dashboard 4-tab grid
+## Dashboard tour
 
-`research-hub serve --dashboard` opens `http://127.0.0.1:8765/`. The dashboard has six tabs; these four are the main control surface.
+`research-hub serve --dashboard` opens `http://127.0.0.1:8765/`. Six tabs; the four most useful ones:
 
-| | |
-|---|---|
-| ![Overview](docs/images/hero/dashboard-overview.png) | ![Library](docs/images/hero/dashboard-library-subtopic.png) |
-| **Overview**: treemap over clusters, storage map, health summary | **Library**: per-cluster drill-down with papers and sub-topics |
-| ![Diagnostics](docs/images/hero/dashboard-diagnostics.png) | ![Manage](docs/images/hero/dashboard-manage-live.png) |
-| **Diagnostics**: grouped drift alerts and readiness checks | **Manage**: CLI actions as buttons for repeated maintenance |
+**Overview** — treemap over clusters + storage map + health summary.
 
-Briefings and Writing are also available. See the [dashboard walkthrough](docs/dashboard-walkthrough.md) and [persona variants](docs/personas.md).
+![Overview](docs/images/hero/dashboard-overview.png)
+
+**Library** — per-cluster drill-down with papers, sub-topics, and per-paper actions.
+
+![Library](docs/images/hero/dashboard-library-subtopic.png)
+
+**Diagnostics** — grouped drift alerts and readiness checks (v0.48 redesign groups 59 raw alerts into ~5 cards).
+
+![Diagnostics](docs/images/hero/dashboard-diagnostics.png)
+
+**Manage** — every CLI action as a button; v0.58 adds an inline result drawer, shared confirmation modal, and per-paper row actions.
+
+![Manage](docs/images/hero/dashboard-manage-live.png)
+
+Briefings and Writing tabs are also available — see the [dashboard walkthrough](docs/dashboard-walkthrough.md) and [persona variants](docs/personas.md).
 
 ---
 

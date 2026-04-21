@@ -136,18 +136,27 @@ curl -X POST http://127.0.0.1:8765/api/v1/plan \
 
 ---
 
-## Dashboard 四格預覽
+## Dashboard 導覽
 
-`research-hub serve --dashboard` 會開啟 `http://127.0.0.1:8765/`。Dashboard 有六個 tab，下面四個是主要操作面。
+`research-hub serve --dashboard` 會開 `http://127.0.0.1:8765/`。6 個 tab，下面是最常用的 4 個:
 
-| | |
-|---|---|
-| ![Overview](docs/images/hero/dashboard-overview.png) | ![Library](docs/images/hero/dashboard-library-subtopic.png) |
-| **Overview**：cluster treemap、storage map、健康摘要 | **Library**：依 cluster 檢視 papers 與 sub-topics |
-| ![Diagnostics](docs/images/hero/dashboard-diagnostics.png) | ![Manage](docs/images/hero/dashboard-manage-live.png) |
-| **Diagnostics**：drift alerts 與 readiness checks | **Manage**：把常用 CLI 動作做成按鈕 |
+**Overview** — cluster treemap + storage map + 健康摘要。
 
-Briefings 與 Writing 也在 dashboard 內。更多畫面請看 [dashboard walkthrough](docs/dashboard-walkthrough.md) 與 [persona variants](docs/personas.md)。
+![Overview](docs/images/hero/dashboard-overview.png)
+
+**Library** — 逐 cluster 檢視 papers 與 sub-topics，每篇 paper 有 inline 動作選單。
+
+![Library](docs/images/hero/dashboard-library-subtopic.png)
+
+**Diagnostics** — drift alerts 按 kind 分組（v0.48 重設計,原本 59 個警告變成 5 張卡）。
+
+![Diagnostics](docs/images/hero/dashboard-diagnostics.png)
+
+**Manage** — 每個 CLI 動作都做成按鈕；v0.58 加了 inline 結果面板、共用 confirm modal、per-paper row actions。
+
+![Manage](docs/images/hero/dashboard-manage-live.png)
+
+Briefings 與 Writing tab 也在 dashboard 內 — 見 [dashboard walkthrough](docs/dashboard-walkthrough.md) 與 [persona variants](docs/personas.md)。
 
 ---
 
