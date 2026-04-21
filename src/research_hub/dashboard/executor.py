@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -137,8 +138,8 @@ def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -
         args = base + ["ingest"]
         if fields.get("cluster_slug"):
             args += ["--cluster", str(fields["cluster_slug"])]
-        if fields.get("papers_input"):
-            args += ["--papers-input", str(fields["papers_input"])]
+        if fields.get("dry_run"):
+            args.append("--dry-run")
         return args
     if action == "topic-build":
         target = slug or (fields or {}).get("cluster_slug") or (fields or {}).get("cluster")
@@ -205,6 +206,38 @@ def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -
     raise ValueError(f"unknown action: {action!r}")
 
 
+def _prepare_ingest_inputs(fields: dict[str, Any]) -> tuple[dict[str, Any], callable[[], None]]:
+    payload = dict(fields)
+    source = str(payload.pop("papers_input", "") or "").strip()
+    if not source:
+        return payload, (lambda: None)
+
+    from pathlib import Path
+
+    from research_hub.config import get_config
+
+    source_path = Path(source)
+    if not source_path.exists():
+        raise ValueError(f"papers_input not found: {source_path}")
+
+    cfg = get_config()
+    target = cfg.root / "papers_input.json"
+    backup = target.read_text(encoding="utf-8") if target.exists() else None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source_path, target)
+
+    def cleanup() -> None:
+        if backup is None:
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+            return
+        target.write_text(backup, encoding="utf-8")
+
+    return payload, cleanup
+
+
 def execute_action(
     action: str,
     slug: str | None,
@@ -217,71 +250,77 @@ def execute_action(
         raise ValueError(f"action {action!r} not in ALLOWED_ACTIONS")
 
     payload = dict(fields or {})
+    cleanup = lambda: None
+    if action == "ingest":
+        payload, cleanup = _prepare_ingest_inputs(payload)
     args = _build_command_args(action, slug, payload)
 
     start = time.monotonic()
-    if subprocess.run is not _ORIGINAL_SUBPROCESS_RUN:
+    try:
+        if subprocess.run is not _ORIGINAL_SUBPROCESS_RUN:
+            try:
+                proc = subprocess.run(
+                    args,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    shell=False,
+                )
+                duration_ms = int((time.monotonic() - start) * 1000)
+                return ExecResult(
+                    ok=proc.returncode == 0,
+                    action=action,
+                    command=args,
+                    stdout=proc.stdout or "",
+                    stderr=proc.stderr or "",
+                    returncode=proc.returncode,
+                    duration_ms=duration_ms,
+                )
+            except subprocess.TimeoutExpired as exc:
+                duration_ms = int((time.monotonic() - start) * 1000)
+                return ExecResult(
+                    ok=False,
+                    action=action,
+                    command=args,
+                    stdout=_decode_output(exc.stdout),
+                    stderr=f"timeout after {timeout}s",
+                    returncode=-1,
+                    duration_ms=duration_ms,
+                )
         try:
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 args,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
                 shell=False,
             )
+            stdout, stderr = proc.communicate(timeout=timeout)
             duration_ms = int((time.monotonic() - start) * 1000)
             return ExecResult(
                 ok=proc.returncode == 0,
                 action=action,
                 command=args,
-                stdout=proc.stdout or "",
-                stderr=proc.stderr or "",
+                stdout=stdout or "",
+                stderr=stderr or "",
                 returncode=proc.returncode,
                 duration_ms=duration_ms,
             )
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", ""
             duration_ms = int((time.monotonic() - start) * 1000)
             return ExecResult(
                 ok=False,
                 action=action,
                 command=args,
-                stdout=_decode_output(exc.stdout),
-                stderr=f"timeout after {timeout}s",
+                stdout=_decode_output(stdout),
+                stderr=f"timeout after {timeout}s (process killed)",
                 returncode=-1,
                 duration_ms=duration_ms,
             )
-    try:
-        proc = subprocess.Popen(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            shell=False,
-        )
-        stdout, stderr = proc.communicate(timeout=timeout)
-        duration_ms = int((time.monotonic() - start) * 1000)
-        return ExecResult(
-            ok=proc.returncode == 0,
-            action=action,
-            command=args,
-            stdout=stdout or "",
-            stderr=stderr or "",
-            returncode=proc.returncode,
-            duration_ms=duration_ms,
-        )
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        try:
-            stdout, stderr = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            stdout, stderr = "", ""
-        duration_ms = int((time.monotonic() - start) * 1000)
-        return ExecResult(
-            ok=False,
-            action=action,
-            command=args,
-            stdout=_decode_output(stdout),
-            stderr=f"timeout after {timeout}s (process killed)",
-            returncode=-1,
-            duration_ms=duration_ms,
-        )
+    finally:
+        cleanup()

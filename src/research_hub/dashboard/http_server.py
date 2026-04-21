@@ -336,7 +336,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         self.wfile.write(b": heartbeat\n\n")
                         self.wfile.flush()
                         continue
-                    payload = f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8")
+                    event_name = ""
+                    payload_obj = event
+                    if isinstance(event, dict):
+                        event_name = str(event.get("event", "") or "").strip()
+                        if event_name:
+                            payload_obj = {key: value for key, value in event.items() if key != "event"}
+                    if event_name:
+                        self.wfile.write(f"event: {event_name}\n".encode("utf-8"))
+                    payload = f"data: {json.dumps(payload_obj, ensure_ascii=False)}\n\n".encode("utf-8")
                     self.wfile.write(payload)
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
@@ -388,9 +396,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
         action = str(payload.get("action", "")).strip()
         slug = payload.get("slug")
         fields = payload.get("fields") or {}
+        timeout = payload.get("timeout", None)
+        if timeout is None:
+            timeout_seconds = 300
+        else:
+            try:
+                timeout_seconds = int(timeout)
+            except (TypeError, ValueError):
+                self._write_json(400, {"error": "timeout must be an integer"})
+                return
+            if timeout_seconds <= 0:
+                self._write_json(400, {"error": "timeout must be > 0"})
+                return
 
         try:
-            result = execute_action(action, slug, fields)
+            try:
+                result = execute_action(action, slug, fields, timeout=timeout_seconds)
+            except TypeError as exc:
+                if "unexpected keyword argument 'timeout'" not in str(exc):
+                    raise
+                result = execute_action(action, slug, fields)
         except ValueError as exc:
             self._write_json(400, {"error": str(exc)})
             return
@@ -407,8 +432,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "action": result.action,
                 }
             )
+            self.broadcaster.broadcast(
+                {
+                    "event": "state-change",
+                    "action": result.action,
+                    "reason": "exec",
+                }
+            )
 
-        self._write_json(200 if result.ok else 500, result.to_dict())
+        response = result.to_dict()
+        if not result.ok and result.returncode == -1 and "timeout" in result.stderr.lower():
+            response["error"] = "timeout"
+        elif not result.ok and result.stderr:
+            response["error"] = result.stderr
+
+        self._write_json(200, response)
 
 
 def serve_dashboard(

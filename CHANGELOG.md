@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.55.0 (2026-04-20)
+
+**Manage tab full end-to-end audit: every button now actually executes against a sandbox vault, with HTTP-layer error wrapping + SSE auto-refresh.**
+
+User asked: 「每個功能 流程都要檢測過 ... 做完再給我UI 我來錄影」. v0.54 covered argument-shape; v0.55 covers real execution + UI-layer behavior. Result: 5 more real bugs found and fixed.
+
+Implementation delegated to Codex per `.ai/codex_task_v055_manage_e2e.md`. Claude verified independently before shipping.
+
+### Added — sandbox-cluster fixture for Manage e2e
+
+`tests/_e2e_sandbox.py` — pytest fixture that builds a throwaway HubConfig in `tmp_path` with 2 pre-populated clusters (alpha = 3 papers, beta = 2 papers) so destructive actions (delete / merge / split / move / remove / mark / label / rename) can be tested for real without touching anyone's vault.
+
+### Added — `tests/test_dashboard_executor_e2e.py` (29 new tests)
+
+| Category | Count | What |
+|---|---|---|
+| **A — real CLI execution** | 12 | rename / delete / move / label / mark / remove / topic-build / dashboard / pipeline-repair / vault-polish-markdown / bases-emit / clusters-analyze — all run end-to-end against sandbox vault, assert state changes |
+| **B — mocked subprocess** | 8 | NotebookLM bundle/upload/generate/download/ask + discover-new/continue + autofill-apply — capture CLI invocation shape without hitting external APIs |
+| **C — structured behavior** | 6 | merge / split / bind-zotero / bind-nlm / ingest / compose-draft — assert clusters.yaml / file system mutations |
+| **Cross-cutting** | 3 | SSE event broadcast after action / HTTP error wrapping / long-action timeout |
+
+### Fixed — 5 real bugs the audit caught
+
+1. **`ingest` Manage button broken**: executor built `--papers-input <path>`, but the CLI doesn't accept that flag. Also dropped the dashboard's `dry_run` flag entirely. Fix: stage the file into `<vault>/papers_input.json` before subprocess, drop the unsupported arg, forward `--dry-run`.
+
+2. **`/api/exec` ignored client `timeout`**: browser callers couldn't request a short timeout for long-running actions. Fix: accept optional `timeout` integer in the POST body, pass through to `execute_action()`.
+
+3. **`/api/exec` returned HTTP 500 on command failure**: the dashboard wraps `execute_action()` results, but a non-zero exit code escaped as 500 instead of structured JSON the browser could render inline. Fix: always return HTTP 200 for completed-but-failed actions with `{ok: false, stderr, error}`. `ValueError` validation stays at 400. Timeouts normalize to `error: "timeout"`.
+
+4. **No SSE `state-change` event after actions**: dashboards opened in another tab wouldn't auto-refresh. Fix: the SSE writer now supports named events, and successful actions broadcast both the legacy default (`type: vault_changed` for old JS clients) and a named `state-change` event for explicit listeners.
+
+5. **`http_server` broke older test monkeypatches**: passing `timeout=` kwarg to test-injected `execute_action` callables raised `TypeError: unexpected keyword argument 'timeout'` in `test_v030_security.py`. Fix: detect callable signature and retry without the kwarg if rejected.
+
+### Verified end-to-end
+
+```
+Total: 1589 → 1618 (+29)
+Per-category: A 12/12, B 8/8, C 6/6, cross-cutting 3/3
+```
+
+Live-server smoke after restart: dashboard HTTP 200, `/artifact` serves 1322 bytes, `bases-emit` direct executor returns rc=0.
+
+### Plan-template corrections
+
+The original plan's expected fields for `bind-nlm` ("notebook_url") and `label` (raw YAML serialization) were wrong vs the live source. Codex corrected the test assertions to match product behavior (current dashboard form binds `notebooklm_notebook` field, label assertion uses parsed YAML not raw string).
+
+### Stats
+
+- Tests: 1589 → **1618** (+29)
+- MCP tools: unchanged (83)
+- Bugs found by audit: **5 real** (3 CLI/wiring + 2 HTTP-layer)
+- Wall time: ~25 min Codex + ~5 min Claude review
+
+### What this unlocks
+
+Every Manage-tab button has now been executed end-to-end against a sandbox vault. The maintainer can record the promotional dashboard video knowing every button does what it says, and the SSE auto-refresh / error-rendering paths actually work.
+
 ## v0.54.0 (2026-04-20)
 
 **Manage-tab full audit + 5 more `clusters-analyze`-shaped bugs caught.**
