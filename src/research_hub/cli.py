@@ -1349,6 +1349,7 @@ def _dashboard(
     watch: bool = False,
     refresh: int = 10,
     rich_bibtex: bool = False,
+    sample: bool = False,
     screenshot: str | None = None,
     out: str | None = None,
     out_dir: str | None = None,
@@ -1357,6 +1358,16 @@ def _dashboard(
     viewport_height: int = 900,
     full_page: bool = False,
 ) -> int:
+    if sample:
+        from research_hub.sample_vault import generate_sample_dashboard
+
+        out_path = generate_sample_dashboard(open_browser=open_browser, rich_bibtex=rich_bibtex)
+        print("SAMPLE PREVIEW - this vault is read-only and temporary.")
+        print(f"Dashboard written to {out_path}")
+        if open_browser:
+            print("Opening in browser...")
+        return 0
+
     if screenshot:
         from research_hub.dashboard.screenshot import (
             PlaywrightNotInstalled,
@@ -2222,10 +2233,12 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Start here ->\n\n"
             "  $ research-hub init           # interactive setup wizard\n"
-            "  $ research-hub doctor         # verify everything is wired\n"
+            "  $ research-hub doctor         # optional readiness check\n"
             "  $ research-hub where          # show vault + config paths\n"
+            "  $ research-hub plan \"your research topic\"\n"
+            "  $ research-hub auto \"your research topic\"\n"
             "  $ research-hub serve --dashboard  # open live dashboard\n"
-            "  $ research-hub install --mcp  # wire into Claude Desktop\n\n"
+            "  $ research-hub dashboard --sample  # preview without accounts\n\n"
             "Docs: https://github.com/WenyuChiou/research-hub\n"
         ),
     )
@@ -2962,6 +2975,11 @@ def build_parser() -> argparse.ArgumentParser:
             "~1s/paper). Default uses an instant frontmatter fallback that "
             "is sufficient for most citations."
         ),
+    )
+    dashboard_parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="Open a bundled temporary sample vault dashboard (no accounts required)",
     )
     dashboard_parser.add_argument(
         "--screenshot",
@@ -3931,6 +3949,7 @@ def main(argv: list[str] | None = None) -> int:
             watch=args.watch,
             refresh=args.refresh,
             rich_bibtex=args.rich_bibtex,
+            sample=args.sample,
             screenshot=args.screenshot,
             out=args.out,
             out_dir=args.out_dir,

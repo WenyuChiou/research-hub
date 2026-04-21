@@ -1,5 +1,83 @@
 # Changelog
 
+## v0.60.0 (2026-04-21)
+
+**Onboarding polish — 4 tracks from the v0.59 usability audit.** Codex delegation, 7th consecutive use.
+
+The v0.59 audit (4 personas × 8 journey stages) gave research-hub 106/160 overall. Codex claimed 5 friction points; Claude verified and found 4 valid (1 false positive — codex's terminal couldn't render CJK/emoji and mis-diagnosed "mojibake"). This release ships the 4 real fixes.
+
+### Fixed — `init` completion banner now persona-aware (Track 1)
+
+Before: every persona ended `init` with `doctor` / `add <DOI>` / `serve --dashboard` / `install --mcp`. That contradicted the README's "one sentence in → `auto`" story.
+
+After:
+- **researcher / humanities**: `plan "your research topic"` → `auto "your research topic"` → `serve --dashboard`
+- **analyst / internal**: `import-folder <folder> --cluster <slug>` → `auto "your topic" --no-nlm` → `serve --dashboard`
+- `doctor` kept as an optional readiness-check line above the main steps.
+- `install --mcp` dropped (superseded by `install --platform <host>` skill pack from v0.53).
+
+### Fixed — `auto` no longer aborts when NotebookLM fails (Track 2)
+
+Before: any NLM step failure (bundle / upload / generate button not found / login expired / UI drift) returned `AutoReport(ok=False)` — even though papers were already in Zotero + Obsidian.
+
+After: NLM failures set `report.nlm_deferred=True` + `report.nlm_error=<stage>:<msg>`, but `report.ok` stays `True` (papers were ingested successfully). Crystal generation still runs. Next-Steps banner adds resume hints:
+
+```
+[NLM] skipped (check: research-hub notebooklm login). Resume with:
+  research-hub notebooklm bundle   --cluster <slug>
+  research-hub notebooklm upload   --cluster <slug>
+  research-hub notebooklm generate --cluster <slug> --type brief
+  research-hub notebooklm download --cluster <slug> --type brief
+```
+
+Pinned by `test_auto_nlm_failure_does_not_abort_pipeline`.
+
+### Added — `research-hub dashboard --sample` zero-account preview (Track 3)
+
+New flag renders the dashboard on a bundled sample vault — no `init`, no Zotero key, no NotebookLM login. Closes the "no low-risk preview" audit gap (v0.59 friction #3).
+
+Sample vault (in the wheel under `src/research_hub/samples/sample_vault/`):
+- 2 clusters, 5 synthetic paper notes, 3 crystals, 2 `.base` files, 1 sample brief
+- Copied to a writable temp dir on first run (fallback to workspace `.research_hub_samples/` if OS temp isn't writable, for sandboxed environments)
+- Dashboard injects a banner: "SAMPLE PREVIEW — this vault is read-only and temporary."
+
+New test: `tests/test_v060_sample_vault.py`.
+
+### Changed — README trimmed (Track 4)
+
+User feedback: "確認readme不要太亂". README.md dropped from 320 → 255 lines. README.zh-TW.md from 281 → 225. Same information density, less scrolling.
+
+Also fixed command examples against the actual argparse shapes (the audit caught `ask "Q" --cluster X` in README vs the real `ask <cluster> <question>` positional).
+
+### Bugs found and fixed during build
+
+- README used wrong `ask` CLI shape (`--cluster X "Q?"` vs actual `<cluster> <question>` positional).
+- CLI help epilog still promoted older doctor/add flow; now points to `plan` / `auto`.
+- `dashboard --sample` needed a workspace-directory fallback because `tempfile.mkdtemp()` directories aren't writable in some sandboxed Windows environments.
+- `test_validate_live_cluster_notes` depended on maintainer's real vault under `~/knowledge-base`; gated behind `RESEARCH_HUB_RUN_LIVE_VAULT_TESTS=1` so CI stays deterministic.
+
+### Stats
+
+- Tests: 1661 → **1666** on the fast suite (+5 net; codex's internal run with `-q` saw more when including the full `-m "not slow"` matrix, but the standard fast suite is what CI uses)
+- MCP tools: unchanged (83)
+- README line count: 320 → 255 (EN), 281 → 225 (zh-TW)
+- New files: `src/research_hub/sample_vault.py`, `src/research_hub/samples/sample_vault/...` (5 md + 3 crystals + 2 .base + 1 brief), `tests/test_v060_sample_vault.py`
+
+### Cumulative since v0.48 stretch
+
+- 15 versions shipped (v0.48 → v0.60; v0.57 and v0.59 were audit-only)
+- 1520 → **1666 tests** (+146)
+- ~55 real bugs fixed
+- 7 successful Codex delegations
+- Every major UX gap flagged in the two audits (v0.57, v0.59) now shipped
+
+### v0.59 audit scores post-v0.60
+
+The audit's friction scores should improve materially on:
+- Stage C (Init): now points at `auto` for researcher / `import-folder` for analyst — no more Doctor-first confusion
+- Stage D (First auto): NLM failure doesn't kill the whole run — smoke test returns useful result even when Chrome session is stale
+- Stage B (Install): zero-account `--sample` preview means Curious Technical User persona can see the end state in 2 minutes without any account setup
+
 ## v0.58.0 (2026-04-21)
 
 **Manage tab UX overhaul** — Codex audit (v0.57) flagged 5 P0 items, this release ships all 5. (v0.57 was an audit-only release with no code-shipped artifact, so no version was published; v0.58 implements the audit's recommendations.)

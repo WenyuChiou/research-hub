@@ -15,6 +15,7 @@ pytest-cache-files-*/
 .pytest-tmp/
 .pytest-work/
 .research_hub_logs/
+.research_hub_samples/
 .tmp/
 .venv/
 venv/

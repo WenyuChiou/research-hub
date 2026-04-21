@@ -160,12 +160,37 @@ def test_auto_pipeline_nlm_step_fails(mock_deps):
 
     report = auto_pipeline(topic="NLM Fail Topic", do_nlm=True, print_progress=False)
 
-    assert not report.ok
-    assert "NotebookLM step failed" in report.error
-    assert report.steps[-1].name == "nlm"
+    assert report.ok
+    assert report.nlm_deferred is True
+    assert "nlm.upload: Invalid credentials" == report.nlm_error
+    assert report.steps[-1].name == "nlm.upload"
     assert not report.steps[-1].ok
     mock_deps["bundle_cluster"].assert_called() # bundle runs before upload
     mock_deps["generate_artifact"].assert_not_called() # generate is after upload
+
+
+def test_auto_nlm_failure_does_not_abort_pipeline(mock_deps, capsys):
+    mock_deps["registry_instance"].get.return_value = MagicMock()
+    mock_deps["upload_cluster"].side_effect = RuntimeError("login expired")
+
+    with patch("research_hub.auto._run_crystal_step") as mock_crystals:
+        report = auto_pipeline(
+            topic="NLM Deferred Topic",
+            do_nlm=True,
+            do_crystals=True,
+            print_progress=True,
+        )
+
+    out = capsys.readouterr().out
+    assert report.ok is True
+    assert report.nlm_deferred is True
+    assert report.nlm_error == "nlm.upload: login expired"
+    mock_crystals.assert_called_once()
+    assert "[NLM] skipped (check: research-hub notebooklm login). Resume with:" in out
+    assert "research-hub notebooklm bundle   --cluster nlm-deferred-topic" in out
+    assert "research-hub notebooklm upload   --cluster nlm-deferred-topic" in out
+    assert "research-hub notebooklm generate --cluster nlm-deferred-topic --type brief" in out
+    assert "research-hub notebooklm download --cluster nlm-deferred-topic --type brief" in out
 
 
 def test_auto_pipeline_search_returns_no_papers(mock_deps):

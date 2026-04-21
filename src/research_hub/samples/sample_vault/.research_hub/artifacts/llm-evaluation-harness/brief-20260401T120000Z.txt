@@ -1,0 +1,8 @@
+# LLM Evaluation Harness
+
+Source: synthetic sample vault
+Downloaded: 20260401T120000Z
+Sources: 3
+Saved briefings: Synthetic overview
+
+The sample cluster frames evaluation harnesses as engineering systems rather than single benchmark scripts. The synthetic papers emphasize calibration drift, prompt leakage, and reproducible judge protocols. A useful reading path starts with benchmark drift, then studies leakage controls, then reviews judge calibration.

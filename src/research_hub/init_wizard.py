@@ -90,10 +90,23 @@ def _detect_existing_obsidian_vault(vault: Path) -> None:
         print("    alongside your existing notes. Nothing is overwritten.\n")
 
 
-def _print_completion_banner(vault_path: Path, config_path: Path) -> None:
+def _print_completion_banner(vault_path: Path, config_path: Path, *, persona: str = "researcher") -> None:
     """Print formatted completion message with next steps."""
     vault_str = str(vault_path)
     config_str = str(config_path)
+    normalized_persona = str(persona or "researcher").strip().lower()
+    if normalized_persona in {"analyst", "internal"}:
+        next_steps = [
+            ("research-hub import-folder <folder> --cluster <slug>", "Ingest local PDFs/docs into a cluster"),
+            ('research-hub auto "your topic" --no-nlm', "Optional paper search without NotebookLM"),
+            ("research-hub serve --dashboard", "See the result at http://127.0.0.1:8765/"),
+        ]
+    else:
+        next_steps = [
+            ('research-hub plan "your research topic"', "Review and confirm the plan"),
+            ('research-hub auto "your research topic"', "Run the full research pipeline"),
+            ("research-hub serve --dashboard", "See the result at http://127.0.0.1:8765/"),
+        ]
 
     lines = [
         "",
@@ -102,23 +115,15 @@ def _print_completion_banner(vault_path: Path, config_path: Path) -> None:
         f"  Your vault:  {vault_str}",
         f"  Your config: {config_str}",
         "",
+        "  Optional readiness check:",
+        "    research-hub doctor",
+        "",
         "  NEXT STEPS (run in order):",
         "",
-        "  1. research-hub doctor",
-        "     -> Verify all green before continuing",
-        "",
-        "  2. research-hub add <DOI> --cluster <name>",
-        "     -> Add your first paper (creates cluster automatically)",
-        "",
-        "  3. research-hub serve --dashboard",
-        "     -> Opens live dashboard at http://127.0.0.1:8765/",
-        "",
-        "  4. research-hub install --mcp",
-        "     -> Auto-configure Claude Desktop (optional)",
-        "",
-        "  Docs: https://github.com/WenyuChiou/research-hub",
-        "",
     ]
+    for idx, (command, detail) in enumerate(next_steps, start=1):
+        lines.extend([f"  {idx}. {command}", f"     -> {detail}", ""])
+    lines.extend(["  Docs: https://github.com/WenyuChiou/research-hub", ""])
     for line in lines:
         print(line)
 
@@ -265,5 +270,5 @@ def run_init(
         if answer == "y":
             print("  Run: research-hub notebooklm login")
 
-    _print_completion_banner(vault, config_path)
+    _print_completion_banner(vault, config_path, persona=persona)
     return 0

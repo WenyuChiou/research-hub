@@ -1,319 +1,255 @@
 # research-hub
 
-> **打一句話進去。Cluster + 論文 + AI 簡報出來。約 50 秒。**
-> Zotero + Obsidian + NotebookLM 三合一,專為 AI agent 打造 — **不需要 OpenAI/Anthropic API key**。
+> **一句話輸入，輸出研究主題、論文與 AI 摘要，約 50 秒。**
+> 把 Zotero、Obsidian、NotebookLM 串成 AI agent 可操作的研究流程，不需要 OpenAI 或 Anthropic API key。
 
 ![research-hub dashboard 實測 GIF](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1661%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1666%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-English → [README.md](README.md) · [看完整解析度 mp4 →](docs/demo/dashboard-walkthrough.mp4)
+English: [README.md](README.md) | [觀看完整解析度 mp4](docs/demo/dashboard-walkthrough.mp4)
 
 ---
 
-## 任何 AI host 都能用
+## 支援任何 AI host
 
-只要你的 AI 會載 MCP tool、會跑 shell 指令、或會打 HTTP,它就能驅動 research-hub。
+只要你的 AI 能載入 MCP tool、執行 shell command，或呼叫 HTTP API，就能操作 research-hub。
 
-| 你的 AI | research-hub 怎麼接 |
+| AI host | research-hub 連接方式 |
 |---|---|
-| **Claude Desktop**(Anthropic 的桌面 app) | MCP stdio via `claude_desktop_config.json` |
-| **Claude Code**(Anthropic 的 terminal / VS Code agent) | MCP stdio — 裝完 research-hub 後直接能用 |
-| **Cursor · Continue.dev · Cline · Roo Code · VS Code Copilot** | 一樣的 MCP 設定,各自 host 有自己的 config 欄位 |
-| **OpenClaw · 其他任何 MCP 相容 host** | MCP stdio |
-| **ChatGPT · Claude.ai 網頁 · Gemini 網頁 · OpenAI Custom GPT** | REST JSON at `/api/v1/*`(bearer token + CORS) |
-| **Codex CLI · Gemini CLI · GPT Code Interpreter · LangChain · AutoGen · CrewAI** | Shell subprocess — 每個指令都支援 `--json` 輸出 |
-| **你自己寫的 Python script** | `from research_hub.auto import auto_pipeline`(任何函式都能 import) |
+| Claude Desktop | 透過 `claude_desktop_config.json` 使用 MCP stdio |
+| Claude Code | MCP stdio 加上內建 skill files |
+| Cursor、Continue.dev、Cline、Roo Code、VS Code Copilot | 相同 MCP config 形狀，放在各 host 的設定檔 |
+| OpenClaw 或任何 MCP host | MCP stdio |
+| ChatGPT、Claude.ai web、Gemini web、OpenAI Custom GPT | `/api/v1/*` REST JSON，支援 bearer token 與 CORS |
+| Codex CLI、Gemini CLI、GPT Code Interpreter、LangChain、AutoGen、CrewAI | Shell subprocess；常用 command 支援 `--json` |
+| 你自己的 Python script | `from research_hub.auto import auto_pipeline` |
 
 ---
 
-## 🤖 直接叫你的 AI 幫你裝
+## 安裝與第一次執行
 
-不想自己打指令?把下面這段複製到任何會幫你跑 shell 的 AI(Claude Desktop / Claude Code / Cursor / Continue / ChatGPT / Gemini)就好。它是個自給自足的安裝腳本,AI 會照步驟跑,需要你給東西時會停下來問你(Zotero key、vault 路徑、你用哪個 MCP host 等等)。
+### 先預覽，不需要帳號
 
-```text
-請幫我從頭到尾安裝 research-hub。它是一個 Python 套件,把學術論文
-pipe 進 Zotero + Obsidian + NotebookLM,並提供 MCP server。
-
-依序做這些步驟。需要我互動的地方停下來問我,不要自己編:
-
-1. 檢查: `python --version`。如果 < 3.10,叫我先升級再繼續。
-
-2. 安裝: `pip install research-hub-pipeline[playwright,secrets]`
-
-3. 跑 `research-hub init`。它會問問題,把問題轉給我,不要亂猜。
-   persona 選項有 `researcher` / `humanities` / `analyst` / `internal`;
-   問我哪個適合。如果我沒有 Zotero API key,停下來告訴我去
-   https://www.zotero.org/settings/keys 拿。
-
-4. 跑 `research-hub notebooklm login`。會開瀏覽器 — 告訴我完成 Google 登入。
-
-5. 搞清楚我用哪個 AI host(通常就是你自己)。修改它的 MCP 設定,加入:
-     { "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
-   設定檔位置:
-     - Claude Desktop (macOS):  ~/Library/Application Support/Claude/claude_desktop_config.json
-     - Claude Desktop (Windows): %APPDATA%\Claude\claude_desktop_config.json
-     - Cursor: Settings → MCP Servers
-     - Continue.dev: ~/.continue/config.json
-     - Cline / Roo: VS Code 設定裡 `cline.mcpServers`
-   不確定的話問我我現在是透過哪個 host 跟你講話。
-
-6. 跑 `research-hub install --platform claude-code`(或 `cursor` / `codex` /
-   `gemini`,對應步驟 5 的 host)。這會把 skill 檔案複製到 host 的 skills 目錄,
-   讓之後的 AI 對話知道怎麼正確用 research-hub 工具。
-
-7. 叫我重啟 AI host。重啟後,問我要研究什麼主題當煙測,然後跑:
-   `research-hub auto "主題" --with-crystals`
+```bash
+pip install research-hub-pipeline
+research-hub dashboard --sample    # 用內建 sample vault 開啟 dashboard
 ```
 
-就這樣。AI 全部幫你處理,你只要回答它問你的問題就好。
+不需要 Zotero、不需要 NotebookLM、不需要任何帳號；先看最後會長什麼樣。
 
----
+### 讓 AI 幫你安裝
 
-## 或手動安裝(約 60 秒)
+把下面這段貼到 Claude Desktop、Claude Code、Cursor、Continue、ChatGPT、Gemini，或任何能執行 shell 的 AI：
+
+```text
+Please install research-hub on my machine end-to-end. It is a Python package
+that pipes academic papers into Zotero + Obsidian + NotebookLM and exposes an
+MCP server.
+
+Do these steps in order. Stop and ask me whenever you need interactive input:
+
+1. Check `python --version`. If it is below 3.10, tell me to upgrade first.
+2. Run `pip install research-hub-pipeline[playwright,secrets]`.
+3. Run `research-hub init`. Pass the prompts to me. The persona options are
+   `researcher`, `humanities`, `analyst`, and `internal`.
+4. Run `research-hub notebooklm login` and tell me to finish Google sign-in.
+5. Add this MCP entry to the AI host I use:
+   `{ "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }`
+6. Run `research-hub install --platform claude-code` or the matching platform:
+   `cursor`, `codex`, or `gemini`.
+7. Ask me for a topic and run `research-hub auto "TOPIC" --with-crystals`.
+```
+
+### 手動安裝
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub init                          # 互動式:選 persona + Zotero + 就緒檢查
-research-hub notebooklm login              # 一次性 Google 登入
-research-hub auto "你想研究的主題"          # 約 50 秒後拿到論文 + AI brief
+research-hub init
+research-hub notebooklm login
+research-hub plan "你的研究題目"
+research-hub auto "你的研究題目"
+research-hub serve --dashboard
 ```
 
-`init` 結尾會跑一次**首次執行就緒檢查**,缺哪個(Obsidian vault、Chrome、Zotero key、LLM CLI)會直接告訴你。如果 `claude` / `codex` / `gemini` CLI 在 PATH 上,加 `--with-crystals` 讓 crystal 也自動生成:
+如果第一次只想測試搜尋與 vault 寫入，不跑 NotebookLM：
 
 ```bash
-research-hub auto "主題" --with-crystals
+research-hub auto "你的研究題目" --no-nlm
 ```
 
-不確定要怎麼問?先 plan:
+Analyst / internal-KM 使用者可以跳過 Zotero，直接匯入本機資料：
 
 ```bash
-research-hub plan "我想學 harness engineering"
-# 自動調 max_papers(看到「thesis / 深入」會調大)、偵測領域
-# (bio/med/cs/…)、警告 cluster 撞名,印出可以直接執行的 `auto` 指令。
+pip install research-hub-pipeline[import,secrets]
+research-hub init --persona analyst
+research-hub import-folder ./papers --cluster my-local-review
+research-hub auto "related literature" --no-nlm
 ```
+
+| Persona | Install extra |
+|---|---|
+| Researcher | `[playwright,secrets]` |
+| Humanities | `[playwright,secrets]` |
+| Analyst | `[import,secrets]` |
+| Internal KM | `[import,secrets]` |
+
+需要 Python 3.10+。可選 extras：`[playwright]` 給 NotebookLM、`[import]` 給 PDF/DOCX/MD/TXT/URL 匯入、`[secrets]` 給 OS keyring、`[mcp]` 給 MCP server。
 
 ---
 
-## 接到你的 AI host(30 秒,一次性設定)
+## 接到你的 AI host
 
-不論 Claude Desktop / Cursor / Continue.dev / Cline / VS Code Copilot / OpenClaw,MCP 設定都是同樣格式。找到該 host 的 MCP config 檔案,加上:
+Claude Desktop、Cursor、Continue.dev、Cline、VS Code Copilot、OpenClaw 或其他 MCP host 都使用這個形狀：
 
 ```json
 { "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
 ```
 
-重啟 host。然後直接用自然語言講話 — 下面用 Claude 當例子,對任何 MCP host 都一樣:
+重啟 host 後，你可以直接用自然語言要求：
 
-> **你:**「幫我找 5 篇 agent-based modeling 的論文放進 notebook」
-> **AI:** *呼叫 `auto_research_topic(topic="agent-based modeling", max_papers=5)`* → 5 篇論文 + NotebookLM brief,約 50 秒。
+> Find me 5 papers on agent-based modeling and put them in a notebook.
 
-> **你:**「我的 llm-evaluation-harness cluster 現在 SOTA 是什麼?」
-> **AI:** *呼叫 `read_crystal("llm-evaluation-harness", "sota-and-open-problems")`* → 180 字預先寫好的答案,附引用。**讀 ~1 KB、0 篇 abstract 被重新讀取。**
+AI 可以呼叫 `auto_research_topic(topic="agent-based modeling", max_papers=5)`，完成論文匯入、NotebookLM brief 與 vault 更新。
 
-**總共 83 個 MCP tools** — 完整參考: [`docs/mcp-tools.md`](docs/mcp-tools.md)。最重要的幾個:
+安裝 host 專用 skill files：
 
-| Tool | 取代了什麼 |
-|---|---|
-| `auto_research_topic(topic)` | 7 步驟 CLI 流程(search → ingest → bundle → upload → generate → download) |
-| `plan_research_workflow(intent)` | 猜 max_papers / field / cluster slug |
-| `ask_cluster_notebooklm(cluster, question)` | 開 NotebookLM、貼問題、複製答案 |
-| `read_crystal(cluster, slot)` | 重讀 20 篇 abstract 回答同一個問題 |
-| `web_search(query)` | 手動蒐集 blog/docs/news 連結 |
-| `cleanup_garbage` + `tidy_vault` | `du -sh` + 手動 `rm -rf` + 手動跑 doctor |
+```bash
+research-hub install --platform claude-code
+research-hub install --platform cursor
+research-hub install --platform codex
+research-hub install --platform gemini
+```
 
-**瀏覽器內的 AI**(ChatGPT、Claude.ai 網頁、Custom GPT)不能用 MCP — 改用 REST API:
+只能用瀏覽器的 AI 可以改走 REST API：
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/v1/plan \
-     -H 'Content-Type: application/json' \
-     -d '{"intent":"research harness engineering"}'
+     -H "Content-Type: application/json" \
+     -d "{\"intent\":\"research harness engineering\"}"
 ```
 
----
+完整參考：[MCP tools](docs/mcp-tools.md)。
 
 ---
 
-## 📊 一張表看完所有功能
+## Dashboard 四格預覽
 
-| 能力 | 指令(或 MCP tool) | 說明 |
+`research-hub serve --dashboard` 會開啟 `http://127.0.0.1:8765/`。Dashboard 有六個 tab，下面四個是主要操作面。
+
+| | |
+|---|---|
+| ![Overview](docs/images/hero/dashboard-overview.png) | ![Library](docs/images/hero/dashboard-library-subtopic.png) |
+| **Overview**：cluster treemap、storage map、健康摘要 | **Library**：依 cluster 檢視 papers 與 sub-topics |
+| ![Diagnostics](docs/images/hero/dashboard-diagnostics.png) | ![Manage](docs/images/hero/dashboard-manage-live.png) |
+| **Diagnostics**：drift alerts 與 readiness checks | **Manage**：把常用 CLI 動作做成按鈕 |
+
+Briefings 與 Writing 也在 dashboard 內。更多畫面請看 [dashboard walkthrough](docs/dashboard-walkthrough.md) 與 [persona variants](docs/personas.md)。
+
+---
+
+## 在 Obsidian 裡
+
+每篇匯入的 paper 都是帶 frontmatter 的 Markdown note。每個 cluster 也能產生 Obsidian Bases dashboard。
+
+| | |
+|---|---|
+| ![Obsidian Bases dashboard for a cluster](docs/images/obsidian-bases-dashboard.png) | ![Single paper note rendered with Properties view](docs/images/obsidian-paper-note.png) |
+| **Cluster Bases dashboard**：生成 `.base`，可排序與篩選 paper metadata | **單篇 paper note**：title、authors、year、DOI、Zotero key、tags、status、cluster、verification metadata |
+
+Crystals 也是純 Markdown，放在 `hub/<cluster>/crystals/*.md`，可連結、搜尋，也可由 MCP tool 低成本讀取。
+
+---
+
+## 功能速覽
+
+| 能力 | Command 或 MCP tool | 備註 |
 |---|---|---|
-| **Lazy mode** — 一句話進,brief 出 | `auto "topic"` / `auto_research_topic` | search → ingest → NLM brief,約 50 秒 |
-| **Lazy maintenance** | `tidy` / `tidy_vault` | doctor + dedup + bases + cleanup preview |
-| **GC 累積垃圾** | `cleanup --all --apply` / `cleanup_garbage` | bundles + debug logs + 過期 artifacts |
-| **臨時 NLM Q&A** | `ask --cluster X "Q?"` / `ask_cluster_notebooklm` | 雙後端(NLM + crystal cache) |
-| **預先運算 crystals** | `crystal emit / apply` | 每個 cluster 約 10 個標準 Q→A,每答案約 1 KB |
-| **結構化 memory** | `memory emit / apply` + `list_entities/claims/methods` | 型別化 entity、有信心度的 claim、method taxonomy |
-| **Live dashboard** | `serve --dashboard` | 6 個 tab、persona-aware、Manage tab 按鈕直接執行 CLI |
-| **4 personas、1 套程式** | `RESEARCH_HUB_PERSONA=researcher\|humanities\|analyst\|internal` | 詞彙跟隱藏 tab 自動適配 |
-| **100% orphan coverage** | `clusters rebind --emit` 然後 `--apply` | 8-heuristic 鏈、auto-create-from-folder 提案 |
-| **健康檢查(12+ 項)** | `doctor` / `doctor --autofix` | 機械式 backfill、patchright Chrome 檢測 |
-| **Multi-backend search** | `search "query"` | arXiv + Semantic Scholar(預設)+ Crossref DOI 查詢 |
-| **Cluster autosplit** | `clusters analyze --split-suggestion` | networkx greedy modularity 跑在引用圖上 |
-| **Obsidian Bases dashboard** | `bases emit` / `emit_cluster_base` | 每個 cluster 自動產出 `.base`(ingest 時自動更新) |
-| **NotebookLM 上傳** | `notebooklm upload --cluster X` | patchright + persistent Chrome(無 API key、無 quota) |
-| **引用圖** | `vault graph-colors` | networkx + Obsidian graph view 上色 |
-| **本機檔案匯入** | `import-folder /path` | PDF / DOCX / MD / TXT / URL(analyst persona) |
-| **通用網路搜尋**(v0.51) | `websearch "query"` / `web_search` | Tavily / Brave / Google CSE / DDG fallback(不用 key 也能跑) |
-| **領域自動偵測**(v0.51) | `plan "intent"` → 建議 `--field` | bio/med 查詢自動挑 pubmed;cs 自動挑 arxiv+s2 |
-
-[→ 完整 lazy-mode 指南](docs/lazy-mode.md) · [→ 所有指令](docs/dashboard-walkthrough.md) · [→ MCP 參考](docs/mcp-tools.md)
+| Lazy research pipeline | `research-hub auto "topic"` / `auto_research_topic` | Search、ingest、bundle、upload、generate、download |
+| 先規劃再執行 | `research-hub plan "intent"` / `plan_research_workflow` | 建議 field、cluster slug、max papers |
+| 不跑 NotebookLM 的 smoke test | `research-hub auto "topic" --no-nlm` | 只驗證搜尋與 vault 寫入 |
+| 本機檔案匯入 | `research-hub import-folder <folder> --cluster <slug>` | PDF、DOCX、MD、TXT、URL |
+| Cluster Q&A | `research-hub ask <cluster> "question"` / `ask_cluster_notebooklm` | Top-level CLI 是 cluster 在前、question 在後 |
+| NotebookLM 操作 | `research-hub notebooklm upload --cluster <slug>` | 使用 persistent Chrome 做 browser automation |
+| 預先計算 crystals | `research-hub crystal emit --cluster <slug>` | Canonical answers 存成 Markdown |
+| Structured memory | `research-hub memory emit --cluster <slug>` | Entities、claims、methods |
+| Live dashboard | `research-hub serve --dashboard` | HTTP dashboard 與 action buttons |
+| Sample preview | `research-hub dashboard --sample` | 暫存內建 sample vault，不需帳號 |
+| Lazy maintenance | `research-hub tidy` | Doctor、dedup、bases refresh、cleanup preview |
+| 垃圾清理 | `research-hub cleanup --all --apply` | Bundles、debug logs、stale artifacts |
+| Cluster repair | `research-hub clusters rebind --emit` 再 `--apply` | 重綁 orphaned notes |
+| Obsidian Bases | `research-hub bases emit --cluster <slug>` | 生成 `.base` dashboard |
+| Web search | `research-hub websearch "query"` / `web_search` | Tavily、Brave、Google CSE、DDG fallback |
 
 ---
 
-## 🖥 Dashboard 長什麼樣
+## vs alternatives
 
-`research-hub serve --dashboard` 會開 `http://127.0.0.1:8765/` — 六個 tab,跟 CLI 看到的是同一份資料。
+research-hub 不取代 Zotero、Obsidian 或 NotebookLM；它把這些工具接起來，讓 AI agent 能操作整個流程。
 
-| | |
-|---|---|
-| ![Overview](docs/images/dashboard-overview.png) | ![Library](docs/images/dashboard-library-subtopic.png) |
-| **Overview** — treemap + storage map + 最近活動 + crystals 覆蓋率 | **Library** — cluster 鑽到 sub-topic + 每篇論文一列 |
-| ![Briefings](docs/images/dashboard-crystals.png) | ![Diagnostics](docs/images/dashboard-diagnostics.png) |
-| **Briefings** — NotebookLM brief 預覽 + artifact 連結 | **Diagnostics** — 健康狀態 + drift 警告(v0.48 已按 kind 分組) |
-| ![Manage](docs/images/dashboard-manage-live.png) | ![Writing](docs/images/dashboard-writing.png) |
-| **Manage** — 每個 CLI 動作都是按鈕(rename / merge / split / NLM upload / ask / polish-markdown / bases emit) | **Writing** — 引文採集 + 草稿合成 + BibTeX 匯出 |
+| 你想做的事 | Zotero alone | NotebookLM alone | Generic RAG | Obsidian-Zotero plugin | research-hub |
+|---|---:|---:|---:|---:|---:|
+| 一行搜尋 arXiv + Semantic Scholar | No | No | DIY | No | Yes |
+| 同步匯入 Zotero、Obsidian、NotebookLM | No | No | DIY | Partial | Yes |
+| 從 collection 產生 AI brief | No | Manual | DIY | No | Yes |
+| 快取 canonical answers | No | No | 重新抓 context | No | Yes |
+| Structured memory layer | No | No | 通常是 chunks | No | Yes |
+| AI-agent 透過 MCP 控制 | No | No | DIY | No | Yes |
+| 含操作按鈕的 live dashboard | No | No | No | No | Yes |
+| Per-cluster Obsidian Bases dashboard | No | No | No | No | Yes |
+| AI 不需要 API key | n/a | Yes | 通常需要 | n/a | Yes |
+| Local-first vault | Partial | No | Depends | Yes | Yes |
 
-[→ Dashboard 完整導覽](docs/dashboard-walkthrough.md) · [→ 4 個 persona 變體](docs/personas.md)
-
----
-
-## 📓 在 Obsidian 裡長什麼樣
-
-Dashboard 是一面;另一面才是你實際在用的:**Obsidian**。research-hub 收的每一篇論文都變成真正的 `.md` 筆記、含結構化 frontmatter,每個 cluster 還會自動產一個 **Bases** dashboard,你不離開 Obsidian 就能瀏覽。
-
-| | |
-|---|---|
-| ![Cluster Bases dashboard](docs/images/obsidian-bases-dashboard.png) | ![單篇 paper 筆記 (Properties view)](docs/images/obsidian-paper-note.png) |
-| **Cluster Bases dashboard** — 每個 cluster 自動產 `.base`(v0.43+)。可排序/可過濾的論文 database view,欄位從 frontmatter 自動建(name / title / year / status / verified / doi)。每次 `ingest` / `topic build` 自動刷新。 | **單篇 paper 筆記** — 每篇收進來的論文都有結構化 frontmatter(title / authors / year / journal / doi / zotero-key / collections / tags / ingested_at / topic_cluster / cluster_queries / verified / status)。可以 wikilink、可以被 Obsidian graph 收錄、可以全文搜尋。 |
-
-Crystals(預先運算的 AI 答案)也是 Obsidian 原生筆記,放在 `hub/<cluster>/crystals/*.md`,完全可以 wikilink、graph view 看得到、可以透過 `read_crystal()` MCP tool 0 token 查詢。
+實際定位：如果你已經使用 Zotero、Obsidian、NotebookLM 其中至少兩個，而且想讓 AI assistant 代跑重複步驟，research-hub 才最有價值。
 
 ---
 
-## 🧠 跟其他工具的差別
+## Troubleshooting
 
-### 1. 預先運算好的答案,不是 lazy retrieval
+| 症狀 | 可能原因 | 修正方式 |
+|---|---|---|
+| `research-hub init` 顯示 Chrome warning | 沒有 Chrome，或 patchright 找不到 | 安裝 Chrome 後跑 `research-hub doctor` |
+| `research-hub notebooklm login` 開了瀏覽器但 Google 擋登入 | 新裝置或 bot challenge | 在可見瀏覽器中完成登入與手機確認 |
+| `research-hub auto` 找到 0 papers | 題目太窄或 search backend 暫時失敗 | 改題目或加 `--max-papers 20` |
+| NotebookLM upload/generate 失敗 | NotebookLM UI 改版或登入過期 | 跑 `research-hub notebooklm login`，再用 `research-hub notebooklm bundle/upload/generate/download --cluster <slug>` 接續 |
+| `auto --with-crystals` 找不到 LLM CLI | PATH 上沒有 `claude`、`codex` 或 `gemini` | 安裝其中一個，或手動跑 `crystal emit` / `crystal apply` |
+| Claude Desktop 看不到 MCP server | MCP config 放錯檔案或沒有重啟 | 檢查 host config path 並重啟 Claude Desktop |
+| `init` 顯示 Zotero warning，但你不用 Zotero | persona 預期使用 Zotero | 重跑 `research-hub init --persona analyst` 或 `--persona internal` |
 
-所有 RAG 系統都還是在查詢時才把資料拼湊起來。research-hub 的答案是:**儲存 AI 的推理結果,而不是原料**。
-
-對每個 cluster,你預先讓 AI(任何 LLM 都行)回答約 10 個標準問題,存成 **crystal**。之後 AI agent 再問「SOTA 是什麼?」時,讀的是預先寫好的段落(~1 KB),不是 20 篇 abstract(~30 KB)— **30× 壓縮**,品質不會在查詢時降級。底層的 **memory layer** 存放 crystal 引用的結構化內容:具型別的 entity、有信心度標記的 claim、method taxonomy。AI agent 用 `list_entities`、`list_claims(min_confidence="high")`、`list_methods` 查詢 — 結構化資料的結構化查詢,沒有 RAG。
-
-維護者 vault 裡的範例 cluster: `hub/llm-evaluation-harness/` 有 10 crystals + 14 entities + 12 claims + 7 methods,全部產生過一次。你跑 `research-hub auto "harness engineering" --with-crystals` 之後,你的 vault 也會長這樣。[→ 為什麼這不是 RAG](docs/anti-rag.md)
-
-### 2. 三個操作介面、一個 orchestrator
-
-CLI、dashboard 按鈕、MCP tools 全部呼叫同一個 Python orchestrator。沒有「REST 模式」或「API 模式」會有不同行為。在 shell 能做的事,Claude 也能透過 MCP 做,反過來也是。
-
-### 3. Provider-agnostic by design
-
-**不需要 OpenAI / Anthropic API key**。所有 AI 生成都用 `emit` / `apply` 模式: `emit` 把獨立完整的 prompt 印到 stdout,你貼到自己選的 AI(Claude、GPT、Gemini、本機模型),`apply` 把 JSON 回應收進去。NotebookLM 用你自己已登入的 Chrome 跑瀏覽器自動化 — 沒有 quota、沒有按 token 計費。
-
----
-
-## ⚖️ 跟其他工具比較
-
-老實的並排比較。research-hub 不取代下面任何一個工具 — 它把它們縫起來,讓 AI agent 一次驅動全部。
-
-| 你能做的事 | 只用 Zotero | 只用 NotebookLM | 通用 RAG(LangChain 等) | Obsidian-Zotero plugin | **research-hub** |
-|---|---|---|---|---|---|
-| 一個指令同時搜 arXiv + Semantic Scholar | ❌ | ❌ | DIY | ❌ | ✅ `auto "topic"` |
-| 一次同步進 Zotero **+** Obsidian **+** NotebookLM | ❌ | ❌ | DIY | 部分(Z↔O 而已) | ✅ `auto` |
-| 從你的論文集自動產 AI brief | ❌ | ✅(手動) | DIY | ❌ | ✅ 自動產 |
-| 預先運算 Q→A 答案,AI 不用每次重新 RAG | ❌ | ❌ | ❌(RAG 每次重抓) | ❌ | ✅ crystals(~1 KB/答案) |
-| 結構化 memory(entity + 有信心度的 claim + method) | ❌ | ❌ | unstructured chunks | ❌ | ✅ `list_entities/claims/methods` |
-| AI agent 直接透過 MCP 控制 | ❌ | ❌ | DIY MCP server | ❌ | ✅ 81 個 MCP tool |
-| Live HTML dashboard(含執行按鈕) | ❌ | ❌ | ❌ | ❌ | ✅ `serve --dashboard` |
-| 自動 cluster + 偵測 drift + 自動 rebind orphan | ❌ | ❌ | ❌ | ❌ | ✅ `clusters rebind` |
-| 每個 cluster 自動產 Obsidian Bases dashboard | ❌ | ❌ | ❌ | ❌ | ✅ `bases emit` |
-| **AI 不需要 API key** | n/a | ✅ | ❌ | n/a | ✅ |
-| **本機優先、你擁有 vault** | ✅(雲端同步) | ❌(Google) | 視情況 | ✅ | ✅ |
-| 1000 次查詢成本 | n/a | quota 限額 | ~$5–50(按 token 收費) | n/a | **$0**(crystal 已快取) |
-
-老實話: research-hub 的價值**只有在你已經用 Zotero / Obsidian / NotebookLM 三個裡面至少 2 個**、想要 AI 幫你 agentize 流程時才划算。如果你只用其中一個,單獨那個工具就夠了。
-
----
-
-## 📦 安裝變體
+更完整的檢查：
 
 ```bash
-# Researcher / Humanities(用 Zotero + NotebookLM)
-pip install research-hub-pipeline[playwright,secrets]
-
-# Analyst / Internal KM(不用 Zotero,匯入本機檔案)
-pip install research-hub-pipeline[import,secrets]
-
-# 開發用全套
-pip install -e '.[dev,playwright,import,secrets,mcp]'
+research-hub doctor --autofix
 ```
 
-Python 3.10+。可選 `npm install -g defuddle-cli` 讓 URL 匯入更乾淨。
-
 ---
 
-## 📚 文件
+## Docs + Status + Dev
 
-| | |
-|---|---|
-| [前 10 分鐘](docs/first-10-minutes.md) | 4 個 persona 各自的引導 |
-| [Lazy-mode 參考](docs/lazy-mode.md) | 4 個一句話指令 |
-| [Dashboard 完整導覽](docs/dashboard-walkthrough.md) | 每個 tab 配 persona 用法 |
-| [MCP tools 參考](docs/mcp-tools.md) | 81 個 tool 分類 + 簽名 |
-| [Personas](docs/personas.md) | 4 個 persona profile + 功能矩陣 |
-| [Cluster integrity](docs/cluster-integrity.md) | 6 個 failure mode × 4 personas |
-| [Anti-RAG / crystals](docs/anti-rag.md) | 為什麼預先運算贏 retrieval |
-| [NotebookLM 設定](docs/notebooklm.md) + [疑難排解](docs/notebooklm-troubleshooting.md) | patchright + persistent Chrome(v0.42+) |
-| [Import folder](docs/import-folder.md) | 本機 PDF/DOCX/MD/TXT/URL 匯入 |
-| [Papers input schema](docs/papers_input_schema.md) | Ingestion pipeline 參考 |
-| [升級指南](UPGRADE.md) | 從舊版本升上來 |
-| [Audit 報告](docs/) | `audit_v0.26.md` … `audit_v0.45.md` |
-| [CHANGELOG](CHANGELOG.md) | 每個版本的 release note |
+文件：[First 10 minutes](docs/first-10-minutes.md)、[lazy mode](docs/lazy-mode.md)、[dashboard walkthrough](docs/dashboard-walkthrough.md)、[MCP tools](docs/mcp-tools.md)、[personas](docs/personas.md)、[NotebookLM setup](docs/notebooklm.md)、[import folder](docs/import-folder.md)、[CLI reference](docs/cli-reference.md)、[CHANGELOG](CHANGELOG.md)。
 
----
+狀態：
 
-## 🩺 疑難排解(第一次跑遇到的問題)
+- Latest：公開 README status notes 目前標示 v0.53.0；完整版本歷史見 [CHANGELOG](CHANGELOG.md)。
+- Tests badge：1661 passing。
+- MCP tools：83。
+- REST endpoints：12 at `/api/v1/*`。
+- Bundled skills：`research-hub` 與 `research-hub-multi-ai`。
 
-| 症狀 | 原因 | 解法 |
-|---|---|---|
-| `research-hub init` 印 `chrome WARN patchright cannot launch Chrome` | 沒裝 Chrome,或 patchright 找不到 | 從 chrome.com 裝 Chrome,再跑 `research-hub doctor` 重新偵測 |
-| `research-hub notebooklm login` 開了瀏覽器但 Google 擋住登入 | Headless / 新裝置驗證 | 那是 patchright(真的 Chrome)— 在手機按「是的,是我」,然後正常登入 |
-| `research-hub auto` 在 `search` 階段拿到 `0 papers` | 主題太窄,或 arXiv/SemSch 短暫斷線 | 加 `--max-papers 20` 或重新描述主題;兩個 backend 都會 fault-tolerant |
-| `research-hub auto` 在 `nlm.upload` 階段炸「Generation button not found」 | NotebookLM UI 改了,或你沒登入 | 重跑 `research-hub notebooklm login`;持續發生請開 issue 附 `.research_hub/` 裡的 `nlm-debug-*.jsonl` |
-| `auto --with-crystals` 顯示「no LLM CLI on PATH」 | `claude`、`codex`、`gemini` CLI 都沒裝 | 裝你慣用的 AI CLI;或手動跑 `crystal emit` → 貼到 AI → `crystal apply` |
-| Claude Desktop 看不到 MCP server | `claude_desktop_config.json` 不在預期位置 | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` · Windows: `%APPDATA%\Claude\claude_desktop_config.json` · 改完要重啟 Claude Desktop |
-| `init` 印 `zotero WARN` 但我不用 Zotero | 預設 persona 是 `researcher`,它預期要 Zotero | 重跑 `research-hub init --persona analyst`(或 `internal`)— 這兩個 persona 完全跳過 Zotero |
-
-其他狀況: `research-hub doctor --autofix` 會修常見的機械問題,報告會告訴你哪個子系統有事。
-
----
-
-## 🛠 狀態
-
-- **最新**: v0.53.0(2026-04-20)— 多 AI skill pack: `research-hub install --platform claude-code` 現在會一起安裝 multi-AI orchestration skill,教 Claude 什麼時候把 crystal 產生 delegate 給 Codex、什麼時候把 CJK 內容 delegate 給 Gemini。見 [`CHANGELOG.md`](CHANGELOG.md)。
-- **測試**: fast suite 1585 passing(CI: Linux + Windows + macOS × Python 3.10/3.11/3.12 = 9 jobs)
-- **MCP tools**: 83 個(v0.47 auto/cleanup/tidy;v0.49 擴充 `auto_research_topic`;v0.50 加 `plan_research_workflow`;v0.51 加 `web_search`)
-- **REST endpoints**: 12 個 at `/api/v1/*`,涵蓋 health/clusters/crystals/search/websearch/plan/ask/auto
-- **內建 skills**: 2 個 — `research-hub`(核心 pipeline)+ `research-hub-multi-ai`(Claude + Codex + Gemini 分工 pattern)
-- **End-to-end 實測通過**: v0.49.5 開始,完整 lazy-mode 流程 — `auto "topic" --with-crystals` → 搜尋 → 收論文 → NotebookLM brief → 預先運算 AI 答案 — 在 Windows zh-TW 機器配真實 `claude` CLI 上實測完整跑完。詳見 [`CHANGELOG.md`](CHANGELOG.md) v0.49.4 的 per-stage 結果表。
-- **依賴**: `pyzotero`, `pyyaml`, `requests`, `rapidfuzz`, `networkx`, `platformdirs`(全部純 Python)
-- **可選 extras**: `[playwright]` 給 NotebookLM、`[import]` 給本機檔案匯入、`[secrets]` 給 OS keyring
-
-## 👩‍💻 開發者用
+開發環境：
 
 ```bash
 git clone https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-pip install -e '.[dev,playwright]'
-python -m pytest -q                     # 1585 passing
+pip install -e ".[dev,playwright]"
+python -m pytest -q
 ```
 
-貢獻: [CONTRIBUTING.md](CONTRIBUTING.md)。安全性: [SECURITY.md](.github/SECURITY.md)。
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)。PyPI package: `research-hub-pipeline`。CLI entry point: `research-hub`。
 
-PyPI 套件名: **research-hub-pipeline** · CLI 進入點: **research-hub**
+## License
 
-## 授權
-
-MIT。詳見 [LICENSE](LICENSE)。
+MIT. See [LICENSE](LICENSE).

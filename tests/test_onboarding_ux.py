@@ -36,15 +36,27 @@ def test_init_prints_next_steps_with_vault_and_config_paths(tmp_path, capsys):
 
     vault = tmp_path / "my-vault"
     config = tmp_path / "config.json"
-    _print_completion_banner(vault, config)
+    _print_completion_banner(vault, config, persona="researcher")
     out = capsys.readouterr().out
     assert "Setup complete" in out
     assert str(vault) in out
     assert str(config) in out
     assert "research-hub doctor" in out
-    assert "research-hub add" in out
+    assert 'research-hub plan "your research topic"' in out
+    assert 'research-hub auto "your research topic"' in out
     assert "research-hub serve --dashboard" in out
-    assert "research-hub install --mcp" in out
+    assert "research-hub install --mcp" not in out
+
+
+def test_init_prints_analyst_next_steps(tmp_path, capsys):
+    from research_hub.init_wizard import _print_completion_banner
+
+    _print_completion_banner(tmp_path / "vault", tmp_path / "config.json", persona="analyst")
+    out = capsys.readouterr().out
+    assert "research-hub import-folder <folder> --cluster <slug>" in out
+    assert 'research-hub auto "your topic" --no-nlm' in out
+    assert "research-hub serve --dashboard" in out
+    assert "research-hub install --mcp" not in out
 
 
 def test_init_detects_existing_obsidian_vault(tmp_path, capsys):

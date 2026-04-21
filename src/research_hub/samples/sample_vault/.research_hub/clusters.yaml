@@ -1,0 +1,19 @@
+clusters:
+  llm-evaluation-harness:
+    name: LLM Evaluation Harness
+    seed_keywords: [llm, evaluation, benchmark, harness]
+    zotero_collection_key: SAMPLELLM
+    notebooklm_notebook: LLM Evaluation Harness Sample
+    notebooklm_notebook_url: https://notebooklm.google.com/notebook/sample-llm-evaluation-harness
+    created_at: "2026-04-01T09:00:00Z"
+    first_query: llm evaluation harness reliability
+    description: Synthetic sample cluster about evaluating language model systems.
+  agent-based-modeling:
+    name: Agent-Based Modeling
+    seed_keywords: [agent, simulation, policy, emergence]
+    zotero_collection_key: SAMPLEABM
+    notebooklm_notebook: Agent-Based Modeling Sample
+    notebooklm_notebook_url: https://notebooklm.google.com/notebook/sample-agent-based-modeling
+    created_at: "2026-04-02T09:00:00Z"
+    first_query: agent based modeling policy simulation
+    description: Synthetic sample cluster about simulation methods and emergent behavior.

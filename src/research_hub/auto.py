@@ -129,6 +129,8 @@ class AutoReport:
     steps: list[AutoStepResult] = field(default_factory=list)
     papers_ingested: int = 0
     nlm_uploaded: int = 0
+    nlm_deferred: bool = False
+    nlm_error: str = ""
     brief_path: Optional[Path] = None
     notebook_url: Optional[str] = None
     total_duration_sec: float = 0.0
@@ -164,7 +166,8 @@ def auto_pipeline(
 
     On dry_run=True: print plan + return early with AutoReport(ok=True).        
 
-    On any step failure: stop, log, return AutoReport with ok=False + error.    
+    Search and ingest failures stop the run. NotebookLM failures are deferred
+    because papers have already landed in the vault.
     """
     cfg = get_config()
 
@@ -281,32 +284,35 @@ def auto_pipeline(
 
     # 6, 7, 8, 9 ??NotebookLM
     cluster = registry.get(slug)  # refresh
+    nlm_step = "nlm"
     try:
-
-
+        nlm_step = "nlm.bundle"
         bundle_report = bundle_cluster(cluster, cfg, download_pdfs=True)        
         _step_log(report, "nlm.bundle", True, _elapsed(started, report),        
                   f"{bundle_report.pdf_count} PDFs", print_progress)
 
+        nlm_step = "nlm.upload"
         upload_report = upload_cluster(cluster, cfg, headless=False)
         report.nlm_uploaded = upload_report.success_count
         report.notebook_url = upload_report.notebook_url
         _step_log(report, "nlm.upload", True, _elapsed(started, report),        
                   f"{upload_report.success_count} succeeded", print_progress)   
 
+        nlm_step = "nlm.generate"
         generate_artifact(cluster, cfg, kind="brief", headless=False)
         _step_log(report, "nlm.generate", True, _elapsed(started, report),      
                   "brief generation triggered", print_progress)
 
+        nlm_step = "nlm.download"
         download_report = download_briefing_for_cluster(cluster, cfg, headless=False)
         report.brief_path = download_report.artifact_path
         _step_log(report, "nlm.download", True, _elapsed(started, report),
                   f"{download_report.char_count} chars saved", print_progress)
     except Exception as exc:
-        _step_log(report, "nlm", False, _elapsed(started, report), str(exc), print_progress)
-        report.ok = False
-        report.error = "NotebookLM step failed: " + str(exc)
-        return report
+        report.nlm_deferred = True
+        report.nlm_error = f"{nlm_step}: {exc}"
+        report.ok = True
+        _step_log(report, nlm_step, False, _elapsed(started, report), str(exc), print_progress)
 
     # 10. (optional) Crystal generation via detected LLM CLI
     if do_crystals:
@@ -393,6 +399,14 @@ def _print_next_steps(report: AutoReport, slug: str, *, do_crystals: bool) -> No
         print(f"  NotebookLM: {report.notebook_url}")
     if report.brief_path:
         print(f"  Brief:      {report.brief_path}")
+    if report.nlm_deferred:
+        print("  [NLM] skipped (check: research-hub notebooklm login). Resume with:")
+        print(f"    research-hub notebooklm bundle   --cluster {slug}")
+        print(f"    research-hub notebooklm upload   --cluster {slug}")
+        print(f"    research-hub notebooklm generate --cluster {slug} --type brief")
+        print(f"    research-hub notebooklm download --cluster {slug} --type brief")
+        if report.nlm_error:
+            print(f"  Last NLM error: {report.nlm_error}")
     print()
     print("Next steps (copy-paste any of these):")
     print()

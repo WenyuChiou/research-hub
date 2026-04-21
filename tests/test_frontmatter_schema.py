@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,8 @@ def test_validate_todo_placeholders_flagged(tmp_path):
 
 @pytest.mark.slow
 def test_validate_live_cluster_notes():
+    if os.environ.get("RESEARCH_HUB_RUN_LIVE_VAULT_TESTS") != "1":
+        pytest.skip("set RESEARCH_HUB_RUN_LIVE_VAULT_TESTS=1 to validate live vault notes")
     vault = Path.home() / "knowledge-base" / "raw" / "llm-agents-software-engineering"
     if not vault.exists():
         pytest.skip("live vault not present")
