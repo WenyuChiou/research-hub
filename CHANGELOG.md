@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.56.0 (2026-04-20)
+
+**Full pipeline sweep — every one of the 10 `auto` stages now has e2e regression coverage.** Plus 1 real ingest bug caught.
+
+User asked for codex to sweep every pipeline stage (search → fit-check → ingest → Zotero/Obsidian/NLM → crystals) before recording the demo. Codex delegation, 5th consecutive use.
+
+### Added — `tests/test_pipeline_e2e.py` (22 new tests across 10 stages + 4 cross-stage)
+
+| Stage | Tests | Coverage |
+|---|---|---|
+| 1 — slugify + cluster create | 1 | naming + collision reuse |
+| 2 — Zotero collection auto-create | 1 | success + pyzotero failure path |
+| 3 — search across 8 backends | 9 | arxiv / s2 / openalex / crossref / pubmed / biorxiv / dblp / websearch + cross-backend empty/rate-limit merge |
+| 4 — `_to_papers_input` mapping | 1 | arxiv→`10.48550/arxiv.<id>` derived DOI (v0.49.4 fix) + real-DOI preservation + no-DOI rejection |
+| 5 — `run_pipeline` ingest | 1 | mock pyzotero + Obsidian frontmatter validation + per-paper rejection |
+| 6 — bundle PDF download | 1 | partial 404 tolerance + bundle_report shape |
+| 7 — NLM upload | 1 | fake-page automation + notebook URL captured into clusters.yaml |
+| 8 — NLM generate brief | 1 | _trigger_and_wait + missing-button error |
+| 9 — NLM download brief | 1 | summary HTML parsing + char_count |
+| 10 — Crystal emit/apply | 1 | LLM CLI mock + crystal file written |
+| Cross-stage | 4 | round-trip / cluster reuse / failure cascade / no-LLM-CLI graceful |
+
+All HTTP, browser automation, and LLM-CLI subprocess calls mocked at the boundary. Test file runs in 6.92s.
+
+### Fixed — Stage 5: ingest treated DOI-less papers as batch-fatal
+
+If `papers_input.json` contained mixed papers (some with DOI, some without — common in real arxiv mixed with web-found articles), the ingest validator killed the whole batch instead of skipping just the bad rows. Real users would lose all the work upstream.
+
+Root cause in `src/research_hub/pipeline.py`: non-dry-run validation was raising on first missing-DOI record. Existing fail-fast for genuinely malformed records (missing author / wrong schema) was correct behavior; the missing-DOI case was over-aggressive.
+
+Fix: skip records whose only validation error is missing DOI, log them under `INPUT VALIDATION SKIPS`, continue ingesting the valid records. Per-paper rejection is the correct user-facing behavior.
+
+### Mock-only coverage gaps (transparent honesty)
+
+These boundaries are NOT exercised by the new tests — they're tested separately:
+- Real Patchright browser behavior (NLM upload/generate/download use a fake CDP session). Real-browser tests are `-m slow`.
+- Real arxiv / S2 / OpenAlex / Crossref / PubMed HTTP calls. Network tests are `-m network`.
+- LLM crystal answer quality (we test wiring, not whether the LLM's answer is good).
+
+### Stats
+
+- Tests: 1618 → **1640** (+22)
+- Bugs found by sweep: **1 real** (ingest DOI-less batch-fatal)
+- Pipeline stages with e2e regression: **10 / 10** (was 0 before; per-stage unit tests existed but boundaries were uncovered)
+- New files: `tests/_pipeline_fixtures.py` (~120 LOC canned responses), `tests/test_pipeline_e2e.py` (22 tests)
+
+### Recommended follow-ups (from Codex)
+
+- Extract a small NotebookLM automation interface so tests don't need to patch module-level session/client internals.
+- Document the per-paper DOI-less rejection policy in `docs/papers_input_schema.md`.
+
+### Cumulative since v0.48 (today's stretch)
+
+- 13 versions shipped (v0.48.0 → v0.56.0)
+- **40+ real bugs fixed** across CLI / dashboard / NotebookLM / pipeline / heuristics / executor wiring
+- 1520 → **1640 tests** (+120, all green)
+- 5 successful Codex delegations (v0.51, v0.52, v0.54, v0.55, v0.56)
+- Codex caught: 0 + 0 + 5 + 5 + 1 = **11 bugs** that the original Claude pass missed
+- Claude smoke-test caught after Codex shipped: 3 + 0 + 0 + 0 + 0 = **3 bugs** that Codex's mocked tests missed
+
 ## v0.55.0 (2026-04-20)
 
 **Manage tab full end-to-end audit: every button now actually executes against a sandbox vault, with HTTP-layer error wrapping + SSE auto-refresh.**

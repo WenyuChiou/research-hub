@@ -359,9 +359,20 @@ def run_pipeline(
         if not no_zotero:
             all_errors: list[str] = []
             nonfatal_errors: list[str] = []
+            valid_papers: list[dict] = []
+            skipped_invalid: list[tuple[int, dict, list[str]]] = []
             for idx, paper in enumerate(papers):
                 _auto_generate_missing_fields(paper, cluster_slug)
                 paper_errors = _validate_paper_input(paper, idx)
+                missing_doi_only = (
+                    not dry_run
+                    and paper_errors
+                    and all("missing required field 'doi'" in err for err in paper_errors)
+                )
+                if missing_doi_only:
+                    skipped_invalid.append((idx, paper, paper_errors))
+                    continue
+                valid_papers.append(paper)
                 if dry_run:
                     for err in paper_errors:
                         if "missing field '" in err and "pipeline will KeyError" in err:
@@ -376,6 +387,13 @@ def run_pipeline(
                     p(f"  !!{err}")
                 p(f"\nFix papers_input.json and re-run. {len(all_errors)} errors total.")
                 return 1
+            if skipped_invalid:
+                p("\n=== INPUT VALIDATION SKIPS ===")
+                for idx, paper, paper_errors in skipped_invalid:
+                    p(f"  SKIPPED invalid input Paper {idx}: {paper.get('title', '(untitled)')}")
+                    for err in paper_errors:
+                        p(f"    !!{err}")
+                papers = valid_papers
             if nonfatal_errors:
                 p("\n=== INPUT VALIDATION WARNINGS ===")
                 for err in nonfatal_errors:
