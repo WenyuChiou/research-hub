@@ -1,0 +1,11 @@
+views:
+  - type: table
+    name: LLM Evaluation Harness Papers
+    filters:
+      and:
+        - file.inFolder("raw/llm-evaluation-harness")
+    order:
+      - title
+      - year
+      - status
+      - labels

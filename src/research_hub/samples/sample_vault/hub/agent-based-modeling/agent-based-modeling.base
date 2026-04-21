@@ -1,0 +1,11 @@
+views:
+  - type: table
+    name: Agent-Based Modeling Papers
+    filters:
+      and:
+        - file.inFolder("raw/agent-based-modeling")
+    order:
+      - title
+      - year
+      - status
+      - labels

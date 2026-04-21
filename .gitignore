@@ -4,6 +4,15 @@ hub/
 logs/
 *.log
 
+# v0.60.1: un-ignore the packaged sample vault that ships in the wheel.
+# Without these negations the global raw/ and hub/ patterns would swallow
+# src/research_hub/samples/sample_vault/raw/** and the CI test for
+# dashboard --sample fails because `glob('*.md')` returns empty.
+!src/research_hub/samples/**/raw/
+!src/research_hub/samples/**/raw/**
+!src/research_hub/samples/**/hub/
+!src/research_hub/samples/**/hub/**
+
 # Python
 __pycache__/
 *.pyc
