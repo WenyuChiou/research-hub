@@ -3,12 +3,16 @@
 > **One sentence in. Cluster + papers + AI brief out. ~50 seconds.**
 > Zotero + Obsidian + NotebookLM, wired together for AI agents — no API key required.
 
+![research-hub dashboard](docs/images/hero/dashboard-overview.png)
+
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1585%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1661%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 繁體中文 → [README.zh-TW.md](README.zh-TW.md)
+
+📺 **[Watch the 30-second dashboard demo →](docs/demo/dashboard-walkthrough.mp4)**
 
 ---
 
@@ -135,28 +139,6 @@ curl -X POST http://127.0.0.1:8765/api/v1/plan \
 ```
 
 ---
-
-## 🎬 Demo — actual screen recording of the live dashboard
-
-<video src="docs/demo/dashboard-walkthrough.mp4" controls width="100%" muted loop>
-  Sorry, your browser doesn't render embedded video. <a href="docs/demo/dashboard-walkthrough.mp4">Download the .mp4 (24 MB)</a>.
-</video>
-
-> If GitHub doesn't render the inline video player above, click [`docs/demo/dashboard-walkthrough.mp4`](docs/demo/dashboard-walkthrough.mp4) to download.
-
-Real screen recording on the maintainer's vault — clicking through the live dashboard at `http://127.0.0.1:8765/` after `research-hub serve --dashboard`. Shows the 6 tabs, Manage-tab buttons, NotebookLM artifact downloads, and the v0.58 inline result drawer in action.
-
-Below that is a static-frame fallback (PIL-rendered) that loops in any markdown viewer that doesn't autoplay video:
-
-![demo: ask AI → auto pipeline runs → cached query](docs/images/lazy-mode-demo.gif)
-
-Three scenes, 1280×760, real captured terminal data:
-
-1. **Talk to your AI host**: "Research harness engineering for me." The host calls `plan_research_workflow` via MCP, confirms the plan, then fires `auto_research_topic`.
-2. **`auto` pipeline runs**: 9 stages (cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals) finish in 187 s.
-3. **Cached query in <1 s**: `ask harness-engineering "SOTA?"` reads a pre-computed crystal. ~1 KB, 0 tokens.
-
-Re-build the GIF yourself: `python docs/demo/build_demo_gif.py`.
 
 ---
 

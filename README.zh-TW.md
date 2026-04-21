@@ -3,12 +3,16 @@
 > **打一句話進去。Cluster + 論文 + AI 簡報出來。約 50 秒。**
 > Zotero + Obsidian + NotebookLM 三合一,專為 AI agent 打造 — **不需要 OpenAI/Anthropic API key**。
 
+![research-hub dashboard](docs/images/hero/dashboard-overview.png)
+
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1585%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1661%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 English → [README.md](README.md)
+
+📺 **[看 30 秒 dashboard 實測影片 →](docs/demo/dashboard-walkthrough.mp4)**
 
 ---
 
@@ -132,28 +136,6 @@ curl -X POST http://127.0.0.1:8765/api/v1/plan \
 ```
 
 ---
-
-## 🎬 Demo — 真實 dashboard 螢幕錄影
-
-<video src="docs/demo/dashboard-walkthrough.mp4" controls width="100%" muted loop>
-  瀏覽器不支援內嵌影片。<a href="docs/demo/dashboard-walkthrough.mp4">下載 .mp4 (24 MB)</a>
-</video>
-
-> GitHub 沒渲染上面播放器的話,點 [`docs/demo/dashboard-walkthrough.mp4`](docs/demo/dashboard-walkthrough.mp4) 下載觀看。
-
-維護者真實 vault 上的螢幕錄影 — `research-hub serve --dashboard` 之後,在瀏覽器點 `http://127.0.0.1:8765/`。展示 6 個 tab、Manage 按鈕、NotebookLM artifact 下載、以及 v0.58 新加的 inline result drawer。
-
-下方是靜態 fallback(PIL 產的 GIF),不會 autoplay 的 markdown viewer 也能 loop 看:
-
-![demo: 問 AI → auto pipeline → cached query](docs/images/lazy-mode-demo.gif)
-
-3 個場景,1280×760,真實 terminal 資料:
-
-1. **跟你的 AI host 對話**: 「幫我研究 harness engineering」。Host 透過 MCP 呼叫 `plan_research_workflow` 確認計畫,再啟動 `auto_research_topic`。
-2. **`auto` pipeline 跑完**: 9 個階段(cluster → zotero.bind → search → ingest → nlm.bundle → upload → generate → download → crystals)187 秒完成。
-3. **Cached query <1 秒**: `ask harness-engineering "SOTA?"` 讀預先算好的 crystal,~1 KB、0 token。
-
-自己重產 GIF: `python docs/demo/build_demo_gif.py`。
 
 ---
 
