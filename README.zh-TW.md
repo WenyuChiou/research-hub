@@ -148,11 +148,11 @@ curl -X POST http://127.0.0.1:8765/api/v1/plan \
 
 ![Library](docs/images/hero/dashboard-library-subtopic.png)
 
-**Diagnostics** — drift alerts 按 kind 分組（v0.48 重設計,原本 59 個警告變成 5 張卡）。
+**Diagnostics** — drift alerts 按 kind 分組,原本 59 個警告收斂成 5 張卡。
 
 ![Diagnostics](docs/images/hero/dashboard-diagnostics.png)
 
-**Manage** — 每個 CLI 動作都做成按鈕；v0.58 加了 inline 結果面板、共用 confirm modal、per-paper row actions。
+**Manage** — 每個 CLI 動作都做成按鈕,附 inline 結果面板、共用 confirm modal、per-paper row actions。
 
 ![Manage](docs/images/hero/dashboard-manage-live.png)
 
@@ -164,10 +164,13 @@ Briefings 與 Writing tab 也在 dashboard 內 — 見 [dashboard walkthrough](d
 
 每篇匯入的 paper 都是帶 frontmatter 的 Markdown note。每個 cluster 也能產生 Obsidian Bases dashboard。
 
-| | |
-|---|---|
-| ![Obsidian Bases dashboard for a cluster](docs/images/obsidian-bases-dashboard.png) | ![Single paper note rendered with Properties view](docs/images/obsidian-paper-note.png) |
-| **Cluster Bases dashboard**：生成 `.base`，可排序與篩選 paper metadata | **單篇 paper note**：title、authors、year、DOI、Zotero key、tags、status、cluster、verification metadata |
+**Cluster Bases dashboard** — 生成 `.base`，可排序與篩選 paper metadata。
+
+<img src="docs/images/obsidian-bases-dashboard.png" alt="Obsidian Bases dashboard for a cluster" width="640">
+
+**單篇 paper note** — title、authors、year、DOI、Zotero key、tags、status、cluster、verification metadata。
+
+<img src="docs/images/obsidian-paper-note.png" alt="Single paper note rendered with Properties view" width="640">
 
 Crystals 也是純 Markdown，放在 `hub/<cluster>/crystals/*.md`，可連結、搜尋，也可由 MCP tool 低成本讀取。
 
@@ -242,8 +245,8 @@ research-hub doctor --autofix
 
 狀態：
 
-- Latest：公開 README status notes 目前標示 v0.53.0；完整版本歷史見 [CHANGELOG](CHANGELOG.md)。
-- Tests badge：1661 passing。
+- Latest：v0.60.0；完整版本歷史見 [CHANGELOG](CHANGELOG.md)。
+- Tests：1666 passing。
 - MCP tools：83。
 - REST endpoints：12 at `/api/v1/*`。
 - Bundled skills：`research-hub` 與 `research-hub-multi-ai`。

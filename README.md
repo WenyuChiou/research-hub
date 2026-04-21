@@ -148,11 +148,11 @@ Full reference: [MCP tools](docs/mcp-tools.md).
 
 ![Library](docs/images/hero/dashboard-library-subtopic.png)
 
-**Diagnostics** — grouped drift alerts and readiness checks (v0.48 redesign groups 59 raw alerts into ~5 cards).
+**Diagnostics** — grouped drift alerts and readiness checks.
 
 ![Diagnostics](docs/images/hero/dashboard-diagnostics.png)
 
-**Manage** — every CLI action as a button; v0.58 adds an inline result drawer, shared confirmation modal, and per-paper row actions.
+**Manage** — every CLI action as a button, with an inline result drawer, shared confirmation modal, and per-paper row actions.
 
 ![Manage](docs/images/hero/dashboard-manage-live.png)
 
@@ -164,10 +164,13 @@ Briefings and Writing tabs are also available — see the [dashboard walkthrough
 
 Every ingested paper becomes a real Markdown note with structured frontmatter. Every cluster can also get an Obsidian Bases dashboard.
 
-| | |
-|---|---|
-| ![Obsidian Bases dashboard for a cluster](docs/images/obsidian-bases-dashboard.png) | ![Single paper note rendered with Properties view](docs/images/obsidian-paper-note.png) |
-| **Cluster Bases dashboard**: generated `.base` file with sortable paper metadata | **Per-paper note**: title, authors, year, DOI, Zotero key, tags, status, cluster, and verification metadata |
+**Cluster Bases dashboard** — generated `.base` file with sortable paper metadata.
+
+<img src="docs/images/obsidian-bases-dashboard.png" alt="Obsidian Bases dashboard for a cluster" width="640">
+
+**Per-paper note** — title, authors, year, DOI, Zotero key, tags, status, cluster, and verification metadata.
+
+<img src="docs/images/obsidian-paper-note.png" alt="Single paper note rendered with Properties view" width="640">
 
 Crystals are plain Markdown notes under `hub/<cluster>/crystals/*.md`, so they can be linked, searched, and read by MCP tools at very low token cost.
 
@@ -242,8 +245,8 @@ Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.m
 
 Status:
 
-- Latest: v0.53.0 in the public README status notes; see [CHANGELOG](CHANGELOG.md) for package history.
-- Tests badge: 1661 passing.
+- Latest: v0.60.0; see [CHANGELOG](CHANGELOG.md) for package history.
+- Tests: 1666 passing.
 - MCP tools: 83.
 - REST endpoints: 12 at `/api/v1/*`.
 - Bundled skills: `research-hub` and `research-hub-multi-ai`.
