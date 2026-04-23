@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.63.0 (2026-04-23)
+
+### Manage tab coverage
+- New Maintenance card exposes `tidy`, `dedup rebuild`, `cleanup --all --apply`,
+  `memory emit`, `crystal emit`, `bases emit` as one-click buttons.
+
+### Search tag extraction
+- arXiv categories (cs.AI, econ.GN, etc.) now flow into Zotero as `category/<tag>`.
+- Semantic Scholar publicationTypes (Review, JournalArticle, etc.) land as `type/<tag>`.
+- Combined with the v0.61 hub namespace: every ingested paper is filterable
+  by cluster, source, document type, AND arXiv category.
+
+### Rebind hardening
+- `clusters rebind` now fuzzy-matches papers whose `topic_cluster` frontmatter
+  points to a non-existent slug, binding them to the best-overlap survivor
+  cluster (min 2 seed-keyword tokens in common). Falls back to the existing
+  orphan-report path when no good match exists.
+
 ## v0.62.0 (2026-04-23)
 
 ### Setup simplification

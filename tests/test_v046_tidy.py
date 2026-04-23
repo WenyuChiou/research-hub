@@ -131,7 +131,7 @@ def test_cli_tidy_dispatch(monkeypatch):
 
     called = {"applied": None}
 
-    def _fake_tidy(*, apply_cleanup, print_progress):
+    def _fake_tidy(*, apply_cleanup, print_progress, cluster_slug=None):
         called["applied"] = apply_cleanup
         return TidyReport(
             steps=[TidyStep(name="doctor", ok=True)], total_duration_sec=1.0

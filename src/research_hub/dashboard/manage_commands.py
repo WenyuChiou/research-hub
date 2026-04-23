@@ -103,6 +103,16 @@ def build_manage_command(action: str, slug: str, **fields) -> str | None:
         if apply:
             cmd += " --apply"
         return cmd
+    if action == "tidy":
+        return f"research-hub tidy --cluster {shell_quote(slug)}"
+    if action == "dedup-rebuild":
+        return "research-hub dedup rebuild"
+    if action == "cleanup":
+        return "research-hub cleanup --all --apply"
+    if action == "memory-emit":
+        return f"research-hub memory emit --cluster {shell_quote(slug)}"
+    if action == "crystal-emit":
+        return f"research-hub crystal emit --cluster {shell_quote(slug)}"
     if action == "bases-emit":
         force = bool(fields.get("force", False))
         cmd = f"research-hub bases emit --cluster {shell_quote(slug)}"

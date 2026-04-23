@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from research_hub.clusters import score_cluster_match, slugify
 from research_hub.security import safe_join
 
 logger = logging.getLogger(__name__)
@@ -181,8 +182,24 @@ def _propose_cluster(fm: dict, by_slug: dict, by_zot_key: dict, folder_hint: str
         return (by_slug[explicit], "explicit `cluster:` frontmatter field", "high")
 
     topic_cluster = str(fm.get("topic_cluster", "") or "").strip()
-    if topic_cluster and topic_cluster in by_slug:
-        return (by_slug[topic_cluster], "explicit `topic_cluster:` frontmatter field", "high")
+    desired_topic_cluster = topic_cluster.lower()
+    if desired_topic_cluster:
+        if desired_topic_cluster in by_slug:
+            return (
+                by_slug[desired_topic_cluster],
+                "explicit `topic_cluster:` frontmatter field",
+                "high",
+            )
+        tokens = {token for token in slugify(desired_topic_cluster).split("-") if token}
+        best_cluster = None
+        best_score = 0
+        for cluster in by_slug.values():
+            score = score_cluster_match(tokens, cluster)
+            if score > best_score:
+                best_score = score
+                best_cluster = cluster
+        if best_cluster is not None and best_score >= 2:
+            return (best_cluster, f"fuzzy(from={desired_topic_cluster})", "high")
 
     collections = fm.get("collections")
     if isinstance(collections, list):

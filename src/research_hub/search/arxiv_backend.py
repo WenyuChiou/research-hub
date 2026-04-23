@@ -29,6 +29,20 @@ def _collapse_whitespace(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
+def _extract_categories(entry: ET.Element) -> list[str]:
+    categories: list[str] = []
+    seen: set[str] = set()
+    for node in entry.findall("atom:category", _NS):
+        term = _collapse_whitespace(node.attrib.get("term"))
+        if not term or term in seen:
+            continue
+        seen.add(term)
+        categories.append(term)
+        if len(categories) >= 5:
+            break
+    return categories
+
+
 def _build_arxiv_query(query: str) -> str:
     """Build the arXiv `search_query` string from a free-text query.
 
@@ -118,6 +132,7 @@ class ArxivBackend:
             citation_count=0,
             pdf_url=f"https://arxiv.org/pdf/{arxiv_id}.pdf",
             source=self.name,
+            categories=_extract_categories(entry),
         )
 
     def _parse_feed(self, xml_text: str) -> list[SearchResult]:

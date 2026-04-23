@@ -797,6 +797,15 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
         arxiv_id = str(candidate.get("arxiv_id") or "")
         if not doi and arxiv_id:
             doi = f"10.48550/arxiv.{arxiv_id}"
+        tags: list[str] = []
+        for cat in (candidate.get("categories") or [])[:5]:
+            value = str(cat).strip()
+            if value:
+                tags.append(f"category/{value}")
+        for pub_type in (candidate.get("publication_types") or [])[:3]:
+            value = str(pub_type).strip()
+            if value:
+                tags.append(f"type/{value}")
         entry = {
             "title": title,
             "doi": doi,
@@ -810,6 +819,7 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
             "key_findings": ["[TODO: fill from abstract]"],
             "methodology": "[TODO: fill from abstract]",
             "relevance": "[TODO: fill relevance to cluster]",
+            "tags": tags,
         }
         if arxiv_id:
             entry["arxiv_id"] = arxiv_id

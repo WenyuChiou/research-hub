@@ -617,6 +617,16 @@
       }
       case "vault-polish-markdown":
         return `research-hub vault polish-markdown --cluster ${shellQuote(slug)}${data.get("apply") ? " --apply" : ""}`;
+      case "tidy":
+        return `research-hub tidy --cluster ${shellQuote(slug)}`;
+      case "dedup-rebuild":
+        return "research-hub dedup rebuild";
+      case "cleanup":
+        return "research-hub cleanup --all --apply";
+      case "memory-emit":
+        return `research-hub memory emit --cluster ${shellQuote(slug)}`;
+      case "crystal-emit":
+        return `research-hub crystal emit --cluster ${shellQuote(slug)}`;
       case "bases-emit":
         return `research-hub bases emit --cluster ${shellQuote(slug)}${data.get("force") ? " --force" : ""}`;
       case "delete":
@@ -658,6 +668,12 @@
         };
       case "vault-polish-markdown":
         return { apply: !!data.get("apply") };
+      case "tidy":
+      case "dedup-rebuild":
+      case "cleanup":
+      case "memory-emit":
+      case "crystal-emit":
+        return {};
       case "bases-emit":
         return { force: !!data.get("force") };
       case "delete":

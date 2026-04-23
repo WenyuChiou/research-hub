@@ -37,6 +37,11 @@ ALLOWED_ACTIONS = frozenset(
         "notebooklm-download",
         "notebooklm-ask",
         "vault-polish-markdown",
+        "tidy",
+        "dedup-rebuild",
+        "cleanup",
+        "memory-emit",
+        "crystal-emit",
         "bases-emit",
         "discover-new",
         "discover-continue",
@@ -97,6 +102,11 @@ def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -
         "notebooklm-download",
         "notebooklm-ask",
         "vault-polish-markdown",
+        "tidy",
+        "dedup-rebuild",
+        "cleanup",
+        "memory-emit",
+        "crystal-emit",
         "bases-emit",
     }
     if action in manage_actions:

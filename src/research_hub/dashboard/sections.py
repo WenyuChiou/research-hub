@@ -1575,6 +1575,28 @@ class ManageSection(DashboardSection):
                 <button type="button" class="manage-build-btn">Emit .base dashboard</button>
                 <small>Generate <code>hub/{slug}/{slug}.base</code> with the standard 4 views and formulas.</small>
               </form>
+
+              <div class="manage-card">
+                <h4>Maintenance</h4>
+                <form class="manage-form" action="javascript:void(0)" data-action="tidy" data-slug="{slug}">
+                  <button type="button" class="manage-build-btn">Run tidy</button>
+                </form>
+                <form class="manage-form" action="javascript:void(0)" data-action="dedup-rebuild">
+                  <button type="button" class="manage-build-btn">Rebuild dedup index</button>
+                </form>
+                <form class="manage-form" action="javascript:void(0)" data-action="cleanup" data-slug="{slug}">
+                  <button type="button" class="manage-build-btn">Run cleanup --all</button>
+                </form>
+                <form class="manage-form" action="javascript:void(0)" data-action="memory-emit" data-slug="{slug}">
+                  <button type="button" class="manage-build-btn">Emit memory</button>
+                </form>
+                <form class="manage-form" action="javascript:void(0)" data-action="crystal-emit" data-slug="{slug}">
+                  <button type="button" class="manage-build-btn">Emit crystals</button>
+                </form>
+                <form class="manage-form" action="javascript:void(0)" data-action="bases-emit" data-slug="{slug}">
+                  <button type="button" class="manage-build-btn">Rebuild Bases</button>
+                </form>
+              </div>
             </details>
           </section>
 

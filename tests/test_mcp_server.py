@@ -481,6 +481,8 @@ def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
             "confidence": 0.5,
             "found_in": [],
             "doc_type": "",
+            "categories": [],
+            "publication_types": [],
         }
     ]
 

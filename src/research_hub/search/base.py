@@ -24,6 +24,8 @@ class SearchResult:
     confidence: float = 0.5
     found_in: list[str] = field(default_factory=list)
     doc_type: str = ""
+    categories: list[str] = field(default_factory=list)
+    publication_types: list[str] = field(default_factory=list)
 
     @classmethod
     def from_s2_json(cls, item: dict) -> "SearchResult":
@@ -53,6 +55,11 @@ class SearchResult:
             pdf_url=pdf.get("url", "") or "",
             source="semantic-scholar",
             doc_type=item.get("publicationTypes", [""])[0] if item.get("publicationTypes") else "",
+            publication_types=[
+                str(pub_type).strip()
+                for pub_type in (item.get("publicationTypes") or [])[:3]
+                if str(pub_type).strip()
+            ],
         )
 
     @property

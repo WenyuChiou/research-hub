@@ -215,6 +215,12 @@ _ACTION_CASES = {
         "expect_slug": "alpha",
     },
     "clusters-analyze": {"slug": "alpha", "fields": {}, "subcommand": ("clusters", "analyze"), "expect_slug": "alpha"},
+    # v0.63: Manage-tab maintenance buttons
+    "tidy": {"slug": "alpha", "fields": {}, "subcommand": ("tidy",), "expect_slug": "alpha"},
+    "dedup-rebuild": {"slug": None, "fields": {}, "subcommand": ("dedup", "rebuild"), "expect_slug": None},
+    "cleanup": {"slug": "alpha", "fields": {}, "subcommand": ("cleanup",), "expect_slug": None},
+    "memory-emit": {"slug": "alpha", "fields": {}, "subcommand": ("memory", "emit"), "expect_slug": "alpha"},
+    "crystal-emit": {"slug": "alpha", "fields": {}, "subcommand": ("crystal", "emit"), "expect_slug": "alpha"},
 }
 
 

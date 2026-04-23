@@ -431,8 +431,8 @@ def test_manage_section_renders_form_per_cluster():
         _data(clusters=[_cluster()], total_clusters=1, total_papers=1)
     )
     assert 'class="manage-card"' in html
-    # Original six forms plus seven v0.42/v0.43 action forms
-    assert html.count('class="manage-form"') == 13
+    # Original six + seven v0.42/v0.43 + six v0.63 maintenance forms
+    assert html.count('class="manage-form"') == 19
     assert 'data-action="rename"' in html
     assert 'data-action="merge"' in html
     assert 'data-action="split"' in html

@@ -32,7 +32,12 @@ class TidyReport:
     cleanup_preview_bytes: int = 0
 
 
-def run_tidy(*, apply_cleanup: bool = False, print_progress: bool = True) -> TidyReport:
+def run_tidy(
+    *,
+    apply_cleanup: bool = False,
+    print_progress: bool = True,
+    cluster_slug: str | None = None,
+) -> TidyReport:
     """Run the 4 maintenance sub-steps. Each step is non-fatal."""
     from research_hub.config import get_config
 
@@ -83,7 +88,13 @@ def run_tidy(*, apply_cleanup: bool = False, print_progress: bool = True) -> Tid
         from research_hub.obsidian_bases import write_cluster_base
 
         registry = ClusterRegistry(cfg.clusters_file)
-        cluster_list = registry.list()
+        if cluster_slug:
+            cluster = registry.get(cluster_slug)
+            if cluster is None:
+                raise ValueError(f"Cluster not found: {cluster_slug}")
+            cluster_list = [cluster]
+        else:
+            cluster_list = registry.list()
         refreshed = 0
         for cluster in cluster_list:
             try:

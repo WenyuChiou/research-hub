@@ -2342,6 +2342,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Apply the cleanup preview (default: dry-run only)",
     )
+    tidy_parser.add_argument(
+        "--cluster",
+        default=None,
+        help="Restrict the bases refresh step to one cluster slug",
+    )
 
     subparsers.add_parser("doctor", help="Health check for research-hub installation")
     doctor_parser = next(
@@ -3555,7 +3560,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "tidy":
         from research_hub.tidy import run_tidy
 
-        report = run_tidy(apply_cleanup=args.apply_cleanup, print_progress=True)
+        report = run_tidy(
+            apply_cleanup=args.apply_cleanup,
+            print_progress=True,
+            cluster_slug=args.cluster,
+        )
         failed = [s for s in report.steps if not s.ok]
         return 0 if not failed else 1
 
