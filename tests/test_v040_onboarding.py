@@ -46,7 +46,8 @@ def test_init_wizard_retries_zotero_credentials_on_validation_failure(tmp_path, 
     prompts: list[str] = []
     answers = iter(
         [
-            "1",
+            "y",  # Q0: do you use Zotero?
+            "1",  # persona menu in Zotero branch -> researcher
             str(tmp_path / "vault"),
             "bad-key",
             "111",
@@ -87,7 +88,8 @@ def test_init_wizard_aborts_when_user_aborts_after_network_failure(tmp_path, mon
     config_dir = tmp_path / "config"
     answers = iter(
         [
-            "1",
+            "y",  # Q0: do you use Zotero?
+            "1",  # persona menu in Zotero branch -> researcher
             str(tmp_path / "vault"),
             "key",
             "111",

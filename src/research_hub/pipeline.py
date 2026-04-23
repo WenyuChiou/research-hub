@@ -26,6 +26,26 @@ REQUIRED_FIELDS_NOTE = ["summary", "key_findings", "methodology", "relevance"]
 logger = logging.getLogger(__name__)
 
 
+def _compose_hub_tags(pp: dict, cluster_slug: str | None) -> list[str]:
+    """Compose research-hub namespace tags from a paper dict + cluster slug.
+
+    Always includes 'research-hub'. Adds 'cluster/<slug>', 'type/<doc_type>',
+    and 'src/<backend>' if available. Merges with any pre-existing pp['tags']
+    while preserving order and de-duplicating.
+    """
+    hub_tags = ["research-hub"]
+    if cluster_slug:
+        hub_tags.append(f"cluster/{cluster_slug}")
+    doc_type = pp.get("doc_type") or pp.get("publication_type")
+    if doc_type:
+        hub_tags.append(f"type/{doc_type}")
+    backend = pp.get("source") or pp.get("found_in")
+    if backend:
+        hub_tags.append(f"src/{backend}")
+    existing = pp.get("tags") or []
+    return list(dict.fromkeys(existing + hub_tags))
+
+
 def _slugify(text: str) -> str:
     from research_hub.clusters import slugify
 
@@ -510,6 +530,25 @@ def run_pipeline(
                             move = getattr(zot, "move_to_collection", None)
                             if callable(move) and zotero_hit.zotero_key:
                                 move(zotero_hit.zotero_key, cluster.zotero_collection_key)
+                        if zotero_hit.zotero_key:
+                            try:
+                                existing_item = zot.item(zotero_hit.zotero_key)
+                                existing_tags = {
+                                    tag["tag"]
+                                    for tag in existing_item.get("data", {}).get("tags", [])
+                                    if "tag" in tag
+                                }
+                                hub_tags = set(_compose_hub_tags(pp, cluster_slug))
+                                new_tags = hub_tags - existing_tags
+                                if new_tags:
+                                    existing_data = existing_item["data"]
+                                    existing_data["tags"] = [
+                                        *existing_data.get("tags", []),
+                                        *[{"tag": tag} for tag in sorted(new_tags)],
+                                    ]
+                                    zot.update_item(existing_data)
+                            except Exception as exc:
+                                p(f"  WARN tag-merge failed: {exc}")
                         manifest.append(
                             new_entry(
                                 cluster=cluster_slug or "",
@@ -565,7 +604,7 @@ def run_pipeline(
             t["issue"] = pp.get("issue", "")
             t["pages"] = pp.get("pages", "")
             t["abstractNote"] = pp["abstract"]
-            t["tags"] = [{"tag": x} for x in pp.get("tags", [])]
+            t["tags"] = [{"tag": x} for x in _compose_hub_tags(pp, cluster_slug)]
             t["collections"] = [cluster_coll or collection_key]
             try:
                 p(

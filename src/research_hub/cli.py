@@ -1807,6 +1807,25 @@ def _pipeline_repair(cluster_slug: str, execute: bool) -> int:
     return 0
 
 
+def _zotero_backfill(args) -> int:
+    from research_hub.zotero_hygiene import run_backfill
+
+    cfg = get_config()
+    cluster_slugs = [args.cluster] if args.cluster else None
+    report = run_backfill(
+        cfg,
+        cluster_slugs=cluster_slugs,
+        do_tags=args.tags,
+        do_notes=args.notes,
+        apply=args.apply,
+        progress=print,
+    )
+    print(report.summary())
+    if args.apply and report.report_path:
+        print(f"Markdown report saved: {report.report_path}")
+    return 0
+
+
 def _notebooklm_bundle(cluster_slug: str, download_pdfs: bool = False) -> int:
     from research_hub.notebooklm.bundle import bundle_cluster
 
@@ -3161,6 +3180,21 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_repair.add_argument("--dry-run", action="store_true", default=True)
     pipeline_repair.add_argument("--execute", action="store_true")
 
+    zotero_parser = subparsers.add_parser("zotero", help="Zotero maintenance commands")
+    zotero_sub = zotero_parser.add_subparsers(dest="zotero_command", required=True)
+    zotero_backfill = zotero_sub.add_parser("backfill", help="Backfill Zotero tags and notes")
+    zotero_scope = zotero_backfill.add_mutually_exclusive_group()
+    zotero_scope.add_argument("--cluster", default=None, help="Only backfill one cluster slug")
+    zotero_scope.add_argument(
+        "--all-clusters",
+        action="store_true",
+        default=True,
+        help="Backfill all clusters (default)",
+    )
+    zotero_backfill.add_argument("--tags", action=argparse.BooleanOptionalAction, default=True)
+    zotero_backfill.add_argument("--notes", action=argparse.BooleanOptionalAction, default=True)
+    zotero_backfill.add_argument("--apply", action="store_true", help="Write changes")
+
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
     nlm_login = nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
@@ -3978,6 +4012,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "pipeline":
         if args.pipeline_command == "repair":
             return _pipeline_repair(cluster_slug=args.cluster, execute=args.execute)
+    if args.command == "zotero":
+        if args.zotero_command == "backfill":
+            return _zotero_backfill(args)
     if args.command == "migrate-yaml":
         return _migrate_yaml(
             assign_cluster=args.assign_cluster,

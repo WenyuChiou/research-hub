@@ -160,12 +160,44 @@ class ClusterRegistry:
         except Exception as exc:
             logger.warning("graph refresh failed after cluster change: %s", exc)
 
+    def _auto_create_zotero_collection(self, cluster: Cluster, progress=None) -> None:
+        try:
+            cfg = get_config()
+        except Exception as exc:
+            if progress:
+                progress(f"WARN: Zotero collection auto-create failed: {exc}")
+            return
+        if getattr(cfg, "no_zotero", False) or cluster.zotero_collection_key:
+            return
+        if not getattr(cfg, "zotero_api_key", None) or not getattr(cfg, "zotero_library_id", None):
+            return
+        try:
+            if Path(cfg.clusters_file).resolve() != self.path.resolve():
+                return
+        except Exception:
+            return
+        try:
+            from research_hub.zotero.client import ZoteroDualClient
+
+            zot = ZoteroDualClient().web
+            resp = zot.create_collections([{"name": cluster.name}])
+            if resp.get("successful"):
+                new_key = list(resp["successful"].values())[0]["key"]
+                cluster.zotero_collection_key = new_key
+                self.save()
+                if progress:
+                    progress(f"Created Zotero collection: {new_key}")
+        except Exception as exc:
+            if progress:
+                progress(f"WARN: Zotero collection auto-create failed: {exc}")
+
     def create(
         self,
         query: str,
         name: str | None = None,
         slug: str | None = None,
         seed_keywords: list[str] | None = None,
+        progress=None,
         **kwargs,
     ) -> Cluster:
         """Create a cluster from a query or return the existing one.
@@ -188,6 +220,7 @@ class ClusterRegistry:
         )
         self.clusters[final_slug] = cluster
         self.save()
+        self._auto_create_zotero_collection(cluster, progress=progress)
         self._refresh_graph_if_possible()
         try:
             from research_hub.topic import scaffold_cluster_hub

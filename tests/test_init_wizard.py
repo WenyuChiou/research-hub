@@ -68,7 +68,8 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     default_home = tmp_path / "home"
     answers = iter(
         [
-            "1",
+            "y",  # Q0: do you use Zotero?
+            "1",  # persona menu in Zotero branch -> researcher
             str(tmp_path / "interactive-vault"),
             "z-key",
             "999",
@@ -101,7 +102,8 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     assert decrypt(config["zotero"]["api_key"], config_dir) == "z-key"
     assert config["zotero"]["library_id"] == "999"
     assert prompts == [
-        "> ",
+        "> ",  # Q0
+        "> ",  # persona menu in Zotero branch
         f"Vault root directory [{default_home / 'knowledge-base'}]: ",
         "  Zotero API key: ",
         "  Zotero library ID: ",

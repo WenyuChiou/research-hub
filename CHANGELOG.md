@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.61.0 (2026-04-23)
+
+### Zotero hygiene
+- Pipeline now injects `research-hub`, `cluster/<slug>`, `type/<doc_type>`, `src/<backend>` tags on every ingest (was: tags came only from search backends, which were empty).
+- New `research-hub zotero backfill [--tags] [--notes] [--cluster SLUG | --all-clusters] [--apply]` command. Dry-run by default; writes a markdown report to `.research_hub/backfill-<ts>.md` on apply.
+- De-dupe path now PATCH-merges hub tags onto matched existing Zotero items.
+
+### Onboarding
+- `init` now asks "Do you use Zotero?" first, then narrows the persona menu accordingly.
+- Researcher/humanities Zotero prompt now warns that ingest will fail without credentials.
+
+### Cluster management
+- `clusters new` now auto-creates the matching Zotero collection (if a key isn't already bound). Idempotent. No-op when persona is no-Zotero.
+
 ## v0.60.0 (2026-04-21)
 
 **Onboarding polish — 4 tracks from the v0.59 usability audit.** Codex delegation, 7th consecutive use.

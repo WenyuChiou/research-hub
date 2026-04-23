@@ -141,13 +141,23 @@ def run_init(
     valid_personas = {"researcher", "analyst", "humanities", "internal"}
 
     if persona is None and interactive:
-        print("What's your primary use case?")
-        print("  1. Researcher (PhD/academic, uses Zotero)")
-        print("  2. Humanities researcher (uses Zotero, quote-heavy work)")
-        print("  3. Industry analyst (no Zotero, imports PDFs/MD)")
-        print("  4. Internal knowledge management (no Zotero, mixed file types)")
-        answer = input("> ").strip()
-        persona = {"1": "researcher", "2": "humanities", "3": "analyst", "4": "internal"}.get(answer, "researcher")
+        print("\nDo you use Zotero for managing references? [y/N]")
+        print("  y = yes  (researcher / humanities personas)")
+        print("  N = no   (analyst / internal personas - Obsidian + NotebookLM only)")
+        uses_zotero = input("> ").strip().lower().startswith("y")
+
+        if uses_zotero:
+            print("\nWhich researcher type best fits your work?")
+            print("  1. Researcher (PhD/academic, broad)")
+            print("  2. Humanities researcher (quote-heavy work)")
+            answer = input("> ").strip() or "1"
+            persona = {"1": "researcher", "2": "humanities"}.get(answer, "researcher")
+        else:
+            print("\nWhich non-Zotero workflow fits?")
+            print("  1. Industry analyst (imports PDFs/MD)")
+            print("  2. Internal knowledge management (mixed file types)")
+            answer = input("> ").strip() or "1"
+            persona = {"1": "analyst", "2": "internal"}.get(answer, "analyst")
     persona = str(persona or "researcher").strip().lower()
     if persona not in valid_personas:
         print("Error: --persona must be one of researcher, analyst, humanities, internal")
@@ -174,6 +184,8 @@ def run_init(
     if not no_zotero_persona and not zotero_key and interactive:
         print("\n  Zotero API key is needed to sync papers.")
         print("  Get one at: https://www.zotero.org/settings/keys")
+        print("  Note: research-hub auto/ingest will fail without Zotero credentials.")
+        print("  If you don't actually use Zotero, abort and re-run init, answering N to the first question.")
         zotero_key = input("  Zotero API key: ").strip() or None
     if not no_zotero_persona and not zotero_library_id and interactive:
         print("  Your Zotero library ID (numeric, from the same settings page):")
