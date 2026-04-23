@@ -6,7 +6,7 @@
 ![research-hub dashboard demo, real screen recording](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1666%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1740%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -46,31 +46,22 @@ No accounts, no Zotero, no NotebookLM. Just see the end-state UI.
 Paste this into Claude Desktop, Claude Code, Cursor, Continue, ChatGPT, Gemini, or another shell-capable AI:
 
 ```text
-Please install research-hub on my machine end-to-end. It is a Python package
-that pipes academic papers into Zotero + Obsidian + NotebookLM and exposes an
-MCP server.
-
-Do these steps in order. Stop and ask me whenever you need interactive input:
+Please install research-hub on my machine. It is a Python package that pipes
+academic papers into Zotero + Obsidian + NotebookLM and exposes an MCP server.
 
 1. Check `python --version`. If it is below 3.10, tell me to upgrade first.
 2. Run `pip install research-hub-pipeline[playwright,secrets]`.
-3. Run `research-hub init`. Pass the prompts to me. The persona options are
-   `researcher`, `humanities`, `analyst`, and `internal`.
-4. Run `research-hub notebooklm login` and tell me to finish Google sign-in.
-5. Add this MCP entry to the AI host I use:
-   `{ "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }`
-6. Run `research-hub install --platform claude-code` or the matching platform:
-   `cursor`, `codex`, or `gemini`.
-7. Ask me for a topic and run `research-hub auto "TOPIC" --with-crystals`.
+3. Run `research-hub setup`. Stop and pass me the prompts as they appear.
+   Answer the first question (use Zotero? y/N) on my behalf only if I have
+   told you. Chrome-based NotebookLM login will auto-launch; I'll finish it.
+4. Ask me for a topic and run `research-hub auto "TOPIC"`.
 ```
 
 ### Or install manually
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub init
-research-hub notebooklm login
-research-hub plan "your research topic"
+research-hub setup                            # v0.62: init + install --platform + NLM login
 research-hub auto "your research topic"
 research-hub serve --dashboard
 ```
@@ -85,7 +76,7 @@ Analyst and internal-KM users can skip Zotero and ingest local material:
 
 ```bash
 pip install research-hub-pipeline[import,secrets]
-research-hub init --persona analyst
+research-hub setup --persona analyst
 research-hub import-folder ./papers --cluster my-local-review
 research-hub auto "related literature" --no-nlm
 ```
@@ -176,12 +167,31 @@ Crystals are plain Markdown notes under `hub/<cluster>/crystals/*.md`, so they c
 
 ---
 
+## Inside Zotero
+
+Every ingested paper gets a namespaced tag set so you can filter your library by research-hub context:
+
+| Tag | Meaning |
+|---|---|
+| `research-hub` | Ingested through this pipeline (vs. manual Zotero adds) |
+| `cluster/<slug>` | Which research cluster the paper belongs to |
+| `category/<arxiv-code>` | arXiv category like `cs.AI`, `econ.GN` (v0.63) |
+| `type/<publication-type>` | `Review`, `JournalArticle`, etc. from Semantic Scholar (v0.63) |
+| `src/<backend>` | Search backend that discovered it: `arxiv`, `semantic_scholar`, `crossref`, `zotero` |
+
+Every paper also gets a child note with `Summary / Key Findings / Methodology / Relevance`, pulled from the Obsidian frontmatter the pipeline generated. Papers that were in Zotero before research-hub existed can be backfilled with `research-hub zotero backfill --tags --notes --apply`.
+
+---
+
 ## Feature matrix at-a-glance
 
 | Capability | Command or MCP tool | Notes |
 |---|---|---|
+| One-shot setup | `research-hub setup` | Runs init + install --platform + NotebookLM login in one call (v0.62) |
 | Lazy research pipeline | `research-hub auto "topic"` / `auto_research_topic` | Search, ingest, bundle, upload, generate, download |
 | Plan before running | `research-hub plan "intent"` / `plan_research_workflow` | Suggests field, cluster slug, and max papers |
+| Zotero hygiene | `research-hub zotero backfill --tags --notes [--apply]` | Fills missing tags + notes on legacy items (v0.61) |
+| Cluster cascade delete | `research-hub clusters delete <slug> [--apply --force]` | Preview impact on Obsidian + Zotero + dedup + memory + crystals (v0.62) |
 | No-NotebookLM smoke test | `research-hub auto "topic" --no-nlm` | Validates search and vault ingest without browser automation |
 | Local file ingest | `research-hub import-folder <folder> --cluster <slug>` | PDF, DOCX, MD, TXT, URL |
 | Ad-hoc cluster Q&A | `research-hub ask <cluster> "question"` / `ask_cluster_notebooklm` | Top-level CLI takes cluster first, then question |
@@ -229,7 +239,10 @@ The practical fit: research-hub is most useful if you already use at least two o
 | NotebookLM upload or generate fails | NotebookLM UI changed or login expired | Run `research-hub notebooklm login`; then resume with `research-hub notebooklm bundle/upload/generate/download --cluster <slug>` |
 | `auto --with-crystals` cannot find an LLM CLI | `claude`, `codex`, or `gemini` is not on PATH | Install one, or use `crystal emit` and `crystal apply` manually |
 | Claude Desktop cannot see the MCP server | MCP config is in the wrong file or host was not restarted | Check the host config path and restart Claude Desktop |
-| `init` reports Zotero warnings but you do not use Zotero | Persona expects Zotero | Re-run `research-hub init --persona analyst` or `--persona internal` |
+| `init` reports Zotero warnings but you do not use Zotero | Persona expects Zotero | Re-run `research-hub setup --persona analyst` or `--persona internal` |
+| `research-hub clusters delete` refuses to delete | Cluster has papers, notes, or Zotero items | Re-run with `--apply --force` after reviewing the cascade preview |
+| `research-hub auto` errors "cluster already has N papers" | Cluster is non-empty and you ran `auto --cluster <slug>` without a flag | Add `--append` (add more) or `--force` (overwrite) |
+| Zotero items miss `research-hub` tags or notes | Items were created before v0.61 or pipeline failed mid-run | `research-hub zotero backfill --tags --notes --apply` |
 
 For broader checks, run:
 
@@ -245,8 +258,8 @@ Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.m
 
 Status:
 
-- Latest: v0.60.0; see [CHANGELOG](CHANGELOG.md) for package history.
-- Tests: 1666 passing.
+- Latest: v0.63.0; see [CHANGELOG](CHANGELOG.md) for package history.
+- Tests: 1740 passing.
 - MCP tools: 83.
 - REST endpoints: 12 at `/api/v1/*`.
 - Bundled skills: `research-hub` and `research-hub-multi-ai`.
