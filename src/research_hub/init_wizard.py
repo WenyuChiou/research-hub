@@ -95,6 +95,19 @@ def _print_completion_banner(vault_path: Path, config_path: Path, *, persona: st
     vault_str = str(vault_path)
     config_str = str(config_path)
     normalized_persona = str(persona or "researcher").strip().lower()
+    detected_host = "claude-code"
+    install_ready = False
+    try:
+        from research_hub.setup_command import detect_host
+        from research_hub.skill_installer import list_platforms
+
+        detected_host = detect_host() or "claude-code"
+        install_ready = any(
+            key == detected_host and installed for key, _name, installed in list_platforms()
+        )
+    except Exception:
+        detected_host = "claude-code"
+        install_ready = False
     if normalized_persona in {"analyst", "internal"}:
         next_steps = [
             ("research-hub import-folder <folder> --cluster <slug>", "Ingest local PDFs/docs into a cluster"),
@@ -107,6 +120,14 @@ def _print_completion_banner(vault_path: Path, config_path: Path, *, persona: st
             ('research-hub auto "your research topic"', "Run the full research pipeline"),
             ("research-hub serve --dashboard", "See the result at http://127.0.0.1:8765/"),
         ]
+    if not install_ready:
+        next_steps.insert(
+            0,
+            (
+                f"research-hub install --platform {detected_host}",
+                "Install MCP skill files for your AI host",
+            ),
+        )
 
     lines = [
         "",
@@ -210,11 +231,8 @@ def run_init(
             else:
                 print(f"  Zotero credentials: returned {response.status_code}")
                 if interactive:
-                    choice = input("    [r]etry / [c]ontinue offline / [a]bort? ").strip().lower() or "c"
-                    if choice.startswith("a"):
-                        print("  Aborted by user.")
-                        return 1
-                    if choice.startswith("r"):
+                    retry = input("    Retry Zotero validation? [y/N]: ").strip().lower()
+                    if retry == "y":
                         zotero_key = input("    Re-enter Zotero API key: ").strip() or zotero_key
                         zotero_library_id = input("    Re-enter Zotero library ID: ").strip() or zotero_library_id
                         response2 = requests.head(
@@ -225,10 +243,9 @@ def run_init(
                         if response2.status_code == 200:
                             print("    Zotero credentials: OK")
                         else:
-                            print(
-                                f"    Still {response2.status_code}; continuing offline. "
-                                "Run `research-hub init` again to retry."
-                            )
+                            print(f"    WARN still {response2.status_code}; continuing offline.")
+                    else:
+                        print("    WARN continuing offline.")
         except Exception as exc:
             print(f"  Zotero credentials: could not reach api.zotero.org ({exc})")
             if interactive:
@@ -277,8 +294,18 @@ def run_init(
     _print_readiness(readiness)
 
     chrome_ok = any(sub == "chrome" and stat == "OK" for sub, stat, _ in readiness)
-    if interactive and chrome_ok:
-        answer = input("  Run NotebookLM Google login now? [y/N]: ").strip().lower()
+    if interactive and chrome_ok and persona not in {"analyst", "internal"}:
+        print("\n  Launching NotebookLM Google login (Ctrl-C to skip).")
+        try:
+            from research_hub.setup_command import run_notebooklm_login
+
+            run_notebooklm_login()
+        except KeyboardInterrupt:
+            print("  Skipped. Run later: research-hub notebooklm login")
+        except Exception as exc:
+            print(f"  Login failed: {exc}. Run later: research-hub notebooklm login")
+    elif interactive and not chrome_ok and persona not in {"analyst", "internal"}:
+        answer = input("  Chrome not ready. Run NotebookLM Google login later? [y/N]: ").strip().lower()
         if answer == "y":
             print("  Run: research-hub notebooklm login")
 

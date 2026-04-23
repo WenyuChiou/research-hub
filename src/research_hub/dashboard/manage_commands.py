@@ -61,8 +61,8 @@ def build_manage_command(action: str, slug: str, **fields) -> str | None:
         return f"research-hub clusters bind {shell_quote(slug)} --notebooklm {shell_quote(notebooklm)}"
     if action == "delete":
         cmd = f"research-hub clusters delete {shell_quote(slug)}"
-        if not fields.get("apply", False):
-            cmd += " --dry-run"
+        if fields.get("apply", False):
+            cmd += " --apply --force"
         return cmd
     if action == "notebooklm-bundle":
         return f"research-hub notebooklm bundle --cluster {shell_quote(slug)}"

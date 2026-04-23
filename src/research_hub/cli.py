@@ -266,20 +266,16 @@ def _clusters_rename(slug: str, name: str) -> int:
 
 
 def _clusters_delete(slug: str, dry_run: bool, purge_folder: bool = False) -> int:
+    del purge_folder
     cfg = get_config()
-    result = ClusterRegistry(cfg.clusters_file).delete(slug, dry_run=dry_run)
-    purged: list[str] = []
-    if purge_folder and not dry_run:
-        for root in (cfg.raw, cfg.hub):
-            try:
-                target = safe_join(root, slug)
-                if target.exists():
-                    shutil.rmtree(target)
-                    purged.append(str(target))
-            except Exception as exc:
-                print(f"WARN: could not purge {root}/{slug}: {exc}", file=sys.stderr)
-    result["purged_folders"] = purged
-    print(json.dumps(result, ensure_ascii=False))
+    from research_hub.clusters import cascade_delete_cluster
+
+    report = cascade_delete_cluster(cfg, slug, apply=not dry_run)
+    print(report.summary())
+    if dry_run:
+        print("")
+        print("Run with --apply to execute the delete.")
+        return 0
     return 0
 
 
@@ -2192,8 +2188,30 @@ def _migrate_yaml(
     return 0
 
 
-def _auto(*, topic, cluster_slug, cluster_name, max_papers, field, do_nlm, do_crystals, llm_cli, dry_run) -> int:
+def _auto(
+    *,
+    topic,
+    cluster_slug,
+    cluster_name,
+    max_papers,
+    field,
+    do_nlm,
+    do_crystals,
+    llm_cli,
+    dry_run,
+    append: bool = False,
+    force: bool = False,
+) -> int:
     from research_hub.auto import auto_pipeline
+
+    if cluster_slug:
+        cfg = get_config()
+        cluster_raw = cfg.raw / cluster_slug
+        existing_papers = len(list(cluster_raw.glob("*.md"))) if cluster_raw.exists() else 0
+        if existing_papers > 0 and not (append or force):
+            print(f"ERROR: cluster '{cluster_slug}' already has {existing_papers} paper(s).")
+            print("       Re-run with --append (add more) or --force (overwrite).")
+            return 2
 
     report = auto_pipeline(
         topic,
@@ -2294,6 +2312,26 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--name", help="Pre-fill cluster display name")
     init_parser.add_argument("--query", help="Pre-fill search query")
     init_parser.add_argument("--definition", help="Pre-fill cluster definition")
+
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="One-shot onboarding: init + install --platform + NotebookLM login",
+    )
+    setup_parser.add_argument("--vault", default=None, help="Vault root directory")
+    setup_parser.add_argument(
+        "--persona",
+        choices=["researcher", "analyst", "humanities", "internal"],
+        default=None,
+        help="Persona to initialize",
+    )
+    setup_parser.add_argument(
+        "--platform",
+        choices=["claude-code", "codex", "cursor", "gemini"],
+        default=None,
+        help="Override auto-detected AI host for install",
+    )
+    setup_parser.add_argument("--skip-install", action="store_true")
+    setup_parser.add_argument("--skip-login", action="store_true")
 
     tidy_parser = subparsers.add_parser(
         "tidy",
@@ -2455,6 +2493,16 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Force a specific LLM CLI for --with-crystals (default: auto-detect)")
     auto_parser.add_argument("--dry-run", action="store_true",
                              help="Print plan without executing")
+    auto_parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Allow adding more papers to an existing non-empty cluster",
+    )
+    auto_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass non-empty cluster guard",
+    )
 
     plan_parser = subparsers.add_parser(
         "plan",
@@ -2593,11 +2641,8 @@ def build_parser() -> argparse.ArgumentParser:
     delete_parser = clusters_subparsers.add_parser("delete", help="Delete a cluster")
     delete_parser.add_argument("slug")
     delete_parser.add_argument("--dry-run", action="store_true")
-    delete_parser.add_argument(
-        "--purge-folder",
-        action="store_true",
-        help="Also delete <vault>/raw/<slug>/ and <vault>/hub/<slug>/ folders (destructive)",
-    )
+    delete_parser.add_argument("--apply", action="store_true", help="Apply the delete instead of previewing it")
+    delete_parser.add_argument("--force", action="store_true", help="Confirm deletion of a non-empty cluster")
     merge_parser = clusters_subparsers.add_parser("merge", help="Merge two clusters")
     merge_parser.add_argument("source", help="Source cluster slug (will be removed)")
     merge_parser.add_argument("--into", required=True, dest="target", help="Target cluster slug")
@@ -3565,6 +3610,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.command == "install":
         return _cmd_install(args)
+    if args.command == "setup":
+        from research_hub.setup_command import run_setup
+
+        return run_setup(args)
     if args.command == "where":
         return _cmd_where(args)
     if args.command == "package-dxt":
@@ -3633,6 +3682,8 @@ def main(argv: list[str] | None = None) -> int:
             do_crystals=args.with_crystals,
             llm_cli=args.llm_cli,
             dry_run=args.dry_run,
+            append=args.append,
+            force=args.force,
         )
     if args.command == "ingest":
         rc = run_pipeline(
@@ -3728,7 +3779,26 @@ def main(argv: list[str] | None = None) -> int:
         if args.clusters_command == "rename":
             return _clusters_rename(args.slug, args.name)
         if args.clusters_command == "delete":
-            return _clusters_delete(args.slug, args.dry_run, args.purge_folder)
+            from research_hub.clusters import cascade_delete_cluster
+
+            cfg = get_config()
+            preview = cascade_delete_cluster(cfg, args.slug, apply=False)
+            if args.apply:
+                if preview.has_data() and not args.force:
+                    print(preview.summary())
+                    print("")
+                    print("Cluster is not empty. Re-run with --apply --force.")
+                    return 2
+                applied = cascade_delete_cluster(cfg, args.slug, apply=True)
+                print(applied.summary())
+                return 0
+            print(preview.summary())
+            print("")
+            if preview.has_data():
+                print("Preview only. Re-run with --apply --force to delete this non-empty cluster.")
+            else:
+                print("Preview only. Re-run with --apply to delete this cluster.")
+            return 0
         if args.clusters_command == "merge":
             return _clusters_merge(args.source, args.target)
         if args.clusters_command == "split":

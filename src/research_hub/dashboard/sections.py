@@ -1580,7 +1580,7 @@ class ManageSection(DashboardSection):
 
           <form class="manage-form" action="javascript:void(0)" data-action="delete" data-slug="{slug}">
             <label><input type="checkbox" name="apply"> Apply delete</label>
-            <button type="button" class="manage-build-btn manage-danger" data-preview-label="Preview delete" data-apply-label="Apply delete">Preview delete</button>
+            <button type="button" class="manage-build-btn manage-danger" data-preview-label="Preview cascade (dry-run)" data-apply-label="Apply delete">Preview cascade (dry-run)</button>
           </form>
         </article>
         """

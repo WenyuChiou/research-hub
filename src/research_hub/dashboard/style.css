@@ -1265,6 +1265,26 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   color: var(--fail);
 }
 
+.stdout-drawer {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.stdout-drawer > summary {
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+  color: var(--fg-strong);
+  font-size: var(--text-xs);
+}
+
+.stdout-drawer > pre {
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: "Geist Mono", "JetBrains Mono", monospace;
+}
+
 .confirm-dialog {
   width: min(420px, calc(100vw - var(--space-lg)));
   border: 1px solid var(--border);

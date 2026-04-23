@@ -160,4 +160,5 @@ def test_backfill_falls_back_to_stub_note_when_obsidian_missing(tmp_path, monkey
     report = run_backfill(cfg, apply=True, do_tags=False)
 
     assert report.notes_added == [{"key": "I1", "slug": "agents", "source": "stub"}]
-    assert zot.created[0]["note"] == "<p>Imported from cluster <b>agents</b>. DOI: n/a</p>"
+    assert "<h3>Paper</h3>" in zot.created[0]["note"]
+    assert "Imported from research-hub cluster" in zot.created[0]["note"]

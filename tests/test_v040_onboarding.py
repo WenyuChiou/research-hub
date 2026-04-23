@@ -51,7 +51,7 @@ def test_init_wizard_retries_zotero_credentials_on_validation_failure(tmp_path, 
             str(tmp_path / "vault"),
             "bad-key",
             "111",
-            "r",
+            "y",
             "good-key",
             "222",
             "n",
@@ -77,7 +77,7 @@ def test_init_wizard_retries_zotero_credentials_on_validation_failure(tmp_path, 
     output = capsys.readouterr().out
     assert "returned 403" in output
     assert "Zotero credentials: OK" in output
-    assert "    [r]etry / [c]ontinue offline / [a]bort? " in prompts
+    assert "    Retry Zotero validation? [y/N]: " in prompts
     assert "    Re-enter Zotero API key: " in prompts
     assert "    Re-enter Zotero library ID: " in prompts
 

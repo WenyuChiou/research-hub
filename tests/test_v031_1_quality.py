@@ -79,10 +79,13 @@ def test_clusters_delete_purge_folder_removes_raw_and_hub_dirs(tmp_path, monkeyp
 
     rc = _clusters_delete(slug, dry_run=False, purge_folder=True)
 
+    # v0.62: _clusters_delete now calls cascade_delete_cluster which moves
+    # raw/<slug> to raw/_deleted_<slug> and removes hub/<slug>. Output is a
+    # human-readable cascade summary (not JSON).
     assert rc == 0
     assert not raw_dir.exists()
     assert not hub_dir.exists()
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["slug"] == slug
-    assert payload["notes_unbound"] == 1
-    assert sorted(payload["purged_folders"]) == sorted([str(raw_dir), str(hub_dir)])
+    assert (cfg.raw / f"_deleted_{slug}").exists()
+    out = capsys.readouterr().out
+    assert slug in out
+    assert "Obsidian papers:" in out

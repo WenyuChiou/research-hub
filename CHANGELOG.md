@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.62.0 (2026-04-23)
+
+### Setup simplification
+- New `research-hub setup` one-shot command runs init + install --platform + NotebookLM login in one call.
+- `init` completion banner now includes the required `install --platform` step.
+- NotebookLM login is mandatory (not [y/N]) when Chrome is available and persona uses NLM. Ctrl-C still skips.
+- Zotero API-key retry loop reduced to one retry; second failure continues offline with a WARN.
+
+### Note hygiene
+- Stub notes in Zotero now include title, authors, year, venue, DOI (was: just "Imported from cluster X").
+- Ingest de-dup branch now also creates a note if the matched existing Zotero item has none.
+- Backfill upgrades legacy stub-only notes to Obsidian-rich notes when possible.
+- Backfill report breaks down "Notes added: N (A from Obsidian, B enriched stubs, C upgraded stubs)".
+
+### Manage tab safety
+- `clusters delete` computes a cascade report (Obsidian papers, Zotero items, dedup/memory/crystals) and requires `--force` on non-empty clusters. Never trashes Zotero items - only unlinks them from the deleted collection.
+- Dashboard cluster-delete now uses a two-step Preview -> Apply flow matching the paper-action pattern.
+- Result drawer now shows full stdout/stderr in a collapsible `<details>` block for long-running commands.
+- `auto` now errors with a 1-line instruction if the target cluster already has papers, unless `--append` or `--force` is passed.
+
 ## v0.61.0 (2026-04-23)
 
 ### Zotero hygiene

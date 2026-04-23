@@ -52,6 +52,20 @@ def _slugify(text: str) -> str:
     return slugify(text)
 
 
+def _build_note_html(pp: dict) -> str:
+    summary = str(pp.get("summary", "") or "")
+    findings = pp.get("key_findings", []) or []
+    methodology = str(pp.get("methodology", "") or "")
+    relevance = str(pp.get("relevance", "") or "")
+    note = "<h1>Summary</h1><p>" + summary + "</p>"
+    note += "<h2>Key Findings</h2><ul>"
+    note += "".join("<li>" + str(item) + "</li>" for item in findings)
+    note += "</ul>"
+    note += "<h2>Methodology</h2><p>" + methodology + "</p>"
+    note += "<h2>Relevance</h2><p>" + relevance + "</p>"
+    return note
+
+
 def _auto_generate_missing_fields(pp: dict, cluster_slug: str | None) -> None:
     """Fill ingest fields that can be derived from existing metadata."""
     if "slug" not in pp or not pp.get("slug"):
@@ -547,8 +561,15 @@ def run_pipeline(
                                         *[{"tag": tag} for tag in sorted(new_tags)],
                                     ]
                                     zot.update_item(existing_data)
+                                children = zot.children(zotero_hit.zotero_key)
+                                has_note = any(
+                                    child.get("data", {}).get("itemType") == "note"
+                                    for child in (children or [])
+                                )
+                                if not has_note:
+                                    add_note(zot, zotero_hit.zotero_key, _build_note_html(pp))
                             except Exception as exc:
-                                p(f"  WARN tag-merge failed: {exc}")
+                                p(f"  WARN dedup note-add failed: {exc}")
                         manifest.append(
                             new_entry(
                                 cluster=cluster_slug or "",
@@ -617,13 +638,7 @@ def run_pipeline(
                     p(f"  CREATED: {key}")
                     pp["zotero_key"] = key
                     zr.append({"title": pp["title"], "status": "CREATED", "key": key})
-                    nh = "<h1>Summary</h1><p>" + pp["summary"] + "</p>"
-                    nh += "<h2>Key Findings</h2><ul>" + "".join(
-                        "<li>" + x + "</li>" for x in pp["key_findings"]
-                    ) + "</ul>"
-                    nh += "<h2>Methodology</h2><p>" + pp["methodology"] + "</p>"
-                    nh += "<h2>Relevance</h2><p>" + pp["relevance"] + "</p>"
-                    ok = add_note(zot, key, nh)
+                    ok = add_note(zot, key, _build_note_html(pp))
                     p(f"  Note: {'OK' if ok else 'FAIL'}")
                     papers_for_notes.append(pp)
                 else:

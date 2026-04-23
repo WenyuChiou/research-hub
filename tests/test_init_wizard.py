@@ -73,7 +73,6 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
             str(tmp_path / "interactive-vault"),
             "z-key",
             "999",
-            "n",
         ]
     )
     prompts: list[str] = []
@@ -92,6 +91,8 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
         "_check_first_run_readiness",
         lambda vault, *, persona, has_zotero: [("chrome", "OK", "patchright can launch Chrome")],
     )
+    # v0.62: mandatory NLM login auto-launches when chrome_ok; stub it out
+    monkeypatch.setattr("research_hub.setup_command.run_notebooklm_login", lambda: None)
 
     assert init_wizard.run_init() == 0
 
@@ -101,13 +102,13 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     assert is_encrypted(config["zotero"]["api_key"])
     assert decrypt(config["zotero"]["api_key"], config_dir) == "z-key"
     assert config["zotero"]["library_id"] == "999"
+    # v0.62: when chrome_ok, NLM login auto-launches (no [y/N] prompt)
     assert prompts == [
         "> ",  # Q0
         "> ",  # persona menu in Zotero branch
         f"Vault root directory [{default_home / 'knowledge-base'}]: ",
         "  Zotero API key: ",
         "  Zotero library ID: ",
-        "  Run NotebookLM Google login now? [y/N]: ",
     ]
     assert "First-run readiness check" in output
     assert "patchright can launch Chrome" in output

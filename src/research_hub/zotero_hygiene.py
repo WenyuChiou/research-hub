@@ -24,6 +24,9 @@ class BackfillReport:
     notes_added: list[dict] = field(default_factory=list)
     errors: list[dict] = field(default_factory=list)
     report_path: str = ""
+    obsidian_sourced: int = 0
+    enriched_stubs: int = 0
+    upgraded_stubs: int = 0
 
     def summary(self) -> str:
         mode = "dry-run" if self.dry_run else "applied"
@@ -32,7 +35,9 @@ class BackfillReport:
             f"  Clusters scanned: {self.clusters_scanned}",
             f"  Items audited:    {self.items_audited}",
             f"  Tag updates:      {len(self.tags_added)}",
-            f"  Notes added:      {len(self.notes_added)}",
+            "  Notes added:      "
+            f"{len(self.notes_added)} ({self.obsidian_sourced} from Obsidian, "
+            f"{self.enriched_stubs} enriched stubs, {self.upgraded_stubs} upgraded from stubs)",
             f"  Errors:           {len(self.errors)}",
         ]
         if self.report_path:
@@ -47,7 +52,11 @@ class BackfillReport:
             f"- Clusters scanned: {self.clusters_scanned}",
             f"- Items audited: {self.items_audited}",
             f"- Tag updates: {len(self.tags_added)}",
-            f"- Notes added: {len(self.notes_added)}",
+            (
+                f"- Notes added: {len(self.notes_added)} "
+                f"({self.obsidian_sourced} from Obsidian, "
+                f"{self.enriched_stubs} enriched stubs, {self.upgraded_stubs} upgraded from stubs)"
+            ),
             f"- Errors: {len(self.errors)}",
             "",
             "## Tags Added",
@@ -122,10 +131,32 @@ def _note_from_obsidian(path: Path) -> str:
     return note
 
 
-def _stub_note(slug: str, doi: str) -> str:
-    safe_slug = html.escape(slug)
-    safe_doi = html.escape(doi or "n/a")
-    return f"<p>Imported from cluster <b>{safe_slug}</b>. DOI: {safe_doi}</p>"
+STUB_MARKER = "<i>Imported from research-hub cluster"
+
+
+def _build_stub_note(item_data: dict, cluster_slug: str) -> str:
+    title = html.escape(str(item_data.get("title", "(no title)") or "(no title)"))
+    authors = item_data.get("creators", [])[:3]
+    author_line = ", ".join(
+        html.escape(f"{a.get('firstName', '')} {a.get('lastName', '')}".strip())
+        for a in authors
+        if a.get("creatorType") == "author"
+    ) or "(no authors)"
+    year = html.escape((str(item_data.get("date", "") or "").split("-")[0] or "no year"))
+    doi = html.escape(str(item_data.get("DOI", "") or ""))
+    venue = html.escape(str(item_data.get("publicationTitle", "") or ""))
+    parts = [
+        f"<h3>{title}</h3>",
+        f"<p><b>Authors:</b> {author_line} ({year})</p>",
+    ]
+    if venue:
+        parts.append(f"<p><b>Venue:</b> {venue}</p>")
+    if doi:
+        parts.append(f'<p><b>DOI:</b> <a href="https://doi.org/{doi}">{doi}</a></p>')
+    parts.append(
+        f"<p><i>Imported from research-hub cluster: <b>{html.escape(cluster_slug)}</b></i></p>"
+    )
+    return "\n".join(parts)
 
 
 def _first_obsidian_path(dedup_index: DedupIndex, *, doi: str, title: str = "") -> Path | None:
@@ -202,23 +233,40 @@ def run_backfill(
                         for child in (children or [])
                         if child.get("data", {}).get("itemType") == "note"
                     ]
-                    if not notes:
-                        obsidian_path = _first_obsidian_path(
-                            dedup_index,
-                            doi=doi,
-                            title=str(data.get("title", "") or ""),
-                        )
+                    obsidian_path = _first_obsidian_path(
+                        dedup_index,
+                        doi=doi,
+                        title=str(data.get("title", "") or ""),
+                    )
+                    is_missing = not notes
+                    is_stub_only = (
+                        notes
+                        and len(notes) == 1
+                        and STUB_MARKER in notes[0].get("data", {}).get("note", "")
+                    )
+                    can_upgrade = bool(is_stub_only and obsidian_path)
+                    needs_note = is_missing or can_upgrade
+                    if needs_note:
                         if obsidian_path:
-                            source = "obsidian"
+                            source = "obsidian" if is_missing else "upgraded-stub"
                             note_html = _note_from_obsidian(obsidian_path)
                         else:
                             source = "stub"
-                            note_html = _stub_note(cluster.slug, doi)
-                        report.notes_added.append(
-                            {"key": key, "slug": cluster.slug, "source": source}
-                        )
+                            note_html = _build_stub_note(data, cluster.slug)
+                        report.notes_added.append({"key": key, "slug": cluster.slug, "source": source})
+                        if source == "obsidian":
+                            report.obsidian_sourced += 1
+                        elif source == "stub":
+                            report.enriched_stubs += 1
+                        else:
+                            report.upgraded_stubs += 1
                         if apply:
-                            safe_api_call(add_note, zot, key, note_html)
+                            if can_upgrade:
+                                note_item = notes[0].get("data", {}).copy()
+                                note_item["note"] = note_html
+                                safe_api_call(zot.update_item, note_item)
+                            else:
+                                safe_api_call(add_note, zot, key, note_html)
             except Exception as exc:
                 report.errors.append({"key": key, "error": str(exc)})
 

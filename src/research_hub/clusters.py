@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -15,6 +16,40 @@ from research_hub.operations import _update_frontmatter_field, move_paper, note_
 from research_hub.security import atomic_write_text, safe_join
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CascadeReport:
+    slug: str
+    obsidian_papers: int = 0
+    zotero_items_in_collection: int = 0
+    dedup_entries: int = 0
+    memory_entries: int = 0
+    crystal_files: int = 0
+    obsidian_folder_size_bytes: int = 0
+
+    def has_data(self) -> bool:
+        return any(
+            [
+                self.obsidian_papers,
+                self.zotero_items_in_collection,
+                self.dedup_entries,
+                self.memory_entries,
+                self.crystal_files,
+            ]
+        )
+
+    def summary(self) -> str:
+        lines = [
+            f"Cascade delete preview for '{self.slug}':",
+            f"  Obsidian papers:            {self.obsidian_papers}",
+            f"  Zotero collection items:    {self.zotero_items_in_collection}",
+            f"  Dedup entries:              {self.dedup_entries}",
+            f"  Memory entries:             {self.memory_entries}",
+            f"  Crystal files:              {self.crystal_files}",
+            f"  Obsidian folder bytes:      {self.obsidian_folder_size_bytes}",
+        ]
+        return "\n".join(lines)
 
 
 @dataclass
@@ -349,3 +384,137 @@ class ClusterRegistry:
             if overlap > best[0] and overlap >= min_overlap:
                 best = (overlap, cluster)
         return best[1]
+
+
+def compute_cluster_cascade_report(cfg, slug: str) -> CascadeReport:
+    from research_hub.dedup import DedupIndex
+    from research_hub.pipeline_repair import _iter_collection_items
+    from research_hub.zotero.client import ZoteroDualClient
+
+    report = CascadeReport(slug=slug)
+    raw_dir = safe_join(cfg.raw, slug)
+    note_paths = sorted(raw_dir.glob("*.md")) if raw_dir.exists() else []
+    report.obsidian_papers = len(note_paths)
+    report.obsidian_folder_size_bytes = sum(
+        path.stat().st_size for path in note_paths if path.exists()
+    )
+
+    hub_dir = safe_join(cfg.hub, slug)
+    crystals_dir = hub_dir / "crystals"
+    report.crystal_files = len(list(crystals_dir.glob("*.md"))) if crystals_dir.exists() else 0
+    memory_json = hub_dir / "memory.json"
+    if memory_json.exists():
+        try:
+            payload = json.loads(memory_json.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        if isinstance(payload, dict):
+            report.memory_entries = sum(
+                len(value) for value in payload.values() if isinstance(value, list)
+            )
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(slug)
+    zotero_keys: set[str] = set()
+    if cluster and cluster.zotero_collection_key:
+        try:
+            zot = ZoteroDualClient().web
+            items = _iter_collection_items(zot, cluster.zotero_collection_key)
+            report.zotero_items_in_collection = len(items)
+            zotero_keys = {
+                str(item.get("key") or item.get("data", {}).get("key") or "")
+                for item in items
+                if (item.get("key") or item.get("data", {}).get("key"))
+            }
+        except Exception:
+            report.zotero_items_in_collection = 0
+
+    dedup = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
+    obsidian_root = raw_dir.resolve() if raw_dir.exists() else None
+    dedup_count = 0
+    seen: set[tuple[str | None, str | None]] = set()
+    for groups in (dedup.doi_to_hits.values(), dedup.title_to_hits.values()):
+        for hits in groups:
+            for hit in hits:
+                obsidian_match = False
+                if obsidian_root and hit.obsidian_path:
+                    try:
+                        Path(hit.obsidian_path).resolve().relative_to(obsidian_root)
+                        obsidian_match = True
+                    except Exception:
+                        obsidian_match = False
+                zotero_match = bool(hit.zotero_key and hit.zotero_key in zotero_keys)
+                if obsidian_match or zotero_match:
+                    marker = (hit.obsidian_path, hit.zotero_key)
+                    if marker not in seen:
+                        seen.add(marker)
+                        dedup_count += 1
+    report.dedup_entries = dedup_count
+    return report
+
+
+def cascade_delete_cluster(cfg, slug: str, *, apply: bool) -> CascadeReport:
+    from research_hub.dedup import DedupIndex
+    from research_hub.pipeline_repair import _iter_collection_items
+    from research_hub.zotero.client import ZoteroDualClient
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {slug}")
+
+    report = compute_cluster_cascade_report(cfg, slug)
+    if not apply:
+        return report
+
+    raw_dir = safe_join(cfg.raw, slug)
+    deleted_dir = safe_join(cfg.raw, f"_deleted_{slug}")
+    if raw_dir.exists():
+        deleted_dir.parent.mkdir(parents=True, exist_ok=True)
+        if deleted_dir.exists():
+            shutil.rmtree(deleted_dir)
+        shutil.move(str(raw_dir), str(deleted_dir))
+
+    if cluster.zotero_collection_key:
+        zot = ZoteroDualClient().web
+        items = _iter_collection_items(zot, cluster.zotero_collection_key)
+        for item in items:
+            item_key = item.get("key") or item.get("data", {}).get("key")
+            if not item_key:
+                continue
+            current = zot.item(item_key)
+            data = current.get("data", {})
+            collections = [key for key in data.get("collections", []) if key != cluster.zotero_collection_key]
+            data["collections"] = collections
+            zot.update_item(data)
+
+    dedup_path = cfg.research_hub_dir / "dedup_index.json"
+    dedup = DedupIndex.load(dedup_path)
+    for groups in (dedup.doi_to_hits, dedup.title_to_hits):
+        for key in list(groups.keys()):
+            kept = []
+            for hit in groups[key]:
+                remove = False
+                if hit.obsidian_path:
+                    try:
+                        Path(hit.obsidian_path).resolve().relative_to(raw_dir.resolve())
+                        remove = True
+                    except Exception:
+                        remove = False
+                if remove:
+                    continue
+                kept.append(hit)
+            if kept:
+                groups[key] = kept
+            else:
+                del groups[key]
+    dedup.save(dedup_path)
+
+    hub_dir = safe_join(cfg.hub, slug)
+    if hub_dir.exists():
+        shutil.rmtree(hub_dir)
+
+    registry.clusters.pop(slug, None)
+    registry.save()
+    registry._refresh_graph_if_possible()
+    return report

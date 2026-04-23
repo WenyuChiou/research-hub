@@ -331,19 +331,15 @@
     }
     const stdout = String(data.stdout || "");
     if (stdout) {
-      const lines = stdout.split(/\r?\n/);
+      const details = doc.createElement("details");
+      details.className = "stdout-drawer";
+      const detailsSummary = doc.createElement("summary");
+      detailsSummary.textContent = "Full output";
       const pre = doc.createElement("pre");
       pre.className = "exec-result-stdout";
       pre.textContent = stdout;
-      if (lines.length > 20) {
-        const details = doc.createElement("details");
-        const detailsSummary = doc.createElement("summary");
-        detailsSummary.textContent = `stdout (${lines.length} lines)`;
-        details.append(detailsSummary, pre);
-        drawer.appendChild(details);
-      } else {
-        drawer.appendChild(pre);
-      }
+      details.append(detailsSummary, pre);
+      drawer.appendChild(details);
     }
     if (data.stderr) {
       const pre = doc.createElement("pre");
@@ -624,7 +620,7 @@
       case "bases-emit":
         return `research-hub bases emit --cluster ${shellQuote(slug)}${data.get("force") ? " --force" : ""}`;
       case "delete":
-        return `research-hub clusters delete ${shellQuote(slug)}${data.get("apply") ? "" : " --dry-run"}`;
+        return `research-hub clusters delete ${shellQuote(slug)}${data.get("apply") ? " --apply --force" : ""}`;
       default:
         return null;
     }
@@ -1027,7 +1023,7 @@
             "notebooklm-ask": "Ask NotebookLM",
             "vault-polish-markdown": "Polish markdown",
             "bases-emit": "Emit .base dashboard",
-            delete: "Copy delete dry-run command"
+            delete: "Preview cascade (dry-run)"
           };
           button.textContent = labels[form.dataset.action] || "Copy command";
         }, 1500);

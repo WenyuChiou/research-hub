@@ -105,8 +105,9 @@ def _render_dashboard_html(tmp_path: Path, monkeypatch, *, with_cluster: bool = 
             {"notebooklm": "https://notebooklm.google.com/notebook/123"},
             'research-hub clusters bind foo --notebooklm "https://notebooklm.google.com/notebook/123"',
         ),
-        ("delete", "foo", {}, "research-hub clusters delete foo --dry-run"),
-        ("delete", "foo", {"apply": True}, "research-hub clusters delete foo"),
+        # v0.62: cluster delete defaults to preview mode; apply requires --force
+        ("delete", "foo", {}, "research-hub clusters delete foo"),
+        ("delete", "foo", {"apply": True}, "research-hub clusters delete foo --apply --force"),
     ],
 )
 def test_build_manage_command(action, slug, fields, expected):
@@ -209,7 +210,8 @@ def test_manage_render_has_dynamic_preview_apply_labels(tmp_path, monkeypatch):
     html = _render_dashboard_html(tmp_path, monkeypatch)
     assert "Preview polish" in html
     assert "Apply polish" in html
-    assert "Preview delete" in html
+    # v0.62: cluster delete uses cascade-report preview label
+    assert "Preview cascade (dry-run)" in html
     assert "Apply delete" in html
 
 
