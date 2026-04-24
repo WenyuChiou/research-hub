@@ -6,7 +6,7 @@
 ![research-hub dashboard demo, real screen recording](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1740%20passing-brightgreen.svg)](docs/audit_v0.45.md)
+[![Tests](https://img.shields.io/badge/tests-1759%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -61,9 +61,10 @@ academic papers into Zotero + Obsidian + NotebookLM and exposes an MCP server.
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub setup                            # v0.62: init + install --platform + NLM login
-research-hub auto "your research topic"
-research-hub serve --dashboard
+research-hub setup                            # v0.62+: init + install --platform + NLM login,
+                                              # v0.64: auto-opens Zotero key page + offers a guided sample run
+research-hub auto "your research topic"       # v0.64: opens the dashboard on success (--no-show to opt out)
+research-hub serve --dashboard                # --strict on `doctor` for full legacy WARN detail
 ```
 
 For a first smoke test without NotebookLM automation:
@@ -187,7 +188,7 @@ Every paper also gets a child note with `Summary / Key Findings / Methodology / 
 
 | Capability | Command or MCP tool | Notes |
 |---|---|---|
-| One-shot setup | `research-hub setup` | Runs init + install --platform + NotebookLM login in one call (v0.62) |
+| One-shot setup | `research-hub setup` | init + install --platform + NotebookLM login (v0.62); auto-opens Zotero key page and offers a guided sample run (v0.64) |
 | Lazy research pipeline | `research-hub auto "topic"` / `auto_research_topic` | Search, ingest, bundle, upload, generate, download |
 | Plan before running | `research-hub plan "intent"` / `plan_research_workflow` | Suggests field, cluster slug, and max papers |
 | Zotero hygiene | `research-hub zotero backfill --tags --notes [--apply]` | Fills missing tags + notes on legacy items (v0.61) |
@@ -258,8 +259,8 @@ Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.m
 
 Status:
 
-- Latest: v0.63.0; see [CHANGELOG](CHANGELOG.md) for package history.
-- Tests: 1740 passing.
+- Latest: v0.64.2; see [CHANGELOG](CHANGELOG.md) for package history.
+- Tests: 1759 passing.
 - MCP tools: 83.
 - REST endpoints: 12 at `/api/v1/*`.
 - Bundled skills: `research-hub` and `research-hub-multi-ai`.
