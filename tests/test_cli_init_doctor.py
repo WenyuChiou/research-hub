@@ -102,6 +102,7 @@ def test_main_routes_init_and_doctor(monkeypatch):
         zotero_library_id=None,
         non_interactive=False,
         persona="researcher",
+        **_kwargs,  # tolerate future additions like v0.64's no_browser
     ):
         calls.append(
             (
@@ -118,7 +119,7 @@ def test_main_routes_init_and_doctor(monkeypatch):
         )
         return 0
 
-    def fake_run_doctor():
+    def fake_run_doctor(*, strict=False, **_kwargs):
         calls.append(("doctor.run", tuple(), {}))
         return ["result"]
 
