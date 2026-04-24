@@ -286,7 +286,12 @@ def test_doctor_pre_2000_missing_doi_is_warn(tmp_path, monkeypatch):
     )
     cfg = hub_config.get_config()
 
-    result = check_frontmatter_completeness(cfg)
+    # v0.64.2: legacy gaps default to INFO; --strict surfaces WARN.
+    info = check_frontmatter_completeness(cfg)
+    assert info.status == "INFO"
+    assert "legacy notes have known gaps" in info.message
+
+    result = check_frontmatter_completeness(cfg, strict=True)
 
     assert result.status == "WARN"
     assert "legacy papers without DOI expected" in result.message
@@ -304,7 +309,12 @@ def test_doctor_migration_missing_doi_is_warn(tmp_path, monkeypatch):
     )
     cfg = hub_config.get_config()
 
-    result = check_frontmatter_completeness(cfg)
+    # v0.64.2: legacy gaps default to INFO; --strict surfaces WARN.
+    info = check_frontmatter_completeness(cfg)
+    assert info.status == "INFO"
+    assert "legacy notes have known gaps" in info.message
+
+    result = check_frontmatter_completeness(cfg, strict=True)
 
     assert result.status == "WARN"
     assert "legacy papers without DOI expected" in result.message

@@ -67,9 +67,18 @@ def test_tidy_signatures_match_real_api():
     from research_hub.dedup import DedupIndex
     from research_hub.vault_autofix import run_autofix
 
-    # run_doctor should be no-arg
-    assert inspect.signature(run_doctor).parameters == {}, (
-        "run_doctor() must remain no-arg; tidy uses it that way"
+    # run_doctor should remain callable with NO positional args (tidy uses
+    # `run_doctor()` that way). v0.64.2 added the keyword-only `strict`
+    # param with a default, which keeps the no-arg call working.
+    sig = inspect.signature(run_doctor)
+    no_arg_callable = all(
+        p.default is not inspect.Parameter.empty
+        or p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        for p in sig.parameters.values()
+    )
+    assert no_arg_callable, (
+        f"run_doctor() must stay callable with no args; tidy uses it that way. "
+        f"Got signature: {sig}"
     )
     # run_autofix should accept a cfg
     assert "cfg" in inspect.signature(run_autofix).parameters
