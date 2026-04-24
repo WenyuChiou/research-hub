@@ -3531,7 +3531,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    exempt_commands = {"init", "doctor", "install", "examples", "where", "config", "package-dxt"}
+    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "package-dxt"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()

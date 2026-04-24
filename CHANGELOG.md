@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.64.1 (2026-04-23)
+
+### Fixed
+- `research-hub setup` now exempt from `require_config()` so it can serve as
+  a true first-run command on a fresh machine (was: errored "not initialized"
+  before reaching the setup orchestrator).
+
 ## v0.64.0 (2026-04-23)
 
 ### Onboarding final-mile UX
