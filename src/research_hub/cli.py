@@ -2377,6 +2377,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Backfill mechanical frontmatter gaps before running checks",
     )
+    doctor_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Show all frontmatter WARNs including expected legacy gaps "
+             "(missing DOI on pre-v0.31 imports, empty Summary/Methodology sections). "
+             "Default hides them as a single INFO line.",
+    )
 
     config_parser = subparsers.add_parser("config", help="Config maintenance commands")
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
@@ -3608,7 +3615,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"doi_derived={summary['doi_derived']} "
                 f"skipped_no_cluster={summary['skipped_no_cluster']}"
             )
-        return print_doctor_report(run_doctor())
+        return print_doctor_report(run_doctor(strict=getattr(args, "strict", False)))
     if args.command == "config":
         if args.config_command == "encrypt-secrets":
             return _config_encrypt_secrets()

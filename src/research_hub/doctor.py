@@ -22,8 +22,15 @@ class CheckResult:
     details: str = ""
 
 
-def check_frontmatter_completeness(cfg) -> CheckResult:
-    """Validate paper-note frontmatter and required body sections across the vault."""
+def check_frontmatter_completeness(cfg, *, strict: bool = False) -> CheckResult:
+    """Validate paper-note frontmatter and required body sections across the vault.
+
+    When strict=False (default), expected legacy gaps (missing DOI on
+    pre-v0.31 imports, empty Summary/Methodology sections) are downgraded
+    to a single INFO line instead of a noisy WARN, since they are known
+    historical state and touching them in bulk triggers Zotero auto-sync
+    re-auth loops. Pass strict=True to surface every legacy WARN.
+    """
     from research_hub.paper_schema import validate_paper_note
     from research_hub.topic import _parse_frontmatter
 
@@ -75,6 +82,17 @@ def check_frontmatter_completeness(cfg) -> CheckResult:
         )
     if legacy_missing_doi or warn:
         warn_examples = [f"{item}: missing ['doi']" for item in legacy_missing_doi] + warn
+        legacy_count = len(legacy_missing_doi) + len(warn)
+        if not strict:
+            return CheckResult(
+                name="frontmatter_completeness",
+                status="INFO",
+                message=(
+                    f"{legacy_count} legacy notes have known gaps "
+                    f"({len(legacy_missing_doi)} missing DOI, {len(warn)} empty sections). "
+                    "Re-run with --strict to list."
+                ),
+            )
         message_parts = []
         if legacy_missing_doi:
             message_parts.append(
@@ -327,8 +345,12 @@ def check_defuddle_cli() -> CheckResult:
     )
 
 
-def run_doctor() -> list[CheckResult]:
-    """Run all health checks and return results."""
+def run_doctor(*, strict: bool = False) -> list[CheckResult]:
+    """Run all health checks and return results.
+
+    strict=True surfaces every legacy WARN; default downgrades known
+    legacy gaps to a single INFO line.
+    """
     from research_hub.config import _resolve_config_path, get_config
 
     results: list[CheckResult] = []
@@ -535,7 +557,7 @@ def run_doctor() -> list[CheckResult]:
             results.append(CheckResult("cluster_field", "WARN", f"Could not check: {exc}"))
 
         try:
-            results.append(check_frontmatter_completeness(cfg))
+            results.append(check_frontmatter_completeness(cfg, strict=strict))
         except Exception as exc:
             results.append(CheckResult("frontmatter_completeness", "WARN", f"Could not check: {exc}"))
 

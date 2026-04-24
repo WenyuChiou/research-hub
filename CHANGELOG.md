@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.64.2 (2026-04-23)
+
+### Doctor noise reduction
+- `frontmatter_completeness` now downgrades known legacy gaps (missing DOI on
+  pre-v0.31 imports, empty Summary/Methodology sections) to a single INFO
+  line: `[ii] N legacy notes have known gaps`. Default behavior; pass
+  `--strict` to see the full WARN listing.
+- Touching these legacy notes in bulk (e.g., `paper lookup-doi --batch`)
+  triggers Zotero auto-sync re-auth loops on machines with Zotero desktop +
+  external file watchers, so silencing the WARN avoids tempting an
+  expensive cleanup that hurts more than it helps.
+
 ## v0.64.1 (2026-04-23)
 
 ### Fixed
