@@ -2201,6 +2201,7 @@ def _auto(
     dry_run,
     append: bool = False,
     force: bool = False,
+    show: bool = True,
 ) -> int:
     from research_hub.auto import auto_pipeline
 
@@ -2228,6 +2229,14 @@ def _auto(
     if not report.ok:
         print(f"  [ERR] {report.error}")
         return 1
+    if show and sys.stdin.isatty():
+        try:
+            from research_hub.dashboard import generate_dashboard
+
+            generate_dashboard(open_browser=True)
+        except Exception as exc:
+            print(f"[auto] Could not open dashboard: {exc}.")
+            print("       Run `research-hub serve --dashboard` to view results.")
     return 0
 
 
@@ -2298,6 +2307,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip prompts; require all values via flags",
     )
     init_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not auto-open browser pages during onboarding prompts",
+    )
+    init_parser.add_argument(
         "--persona",
         choices=["researcher", "analyst", "humanities", "internal"],
         default=None,
@@ -2332,6 +2346,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     setup_parser.add_argument("--skip-install", action="store_true")
     setup_parser.add_argument("--skip-login", action="store_true")
+    setup_parser.add_argument("--skip-sample", action="store_true")
+    setup_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not auto-open browser pages during onboarding prompts",
+    )
 
     tidy_parser = subparsers.add_parser(
         "tidy",
@@ -2498,6 +2518,12 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Force a specific LLM CLI for --with-crystals (default: auto-detect)")
     auto_parser.add_argument("--dry-run", action="store_true",
                              help="Print plan without executing")
+    auto_parser.add_argument(
+        "--show",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Open the dashboard in your browser after successful run (default: on)",
+    )
     auto_parser.add_argument(
         "--append",
         action="store_true",
@@ -3556,6 +3582,7 @@ def main(argv: list[str] | None = None) -> int:
             zotero_library_id=args.zotero_library_id,
             non_interactive=args.non_interactive,
             persona=args.persona,
+            no_browser=args.no_browser,
         )
     if args.command == "tidy":
         from research_hub.tidy import run_tidy
@@ -3693,6 +3720,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             append=args.append,
             force=args.force,
+            show=args.show,
         )
     if args.command == "ingest":
         rc = run_pipeline(

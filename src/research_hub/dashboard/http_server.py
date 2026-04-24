@@ -535,7 +535,28 @@ def serve_dashboard(
     DashboardHandler.api_token = api_token
     DashboardHandler.job_queue = JobQueue()
 
-    server = ThreadingHTTPServer((host, port), DashboardHandler)
+    try:
+        server = ThreadingHTTPServer((host, port), DashboardHandler)
+    except OSError as exc:
+        msg = str(exc).lower()
+        is_addr_in_use = (
+            "address already in use" in msg
+            or "10048" in msg
+            or getattr(exc, "errno", None) in (48, 98)
+        )
+        if is_addr_in_use:
+            print(f"[serve] Dashboard already running at http://{host}:{port}/")
+            if open_browser:
+                import webbrowser
+
+                try:
+                    webbrowser.open(f"http://{host}:{port}/")
+                except Exception:
+                    pass
+            watcher.stop()
+            return
+        watcher.stop()
+        raise
     logger.info("dashboard server listening on http://%s:%d/", host, port)
 
     if open_browser:

@@ -156,6 +156,7 @@ def run_init(
     zotero_library_id: str | None = None,
     non_interactive: bool = False,
     persona: str | None = None,
+    no_browser: bool = False,
 ) -> int:
     """Run the init wizard. Returns 0 on success, 1 on error."""
     interactive = sys.stdin.isatty() and not non_interactive
@@ -204,7 +205,19 @@ def run_init(
 
     if not no_zotero_persona and not zotero_key and interactive:
         print("\n  Zotero API key is needed to sync papers.")
-        print("  Get one at: https://www.zotero.org/settings/keys")
+        no_browser_flag = bool(no_browser) if "no_browser" in locals() else False
+        if interactive and not no_browser_flag:
+            print("  Opening https://www.zotero.org/settings/keys in your browser.")
+            print("  Log in, click 'Create new private key', enable Library Read/Write,")
+            print("  then copy the key + library ID back here.")
+            try:
+                import webbrowser
+
+                webbrowser.open("https://www.zotero.org/settings/keys")
+            except Exception:
+                pass
+        else:
+            print("  Get one at: https://www.zotero.org/settings/keys")
         print("  Note: research-hub auto/ingest will fail without Zotero credentials.")
         print("  If you don't actually use Zotero, abort and re-run init, answering N to the first question.")
         zotero_key = input("  Zotero API key: ").strip() or None

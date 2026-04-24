@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.64.0 (2026-04-23)
+
+### Onboarding final-mile UX
+- `setup` / `init` now auto-open https://www.zotero.org/settings/keys in your
+  browser when prompting for the Zotero API key (use --no-browser to opt out).
+- `setup` ends with an optional "Try a sample research topic now? [Y/n]" prompt
+  that runs a small `auto` and opens the dashboard so first-time users see a
+  result without having to remember another command. Skip with --skip-sample.
+- `auto` gained `--show` (default on): opens the dashboard on success. Use
+  --no-show in scripts / CI. Already silent in non-TTY contexts.
+
+### Defensive
+- `serve --dashboard` no longer crashes with a raw OSError when port 8765 is
+  already taken; prints "Dashboard already running at..." and exits cleanly.
+
 ## v0.63.0 (2026-04-23)
 
 ### Manage tab coverage
