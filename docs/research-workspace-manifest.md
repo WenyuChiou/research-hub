@@ -298,4 +298,5 @@ These conventions deliberately don't cover:
 - **Manuscript content** — the manuscript itself lives wherever the journal
   workflow expects (Word doc, LaTeX repo, etc.). `.paper/` only holds
   AI-readable companion structure.
-- **WAGF / domain-pack governance** — handled by the WAGF tooling, not here.
+- **Domain-specific governance, audit traces, or model-coupling contracts** —
+  handled by the relevant model repository, not here.

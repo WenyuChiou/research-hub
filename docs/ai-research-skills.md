@@ -108,10 +108,9 @@ anything", "compare the downloaded notes to the cluster papers".
 The boundary is important enough to repeat from the brief
 (`docs/research-hub-research-skills-brief.md`):
 
-- **WAGF governance, domain packs, audit traces** — those live in the
-  WAGF tooling, not here.
-- **ABM/CAT/hydrology coupling contracts** — those live in the model
-  repos (FLOODABM, Cat_framework).
+- **Domain-specific model governance, audit traces, or coupling contracts** —
+  those live in the model repositories, not in the public research-hub skill
+  pack.
 - **Manuscript editing without research-workspace context** — handled by
   the standalone `academic-writing-skills` skill.
 - **Full Zotero CRUD** — handled by the standalone `zotero-skills` repo.
