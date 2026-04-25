@@ -27,6 +27,17 @@ jobs:
       - name: Check
         run: twine check dist/*
 
+      # v0.65: validate the wheel actually installs + imports in a fresh
+      # venv before uploading. Catches packaging bugs (missing module in
+      # wheel, broken __version__, syntax error introduced post-CI) that
+      # the test matrix can't see because tests run on the editable repo.
+      - name: Validate wheel installs cleanly
+        run: |
+          python -m venv /tmp/wheel_test
+          /tmp/wheel_test/bin/pip install --quiet dist/*.whl
+          /tmp/wheel_test/bin/python -c "import research_hub; print('research_hub', research_hub.__version__)"
+          /tmp/wheel_test/bin/python -c "from research_hub.cli import main"
+
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__

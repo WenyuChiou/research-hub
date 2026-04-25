@@ -34,8 +34,11 @@ def _compose_hub_tags(pp: dict, cluster_slug: str | None) -> list[str]:
     while preserving order and de-duplicating.
     """
     hub_tags = ["research-hub"]
-    if cluster_slug:
-        hub_tags.append(f"cluster/{cluster_slug}")
+    # v0.65: guard against literal "None"/"none"/"null" strings and
+    # whitespace-only slugs that would produce a bogus "cluster/None" tag.
+    cluster_token = (str(cluster_slug).strip() if cluster_slug is not None else "")
+    if cluster_token and cluster_token.lower() not in {"none", "null"}:
+        hub_tags.append(f"cluster/{cluster_token}")
     doc_type = pp.get("doc_type") or pp.get("publication_type")
     if doc_type:
         hub_tags.append(f"type/{doc_type}")

@@ -632,6 +632,18 @@ def _paper_command(args) -> int:
             if not args.cluster:
                 print("--batch requires --cluster", file=sys.stderr)
                 return 2
+            # v0.65: warn about Zotero auto-sync side effect. Each rewrite
+            # of an Obsidian frontmatter file triggers Zotero desktop's file
+            # watcher, which can cascade into repeated re-auth prompts that
+            # open https://www.zotero.org/settings/keys in your browser.
+            print(
+                "Note: --batch will rewrite Obsidian notes for any paper "
+                "with a Crossref match. If Zotero desktop is running with "
+                "file watcher / auto-sync, you may see "
+                "zotero.org/settings/keys re-auth prompts during the run. "
+                "Pause Zotero auto-sync first, or use single-paper "
+                "`research-hub paper lookup-doi <slug>` instead."
+            )
             result = batch_lookup_missing_dois(cfg, args.cluster)
             updated = sum(1 for item in result["results"] if item.get("status") == "updated")
             print(f"updated: {updated}")

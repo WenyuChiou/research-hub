@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,8 @@ from research_hub.dedup import DedupIndex
 from research_hub.pipeline import _compose_hub_tags
 from research_hub.pipeline_repair import _iter_collection_items
 from research_hub.zotero.client import add_note, safe_api_call
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -85,7 +88,10 @@ class BackfillReport:
 def _frontmatter_payload(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
+    except OSError as exc:
+        # v0.65: log file-read failures so backfill investigations can find
+        # permission / disk issues. Return {} so the scan keeps going.
+        logger.warning("zotero_hygiene: could not read %s: %s", path, exc)
         return {}
     if not text.startswith("---"):
         return {}
@@ -98,7 +104,15 @@ def _frontmatter_payload(path: Path) -> dict:
 
         payload = yaml.safe_load(frontmatter) or {}
         return payload if isinstance(payload, dict) else {}
-    except Exception:
+    except Exception as exc:
+        # v0.65: log YAML parse failure but keep the manual fallback path
+        # so a single bad note does not derail the whole scan.
+        logger.warning(
+            "zotero_hygiene: YAML parse failed for %s, falling back to "
+            "line-by-line parser: %s",
+            path,
+            exc,
+        )
         payload: dict[str, object] = {}
         for line in frontmatter.splitlines():
             if ":" not in line:

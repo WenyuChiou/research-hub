@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.65.0 (2026-04-25)
+
+QC/QA stabilization release. No new user-visible features; focus on
+diagnostics, silent-failure cleanup, and test coverage uplift.
+
+### Bug fixes (Track A)
+- **NLM login**: `research-hub notebooklm login` now requires a logged-in
+  DOM element (account button / profile image / notebook link) before
+  marking the session stable. Prevents partial-cookie saves that caused
+  next `auto` runs to bounce back to login.
+- **NLM login diagnostic**: timeout now prints the final URL, page title,
+  and a one-line hint about Google security/consent flows. Was: a bare
+  "Login not detected" with no clue where the browser stopped.
+- **NLM session save**: failures during `save_auth_state` now WARN to
+  stderr instead of `try/except: pass`. Disk-full / permission errors no
+  longer hide.
+- **NLM browser arg**: removed `--disable-sync` from the persistent-context
+  launch flags. It marked the profile as untrusted and triggered repeated
+  Google security checkup challenges. Persistent context already isolates
+  the profile via `user_data_dir`.
+- **`paper lookup-doi --batch`**: prints a one-line warning that the
+  Obsidian rewrites it makes can wake Zotero desktop's file watcher and
+  cascade into repeated `zotero.org/settings/keys` re-auth prompts.
+  Suggests pausing Zotero auto-sync first or using single-paper lookup.
+- **Hub tag composition**: `_compose_hub_tags` now skips literal `"None"`,
+  `"none"`, `"null"` strings and whitespace-only slugs that would have
+  produced bogus `cluster/None` tags in Zotero.
+- **Zotero hygiene**: `_frontmatter_payload` now logs file-read and
+  YAML-parse failures via the standard logger instead of silently
+  returning `{}`. Backfill investigations can now find permission /
+  disk problems.
+
+### CI / release pipeline (Track C)
+- Coverage threshold gate added: `pytest --cov-fail-under=60` on the
+  Ubuntu/3.12 matrix cell. Will ratchet upward as targeted tests land.
+- Pre-publish wheel validation: `publish.yml` now installs the built
+  wheel into a fresh venv and imports `research_hub` before calling
+  `twine upload`. Catches packaging bugs (missing module in wheel,
+  broken `__version__`) that the test matrix can't see because tests
+  run on the editable repo.
+
+### Coverage uplift (Track B, Codex-delivered)
+- **`notebooklm/upload.py`**: 7% → 54% (10 unit tests, mocked Page)
+- **`notebooklm/bundle.py`**: 27% → 84% (6 error-path tests)
+- **`mcp_server.py`**: 41 snapshot tests guard tool-signature drift
+- **`setup_command.py`**: 21% → 59% (8 validation tests)
+- **Per-extra install** (`@pytest.mark.slow`, NEW
+  `tests/test_v065_extras_install.py`): 5 isolated venvs verify each
+  extra (`secrets / import / playwright / mcp / dev`) installs cleanly
+  and imports its key probe module. Runs only with `pytest -m slow`.
+
+### Tests
+- 1759 (v0.64.2) → ~1850 (v0.65.0): +99 added
+  (Codex 82 + Claude 17), +existing regressions intact.
+
+Codex-delegated per CLAUDE.md Complex Task Protocol
+(brief: `.ai/codex_task_v065_qa.md`,
+result: `.ai/codex_task_v065_qa_result.md`).
+
 ## v0.64.2 (2026-04-23)
 
 ### Doctor noise reduction

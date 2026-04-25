@@ -29,7 +29,21 @@ _DEFAULT_LAUNCH_ARGS = (
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-features=GlobalMediaControls",
-    "--disable-sync",
+    # v0.65: removed `--disable-sync` because it caused Google to treat the
+    # profile as untrusted and trigger repeated security-checkup challenges
+    # during interactive login. Persistent context already isolates the
+    # profile via user_data_dir; sync being on is harmless.
+)
+
+# v0.65: DOM selectors that confirm a real logged-in NotebookLM session
+# (URL alone is not enough — the page can sit on notebooklm.google.com
+# while the session token is still propagating). Matches in OR order:
+# any one is enough to consider the session live.
+_LOGGED_IN_DOM_SELECTORS = (
+    'button[aria-label*="Account" i]',
+    'img[aria-label*="profile" i]',
+    '[data-test-id*="notebook" i]',
+    'a[href*="/notebook/"]',
 )
 
 _IGNORE_DEFAULT_ARGS = ("--enable-automation",)
@@ -120,8 +134,11 @@ def launch_nlm_context(
                 if state_file is not None:
                     try:
                         save_auth_state(context, state_file)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        print(
+                            f"  WARN: NLM session state save failed: {exc}",
+                            file=sys.stderr,
+                        )
                 context.close()
             except Exception:
                 pass
@@ -199,16 +216,27 @@ def login_nlm(
                 and "signin" not in lowered
             )
             if on_notebooklm:
-                if stable_since is None:
+                # v0.65: URL alone is not enough; require a logged-in DOM
+                # element so we don't save partial cookies during a bounce.
+                dom_ok = _wait_for_logged_in_dom(page)
+                if dom_ok and stable_since is None:
                     stable_since = time.time()
                     print(
-                        "  [{0}] On notebooklm.google.com - waiting {1}s for session to "
-                        "stabilize...".format(_tstamp(), stable_hold_sec)
+                        "  [{0}] On notebooklm.google.com (logged-in DOM "
+                        "detected) - waiting {1}s for session to stabilize..."
+                        .format(_tstamp(), stable_hold_sec)
                     )
                     sys.stdout.flush()
-                elif time.time() - stable_since >= stable_hold_sec:
-                    print("  [{0}] Login detected. Session saved.".format(_tstamp()))
+                elif dom_ok and time.time() - stable_since >= stable_hold_sec:
+                    print(
+                        "  [{0}] Login detected. Session saved."
+                        .format(_tstamp())
+                    )
                     return 0
+                elif not dom_ok:
+                    # On NLM URL but no logged-in DOM yet -- treat as
+                    # transient; reset stability timer.
+                    stable_since = None
             else:
                 if current_url and current_url != last_status_url:
                     last_status_url = current_url
@@ -217,8 +245,44 @@ def login_nlm(
                     sys.stdout.flush()
                 stable_since = None
             time.sleep(1)
-    print("  [{0}] Login not detected after {1}s.".format(_tstamp(), timeout_sec))
+    # v0.65: surface final URL + page title + actionable hint instead of a
+    # bare timeout message.
+    try:
+        final_url = page.url or "(unknown)"
+    except Exception:
+        final_url = "(unknown)"
+    try:
+        final_title = page.title() or "(unknown)"
+    except Exception:
+        final_title = "(unknown)"
+    print(
+        "  [{0}] Login not detected after {1}s."
+        .format(_tstamp(), timeout_sec)
+    )
+    print("  Last URL:    {0}".format(final_url))
+    print("  Page title:  {0}".format(final_title))
+    print(
+        "  Hint: if you see a Google security checkup, consent screen, or "
+        "account chooser, finish it manually then re-run "
+        "`research-hub notebooklm login`."
+    )
     return 1
+
+
+def _wait_for_logged_in_dom(page) -> bool:
+    """Probe the page for any of several logged-in NotebookLM DOM elements.
+
+    Returns True the moment any selector matches. Patchright's
+    wait_for_selector raises on timeout, so we bound each selector to a
+    short timeout and treat the union as the gate.
+    """
+    for selector in _LOGGED_IN_DOM_SELECTORS:
+        try:
+            if page.query_selector(selector) is not None:
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _tstamp() -> str:

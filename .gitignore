@@ -64,3 +64,4 @@ dist/
 .gemini-context-*.md
 # Local dev-only patchright shim (real patchright ships via [playwright] extra)
 src/patchright/
+.coverage
