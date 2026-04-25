@@ -91,7 +91,14 @@ def test_doctor_all_green(tmp_path, monkeypatch, capsys):
 
     results = run_doctor()
 
-    assert all(result.status == "OK" for result in results)
+    # v0.66.1: nlm_chrome_orphans returns INFO when wmic/ps is unavailable
+    # (e.g. Windows CI runners where wmic is deprecated/removed). INFO is
+    # informational, not a failure -- treat as green.
+    not_green = [r for r in results if r.status not in ("OK", "INFO")]
+    assert not not_green, (
+        f"Doctor reported non-green status: "
+        f"{[(r.name, r.status, r.message) for r in not_green]}"
+    )
     assert any(
         result.name == "dedup_index" and result.message == "2 DOIs, 1 titles" for result in results
     )
