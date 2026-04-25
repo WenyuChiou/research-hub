@@ -1,9 +1,10 @@
 {
   "name": "research-hub",
   "version": "0.1.0",
-  "description": "Research Hub: AI-powered academic literature pipeline — fetch from Zotero, build knowledge graphs, generate synthesis reports.",
+  "description": "AI-operable research workspace for Zotero, Obsidian, and NotebookLM. Use any two, or all three, through CLI, MCP, REST, and dashboard.",
   "skills": [
     "skills/knowledge-base/SKILL.md",
+    "skills/research-hub-multi-ai/SKILL.md",
     "skills/zotero-skills/SKILL.md"
   ],
   "entry_point": "SKILL.md",

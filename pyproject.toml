@@ -1,7 +1,7 @@
 [project]
 name = "research-hub-pipeline"
 version = "0.64.2"
-description = "CLI + MCP server for Zotero + Obsidian + NotebookLM research pipelines. Run `research-hub init` after install."
+description = "AI-operable research workspace for Zotero, Obsidian, and NotebookLM. Use any two, or all three, through CLI, MCP, REST, and dashboard."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"

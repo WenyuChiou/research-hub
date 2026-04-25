@@ -1,7 +1,7 @@
 # research-hub
 
-> **One sentence in. Cluster + papers + AI brief out. ~50 seconds.**
-> Zotero + Obsidian + NotebookLM, wired together for AI agents with no OpenAI or Anthropic API key required.
+> **Turn your research stack into an AI-operable workspace.**
+> Use Zotero, Obsidian, and NotebookLM together, or start with any two. research-hub gives your AI assistant a real CLI, MCP server, REST API, and dashboard for repeatable literature workflows.
 
 ![research-hub dashboard demo, real screen recording](docs/images/dashboard-walkthrough.gif)
 
@@ -10,61 +10,86 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-繁體中文: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp4](docs/demo/dashboard-walkthrough.mp4)
+Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp4](docs/demo/dashboard-walkthrough.mp4)
 
 ---
 
-## Works with any AI host
+## Why this exists
 
-If your AI can load an MCP tool, run a shell command, or make an HTTP call, it can drive research-hub.
+Most research tools are good at one part of the workflow:
 
-| Your AI | How research-hub connects |
+- Zotero stores citations, metadata, and PDFs.
+- Obsidian stores notes, links, and synthesis.
+- NotebookLM turns source bundles into AI-readable briefs.
+
+The painful part is the handoff. research-hub connects those handoffs so an AI agent can search, ingest, tag, summarize, repair, brief, and inspect your workspace without turning your library into an opaque RAG box.
+
+You do **not** need all three tools on day one.
+
+| Your current stack | What research-hub gives you first |
 |---|---|
-| Claude Desktop | MCP stdio via `claude_desktop_config.json` |
-| Claude Code | MCP stdio plus bundled skill files |
-| Cursor, Continue.dev, Cline, Roo Code, VS Code Copilot | Same MCP config shape, host-specific settings file |
-| OpenClaw or any MCP-compatible host | MCP stdio |
-| ChatGPT, Claude.ai web, Gemini web, OpenAI Custom GPT | REST JSON at `/api/v1/*` with bearer-token auth and CORS |
-| Codex CLI, Gemini CLI, GPT Code Interpreter, LangChain, AutoGen, CrewAI | Shell subprocess; every command supports `--json` where useful |
-| Your own Python script | `from research_hub.auto import auto_pipeline` |
+| Zotero + Obsidian | Paper search, Zotero metadata, Markdown notes, tags, Obsidian Bases dashboards |
+| Obsidian + NotebookLM | Local PDF/DOCX/MD/TXT ingest, cluster dashboards, NotebookLM bundles and briefs |
+| Zotero + NotebookLM | Zotero-backed paper selection, namespaced tags, NotebookLM upload/generate/download |
+| Zotero + Obsidian + NotebookLM | Full loop: discover -> ingest -> organize -> brief -> answer -> maintain |
+| No accounts yet | Sample dashboard and local smoke tests before connecting anything |
+
+---
+
+## What it does
+
+research-hub is a local-first orchestration layer for research workflows:
+
+- **CLI:** `research-hub auto`, `import-folder`, `ask`, `doctor`, `tidy`, `clusters`, `zotero`, `notebooklm`, `crystal`, and more.
+- **MCP server:** lets Claude Desktop, Claude Code, Cursor, Continue.dev, Cline, Roo Code, OpenClaw, and other MCP hosts operate the same workflow.
+- **REST API:** exposes `/api/v1/*` for browser-only or HTTP-capable assistants.
+- **Dashboard:** gives humans a live view of clusters, papers, diagnostics, briefs, writing support, and management actions.
+- **Vault format:** writes normal Markdown, frontmatter, `.base` dashboards, cache files, and logs that you can inspect directly.
+
+The core loop:
+
+```text
+topic or source folder
+  -> discover or import sources
+  -> enrich metadata
+  -> write Zotero tags/notes when enabled
+  -> write Obsidian Markdown notes and cluster dashboards
+  -> bundle/upload/generate with NotebookLM when enabled
+  -> cache answers as crystals and structured memory
+```
 
 ---
 
 ## Install + first run
 
-### Preview before installing accounts
+### Option A: preview without accounts
 
 ```bash
 pip install research-hub-pipeline
-research-hub dashboard --sample    # opens the dashboard on a bundled sample vault
+research-hub dashboard --sample
 ```
 
-No accounts, no Zotero, no NotebookLM. Just see the end-state UI.
+No Zotero, no NotebookLM, no API keys. This opens the end-state dashboard on a bundled sample vault.
 
-### Let your AI install it
+### Option B: local-first Obsidian workflow
 
-Paste this into Claude Desktop, Claude Code, Cursor, Continue, ChatGPT, Gemini, or another shell-capable AI:
+If you mainly use Obsidian and local files:
 
-```text
-Please install research-hub on my machine. It is a Python package that pipes
-academic papers into Zotero + Obsidian + NotebookLM and exposes an MCP server.
-
-1. Check `python --version`. If it is below 3.10, tell me to upgrade first.
-2. Run `pip install research-hub-pipeline[playwright,secrets]`.
-3. Run `research-hub setup`. Stop and pass me the prompts as they appear.
-   Answer the first question (use Zotero? y/N) on my behalf only if I have
-   told you. Chrome-based NotebookLM login will auto-launch; I'll finish it.
-4. Ask me for a topic and run `research-hub auto "TOPIC"`.
+```bash
+pip install research-hub-pipeline[import,secrets]
+research-hub setup --persona analyst
+research-hub import-folder ./papers --cluster my-local-review
+research-hub serve --dashboard
 ```
 
-### Or install manually
+Add NotebookLM later with `[playwright]` if you want browser-based brief generation.
+
+### Option C: full Zotero + Obsidian + NotebookLM workflow
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
-research-hub setup                            # v0.62+: init + install --platform + NLM login,
-                                              # v0.64: auto-opens Zotero key page + offers a guided sample run
-research-hub auto "your research topic"       # v0.64: opens the dashboard on success (--no-show to opt out)
-research-hub serve --dashboard                # --strict on `doctor` for full legacy WARN detail
+research-hub setup
+research-hub auto "your research topic"
 ```
 
 For a first smoke test without NotebookLM automation:
@@ -73,29 +98,36 @@ For a first smoke test without NotebookLM automation:
 research-hub auto "your research topic" --no-nlm
 ```
 
-Analyst and internal-KM users can skip Zotero and ingest local material:
+### Let your AI install it
 
-```bash
-pip install research-hub-pipeline[import,secrets]
-research-hub setup --persona analyst
-research-hub import-folder ./papers --cluster my-local-review
-research-hub auto "related literature" --no-nlm
+Paste this into Claude Desktop, Claude Code, Cursor, Continue, ChatGPT, Gemini, or another shell-capable AI:
+
+```text
+Please install research-hub on my machine. It is a Python package that turns
+Zotero, Obsidian, and NotebookLM into an AI-operable research workspace.
+
+1. Check `python --version`. If it is below 3.10, tell me to upgrade first.
+2. Run `pip install research-hub-pipeline[playwright,secrets]`.
+3. Run `research-hub setup`. Stop and pass me the prompts as they appear.
+   Answer the Zotero question on my behalf only if I already told you.
+   Chrome-based NotebookLM login may open; I will finish it.
+4. Ask me for a topic and run `research-hub auto "TOPIC"`.
 ```
 
-| Persona | Install extra |
-|---|---|
-| Researcher | `[playwright,secrets]` |
-| Humanities | `[playwright,secrets]` |
-| Analyst | `[import,secrets]` |
-| Internal KM | `[import,secrets]` |
+| Persona | Best for | Install extra |
+|---|---|---|
+| Researcher | STEM papers, DOI/arXiv, Zotero-first workflows | `[playwright,secrets]` |
+| Humanities | books, quotes, URL-only sources, Zotero + Obsidian | `[playwright,secrets]` |
+| Analyst | industry research, local PDFs/reports, no Zotero required | `[import,secrets]` |
+| Internal KM | lab/company knowledge bases, mixed file types | `[import,secrets]` |
 
 Python 3.10+ is required. Optional extras: `[playwright]` for NotebookLM, `[import]` for local PDF/DOCX/MD/TXT/URL ingest, `[secrets]` for OS-keyring credential storage, `[mcp]` for MCP server dependencies.
 
 ---
 
-## Hook to your AI host
+## Connect your AI host
 
-For Claude Desktop, Cursor, Continue.dev, Cline, VS Code Copilot, OpenClaw, or another MCP host, add:
+For Claude Desktop, Cursor, Continue.dev, Cline, VS Code Copilot, OpenClaw, or another MCP host:
 
 ```json
 { "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
@@ -116,7 +148,7 @@ research-hub install --platform codex
 research-hub install --platform gemini
 ```
 
-Browser-only AIs can use the REST API instead:
+Browser-only or HTTP-capable AIs can use the REST API:
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/v1/plan \
@@ -124,31 +156,31 @@ curl -X POST http://127.0.0.1:8765/api/v1/plan \
      -d "{\"intent\":\"research harness engineering\"}"
 ```
 
-Full reference: [MCP tools](docs/mcp-tools.md).
+Full reference: [MCP tools](docs/mcp-tools.md) and [AI integrations](docs/ai-integrations.md).
 
 ---
 
 ## Dashboard tour
 
-`research-hub serve --dashboard` opens `http://127.0.0.1:8765/`. Six tabs; the four most useful ones:
+`research-hub serve --dashboard` opens `http://127.0.0.1:8765/`.
 
-**Overview** — treemap over clusters + storage map + health summary.
+**Overview**: treemap over clusters, storage map, and health summary.
 
 ![Overview](docs/images/hero/dashboard-overview.png)
 
-**Library** — per-cluster drill-down with papers, sub-topics, and per-paper actions.
+**Library**: per-cluster drill-down with papers, sub-topics, and per-paper actions.
 
 ![Library](docs/images/hero/dashboard-library-subtopic.png)
 
-**Diagnostics** — grouped drift alerts and readiness checks.
+**Diagnostics**: grouped drift alerts and readiness checks.
 
 ![Diagnostics](docs/images/hero/dashboard-diagnostics.png)
 
-**Manage** — every CLI action as a button, with an inline result drawer, shared confirmation modal, and per-paper row actions.
+**Manage**: CLI actions as buttons, inline result drawer, confirmation modal, and per-paper row actions.
 
 ![Manage](docs/images/hero/dashboard-manage-live.png)
 
-Briefings and Writing tabs are also available — see the [dashboard walkthrough](docs/dashboard-walkthrough.md) and [persona variants](docs/personas.md).
+Briefings and Writing tabs are also available. See the [dashboard walkthrough](docs/dashboard-walkthrough.md) and [persona variants](docs/personas.md).
 
 ---
 
@@ -156,11 +188,11 @@ Briefings and Writing tabs are also available — see the [dashboard walkthrough
 
 Every ingested paper becomes a real Markdown note with structured frontmatter. Every cluster can also get an Obsidian Bases dashboard.
 
-**Cluster Bases dashboard** — generated `.base` file with sortable paper metadata.
+**Cluster Bases dashboard**: generated `.base` file with sortable paper metadata.
 
 <img src="docs/images/obsidian-bases-dashboard.png" alt="Obsidian Bases dashboard for a cluster" width="640">
 
-**Per-paper note** — title, authors, year, DOI, Zotero key, tags, status, cluster, and verification metadata.
+**Per-paper note**: title, authors, year, DOI, Zotero key, tags, status, cluster, and verification metadata.
 
 <img src="docs/images/obsidian-paper-note.png" alt="Single paper note rendered with Properties view" width="640">
 
@@ -174,25 +206,29 @@ Every ingested paper gets a namespaced tag set so you can filter your library by
 
 | Tag | Meaning |
 |---|---|
-| `research-hub` | Ingested through this pipeline (vs. manual Zotero adds) |
+| `research-hub` | Ingested through this pipeline |
 | `cluster/<slug>` | Which research cluster the paper belongs to |
-| `category/<arxiv-code>` | arXiv category like `cs.AI`, `econ.GN` (v0.63) |
-| `type/<publication-type>` | `Review`, `JournalArticle`, etc. from Semantic Scholar (v0.63) |
+| `category/<arxiv-code>` | arXiv category like `cs.AI` or `econ.GN` |
+| `type/<publication-type>` | `Review`, `JournalArticle`, etc. from Semantic Scholar |
 | `src/<backend>` | Search backend that discovered it: `arxiv`, `semantic_scholar`, `crossref`, `zotero` |
 
-Every paper also gets a child note with `Summary / Key Findings / Methodology / Relevance`, pulled from the Obsidian frontmatter the pipeline generated. Papers that were in Zotero before research-hub existed can be backfilled with `research-hub zotero backfill --tags --notes --apply`.
+Every paper can also get a child note with `Summary / Key Findings / Methodology / Relevance`, derived from the Obsidian frontmatter. Papers that were in Zotero before research-hub existed can be backfilled with:
+
+```bash
+research-hub zotero backfill --tags --notes --apply
+```
 
 ---
 
-## Feature matrix at-a-glance
+## Feature matrix
 
 | Capability | Command or MCP tool | Notes |
 |---|---|---|
-| One-shot setup | `research-hub setup` | init + install --platform + NotebookLM login (v0.62); auto-opens Zotero key page and offers a guided sample run (v0.64) |
+| One-shot setup | `research-hub setup` | init + install + optional NotebookLM login + guided sample run |
 | Lazy research pipeline | `research-hub auto "topic"` / `auto_research_topic` | Search, ingest, bundle, upload, generate, download |
 | Plan before running | `research-hub plan "intent"` / `plan_research_workflow` | Suggests field, cluster slug, and max papers |
-| Zotero hygiene | `research-hub zotero backfill --tags --notes [--apply]` | Fills missing tags + notes on legacy items (v0.61) |
-| Cluster cascade delete | `research-hub clusters delete <slug> [--apply --force]` | Preview impact on Obsidian + Zotero + dedup + memory + crystals (v0.62) |
+| Zotero hygiene | `research-hub zotero backfill --tags --notes [--apply]` | Fills missing tags and notes on legacy items |
+| Cluster cascade delete | `research-hub clusters delete <slug> [--apply --force]` | Preview impact on Obsidian, Zotero, dedup, memory, and crystals |
 | No-NotebookLM smoke test | `research-hub auto "topic" --no-nlm` | Validates search and vault ingest without browser automation |
 | Local file ingest | `research-hub import-folder <folder> --cluster <slug>` | PDF, DOCX, MD, TXT, URL |
 | Ad-hoc cluster Q&A | `research-hub ask <cluster> "question"` / `ask_cluster_notebooklm` | Top-level CLI takes cluster first, then question |
@@ -223,7 +259,7 @@ research-hub does not replace Zotero, Obsidian, or NotebookLM. It connects them 
 | Direct AI-agent control via MCP | No | No | DIY | No | Yes |
 | Live dashboard with action buttons | No | No | No | No | Yes |
 | Per-cluster Obsidian Bases dashboard | No | No | No | No | Yes |
-| No API key required for AI | n/a | Yes | Usually no | n/a | Yes |
+| No OpenAI/Anthropic API key required | n/a | Yes | Usually no | n/a | Yes |
 | Local-first vault you own | Partial | No | Depends | Yes | Yes |
 
 The practical fit: research-hub is most useful if you already use at least two of Zotero, Obsidian, and NotebookLM and want your AI assistant to run the repetitive steps.
@@ -242,7 +278,7 @@ The practical fit: research-hub is most useful if you already use at least two o
 | Claude Desktop cannot see the MCP server | MCP config is in the wrong file or host was not restarted | Check the host config path and restart Claude Desktop |
 | `init` reports Zotero warnings but you do not use Zotero | Persona expects Zotero | Re-run `research-hub setup --persona analyst` or `--persona internal` |
 | `research-hub clusters delete` refuses to delete | Cluster has papers, notes, or Zotero items | Re-run with `--apply --force` after reviewing the cascade preview |
-| `research-hub auto` errors "cluster already has N papers" | Cluster is non-empty and you ran `auto --cluster <slug>` without a flag | Add `--append` (add more) or `--force` (overwrite) |
+| `research-hub auto` errors "cluster already has N papers" | Cluster is non-empty and you ran `auto --cluster <slug>` without a flag | Add `--append` to add more, or `--force` to overwrite |
 | Zotero items miss `research-hub` tags or notes | Items were created before v0.61 or pipeline failed mid-run | `research-hub zotero backfill --tags --notes --apply` |
 
 For broader checks, run:

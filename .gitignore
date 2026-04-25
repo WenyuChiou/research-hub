@@ -28,6 +28,9 @@ pytest-cache-files-*/
 .tmp/
 .venv/
 venv/
+bad-key/
+key/
+z-key/
 
 # User config
 config.json
