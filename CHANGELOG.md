@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.66.1 (2026-04-25)
+
+### Doctor diagnostic
+- New `nlm_chrome_orphans` check in `research-hub doctor` detects leftover
+  Chrome processes still holding the NotebookLM patchright profile
+  (`nlm_sessions/default/`). These are the most common cause of
+  spontaneous `accounts.google.com/.../notebooklm.google.com/...` popups
+  that look like research-hub bugs but are actually orphan patchright
+  contexts whose cookies expired.
+- Status semantics: `OK` when no orphan, `INFO` when orphans found
+  (with PIDs in the details so the user can kill them via Task Manager
+  or `kill <pid>`), `INFO` when process listing is unavailable on the
+  current OS.
+- Same root-cause family as the v0.65 `paper lookup-doi --batch`
+  Zotero-auto-sync warning: external tools react to research-hub
+  artifacts in ways that look like research-hub bugs.
+
 ## v0.66.0 (2026-04-25)
 
 Research workspace skills (Phase 1 of the research-skills brief at

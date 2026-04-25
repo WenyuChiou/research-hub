@@ -345,6 +345,65 @@ def check_defuddle_cli() -> CheckResult:
     )
 
 
+def check_nlm_chrome_orphans() -> CheckResult:
+    """Detect Chrome processes still holding the NotebookLM patchright profile.
+
+    A leftover patchright Chrome process keeps `nlm_sessions/default/` open;
+    when its cookie expires it can spontaneously open
+    `accounts.google.com/.../notebooklm.google.com/...` in your default
+    browser, which looks like a research-hub pop-up but is actually the
+    orphan process Google-bouncing.
+
+    Same root cause family as Zotero auto-sync re-auth (see
+    `paper lookup-doi --batch` warning text).
+    """
+    import subprocess
+    import sys as _sys
+
+    needle = "nlm_sessions"
+    cmdline_lookups: list[str] = []
+    try:
+        if _sys.platform == "win32":
+            # tasklist /v doesn't show full cmdline; use wmic as fallback.
+            # Some hardened Windows installs disable wmic; treat any failure
+            # as "could not check" rather than FAIL.
+            proc = subprocess.run(
+                ["wmic", "process", "where", "name='chrome.exe'", "get", "ProcessId,CommandLine", "/format:csv"],
+                capture_output=True, text=True, timeout=8, check=False,
+            )
+            cmdline_lookups = proc.stdout.splitlines() if proc.returncode == 0 else []
+        else:
+            proc = subprocess.run(
+                ["ps", "-eo", "pid,command"],
+                capture_output=True, text=True, timeout=8, check=False,
+            )
+            cmdline_lookups = proc.stdout.splitlines() if proc.returncode == 0 else []
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return CheckResult(
+            "nlm_chrome_orphans",
+            "INFO",
+            "Process listing unavailable on this OS; cannot probe orphan NLM Chrome.",
+        )
+
+    matches = [line for line in cmdline_lookups if needle in line]
+    if not matches:
+        return CheckResult(
+            "nlm_chrome_orphans",
+            "OK",
+            "No orphan Chrome process is holding the NLM session profile.",
+        )
+
+    return CheckResult(
+        "nlm_chrome_orphans",
+        "INFO",
+        f"{len(matches)} Chrome process(es) hold an NLM session profile. "
+        "If you see spontaneous accounts.google.com/notebooklm popups, "
+        "kill these processes (Task Manager / `kill <pid>`). They are not "
+        "research-hub itself; they are leftover patchright contexts.",
+        details="; ".join(line.strip()[:120] for line in matches[:3]),
+    )
+
+
 def run_doctor(*, strict: bool = False) -> list[CheckResult]:
     """Run all health checks and return results.
 
@@ -771,6 +830,10 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
             results.append(check_defuddle_cli())
         except Exception as exc:
             results.append(CheckResult("defuddle_cli", "WARN", f"Could not check: {exc}"))
+        try:
+            results.append(check_nlm_chrome_orphans())
+        except Exception as exc:
+            results.append(CheckResult("nlm_chrome_orphans", "WARN", f"Could not check: {exc}"))
         for check in (
             check_cluster_missing_dir,
             check_cluster_orphan_papers,
