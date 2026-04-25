@@ -11,12 +11,11 @@ The umbrella should answer:
 - I am a researcher. Which skills should I install?
 - I use Zotero, Obsidian, or NotebookLM. What helps me?
 - I am writing or revising a paper. What helps me?
-- I am building LLM-agent ABM experiments. What helps me?
 - I want multi-model AI assistance with Claude, Codex, or Gemini. What helps me?
 
 ## Recommended Product Architecture
 
-Keep four layers:
+Keep three first-phase layers:
 
 ### 1. Research Workspace Layer
 
@@ -54,24 +53,7 @@ Audience:
 - Graduate students and researchers writing papers.
 - Users who may not use `research-hub`.
 
-### 3. LLM-Agent ABM Research Layer
-
-Primary repo: `WAGF`
-
-Owns:
-
-- WAGF experiment design.
-- Domain-pack generation.
-- Audit-trace analysis.
-- Governance metrics.
-- External model coupling checks.
-- ABM reproducibility checks.
-
-Audience:
-
-- Researchers studying LLM agents, ABM, coupled human-water systems, and scientific simulation.
-
-### 4. Multi-Model AI Workflow Layer
+### 3. Multi-Model AI Workflow Layer
 
 Primary repos:
 
@@ -105,7 +87,6 @@ ai-research-skills/
   packs/
     research-workspace-pack.md
     academic-writing-pack.md
-    wagf-pack.md
     multi-model-ai-pack.md
     full-researcher-pack.md
   catalog/
@@ -162,27 +143,7 @@ Best for:
 - Submission preparation.
 - Figure/prose consistency.
 
-### Pack C: WAGF Research Pack
-
-For LLM-driven ABM and governed simulation research.
-
-Includes:
-
-- `WAGF`
-- `wagf-experiment-designer`
-- `llm-agent-audit-trace-analyzer`
-- `model-coupling-contract-checker`
-- `abm-reproducibility-checker`
-- `wagf-domain-pack-builder`
-
-Best for:
-
-- LLM-agent ABM.
-- External model coupling.
-- Governance experiments.
-- Multi-seed and cross-model simulation studies.
-
-### Pack D: Multi-Model AI Pack
+### Pack C: Multi-Model AI Pack
 
 For users who want Claude, Codex, and Gemini to cooperate.
 
@@ -197,7 +158,7 @@ Best for:
 - Codex for implementation-heavy coding.
 - Gemini for long-context synthesis and bilingual/CJK drafting.
 
-### Pack E: Full Researcher Pack
+### Pack D: Full Researcher Pack
 
 For power users.
 
@@ -206,9 +167,6 @@ Includes:
 - Research Workspace Pack.
 - Academic Writing Pack.
 - Multi-Model AI Pack.
-- Optional WAGF Research Pack.
-
-The WAGF pack should be optional because it is domain-specific and heavier than the general research workflow.
 
 ## Skills That Should Be Created Or Improved
 
@@ -309,13 +267,13 @@ This is the main value proposition: skills reduce repeated context loading and m
 Suggested tagline:
 
 ```text
-AI research skills for literature, writing, reproducibility, and governed LLM-agent simulation.
+AI research skills for literature, writing, research memory, and multi-model AI workflows.
 ```
 
 Short description:
 
 ```text
-A curated set of skills and tools for researchers using AI assistants across the full academic workflow: reading papers, managing Zotero/Obsidian/NotebookLM workspaces, writing manuscripts, planning experiments, and auditing LLM-agent simulations.
+A curated set of skills and tools for researchers using AI assistants across the academic workflow: reading papers, managing Zotero/Obsidian/NotebookLM workspaces, writing manuscripts, preserving reusable research context, and coordinating Claude, Codex, and Gemini.
 ```
 
 Avoid positioning it as "one giant framework." It should be a catalog of focused packs.
@@ -331,7 +289,6 @@ Avoid positioning it as "one giant framework." It should be a catalog of focused
 |---|---|
 | Manage papers and notes | Research Workspace Pack |
 | Write or revise manuscripts | Academic Writing Pack |
-| Run governed LLM-agent ABM experiments | WAGF Research Pack |
 | Use Claude + Codex + Gemini together | Multi-Model AI Pack |
 | Use everything | Full Researcher Pack |
 
@@ -361,7 +318,6 @@ Phase 2:
 
 - Improve `academic-writing-skills`.
 - Add research-hub research workspace skills.
-- Add WAGF skills after WAGF tests are green.
 
 Phase 3:
 
@@ -378,7 +334,7 @@ The umbrella project is ready when:
 - The README clearly explains what belongs where.
 - No skill exists in two canonical locations.
 - The shared `.research/` and `.paper/` conventions are documented.
-- The WAGF pack is clearly marked as specialized, not required for general users.
+- Specialized domain frameworks can be linked later without blocking the first public launch.
 
 ## Suggested Next Actions For Claude Code
 
@@ -386,5 +342,5 @@ The umbrella project is ready when:
 2. Create the umbrella repo skeleton: `ai-research-skills`.
 3. Add `catalog/skills.yml` and `catalog/repos.yml`.
 4. Add pack documentation.
-5. Add links to `research-hub`, `academic-writing-skills`, `zotero-skills`, `codex-delegate`, `gemini-delegate-skill`, and WAGF.
+5. Add links to `research-hub`, `academic-writing-skills`, `zotero-skills`, `codex-delegate`, and `gemini-delegate-skill`.
 6. Do not move canonical skill bodies until versioning and packaging are decided.
