@@ -1,0 +1,49 @@
+{
+  "skill": "research-context-compressor",
+  "evals": [
+    {
+      "prompt": "Compress this project context for future agents.",
+      "expected_artifacts": [
+        ".research/project_manifest.yml",
+        ".research/run_log.md"
+      ],
+      "must_not_touch": [
+        ".paper/",
+        ".research_hub/"
+      ]
+    },
+    {
+      "prompt": "Create a research manifest so future sessions don't need to reread everything.",
+      "expected_artifacts": [
+        ".research/project_manifest.yml",
+        ".research/experiment_matrix.yml"
+      ],
+      "must_not_touch": [
+        ".paper/",
+        ".research_hub/"
+      ]
+    },
+    {
+      "prompt": "Save the key project context before we continue.",
+      "expected_artifacts": [
+        ".research/project_manifest.yml"
+      ],
+      "must_not_touch": [
+        ".paper/",
+        ".research_hub/"
+      ]
+    },
+    {
+      "prompt": "Refresh the .research/ manifests for this project.",
+      "expected_artifacts": [
+        ".research/project_manifest.yml",
+        ".research/run_log.md"
+      ],
+      "must_not_touch": [
+        ".paper/",
+        ".research_hub/"
+      ],
+      "note": "Refresh mode must preserve human-edited fields and only fill empty ones."
+    }
+  ]
+}

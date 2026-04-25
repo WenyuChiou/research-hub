@@ -1,0 +1,31 @@
+{
+  "skill": "research-project-orienter",
+  "evals": [
+    {
+      "prompt": "Understand this research project before helping me.",
+      "expected_behavior": "Read .research/ manifests; produce orientation memo with research question, datasets, experiments, entrypoints, open questions.",
+      "must_not_touch": [
+        "data/",
+        "outputs/"
+      ]
+    },
+    {
+      "prompt": "Build a context map for this paper.",
+      "expected_behavior": "Same orientation memo; if .research/ is missing, ask before falling back to repo scan.",
+      "must_not_touch": [
+        "data/",
+        "outputs/"
+      ]
+    },
+    {
+      "prompt": "What is this repo about?",
+      "expected_behavior": "Concise orientation in 200-400 tokens; defer paper-level summary to paper-memory-builder.",
+      "must_not_touch": []
+    },
+    {
+      "prompt": "Orient me before we discuss reviewer comments.",
+      "expected_behavior": "Orientation memo plus highlight of `current_stage=rebuttal` if applicable.",
+      "must_not_touch": []
+    }
+  ]
+}

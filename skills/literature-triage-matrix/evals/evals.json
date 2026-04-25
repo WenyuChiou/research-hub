@@ -1,0 +1,33 @@
+{
+  "skill": "literature-triage-matrix",
+  "evals": [
+    {
+      "prompt": "Make a literature matrix for the papers in cluster llm-agents-software-engineering.",
+      "expected_artifacts": [
+        ".research/literature_matrix.md"
+      ],
+      "expected_behavior": "Read Obsidian frontmatter under raw/llm-agents-software-engineering/; emit one row per paper with the 9 default columns; cap PDF reads."
+    },
+    {
+      "prompt": "Compare these papers by method, data, claims, and limitations.",
+      "expected_artifacts": [
+        ".research/literature_matrix.md"
+      ],
+      "expected_behavior": "Use only the 4 requested columns; skip Use-as / Relevance unless user follows up."
+    },
+    {
+      "prompt": "Help me decide which papers are central to my review.",
+      "expected_artifacts": [
+        ".research/literature_matrix.md"
+      ],
+      "expected_behavior": "Emit the matrix and then summarize: which rows are High relevance, which Medium, which Low."
+    },
+    {
+      "prompt": "Refresh the literature matrix; I added 5 papers to Zotero.",
+      "expected_artifacts": [
+        ".research/literature_matrix.md"
+      ],
+      "expected_behavior": "Append-only by default; emit new rows for the 5 added papers; do not rewrite existing rows."
+    }
+  ]
+}

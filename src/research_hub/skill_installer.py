@@ -1,9 +1,14 @@
 """Install research-hub SKILL.md files into AI coding assistant directories.
 
-v0.53 ships a skill PACK (multiple SKILL.md files), not just one. The
-existing `research-hub` skill gives generic pipeline guidance; the new
-`research-hub-multi-ai` skill teaches Claude how to delegate crystal
-generation and long work to Codex/Gemini CLIs when they're on PATH.
+v0.53 shipped a skill PACK (multiple SKILL.md files), not just one. v0.66
+adds five workspace skills (research-context-compressor, project-orienter,
+literature-triage-matrix, paper-memory-builder, notebooklm-brief-verifier)
+on top of the original `research-hub` and `research-hub-multi-ai`.
+
+Discovery is dynamic as of v0.66: the installer walks `skills_data/` and
+installs every directory that contains a SKILL.md. The hardcoded LEGACY_PACK
+below stays as a safety net so older wheels (or empty test environments)
+still install the original two skills.
 """
 
 from __future__ import annotations
@@ -13,13 +18,64 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-# A skill in the pack: bundled source name -> install target subdir name.
-# Each platform directory ends up with one subdir per skill, each containing
-# SKILL.md — matches Claude Code's standard `~/.claude/skills/<name>/SKILL.md`.
-SKILL_PACK: tuple[tuple[str, str], ...] = (
+# Legacy fallback when skills_data/ is missing or empty (e.g. wheel built
+# before v0.66 packaging change). Keeps the original two skills installable
+# even without the dynamic discovery.
+LEGACY_SKILL_PACK: tuple[tuple[str, str], ...] = (
     ("knowledge-base", "research-hub"),             # legacy name -> legacy dir
     ("research-hub-multi-ai", "research-hub-multi-ai"),
 )
+
+# Map from on-disk source dir -> install target dir.
+# Most skills install under their own name; `knowledge-base` is the only
+# historical alias (its install target is `research-hub` so user installs
+# made before v0.62 keep working).
+LEGACY_TARGET_ALIASES: dict[str, str] = {
+    "knowledge-base": "research-hub",
+}
+
+
+def _resolve_skills_data_root() -> Path:
+    """Return the directory holding bundled skill subdirectories.
+
+    Order: installed package layout, then editable repo layout.
+    """
+    pkg = Path(__file__).parent / "skills_data"
+    if pkg.exists():
+        return pkg
+    repo = Path(__file__).resolve().parents[2] / "skills"
+    return repo
+
+
+def _discover_skill_pack() -> tuple[tuple[str, str], ...]:
+    """Walk skills_data/ (or skills/ in editable installs) and return
+    (install_target_name, source_dir_name) tuples for every directory
+    that contains a SKILL.md.
+
+    Falls back to LEGACY_SKILL_PACK when the discovery directory is
+    missing or contains no SKILL.md children.
+    """
+    base = _resolve_skills_data_root()
+    if not base.exists():
+        return LEGACY_SKILL_PACK
+    discovered: list[tuple[str, str]] = []
+    for child in sorted(base.iterdir()):
+        if not child.is_dir():
+            continue
+        # Skip vendored third-party skills like zotero-skills that ship
+        # in the editable repo but aren't part of the research-hub pack.
+        if child.name == "zotero-skills":
+            continue
+        if not (child / "SKILL.md").exists():
+            continue
+        source_dir = child.name
+        target = LEGACY_TARGET_ALIASES.get(source_dir, source_dir)
+        # SKILL_PACK historic shape was (source_name, target_name).
+        discovered.append((source_dir, target))
+    return tuple(discovered) or LEGACY_SKILL_PACK
+
+
+SKILL_PACK: tuple[tuple[str, str], ...] = _discover_skill_pack()
 
 
 @dataclass

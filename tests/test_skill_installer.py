@@ -124,8 +124,14 @@ def test_bundled_skills_use_current_public_positioning():
         text = skill_installer.get_bundled_skill_path(source_name).read_text(encoding="utf-8")
         for fragment in bad_fragments:
             assert fragment not in text
-        for fragment in ("Zotero", "Obsidian", "NotebookLM"):
-            assert fragment in text
+        # v0.66 relaxed: each skill must mention AT LEAST ONE product term
+        # (was: must mention ALL THREE). Specialized v0.66 skills like
+        # paper-memory-builder are scoped to one part of the stack.
+        product_terms = ("Zotero", "Obsidian", "NotebookLM", "research-hub")
+        assert any(term in text for term in product_terms), (
+            f"{source_name}: SKILL.md mentions none of {product_terms} -- "
+            "not anchored to research-hub product surface"
+        )
     core = skill_installer.get_bundled_skill_path("knowledge-base").read_text(encoding="utf-8")
     assert "AI-operable" in core
     assert "--preset" not in core

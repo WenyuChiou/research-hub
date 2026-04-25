@@ -1,0 +1,40 @@
+{
+  "skill": "paper-memory-builder",
+  "evals": [
+    {
+      "prompt": "Build paper memory for this manuscript.",
+      "expected_artifacts": [
+        ".paper/claims.yml",
+        ".paper/figures.yml"
+      ],
+      "must_not_touch": [
+        ".paper/journal_format.md",
+        ".paper/reviewer_comments.md",
+        ".paper/style_overrides.md",
+        ".research/"
+      ]
+    },
+    {
+      "prompt": "Extract claims, figures, and evidence from this paper folder.",
+      "expected_artifacts": [
+        ".paper/claims.yml",
+        ".paper/figures.yml"
+      ],
+      "expected_behavior": "Copy claim text verbatim from manuscript; preserve any human-assigned claim IDs."
+    },
+    {
+      "prompt": "I'm starting a rebuttal — give me the claims layer first.",
+      "expected_artifacts": [
+        ".paper/claims.yml"
+      ],
+      "expected_behavior": "Write claims.yml even if figures.yml not requested; flag at-risk claims with `risk` field; suggest loading academic-writing-skills next."
+    },
+    {
+      "prompt": "Refresh paper memory; I added two figures.",
+      "expected_artifacts": [
+        ".paper/figures.yml"
+      ],
+      "expected_behavior": "Append-only update; preserve existing figure IDs and human-edited captions."
+    }
+  ]
+}

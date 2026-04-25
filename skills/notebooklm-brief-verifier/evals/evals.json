@@ -1,0 +1,37 @@
+{
+  "skill": "notebooklm-brief-verifier",
+  "evals": [
+    {
+      "prompt": "Check this NotebookLM brief against the source bundle.",
+      "expected_behavior": "Read brief + bundle manifest; produce verification report with source coverage, unsupported claims, contradictions, overgeneralizations, spot-checks, follow-up prompts.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "Verify whether NotebookLM missed or hallucinated anything important.",
+      "expected_behavior": "Same report; if no issues found, emit a short positive verdict with what's reliable for vs what to spot-check.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "Compare downloaded NotebookLM notes to the cluster papers.",
+      "expected_behavior": "Coverage report; cap PDF spot-checks at 3 per run; quote brief line numbers.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "Audit this brief before I send it to my advisor.",
+      "expected_behavior": "Run full verification; emit explicit Verdict section so the user knows what to trust vs flag for spot-check; suggest follow-up NotebookLM prompts to close gaps.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    }
+  ]
+}
