@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from research_hub.dashboard.data import collect_dashboard_data
+from research_hub import __version__
 from research_hub import mcp_server as _m
 
 
@@ -33,7 +34,7 @@ show_cluster = _unwrap(_m.show_cluster)
 web_search = _unwrap(_m.web_search)
 
 
-API_VERSION = "0.52.0"
+API_VERSION = __version__
 
 
 class ApiError(Exception):

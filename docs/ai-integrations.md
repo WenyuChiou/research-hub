@@ -58,7 +58,7 @@ research-hub topic digest --cluster my-topic > /tmp/digest.md
 # 6. NotebookLM verification
 research-hub notebooklm bundle --cluster my-topic --download-pdfs
 research-hub notebooklm upload --cluster my-topic
-research-hub notebooklm generate --cluster my-topic --preset briefing
+research-hub notebooklm generate --cluster my-topic --type brief
 research-hub notebooklm download --cluster my-topic
 # Read the briefing — if it complains about off-topic papers, go back to step 1.
 ```

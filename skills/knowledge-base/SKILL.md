@@ -67,7 +67,7 @@ research-hub crystal emit --cluster project-topic
 research-hub notebooklm login
 research-hub notebooklm bundle --cluster project-topic
 research-hub notebooklm upload --cluster project-topic
-research-hub notebooklm generate --cluster project-topic --preset briefing
+research-hub notebooklm generate --cluster project-topic --type brief
 research-hub notebooklm download --cluster project-topic
 ```
 

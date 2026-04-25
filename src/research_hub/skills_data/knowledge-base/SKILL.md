@@ -1,137 +1,107 @@
 ---
 name: research-hub
-description: "Knowledge management pipeline for research and analysis: search literature, verify sources, organize into Zotero/Obsidian/NotebookLM, upload PDFs, generate AI artifacts. Works for academic researchers AND data analysts. Use when the user mentions finding papers, building a knowledge base, organizing references, NotebookLM, citation management, or literature review."
+description: Operate research-hub workflows for literature discovery, source ingest, Zotero/Obsidian/NotebookLM organization, dashboard inspection, and vault maintenance. Use when the user asks to find papers, build a knowledge base, organize references, upload to NotebookLM, generate research briefs, inspect clusters, or maintain a research vault.
 ---
 
-# research-hub — Knowledge Pipeline
+# research-hub
 
-Search, verify, organize, and upload research material from the terminal.
+research-hub turns Zotero, Obsidian, and NotebookLM into an AI-operable research workspace. It works best with any two of the three tools, and unlocks the full loop when all three are connected.
 
-**Two personas supported:**
+Default language policy: answer the user in their language. Generate durable research notes, metadata, and citations in English unless the user explicitly asks for another language.
 
-- **Academic researcher** (default) — uses Zotero + Obsidian + NotebookLM. Citation-heavy. Needs DOI/volume/pages.
-- **Data analyst** — skips Zotero (set `RESEARCH_HUB_NO_ZOTERO=1`), uses Obsidian + NotebookLM only. Works with URLs, PDFs, technical reports, white papers.
+## Pick The Right Entry Point
 
-**Trigger phrases (any language):** "find papers about X", "build a knowledge base on Y", "add to Research Hub", "upload to NotebookLM", "verify this DOI", "幫我找文獻", "幫我整理資料"
+| User setup | Recommended path |
+|---|---|
+| Zotero + Obsidian + NotebookLM | `research-hub auto "topic"` |
+| Zotero + Obsidian only | `research-hub auto "topic" --no-nlm`, `zotero backfill`, Obsidian dashboard output |
+| Obsidian + NotebookLM only | `research-hub import-folder <folder> --cluster <slug>`, then NotebookLM bundle/upload |
+| Zotero + NotebookLM only | Zotero-backed search and NotebookLM operations |
+| No accounts yet | `research-hub dashboard --sample` |
 
----
-
-## CRITICAL: Always confirm names before creating
-
-**Before creating any cluster, Zotero collection, or NotebookLM notebook, you MUST:**
-
-1. Call `propose_research_setup(topic)` to get suggested names
-2. Show the suggestions to the user (cluster_slug, cluster_name, zotero_collection_name, notebooklm_notebook_name)
-3. Ask the user to confirm or override each name
-4. Only after user approval, call `clusters_new`, `create_zotero_collection`, and `clusters_bind`
-
-Do NOT auto-create with AI-generated names. Researchers and analysts have strong preferences about how their work is labeled.
-
----
-
-## Setup (one-time)
+## Setup Commands
 
 ```bash
-# Researcher (with Zotero):
-pip install research-hub-pipeline[playwright,mcp]
-research-hub init                    # interactive: vault + Zotero key + library id
-research-hub doctor                  # 7-check health diagnostic
-
-# Data analyst (no Zotero):
-pip install research-hub-pipeline[playwright,mcp]
-RESEARCH_HUB_NO_ZOTERO=1 research-hub init   # skip Zotero prompts
+pip install research-hub-pipeline[playwright,secrets]
+research-hub setup
 research-hub doctor
 ```
 
-## Core Workflow
-
-### Step 1: Search & Verify
+For local files without Zotero:
 
 ```bash
-research-hub search "flood risk agent LLM" --verify --limit 10
-# Returns: title, DOI, VERIFIED/UNVERIFIED per result
-
-research-hub verify --doi 10.1234/xxxx
-# Checks: doi.org HEAD + arxiv.org HEAD + Semantic Scholar fuzzy match
+pip install research-hub-pipeline[import,secrets]
+research-hub setup --persona analyst
+research-hub import-folder ./papers --cluster my-local-review
 ```
 
-### Step 2: Get Suggestions
+## Core Workflows
+
+### Preview
 
 ```bash
-research-hub suggest 10.1234/xxxx --json
-# Returns: which cluster this paper belongs to + related existing papers
+research-hub dashboard --sample
 ```
 
-### Step 3: Save to Zotero + Obsidian
+### Research Topic
 
 ```bash
-research-hub ingest --cluster my-cluster
-# Creates Zotero item + Obsidian raw note + dedup check + verification
-# Auto-prints integration suggestions for each new paper
+research-hub plan "TOPIC"
+research-hub auto "TOPIC" --no-nlm
+research-hub serve --dashboard
 ```
 
-### Step 4: Upload to NotebookLM
+Use `--no-nlm` for first-run smoke tests or when NotebookLM browser automation is not configured.
+
+### Local Source Folder
 
 ```bash
-research-hub notebooklm login --cdp
-research-hub notebooklm bundle --cluster my-cluster
-research-hub notebooklm upload --cluster my-cluster
+research-hub import-folder ./sources --cluster project-topic
+research-hub serve --dashboard
+research-hub crystal emit --cluster project-topic
 ```
 
-### Step 5: Generate Artifacts
+### NotebookLM
 
 ```bash
-research-hub notebooklm generate --cluster my-cluster --type brief
-# Types: brief, audio, mind-map, video, all
+research-hub notebooklm login
+research-hub notebooklm bundle --cluster project-topic
+research-hub notebooklm upload --cluster project-topic
+research-hub notebooklm generate --cluster project-topic --type brief
+research-hub notebooklm download --cluster project-topic
 ```
 
-### Step 6: Export Citations
+### Maintenance
 
 ```bash
-research-hub cite 10.1234/xxxx --format bibtex
-research-hub cite --cluster my-cluster --format bibtex --out refs.bib
+research-hub doctor --autofix
+research-hub tidy
+research-hub clusters rebind --emit
+research-hub cleanup --all
 ```
 
-## Cluster Management
+## MCP Integration
+
+For MCP hosts:
+
+```json
+{ "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+```
+
+Install host-specific files:
 
 ```bash
-research-hub clusters new --query "flood risk agent"
-research-hub clusters list
-research-hub clusters show my-cluster
-research-hub clusters bind my-cluster --zotero KEY --notebooklm "Notebook Name"
+research-hub install --platform claude-code
+research-hub install --platform cursor
+research-hub install --platform codex
+research-hub install --platform gemini
 ```
 
-## Maintenance
+## Guardrails
 
-```bash
-research-hub index
-research-hub status
-research-hub sync status
-research-hub sync reconcile --cluster X --execute
-research-hub synthesize
-research-hub cleanup
-```
-
-## All Commands
-
-| Command | Description |
-|---|---|
-| `init` | Interactive setup wizard |
-| `doctor` | Health check (config, Zotero, Chrome, NLM) |
-| `install --platform X` | Install this skill for AI assistants |
-| `search` | Query Semantic Scholar |
-| `verify` | Check paper DOI/arXiv/title existence |
-| `suggest` | Cluster + related-paper suggestions |
-| `run` / `ingest` | Full pipeline (Zotero + Obsidian + verify + suggest) |
-| `cite` | Export BibTeX / BibLaTeX / RIS |
-| `clusters` | Create, list, show, bind clusters |
-| `sync` | Zotero <-> Obsidian drift detection + fix |
-| `notebooklm login` | One-time Chrome sign-in (CDP) |
-| `notebooklm bundle` | Export drag-drop folder |
-| `notebooklm upload` | Auto-upload to NotebookLM |
-| `notebooklm generate` | Trigger briefing/audio/video/mind-map |
-| `index` | Rebuild dedup index |
-| `status` | Per-cluster reading progress |
-| `synthesize` | Generate cluster synthesis pages |
-| `cleanup` | Deduplicate hub page wikilinks |
-| `migrate-yaml` | Patch legacy notes to current spec |
+- Always run `research-hub doctor` when setup state is uncertain.
+- Do not invent DOIs, citations, or paper metadata; use search/enrich/verify commands.
+- Do not delete clusters without reviewing cascade impact.
+- Treat the vault as user-owned local data; avoid overwriting notes unless asked.
+- Prefer `import-folder` for non-academic or internal documents.
+- Prefer Zotero-backed workflows for DOI/arXiv-heavy academic literature.

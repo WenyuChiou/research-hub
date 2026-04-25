@@ -115,3 +115,25 @@ def test_multi_ai_skill_is_discoverable():
     # Spot-check that the skill mentions the three executors
     for name in ("Claude", "Codex", "Gemini"):
         assert name in text
+
+
+def test_bundled_skills_use_current_public_positioning():
+    """Packaged skills are what `research-hub install` copies for users."""
+    bad_fragments = ("??", "蝜", "銝", "", "撟")
+    for source_name, _target in skill_installer.SKILL_PACK:
+        text = skill_installer.get_bundled_skill_path(source_name).read_text(encoding="utf-8")
+        for fragment in bad_fragments:
+            assert fragment not in text
+        for fragment in ("Zotero", "Obsidian", "NotebookLM"):
+            assert fragment in text
+    core = skill_installer.get_bundled_skill_path("knowledge-base").read_text(encoding="utf-8")
+    assert "AI-operable" in core
+    assert "--preset" not in core
+    assert "notebooklm generate --cluster project-topic --type brief" in core
+
+
+def test_ai_integration_docs_use_current_notebooklm_generate_flag():
+    for path in (Path("docs/ai-integrations.md"), Path("docs/zh/ai-integrations.md")):
+        text = path.read_text(encoding="utf-8")
+        assert "--preset" not in text
+        assert "notebooklm generate --cluster my-topic --type brief" in text

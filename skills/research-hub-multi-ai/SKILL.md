@@ -5,7 +5,7 @@ description: Multi-AI orchestration for research-hub workflows. Use when the use
 
 # research-hub Multi-AI Orchestration
 
-research-hub can be driven by any AI that can run shell commands, call MCP tools, or call REST endpoints. Use this skill to decide when the primary assistant should work directly and when to delegate long or language-specific work to Codex CLI or Gemini CLI.
+research-hub can be driven by any AI that can run shell commands, call MCP tools, or call REST endpoints. Use this skill to decide when the primary assistant should work directly and when to delegate long or language-specific work to Codex CLI or Gemini CLI. The underlying workspace may connect Zotero, Obsidian, and NotebookLM, or any useful two-tool subset.
 
 ## Roles
 

@@ -99,7 +99,7 @@ def test_health_endpoint_returns_ok_without_auth(server):
     status, payload, _headers = _request(port, "GET", "/api/v1/health")
     assert status == 200
     assert payload["ok"] is True
-    assert payload["version"] == "0.52.0"
+    assert payload["version"] == "0.64.2"
 
 
 def test_health_endpoint_returns_ok_even_with_auth_configured(server):
