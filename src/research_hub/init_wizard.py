@@ -210,6 +210,7 @@ def run_init(
             print("  Opening https://www.zotero.org/settings/keys in your browser.")
             print("  Log in, click 'Create new private key', enable Library Read/Write,")
             print("  then copy the key + library ID back here.")
+            print("  If Zotero shows 'Access denied', click 'Log In' first, then reopen the keys page.")
             try:
                 import webbrowser
 
