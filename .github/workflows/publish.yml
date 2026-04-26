@@ -31,12 +31,25 @@ jobs:
       # venv before uploading. Catches packaging bugs (missing module in
       # wheel, broken __version__, syntax error introduced post-CI) that
       # the test matrix can't see because tests run on the editable repo.
-      - name: Validate wheel installs cleanly
+      # v0.68.3: also assert __version__ matches the git tag (drop the
+      # leading 'v'). The drift check `tests/test_v068_3_version_sync.py`
+      # catches mismatches between pyproject.toml and __init__.py at PR
+      # time; this step catches mismatches between either of those and
+      # the actual git tag at release time.
+      - name: Validate wheel installs cleanly + version matches tag
         run: |
           python -m venv /tmp/wheel_test
           /tmp/wheel_test/bin/pip install --quiet dist/*.whl
-          /tmp/wheel_test/bin/python -c "import research_hub; print('research_hub', research_hub.__version__)"
+          INSTALLED=$(/tmp/wheel_test/bin/python -c "import research_hub; print(research_hub.__version__)")
           /tmp/wheel_test/bin/python -c "from research_hub.cli import main"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Installed version: $INSTALLED"
+          echo "Git tag (without v): $TAG_VERSION"
+          if [ "$INSTALLED" != "$TAG_VERSION" ]; then
+            echo "::error::Version drift: research_hub.__version__='$INSTALLED' but git tag is '$GITHUB_REF_NAME' ($TAG_VERSION)."
+            echo "::error::Update src/research_hub/__init__.py and pyproject.toml to match the tag, then re-tag."
+            exit 1
+          fi
 
       - name: Publish to PyPI
         env:

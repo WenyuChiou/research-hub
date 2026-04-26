@@ -98,6 +98,43 @@ Fixes #42
 
 ---
 
+## Skill source-dir stability
+
+Source dirs under `skills/` (and their mirrors under
+`src/research_hub/skills_data/`) are linked from the public catalog at
+[WenyuChiou/ai-research-skills](https://github.com/WenyuChiou/ai-research-skills/blob/main/catalog/skills.yml)
+via raw GitHub URLs. Renaming or removing a directory there will break
+those links until the catalog updates.
+
+Before merging a rename or removal:
+
+1. **File a coordination issue against `WenyuChiou/ai-research-skills`** so
+   the catalog maintainer can sync `directory:` and `skill_url:` fields
+   in the same release.
+2. **Update `EXPECTED_SKILL_DIR_NAMES` in `tests/test_v068_3_version_sync.py`**
+   in the same commit. The test fails fast otherwise — that's intentional;
+   it forces a deliberate decision rather than a silent rename.
+3. **Add a `CHANGELOG.md` note** under the release describing the rename so
+   downstream wheel users can grep for it.
+
+**Adding a new skill** doesn't need catalog coordination (the link will
+be added when the catalog notices the new dir), but you do need to add
+the new name to `EXPECTED_SKILL_DIR_NAMES` so the test can guard it
+against future drift.
+
+## Version drift
+
+`pyproject.toml [project].version` and
+`src/research_hub/__init__.py:__version__` MUST match.
+`tests/test_v068_3_version_sync.py` enforces this at PR time.
+
+`.github/workflows/publish.yml` additionally asserts that `__version__`
+matches the git tag at release time (drops the leading `v`). If you tag
+`v0.69.0` without bumping both files first, the publish job fails and
+nothing reaches PyPI.
+
+---
+
 ## Reporting bugs
 
 Open an issue with:

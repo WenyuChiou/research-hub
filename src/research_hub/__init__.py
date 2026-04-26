@@ -8,7 +8,10 @@ import sys
 import tempfile as _tempfile
 import threading as _threading
 
-__version__ = "0.64.2"
+# Keep in sync with pyproject.toml [project].version. Drift caught by
+# tests/test_v068_3_version_sync.py and by publish.yml's wheel-validate
+# step (which asserts __version__ matches the git tag before twine upload).
+__version__ = "0.68.3"
 
 
 if sys.platform.startswith("win") and "pytest" in sys.modules:

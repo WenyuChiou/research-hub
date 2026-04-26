@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.68.3 (2026-04-26)
+
+Two regressions caught by the v0.68.2 interop test against
+`WenyuChiou/ai-research-skills` catalog. Fix + add guard rails so the
+catalog (and any other downstream consumer) can rely on us.
+
+### Fixed
+- **`__version__` drift**: `src/research_hub/__init__.py:11` hardcoded
+  `"0.64.2"` while pyproject.toml bumped through 0.65 / 0.66.x / 0.67 /
+  0.68.x. The string drifted past 4 PyPI releases without anyone
+  noticing because the publish.yml wheel-validate step printed
+  `__version__` but didn't compare it against the tag. Now bumped to
+  `"0.68.3"` and pinned to pyproject.toml by a test.
+
+### Added — guard rails
+- **`tests/test_v068_3_version_sync.py`** (3 tests):
+  - `test_init_version_matches_pyproject_version` — fails the suite if
+    `__init__.py:__version__` ≠ `pyproject.toml [project].version`.
+  - `test_skill_source_dirs_match_expected_set` — pins the 9 source-dir
+    names under `skills/`. Renaming or removing one fails the test until
+    `EXPECTED_SKILL_DIR_NAMES` is updated in the same commit. Forces a
+    deliberate decision instead of silently breaking catalog links.
+  - `test_skill_data_mirror_dirs_match_expected_set` — same for
+    `src/research_hub/skills_data/`.
+- **`.github/workflows/publish.yml`**: the wheel-validate step now
+  asserts `research_hub.__version__ == GITHUB_REF_NAME[1:]` (drops the
+  leading `v`). If you tag `v0.69.0` without bumping the source first,
+  the publish job fails and nothing reaches PyPI.
+- **`CONTRIBUTING.md`** sections "Skill source-dir stability" and
+  "Version drift" document the new guards and the required catalog
+  coordination steps for any future rename.
+
+### Why this matters for ai-research-skills catalog
+The catalog at `WenyuChiou/ai-research-skills/catalog/skills.yml`
+links into `https://github.com/WenyuChiou/research-hub/blob/master/skills/<name>/SKILL.md`
+for each of the 9 packaged skills. Our v0.68.0 rename
+`knowledge-base/` → `research-hub/` broke one of those links (left as a
+404 until catalog syncs). The guard rails above make sure that doesn't
+happen again silently — every future rename now requires (a) a coord
+issue against the catalog, (b) updating
+`EXPECTED_SKILL_DIR_NAMES`, and (c) a CHANGELOG entry, all in the same
+commit. See `docs/interop-test-v068-2.md` for the full audit.
+
 ## v0.68.2 (2026-04-26)
 
 Three SKILL.md structural refinements from the upstream catalog
