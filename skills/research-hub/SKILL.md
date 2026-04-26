@@ -7,6 +7,34 @@ description: Operate research-hub workflows for literature discovery, source ing
 
 research-hub turns Zotero, Obsidian, and NotebookLM into an AI-operable research workspace. It works best with any two of the three tools, and unlocks the full loop when all three are connected.
 
+## Prerequisite check (do this first)
+
+This skill drives the `research-hub` Python CLI. Before running any
+command from this skill, verify the CLI is installed:
+
+```bash
+research-hub --version
+```
+
+If that command is **not found**, the user installed only the Claude
+Code marketplace plugin and is missing the Python CLI. Stop and tell
+them:
+
+> This skill needs the `research-hub` CLI. Please run:
+>
+> ```bash
+> pip install research-hub-pipeline
+> research-hub setup --persona researcher   # or analyst | humanities | internal
+> ```
+>
+> Then re-run your request. If you only need to compare papers, sharpen
+> a research question, or build a project / paper memory file (no
+> automated search, no NotebookLM upload), the marketplace install
+> alone is enough — you don't need this skill for those.
+
+Do **not** invent or simulate `research-hub` output if the CLI is
+missing.
+
 Default language policy: answer the user in their language. Generate durable research notes, metadata, and citations in English unless the user explicitly asks for another language.
 
 ## Pick The Right Entry Point

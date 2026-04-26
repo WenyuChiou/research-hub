@@ -16,6 +16,38 @@ For any actual create / update / delete operation, defer to:
 - The **`research-hub zotero` CLI** (`backfill --tags --notes [--apply]`,
   etc., which is preview-first by default).
 
+## Prerequisite check (do this first)
+
+Reading the Zotero library requires a connection. The skill works in
+two modes:
+
+1. **Read-only audit / preview** — needs **either** `zotero-skills`
+   (Zotero local API) **or** the `research-hub zotero` CLI to
+   inspect items.
+2. **Apply cleanup** — must defer to `zotero-skills` or
+   `research-hub zotero ... --apply`.
+
+Before running, verify at least one is present:
+
+```bash
+research-hub --version 2>/dev/null  # if research-hub CLI installed
+ls ~/.claude/skills/zotero-skills/SKILL.md 2>/dev/null  # if zotero-skills skill installed
+```
+
+If **neither** is available, the user installed only the marketplace
+plugin without the CLI and without the standalone `zotero-skills`
+skill. Stop and tell them:
+
+> This skill audits a Zotero library, which needs Zotero connectivity
+> via one of:
+>
+> - The standalone `zotero-skills` skill (handles Zotero local API):
+>   `git clone https://github.com/WenyuChiou/zotero-skills ~/.claude/skills/zotero-skills`
+> - **Or** the `research-hub` CLI: `pip install research-hub-pipeline`
+>
+> Either path needs Zotero configured (local API on port 23119, or
+> Zotero Web API key). Once one is set up, re-run your audit request.
+
 ## When to use
 
 Trigger phrases:
