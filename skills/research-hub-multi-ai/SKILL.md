@@ -7,6 +7,8 @@ description: Multi-AI orchestration for research-hub workflows. Use when the use
 
 research-hub can be driven by any AI that can run shell commands, call MCP tools, or call REST endpoints. Use this skill to decide when the primary assistant should work directly and when to delegate long or language-specific work to Codex CLI or Gemini CLI. The underlying workspace may connect Zotero, Obsidian, and NotebookLM, or any useful two-tool subset.
 
+**Stage-agnostic, character-driven routing.** This skill is NOT bound to a specific research stage (discover / ingest / design / write / submit). The decision to delegate is driven by **task character** — token-heavy code, long-context reading, CJK prose, mechanical bulk edits — not by which stage of the research pipeline you happen to be in. A 200-page systematic-review summary in Stage 1 routes to Gemini for the same reason a zh-TW cover letter in Stage 8 does: long CJK prose that pays off Gemini's strength.
+
 ## Roles
 
 | AI | Best role | Use when |

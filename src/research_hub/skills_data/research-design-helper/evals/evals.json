@@ -1,0 +1,37 @@
+{
+  "skill": "research-design-helper",
+  "evals": [
+    {
+      "prompt": "Help me think through what model to build for studying flood adaptation behavior.",
+      "expected_artifacts": [
+        ".research/design_brief.md"
+      ],
+      "expected_behavior": "Run all 5 segments (RQ / mechanism / identifiability / validation / risks); record user's answers verbatim; do NOT propose specific model architectures or libraries.",
+      "must_not_touch": [
+        ".paper/",
+        ".research/project_manifest.yml"
+      ]
+    },
+    {
+      "prompt": "Sharpen my hypothesis before I start coding.",
+      "expected_artifacts": [
+        ".research/design_brief.md"
+      ],
+      "expected_behavior": "Focus on segment 1 (RQ sharpening) + segment 3 (identifiability); skip rest if user signals time pressure; mark skipped segments _TODO_."
+    },
+    {
+      "prompt": "Walk me through the design for a new ABM-CAT coupling study.",
+      "expected_artifacts": [
+        ".research/design_brief.md"
+      ],
+      "expected_behavior": "Run all 5 segments in order; if .research/literature_matrix.md exists, reference prior-art rows during identifiability discussion."
+    },
+    {
+      "prompt": "Refresh the design brief; my hypothesis evolved this week.",
+      "expected_artifacts": [
+        ".research/design_brief.md"
+      ],
+      "expected_behavior": "Refresh mode: keep human-edited sections; fill blanks; bump last_updated; do NOT replace locked sections (status=locked)."
+    }
+  ]
+}

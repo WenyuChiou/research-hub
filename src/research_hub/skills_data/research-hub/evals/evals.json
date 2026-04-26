@@ -1,5 +1,5 @@
 {
-  "skill": "knowledge-base",
+  "skill": "research-hub",
   "evals": [
     {
       "prompt": "Find me 5 recent papers on agent-based modeling and put them in a notebook.",

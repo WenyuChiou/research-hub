@@ -22,15 +22,19 @@ from pathlib import Path
 # before v0.66 packaging change). Keeps the original two skills installable
 # even without the dynamic discovery.
 LEGACY_SKILL_PACK: tuple[tuple[str, str], ...] = (
-    ("knowledge-base", "research-hub"),             # legacy name -> legacy dir
+    ("research-hub", "research-hub"),
     ("research-hub-multi-ai", "research-hub-multi-ai"),
 )
 
 # Map from on-disk source dir -> install target dir.
-# Most skills install under their own name; `knowledge-base` is the only
-# historical alias (its install target is `research-hub` so user installs
-# made before v0.62 keep working).
-LEGACY_TARGET_ALIASES: dict[str, str] = {
+# v0.68: source dir renamed `knowledge-base/` -> `research-hub/`; alias
+# map is now empty by default but kept as the extension point.
+LEGACY_TARGET_ALIASES: dict[str, str] = {}
+
+# v0.68: source-name aliases for backward-compat callers. If external code
+# (older user scripts, third-party tooling) calls `get_bundled_skill_path`
+# with the pre-rename name, we emit a DeprecationWarning and resolve.
+LEGACY_SOURCE_NAME_ALIASES: dict[str, str] = {
     "knowledge-base": "research-hub",
 }
 
@@ -110,17 +114,33 @@ PLATFORMS: dict[str, PlatformConfig] = {
 }
 
 
-def get_bundled_skill_path(source_name: str = "knowledge-base") -> Path:
+def get_bundled_skill_path(source_name: str = "research-hub") -> Path:
     """Return the path to the SKILL.md bundled with the package for this source.
 
     Checks the installed-package layout first, then the repo layout (for
-    editable installs). Accepts source_name ∈ SKILL_PACK first column.
+    editable installs). Accepts source_name in the discovered SKILL_PACK.
+
+    v0.68: source dir was renamed from `knowledge-base` to `research-hub`.
+    Callers passing the pre-rename name still work but emit a one-time
+    DeprecationWarning.
     """
+    if source_name in LEGACY_SOURCE_NAME_ALIASES:
+        import warnings
+        new_name = LEGACY_SOURCE_NAME_ALIASES[source_name]
+        warnings.warn(
+            f"Skill source name {source_name!r} was renamed to {new_name!r} in "
+            "research-hub v0.68. Update your code to use the new name; the "
+            "alias will be removed in v0.70.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        source_name = new_name
+
     pkg_path = Path(__file__).parent / "skills_data" / source_name / "SKILL.md"
     if pkg_path.exists():
         return pkg_path
-    # Backward-compat: old layout had knowledge-base at src/research_hub/skill/SKILL.md
-    if source_name == "knowledge-base":
+    # Pre-v0.62 layout: src/research_hub/skill/SKILL.md (singular)
+    if source_name == "research-hub":
         legacy_pkg = Path(__file__).parent / "skill" / "SKILL.md"
         if legacy_pkg.exists():
             return legacy_pkg
@@ -153,7 +173,7 @@ def install_skill(platform: str) -> list[str]:
             source = get_bundled_skill_path(source_name)
         except FileNotFoundError:
             # Skip optional skills gracefully if the source is missing, so the
-            # core knowledge-base skill still installs even if multi-ai is
+            # core research-hub skill still installs even if multi-ai is
             # absent from a partial install.
             continue
         skill_dir = config.skill_dir(target_name)
@@ -172,7 +192,7 @@ def list_platforms() -> list[tuple[str, str, bool]]:
     installs that need re-running after a package upgrade.
     """
     # Ensure at least the core skill is findable — fail loudly if not.
-    get_bundled_skill_path("knowledge-base")
+    get_bundled_skill_path("research-hub")
     result: list[tuple[str, str, bool]] = []
     for key, cfg in sorted(PLATFORMS.items()):
         all_present = all(cfg.skill_path(target).exists() for _, target in SKILL_PACK)

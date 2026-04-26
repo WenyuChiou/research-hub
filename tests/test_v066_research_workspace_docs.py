@@ -24,6 +24,8 @@ V066_SKILLS = (
     "notebooklm-brief-verifier",
     # v0.67: 6th skill from the brief
     "zotero-library-curator",
+    # v0.68: Stage 3a/4 design helper
+    "research-design-helper",
 )
 EXCLUDED_FROM_PACKAGING = {"zotero-skills"}
 
@@ -84,12 +86,13 @@ def test_packaged_evals_mirror_byte_identical(skill):
 def test_no_orphan_packaged_skill_without_root_source():
     """Every dir under skills_data/ must have a matching skills/ source
     (except legacy aliases). Catches orphaned mirrors after a rename."""
-    legacy_target_to_source = {"research-hub": "knowledge-base"}
+    # v0.68: alias map is now empty after the source-dir rename, but we
+    # keep the variable as the extension point for any future renames.
+    legacy_target_to_source: dict[str, str] = {}
     for child in SKILLS_DATA_ROOT.iterdir():
         if not child.is_dir():
             continue
         name = child.name
-        # Resolve alias if any
         source_name = legacy_target_to_source.get(name, name)
         src = SKILLS_ROOT / source_name
         assert src.exists(), (

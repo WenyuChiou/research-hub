@@ -27,8 +27,11 @@ V066_SKILLS = (
     "notebooklm-brief-verifier",
     # v0.67: 6th skill from the brief, audit/curation layer above zotero-skills
     "zotero-library-curator",
+    # v0.68: Stage 3a/4 design helper from the catalog feedback
+    "research-design-helper",
 )
-LEGACY_SKILLS = ("knowledge-base", "research-hub-multi-ai")
+# v0.68: source dir renamed knowledge-base/ -> research-hub/
+LEGACY_SKILLS = ("research-hub", "research-hub-multi-ai")
 ALL_SKILLS = V066_SKILLS + LEGACY_SKILLS
 
 # Third-party / vendored skills under skills/ that we do NOT package

@@ -35,6 +35,7 @@ The `.research/` and `.paper/` directories give the project a single
     decisions.md                          # ADR-style decision log
     open_questions.md                     # Unresolved questions
     literature_matrix.md                  # Output of literature-triage-matrix
+    design_brief.md                       # Output of research-design-helper (v0.68)
 
   .paper/                                 # Manuscript-specific context
     journal_format.md                     # Journal style (owned by academic-writing-skills)
@@ -58,6 +59,7 @@ The same `.paper/` folder is shared with the existing
 | `.research/decisions.md` | shared | humans + skills append | humans + skills read |
 | `.research/open_questions.md` | shared | humans + skills append | humans + skills read |
 | `.research/literature_matrix.md` | research-hub | `literature-triage-matrix` | humans + writing skills |
+| `.research/design_brief.md` | research-hub | `research-design-helper` (v0.68) | `research-context-compressor` (notes presence), `research-project-orienter` (cites), humans |
 | `.paper/journal_format.md` | `academic-writing-skills` | writing skill | writing skill |
 | `.paper/claims.yml` | research-hub | `paper-memory-builder` | `academic-writing-skills` |
 | `.paper/figures.yml` | research-hub | `paper-memory-builder` | `academic-writing-skills` |

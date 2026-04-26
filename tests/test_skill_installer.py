@@ -132,7 +132,9 @@ def test_bundled_skills_use_current_public_positioning():
             f"{source_name}: SKILL.md mentions none of {product_terms} -- "
             "not anchored to research-hub product surface"
         )
-    core = skill_installer.get_bundled_skill_path("knowledge-base").read_text(encoding="utf-8")
+    # v0.68: source dir is now `research-hub` (was `knowledge-base`).
+    # Backward-compat alias is verified separately in test_v068_legacy_knowledge_base_alias.py.
+    core = skill_installer.get_bundled_skill_path("research-hub").read_text(encoding="utf-8")
     assert "AI-operable" in core
     assert "--preset" not in core
     assert "notebooklm generate --cluster project-topic --type brief" in core

@@ -5,6 +5,52 @@ operate a research workspace. This page is the directory: which skill to
 use when, what it reads, what it writes, and what it deliberately doesn't
 cover.
 
+## Stages of a research project
+
+| Stage | What it is | Owner | Skill(s) |
+|---|---|---|---|
+| 1. Discover sources | Find papers / data | research-hub | `research-hub`, `literature-triage-matrix` |
+| 2. Ingest + tag | Pull into Zotero / Obsidian | research-hub | `research-hub`, `zotero-library-curator` |
+| **3a. Frame the problem** | Sharpen RQ; design study | **YOU** (creative) | `research-design-helper` (Socratic guide) |
+| **3b. Plan artifacts** | Manifest + experiment matrix | mechanical | `research-context-compressor`, `research-project-orienter` |
+| 4. Design & build the model | Implement | YOU + cross-cutting tools | (see Cross-cutting tools below) |
+| 5. Run experiments | Execute | YOU | (cross-cutting) |
+| 6. Synthesize | Brief / claims | research-hub | `paper-memory-builder`, `notebooklm-brief-verifier` |
+| 7. Write & revise | Manuscript | external skill | `academic-writing-skills` |
+| 8. Submission ops | Cover letter, response | mixed | external |
+
+> **Stage 3a is intentionally human work.** AI skills cannot invent your
+> research question — `research-context-compressor` will leave
+> `research_question:` empty and add the gap to `.research/open_questions.md`
+> rather than guess. The `research-design-helper` skill (v0.68) guides you
+> through 5 Socratic segments to sharpen the question yourself; it does not
+> write the answer for you.
+
+## Cross-cutting tools (used at every stage)
+
+These three skills are NOT stage-bound. They route work by **task character**
+(token-heavy / long-context / CJK / mechanical bulk), not by pipeline
+position:
+
+- `research-hub-multi-ai` — when to keep work in the primary AI vs hand
+  it to Codex (heavy code, batch edits) or Gemini (long CJK prose,
+  cross-file synthesis).
+- `codex-delegate` (external skill) — Codex CLI handoff when Claude
+  would otherwise spend many turns on mechanical scaffolding.
+- `gemini-delegate` (external skill) — Gemini CLI handoff for >50k-token
+  context reads or zh-TW content.
+
+Examples per stage where delegation matters:
+
+- **Stage 1**: Gemini summarizes a 200-page systematic review you found.
+- **Stage 2**: Codex batch-rewrites frontmatter on 100 cluster notes.
+- **Stage 3a**: keep in primary AI (creative thinking, low token cost).
+- **Stage 6**: Gemini drafts a long zh-TW NotebookLM brief preface.
+- **Stage 8**: Gemini writes the zh-TW cover letter; Codex builds the
+  reviewer-response table.
+
+The `research-hub-multi-ai` SKILL.md lists the routing rules.
+
 ## When to use which skill
 
 | Situation | Skill | Effort |
@@ -15,6 +61,7 @@ cover.
 | Preparing a manuscript for AI-assisted writing/revision | `paper-memory-builder` | minutes |
 | Just downloaded a NotebookLM brief, want to verify it | `notebooklm-brief-verifier` | minutes |
 | Want a Zotero audit / dedupe / tag hygiene plan (no writes) | `zotero-library-curator` | minutes |
+| Starting a new study, want to sharpen the RQ + design before coding | `research-design-helper` | one session |
 | General research workflow (search → ingest → organize) | `research-hub` (the original CLI-operating skill) | continuous |
 | Multi-AI handoff (Claude ↔ Codex ↔ Gemini) | `research-hub-multi-ai` | as needed |
 
@@ -104,6 +151,24 @@ and recommended follow-up prompts.
 Trigger phrases: "verify this NotebookLM brief", "does the brief miss
 anything", "compare the downloaded notes to the cluster papers".
 
+### `research-design-helper` (v0.68)
+Stage 3a / front-of-Stage 4 helper. Domain-agnostic Socratic guide that
+walks the user through 5 segments — research question sharpening,
+expected mechanism, identifiability check, validation plan, risk
+register — and saves the result to `.research/design_brief.md`.
+
+Does NOT invent the research question or model design; like
+`research-context-compressor`, it leaves blanks rather than guess.
+
+**Reads**: `.research/project_manifest.yml`, optional `design_brief.md`
+(refresh mode), optional `literature_matrix.md` (for prior-art context
+during identifiability discussion).
+**Writes**: `.research/design_brief.md`.
+
+Trigger phrases: "frame this research question", "design my study",
+"help me think through what model to build", "sharpen my hypothesis",
+"walk me through the design".
+
 ### `zotero-library-curator` (v0.67)
 Sits one layer above the standalone `zotero-skills` skill. Reads the
 Zotero library, runs **audit + hygiene** checks (duplicate DOIs, items
@@ -166,8 +231,11 @@ etc). `research-hub install --list` shows install status per platform.
 
 ## Versioning
 
-These skills are versioned alongside the research-hub package. v0.66
-adds `research-context-compressor`, `research-project-orienter`,
-`literature-triage-matrix`, `paper-memory-builder`, and
-`notebooklm-brief-verifier`. v0.67 adds `zotero-library-curator` (audit
-layer above the standalone `zotero-skills` CRUD skill).
+These skills are versioned alongside the research-hub package.
+
+- v0.66: `research-context-compressor`, `research-project-orienter`,
+  `literature-triage-matrix`, `paper-memory-builder`,
+  `notebooklm-brief-verifier`.
+- v0.67: `zotero-library-curator` (audit layer above the standalone
+  `zotero-skills` CRUD skill).
+- v0.68: `research-design-helper` (Stage 3a Socratic design guide).

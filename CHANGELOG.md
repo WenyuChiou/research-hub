@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.68.0 (2026-04-26)
+
+Closes the four follow-up suggestions from the upstream
+`WenyuChiou/ai-research-skills` catalog session.
+
+### New skill (#9)
+- **`research-design-helper`** — Stage 3a / front-of-Stage 4 Socratic
+  guide. Walks the user through 5 segments (RQ sharpening, expected
+  mechanism, identifiability check, validation plan, risk register) and
+  saves the result to `.research/design_brief.md`. Domain-agnostic; does
+  NOT invent the research question or model design.
+- Ships with `references/design_brief_template.md`.
+- Hooks into existing skills via doc updates: compressor and orienter
+  reference `design_brief.md` if it exists; ownership recorded in the
+  workspace-manifest doc.
+
+Total packaged skills: 8 → 9. Auto-discovery picks it up; no installer
+code change needed.
+
+### Doc framing (catalog feedback #2 + #3)
+- `docs/ai-research-skills.md` now opens with a **"Stages of a research
+  project"** table that explicitly splits Stage 3a (frame the problem,
+  human work) from Stage 3b (plan artifacts, mechanical). Top-line
+  caveat says AI cannot invent the research question.
+- New **"Cross-cutting tools (used at every stage)"** section makes it
+  explicit that `research-hub-multi-ai`, `codex-delegate`,
+  `gemini-delegate` route by task character (token-heavy, long-context,
+  CJK, mechanical bulk), not by pipeline stage. Per-stage examples
+  included.
+- `skills/research-hub-multi-ai/SKILL.md` first paragraph rewritten to
+  lead with "stage-agnostic, character-driven routing".
+
+### Source dir rename (catalog feedback #4, option A)
+- `skills/knowledge-base/` → `skills/research-hub/`
+- `src/research_hub/skills_data/knowledge-base/` →
+  `src/research_hub/skills_data/research-hub/`
+- `LEGACY_TARGET_ALIASES` map cleared (was `{"knowledge-base":
+  "research-hub"}`); replaced by `LEGACY_SOURCE_NAME_ALIASES` for
+  backward-compat callers.
+- `get_bundled_skill_path("knowledge-base")` still resolves but emits
+  `DeprecationWarning` (alias removed in v0.70).
+- **User-facing install target unchanged**: still
+  `~/.claude/skills/research-hub/SKILL.md`. The rename is purely
+  source-side.
+- `tests/test_v068_legacy_knowledge_base_alias.py` (3 tests) pins the
+  alias contract.
+
+### Tests
+- `tests/test_v066_skill_schema.py` and
+  `tests/test_v066_research_workspace_docs.py` extended via
+  parametrize: design-helper picked up automatically.
+- All v0.61-v0.67 regression suites green.
+
+Test count: 1899 → 1908 (+9 net).
+
 ## v0.67.0 (2026-04-25)
 
 Closes the three remaining items from the Codex skills brief:
