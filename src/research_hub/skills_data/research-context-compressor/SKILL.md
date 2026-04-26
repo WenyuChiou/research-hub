@@ -29,61 +29,66 @@ Not for:
   not `.research/`.
 - Writing the manuscript itself.
 
-## Inputs you should read (priority order over inputs you may have)
+## Inputs you should read (whichever exist — priority order)
 
-This is a **priority list, not a requirements list**. Many research
-projects don't have all of these — humanities work might be a folder of
-PDFs + a single Markdown outline; an early-stage qualitative study might
-just have field notes and a Zotero collection. Read whatever EXISTS in
-the priority order below, skip the rest, and DON'T pad the manifest with
-fields you can't substantiate from real artifacts.
+The compressor reads whatever your project has. **None of these are
+required.** If a file is missing, that field of the manifest stays
+empty (see "What NOT to do"). Skim, do not deep-read.
 
-1. `README.md` at the repo root — project overview, if present.
-2. `pyproject.toml` / `package.json` / `requirements.txt` — primary tools, if a code project.
-3. `docs/` directory — long-form descriptions, if present.
-4. `scripts/` and `notebooks/` — main entrypoints, if a code project.
-5. `data/` and `outputs/` directory listings — datasets and artifacts, if present.
-6. `.git/HEAD` and `git log --oneline -20` — current branch and recent activity, if a git repo.
-7. `.research/` (if it already exists) — for refresh, not first-time create.
-8. **For humanities / qualitative projects** — substitute: a primary
-   sources folder (PDFs / images / transcripts), an Obsidian vault, a
-   Zotero collection. The manifest still applies; just leave
-   `primary_tools / scripts / outputs` empty and put the source
-   collection name in `data_sources` instead.
+**For any project**:
 
-Skim, do not deep-read. The point is orientation, not analysis.
+1. `README.md` at the repo root — project overview. Single most useful
+   input.
 
-### Humanities use case example
+**For code-based research projects** (Python / JS / R / Julia / etc.):
 
-A literary scholar studying 19th-century travel writing might have:
-- 40 PDFs of primary sources in a single folder
-- A Zotero collection of secondary literature
-- One outline.md with their argument
+2. `pyproject.toml` / `package.json` / `requirements.txt` /
+   `renv.lock` / `Project.toml` — primary tools.
+3. `scripts/` and `notebooks/` — main entrypoints.
+4. `data/` and `outputs/` — datasets and artifacts.
 
-The compressor should write `project_manifest.yml` like:
+**For qualitative / archival / interpretive projects**:
+
+2. `notes/`, `drafts/`, `sources/` — manuscript-track work.
+3. `.obsidian/` — Obsidian vault settings, if present.
+4. Any plain-text bibliography file (`bibliography.md`, `sources.bib`,
+   `references.json`).
+
+**For both**:
+
+5. `docs/` — long-form descriptions.
+6. `.git/HEAD` and `git log --oneline -20` — current branch + recent
+   activity, if a git repo.
+7. `.research/` (if it already exists) — for refresh, not first-time
+   create.
+
+**An empty manifest field is better than an invented one.**
+
+### Example: humanities project with minimal scaffold
+
+A literature-review project with just `README.md` + `notes/` + a few
+draft markdown files will produce a manifest like:
 
 ```yaml
-project_name: "Travel writing in 19th-century Korea"
-research_area: "Korean studies / comparative literature"
-research_question: "How did Western travelers' framing of Korea shift after 1882?"
-current_stage: "exploration"
-primary_tools: []          # not a code project
+project_name: "late-ming-print-culture"
+research_area: "history of book publishing"
+research_question: ""             # left empty — README didn't state one
+current_stage: "discovery"
+primary_tools: []                 # no code project
 key_repositories: []
-data_sources:
-  - id: "primary-pdfs"
-    description: "40 travel-account PDFs (1850-1910)"
-    location: "primary-sources/"
-  - id: "zotero-secondary"
-    description: "Secondary literature in Zotero collection 'Korea-1882'"
-    location: "Zotero://collection/Korea-1882"
-model_components: []       # no model
-main_entrypoints: []
-important_outputs: ["outline.md"]
-paper_or_deliverable: "Journal article in Korean Studies, target 2027"
-last_updated: "..."
+data_sources: []                  # no data/ directory, intentional
+model_components: []
+main_entrypoints: []               # no scripts/ either
+important_outputs:                 # populated from notes/ + drafts/
+  - "notes/01-survey.md"
+  - "notes/02-method.md"
+  - "drafts/intro-v1.md"
+paper_or_deliverable: ""
+last_updated: "2026-04-26"
 ```
 
-Empty lists are honest signals, not gaps to fill.
+Empty fields are honest signals to the next AI session that this is
+a non-code project. They are not failures.
 
 ## Outputs you must produce
 

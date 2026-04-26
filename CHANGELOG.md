@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.68.2 (2026-04-26)
+
+Three SKILL.md structural refinements from the upstream catalog
+session — same 3 skills as v0.68.1, but with the framing closer to
+how a fresh non-CS user actually reads them. Pure prose + numbering
+changes; no code, no test impact.
+
+### research-context-compressor
+- Inputs section restructured into three explicit branches: "For any
+  project" (just README) / "For code-based research projects"
+  (pyproject, scripts, data) / "For qualitative / archival /
+  interpretive projects" (notes, drafts, sources, bibliography).
+  Reads more like a menu than a checklist.
+- Concrete YAML example for a humanities literature-review project
+  with `notes/` + `drafts/` only (no code project structure).
+  Caption: "Empty fields are honest signals to the next AI session
+  that this is a non-code project. They are not failures."
+- "An empty manifest field is better than an invented one." pulled
+  out as a one-line caveat.
+
+### literature-triage-matrix
+- "Manual paper list" promoted from input #5 to **input #0**
+  (lowest-friction, listed first). Includes a 3-line example so a
+  fresh user who has 5 paper titles + DOIs in their head can use the
+  skill without setting up Zotero/Obsidian/cluster.
+
+### notebooklm-brief-verifier
+- Inputs section restructured into two numbered modes:
+  1. **research-hub-managed mode** (default; bundle paths
+     predictable).
+  2. **Manual fallback mode** — `--brief <path>` + `--sources <list>`
+     for users who generated the brief on notebooklm.google.com
+     directly (web UI, manual upload). Conversational variant via
+     paste-into-chat documented.
+- Verification logic explicitly noted as identical in both modes.
+
 ## v0.68.1 (2026-04-26)
 
 Three SKILL.md prose updates from the upstream catalog session.

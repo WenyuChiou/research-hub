@@ -35,47 +35,39 @@ Not for:
 
 ## Inputs
 
-This skill works in two modes: **integrated** (research-hub uploaded the
-bundle, all paths predictable) and **standalone** (user has a brief +
-sources from anywhere — NotebookLM session they ran by hand, a colleague's
-brief, a PDF + plain-text source list). Both are first-class.
-
-### Integrated mode (research-hub uploaded the bundle)
-
 In priority order:
 
-1. **The downloaded brief** at `.research_hub/artifacts/<cluster>/brief-*.txt`
-   (research-hub's `notebooklm download` writes here). Read in full.
-2. **The bundle manifest** at `.research_hub/bundles/<cluster>/manifest.json`
-   (or similar) — list of which source files were uploaded for this brief.
-3. **Cluster Obsidian notes** under `raw/<cluster>/*.md` — for spot-checking
-   specific claims.
-4. **Source PDFs** under `pdfs/<cluster>/` — only for spot-checks of
-   suspicious claims; expensive, cap at 3 per session.
+1. **research-hub-managed mode** (default). When the brief was generated
+   via `research-hub notebooklm generate` + `download`:
+   - **Brief**: `.research_hub/artifacts/<cluster>/brief-*.txt`
+   - **Bundle manifest**: `.research_hub/bundles/<cluster>/manifest.json`
+     — list of which source files were uploaded.
+   - **Cluster Obsidian notes** under `raw/<cluster>/*.md` — for
+     spot-checking specific claims.
+   - **Source PDFs** under `pdfs/<cluster>/` — last-resort spot-check
+     only; cap at 3 per session.
 
-### Standalone mode (no research-hub bundle)
+2. **Manual fallback mode** (new in v0.68.x). When the user generated
+   the brief themselves on notebooklm.google.com — direct upload, web
+   UI, copy-paste — research-hub never saw the bundle. Accept either
+   CLI flags or a paste-into-chat:
 
-When the user invokes the skill outside a research-hub vault, accept
-explicit fallback inputs:
+   - `--brief <path-to-brief.{md,txt,pdf}>` — the downloaded brief
+     file (any path, not just `.research_hub/artifacts/`).
+   - `--sources <path-to-source-list.{yml,md,json}>` — a plain list
+     of the source titles + DOIs / URLs the user uploaded to NLM.
 
-- **`--brief <path>`** (or "the brief is at /path/to/brief.txt") — any
-  text/markdown/PDF file containing the brief. Read in full.
-- **`--sources <list>`** (or "here are the sources I uploaded:" followed
-  by a Markdown bullet list / file paths / DOIs) — substitutes for the
-  bundle manifest. Each entry should be a citation key, DOI, or file
-  path; one per line.
-- **Optional source files** — if the user provides PDF / Markdown
-  paths in `--sources`, treat those as the primary spot-check material
-  (cap at 3 per session, same as integrated mode).
+   Conversational variant: paste the brief and the source list
+   directly into the chat. The skill should ask explicitly for the
+   source list if missing — do NOT assume coverage without ground
+   truth.
 
-The audit method (source coverage, unsupported claims, contradictions,
-overgeneralization, spot-check, follow-up prompts) is identical in both
-modes. Only the input plumbing changes.
+The verification logic (source coverage scan, claim attribution,
+contradiction scan, overgeneralization scan, spot-check, follow-up
+prompts) is identical in both modes. Only the input-loading layer
+differs.
 
 If the user names a brief file directly, prefer that path over guessing.
-If a manifest path is missing, ask the user for the source list before
-running the source-coverage scan; do NOT assume coverage without ground
-truth.
 
 ## Method
 

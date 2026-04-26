@@ -34,6 +34,20 @@ Not for:
 
 In priority order (cheapest to most expensive):
 
+0. **Manual paper list** — a Markdown bullet list of titles + DOIs (or
+   arXiv IDs) the user pastes directly into the chat. **Lowest-friction
+   entry; works without any other research-hub setup.** Treat each
+   line as one row in the matrix; fill cells from your own knowledge
+   + DOI lookup if the title is famous, otherwise mark `?` and ask
+   the user.
+
+   Example minimal input:
+   ```
+   - "Memory enables ToM-like behaviour in LLM poker agents", arXiv:2604.04157
+   - "Multi-agent LLM social learning", arXiv:2604.02677
+   - "Triadic Loop alignment framework", arXiv:2604.18850
+   ```
+
 1. **`.research/literature_matrix.md`** — if it already exists, parse it
    first. Append-only by convention; only re-emit a row if the
    underlying paper changed materially.
@@ -46,15 +60,7 @@ In priority order (cheapest to most expensive):
 4. **NotebookLM downloaded briefs** under `.research_hub/artifacts/` —
    if the user has already generated a brief on the cluster, mine it
    for cross-paper comparisons.
-5. **Manual paper list** — a Markdown bullet list of titles + DOIs the
-   user pastes into the chat. No Zotero, no Obsidian, no cluster needed.
-   Each line should be `- Smith 2024. "Title here". 10.xxxx/yyyy` or
-   any unambiguous form. Useful when the user is reviewing papers from
-   outside their library, doing a one-shot triage, or working in a
-   sandbox repo without research-hub set up. Treat each line as one
-   row in the matrix; fill cells from your own knowledge + DOI lookup
-   if the title is famous, otherwise mark `?` and ask the user.
-6. **Raw PDFs** — only as last resort, and only the abstract + first 2
+5. **Raw PDFs** — only as last resort, and only the abstract + first 2
    pages + conclusion. PDFs are token-expensive.
 
 ## Output
