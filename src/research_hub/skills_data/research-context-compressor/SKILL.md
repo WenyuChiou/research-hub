@@ -29,17 +29,61 @@ Not for:
   not `.research/`.
 - Writing the manuscript itself.
 
-## Inputs you should read (in priority order)
+## Inputs you should read (priority order over inputs you may have)
 
-1. `README.md` at the repo root — project overview.
-2. `pyproject.toml` / `package.json` / `requirements.txt` — primary tools.
-3. `docs/` directory — long-form descriptions.
-4. `scripts/` and `notebooks/` — main entrypoints.
-5. `data/` and `outputs/` directory listings — datasets and artifacts.
-6. `.git/HEAD` and `git log --oneline -20` — current branch and recent activity.
+This is a **priority list, not a requirements list**. Many research
+projects don't have all of these — humanities work might be a folder of
+PDFs + a single Markdown outline; an early-stage qualitative study might
+just have field notes and a Zotero collection. Read whatever EXISTS in
+the priority order below, skip the rest, and DON'T pad the manifest with
+fields you can't substantiate from real artifacts.
+
+1. `README.md` at the repo root — project overview, if present.
+2. `pyproject.toml` / `package.json` / `requirements.txt` — primary tools, if a code project.
+3. `docs/` directory — long-form descriptions, if present.
+4. `scripts/` and `notebooks/` — main entrypoints, if a code project.
+5. `data/` and `outputs/` directory listings — datasets and artifacts, if present.
+6. `.git/HEAD` and `git log --oneline -20` — current branch and recent activity, if a git repo.
 7. `.research/` (if it already exists) — for refresh, not first-time create.
+8. **For humanities / qualitative projects** — substitute: a primary
+   sources folder (PDFs / images / transcripts), an Obsidian vault, a
+   Zotero collection. The manifest still applies; just leave
+   `primary_tools / scripts / outputs` empty and put the source
+   collection name in `data_sources` instead.
 
 Skim, do not deep-read. The point is orientation, not analysis.
+
+### Humanities use case example
+
+A literary scholar studying 19th-century travel writing might have:
+- 40 PDFs of primary sources in a single folder
+- A Zotero collection of secondary literature
+- One outline.md with their argument
+
+The compressor should write `project_manifest.yml` like:
+
+```yaml
+project_name: "Travel writing in 19th-century Korea"
+research_area: "Korean studies / comparative literature"
+research_question: "How did Western travelers' framing of Korea shift after 1882?"
+current_stage: "exploration"
+primary_tools: []          # not a code project
+key_repositories: []
+data_sources:
+  - id: "primary-pdfs"
+    description: "40 travel-account PDFs (1850-1910)"
+    location: "primary-sources/"
+  - id: "zotero-secondary"
+    description: "Secondary literature in Zotero collection 'Korea-1882'"
+    location: "Zotero://collection/Korea-1882"
+model_components: []       # no model
+main_entrypoints: []
+important_outputs: ["outline.md"]
+paper_or_deliverable: "Journal article in Korean Studies, target 2027"
+last_updated: "..."
+```
+
+Empty lists are honest signals, not gaps to fill.
 
 ## Outputs you must produce
 

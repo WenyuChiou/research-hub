@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.68.1 (2026-04-26)
+
+Three SKILL.md prose updates from the upstream catalog session.
+No code change, no test change.
+
+### research-context-compressor
+- Inputs section header changed from "Inputs you should read (in
+  priority order)" to "Inputs you should read (priority order over
+  inputs you may have)" + explicit "this is a priority list, not a
+  requirements list" framing.
+- New "Humanities use case example" with worked
+  `project_manifest.yml` for a primary-sources-only literary study
+  (no code, no scripts, no outputs). Demonstrates that empty lists are
+  honest signals, not gaps to fill.
+- New input #8 explicitly substitutes a primary-sources folder /
+  Obsidian vault / Zotero collection for `data_sources` in non-code
+  research.
+
+### literature-triage-matrix
+- New input #5: "Manual paper list — a Markdown bullet list of titles
+  + DOIs the user pastes into the chat". Lets the skill work without
+  Zotero, Obsidian, or any research-hub vault. Useful for one-shot
+  triage from external libraries or sandbox repos.
+
+### notebooklm-brief-verifier
+- Inputs section split into "Integrated mode" (research-hub uploaded
+  the bundle, all paths predictable) and "Standalone mode" (`--brief
+  <path>` + `--sources <list>` fallback inputs, works on briefs from
+  anywhere — manual NotebookLM session, colleague's brief, etc.).
+- Both modes are first-class; the audit method is identical, only the
+  input plumbing changes.
+- Standalone mode explicitly asks for the source list before running
+  the coverage scan; never assumes coverage without ground truth.
+
 ## v0.68.0 (2026-04-26)
 
 Closes the four follow-up suggestions from the upstream

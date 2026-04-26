@@ -46,7 +46,15 @@ In priority order (cheapest to most expensive):
 4. **NotebookLM downloaded briefs** under `.research_hub/artifacts/` —
    if the user has already generated a brief on the cluster, mine it
    for cross-paper comparisons.
-5. **Raw PDFs** — only as last resort, and only the abstract + first 2
+5. **Manual paper list** — a Markdown bullet list of titles + DOIs the
+   user pastes into the chat. No Zotero, no Obsidian, no cluster needed.
+   Each line should be `- Smith 2024. "Title here". 10.xxxx/yyyy` or
+   any unambiguous form. Useful when the user is reviewing papers from
+   outside their library, doing a one-shot triage, or working in a
+   sandbox repo without research-hub set up. Treat each line as one
+   row in the matrix; fill cells from your own knowledge + DOI lookup
+   if the title is famous, otherwise mark `?` and ask the user.
+6. **Raw PDFs** — only as last resort, and only the abstract + first 2
    pages + conclusion. PDFs are token-expensive.
 
 ## Output

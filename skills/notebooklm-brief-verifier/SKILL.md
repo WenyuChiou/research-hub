@@ -35,6 +35,13 @@ Not for:
 
 ## Inputs
 
+This skill works in two modes: **integrated** (research-hub uploaded the
+bundle, all paths predictable) and **standalone** (user has a brief +
+sources from anywhere — NotebookLM session they ran by hand, a colleague's
+brief, a PDF + plain-text source list). Both are first-class.
+
+### Integrated mode (research-hub uploaded the bundle)
+
 In priority order:
 
 1. **The downloaded brief** at `.research_hub/artifacts/<cluster>/brief-*.txt`
@@ -46,7 +53,29 @@ In priority order:
 4. **Source PDFs** under `pdfs/<cluster>/` — only for spot-checks of
    suspicious claims; expensive, cap at 3 per session.
 
+### Standalone mode (no research-hub bundle)
+
+When the user invokes the skill outside a research-hub vault, accept
+explicit fallback inputs:
+
+- **`--brief <path>`** (or "the brief is at /path/to/brief.txt") — any
+  text/markdown/PDF file containing the brief. Read in full.
+- **`--sources <list>`** (or "here are the sources I uploaded:" followed
+  by a Markdown bullet list / file paths / DOIs) — substitutes for the
+  bundle manifest. Each entry should be a citation key, DOI, or file
+  path; one per line.
+- **Optional source files** — if the user provides PDF / Markdown
+  paths in `--sources`, treat those as the primary spot-check material
+  (cap at 3 per session, same as integrated mode).
+
+The audit method (source coverage, unsupported claims, contradictions,
+overgeneralization, spot-check, follow-up prompts) is identical in both
+modes. Only the input plumbing changes.
+
 If the user names a brief file directly, prefer that path over guessing.
+If a manifest path is missing, ask the user for the source list before
+running the source-coverage scan; do NOT assume coverage without ground
+truth.
 
 ## Method
 
