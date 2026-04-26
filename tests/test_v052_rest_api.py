@@ -95,11 +95,16 @@ def _request(port: int, method: str, path: str, payload=None, headers=None):
 
 
 def test_health_endpoint_returns_ok_without_auth(server):
+    """v0.68.3: read the expected version from research_hub.__version__
+    rather than hard-coding it. Hardcoded version drifted past 4 PyPI
+    releases (0.64.2 → 0.65 → 0.66.x → 0.67 → 0.68.x) without anyone
+    noticing because the test stayed green only by accident."""
+    import research_hub
     port = server()
     status, payload, _headers = _request(port, "GET", "/api/v1/health")
     assert status == 200
     assert payload["ok"] is True
-    assert payload["version"] == "0.64.2"
+    assert payload["version"] == research_hub.__version__
 
 
 def test_health_endpoint_returns_ok_even_with_auth_configured(server):
