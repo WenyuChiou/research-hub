@@ -25,6 +25,8 @@ V066_SKILLS = (
     "literature-triage-matrix",
     "paper-memory-builder",
     "notebooklm-brief-verifier",
+    # v0.67: 6th skill from the brief, audit/curation layer above zotero-skills
+    "zotero-library-curator",
 )
 LEGACY_SKILLS = ("knowledge-base", "research-hub-multi-ai")
 ALL_SKILLS = V066_SKILLS + LEGACY_SKILLS
@@ -66,7 +68,7 @@ def test_skill_frontmatter_has_name_and_description(skill):
     )
 
 
-@pytest.mark.parametrize("skill", V066_SKILLS)
+@pytest.mark.parametrize("skill", ALL_SKILLS)
 def test_v066_skills_ship_evals_json_with_min_3_prompts(skill):
     evals_path = SKILLS_ROOT / skill / "evals" / "evals.json"
     assert evals_path.exists(), f"{evals_path} missing (v0.66 skills require evals)"

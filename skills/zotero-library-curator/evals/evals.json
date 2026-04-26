@@ -1,0 +1,27 @@
+{
+  "skill": "zotero-library-curator",
+  "evals": [
+    {
+      "prompt": "Audit my Zotero library for duplicate DOIs.",
+      "expected_behavior": "Read dedup_index + local Zotero API; produce duplicate-DOI section of curation report; suggest keep/merge/trash per group; never call delete/update directly.",
+      "must_not_touch": [
+        "zotero create/update/delete endpoints"
+      ]
+    },
+    {
+      "prompt": "Find Zotero items missing required tags / DOI.",
+      "expected_behavior": "Compare each item's tags against required hub-tag set (research-hub + cluster/<slug>); list keys missing tags; suggest `research-hub zotero backfill --tags`.",
+      "must_not_touch": [
+        "zotero update endpoint"
+      ]
+    },
+    {
+      "prompt": "Generate a tag hygiene report.",
+      "expected_behavior": "List top tags by count, low-count tags, near-duplicate candidates; defer renames to manual review or zotero-skills batch update."
+    },
+    {
+      "prompt": "Propose a Zotero cleanup plan I can review before applying.",
+      "expected_behavior": "Emit full preview report (duplicates + orphan tags + mismatches + bloat) with explicit follow-up commands; never executes any change directly."
+    }
+  ]
+}

@@ -22,6 +22,8 @@ V066_SKILLS = (
     "literature-triage-matrix",
     "paper-memory-builder",
     "notebooklm-brief-verifier",
+    # v0.67: 6th skill from the brief
+    "zotero-library-curator",
 )
 EXCLUDED_FROM_PACKAGING = {"zotero-skills"}
 

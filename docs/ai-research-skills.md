@@ -14,6 +14,7 @@ cover.
 | Comparing 5–30 papers for a literature review | `literature-triage-matrix` | minutes |
 | Preparing a manuscript for AI-assisted writing/revision | `paper-memory-builder` | minutes |
 | Just downloaded a NotebookLM brief, want to verify it | `notebooklm-brief-verifier` | minutes |
+| Want a Zotero audit / dedupe / tag hygiene plan (no writes) | `zotero-library-curator` | minutes |
 | General research workflow (search → ingest → organize) | `research-hub` (the original CLI-operating skill) | continuous |
 | Multi-AI handoff (Claude ↔ Codex ↔ Gemini) | `research-hub-multi-ai` | as needed |
 
@@ -103,6 +104,21 @@ and recommended follow-up prompts.
 Trigger phrases: "verify this NotebookLM brief", "does the brief miss
 anything", "compare the downloaded notes to the cluster papers".
 
+### `zotero-library-curator` (v0.67)
+Sits one layer above the standalone `zotero-skills` skill. Reads the
+Zotero library, runs **audit + hygiene** checks (duplicate DOIs, items
+missing required tags, cluster/collection mismatches, tag near-duplicates,
+collection bloat), and emits a **preview-only plan**. For any actual
+create/update/delete, it defers to `zotero-skills` or
+`research-hub zotero backfill`.
+
+**Reads**: research-hub cluster registry, Zotero library state via local
+API, dedup index. **Writes**: nothing on disk by default; can save report
+to `.research_hub/curator-<ts>.md` on request.
+
+Trigger phrases: "audit my Zotero library", "find duplicate DOIs",
+"propose a tag hygiene cleanup plan", "Zotero cleanup preview".
+
 ## What these skills deliberately don't cover
 
 The boundary is important enough to repeat from the brief
@@ -153,5 +169,5 @@ etc). `research-hub install --list` shows install status per platform.
 These skills are versioned alongside the research-hub package. v0.66
 adds `research-context-compressor`, `research-project-orienter`,
 `literature-triage-matrix`, `paper-memory-builder`, and
-`notebooklm-brief-verifier`. Future versions may add `zotero-library-curator`
-once we confirm it doesn't duplicate the standalone `zotero-skills` repo.
+`notebooklm-brief-verifier`. v0.67 adds `zotero-library-curator` (audit
+layer above the standalone `zotero-skills` CRUD skill).

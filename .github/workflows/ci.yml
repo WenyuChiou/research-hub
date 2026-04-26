@@ -40,9 +40,10 @@ jobs:
 
       - name: Coverage
         if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
-        # v0.65: --cov-fail-under=60 set conservatively (current ~65%);
-        # ratchet upward over the next few releases as targeted tests land.
-        run: pytest --cov=research_hub --cov-report=term-missing --cov-fail-under=60 -m "not slow"
+        # v0.67: ratcheted from 60 -> 62. Targeted unit-test uplift in
+        # v0.65 (upload 7->54%, bundle 27->84%, setup 21->59%) plus v0.66
+        # schema/docs tests pushed real coverage above 62%; lock it in.
+        run: pytest --cov=research_hub --cov-report=term-missing --cov-fail-under=62 -m "not slow"
 
   stress-tests:
     runs-on: ubuntu-latest

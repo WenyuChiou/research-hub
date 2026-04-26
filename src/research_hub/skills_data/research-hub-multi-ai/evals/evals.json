@@ -1,0 +1,17 @@
+{
+  "skill": "research-hub-multi-ai",
+  "evals": [
+    {
+      "prompt": "Delegate this 200-line refactor to Codex.",
+      "expected_behavior": "Recognize this is a heavy code task: write a brief at `.ai/codex_task_*.md`, then `codex exec --full-auto -C <repo> ...` in background; review diff before committing."
+    },
+    {
+      "prompt": "Generate a Traditional Chinese summary of this 8000-word paper.",
+      "expected_behavior": "Recognize this is a CJK long-form task: defer to Gemini CLI via the gemini-delegate pattern; preserve technical terms; review for hallucination before posting."
+    },
+    {
+      "prompt": "Should you write this 30-line bug fix yourself or delegate?",
+      "expected_behavior": "Decide locally: <50 LOC + needs project context = Claude direct, no delegation. Reply with one sentence on why."
+    }
+  ]
+}

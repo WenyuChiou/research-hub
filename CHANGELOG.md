@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.67.0 (2026-04-25)
+
+Closes the three remaining items from the Codex skills brief:
+
+### New skill (#6 of 6 from the brief)
+- **`zotero-library-curator`** — sits one layer above the standalone
+  `zotero-skills` skill. Reads the Zotero library + research-hub cluster
+  registry + dedup index; emits a preview-only audit/curation plan
+  covering duplicate DOIs, items missing required hub tags, cluster
+  mismatches, tag near-duplicates, collection bloat. **Never** calls
+  any Zotero create/update/delete endpoint — defers all writes to
+  `zotero-skills` or `research-hub zotero backfill --apply`.
+- Trigger phrases: "audit my Zotero library", "find duplicate DOIs",
+  "propose a tag hygiene cleanup plan".
+
+Total packaged skills: 7 → 8. Auto-discovery installer picks it up
+without any installer code change (v0.66 architecture).
+
+### New CLI: `research-hub context init/audit/compress`
+Phase 2 of the brief. Lets users / scripts invoke the workspace skill
+logic from shell instead of through an AI session.
+
+- `research-hub context init [--vault PATH]` — bootstrap a `.research/`
+  skeleton (6 files); idempotent (never overwrites existing files).
+- `research-hub context audit [--vault PATH]` — schema audit
+  (project_manifest required fields, freshness, experiment ID
+  uniqueness, dataset paths exist). `[OK] / [WARN]` output matching
+  `doctor` style.
+- `research-hub context compress [--vault PATH] [--print-prompt]` —
+  pointer / prompt generator for the `research-context-compressor` AI
+  skill. The CLI is intentionally NOT a from-scratch implementation;
+  the compression itself is an AI task.
+
+### Legacy evals.json backfill + schema test tightening
+- `skills/knowledge-base/evals/evals.json` (4 prompts).
+- `skills/research-hub-multi-ai/evals/evals.json` (3 prompts).
+- `tests/test_v066_skill_schema.py` no longer exempts the 2 legacy
+  skills from the evals.json check; ALL_SKILLS now requires it.
+
+### CI ratchet
+- `--cov-fail-under` 60 → 62 (per inventory: real coverage is well
+  above 62% after v0.65/v0.66 uplift; locking in the floor).
+
+### Tests
+- `tests/test_v067_context_cli.py` (10 tests): init creates skeleton,
+  init idempotent, init skips existing files, audit passes clean,
+  audit flags missing fields / stale dates / missing dataset paths,
+  audit returns 0 on WARN only, compress --print-prompt emits canonical
+  prompt, compress default points at skill.
+
+Test count: 1877 → 1899 (+22).
+
 ## v0.66.1 (2026-04-25)
 
 ### Doctor diagnostic

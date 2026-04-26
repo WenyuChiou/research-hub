@@ -1,0 +1,21 @@
+{
+  "skill": "knowledge-base",
+  "evals": [
+    {
+      "prompt": "Find me 5 recent papers on agent-based modeling and put them in a notebook.",
+      "expected_behavior": "Drive `research-hub auto \"agent-based modeling\" --max-papers 5` end-to-end: search, ingest into Zotero + Obsidian, bundle + upload + generate brief in NotebookLM."
+    },
+    {
+      "prompt": "Ingest the PDFs in ./papers into a cluster called my-review.",
+      "expected_behavior": "Run `research-hub import-folder ./papers --cluster my-review`; report how many were ingested and which were skipped as duplicates."
+    },
+    {
+      "prompt": "Show me the dashboard.",
+      "expected_behavior": "Run `research-hub serve --dashboard`; print the URL `http://127.0.0.1:8765/`; suggest closing it later with Ctrl-C."
+    },
+    {
+      "prompt": "Backfill missing tags and notes on my Zotero items.",
+      "expected_behavior": "Dry-run first with `research-hub zotero backfill --tags --notes`; surface the report; only run `--apply` after the user confirms."
+    }
+  ]
+}

@@ -2733,6 +2733,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Find clusters with no hub/<slug>/ scaffold and create it. Idempotent.",
     )
 
+    # v0.67: Phase 2 of the Codex skills brief - shell entry point for the
+    # research workspace manifest layer. Skills do the AI part; this CLI
+    # bootstraps the skeleton, audits the schema, and points at the AI prompt.
+    context_parser = subparsers.add_parser(
+        "context",
+        help="Manage the .research/ workspace manifest (init/audit/compress)",
+    )
+    context_subparsers = context_parser.add_subparsers(
+        dest="context_command", required=True
+    )
+    context_init_p = context_subparsers.add_parser(
+        "init", help="Bootstrap an empty .research/ skeleton (idempotent)"
+    )
+    context_init_p.add_argument(
+        "--vault", default=None,
+        help="Project root (default: research-hub vault root)",
+    )
+    context_audit_p = context_subparsers.add_parser(
+        "audit", help="Audit .research/ for required fields, freshness, dataset paths",
+    )
+    context_audit_p.add_argument("--vault", default=None)
+    context_compress_p = context_subparsers.add_parser(
+        "compress",
+        help="Point at the research-context-compressor AI skill (or --print-prompt)",
+    )
+    context_compress_p.add_argument("--vault", default=None)
+    context_compress_p.add_argument(
+        "--print-prompt", action="store_true",
+        help="Emit the canonical compression prompt for piping into an AI CLI",
+    )
+
     topic_parser = subparsers.add_parser(
         "topic",
         help="Manage cluster topic overview + sub-topic notes",
@@ -3550,7 +3581,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "package-dxt"}
+    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "package-dxt", "context"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()
@@ -3818,6 +3849,13 @@ def main(argv: list[str] | None = None) -> int:
         return _rebuild_index()
     if args.command == "dedup":
         return _dedup(args)
+    if args.command == "context":
+        from research_hub.context_cli import dispatch as _context_dispatch
+        try:
+            cfg = get_config()
+        except Exception:
+            cfg = None
+        return _context_dispatch(args, cfg)
     if args.command == "clusters":
         if args.clusters_command == "list":
             return _clusters_list()
