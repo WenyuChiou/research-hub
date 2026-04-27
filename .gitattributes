@@ -1,0 +1,19 @@
+# v0.70.0: enforce LF line endings for files that are byte-compared in CI.
+# `tests/test_v066_research_workspace_docs.py::test_packaged_skill_mirror_byte_identical`
+# diffs `skills/<name>/SKILL.md` against `src/research_hub/skills_data/<name>/SKILL.md`.
+# Without this, a Windows runner with `core.autocrlf=true` could mangle one
+# path's line endings on checkout (the other path stays LF because it's under
+# `src/`), making the byte-compare flake.
+
+# Skills (source + packaged mirror)
+skills/**/SKILL.md          text eol=lf
+skills/**/evals/evals.json  text eol=lf
+src/research_hub/skills_data/**/SKILL.md          text eol=lf
+src/research_hub/skills_data/**/evals/evals.json  text eol=lf
+
+# Python source — keep LF everywhere for cross-platform reproducibility
+*.py text eol=lf
+
+# pyproject + workflow YAML — LF (used by GitHub Actions on Linux runners)
+pyproject.toml text eol=lf
+.github/workflows/*.yml text eol=lf
