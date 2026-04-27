@@ -483,6 +483,10 @@ def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
             "doc_type": "",
             "categories": [],
             "publication_types": [],
+            # v0.68.5: SearchResult gained these 3 bibliographic locator fields.
+            "volume": "",
+            "issue": "",
+            "pages": "",
         }
     ]
 

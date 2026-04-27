@@ -26,6 +26,13 @@ class SearchResult:
     doc_type: str = ""
     categories: list[str] = field(default_factory=list)
     publication_types: list[str] = field(default_factory=list)
+    # v0.68.5: bibliographic locator fields. Populated by openalex/crossref
+    # when the API returns them; left "" by arxiv (preprints have no journal
+    # volume/issue) and by semantic-scholar when its `journal` block is absent.
+    # Required for complete citations (Author year. Title. Journal vol(issue):pp).
+    volume: str = ""
+    issue: str = ""
+    pages: str = ""
 
     @classmethod
     def from_s2_json(cls, item: dict) -> "SearchResult":
@@ -42,6 +49,11 @@ class SearchResult:
             arxiv_id = arxiv_id.split(":", 1)[1]
         if "v" in arxiv_id and arxiv_id.startswith(tuple(str(i) for i in range(10))):
             arxiv_id = arxiv_id.split("v", 1)[0]
+        # v0.68.5: Semantic Scholar exposes journal locator fields under the
+        # `journal` block. The block is optional and inconsistently populated;
+        # fall back to "" when absent so downstream writers (Zotero, Obsidian)
+        # see a real string rather than None.
+        journal = item.get("journal") or {}
         return cls(
             title=item.get("title") or "",
             doi=external_ids.get("DOI", "") or "",
@@ -60,6 +72,8 @@ class SearchResult:
                 for pub_type in (item.get("publicationTypes") or [])[:3]
                 if str(pub_type).strip()
             ],
+            volume=str(journal.get("volume") or ""),
+            pages=str(journal.get("pages") or ""),
         )
 
     @property

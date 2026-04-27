@@ -113,6 +113,18 @@ class ArxivBackend:
         published = entry.findtext("atom:published", default="", namespaces=_NS)
         year = int(published[:4]) if len(published) >= 4 and published[:4].isdigit() else None
         doi = entry.findtext("arxiv:doi", default="", namespaces=_NS) or ""
+
+        # v0.68.5: arXiv preprints have no journal volume/issue. The
+        # `arxiv:comment` field sometimes contains a "<n> pages" hint
+        # (e.g. "12 pages, 5 figures") which is the closest analog to a
+        # page count for unpublished work. Capture only the digit when the
+        # comment matches; leave volume/issue empty (no analog exists).
+        comment = entry.findtext("arxiv:comment", default="", namespaces=_NS) or ""
+        pages = ""
+        page_match = re.search(r"(\d+)\s*pages?\b", comment, re.IGNORECASE)
+        if page_match:
+            pages = page_match.group(1)
+
         return SearchResult(
             title=_collapse_whitespace(entry.findtext("atom:title", default="", namespaces=_NS)),
             doi=doi,
@@ -133,6 +145,7 @@ class ArxivBackend:
             pdf_url=f"https://arxiv.org/pdf/{arxiv_id}.pdf",
             source=self.name,
             categories=_extract_categories(entry),
+            pages=pages,
         )
 
     def _parse_feed(self, xml_text: str) -> list[SearchResult]:
