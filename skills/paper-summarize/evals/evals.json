@@ -1,0 +1,37 @@
+{
+  "skill": "paper-summarize",
+  "evals": [
+    {
+      "prompt": "Summarize the papers in cluster post-flood-household-relocation-behavioral-adaptation.",
+      "expected_behavior": "Run `research-hub summarize --cluster <slug>` (dry-run first), inspect parsed JSON, then re-run with --apply. Report which papers got updated in Obsidian + Zotero, list any skipped papers with reasons.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "Fill the TODO Key Findings for cluster X.",
+      "expected_behavior": "Same flow. If LLM CLI is not on PATH, surface the saved prompt path and offer to pipe through user's LLM.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "I just ran `auto X` and the notes are empty — give me real summaries.",
+      "expected_behavior": "Confirm that auto pipeline does NOT auto-fill per-paper Findings (by design, see paper-summarize SKILL). Then run summarize with --apply. After: spot-check 1-2 papers' markdown to verify findings are anchored in the abstract, not hallucinated.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "Update Zotero notes for cluster X with what each paper actually says.",
+      "expected_behavior": "Run with --apply (default writes both). Confirm zotero_writes count matches paper count. If any Zotero write failed, the markdown for that paper rolled back — call it out so the user knows the two systems are still in sync.",
+      "must_not_touch": [
+        ".research/",
+        ".paper/"
+      ]
+    }
+  ]
+}

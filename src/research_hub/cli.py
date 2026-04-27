@@ -564,6 +564,45 @@ def _cmd_crystal(args, cfg) -> int:
     raise ValueError(f"unknown crystal command: {args.crystal_command}")
 
 
+def _cmd_summarize(args, cfg) -> int:
+    from research_hub import summarize as summarize_mod
+
+    report = summarize_mod.summarize_cluster(
+        cfg,
+        args.cluster,
+        llm_cli=args.llm_cli,
+        apply=args.apply,
+        write_zotero=not args.no_zotero,
+        write_obsidian=not args.no_obsidian,
+    )
+    if not report.ok:
+        print(f"summarize failed: {report.error}", file=sys.stderr)
+        return 1
+    if report.prompt_path:
+        print(f"no LLM CLI on PATH; prompt saved to {report.prompt_path}")
+        print("pipe it through your LLM (claude/codex/gemini) and re-run with --apply")
+        return 0
+    print(f"cli used: {report.cli_used}")
+    if not args.apply:
+        print("(dry-run; pass --apply to write to Obsidian + Zotero)")
+        return 0
+    apply_result = report.apply_result
+    if apply_result is None:
+        print("no apply result returned")
+        return 1
+    print(
+        f"applied: {len(apply_result.applied)}  "
+        f"skipped: {len(apply_result.skipped)}  "
+        f"errors: {len(apply_result.errors)}"
+    )
+    print(f"obsidian writes: {apply_result.obsidian_writes}, zotero writes: {apply_result.zotero_writes}")
+    for skip in apply_result.skipped:
+        print(f"  SKIP {skip}")
+    for err in apply_result.errors:
+        print(f"  ERROR {err}", file=sys.stderr)
+    return 0 if not apply_result.errors else 1
+
+
 def _cmd_memory(args, cfg) -> int:
     from research_hub.memory import (
         apply_memory,
@@ -3484,6 +3523,32 @@ def build_parser() -> argparse.ArgumentParser:
     crystal_check = crystal_sub.add_parser("check", help="Check crystal staleness")
     crystal_check.add_argument("--cluster", required=True)
 
+    summarize_parser = subparsers.add_parser(
+        "summarize",
+        help="Fill per-paper Key Findings + Methodology + Relevance via LLM CLI",
+    )
+    summarize_parser.add_argument("--cluster", required=True)
+    summarize_parser.add_argument(
+        "--llm-cli",
+        choices=["claude", "codex", "gemini"],
+        help="Override the auto-detected LLM CLI on PATH",
+    )
+    summarize_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write summaries back to Obsidian + Zotero (default: print prompt + JSON only)",
+    )
+    summarize_parser.add_argument(
+        "--no-zotero",
+        action="store_true",
+        help="Skip Zotero child-note write (Obsidian-only)",
+    )
+    summarize_parser.add_argument(
+        "--no-obsidian",
+        action="store_true",
+        help="Skip Obsidian markdown write (Zotero-only)",
+    )
+
     memory_parser = subparsers.add_parser("memory", help="Manage structured cluster memory registries")
     memory_sub = memory_parser.add_subparsers(dest="memory_command")
     memory_emit = memory_sub.add_parser("emit", help="Emit a memory-extraction prompt for an AI")
@@ -3827,6 +3892,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("crystal requires a subcommand")
             return 2
         return _cmd_crystal(args, get_config())
+    if args.command == "summarize":
+        return _cmd_summarize(args, get_config())
     if args.command == "memory":
         if not args.memory_command:
             parser.error("memory requires a subcommand")
