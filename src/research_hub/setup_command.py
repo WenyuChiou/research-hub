@@ -74,7 +74,7 @@ def run_setup(args) -> int:
             persona = str(get_config().persona or "researcher").strip().lower()
         except Exception:
             persona = "researcher"
-    if not args.skip_login and persona not in {"analyst", "internal"}:
+    if not interactive and not args.skip_login and persona not in {"analyst", "internal"}:
         print("[setup] Launching NotebookLM login (Ctrl-C to skip)...")
         try:
             run_notebooklm_login()
