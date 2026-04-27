@@ -16,6 +16,25 @@ def pytest_configure(config) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _block_real_webbrowser_open(monkeypatch):
+    """v0.68.5: globally stub `webbrowser.open` for every test.
+
+    Several init_wizard / setup_command interactive tests call into code
+    paths that do `webbrowser.open("https://www.zotero.org/settings/keys")`
+    or `webbrowser.open("http://...dashboard...")`. Without a global stub,
+    a full `pytest` run would launch a real browser tab on every such test
+    — observed in CI logs and on the maintainer's machine. The previous
+    per-file stub only covered one test.
+
+    Tests that need to ASSERT a webbrowser.open was called can re-patch it
+    locally with their own monkeypatch.setattr — the per-test patch wins
+    over this autouse one.
+    """
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", lambda *args, **kwargs: True)
+
+
 @pytest.fixture
 def reset_research_hub_modules():
     """Returns a callable that resets named research_hub.* submodules.

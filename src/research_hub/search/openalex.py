@@ -90,6 +90,19 @@ class OpenAlexBackend:
                 arxiv_id = match.group(1)
                 break
 
+        # v0.68.5: extract bibliographic locator fields from the `biblio`
+        # block. OpenAlex stores them as strings (e.g. {"volume":"45",
+        # "issue":"3","first_page":"123","last_page":"145"}); join first/last
+        # into the canonical "123-145" pages form, fall back to first_page
+        # alone when last_page is empty.
+        biblio = work.get("biblio") or {}
+        first_page = str(biblio.get("first_page") or "").strip()
+        last_page = str(biblio.get("last_page") or "").strip()
+        if first_page and last_page and first_page != last_page:
+            pages = f"{first_page}-{last_page}"
+        else:
+            pages = first_page or last_page
+
         return SearchResult(
             title=work.get("title") or "",
             doi=doi,
@@ -111,6 +124,9 @@ class OpenAlexBackend:
             ),
             source=self.name,
             doc_type=work.get("type", "") or "",
+            volume=str(biblio.get("volume") or ""),
+            issue=str(biblio.get("issue") or ""),
+            pages=pages,
         )
 
     def search(
@@ -126,7 +142,7 @@ class OpenAlexBackend:
             "per-page": min(limit, 200),
             "select": (
                 "id,doi,title,publication_year,authorships,primary_location,locations,"
-                "cited_by_count,abstract_inverted_index,open_access,type"
+                "cited_by_count,abstract_inverted_index,open_access,type,biblio"
             ),
             "mailto": _MAILTO,
         }
@@ -174,7 +190,7 @@ class OpenAlexBackend:
                     "per-page": 1,
                     "select": (
                         "id,doi,title,publication_year,authorships,primary_location,locations,"
-                        "cited_by_count,abstract_inverted_index,open_access,type"
+                        "cited_by_count,abstract_inverted_index,open_access,type,biblio"
                     ),
                     "mailto": _MAILTO,
                 },

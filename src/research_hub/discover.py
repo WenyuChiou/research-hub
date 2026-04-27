@@ -840,6 +840,13 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
             "methodology": methodology_text,
             "relevance": "[TODO: fill relevance to cluster]",
             "tags": tags,
+            # v0.68.5: propagate bibliographic locator fields end-to-end so
+            # Zotero items + Obsidian frontmatter get complete citation
+            # metadata. Backends that don't return these (arxiv volume/issue,
+            # most semantic-scholar hits) leave them as "".
+            "volume": str(candidate.get("volume") or ""),
+            "issue": str(candidate.get("issue") or ""),
+            "pages": str(candidate.get("pages") or ""),
         }
         if arxiv_id:
             entry["arxiv_id"] = arxiv_id

@@ -64,7 +64,10 @@ class CrossrefBackend:
         params: dict[str, str | int] = {
             "query": query,
             "rows": min(limit, 100),
-            "select": "DOI,title,author,issued,container-title,type,is-referenced-by-count",
+            "select": (
+                "DOI,title,author,issued,container-title,type,is-referenced-by-count,"
+                "volume,issue,page"
+            ),
         }
         filters = []
         if year_from is not None:
@@ -117,6 +120,9 @@ class CrossrefBackend:
         venue_list = work.get("container-title") or []
         venue = venue_list[0] if venue_list else ""
         doi = (work.get("DOI") or "").lower()
+        # v0.68.5: Crossref returns `page` as a single string already in the
+        # canonical "first-last" form (e.g. "123-145"). volume / issue may be
+        # missing for some doc types; fall back to "" rather than None.
         return SearchResult(
             title=title,
             doi=doi,
@@ -128,4 +134,7 @@ class CrossrefBackend:
             citation_count=int(work.get("is-referenced-by-count", 0) or 0),
             source=self.name,
             doc_type=work.get("type", "") or "",
+            volume=str(work.get("volume") or ""),
+            issue=str(work.get("issue") or ""),
+            pages=str(work.get("page") or ""),
         )

@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1"
 DEFAULT_FIELDS = (
-    "title,abstract,year,authors,externalIds,venue,citationCount,url,openAccessPdf,publicationTypes"
+    "title,abstract,year,authors,externalIds,venue,citationCount,url,openAccessPdf,publicationTypes,"
+    "journal"
 )
 
 
