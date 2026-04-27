@@ -806,22 +806,44 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
             value = str(pub_type).strip()
             if value:
                 tags.append(f"type/{value}")
+        # v0.68.4: propagate the search backend so _compose_hub_tags can
+        # emit src/<backend>. Previously dropped here, leaving every paper
+        # with only research-hub + cluster/<slug> tags (2/4 namespaces).
+        backend_source = candidate.get("source") or candidate.get("found_in") or ""
+
+        # v0.68.4: when the backend returned a real abstract, seed the note
+        # fields with it instead of TODO skeletons. Reviewers can still edit,
+        # but they have actual content to start from.
+        abstract_text = candidate.get("abstract") or ""
+        has_real_abstract = bool(abstract_text.strip()) and abstract_text.strip().lower() not in {"(no abstract)", "no abstract"}
+
+        if has_real_abstract:
+            summary_text = abstract_text[:500]
+            key_findings = ["[review and extract from Abstract section above]"]
+            methodology_text = "[review abstract; refine after reading PDF]"
+        else:
+            summary_text = f"[TODO] {title}"[:200]
+            key_findings = ["[TODO: fill from abstract]"]
+            methodology_text = "[TODO: fill from abstract]"
+
         entry = {
             "title": title,
             "doi": doi,
             "authors": _authors_to_creators(names),
             "year": candidate.get("year") or 0,
-            "abstract": candidate.get("abstract") or "(no abstract)",
+            "abstract": abstract_text or "(no abstract)",
             "journal": candidate.get("venue") or "preprint",
             "slug": slug,
             "sub_category": cluster_slug or "",
-            "summary": f"[TODO] {title}"[:200],
-            "key_findings": ["[TODO: fill from abstract]"],
-            "methodology": "[TODO: fill from abstract]",
+            "summary": summary_text,
+            "key_findings": key_findings,
+            "methodology": methodology_text,
             "relevance": "[TODO: fill relevance to cluster]",
             "tags": tags,
         }
         if arxiv_id:
             entry["arxiv_id"] = arxiv_id
+        if backend_source:
+            entry["source"] = backend_source
         papers.append(entry)
     return papers

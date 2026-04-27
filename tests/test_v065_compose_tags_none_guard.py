@@ -10,10 +10,12 @@ from research_hub.pipeline import _compose_hub_tags
 @pytest.mark.parametrize("cluster_slug", [None, "", "   ", "None", "none", "null", "NULL"])
 def test_compose_hub_tags_skips_bogus_cluster_slug(cluster_slug):
     """None / empty / whitespace / literal None-strings must NOT produce
-    a cluster/<slug> tag."""
+    a cluster/<slug> tag. (v0.68.4: type/journalArticle default still
+    appears since the pipeline always creates that Zotero item type.)"""
     tags = _compose_hub_tags({}, cluster_slug)
-    assert tags == ["research-hub"], (
-        f"cluster_slug={cluster_slug!r} should produce only 'research-hub', got {tags}"
+    assert "research-hub" in tags
+    assert not any(t.startswith("cluster/") for t in tags), (
+        f"cluster_slug={cluster_slug!r} produced a cluster/ tag: {tags}"
     )
 
 
