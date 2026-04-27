@@ -198,6 +198,11 @@ def auto_pipeline(
             _ensure_zotero_collection(registry, cluster, slug, report, print_progress)
     else:
         _step_log(report, "cluster", True, 0.0, f"existing: {slug}", print_progress)
+        # NOTE: clusters with a recorded zotero_collection_key are trusted
+        # without round-tripping to Zotero. If the user manually deleted
+        # that collection in the Zotero UI, the next ingest will 404 on
+        # write. Validating-and-rebinding stale keys is a separate concern
+        # (see follow-up: probe-then-rebind on stale keys).
         if not dry_run and not getattr(cluster, "zotero_collection_key", None):
             _ensure_zotero_collection(registry, cluster, slug, report, print_progress)
 
@@ -431,7 +436,7 @@ def _print_next_steps(report: AutoReport, slug: str, *, do_crystals: bool) -> No
 
 
 def _find_existing_collection_key_by_name(web, name: str) -> str | None:
-    """Look up a Zotero collection by exact name, return its key or None.
+    """Look up a Zotero collection by case-insensitive name, return key or None.
 
     v0.68.4: prevent the duplicate-collection accumulation bug. Previously
     `_ensure_zotero_collection` always POSTed a new collection, so any code
@@ -440,7 +445,14 @@ def _find_existing_collection_key_by_name(web, name: str) -> str | None:
     that happens to share a name) would silently create a duplicate. A real
     incident left 283 empty orphan collections in the maintainer's library
     over months of test runs.
+
+    Name match is case-folded (`.casefold()`) on both sides because the
+    Zotero web UI lets users rename to case-only-different forms ("Flood
+    Risk" vs "flood risk"), and a case-sensitive match would still leak
+    duplicates from that path. casefold() is preferred over lower() for
+    Unicode correctness (e.g., German ß).
     """
+    target = name.casefold()
     try:
         # Manual pagination: pyzotero's follow() pattern hit a None-path bug
         # on some versions; explicit start= avoids it.
@@ -450,7 +462,7 @@ def _find_existing_collection_key_by_name(web, name: str) -> str | None:
             if not chunk:
                 return None
             for c in chunk:
-                if c.get("data", {}).get("name") == name:
+                if c.get("data", {}).get("name", "").casefold() == target:
                     return c["data"]["key"]
             if len(chunk) < 100:
                 return None

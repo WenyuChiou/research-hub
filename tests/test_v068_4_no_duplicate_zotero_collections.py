@@ -92,6 +92,25 @@ def test_ensure_zotero_collection_does_not_create_on_pagination_match(monkeypatc
     web.create_collections.assert_not_called()
 
 
+def test_ensure_zotero_collection_matches_case_insensitively(monkeypatch):
+    """Code-review follow-up W1: Zotero web UI lets users rename to
+    case-only-different forms ("Flood Risk" vs "flood risk"). Without
+    case-folding, the probe misses such matches and we leak duplicates
+    from the same root-cause class as the original incident."""
+    web = MagicMock(spec=["collections", "create_collections"])
+    web.collections.return_value = [{"data": {"key": "EXISTING_LOWER", "name": "flood risk"}}]
+    monkeypatch.setattr("research_hub.zotero.client.get_client", lambda: web)
+
+    cluster = SimpleNamespace(name="Flood Risk", zotero_collection_key=None)
+    registry = MagicMock()
+    report = AutoReport(cluster_created=False, cluster_slug="flood-risk")
+
+    _ensure_zotero_collection(registry, cluster, "flood-risk", report, print_progress=False)
+
+    assert cluster.zotero_collection_key == "EXISTING_LOWER"
+    web.create_collections.assert_not_called()
+
+
 def test_ensure_zotero_collection_skips_when_no_zotero_env(monkeypatch):
     monkeypatch.setenv("RESEARCH_HUB_NO_ZOTERO", "1")
     cluster = SimpleNamespace(name="X", zotero_collection_key=None)
