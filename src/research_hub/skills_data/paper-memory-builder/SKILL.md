@@ -55,6 +55,10 @@ Write to `<project-root>/.paper/`:
 - `claims.yml` — every paper-level claim, with evidence pointers + status.
 - `figures.yml` — every figure inventory, with key numbers + supported
   claims.
+- `revision_history.yml` — append-only log of revision rounds (when a
+  claim or figure changed, in which round, why). See
+  `references/revision_history_schema.md` for the schema and the
+  append-vs-overwrite rules.
 
 Do **not** touch `journal_format.md`, `reviewer_comments.md`, or
 `style_overrides.md` — those belong to `academic-writing-skills`.
@@ -90,6 +94,31 @@ figures:
 ```
 
 Required per figure: `id`, `file`, `supports_claims` (may be `[]`).
+
+### `.paper/revision_history.yml` structure
+
+```yaml
+revisions:
+  - round: 1
+    date: "2026-04-15"
+    trigger: "Initial draft v1"
+    changed_claims: []          # all claims new
+    changed_figures: []
+    summary: "First complete draft."
+  - round: 2
+    date: "2026-05-02"
+    trigger: "Reviewer 2 round 1: doubt on calibration window"
+    changed_claims: ["C1", "C4"]
+    changed_figures: ["Fig3"]
+    summary: "Tightened calibration window claim, added robustness check (Fig S3), softened C4 claim wording."
+```
+
+Required per revision: `round`, `date`, `trigger`, `summary`.
+`changed_claims` and `changed_figures` may be `[]` for fresh drafts.
+
+**Append, do not overwrite.** Each new revision round appends a new
+list entry. Past rounds stay verbatim — they're the audit trail. The
+full schema is in `references/revision_history_schema.md`.
 
 ## Token-saving behavior
 
