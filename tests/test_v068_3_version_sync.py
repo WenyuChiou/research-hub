@@ -40,6 +40,7 @@ EXPECTED_SKILL_DIR_NAMES = frozenset({
     "notebooklm-brief-verifier",
     "zotero-library-curator",
     "research-design-helper",
+    "paper-summarize",  # v0.69.0
 })
 
 

@@ -94,6 +94,8 @@ EXPECTED_MAPPINGS = {
     "tidy_vault": "tidy",
     "plan_research_workflow": "plan",
     "collect_to_cluster": "mcp-only",
+    "summarize_cluster": "summarize",
+    "apply_cluster_summaries": "mcp-only",
 }
 
 

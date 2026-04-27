@@ -1152,6 +1152,68 @@ def apply_crystals(cluster_slug: str, crystals_json: dict) -> dict:
 
 
 @mcp.tool()
+def summarize_cluster(
+    cluster_slug: str,
+    llm_cli: str = "",
+    apply: bool = False,
+    write_zotero: bool = True,
+    write_obsidian: bool = True,
+) -> dict:
+    """Generate per-paper Key Findings + Methodology + Relevance via LLM CLI.
+
+    For each paper in `cluster_slug`, builds a prompt from the abstract and
+    invokes the detected LLM CLI (`claude`, `codex`, or `gemini` — pass
+    `llm_cli` to override). With `apply=False` (default), returns the parsed
+    JSON without writing. With `apply=True`, writes back to BOTH the Obsidian
+    markdown blocks and the Zotero child note for each paper.
+
+    Use when: user says "summarize this cluster's papers", "fill the TODO
+    Findings", or after `auto` ingest before scanning the vault.
+
+    No LLM CLI on PATH: prompt is saved to artifacts/<slug>/summarize-prompt.md;
+    user can pipe it through their LLM and re-run with --apply (CLI) or pass
+    the parsed payload to the apply_cluster_summaries MCP tool below.
+
+    Returns ``{cluster_slug, ok, error, cli_used, prompt_path, apply_result}``.
+    """
+    try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+        from research_hub import summarize as summarize_mod
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        report = summarize_mod.summarize_cluster(
+            cfg,
+            cluster_slug,
+            llm_cli=llm_cli or None,
+            apply=apply,
+            write_zotero=write_zotero,
+            write_obsidian=write_obsidian,
+        )
+        return report.to_dict()
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
+def apply_cluster_summaries(cluster_slug: str, summaries_json: dict) -> dict:
+    """Persist a JSON payload of per-paper summaries (when LLM was invoked
+    out-of-band) to Obsidian + Zotero. The payload shape matches the
+    `summarize_cluster` prompt's expected output: `{summaries: [...]}`.
+    """
+    try:
+        cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+        from research_hub import summarize as summarize_mod
+        from research_hub.config import get_config
+
+        cfg = get_config()
+        result = summarize_mod.apply_summaries(cfg, cluster_slug, summaries_json)
+        return result.to_dict()
+    except Exception as exc:
+        return _tool_error(exc)
+
+
+@mcp.tool()
 def check_crystal_staleness(cluster_slug: str) -> dict:
     """Check how many crystals are stale (>10% cluster paper delta since generation)."""
     try:
