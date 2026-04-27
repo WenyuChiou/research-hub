@@ -101,18 +101,25 @@ def test_backfill_adds_missing_hub_tags(tmp_path, monkeypatch):
     report = run_backfill(cfg, apply=True)
 
     assert report.dry_run is False
+    # v0.68.4: _compose_hub_tags now defaults type/<itemType> to
+    # journalArticle when the paper dict has no doc_type, so backfill
+    # emits one more tag than before.
     assert [tag["tag"] for tag in zot.updated[0]["tags"]] == [
         "foo",
         "research-hub",
         "cluster/agents",
+        "type/journalArticle",
         "src/zotero",
     ]
 
 
 def test_backfill_does_not_duplicate_existing_hub_tag(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
+    # v0.68.4: include type/journalArticle in pre-existing tags since
+    # _compose_hub_tags now emits it by default — without it the backfill
+    # would add it and break the "no duplicate" assertion.
     zot = FakeZotero(
-        [_item(["foo", "research-hub", "cluster/agents", "src/zotero"])],
+        [_item(["foo", "research-hub", "cluster/agents", "type/journalArticle", "src/zotero"])],
         children=[{"data": {"itemType": "note"}}],
     )
     _patch_dual(monkeypatch, zot)
