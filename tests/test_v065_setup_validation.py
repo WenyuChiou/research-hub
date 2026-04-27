@@ -66,7 +66,12 @@ def test_run_setup_persona_fallback_when_config_read_fails(monkeypatch):
     )
 
     assert setup_command.run_setup(args) == 0
-    assert calls == ["login"]
+    # v0.68.4: with persona="" the setup is interactive (vault+persona
+    # bound check fails), so the new guard skips the second login launch
+    # — run_init is responsible for it in interactive mode. Previously
+    # this assertion was calls==["login"] because the unconditional
+    # second launch was the bug being fixed (PR #11).
+    assert calls == []
 
 
 def test_run_setup_sample_run_keyboard_interrupt_handled(monkeypatch, capsys):
