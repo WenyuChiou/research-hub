@@ -2167,6 +2167,8 @@ def auto_research_topic(
     field: str = "",
     do_nlm: bool = True,
     do_crystals: bool = False,
+    do_fit_check: bool = True,
+    fit_check_threshold: int = 3,
     llm_cli: str = "",
     dry_run: bool = False,
 ) -> dict[str, Any]:
@@ -2195,6 +2197,8 @@ def auto_research_topic(
             field=field or None,
             do_nlm=do_nlm,
             do_crystals=do_crystals,
+            do_fit_check=do_fit_check,
+            fit_check_threshold=fit_check_threshold,
             llm_cli=llm_cli or None,
             dry_run=dry_run,
             print_progress=False,
