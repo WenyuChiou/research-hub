@@ -39,9 +39,11 @@ def _compose_hub_tags(pp: dict, cluster_slug: str | None) -> list[str]:
     cluster_token = (str(cluster_slug).strip() if cluster_slug is not None else "")
     if cluster_token and cluster_token.lower() not in {"none", "null"}:
         hub_tags.append(f"cluster/{cluster_token}")
-    doc_type = pp.get("doc_type") or pp.get("publication_type")
-    if doc_type:
-        hub_tags.append(f"type/{doc_type}")
+    # v0.68.4: default to journalArticle when the search backend didn't
+    # supply a doc_type — the pipeline always creates journalArticle items
+    # (see pipeline.py zot.item_template call), so this matches reality.
+    doc_type = pp.get("doc_type") or pp.get("publication_type") or "journalArticle"
+    hub_tags.append(f"type/{doc_type}")
     backend = pp.get("source") or pp.get("found_in")
     if backend:
         hub_tags.append(f"src/{backend}")

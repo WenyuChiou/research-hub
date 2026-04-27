@@ -93,6 +93,12 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     )
     # v0.62: mandatory NLM login auto-launches when chrome_ok; stub it out
     monkeypatch.setattr("research_hub.setup_command.run_notebooklm_login", lambda: None)
+    # v0.68.4: stub webbrowser.open so the test does not actually launch a
+    # real browser to https://www.zotero.org/settings/keys when the user
+    # hasn't pre-supplied a key. (Test was popping the page on every full
+    # `pytest` run.)
+    browser_calls: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url, *a, **k: browser_calls.append(url) or True)
 
     assert init_wizard.run_init() == 0
 
@@ -112,6 +118,11 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     ]
     assert "First-run readiness check" in output
     assert "patchright can launch Chrome" in output
+    # v0.68.4: regression — interactive flow MUST route through the
+    # mocked webbrowser.open (not pop a real browser). This test was
+    # actually launching the Zotero keys page on every full pytest run
+    # before the mock was added.
+    assert browser_calls == ["https://www.zotero.org/settings/keys"]
 
 
 def test_init_creates_vault_subdirs(tmp_path, monkeypatch):

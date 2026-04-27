@@ -304,6 +304,11 @@ def test_discover_continue_papers_input_has_creator_dict_authors(tmp_path):
 
 
 def test_discover_continue_papers_input_has_todo_placeholders(tmp_path):
+    """v0.68.4: when the search backend returned a real abstract,
+    summary is now seeded from it ("Abstract one.") and methodology
+    becomes "[review abstract; refine after reading PDF]" — TODO marker
+    only appears now when the abstract is genuinely empty. relevance is
+    still TODO because the backend can't infer cluster fit."""
     from research_hub.discover import discover_continue
 
     cfg = _write_state_and_candidates(tmp_path)
@@ -315,9 +320,10 @@ def test_discover_continue_papers_input_has_todo_placeholders(tmp_path):
     )
     payload = json.loads(out_path.read_text(encoding="utf-8"))
 
-    assert payload[0]["summary"].startswith("[TODO]")
+    assert payload[0]["summary"] == "Abstract one."
     assert payload[0]["key_findings"]
-    assert payload[0]["methodology"].startswith("[TODO:")
+    assert "review abstract" in payload[0]["methodology"]
+    assert payload[0]["relevance"].startswith("[TODO")
 
 
 def test_compute_auto_threshold_median_minus_one():

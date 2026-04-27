@@ -6,9 +6,12 @@
 ![research-hub dashboard demo, real screen recording](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Tests](https://img.shields.io/badge/tests-1759%20passing-brightgreen.svg)](docs/audit_v0.45.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+[![Zotero](https://img.shields.io/badge/Zotero-CC2936?logo=zotero&logoColor=white)](https://www.zotero.org/)
+[![Obsidian](https://img.shields.io/badge/Obsidian-7C3AED?logo=obsidian&logoColor=white)](https://obsidian.md/)
+[![NotebookLM](https://img.shields.io/badge/NotebookLM-4285F4?logo=google&logoColor=white)](https://notebooklm.google.com/)
 
 Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp4](docs/demo/dashboard-walkthrough.mp4)
 
@@ -295,11 +298,10 @@ Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.m
 
 Status:
 
-- Latest: v0.64.2; see [CHANGELOG](CHANGELOG.md) for package history.
-- Tests: 1759 passing.
+- Latest: v0.68.3; see [CHANGELOG](CHANGELOG.md) for package history.
 - MCP tools: 83.
 - REST endpoints: 12 at `/api/v1/*`.
-- Bundled skills: `research-hub` and `research-hub-multi-ai`.
+- Bundled skills: 9 (see `skills/` directory).
 
 Developer setup:
 

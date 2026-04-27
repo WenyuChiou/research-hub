@@ -65,7 +65,9 @@ def test_cli_search_to_papers_input_produces_ingest_ready_shape(tmp_path, monkey
     assert payload[0]["sub_category"] == "foo-bar"
     assert payload[0]["slug"]
     assert payload[0]["authors"][0]["lastName"] == "Doe"
-    assert payload[0]["summary"].startswith("[TODO]")
+    # v0.68.4: when the search backend returned a real abstract, the
+    # summary is seeded from it instead of the old "[TODO] <title>" stub.
+    assert payload[0]["summary"] == "Abstract"
 
 
 def test_cli_search_year_range_parses_2024_2025():
