@@ -147,6 +147,8 @@ def auto_pipeline(
     field: Optional[str] = None,
     do_nlm: bool = True,
     do_crystals: bool = False,
+    do_cluster_overview: bool = True,
+    cluster_overview_threshold: int = 0,
     do_fit_check: bool = True,
     fit_check_threshold: int = 3,
     llm_cli: Optional[str] = None,
@@ -172,6 +174,7 @@ def auto_pipeline(
     because papers have already landed in the vault.
     """
     cfg = get_config()
+    del cluster_overview_threshold
 
 
     started = time.time()
@@ -219,6 +222,9 @@ def auto_pipeline(
                 f"  fit-check via LLM judge ({cli_for_plan}, threshold={fit_check_threshold})"
             )
         plan_lines.append(f"  ingest into cluster {slug}")
+        if do_cluster_overview:
+            cli = llm_cli or detect_llm_cli() or "(none on PATH -> save prompt only)"
+            plan_lines.append(f"  cluster overview auto-fill via LLM CLI ({cli})")
         if do_nlm:
             plan_lines.extend([
                 f"  notebooklm bundle --cluster {slug}",
@@ -295,6 +301,9 @@ def auto_pipeline(
         report.ok = False
         report.error = "ingest failed: " + str(exc)
         return report
+
+    if do_cluster_overview:
+        _run_cluster_overview_step(cfg, slug, llm_cli, report, started, print_progress)
 
     if not do_nlm:
         if do_crystals:
@@ -409,6 +418,38 @@ def _run_crystal_step(
     written = getattr(apply_result, "written_count", None) or len(getattr(apply_result, "written", []) or [])
     _step_log(report, "crystals", True, _elapsed(started, report),
               f"{written} crystals via {cli_name}", print_progress)
+
+
+def _run_cluster_overview_step(
+    cfg,
+    slug: str,
+    llm_cli: Optional[str],
+    report: AutoReport,
+    started: float,
+    print_progress: bool,
+) -> None:
+    """Best-effort cluster overview autofill after ingest."""
+    from research_hub.cluster_overview import overview_cluster
+
+    try:
+        overview_report = overview_cluster(cfg, slug, llm_cli=llm_cli, apply=True)
+    except Exception as exc:
+        _step_log(report, "cluster_overview", False, _elapsed(started, report),
+                  f"overview step failed: {exc}", print_progress)
+        return
+
+    if not overview_report.ok:
+        _step_log(report, "cluster_overview", False, _elapsed(started, report),
+                  overview_report.error or "overview step failed", print_progress)
+        return
+
+    if overview_report.apply_result and overview_report.apply_result.written:
+        detail = f"wrote 00_overview.md via {overview_report.cli_used or 'saved payload'}"
+    elif overview_report.prompt_path:
+        detail = f"no LLM CLI on PATH; prompt saved to {overview_report.prompt_path}"
+    else:
+        detail = "overview step completed"
+    _step_log(report, "cluster_overview", True, _elapsed(started, report), detail, print_progress)
 
 
 def _print_next_steps(report: AutoReport, slug: str, *, do_crystals: bool) -> None:
