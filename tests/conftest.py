@@ -35,6 +35,62 @@ def _block_real_webbrowser_open(monkeypatch):
     monkeypatch.setattr(webbrowser, "open", lambda *args, **kwargs: True)
 
 
+# v0.71.0: test files in this set explicitly verify Zotero write paths
+# (using FakeZotero, mocked get_client, or run_backfill). The autouse
+# below leaves their env alone so they can exercise the real code path
+# under their own mocks. Other tests get RESEARCH_HUB_NO_ZOTERO=1 set by
+# the autouse to prevent accidental writes to the maintainer's library
+# — observed in this PR creating 3 spurious `test-topic` collections.
+_ZOTERO_WRITE_TEST_MODULES = frozenset({
+    "test_v068_4_no_duplicate_zotero_collections",
+    "test_v061_zotero_backfill",
+    "test_v062_cluster_delete_cascade",
+    "test_v062_note_enrich",
+    "test_v041_pipeline_ingest_fixes",
+    "test_pipeline_e2e",
+    "test_pipeline",  # exercises run_pipeline against FakeZotero
+    "test_clusters_rename_zotero",
+    "test_cluster_rename_triple_sync",
+    "test_vault_sync",
+    "test_v030_security",  # asserts pipeline routes to cluster collection
+})
+
+
+@pytest.fixture(autouse=True)
+def _block_real_zotero_writes(request, monkeypatch):
+    """v0.71.0: stub `_ensure_zotero_collection` to a no-op for tests NOT
+    in the Zotero-write allowlist above.
+
+    Why not just set RESEARCH_HUB_NO_ZOTERO=1? That env var has production
+    side effects: dashboard rendering inspects it (see
+    dashboard/context.py:136 and dashboard/data.py:56) and hides the
+    diagnostics tab when set, which broke ~10 dashboard tests. Patching
+    only the single helper that actually leaks (`_ensure_zotero_collection`)
+    is surgical: it can't accidentally turn on production code paths for
+    NO_ZOTERO mode.
+
+    Without this autouse, any test that calls `auto_pipeline` with a mock
+    cluster missing `zotero_collection_key` will hit the guard and create
+    a REAL Zotero collection on the maintainer's library — observed in
+    this PR creating 3 spurious `test-topic` collections.
+
+    Allowlist `_ZOTERO_WRITE_TEST_MODULES` skips this stub for files that
+    DELIBERATELY exercise `_ensure_zotero_collection` under their own
+    FakeZotero / MagicMock isolation.
+    """
+    module_stem = request.module.__name__.rsplit(".", 1)[-1]
+    if module_stem in _ZOTERO_WRITE_TEST_MODULES:
+        return  # Test owns its own Zotero isolation.
+
+    def _noop_ensure_zotero_collection(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "research_hub.auto._ensure_zotero_collection",
+        _noop_ensure_zotero_collection,
+    )
+
+
 @pytest.fixture
 def reset_research_hub_modules():
     """Returns a callable that resets named research_hub.* submodules.
