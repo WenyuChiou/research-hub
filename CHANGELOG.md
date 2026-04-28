@@ -1,5 +1,207 @@
 # Changelog
 
+## v0.70.1 (2026-04-27)
+
+UX fix for two recurring NotebookLM session pain points: silent
+session expiry and the cross-vault re-login dance. No behavior
+change to working flows — pure error-surface + import shortcut.
+
+### Fixed
+- **Stale Google session showed wall-of-text URL spew instead of an
+  actionable error.** NLM operations (bundle/upload/generate/download/
+  ask) now run a 1-line filesystem-only pre-flight check before
+  launching Playwright. If the session profile looks empty or
+  expired, exit code 1 with a hint that says exactly which command
+  to run (`research-hub notebooklm login`). Skipped on `--dry-run
+  upload` (no browser launched there).
+- **Each new vault required its own ~5-min interactive Google login
+  even when a sibling vault on the same machine was already logged
+  in.** New `--import-from <vault-path>` flag on
+  `research-hub notebooklm login` copies a logged-in profile across
+  vaults, skipping the browser dance entirely. Refuses to clobber an
+  existing logged-in dest unless `--overwrite` is also passed; refuses
+  to copy from a not-logged-in source.
+
+### Added
+- New module `notebooklm/session_health.py`:
+  `check_session_health`, `is_session_logged_in`, `import_session`.
+  Conservative thresholds (state ≥ 100B OR cookies ≥ 5KB) — false
+  positives waste a browser launch, false negatives prompt re-login
+  the user might not have needed but stays safe. Distinct error
+  messages for "no session at all" vs "session exists but looks
+  empty/expired".
+- 12 new tests in `tests/test_v070_1_nlm_session_management.py`:
+  5 session-health, 5 import_session, 2 pre-flight integration.
+  pytest: 1958 passed, 0 failed.
+
+## v0.70.0 (2026-04-27)
+
+Add a third paper-quality gate to the auto pipeline: an LLM-judge
+fit-check that runs **before** ingest, so off-topic papers never hit
+Zotero / Obsidian. Real incident driving this: an `auto` run for
+"post-flood household relocation" returned 8 papers, of which 2
+were off-topic — Llorca 2022 (autonomous-vehicles + relocation,
+nothing about floods) and Komleva 2025 (Soviet-era reservoir forced
+resettlement, not climate adaptation). 25% noise rate on a real
+research query.
+
+### Added
+- **LLM-judge fit-check** between search and ingest in
+  `research-hub auto`. Reuses the existing `fit_check.emit_prompt` +
+  `fit_check.apply_scores` machinery (the same Gate-1 scoring rubric
+  used by manual `discover new` / `discover continue`) plus the
+  existing `auto._invoke_llm_cli` + `auto._extract_first_json`
+  helpers. No new LLM-CLI abstraction, no new prompt schema.
+- New CLI flags:
+  - `--no-fit-check` — opt out
+  - `--fit-check-threshold N` — default 3 (1-5 rubric); 4 = stricter
+- MCP tool `auto_research_topic` gains matching `do_fit_check` +
+  `fit_check_threshold` params.
+- 11 new tests in `tests/test_v070_auto_fit_check.py` covering
+  keep-all-when-no-CLI, filter-by-score, malformed-JSON safety,
+  empty-input short-circuit, threshold propagation, plus 4
+  auto_pipeline integration tests. pytest: 1946 passed.
+
+### Changed
+- Default behavior: `do_fit_check=True`. When LLM CLI is on PATH
+  (claude/codex/gemini), runs the judge step. When no CLI is
+  available, skips silently with a step-log entry — pre-v0.70.0
+  users without CLIs see identical behavior.
+
+### Safety paths (graceful degrade — never drop)
+- No CLI on PATH → keep all papers, log "skipped".
+- LLM returns malformed JSON → keep all, log failure.
+- All papers rejected by threshold → keep all as fallback rather
+  than ingest nothing.
+
+## v0.69.0 (2026-04-27)
+
+Adds the **10th packaged skill**: `paper-summarize`. The auto
+pipeline ingests metadata + abstract only; per-paper Key Findings /
+Methodology / Relevance stayed as `[TODO]` skeletons in both Obsidian
+and Zotero. Cluster-level summarization (NotebookLM brief, crystals)
+does not fill per-paper notes — so after `auto` the user had nothing
+scannable per paper. This release closes that gap.
+
+### Added
+- New CLI command:
+  ```bash
+  research-hub summarize --cluster <slug>            # dry-run
+  research-hub summarize --cluster <slug> --apply    # write to both systems
+  research-hub summarize --cluster <slug> --llm-cli codex --apply
+  ```
+- Two new MCP tools: `summarize_cluster` (orchestration) and
+  `apply_cluster_summaries` (apply a pre-parsed payload — useful when
+  LLM was invoked out-of-band).
+- New skill `paper-summarize` (10th packaged):
+  - `skills/paper-summarize/SKILL.md`
+  - `skills/paper-summarize/evals/evals.json` (4 evals)
+  - mirrored to `src/research_hub/skills_data/paper-summarize/`
+- `EXPECTED_SKILL_DIR_NAMES` in `test_v068_3_version_sync.py` updated
+  9 → 10. `EXPECTED_MAPPINGS` in `test_consistency.py` updated for
+  the 2 new MCP tools.
+- 17 new tests in `tests/test_v069_summarize.py`. pytest: 1951 passed.
+
+### Architecture
+Mirrors the existing crystal flow (`auto.py:_run_crystal_step`):
+1. `build_summarize_prompt` reads cluster papers + abstracts, emits
+   a JSON-output prompt.
+2. `auto._invoke_llm_cli` (reused) pipes the prompt through
+   claude/codex/gemini.
+3. `auto._extract_first_json` (reused) parses the response.
+4. `_validate_entry` rejects unknown paper_slug, empty findings,
+   non-list types.
+5. `apply_summaries` writes BOTH Obsidian markdown blocks AND
+   Zotero child note HTML per paper. Zotero failure rolls back the
+   markdown change so the two systems stay in sync.
+
+### Fallback
+When no LLM CLI is on PATH: prompt is saved to
+`<vault>/.research_hub/artifacts/<slug>/summarize-prompt.md`,
+report.ok=True (best-effort). User pipes manually then re-runs with
+`--apply` or calls `apply_cluster_summaries` MCP tool.
+
+## v0.68.5 (2026-04-27)
+
+Plumbs volume / issue / pages metadata end-to-end. `SearchResult` at
+`search/base.py` had no fields for these — every Zotero item +
+Obsidian note ended up with empty bibliographic locator metadata
+despite OpenAlex / Crossref returning the data in their API
+responses. Real incident: 8 ingested flood-relocation papers all had
+`volume: ""`, `issue: ""`, `pages: ""` in their markdown frontmatter.
+
+### Fixed
+- **Backend extraction**:
+  - `openalex`: read from `work["biblio"]` (volume/issue/first_page/
+    last_page); collapse first+last into "first-last". Added `biblio`
+    to the API select param.
+  - `crossref`: read `work["volume"]`, `work["issue"]`, `work["page"]`
+    (already canonical "first-last"). Added these to select param.
+  - `semantic-scholar`: read `item["journal"]` (volume/pages); issue
+    not exposed by S2's schema. Added "journal" to `DEFAULT_FIELDS`.
+  - `arxiv`: extract pages from `arxiv:comment` when it matches
+    `r"\d+\s*pages?"`. No volume/issue (preprints).
+- **Propagation**: `discover._to_papers_input` now copies
+  volume/issue/pages into the entry dict. `pipeline.py` and
+  `zotero/fetch.py:make_raw_md` already consumed these so no
+  downstream changes needed.
+
+### Added
+- 13 new tests in `tests/test_v068_5_metadata_completeness.py`.
+- **Test hygiene bonus**: `tests/conftest.py` autouse fixture
+  globally stubs `webbrowser.open`. Several `init_wizard` /
+  `setup_command` tests trigger code paths that call
+  `webbrowser.open("https://zotero.org/settings/keys")`; without a
+  global stub, every full pytest run launched a real browser tab.
+  Tests that need to assert on the call re-patch locally — the
+  autouse stub is overridden cleanly.
+
+pytest: 1918 passed.
+
+## v0.68.4 (2026-04-26)
+
+Three bugs in the auto pipeline left ingested papers with only 2/4
+hub tag namespaces (`research-hub` + `cluster/<slug>`) and
+TODO-skeleton notes even when the search backend returned a real
+abstract.
+
+### Fixed
+- **Bug A — `discover.py:_to_papers_input` dropped `source` field.**
+  The search candidate dict carries `source` (openalex / crossref /
+  etc), but the conversion to ingest input dropped it.
+  `_compose_hub_tags` then had nothing to feed the `src/<backend>`
+  namespace. Fix: propagate `candidate.get("source") or
+  candidate.get("found_in")` into the entry.
+- **Bug B — `pipeline.py:_compose_hub_tags` skipped `type/` when no
+  doc_type.** Most search backends (semantic-scholar, crossref)
+  don't return a `publication_type` field. The pipeline always
+  creates journalArticle items in Zotero anyway, so default to
+  `type/journalArticle` rather than dropping the namespace.
+- **Bug C — TODO-skeleton notes shadowed real abstracts.** When the
+  backend returned a non-empty abstract, the note still hardcoded
+  `[TODO] <title>` for the summary. Now: seed summary from the
+  abstract when available, fall back to TODO marker only when the
+  abstract is empty / "(no abstract)".
+
+### Real-incident impact
+An `auto` run for "post-flood household relocation" produced 8
+papers in Zotero collection C7S7A9KA — every one missing both
+`type/` and `src/` tags, every note a TODO skeleton. Manual backfill
+via OpenAlex DOI lookup recovered 5 of 6 missing abstracts.
+
+### Changed
+- `README.md`: drop hardcoded "Tests: 1759 passing" status
+  (auto-stale marker), add product-support badges (Zotero / Obsidian
+  / NotebookLM).
+- `README.zh-TW`: mirror the badge row that the EN README had been
+  carrying alone.
+
+### Added
+- 8 new tests in `test_v068_4_hub_tag_completeness.py` covering the
+  three bugs end-to-end. Updates to `test_v061_pipeline_tags.py`,
+  `test_v065_compose_tags_none_guard.py`, `test_cli_search.py`
+  reflect the new contract.
+
 ## v0.68.3 (2026-04-26)
 
 Two regressions caught by the v0.68.2 interop test against
