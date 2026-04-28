@@ -1873,6 +1873,26 @@ def _zotero_backfill(args) -> int:
     return 0
 
 
+def _preflight_nlm_session(cfg, *, op_name: str) -> int | None:
+    """v0.70.1: surface "session expired / not logged in" BEFORE the
+    browser launches a 30-second deep-stack failure. Returns None when
+    OK to proceed, or an exit code (1) with a one-line actionable hint
+    printed to stderr when not."""
+    from research_hub.notebooklm.browser import default_session_dir, default_state_file
+    from research_hub.notebooklm.session_health import check_session_health
+
+    session_dir = default_session_dir(cfg.research_hub_dir)
+    state_file = default_state_file(cfg.research_hub_dir)
+    health = check_session_health(session_dir, state_file)
+    if health.looks_logged_in:
+        return None
+    print(
+        f"[notebooklm {op_name}] session check failed: {health.actionable_hint()}",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def _notebooklm_bundle(cluster_slug: str, download_pdfs: bool = False) -> int:
     from research_hub.notebooklm.bundle import bundle_cluster
 
@@ -1900,6 +1920,10 @@ def _nlm_upload(
     from research_hub.notebooklm.upload import upload_cluster
 
     cfg = get_config()
+    if not dry_run:
+        rc = _preflight_nlm_session(cfg, op_name="upload")
+        if rc is not None:
+            return rc
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.get(cluster_slug)
     if cluster is None:
@@ -1932,6 +1956,9 @@ def _nlm_download(cluster_slug: str, artifact_type: str, headless: bool) -> int:
     from research_hub.notebooklm.upload import download_briefing_for_cluster
 
     cfg = get_config()
+    rc = _preflight_nlm_session(cfg, op_name="download")
+    if rc is not None:
+        return rc
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.get(cluster_slug)
     if cluster is None:
@@ -1969,6 +1996,9 @@ def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
     from research_hub.notebooklm.upload import generate_artifact
 
     cfg = get_config()
+    rc = _preflight_nlm_session(cfg, op_name="generate")
+    if rc is not None:
+        return rc
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.get(cluster_slug)
     if cluster is None:
@@ -1989,6 +2019,11 @@ def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
 
 def _nlm_ask(cluster_slug: str, *, question: str, headless: bool, timeout_sec: int) -> int:
     from research_hub.notebooklm.ask import ask_cluster_notebook
+
+    cfg_for_check = get_config()
+    rc = _preflight_nlm_session(cfg_for_check, op_name="ask")
+    if rc is not None:
+        return rc
 
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
@@ -3412,6 +3447,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max seconds to wait for login (default: 300)",
     )
     nlm_login.add_argument(
+        "--import-from",
+        default=None,
+        metavar="VAULT_PATH",
+        help="v0.70.1: copy a logged-in NotebookLM session profile from another vault "
+             "instead of running the interactive Google sign-in. VAULT_PATH points at "
+             "the OTHER vault root (the one already logged in). Skips the browser dance.",
+    )
+    nlm_login.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="With --import-from: replace the current vault's logged-in session if one exists.",
+    )
+    nlm_login.add_argument(
         "--keep-open",
         action="store_true",
         help="(CDP mode) Do NOT auto-close on login detection. Keeps Chrome open "
@@ -4294,6 +4342,30 @@ def main(argv: list[str] | None = None) -> int:
 
             cfg = get_config()
             session_dir = default_session_dir(cfg.research_hub_dir)
+            # v0.70.1: --import-from short-circuits the interactive flow by
+            # copying a logged-in session profile from another vault.
+            if args.import_from:
+                from research_hub.notebooklm.session_health import import_session
+                src_vault = _Path(args.import_from).expanduser().resolve()
+                src_research_hub = src_vault / ".research_hub"
+                src_session = default_session_dir(src_research_hub)
+                src_state = default_state_file(src_research_hub)
+                dest_state = default_state_file(cfg.research_hub_dir)
+                result = import_session(
+                    src_session, src_state,
+                    session_dir, dest_state,
+                    overwrite=args.overwrite,
+                )
+                if not result.ok:
+                    print(f"[notebooklm login --import-from] FAILED: {result.error}", file=sys.stderr)
+                    return 1
+                mb = result.bytes_copied / (1024 * 1024)
+                print(
+                    f"[notebooklm login --import-from] copied logged-in session "
+                    f"({result.files_copied} files, {mb:.0f} MB) from {src_vault}"
+                )
+                print("Verify with: research-hub notebooklm bundle --cluster <slug>")
+                return 0
             if args.cdp:
                 return login_interactive_cdp(
                     session_dir,
