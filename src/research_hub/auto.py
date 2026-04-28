@@ -147,6 +147,8 @@ def auto_pipeline(
     field: Optional[str] = None,
     do_nlm: bool = True,
     do_crystals: bool = False,
+    do_fit_check: bool = True,
+    fit_check_threshold: int = 3,
     llm_cli: Optional[str] = None,
     dry_run: bool = False,
     print_progress: bool = True,
@@ -210,9 +212,13 @@ def auto_pipeline(
     if dry_run:
         plan_lines = [
             f"  search {topic!r} (max_papers={max_papers}, backends=arxiv+semantic_scholar)",
-            f"  fit-check filter (heuristic)",
-            f"  ingest into cluster {slug}",
         ]
+        if do_fit_check:
+            cli_for_plan = llm_cli or detect_llm_cli() or "(none on PATH — will skip)"
+            plan_lines.append(
+                f"  fit-check via LLM judge ({cli_for_plan}, threshold={fit_check_threshold})"
+            )
+        plan_lines.append(f"  ingest into cluster {slug}")
         if do_nlm:
             plan_lines.extend([
                 f"  notebooklm bundle --cluster {slug}",
@@ -248,6 +254,17 @@ def auto_pipeline(
         report.ok = False
         report.error = "Search returned 0 papers ??try a different topic or backend"
         return report
+
+    # v0.70.0: LLM-judge fit-check between search and ingest. Drops off-topic
+    # results before they hit Zotero/Obsidian. Best-effort: skips silently
+    # when no LLM CLI on PATH so users without claude/codex/gemini still get
+    # the pre-v0.70.0 behavior (ingest everything search returns).
+    if do_fit_check:
+        papers = _run_fit_check_step(
+            cfg, papers, topic, slug, llm_cli,
+            fit_check_threshold, report, started, print_progress,
+        )
+        report.papers_ingested = len(papers)
 
     # Write papers_input.json to cfg.root (the default location pipeline reads from)
     papers_input_path = cfg.root / "papers_input.json"
@@ -469,6 +486,90 @@ def _find_existing_collection_key_by_name(web, name: str) -> str | None:
             start += 100
     except Exception:
         return None
+
+
+def _run_fit_check_step(
+    cfg,
+    papers: list[dict],
+    topic: str,
+    slug: str,
+    llm_cli: Optional[str],
+    threshold: int,
+    report: AutoReport,
+    started: float,
+    print_progress: bool,
+) -> list[dict]:
+    """v0.70.0: LLM-judge filter between search and ingest.
+
+    Drops off-topic papers BEFORE they hit Zotero/Obsidian, fixing the
+    "auto found 8 papers but 2 are off-topic" problem reported on the
+    flood-relocation cluster (Llorca AV-relocation + Komleva Soviet-era
+    reservoir slipped in via keyword "household relocation" alone).
+
+    Reuses the existing `fit_check.emit_prompt` + `fit_check.apply_scores`
+    machinery (Gate 1) — same scoring rubric used by the manual
+    `discover new` / `discover continue` flow.
+
+    Best-effort:
+    - No LLM CLI on PATH → skip silently, keep all papers (graceful degrade).
+    - LLM returns malformed JSON → skip, keep all (don't drop on parser error).
+    - All papers rejected (threshold too high?) → keep all (fallback: better
+      to ingest noise than nothing).
+    """
+    if not papers:
+        return papers
+
+    from research_hub.auto import detect_llm_cli  # avoid circular at module load
+
+    cli = llm_cli or detect_llm_cli()
+    if not cli:
+        _step_log(report, "fit_check", True, _elapsed(started, report),
+                  f"skipped (no LLM CLI on PATH); kept all {len(papers)}", print_progress)
+        return papers
+
+    try:
+        from research_hub.fit_check import emit_prompt, apply_scores
+        # If a cluster overview exists, use that. Otherwise fall back to the
+        # raw topic — first-time `auto` runs have no overview yet.
+        definition = topic
+        try:
+            from research_hub.fit_check import _read_definition_from_overview
+            existing = _read_definition_from_overview(cfg, slug)
+            if existing:
+                definition = existing
+        except Exception:
+            pass
+
+        prompt = emit_prompt(slug, papers, definition=definition)
+        raw = _invoke_llm_cli(cli, prompt)
+        payload = _extract_first_json(raw)
+        if payload is None:
+            _step_log(report, "fit_check", False, _elapsed(started, report),
+                      f"LLM ({cli}) returned unparseable JSON; kept all {len(papers)}", print_progress)
+            return papers
+
+        fit_report = apply_scores(slug, papers, payload, threshold=threshold)
+        accepted_dois = {a.doi.lower() for a in fit_report.accepted if a.doi}
+        accepted_titles = {a.title.strip().lower() for a in fit_report.accepted if a.title}
+        kept = [
+            p for p in papers
+            if p.get("doi", "").lower() in accepted_dois
+            or p.get("title", "").strip().lower() in accepted_titles
+        ]
+        if not kept:
+            _step_log(report, "fit_check", True, _elapsed(started, report),
+                      f"all {len(papers)} rejected by threshold={threshold}; "
+                      f"keeping all as fallback (lower threshold or revise topic)",
+                      print_progress)
+            return papers
+        _step_log(report, "fit_check", True, _elapsed(started, report),
+                  f"kept {len(kept)}/{len(papers)} (threshold={threshold}, cli={cli})",
+                  print_progress)
+        return kept
+    except Exception as exc:
+        _step_log(report, "fit_check", False, _elapsed(started, report),
+                  f"fit_check error: {exc}; kept all {len(papers)}", print_progress)
+        return papers
 
 
 def _ensure_zotero_collection(registry, cluster, slug: str, report: AutoReport, print_progress: bool) -> None:

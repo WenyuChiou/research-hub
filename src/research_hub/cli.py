@@ -2248,6 +2248,8 @@ def _auto(
     field,
     do_nlm,
     do_crystals,
+    do_fit_check: bool = True,
+    fit_check_threshold: int = 3,
     llm_cli,
     dry_run,
     append: bool = False,
@@ -2273,6 +2275,8 @@ def _auto(
         field=field,
         do_nlm=do_nlm,
         do_crystals=do_crystals,
+        do_fit_check=do_fit_check,
+        fit_check_threshold=fit_check_threshold,
         llm_cli=llm_cli,
         dry_run=dry_run,
         print_progress=True,
@@ -2572,8 +2576,12 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Skip NotebookLM bundle/upload/generate/download")
     auto_parser.add_argument("--with-crystals", action="store_true",
                              help="Also generate crystals via detected LLM CLI (claude/codex/gemini on PATH)")
+    auto_parser.add_argument("--no-fit-check", action="store_true",
+                             help="Skip the v0.70.0 LLM-judge fit-check between search and ingest (default: on when LLM CLI present)")
+    auto_parser.add_argument("--fit-check-threshold", type=int, default=3,
+                             help="Minimum 0-5 score for a paper to pass fit-check (default: 3 = tangentially related and above)")
     auto_parser.add_argument("--llm-cli", default=None, choices=["claude", "codex", "gemini"],
-                             help="Force a specific LLM CLI for --with-crystals (default: auto-detect)")
+                             help="Force a specific LLM CLI for --with-crystals / fit-check (default: auto-detect)")
     auto_parser.add_argument("--dry-run", action="store_true",
                              help="Print plan without executing")
     auto_parser.add_argument(
@@ -3831,6 +3839,8 @@ def main(argv: list[str] | None = None) -> int:
             field=args.field,
             do_nlm=not args.no_nlm,
             do_crystals=args.with_crystals,
+            do_fit_check=not args.no_fit_check,
+            fit_check_threshold=args.fit_check_threshold,
             llm_cli=args.llm_cli,
             dry_run=args.dry_run,
             append=args.append,
