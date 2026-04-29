@@ -59,6 +59,7 @@ class UploadReport:
     notebook_url: str = ""
     notebook_id: str = ""
     notebook_name: str = ""
+    notebook_was_reused: bool = False
     uploaded: list[UploadResult] = field(default_factory=list)
     skipped_already_uploaded: int = 0
     errors: list[dict] = field(default_factory=list)
@@ -246,6 +247,9 @@ def upload_cluster(
             if create_if_missing
             else client.open_notebook_by_name(notebook_name)
         )
+        prior_url = (cluster.notebooklm_notebook_url or "").strip()
+        if prior_url and prior_url == handle.url:
+            report.notebook_was_reused = True
 
         report.notebook_url = handle.url
         report.notebook_id = handle.notebook_id
@@ -365,6 +369,8 @@ def download_briefing_for_cluster(
         handle = client.open_notebook_by_name(notebook_name)
         _log_jsonl(log_path, {"kind": "download_navigate", "notebook_url": handle.url})
         artifact: BriefingArtifact = client.download_briefing(handle)
+    if artifact.source_count == 0:
+        artifact.source_count = int(cluster_cache.get("uploaded_doi_count", 0))
 
     artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
     artifacts_dir.mkdir(parents=True, exist_ok=True)
