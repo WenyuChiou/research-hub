@@ -33,6 +33,27 @@ def _reconstruct_abstract(inv_index: dict[str, list[int]] | None) -> str:
     return " ".join(word for _, word in positions)
 
 
+def _extract_metadata_year(work: dict) -> int | None:
+    publication_year = work.get("publication_year")
+    biblio = work.get("biblio") or {}
+    issued_date = biblio.get("issued_date")
+    if isinstance(issued_date, str):
+        match = re.match(r"(\d{4})", issued_date.strip())
+        if match:
+            metadata_year = int(match.group(1))
+            if publication_year is not None and metadata_year != publication_year:
+                return metadata_year
+    elif isinstance(issued_date, dict):
+        year_value = issued_date.get("year")
+        if isinstance(year_value, int) and publication_year is not None and year_value != publication_year:
+            return year_value
+    elif isinstance(issued_date, (list, tuple)) and issued_date:
+        year_value = issued_date[0]
+        if isinstance(year_value, int) and publication_year is not None and year_value != publication_year:
+            return year_value
+    return None
+
+
 class OpenAlexBackend:
     """OpenAlex REST backend with polite throttling."""
 
@@ -102,13 +123,16 @@ class OpenAlexBackend:
             pages = f"{first_page}-{last_page}"
         else:
             pages = first_page or last_page
+        abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
 
         return SearchResult(
             title=work.get("title") or "",
             doi=doi,
             arxiv_id=arxiv_id,
-            abstract=_reconstruct_abstract(work.get("abstract_inverted_index")),
+            abstract=abstract,
+            abstract_source=self.name if abstract else "",
             year=work.get("publication_year"),
+            metadata_year=_extract_metadata_year(work),
             authors=[
                 authorship.get("author", {}).get("display_name", "")
                 for authorship in authorships

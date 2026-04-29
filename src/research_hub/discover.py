@@ -26,6 +26,13 @@ _DEFAULT_PER_BACKEND_LIMIT_FACTOR = 3
 _DEFAULT_PER_BACKEND_LIMIT_FLOOR = 40
 
 
+def _search_result_to_candidate(result) -> dict:
+    entry = asdict(result)
+    entry["abstract_source"] = result.abstract_source
+    entry["metadata_year"] = result.metadata_year
+    return entry
+
+
 @dataclass
 class QueryVariation:
     query: str
@@ -204,7 +211,7 @@ def apply_variations(
     out: list[dict] = []
     for result in merged:
         matched = list(result.found_in)
-        entry = asdict(result)
+        entry = _search_result_to_candidate(result)
         entry["confidence"] = min(
             1.0,
             base_confidence_by_key.get(result.dedup_key, float(result.confidence))
@@ -357,7 +364,7 @@ def _resolve_seed_dois(
         for doi, result in zip(to_fetch, resolved):
             if result is None:
                 continue
-            entry = asdict(result)
+            entry = _search_result_to_candidate(result)
             entry["confidence"] = 1.0
             entry["_discover_meta"] = {
                 "matched_variations": [],
@@ -529,7 +536,7 @@ def discover_new(
         rank_by=rank_by,
         per_backend_limit=per_backend_limit,
     )
-    candidates = [asdict(result) for result in results]
+    candidates = [_search_result_to_candidate(result) for result in results]
 
     for candidate in candidates:
         candidate["_discover_meta"] = {
@@ -584,7 +591,7 @@ def discover_new(
                         )
                         break
                 continue
-            entry = asdict(result)
+            entry = _search_result_to_candidate(result)
             entry["_discover_meta"] = {
                 "matched_variations": [],
                 "source_tags": ["citation-graph"],
@@ -831,7 +838,9 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
             "doi": doi,
             "authors": _authors_to_creators(names),
             "year": candidate.get("year") or 0,
+            "metadata_year": candidate.get("metadata_year"),
             "abstract": abstract_text or "(no abstract)",
+            "abstract_source": candidate.get("abstract_source") or "",
             "journal": candidate.get("venue") or "preprint",
             "slug": slug,
             "sub_category": cluster_slug or "",
@@ -852,5 +861,11 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
             entry["arxiv_id"] = arxiv_id
         if backend_source:
             entry["source"] = backend_source
+        ingest_year = candidate.get("year") or 0
+        metadata_year = candidate.get("metadata_year")
+        if metadata_year and ingest_year and metadata_year != ingest_year:
+            entry["year_drift_warning"] = (
+                f"ingest_year={ingest_year} differs from doi_lookup_year={metadata_year}"
+            )
         papers.append(entry)
     return papers

@@ -6,6 +6,7 @@ import logging
 import re
 from collections.abc import Sequence
 
+from research_hub.search.abstract_recovery import recover_abstract
 from research_hub.search.arxiv_backend import ArxivBackend
 from research_hub.search.base import SearchResult
 from research_hub.search.openalex import OpenAlexBackend
@@ -70,6 +71,8 @@ def enrich_candidates(
                     logger.debug("enrich %s via %s failed: %s", cand, name, exc)
                     continue
                 if result is not None:
+                    if result.abstract and not result.abstract_source:
+                        result.abstract_source = result.source
                     resolved = result
                     break
         else:
@@ -83,8 +86,20 @@ def enrich_candidates(
                     continue
                 best = max(hits, key=lambda h: _ratio(h.title.lower(), cand.lower()))
                 if _ratio(best.title.lower(), cand.lower()) >= 60:
+                    if best.abstract and not best.abstract_source:
+                        best.abstract_source = best.source
                     resolved = best
                     break
+
+        if resolved is not None and not resolved.abstract and resolved.doi:
+            try:
+                recovered = recover_abstract(resolved.doi)
+            except Exception as exc:
+                logger.debug("abstract recovery failed for %s: %s", resolved.doi, exc)
+            else:
+                if recovered.text:
+                    resolved.abstract = recovered.text
+                    resolved.abstract_source = recovered.source
 
         out.append(resolved)
     return out

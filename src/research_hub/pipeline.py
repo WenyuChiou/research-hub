@@ -479,6 +479,11 @@ def run_pipeline(
             query_text = _query_for_paper(pp, query)
             cluster_obj = clusters.get(cluster_slug) if cluster_slug else None
             cluster_coll = cluster_obj.zotero_collection_key if cluster_obj else None
+            if pp.get("year_drift_warning"):
+                p(
+                    f"  [warn] year-drift: {pp['slug']} "
+                    f"ingest={pp.get('year')} doi-lookup={pp.get('metadata_year')}"
+                )
             if fit_check:
                 doi_key = str(pp.get("doi", "") or "").strip().lower()
                 title_key = str(pp.get("title", "") or "").strip().lower()
