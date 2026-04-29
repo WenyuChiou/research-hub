@@ -25,6 +25,7 @@ from research_hub.notebooklm.upload import (
 from research_hub.pipeline import run_pipeline
 from research_hub.search import search_papers
 from research_hub.search.fallback import FIELD_PRESETS
+from research_hub.vault.graph_config import refresh_graph_from_vault
 
 
 _LLM_CLI_CANDIDATES = ("claude", "codex", "gemini")
@@ -198,6 +199,10 @@ def auto_pipeline(
             cluster = registry.create(query=topic, slug=slug, name=display)
             report.cluster_created = True
             _step_log(report, "cluster", True, 0.0, f"created: {slug}", print_progress)
+            try:
+                refresh_graph_from_vault(cfg)
+            except Exception as exc:
+                _step_log(report, "graph.refresh", False, 0.0, str(exc), print_progress)
             # v0.49.4: also auto-create + bind a Zotero collection so ingest
             # has somewhere to put papers without manual `clusters bind`.
             _ensure_zotero_collection(registry, cluster, slug, report, print_progress)

@@ -11,6 +11,7 @@ import platformdirs
 
 from research_hub.security import chmod_sensitive
 from research_hub.security.secret_box import encrypt
+from research_hub.vault.graph_config import update_from_clusters_file
 
 
 def _check_first_run_readiness(vault: Path, *, persona: str, has_zotero: bool) -> list[tuple[str, str, str]]:
@@ -202,6 +203,12 @@ def run_init(
         (vault / subdir).mkdir(parents=True, exist_ok=True)
     chmod_sensitive(vault / ".research_hub", mode=0o700)
     print(f"  Vault root: {vault}")
+    clusters_file = vault / ".research_hub" / "clusters.yaml"
+    try:
+        graph_update = update_from_clusters_file(vault, clusters_file)
+        print(f"  [init] Wrote .obsidian/graph.json with {graph_update.color_groups_written} color groups")
+    except Exception as exc:
+        print(f"  [init] WARN could not write .obsidian/graph.json: {exc}", file=sys.stderr)
 
     if not no_zotero_persona and not zotero_key and interactive:
         print("\n  Zotero API key is needed to sync papers.")
