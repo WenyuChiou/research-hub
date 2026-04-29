@@ -55,6 +55,7 @@ class GraphConfigUpdate:
     """Report for a graph.json update attempt."""
 
     updated: bool = False
+    created: bool = False
     color_groups_written: int = 0
     skipped_reason: str = ""
     cluster_slugs: list[str] = field(default_factory=list)
@@ -122,11 +123,29 @@ def _is_managed_query(query: object) -> bool:
     )
 
 
+def _is_obsidian_graph_path(graph_json_path: Path) -> bool:
+    return graph_json_path.name == "graph.json" and graph_json_path.parent.name == ".obsidian"
+
+
 def update_graph_json(graph_json_path: Path, cluster_slugs: list[str]) -> GraphConfigUpdate:
     """Update ``colorGroups`` in graph.json while preserving other settings."""
 
     if not graph_json_path.exists():
-        return GraphConfigUpdate(skipped_reason=f"No graph.json at {graph_json_path}")
+        if not _is_obsidian_graph_path(graph_json_path):
+            return GraphConfigUpdate(skipped_reason=f"No graph.json at {graph_json_path}")
+        ordered_slugs = list(cluster_slugs)
+        minimal = {"colorGroups": build_all_color_groups(ordered_slugs)}
+        graph_json_path.parent.mkdir(parents=True, exist_ok=True)
+        graph_json_path.write_text(
+            json.dumps(minimal, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return GraphConfigUpdate(
+            updated=True,
+            created=True,
+            color_groups_written=len(minimal["colorGroups"]),
+            cluster_slugs=ordered_slugs,
+        )
 
     try:
         existing = json.loads(graph_json_path.read_text(encoding="utf-8"))
@@ -137,8 +156,17 @@ def update_graph_json(graph_json_path: Path, cluster_slugs: list[str]) -> GraphC
         existing = {}
 
     ordered_slugs = list(cluster_slugs)
-    managed_groups = build_color_groups(ordered_slugs)
-    existing["colorGroups"] = managed_groups
+    if _is_obsidian_graph_path(graph_json_path):
+        managed_groups = build_all_color_groups(ordered_slugs)
+        preserved_groups = [
+            group
+            for group in (existing.get("colorGroups") or [])
+            if isinstance(group, dict) and not _is_managed_query(group.get("query"))
+        ]
+        existing["colorGroups"] = managed_groups + preserved_groups
+    else:
+        managed_groups = build_color_groups(ordered_slugs)
+        existing["colorGroups"] = managed_groups
     rendered = json.dumps(existing, ensure_ascii=False, indent=2) + "\n"
     current = graph_json_path.read_text(encoding="utf-8")
     if current != rendered:
