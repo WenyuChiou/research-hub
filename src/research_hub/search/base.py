@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 
-@dataclass
+@dataclass(init=False)
 class SearchResult:
     """Normalized search result from any backend."""
 
@@ -33,6 +33,52 @@ class SearchResult:
     volume: str = ""
     issue: str = ""
     pages: str = ""
+
+    def __init__(
+        self,
+        title: str,
+        doi: str = "",
+        arxiv_id: str = "",
+        abstract: str = "",
+        abstract_source: str = "",
+        year: int | None = None,
+        metadata_year: int | None = None,
+        authors: list[str] | None = None,
+        venue: str = "",
+        url: str = "",
+        citation_count: int = 0,
+        pdf_url: str = "",
+        source: str = "",
+        confidence: float = 0.5,
+        found_in: list[str] | None = None,
+        doc_type: str = "",
+        categories: list[str] | None = None,
+        publication_types: list[str] | None = None,
+        volume: str = "",
+        issue: str = "",
+        pages: str = "",
+    ) -> None:
+        self.title = title
+        self.doi = doi
+        self.arxiv_id = arxiv_id
+        self.abstract = abstract
+        self.abstract_source = abstract_source or ""
+        self.year = year
+        self.metadata_year = metadata_year
+        self.authors = list(authors or [])
+        self.venue = venue
+        self.url = url
+        self.citation_count = citation_count
+        self.pdf_url = pdf_url
+        self.source = source
+        self.confidence = confidence
+        self.found_in = list(found_in or [])
+        self.doc_type = doc_type
+        self.categories = list(categories or [])
+        self.publication_types = list(publication_types or [])
+        self.volume = volume
+        self.issue = issue
+        self.pages = pages
 
     @classmethod
     def from_s2_json(cls, item: dict) -> "SearchResult":

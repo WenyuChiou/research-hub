@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from urllib.parse import quote
 
@@ -16,6 +17,15 @@ logger = logging.getLogger(__name__)
 CROSSREF_BASE = "https://api.crossref.org/works"
 _USER_AGENT = "research-hub/0.16.0 (mailto:research-hub@example.invalid)"
 _DEFAULT_TIMEOUT = 20
+_JATS_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _extract_crossref_abstract(work: dict) -> str:
+    raw = work.get("abstract", "")
+    if not raw:
+        return ""
+    text = _JATS_TAG_RE.sub("", raw)
+    return " ".join(text.split())
 
 
 class CrossrefBackend:
@@ -123,11 +133,14 @@ class CrossrefBackend:
         # v0.68.5: Crossref returns `page` as a single string already in the
         # canonical "first-last" form (e.g. "123-145"). volume / issue may be
         # missing for some doc types; fall back to "" rather than None.
+        abstract = _extract_crossref_abstract(work)
         return SearchResult(
             title=title,
             doi=doi,
-            abstract="",
+            abstract=abstract,
+            abstract_source=self.name if abstract else "",
             year=year,
+            metadata_year=year,
             authors=authors,
             venue=venue,
             url=f"https://doi.org/{work.get('DOI', '')}",
