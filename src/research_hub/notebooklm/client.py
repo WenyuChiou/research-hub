@@ -499,11 +499,25 @@ class NotebookLMClient:
         source_count = 0
         try:
             source_count = self.page.evaluate(
-                "() => document.querySelectorAll('source-list-item, "
-                "[role=\"listitem\"][data-source-id]').length"
+                """() => {
+                    const selectors = [
+                        'source-list-item',
+                        '[role="listitem"][data-source-id]',
+                        'mat-list-item.source-item',
+                        '[aria-label*="source"]',
+                        'div.source-card',
+                    ];
+                    for (const sel of selectors) {
+                        const n = document.querySelectorAll(sel).length;
+                        if (n > 0) return n;
+                    }
+                    return 0;
+                }"""
             )
         except Exception:
             pass
+        if not source_count and titles:
+            source_count = len(titles)
 
         return BriefingArtifact(
             notebook_name=handle.name,

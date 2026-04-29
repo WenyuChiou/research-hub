@@ -333,6 +333,11 @@ def auto_pipeline(
         report.notebook_url = upload_report.notebook_url
         _step_log(report, "nlm.upload", True, _elapsed(started, report),        
                   f"{upload_report.success_count} succeeded", print_progress)   
+        if upload_report.notebook_was_reused and print_progress:
+            print(
+                "  [NLM] Reusing existing notebook (same cluster name). "
+                "To start clean, delete it at https://notebooklm.google.com/ first."
+            )
 
         nlm_step = "nlm.generate"
         generate_artifact(cluster, cfg, kind="brief", headless=False)
