@@ -103,8 +103,10 @@ def test_auto_pipeline_full_run_new_cluster(mock_deps):
         query="New Topic", slug="new-topic", name="New Topic"
     )
     mock_deps["run_search"].assert_called_with("New Topic", max_papers=5, cluster_slug="new-topic")
+    # v0.73.0: zotero_batch_size=50 added to run_pipeline signature.
     mock_deps["run_pipeline"].assert_called_with(
-        dry_run=False, cluster_slug="new-topic", query="New Topic", verify=False
+        dry_run=False, cluster_slug="new-topic", query="New Topic", verify=False,
+        zotero_batch_size=50,
     )
     mock_deps["bundle_cluster"].assert_called()
     mock_deps["upload_cluster"].assert_called()

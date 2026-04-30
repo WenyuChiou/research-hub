@@ -2171,6 +2171,7 @@ def auto_research_topic(
     do_fit_check: bool = True,
     cluster_overview_threshold: int = 0,
     fit_check_threshold: int = 3,
+    zotero_batch_size: int = 50,
     llm_cli: str = "",
     dry_run: bool = False,
 ) -> dict[str, Any]:
@@ -2203,6 +2204,7 @@ def auto_research_topic(
             cluster_overview_threshold=cluster_overview_threshold,
             do_fit_check=do_fit_check,
             fit_check_threshold=fit_check_threshold,
+            zotero_batch_size=zotero_batch_size,
             llm_cli=llm_cli or None,
             dry_run=dry_run,
             print_progress=False,

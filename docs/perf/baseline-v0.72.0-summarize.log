@@ -1,0 +1,5 @@
+C:\Users\wenyu\AppData\Roaming\Python\Python314\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.4.3)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+cli used: claude
+applied: 23  skipped: 0  errors: 0
+obsidian writes: 23, zotero writes: 23

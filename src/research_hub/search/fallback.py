@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 import logging
 from collections.abc import Iterable, Sequence
 
@@ -116,35 +117,54 @@ def search_papers(
         per_backend_limit = max(limit * 2, 20)
 
     per_backend: dict[str, list[SearchResult]] = {}
-    trace: dict[str, int] = {}
+    backend_to_class: list[tuple[str, type[SearchBackend]]] = []
     for name in backends:
         cls = _BACKEND_REGISTRY.get(name)
         if cls is None:
             logger.warning("unknown search backend: %s", name)
             continue
+        backend_to_class.append((name, cls))
+
+    def _search_one_backend(name: str, cls: type[SearchBackend]) -> tuple[str, list[SearchResult]]:
+        backend = cls()
+        results = backend.search(
+            query,
+            limit=per_backend_limit,
+            year_from=year_from,
+            year_to=year_to,
+        )
+        if name != "arxiv" and min_citations > 0:
+            results = [result for result in results if result.citation_count >= min_citations]
+        return name, results
+
+    if backend_to_class:
+        completed_results: dict[str, list[SearchResult]] = {}
+        executor = ThreadPoolExecutor(max_workers=min(len(backend_to_class), 8))
+        futures = {
+            executor.submit(_search_one_backend, name, cls): name
+            for name, cls in backend_to_class
+        }
         try:
-            backend = cls()
-            if name == "arxiv":
-                results = backend.search(
-                    query,
-                    limit=per_backend_limit,
-                    year_from=year_from,
-                    year_to=year_to,
-                )
-            else:
-                results = backend.search(
-                    query,
-                    limit=per_backend_limit,
-                    year_from=year_from,
-                    year_to=year_to,
-                )
-                if min_citations > 0:
-                    results = [result for result in results if result.citation_count >= min_citations]
-        except Exception as exc:
-            logger.warning("search backend %s failed: %s", name, exc)
-            results = []
-        per_backend[name] = results
-        trace[name] = len(results)
+            for future in as_completed(futures, timeout=60):
+                name = futures[future]
+                try:
+                    backend_name, results = future.result()
+                    completed_results[backend_name] = results
+                except Exception as exc:
+                    logger.warning("search backend %s failed: %s", name, exc)
+                    completed_results[name] = []
+        except TimeoutError:
+            logger.warning("search backend pool timed out after 60s")
+        finally:
+            for future, name in futures.items():
+                if name not in completed_results:
+                    future.cancel()
+                    completed_results[name] = []
+            executor.shutdown(wait=False, cancel_futures=True)
+        for name, _cls in backend_to_class:
+            per_backend[name] = completed_results.get(name, [])
+
+    trace = {name: len(per_backend.get(name, [])) for name, _cls in backend_to_class}
 
     if backend_trace:
         for name, count in trace.items():
