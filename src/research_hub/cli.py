@@ -2286,6 +2286,7 @@ def _auto(
     do_cluster_overview: bool = True,
     do_fit_check: bool = True,
     fit_check_threshold: int = 3,
+    zotero_batch_size: int = 50,
     llm_cli,
     dry_run,
     append: bool = False,
@@ -2314,6 +2315,7 @@ def _auto(
         do_cluster_overview=do_cluster_overview,
         do_fit_check=do_fit_check,
         fit_check_threshold=fit_check_threshold,
+        zotero_batch_size=zotero_batch_size,
         llm_cli=llm_cli,
         dry_run=dry_run,
         print_progress=True,
@@ -2621,6 +2623,12 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Skip the v0.70.0 LLM-judge fit-check between search and ingest (default: on when LLM CLI present)")
     auto_parser.add_argument("--fit-check-threshold", type=int, default=3,
                              help="Minimum 0-5 score for a paper to pass fit-check (default: 3 = tangentially related and above)")
+    auto_parser.add_argument(
+        "--zotero-batch-size",
+        type=int,
+        default=50,
+        help="Number of Zotero items to create per batch during ingest (default: 50)",
+    )
     auto_parser.add_argument("--llm-cli", default=None, choices=["claude", "codex", "gemini"],
                              help="Force a specific LLM CLI for --with-crystals / fit-check (default: auto-detect)")
     auto_parser.add_argument("--dry-run", action="store_true",
@@ -3896,6 +3904,7 @@ def main(argv: list[str] | None = None) -> int:
             do_cluster_overview=not args.no_cluster_overview,
             do_fit_check=not args.no_fit_check,
             fit_check_threshold=args.fit_check_threshold,
+            zotero_batch_size=args.zotero_batch_size,
             llm_cli=args.llm_cli,
             dry_run=args.dry_run,
             append=args.append,

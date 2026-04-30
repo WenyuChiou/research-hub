@@ -53,6 +53,9 @@ _ZOTERO_WRITE_TEST_MODULES = frozenset({
     "test_cluster_rename_triple_sync",
     "test_vault_sync",
     "test_v030_security",  # asserts pipeline routes to cluster collection
+    "test_v073_parallel_search",
+    "test_v073_batched_zotero",
+    "test_v073_parallel_summarize",
 })
 
 

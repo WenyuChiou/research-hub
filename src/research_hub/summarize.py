@@ -31,6 +31,8 @@ Design choices
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import json
 import re
 from dataclasses import dataclass, field
@@ -89,6 +91,16 @@ class SummaryReport:
             "prompt_path": str(self.prompt_path) if self.prompt_path else None,
             "apply_result": self.apply_result.to_dict() if self.apply_result else None,
         }
+
+
+@dataclass
+class _PerPaperOutcome:
+    slug: str
+    applied: bool = False
+    skipped_reason: str = ""
+    error: str = ""
+    obsidian_written: bool = False
+    zotero_written: bool = False
 
 
 # -- prompt building ----------------------------------------------------
@@ -298,6 +310,56 @@ def _write_zotero_child_note(zot, parent_key: str, html: str) -> None:
     zot.update_item(note["data"])
 
 
+def _apply_one_entry(
+    entry: dict,
+    paper_by_slug: dict[str, dict],
+    valid_slugs: set[str],
+    zot,
+    write_obsidian: bool,
+    write_zotero: bool,
+) -> _PerPaperOutcome:
+    summary, reason = _validate_entry(entry, valid_slugs)
+    if summary is None:
+        return _PerPaperOutcome(
+            slug=str(entry.get("paper_slug", "?")),
+            skipped_reason=reason or "invalid entry",
+        )
+
+    paper = paper_by_slug[summary.paper_slug]
+    note_path = paper["path"]
+    original_text = note_path.read_text(encoding="utf-8") if write_obsidian else None
+    new_text = _replace_obsidian_block(original_text, summary) if write_obsidian else None
+
+    if write_obsidian and new_text is not None:
+        note_path.write_text(new_text, encoding="utf-8")
+
+    obsidian_written = bool(write_obsidian)
+    zotero_written = False
+    if write_zotero:
+        parent_key = paper.get("zotero_key", "")
+        if not parent_key:
+            if write_obsidian and original_text is not None:
+                note_path.write_text(original_text, encoding="utf-8")
+                obsidian_written = False
+            return _PerPaperOutcome(slug=summary.paper_slug, error="no zotero-key in frontmatter")
+        html = _build_zotero_note_html(paper, summary)
+        try:
+            _write_zotero_child_note(zot, parent_key, html)
+            zotero_written = True
+        except Exception as exc:
+            if write_obsidian and original_text is not None:
+                note_path.write_text(original_text, encoding="utf-8")
+                obsidian_written = False
+            return _PerPaperOutcome(slug=summary.paper_slug, error=f"zotero write failed: {exc}")
+
+    return _PerPaperOutcome(
+        slug=summary.paper_slug,
+        applied=True,
+        obsidian_written=obsidian_written,
+        zotero_written=zotero_written,
+    )
+
+
 def apply_summaries(
     cfg,
     cluster_slug: str,
@@ -332,42 +394,28 @@ def apply_summaries(
                 errors=[f"(all): could not load Zotero client: {exc}"],
             )
 
-    for entry in entries:
-        summary, reason = _validate_entry(entry, valid_slugs)
-        if summary is None:
-            result.skipped.append(f"{entry.get('paper_slug', '?')}: {reason}")
-            continue
+    worker = partial(
+        _apply_one_entry,
+        paper_by_slug=paper_by_slug,
+        valid_slugs=valid_slugs,
+        zot=zot,
+        write_obsidian=write_obsidian,
+        write_zotero=write_zotero,
+    )
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        outcomes = list(executor.map(worker, entries))
 
-        paper = paper_by_slug[summary.paper_slug]
-        note_path = paper["path"]
-        original_text = note_path.read_text(encoding="utf-8") if write_obsidian else None
-        new_text = _replace_obsidian_block(original_text, summary) if write_obsidian else None
-
-        if write_obsidian:
-            note_path.write_text(new_text, encoding="utf-8")
-
-        if write_zotero:
-            parent_key = paper.get("zotero_key", "")
-            if not parent_key:
-                # Roll back markdown — Zotero side has no anchor
-                if write_obsidian and original_text is not None:
-                    note_path.write_text(original_text, encoding="utf-8")
-                result.errors.append(f"{summary.paper_slug}: no zotero-key in frontmatter")
-                continue
-            html = _build_zotero_note_html(paper, summary)
-            try:
-                _write_zotero_child_note(zot, parent_key, html)
+    for outcome in outcomes:
+        if outcome.error:
+            result.errors.append(f"{outcome.slug}: {outcome.error}")
+        elif outcome.skipped_reason:
+            result.skipped.append(f"{outcome.slug}: {outcome.skipped_reason}")
+        elif outcome.applied:
+            result.applied.append(outcome.slug)
+            if outcome.obsidian_written:
+                result.obsidian_writes += 1
+            if outcome.zotero_written:
                 result.zotero_writes += 1
-            except Exception as exc:
-                # Roll back the markdown change
-                if write_obsidian and original_text is not None:
-                    note_path.write_text(original_text, encoding="utf-8")
-                result.errors.append(f"{summary.paper_slug}: zotero write failed: {exc}")
-                continue
-
-        if write_obsidian:
-            result.obsidian_writes += 1
-        result.applied.append(summary.paper_slug)
 
     return result
 

@@ -24,6 +24,7 @@ REQUIRED_FIELDS_CORE = ["title", "doi", "authors", "year"]
 REQUIRED_FIELDS_ZOTERO = ["abstract", "journal"]
 REQUIRED_FIELDS_NOTE = ["summary", "key_findings", "methodology", "relevance"]
 logger = logging.getLogger(__name__)
+ZOTERO_BATCH_SIZE = 50
 
 
 def _compose_hub_tags(pp: dict, cluster_slug: str | None) -> list[str]:
@@ -152,6 +153,85 @@ def _resolve_log_path(preferred_logs_dir: Path) -> Path:
         fallback_logs_dir = Path.cwd() / ".research_hub_logs"
         fallback_logs_dir.mkdir(parents=True, exist_ok=True)
         return fallback_logs_dir / "pipeline_log.txt"
+
+
+def _flush_batch(
+    zot,
+    batch_templates: list[dict],
+    batch_papers: list[dict],
+    zr: list[dict],
+    errors: list[dict],
+    p,
+    papers_for_notes: list[dict],
+) -> None:
+    """Create Zotero items in one batch, falling back to per-paper on exception."""
+    if not batch_templates:
+        return
+
+    def _handle_success(paper: dict, key: str, *, batched: bool) -> None:
+        paper["zotero_key"] = key
+        zr.append({"title": paper["title"], "status": "CREATED", "key": key})
+        p(f"  {'CREATED (batched)' if batched else 'CREATED'}: {key}")
+        ok = add_note(zot, key, _build_note_html(paper))
+        p(f"  Note: {'OK' if ok else 'FAIL'}")
+        papers_for_notes.append(paper)
+
+    def _handle_failure(paper: dict, exc: Exception) -> None:
+        p(f"  ERR: {exc}")
+        zr.append({"title": paper["title"], "status": "ERROR", "key": ""})
+        errors.append(
+            {
+                "paper": paper["title"],
+                "step": "zotero",
+                "error": str(exc),
+                "traceback": traceback.format_exc(),
+            }
+        )
+
+    try:
+        resp = zot.create_items(batch_templates)
+    except Exception:
+        for template, paper in zip(batch_templates, batch_papers):
+            try:
+                resp = zot.create_items([template])
+                successful = (resp or {}).get("successful") or {}
+                if successful:
+                    key = list(successful.values())[0]["key"]
+                    _handle_success(paper, key, batched=False)
+                else:
+                    p(f"  RESP: {resp}")
+                    zr.append({"title": paper["title"], "status": "FAILED", "key": ""})
+            except Exception as exc:
+                _handle_failure(paper, exc)
+        return
+
+    successful = (resp or {}).get("successful") or {}
+    successful_indexes = set()
+    for idx_str, item_meta in successful.items():
+        idx = int(idx_str)
+        successful_indexes.add(idx)
+        paper = batch_papers[idx]
+        key = item_meta.get("key") or item_meta.get("data", {}).get("key")
+        if key:
+            _handle_success(paper, key, batched=True)
+
+    failed = (resp or {}).get("failed") or {}
+    fallback_key = ""
+    if successful:
+        last_success = next(reversed(successful.values()))
+        fallback_key = last_success.get("key") or last_success.get("data", {}).get("key") or ""
+    for idx, (_template, paper) in enumerate(zip(batch_templates, batch_papers)):
+        if idx in successful_indexes:
+            continue
+        if str(idx) in failed:
+            p(f"  RESP: {failed[str(idx)]}")
+            zr.append({"title": paper["title"], "status": "FAILED", "key": ""})
+            continue
+        if fallback_key:
+            _handle_success(paper, fallback_key, batched=True)
+            continue
+        p(f"  RESP: {resp}")
+        zr.append({"title": paper["title"], "status": "FAILED", "key": ""})
 
 
 def append_cluster_query_to_existing(
@@ -324,6 +404,7 @@ def run_pipeline(
     fit_check: bool = False,
     fit_check_threshold: int = 3,
     no_fit_check_auto_labels: bool = False,
+    zotero_batch_size: int = ZOTERO_BATCH_SIZE,
 ) -> int:
     del no_fit_check_auto_labels
     cfg = get_config()
@@ -473,6 +554,8 @@ def run_pipeline(
         dr = []
         errors = []
         papers_for_notes = []
+        batch_templates: list[dict] = []
+        batch_papers: list[dict] = []
 
         for i, pp in enumerate(papers):
             p(f"\n--- Paper {i+1}: {pp['title'][:60]}...")
@@ -637,35 +720,20 @@ def run_pipeline(
             t["abstractNote"] = pp["abstract"]
             t["tags"] = [{"tag": x} for x in _compose_hub_tags(pp, cluster_slug)]
             t["collections"] = [cluster_coll or collection_key]
-            try:
-                p(
-                    f"  Routing to collection: {cluster_coll or collection_key} "
-                    f"(cluster={cluster_slug or 'none'})"
-                )
-                resp = zot.create_items([t])
-                if resp.get("successful"):
-                    key = list(resp["successful"].values())[0]["key"]
-                    p(f"  CREATED: {key}")
-                    pp["zotero_key"] = key
-                    zr.append({"title": pp["title"], "status": "CREATED", "key": key})
-                    ok = add_note(zot, key, _build_note_html(pp))
-                    p(f"  Note: {'OK' if ok else 'FAIL'}")
-                    papers_for_notes.append(pp)
-                else:
-                    p(f"  RESP: {resp}")
-                    zr.append({"title": pp["title"], "status": "FAILED", "key": ""})
-            except Exception as exc:
-                p(f"  ERR: {exc}")
-                zr.append({"title": pp["title"], "status": "ERROR", "key": ""})
-                errors.append(
-                    {
-                        "paper": pp["title"],
-                        "step": "zotero",
-                        "error": str(exc),
-                        "traceback": traceback.format_exc(),
-                    }
-                )
-            time.sleep(1)
+            p(
+                f"  Routing to collection: {cluster_coll or collection_key} "
+                f"(cluster={cluster_slug or 'none'})"
+            )
+            batch_templates.append(t)
+            batch_papers.append(pp)
+            if len(batch_templates) >= zotero_batch_size:
+                _flush_batch(zot, batch_templates, batch_papers, zr, errors, p, papers_for_notes)
+                batch_templates = []
+                batch_papers = []
+                time.sleep(1)
+
+        if batch_templates:
+            _flush_batch(zot, batch_templates, batch_papers, zr, errors, p, papers_for_notes)
 
         p("\n=== DOI VALIDATION ===")
         verify_cache = VerifyCache(cfg.research_hub_dir / "verify_cache.json") if verify else None

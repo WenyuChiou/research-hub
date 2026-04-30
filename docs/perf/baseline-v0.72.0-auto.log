@@ -1,0 +1,31 @@
+C:\Users\wenyu\AppData\Roaming\Python\Python314\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.4.3)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+semantic-scholar rate-limited (HTTP 429); backend returned 0 results. Consider requesting an API key at https://www.semanticscholar.org/product/api#api-key-form or using --backend-trace to see the silent-drop.
+[OK] cluster        created: baseline-perf-v072
+[OK] zotero.bind    reused existing collection JKZPKTST for baseline-perf-v072
+[OK] search         30 results
+[OK] ingest         23 papers in raw/baseline-perf-v072/
+
+============================================================
+Done in 50.3s. Cluster: baseline-perf-v072
+============================================================
+
+Next steps (copy-paste any of these):
+
+  # See your new cluster in the live dashboard
+  research-hub serve --dashboard
+
+  # Generate cached AI answers (~10 Q&As, ~1 KB each)
+  research-hub crystal emit  --cluster baseline-perf-v072 > /tmp/cprompt.md
+  # paste /tmp/cprompt.md into Claude/GPT/Gemini, save response as crystals.json
+  research-hub crystal apply --cluster baseline-perf-v072 --scored crystals.json
+
+  # Or auto-pipe through a detected LLM CLI:
+  research-hub auto "baseline-perf-v072" --with-crystals  # if claude/codex/gemini on PATH
+
+  # Ad-hoc Q&A against the uploaded notebook
+  research-hub ask baseline-perf-v072 "what are the 3 main research threads?"
+
+  # Talk to Claude Desktop instead (with research-hub MCP installed)
+  > "Claude, what's in my baseline-perf-v072 cluster?"  # calls read_crystal()
+

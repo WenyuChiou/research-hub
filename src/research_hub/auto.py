@@ -155,6 +155,7 @@ def auto_pipeline(
     llm_cli: Optional[str] = None,
     dry_run: bool = False,
     print_progress: bool = True,
+    zotero_batch_size: int = 50,
 ) -> AutoReport:
     """End-to-end ingest + optional NotebookLM publish.
 
@@ -292,6 +293,7 @@ def auto_pipeline(
             cluster_slug=slug,
             query=topic,
             verify=False,
+            zotero_batch_size=zotero_batch_size,
         )
         if rc != 0:
             raise RuntimeError("pipeline returned exit code " + str(rc))        
