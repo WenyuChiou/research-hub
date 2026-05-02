@@ -34,6 +34,9 @@ def _make_zotero(existing_subcollections=None):
     zot = MagicMock()
     zot.web = MagicMock()
     zot.web.collections_sub.return_value = list(existing_subcollections or [])
+    # _list_subcollections in pipeline.py iterates zot.collections() filtered
+    # by parentCollection; mirror that so existing subcollections get found.
+    zot.collections.return_value = list(existing_subcollections or [])
     zot.item_template.side_effect = lambda item_type: {"itemType": item_type}
 
     def _create_items(items):
@@ -45,7 +48,9 @@ def _make_zotero(existing_subcollections=None):
         }
 
     zot.create_items.side_effect = _create_items
-    zot.create_collection.return_value = {"successful": {"0": {"key": "BATCH123"}}}
+    # pyzotero.Zotero exposes create_collections(payload_list); the pipeline
+    # probes for it first via hasattr.
+    zot.create_collections.return_value = {"successful": {"0": {"key": "BATCH123"}}}
     return zot
 
 
@@ -63,7 +68,9 @@ def test_pipeline_creates_subcollection_per_batch_label(tmp_path, monkeypatch):
             verify=False,
             batch_label="2026-05-02-society",
         ) == 0
-        zot.create_collection.assert_called_once_with("2026-05-02-society", parent_key="CLUSTER123")
+        zot.create_collections.assert_called_once_with(
+            [{"name": "2026-05-02-society", "parentCollection": "CLUSTER123"}]
+        )
         template = zot.create_items.call_args_list[0].args[0][0]
         assert template["collections"] == ["CLUSTER123", "BATCH123"]
     finally:
@@ -86,7 +93,7 @@ def test_pipeline_reuses_existing_subcollection(tmp_path, monkeypatch):
             verify=False,
             batch_label="2026-05-02-society",
         ) == 0
-        zot.create_collection.assert_not_called()
+        zot.create_collections.assert_not_called()
         template = zot.create_items.call_args_list[0].args[0][0]
         assert template["collections"] == ["CLUSTER123", "BATCH123"]
     finally:
@@ -150,8 +157,8 @@ def test_pipeline_default_batch_label_from_query(tmp_path, monkeypatch):
             query="post-flood",
             verify=False,
         ) == 0
-        label = zot.create_collection.call_args.args[0]
-        assert re.match(r"^\d{8}-post-flood", label)
+        payload = zot.create_collections.call_args.args[0][0]
+        assert re.match(r"^\d{8}-post-flood", payload["name"])
     finally:
         hub_config._config = None
         hub_config._config_path = None
@@ -170,8 +177,8 @@ def test_pipeline_default_batch_label_manual(tmp_path, monkeypatch):
             query=None,
             verify=False,
         ) == 0
-        label = zot.create_collection.call_args.args[0]
-        assert re.match(r"^manual-\d{8}-\d{6}$", label)
+        payload = zot.create_collections.call_args.args[0][0]
+        assert re.match(r"^manual-\d{8}-\d{6}$", payload["name"])
     finally:
         hub_config._config = None
         hub_config._config_path = None
@@ -188,25 +195,27 @@ def test_same_day_same_query_appends_suffix(tmp_path, monkeypatch):
     zot.item_template.side_effect = lambda item_type: {"itemType": item_type}
     zot.create_items.side_effect = lambda items: {"successful": {"0": {"key": "Z0"}}}
 
-    def _collections_sub(_parent):
+    def _existing_payload(_parent=None):
         return [
             {"key": key, "data": {"name": name, "parentCollection": "CLUSTER123"}}
             for key, name in existing
         ]
 
-    def _create_collection(name, parent_key=None):
+    def _create_collections(payload_list):
+        name = payload_list[0]["name"]
         key = f"B{len(existing) + 1}"
         existing.append((key, name))
         return {"successful": {"0": {"key": key}}}
 
-    zot.web.collections_sub.side_effect = _collections_sub
-    zot.create_collection.side_effect = _create_collection
+    zot.web.collections_sub.side_effect = _existing_payload
+    zot.collections.side_effect = _existing_payload
+    zot.create_collections.side_effect = _create_collections
     monkeypatch.setattr(pipeline, "get_client", lambda: zot)
 
     try:
         assert pipeline.run_pipeline(dry_run=False, cluster_slug="agents", query="same query", verify=False) == 0
         assert pipeline.run_pipeline(dry_run=False, cluster_slug="agents", query="same query", verify=False) == 0
-        labels = [call.args[0] for call in zot.create_collection.call_args_list]
+        labels = [call.args[0][0]["name"] for call in zot.create_collections.call_args_list]
         assert labels == ["20260502-same-query", "20260502-same-query-2"]
     finally:
         hub_config._config = None

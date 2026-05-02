@@ -65,10 +65,26 @@ class ClusterSyncStatus:
 
 
 def list_cluster_notes(cluster_slug: str, raw_dir: Path) -> list[Path]:
-    """Find all Obsidian notes whose YAML topic_cluster matches a slug."""
+    """Find all Obsidian notes whose YAML topic_cluster matches a slug.
+
+    Skips soft-deleted notes living under raw/_deleted_*/ — they retain
+    their topic_cluster frontmatter so they can be restored, but should
+    not inflate sync/drift counts.
+    """
     if not raw_dir.exists():
         return []
-    return [md for md in sorted(raw_dir.rglob("*.md")) if _note_topic_cluster(md) == cluster_slug]
+    results: list[Path] = []
+    for md in sorted(raw_dir.rglob("*.md")):
+        # Skip anything under a top-level _deleted_* directory.
+        try:
+            rel_first = md.relative_to(raw_dir).parts[0]
+        except (ValueError, IndexError):
+            rel_first = ""
+        if rel_first.startswith("_deleted_"):
+            continue
+        if _note_topic_cluster(md) == cluster_slug:
+            results.append(md)
+    return results
 
 
 def list_zotero_collection_items(zot, collection_key: str) -> list[dict]:

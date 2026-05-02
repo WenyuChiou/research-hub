@@ -325,7 +325,18 @@ def _ensure_batch_subcollection(
             return _collection_field(collection, "key")
 
     try:
-        result = zot.create_collection(batch_label, parent_key=cluster_coll)
+        # get_client() returns raw pyzotero.Zotero (which has
+        # create_collections(payload_list)), but ZoteroDualClient wraps it
+        # as create_collection(name, parent_key=...). Probe for both.
+        if hasattr(zot, "create_collections"):
+            result = zot.create_collections(
+                [{"name": batch_label, "parentCollection": cluster_coll}]
+            )
+        elif hasattr(zot, "create_collection"):
+            result = zot.create_collection(batch_label, parent_key=cluster_coll)
+        else:
+            log(f"[warn] zot has no create_collection(s) method")
+            return ""
         key = _extract_created_collection_key(result)
         if key:
             return key
