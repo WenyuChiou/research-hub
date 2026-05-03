@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -58,6 +59,12 @@ _ZOTERO_WRITE_TEST_MODULES = frozenset({
     "test_v073_parallel_summarize",
     "test_v074_drift_prevention",
     "test_v074_batch_collection",
+    "test_v075_name_drift",
+    "test_v075_collision_prevention",
+    "test_v075_zotero_gc",
+    "test_v075_test_isolation",
+    "test_v075_enrich_existing",
+    "test_v075_pdf_attach",
 })
 
 
@@ -94,6 +101,25 @@ def _block_real_zotero_writes(request, monkeypatch):
         "research_hub.auto._ensure_zotero_collection",
         _noop_ensure_zotero_collection,
     )
+
+
+@pytest.fixture(autouse=True)
+def _block_real_zotero(monkeypatch, request):
+    """Refuse real Zotero client construction inside tests unless opted in."""
+    if "ALLOW_REAL_ZOTERO" in os.environ:
+        return
+    if request.node.get_closest_marker("real_zotero"):
+        return
+
+    def _refuse(*_args, **_kwargs):
+        raise RuntimeError(
+            "Tests must not touch the real Zotero account. "
+            "Mock zotero.client.get_client / ZoteroDualClient. "
+            "Set ALLOW_REAL_ZOTERO=1 env var or @pytest.mark.real_zotero to bypass."
+        )
+
+    monkeypatch.setattr("research_hub.zotero.client.get_client", _refuse)
+    monkeypatch.setattr("research_hub.zotero.client.ZoteroDualClient.__init__", _refuse)
 
 
 @pytest.fixture
@@ -176,6 +202,21 @@ def _allow_external_vault_root_in_tests(monkeypatch):
     sandboxed tmp_paths, not against the user's real $HOME.
     """
     monkeypatch.setenv("RESEARCH_HUB_ALLOW_EXTERNAL_ROOT", "1")
+
+
+@pytest.fixture(autouse=True)
+def _force_writable_tempdir(monkeypatch):
+    """Point subprocess-created temp files at a writable workspace path.
+
+    Windows sandboxing in this environment intermittently denies writes under
+    the default user temp dir during `venv -> ensurepip`, which breaks the
+    extras-install smoke test even though the package metadata is fine.
+    """
+    temp_root = Path.cwd() / ".pytest-work" / "_tmp"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("TMP", str(temp_root))
+    monkeypatch.setenv("TEMP", str(temp_root))
+    monkeypatch.setenv("TMPDIR", str(temp_root))
 
 
 @pytest.fixture(autouse=True)

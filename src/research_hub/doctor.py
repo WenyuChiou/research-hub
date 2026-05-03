@@ -387,6 +387,50 @@ def check_cluster_zotero_drift(cfg) -> list[CheckResult]:
     ]
 
 
+def check_cluster_name_drift(cfg) -> CheckResult:
+    """WARN when vault cluster.name differs from the Zotero collection name."""
+    from research_hub.clusters import ClusterRegistry
+    from research_hub.zotero.client import get_client
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    try:
+        zot = get_client()
+    except Exception:
+        return CheckResult(
+            "cluster/name_drift",
+            "INFO",
+            "Zotero client unavailable; name-drift check skipped",
+        )
+
+    drifted: list[str] = []
+    for cluster in registry.list():
+        if not cluster.zotero_collection_key:
+            continue
+        try:
+            coll = zot.collection(cluster.zotero_collection_key)
+            zotero_name = coll.get("data", {}).get("name", "")
+            if zotero_name and cluster.name and zotero_name != cluster.name:
+                drifted.append(
+                    f"{cluster.slug}: vault='{cluster.name}' zotero='{zotero_name}'"
+                )
+        except Exception as exc:
+            drifted.append(f"{cluster.slug}: fetch failed ({exc})")
+
+    if drifted:
+        return CheckResult(
+            "cluster/name_drift",
+            "WARN",
+            f"{len(drifted)} cluster(s) have vault name != Zotero collection name",
+            remedy="Run: python -m research_hub clusters sync-names --apply",
+            details="\n  ".join(drifted[:10]),
+        )
+    return CheckResult(
+        "cluster/name_drift",
+        "OK",
+        "All cluster names align between vault and Zotero",
+    )
+
+
 def check_cluster_test_pattern(cfg) -> CheckResult:
     """WARN on cluster slugs that look like test or scratch data."""
     import fnmatch
@@ -979,6 +1023,10 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
             results.extend(check_cluster_zotero_drift(cfg))
         except Exception as exc:
             results.append(CheckResult("cluster/zotero_drift", "WARN", f"check failed: {exc}"))
+        try:
+            results.append(check_cluster_name_drift(cfg))
+        except Exception as exc:
+            results.append(CheckResult("cluster/name_drift", "WARN", f"check failed: {exc}"))
         for check in (
             check_cluster_missing_dir,
             check_cluster_orphan_papers,

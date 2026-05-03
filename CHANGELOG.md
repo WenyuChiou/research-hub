@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.75.0 (2026-05-02)
+
+Workflow drift fixes (round 2) + test isolation + PDF auto-attach.
+Driven by 6 gaps surfaced after v0.74 ship: vault/Zotero name drift,
+collision allowed at bind time, stale Zotero collections after
+cluster delete, tests polluting real Zotero, metadata gaps from search
+backends with no re-enrich path, and no PDF auto-attach.
+
+### Added
+- `clusters bind --no-sync-zotero` / `--force-shared` flags
+- `clusters rename --no-sync-zotero` flag
+- `clusters sync-names [--apply]` to fix vault/Zotero name drift
+- `clusters resolve-collision <slug> --new|--into <other>` to fix shared collection keys
+- `clusters delete --delete-zotero-collection` flag
+- `zotero gc [--apply] [--age-days N]` to find/delete empty/test/orphan Zotero collections
+- `paper enrich-existing --cluster <slug> --apply` to fill empty vol/issue/pages/url/abstract fields via Crossref + OpenAlex
+- `paper attach-pdfs --cluster <slug> --apply` for Unpaywall + arXiv PDF discovery
+- `auto --with-pdfs` and `ingest --with-pdfs` flags for end-to-end ingest + PDFs
+- doctor check `cluster/name_drift`
+- `tests/conftest.py` autouse `_block_real_zotero` fixture with `ALLOW_REAL_ZOTERO=1` / `@pytest.mark.real_zotero` opt-out
+- `unpaywall_email` optional config field
+- 28 new tests across 6 files
+
+### Changed
+- `ClusterRegistry.bind()` raises `CollisionError` on duplicate `zotero_collection_key` unless `force_shared=True`
+- `ClusterRegistry.bind()` and `.rename()` sync the corresponding Zotero collection name by default
+
+### Tests
+- 2032 baseline -> ~2060 passing target
+
 ## v0.74.0 (2026-05-02)
 
 Workflow drift prevention + per-batch sub-collection. Driven by audit

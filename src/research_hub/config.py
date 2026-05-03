@@ -77,6 +77,8 @@ class HubConfig:
         config_zotero_collections: dict[str, dict] = {}
         config_persona: str | None = None
         config_no_zotero: bool = False
+        config_unpaywall_email: str | None = None
+        zotero: dict = {}
 
         config_path = _resolve_config_path()
         if config_path is not None:
@@ -95,10 +97,13 @@ class HubConfig:
             config_persona = data.get("persona")
             config_no_zotero = bool(data.get("no_zotero", False))
             zotero = data.get("zotero", {})
+            config_unpaywall_email = data.get("unpaywall_email")
             config_zotero_library_id = zotero.get("library_id")
             config_zotero_library_type = zotero.get("library_type")
             config_zotero_default_collection = zotero.get("default_collection")
             config_zotero_collections = zotero.get("collections", {})
+            if not config_unpaywall_email:
+                config_unpaywall_email = zotero.get("unpaywall_email")
 
         raw_root = config_root or os.environ.get("RESEARCH_HUB_ROOT")
         raw_path = config_raw or os.environ.get("RESEARCH_HUB_RAW")
@@ -141,10 +146,14 @@ class HubConfig:
         self.zotero_collections = config_zotero_collections if isinstance(
             config_zotero_collections, dict
         ) else {}
+        self.zotero = zotero if isinstance(zotero, dict) else {}
         self.persona = str(config_persona or os.environ.get("RESEARCH_HUB_PERSONA", "")).strip().lower()
         self.no_zotero = config_no_zotero or (
             os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in {"1", "true", "yes"}
         )
+        self.unpaywall_email = str(
+            config_unpaywall_email or os.environ.get("UNPAYWALL_EMAIL", "")
+        ).strip()
 
         for path in (self.logs, self.research_hub_dir):
             try:

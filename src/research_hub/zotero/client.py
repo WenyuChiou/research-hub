@@ -465,6 +465,13 @@ class ZoteroDualClient:
         coll = self._read("collection", collection_key)
         return self.web.delete_collection(coll)
 
+    def update_collection(self, key: str, name: str) -> dict:
+        """PATCH Zotero collection name. Reads version internally."""
+        self._require_web()
+        coll = self.web.collection(key)
+        version = coll.get("version") or coll.get("data", {}).get("version")
+        return self.web.update_collection({"key": key, "version": version, "name": name})
+
     # --- TEMPLATES ---
     def get_template(self, item_type="journalArticle"):
         return self.web.item_template(item_type)

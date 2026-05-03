@@ -98,8 +98,13 @@ def test_doctor_collection_collision_warns_on_shared_key(tmp_path):
     registry = ClusterRegistry(cfg.clusters_file)
     registry.create(query="alpha", name="Alpha", slug="alpha")
     registry.create(query="beta", name="Beta", slug="beta")
-    registry.bind("alpha", zotero_collection_key="ABC123")
-    registry.bind("beta", zotero_collection_key="ABC123")
+    registry.bind("alpha", zotero_collection_key="ABC123", sync_zotero=False)
+    registry.bind(
+        "beta",
+        zotero_collection_key="ABC123",
+        sync_zotero=False,
+        force_shared=True,
+    )
 
     result = doctor.check_cluster_collection_collision(cfg)
     assert result.status == "WARN"
@@ -114,8 +119,8 @@ def test_doctor_collection_collision_ok_when_unique(tmp_path):
     registry = ClusterRegistry(cfg.clusters_file)
     registry.create(query="alpha", name="Alpha", slug="alpha")
     registry.create(query="beta", name="Beta", slug="beta")
-    registry.bind("alpha", zotero_collection_key="ABC123")
-    registry.bind("beta", zotero_collection_key="XYZ999")
+    registry.bind("alpha", zotero_collection_key="ABC123", sync_zotero=False)
+    registry.bind("beta", zotero_collection_key="XYZ999", sync_zotero=False)
 
     result = doctor.check_cluster_collection_collision(cfg)
     assert result.status == "OK"

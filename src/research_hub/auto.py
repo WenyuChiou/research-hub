@@ -156,6 +156,7 @@ def auto_pipeline(
     dry_run: bool = False,
     print_progress: bool = True,
     zotero_batch_size: int = 50,
+    with_pdfs: bool = False,
 ) -> AutoReport:
     """End-to-end ingest + optional NotebookLM publish.
 
@@ -228,6 +229,8 @@ def auto_pipeline(
                 f"  fit-check via LLM judge ({cli_for_plan}, threshold={fit_check_threshold})"
             )
         plan_lines.append(f"  ingest into cluster {slug}")
+        if with_pdfs:
+            plan_lines.append("  attach open-access PDFs from arXiv/Unpaywall")
         if do_cluster_overview:
             cli = llm_cli or detect_llm_cli() or "(none on PATH -> save prompt only)"
             plan_lines.append(f"  cluster overview auto-fill via LLM CLI ({cli})")
@@ -288,13 +291,16 @@ def auto_pipeline(
     # 5. Ingest
     try:
 
-        rc = run_pipeline(
-            dry_run=False,
-            cluster_slug=slug,
-            query=topic,
-            verify=False,
-            zotero_batch_size=zotero_batch_size,
-        )
+        run_kwargs = {
+            "dry_run": False,
+            "cluster_slug": slug,
+            "query": topic,
+            "verify": False,
+            "zotero_batch_size": zotero_batch_size,
+        }
+        if with_pdfs:
+            run_kwargs["with_pdfs"] = True
+        rc = run_pipeline(**run_kwargs)
         if rc != 0:
             raise RuntimeError("pipeline returned exit code " + str(rc))        
         # Count actual ingested files (anything in raw/<slug>/ now)
@@ -652,11 +658,27 @@ def _ensure_zotero_collection(registry, cluster, slug: str, report: AutoReport, 
         web = getattr(zot, "web", None) or zot
         existing_key = _find_existing_collection_key_by_name(web, cluster.name)
         if existing_key:
-            cluster.zotero_collection_key = existing_key
-            registry.save()
-            _step_log(report, "zotero.bind", True, 0.0,
-                      f"reused existing collection {existing_key} for {slug}", print_progress)
-            return
+            collision_slug = next(
+                (
+                    other.slug
+                    for other in registry.list()
+                    if other.slug != slug
+                    and (other.zotero_collection_key or "").strip() == existing_key
+                ),
+                None,
+            )
+            if collision_slug:
+                if print_progress:
+                    print(
+                        f"  [WARN] Zotero collection {existing_key} is already bound to "
+                        f"{collision_slug}; creating a fresh collection for {slug} instead."
+                    )
+            else:
+                cluster.zotero_collection_key = existing_key
+                registry.save()
+                _step_log(report, "zotero.bind", True, 0.0,
+                          f"reused existing collection {existing_key} for {slug}", print_progress)
+                return
         result = web.create_collections([{"name": cluster.name}])
         # pyzotero returns {"successful": {"0": {"key": "ABC123", ...}}, ...}
         successful = (result or {}).get("successful", {}) if isinstance(result, dict) else {}

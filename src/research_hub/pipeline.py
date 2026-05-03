@@ -576,6 +576,7 @@ def run_pipeline(
     no_fit_check_auto_labels: bool = False,
     zotero_batch_size: int = ZOTERO_BATCH_SIZE,
     batch_label: str | None = None,
+    with_pdfs: bool = False,
 ) -> int:
     del no_fit_check_auto_labels
     cfg = get_config()
@@ -1062,6 +1063,52 @@ def run_pipeline(
                         "traceback": traceback.format_exc(),
                     }
                 )
+
+        if with_pdfs and not no_zotero:
+            from research_hub.zotero.pdf_attach import attach_pdfs, plan_attach_for_items
+
+            oa_email = (
+                getattr(cfg, "unpaywall_email", "")
+                or (
+                    cfg.zotero.get("unpaywall_email", "")
+                    if isinstance(getattr(cfg, "zotero", None), dict)
+                    else ""
+                )
+            )
+            just_added_keys = [pp["zotero_key"] for pp in papers_for_notes if pp.get("zotero_key")]
+            if just_added_keys:
+                try:
+                    items = [zot.item(key) for key in just_added_keys]
+                    plans = plan_attach_for_items(items, unpaywall_email=oa_email)
+                    pdf_results = attach_pdfs(zot, plans, rate_limit_rps=2.0)
+                    attached = sum(1 for value in pdf_results.values() if value == "ok")
+                    p(f"PDF attach: {attached}/{len(plans)} attached")
+                    if cluster_slug:
+                        pdf_batch_label = f"pdf-attach-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+                        papers_by_key = {
+                            pp.get("zotero_key", ""): pp
+                            for pp in papers_for_notes
+                            if pp.get("zotero_key")
+                        }
+                        for item_key, status in pdf_results.items():
+                            if status != "ok":
+                                continue
+                            paper = papers_by_key.get(item_key)
+                            if paper is None:
+                                continue
+                            manifest.append(
+                                new_entry(
+                                    cluster=cluster_slug,
+                                    query=_query_for_paper(paper, query),
+                                    action="pdf-attach",
+                                    doi=paper.get("doi", ""),
+                                    title=paper.get("title", ""),
+                                    zotero_key=item_key,
+                                    batch_label=pdf_batch_label,
+                                )
+                            )
+                except Exception as exc:
+                    p(f"  [warn] PDF attach failed: {exc}")
 
         cr = sum(1 for r in zr if r["status"] == "CREATED")
         sk = sum(1 for r in zr if r["status"] == "SKIPPED_DUPLICATE")

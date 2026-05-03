@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.74.0"
+version = "0.75.0"
 description = "AI-operable research workspace for Zotero, Obsidian, and NotebookLM. Use any two, or all three, through CLI, MCP, REST, and dashboard."
 readme = "README.md"
 license = {text = "MIT"}
@@ -67,6 +67,7 @@ markers = [
     "network: Tests that hit real external APIs (OpenAlex, arXiv, etc)",
     "evals: Evaluation tests measuring search accuracy and fit-check quality",
     "slow: Tests that take >5 seconds to run",
+    "real_zotero: bypass the real-Zotero block (rare)",
 ]
 testpaths = ["tests"]
 addopts = "--ignore=tests/stress -m 'not stress' -p no:cacheprovider -p no:tmpdir"

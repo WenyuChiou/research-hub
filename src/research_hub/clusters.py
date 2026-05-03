@@ -18,6 +18,33 @@ from research_hub.security import atomic_write_text, safe_join
 logger = logging.getLogger(__name__)
 
 
+class CollisionError(ValueError):
+    """Raised when two clusters attempt to bind the same Zotero collection key."""
+
+
+def _try_sync_zotero_collection_name(key: str, vault_name: str) -> None:
+    """Best-effort: PATCH Zotero collection name to match the vault name."""
+    try:
+        from research_hub.zotero.client import ZoteroDualClient, get_client
+
+        try:
+            zot = ZoteroDualClient().web
+        except Exception:
+            zot = get_client()
+        coll = zot.collection(key)
+        current_version = coll.get("version") or coll.get("data", {}).get("version")
+        if not current_version:
+            logger.warning("could not read version for Zotero coll %s; skip name sync", key)
+            return
+        if coll.get("data", {}).get("name") == vault_name:
+            logger.info("Zotero coll %s already matches vault name %r", key, vault_name)
+            return
+        zot.update_collection({"key": key, "version": current_version, "name": vault_name})
+        logger.info("synced Zotero coll %s name to %r", key, vault_name)
+    except Exception as exc:
+        logger.warning("failed to sync Zotero coll %s name: %s", key, exc)
+
+
 @dataclass
 class CascadeReport:
     slug: str
@@ -284,13 +311,27 @@ class ClusterRegistry:
         notebooklm_notebook: str | None = None,
         notebooklm_notebook_url: str | None = None,
         notebooklm_notebook_id: str | None = None,
+        sync_zotero: bool = True,
+        force_shared: bool = False,
     ) -> Cluster:
         """Update the cluster's system bindings. Only non-None params are changed."""
         cluster = self.clusters.get(slug)
         if cluster is None:
             raise ValueError(f"Cluster not found: {slug}")
+        normalized_key = zotero_collection_key
+        if isinstance(normalized_key, str):
+            normalized_key = normalized_key.strip() or None
+        if normalized_key and not force_shared:
+            for other_slug, other in self.clusters.items():
+                if other_slug == slug:
+                    continue
+                if (other.zotero_collection_key or "").strip() == normalized_key:
+                    raise CollisionError(
+                        f"zotero_collection_key '{normalized_key}' is already "
+                        f"bound by cluster '{other_slug}'. Pass force_shared=True if intentional."
+                    )
         if zotero_collection_key is not None:
-            cluster.zotero_collection_key = zotero_collection_key
+            cluster.zotero_collection_key = normalized_key
         if obsidian_subfolder is not None:
             cluster.obsidian_subfolder = obsidian_subfolder
         if notebooklm_notebook is not None:
@@ -300,16 +341,20 @@ class ClusterRegistry:
         if notebooklm_notebook_id is not None:
             cluster.notebooklm_notebook_id = notebooklm_notebook_id
         self.save()
+        if sync_zotero and cluster.zotero_collection_key and cluster.name:
+            _try_sync_zotero_collection_name(cluster.zotero_collection_key, cluster.name)
         self._refresh_graph_if_possible()
         return cluster
 
-    def rename(self, slug: str, new_name: str) -> Cluster:
+    def rename(self, slug: str, new_name: str, *, sync_zotero: bool = True) -> Cluster:
         """Rename a cluster display name without changing its slug."""
         cluster = self.clusters.get(slug)
         if cluster is None:
             raise ValueError(f"Cluster not found: {slug}")
         cluster.name = new_name
         self.save()
+        if sync_zotero and cluster.zotero_collection_key:
+            _try_sync_zotero_collection_name(cluster.zotero_collection_key, new_name)
         self._refresh_graph_if_possible()
         return cluster
 
@@ -453,7 +498,13 @@ def compute_cluster_cascade_report(cfg, slug: str) -> CascadeReport:
     return report
 
 
-def cascade_delete_cluster(cfg, slug: str, *, apply: bool) -> CascadeReport:
+def cascade_delete_cluster(
+    cfg,
+    slug: str,
+    *,
+    apply: bool,
+    delete_zotero_collection: bool = False,
+) -> CascadeReport:
     from research_hub.dedup import DedupIndex
     from research_hub.pipeline_repair import _iter_collection_items
     from research_hub.zotero.client import ZoteroDualClient
@@ -487,6 +538,13 @@ def cascade_delete_cluster(cfg, slug: str, *, apply: bool) -> CascadeReport:
             collections = [key for key in data.get("collections", []) if key != cluster.zotero_collection_key]
             data["collections"] = collections
             zot.update_item(data)
+        if delete_zotero_collection:
+            try:
+                ZoteroDualClient().delete_collection(cluster.zotero_collection_key)
+            except Exception as exc:
+                print(
+                    f"warning: failed to delete Zotero coll {cluster.zotero_collection_key}: {exc}"
+                )
 
     dedup_path = cfg.research_hub_dir / "dedup_index.json"
     dedup = DedupIndex.load(dedup_path)

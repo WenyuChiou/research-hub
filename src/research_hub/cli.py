@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from research_hub.clusters import ClusterRegistry
@@ -284,15 +285,36 @@ def _clusters_new(query: str, name: str | None, slug: str | None) -> int:
     return 0
 
 
-def _clusters_bind(slug: str, zotero_key, obsidian_folder, notebooklm_notebook) -> int:
+def _clusters_bind(
+    slug: str,
+    zotero_key,
+    obsidian_folder,
+    notebooklm_notebook,
+    *,
+    sync_zotero: bool = True,
+    force_shared: bool = False,
+) -> int:
     cfg = get_config()
+    from research_hub.clusters import CollisionError
+
     reg = ClusterRegistry(cfg.clusters_file)
-    cluster = reg.bind(
-        slug=slug,
-        zotero_collection_key=zotero_key,
-        obsidian_subfolder=obsidian_folder,
-        notebooklm_notebook=notebooklm_notebook,
-    )
+    try:
+        cluster = reg.bind(
+            slug=slug,
+            zotero_collection_key=zotero_key,
+            obsidian_subfolder=obsidian_folder,
+            notebooklm_notebook=notebooklm_notebook,
+            sync_zotero=sync_zotero,
+            force_shared=force_shared,
+        )
+    except CollisionError as exc:
+        print(str(exc), file=sys.stderr)
+        print(
+            "Remedy: re-run with --force-shared if the shared binding is intentional, "
+            "or use `research-hub clusters resolve-collision <slug> --new --apply`.",
+            file=sys.stderr,
+        )
+        return 2
     print(f"Bound {cluster.slug}:")
     print(f"  Zotero collection:   {cluster.zotero_collection_key or '(unset)'}")
     print(f"  Obsidian folder:     {cluster.obsidian_subfolder or '(unset)'}")
@@ -300,10 +322,10 @@ def _clusters_bind(slug: str, zotero_key, obsidian_folder, notebooklm_notebook) 
     return 0
 
 
-def _clusters_rename(slug: str, name: str) -> int:
+def _clusters_rename(slug: str, name: str, *, sync_zotero: bool = True) -> int:
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.rename(slug, name)
+    cluster = registry.rename(slug, name, sync_zotero=False)
     print(f"{cluster.slug}\t{cluster.name}")
     cache_path = cfg.research_hub_dir / "nlm_cache.json"
     if cache_path.exists():
@@ -314,7 +336,7 @@ def _clusters_rename(slug: str, name: str) -> int:
         if isinstance(cache, dict) and isinstance(cache.get(cluster.slug), dict):
             cache[cluster.slug]["notebook_name"] = name
             cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
-    if not cluster.zotero_collection_key:
+    if not sync_zotero or not cluster.zotero_collection_key:
         return 0
     try:
         from research_hub.zotero.client import get_client
@@ -333,17 +355,174 @@ def _clusters_rename(slug: str, name: str) -> int:
     return 0
 
 
-def _clusters_delete(slug: str, dry_run: bool, purge_folder: bool = False) -> int:
+def _clusters_delete(
+    slug: str,
+    dry_run: bool,
+    purge_folder: bool = False,
+    *,
+    delete_zotero_collection: bool = False,
+) -> int:
     del purge_folder
     cfg = get_config()
     from research_hub.clusters import cascade_delete_cluster
 
-    report = cascade_delete_cluster(cfg, slug, apply=not dry_run)
+    report = cascade_delete_cluster(
+        cfg,
+        slug,
+        apply=not dry_run,
+        delete_zotero_collection=delete_zotero_collection,
+    )
     print(report.summary())
     if dry_run:
         print("")
         print("Run with --apply to execute the delete.")
         return 0
+    return 0
+
+
+def _clusters_sync_names(
+    slug_filter: str | None,
+    apply: bool,
+    direction: str,
+) -> int:
+    cfg = get_config()
+    from research_hub.zotero.client import get_client
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    zot = get_client()
+    clusters = registry.list()
+    if slug_filter:
+        cluster = registry.get(slug_filter)
+        if cluster is None:
+            print(f"Cluster not found: {slug_filter}", file=sys.stderr)
+            return 2
+        clusters = [cluster]
+
+    drifts: list[tuple[object, str]] = []
+    print("slug\tvault_name\tzotero_name")
+    for cluster in clusters:
+        if not cluster.zotero_collection_key:
+            continue
+        try:
+            coll = zot.collection(cluster.zotero_collection_key)
+            zotero_name = str(coll.get("data", {}).get("name", "") or "")
+        except Exception as exc:
+            zotero_name = f"<error: {exc}>"
+        if cluster.name == zotero_name:
+            continue
+        drifts.append((cluster, zotero_name))
+        print(f"{cluster.slug}\t{cluster.name}\t{zotero_name}")
+
+    if not drifts:
+        print("All cluster names already match.")
+        return 0
+    if not apply:
+        print("")
+        print("Preview only. Re-run with --apply to sync names.")
+        return 0
+
+    for cluster, zotero_name in drifts:
+        if direction == "vault-to-zotero":
+            _clusters_rename(cluster.slug, cluster.name, sync_zotero=True)
+            continue
+        registry.rename(cluster.slug, zotero_name, sync_zotero=False)
+        print(f"updated vault name for {cluster.slug} -> {zotero_name!r}")
+    return 0
+
+
+def _clusters_resolve_collision(
+    slug: str,
+    *,
+    new: bool,
+    target_slug: str | None,
+    apply: bool,
+    force_shared: bool,
+) -> int:
+    cfg = get_config()
+    from research_hub.vault.sync import list_cluster_notes, list_zotero_collection_items
+    from research_hub.zotero.client import get_client
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(slug)
+    if cluster is None:
+        print(f"Cluster not found: {slug}", file=sys.stderr)
+        return 2
+    key = (cluster.zotero_collection_key or "").strip()
+    if not key:
+        print(f"{slug}: no Zotero collection is bound")
+        return 0
+
+    colliding = [
+        other
+        for other in registry.list()
+        if other.slug != slug and (other.zotero_collection_key or "").strip() == key
+    ]
+    if not colliding:
+        print(f"{slug}: no collision detected")
+        return 0
+
+    print(f"{slug}: {key} is also bound by {', '.join(other.slug for other in colliding)}")
+    if not new and not target_slug:
+        print("Specify exactly one of --new or --into <target>", file=sys.stderr)
+        return 2
+    if new and target_slug:
+        print("Use either --new or --into, not both", file=sys.stderr)
+        return 2
+
+    zot = get_client()
+    if not apply:
+        if new:
+            print("Preview: would create a fresh Zotero collection and re-tag this cluster's items.")
+        else:
+            print(f"Preview: would drop the Zotero binding from {slug} and keep it on {target_slug}.")
+        return 0
+
+    if new:
+        result = zot.create_collections([{"name": cluster.name, "parentCollection": False}])
+        successful = (result or {}).get("successful", {}) if isinstance(result, dict) else {}
+        first = next(iter(successful.values()), None) if successful else None
+        new_key = (first or {}).get("key") or (first or {}).get("data", {}).get("key")
+        if not new_key:
+            print(f"Could not create fresh Zotero collection: {result}", file=sys.stderr)
+            return 1
+        registry.bind(slug, zotero_collection_key=new_key, sync_zotero=False, force_shared=False)
+        note_dois = {
+            str(_read_doi_from_frontmatter(note_path) or "").strip().lower()
+            for note_path in list_cluster_notes(slug, cfg.raw)
+        }
+        note_dois.discard("")
+        moved = 0
+        for item in list_zotero_collection_items(zot, key):
+            data = item.get("data", {})
+            doi = str(data.get("DOI", "") or "").strip().lower()
+            if not doi or doi not in note_dois:
+                continue
+            current = zot.item(item.get("key") or item.get("data", {}).get("key"))
+            current_data = current.get("data", {})
+            collections = list(current_data.get("collections", []))
+            if new_key not in collections:
+                collections.append(new_key)
+                current_data["collections"] = collections
+                zot.update_item(current_data)
+                moved += 1
+        print(f"Created {new_key} and added it to {moved} matching item(s).")
+        return 0
+
+    target = registry.get(target_slug or "")
+    if target is None:
+        print(f"Cluster not found: {target_slug}", file=sys.stderr)
+        return 2
+    if not force_shared:
+        print("--into requires --force-shared", file=sys.stderr)
+        return 2
+    if (target.zotero_collection_key or "").strip() != key:
+        print(
+            f"{target.slug} is not bound to the colliding key {key!r}",
+            file=sys.stderr,
+        )
+        return 2
+    registry.bind(slug, zotero_collection_key="", sync_zotero=False)
+    print(f"Removed Zotero binding from {slug}; {target.slug} keeps {key}.")
     return 0
 
 
@@ -730,6 +909,192 @@ def _cmd_memory(args, cfg) -> int:
     raise ValueError(f"unknown memory command: {args.memory_command}")
 
 
+def _manifest_batch_label(prefix: str) -> str:
+    return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+
+
+def _paper_enrich_existing(
+    cluster_slug: str,
+    *,
+    limit: int,
+    apply: bool,
+    rate_limit: float,
+) -> int:
+    cfg = get_config()
+    from research_hub.manifest import Manifest, new_entry
+    from research_hub.vault.sync import list_zotero_collection_items
+    from research_hub.zotero.client import get_client
+    from research_hub.zotero.enrich import apply_enrichment, plan_enrichment
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        print(f"Cluster not found: {cluster_slug}", file=sys.stderr)
+        return 2
+    if not cluster.zotero_collection_key:
+        print(f"{cluster_slug} has no Zotero collection binding", file=sys.stderr)
+        return 2
+
+    zot = get_client()
+    items = list_zotero_collection_items(zot, cluster.zotero_collection_key)
+    if limit > 0:
+        items = items[:limit]
+    plans = plan_enrichment(items)
+    if not plans:
+        print("No enrichment candidates found.")
+        return 0
+
+    print("item_key\ttitle\tdoi\tfields")
+    for plan in plans:
+        print(
+            f"{plan.item_key}\t{plan.title}\t{plan.doi}\t"
+            f"{', '.join(sorted(plan.fields_to_fill))}"
+        )
+    if not apply:
+        print("")
+        print("Preview only. Re-run with --apply to write metadata back to Zotero.")
+        return 0
+
+    results = apply_enrichment(zot, plans, rate_limit_rps=rate_limit)
+    manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
+    batch_label = _manifest_batch_label("enrich")
+    ok_count = 0
+    for plan in plans:
+        status = results.get(plan.item_key, "")
+        if status != "ok":
+            continue
+        ok_count += 1
+        manifest.append(
+            new_entry(
+                cluster=cluster_slug,
+                query=cluster.first_query or cluster.name,
+                action="enrich-existing",
+                doi=plan.doi,
+                title=plan.title,
+                zotero_key=plan.item_key,
+                batch_label=batch_label,
+            )
+        )
+    print(f"Applied enrichment to {ok_count}/{len(plans)} item(s).")
+    return 0
+
+
+def _paper_attach_pdfs(
+    cluster_slug: str,
+    *,
+    limit: int,
+    apply: bool,
+    rate_limit: float,
+) -> int:
+    cfg = get_config()
+    from research_hub.manifest import Manifest, new_entry
+    from research_hub.vault.sync import list_zotero_collection_items
+    from research_hub.zotero.client import get_client
+    from research_hub.zotero.pdf_attach import attach_pdfs, plan_attach_for_items
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        print(f"Cluster not found: {cluster_slug}", file=sys.stderr)
+        return 2
+    if not cluster.zotero_collection_key:
+        print(f"{cluster_slug} has no Zotero collection binding", file=sys.stderr)
+        return 2
+
+    zot = get_client()
+    items = list_zotero_collection_items(zot, cluster.zotero_collection_key)
+    if limit > 0:
+        items = items[:limit]
+    plans = plan_attach_for_items(items, unpaywall_email=getattr(cfg, "unpaywall_email", ""))
+
+    print("item_key\tsource\tpdf_url\ttitle")
+    for plan in plans:
+        print(f"{plan.item_key}\t{plan.source or '-'}\t{plan.pdf_url or '-'}\t{plan.title}")
+    if not apply:
+        print("")
+        print("Preview only. Re-run with --apply to attach PDFs.")
+        return 0
+
+    results = attach_pdfs(zot, plans, rate_limit_rps=rate_limit)
+    manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
+    batch_label = _manifest_batch_label("pdf-attach")
+    ok_count = 0
+    title_by_key = {item.get("key", ""): str(item.get("data", {}).get("title", "") or "") for item in items}
+    doi_by_key = {item.get("key", ""): str(item.get("data", {}).get("DOI", "") or "") for item in items}
+    for item_key, status in results.items():
+        if status != "ok":
+            continue
+        ok_count += 1
+        manifest.append(
+            new_entry(
+                cluster=cluster_slug,
+                query=cluster.first_query or cluster.name,
+                action="pdf-attach",
+                doi=doi_by_key.get(item_key, ""),
+                title=title_by_key.get(item_key, ""),
+                zotero_key=item_key,
+                batch_label=batch_label,
+            )
+        )
+    print(f"Attached PDFs to {ok_count}/{len(plans)} item(s).")
+    return 0
+
+
+def _zotero_gc(*, apply: bool, yes: bool, no_test_pattern: bool, age_days: int) -> int:
+    cfg = get_config()
+    from research_hub.zotero.client import get_client
+    from research_hub.zotero.gc import delete_candidates, scan_zotero_for_gc
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    vault_keys = {
+        (cluster.zotero_collection_key or "").strip()
+        for cluster in registry.list()
+        if (cluster.zotero_collection_key or "").strip()
+    }
+    zot = get_client()
+    candidates = scan_zotero_for_gc(
+        zot,
+        vault_keys,
+        include_test_pattern=not no_test_pattern,
+        age_days=age_days,
+    )
+    if not candidates:
+        print("No Zotero GC candidates found.")
+        return 0
+
+    print("key\tname\titems\tsubcollections\treasons")
+    for candidate in candidates:
+        print(
+            f"{candidate.key}\t{candidate.name}\t{candidate.num_items}\t"
+            f"{candidate.num_collections}\t{', '.join(candidate.reasons)}"
+        )
+    if not apply:
+        print("")
+        print("Preview only. Re-run with --apply to delete candidates.")
+        return 0
+
+    selected = list(candidates)
+    if not yes:
+        kept: list = []
+        for candidate in candidates:
+            answer = input(f"Delete {candidate.name} ({candidate.key})? [y/N] ").strip().lower()
+            if answer in {"y", "yes"}:
+                kept.append(candidate)
+        selected = kept
+    else:
+        selected = [
+            candidate
+            for candidate in candidates
+            if any(reason.startswith("empty>") for reason in candidate.reasons)
+            and any(reason.startswith("test-pattern(") for reason in candidate.reasons)
+            and "orphan-from-vault" in candidate.reasons
+        ]
+    results = delete_candidates(zot, selected)
+    ok_count = sum(1 for status in results.values() if status == "ok")
+    print(f"Deleted {ok_count}/{len(selected)} collection(s).")
+    return 0
+
+
 def _paper_command(args) -> int:
     if args.paper_command == "lookup-doi":
         from research_hub.doi_lookup import batch_lookup_missing_dois, lookup_doi_for_slug
@@ -803,6 +1168,20 @@ def _paper_command(args) -> int:
         print(f"restored: {result['restored']}")
         print(f"path: {result['path']}")
         return 0
+    if args.paper_command == "enrich-existing":
+        return _paper_enrich_existing(
+            args.cluster,
+            limit=args.limit,
+            apply=args.apply,
+            rate_limit=args.rate_limit,
+        )
+    if args.paper_command == "attach-pdfs":
+        return _paper_attach_pdfs(
+            args.cluster,
+            limit=args.limit,
+            apply=args.apply,
+            rate_limit=args.rate_limit,
+        )
     return 2
 
 
@@ -1151,6 +1530,24 @@ def _read_zotero_key_from_frontmatter(md_path: Path) -> str | None:
     import re as _re
     match = _re.search(r"^zotero-key:\s*([A-Z0-9]+)", frontmatter, _re.MULTILINE)
     return match.group(1) if match else None
+
+
+def _read_doi_from_frontmatter(md_path: Path) -> str | None:
+    """Pull the `doi:` line out of an Obsidian raw note frontmatter."""
+    try:
+        text = md_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end < 0:
+        return None
+    frontmatter = text[3:end]
+    import re as _re
+
+    match = _re.search(r'^doi:\s*[\'"]?([^\'"\n]+)', frontmatter, _re.MULTILINE)
+    return match.group(1).strip() if match else None
 
 
 def _search(
@@ -2364,6 +2761,7 @@ def _auto(
     force: bool = False,
     show: bool = True,
     batch_label: str | None = None,
+    with_pdfs: bool = False,
 ) -> int:
     from research_hub.auto import auto_pipeline
 
@@ -2380,22 +2778,25 @@ def _auto(
     if batch_label is not None:
         os.environ["RESEARCH_HUB_BATCH_LABEL"] = batch_label
     try:
-        report = auto_pipeline(
-            topic,
-            cluster_slug=cluster_slug,
-            cluster_name=cluster_name,
-            max_papers=max_papers,
-            field=field,
-            do_nlm=do_nlm,
-            do_crystals=do_crystals,
-            do_cluster_overview=do_cluster_overview,
-            do_fit_check=do_fit_check,
-            fit_check_threshold=fit_check_threshold,
-            zotero_batch_size=zotero_batch_size,
-            llm_cli=llm_cli,
-            dry_run=dry_run,
-            print_progress=True,
-        )
+        auto_kwargs = {
+            "topic": topic,
+            "cluster_slug": cluster_slug,
+            "cluster_name": cluster_name,
+            "max_papers": max_papers,
+            "field": field,
+            "do_nlm": do_nlm,
+            "do_crystals": do_crystals,
+            "do_cluster_overview": do_cluster_overview,
+            "do_fit_check": do_fit_check,
+            "fit_check_threshold": fit_check_threshold,
+            "zotero_batch_size": zotero_batch_size,
+            "llm_cli": llm_cli,
+            "dry_run": dry_run,
+            "print_progress": True,
+        }
+        if with_pdfs:
+            auto_kwargs["with_pdfs"] = True
+        report = auto_pipeline(**auto_kwargs)
     finally:
         if batch_label is not None:
             if previous_batch_label is None:
@@ -2679,6 +3080,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Bypass Zotero library duplicate blocking and allow re-ingest",
     )
+    run_parser.add_argument(
+        "--with-pdfs",
+        action="store_true",
+        help="Attach open-access PDFs from arXiv/Unpaywall after ingest",
+    )
 
     auto_parser = subparsers.add_parser(
         "auto",
@@ -2736,6 +3142,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional explicit batch label for the ingest sub-collection",
     )
+    auto_parser.add_argument(
+        "--with-pdfs",
+        action="store_true",
+        help="Attach open-access PDFs from arXiv/Unpaywall after ingest",
+    )
 
     plan_parser = subparsers.add_parser(
         "plan",
@@ -2777,6 +3188,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--batch-label",
         default=None,
         help="Optional explicit batch label for the ingest sub-collection",
+    )
+    ingest_parser.add_argument(
+        "--with-pdfs",
+        action="store_true",
+        help="Attach open-access PDFs from arXiv/Unpaywall after ingest",
     )
 
     import_folder_parser = subparsers.add_parser(
@@ -2889,14 +3305,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="NotebookLM notebook name",
     )
+    bind_parser.add_argument(
+        "--no-sync-zotero",
+        action="store_true",
+        help="Do not sync the Zotero collection name to the vault cluster name",
+    )
+    bind_parser.add_argument(
+        "--force-shared",
+        action="store_true",
+        help="Allow duplicate zotero_collection_key binding intentionally",
+    )
     rename_parser = clusters_subparsers.add_parser("rename", help="Rename a cluster")
     rename_parser.add_argument("slug")
     rename_parser.add_argument("--name", required=True)
+    rename_parser.add_argument(
+        "--no-sync-zotero",
+        action="store_true",
+        help="Do not sync the Zotero collection name",
+    )
     delete_parser = clusters_subparsers.add_parser("delete", help="Delete a cluster")
     delete_parser.add_argument("slug")
     delete_parser.add_argument("--dry-run", action="store_true")
     delete_parser.add_argument("--apply", action="store_true", help="Apply the delete instead of previewing it")
     delete_parser.add_argument("--force", action="store_true", help="Confirm deletion of a non-empty cluster")
+    delete_parser.add_argument(
+        "--delete-zotero-collection",
+        action="store_true",
+        help="Also delete the now-empty Zotero collection container",
+    )
     merge_parser = clusters_subparsers.add_parser("merge", help="Merge two clusters")
     merge_parser.add_argument("source", help="Source cluster slug (will be removed)")
     merge_parser.add_argument("--into", required=True, dest="target", help="Target cluster slug")
@@ -2944,6 +3380,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--cluster",
         default=None,
         help="Audit only this cluster slug (default: all)",
+    )
+    sync_names = clusters_subparsers.add_parser(
+        "sync-names",
+        help="Detect and fix cluster.name drift between vault and Zotero",
+    )
+    sync_names.add_argument("--cluster", default=None, help="Only this cluster slug (default: all)")
+    sync_names.add_argument("--apply", action="store_true", help="Apply fixes (default: preview only)")
+    sync_names.add_argument(
+        "--direction",
+        choices=["vault-to-zotero", "zotero-to-vault"],
+        default="vault-to-zotero",
+        help="Source of truth (default: vault)",
+    )
+    resolve_parser = clusters_subparsers.add_parser(
+        "resolve-collision",
+        help="Fix two clusters sharing one zotero_collection_key",
+    )
+    resolve_parser.add_argument("slug")
+    resolve_parser.add_argument("--new", action="store_true", help="Create a fresh Zotero collection for this slug and migrate items")
+    resolve_parser.add_argument("--into", dest="target_slug", default=None, help="Drop this slug's Zotero binding; keep it on target")
+    resolve_parser.add_argument("--apply", action="store_true")
+    resolve_parser.add_argument(
+        "--force-shared",
+        action="store_true",
+        help="Required when using --into",
     )
 
     # v0.67: Phase 2 of the Codex skills brief - shell entry point for the
@@ -3533,6 +3994,19 @@ def build_parser() -> argparse.ArgumentParser:
     zotero_backfill.add_argument("--tags", action=argparse.BooleanOptionalAction, default=True)
     zotero_backfill.add_argument("--notes", action=argparse.BooleanOptionalAction, default=True)
     zotero_backfill.add_argument("--apply", action="store_true", help="Write changes")
+    gc_parser = zotero_sub.add_parser("gc", help="Garbage-collect empty/test/orphan Zotero collections")
+    gc_parser.add_argument("--apply", action="store_true")
+    gc_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip confirmation only for collections matching empty + test-pattern + orphan",
+    )
+    gc_parser.add_argument(
+        "--no-test-pattern",
+        action="store_true",
+        help="Skip test-pattern matching",
+    )
+    gc_parser.add_argument("--age-days", type=int, default=30)
 
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
@@ -3765,6 +4239,22 @@ def build_parser() -> argparse.ArgumentParser:
     unarch_p = paper_sub.add_parser("unarchive", help="Restore an archived paper back to active cluster")
     unarch_p.add_argument("--cluster", required=True)
     unarch_p.add_argument("--slug", required=True)
+    enrich_existing = paper_sub.add_parser(
+        "enrich-existing",
+        help="Re-fetch DOI metadata to fill empty Zotero/Obsidian fields",
+    )
+    enrich_existing.add_argument("--cluster", required=True)
+    enrich_existing.add_argument("--limit", type=int, default=0, help="0 = no limit")
+    enrich_existing.add_argument("--apply", action="store_true")
+    enrich_existing.add_argument("--rate-limit", type=float, default=2.0)
+    attach_pdfs_p = paper_sub.add_parser(
+        "attach-pdfs",
+        help="Find OA PDFs (Unpaywall + arXiv) and attach to Zotero items",
+    )
+    attach_pdfs_p.add_argument("--cluster", required=True)
+    attach_pdfs_p.add_argument("--limit", type=int, default=0)
+    attach_pdfs_p.add_argument("--apply", action="store_true")
+    attach_pdfs_p.add_argument("--rate-limit", type=float, default=2.0)
 
     discover_parser = subparsers.add_parser(
         "discover",
@@ -3839,17 +4329,20 @@ def main(argv: list[str] | None = None) -> int:
         require_config()
 
     if args.command in (None, "run"):
-        rc = run_pipeline(
-            dry_run=getattr(args, "dry_run", False),
-            cluster_slug=getattr(args, "cluster", None),
-            query=getattr(args, "query", None),
-            verify=getattr(args, "verify", True),
-            allow_library_duplicates=getattr(args, "allow_library_duplicates", False),
-            fit_check=getattr(args, "fit_check", False),
-            fit_check_threshold=getattr(args, "fit_check_threshold", 3),
-            no_fit_check_auto_labels=getattr(args, "no_fit_check_auto_labels", False),
-            batch_label=getattr(args, "batch_label", None),
-        )
+        run_kwargs = {
+            "dry_run": getattr(args, "dry_run", False),
+            "cluster_slug": getattr(args, "cluster", None),
+            "query": getattr(args, "query", None),
+            "verify": getattr(args, "verify", True),
+            "allow_library_duplicates": getattr(args, "allow_library_duplicates", False),
+            "fit_check": getattr(args, "fit_check", False),
+            "fit_check_threshold": getattr(args, "fit_check_threshold", 3),
+            "no_fit_check_auto_labels": getattr(args, "no_fit_check_auto_labels", False),
+            "batch_label": getattr(args, "batch_label", None),
+        }
+        if getattr(args, "with_pdfs", False):
+            run_kwargs["with_pdfs"] = True
+        rc = run_pipeline(**run_kwargs)
         if rc == 0 and getattr(args, "fit_check", False) and not getattr(args, "no_fit_check_auto_labels", False):
             from research_hub.paper import apply_fit_check_to_labels
 
@@ -4029,19 +4522,23 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             show=args.show,
             batch_label=args.batch_label,
+            with_pdfs=args.with_pdfs,
         )
     if args.command == "ingest":
-        rc = run_pipeline(
-            dry_run=args.dry_run,
-            cluster_slug=args.cluster,
-            query=args.query,
-            verify=args.verify,
-            allow_library_duplicates=args.allow_library_duplicates,
-            fit_check=args.fit_check,
-            fit_check_threshold=args.fit_check_threshold,
-            no_fit_check_auto_labels=args.no_fit_check_auto_labels,
-            batch_label=args.batch_label,
-        )
+        run_kwargs = {
+            "dry_run": args.dry_run,
+            "cluster_slug": args.cluster,
+            "query": args.query,
+            "verify": args.verify,
+            "allow_library_duplicates": args.allow_library_duplicates,
+            "fit_check": args.fit_check,
+            "fit_check_threshold": args.fit_check_threshold,
+            "no_fit_check_auto_labels": args.no_fit_check_auto_labels,
+            "batch_label": args.batch_label,
+        }
+        if args.with_pdfs:
+            run_kwargs["with_pdfs"] = True
+        rc = run_pipeline(**run_kwargs)
         if rc == 0 and args.fit_check and not args.no_fit_check_auto_labels:
             from research_hub.paper import apply_fit_check_to_labels
 
@@ -4130,21 +4627,33 @@ def main(argv: list[str] | None = None) -> int:
                 args.zotero_key,
                 args.obsidian_folder,
                 args.notebooklm_notebook,
+                sync_zotero=not args.no_sync_zotero,
+                force_shared=args.force_shared,
             )
         if args.clusters_command == "rename":
-            return _clusters_rename(args.slug, args.name)
+            return _clusters_rename(args.slug, args.name, sync_zotero=not args.no_sync_zotero)
         if args.clusters_command == "delete":
             from research_hub.clusters import cascade_delete_cluster
 
             cfg = get_config()
-            preview = cascade_delete_cluster(cfg, args.slug, apply=False)
+            preview = cascade_delete_cluster(
+                cfg,
+                args.slug,
+                apply=False,
+                delete_zotero_collection=args.delete_zotero_collection,
+            )
             if args.apply:
                 if preview.has_data() and not args.force:
                     print(preview.summary())
                     print("")
                     print("Cluster is not empty. Re-run with --apply --force.")
                     return 2
-                applied = cascade_delete_cluster(cfg, args.slug, apply=True)
+                applied = cascade_delete_cluster(
+                    cfg,
+                    args.slug,
+                    apply=True,
+                    delete_zotero_collection=args.delete_zotero_collection,
+                )
                 print(applied.summary())
                 return 0
             print(preview.summary())
@@ -4187,6 +4696,16 @@ def main(argv: list[str] | None = None) -> int:
             return _clusters_scaffold_missing()
         if args.clusters_command == "audit":
             return _clusters_audit(args.cluster)
+        if args.clusters_command == "sync-names":
+            return _clusters_sync_names(args.cluster, args.apply, args.direction)
+        if args.clusters_command == "resolve-collision":
+            return _clusters_resolve_collision(
+                args.slug,
+                new=args.new,
+                target_slug=args.target_slug,
+                apply=args.apply,
+                force_shared=args.force_shared,
+            )
     if args.command == "topic":
         from research_hub.topic import (
             SubtopicProposal,
@@ -4442,6 +4961,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "zotero":
         if args.zotero_command == "backfill":
             return _zotero_backfill(args)
+        if args.zotero_command == "gc":
+            return _zotero_gc(
+                apply=args.apply,
+                yes=args.yes,
+                no_test_pattern=args.no_test_pattern,
+                age_days=args.age_days,
+            )
     if args.command == "migrate-yaml":
         return _migrate_yaml(
             assign_cluster=args.assign_cluster,
