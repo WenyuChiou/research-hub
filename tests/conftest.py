@@ -89,6 +89,7 @@ _ZOTERO_WRITE_TEST_MODULES = frozenset({
     "test_v080_abstract_recovery_in_ingest",
     "test_v080_resummarize",
     "test_v080_summary_thin_check",
+    "test_v081_summary_block_and_orphan_skip",
 })
 
 

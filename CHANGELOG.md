@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.81.0 (2026-05-04)
+
+Two small bugs surfaced by the v0.80 end-to-end audit.
+
+### Fixed
+- `summarize.py` `_replace_obsidian_block` was leaving `## Summary` at
+  the ingest-time `[TODO] <title>` placeholder forever — even when
+  claude returned substantive Key Findings. Root cause: the
+  `PaperSummary` dataclass had no `summary` field, the LLM prompt
+  didn't ask for one, and the writer never targeted the block.
+  Fix: prompt now asks for a 1-2 sentence TLDR; `PaperSummary.summary`
+  field added; new `_SUMMARY_BLOCK_RE` writes it. Back-compat: when
+  LLM omits the field, Summary block stays at [TODO] (no-op).
+- `doctor.check_cluster_orphan_papers` was counting `raw/_deleted_*/`
+  soft-delete folders as orphan, producing false WARNs (today's
+  audit showed `!14 folder(s)` from accumulated cleanup history).
+  Fix: skip directories whose name starts with `_deleted_`, mirroring
+  the existing exclusion in `vault/sync.list_cluster_notes`.
+
+### Added
+- `_build_zotero_note_html` includes the new summary block so Zotero
+  child notes also get the TLDR in addition to Key Findings.
+
+### Tests
+- 6 new tests in `tests/test_v081_summary_block_and_orphan_skip.py`.
+
+Tests: 2123 → ~2129.
+
 ## v0.80.0 (2026-05-04)
 
 Clickable PDFs (imported_file) + abstract recovery + chained re-summarize.
