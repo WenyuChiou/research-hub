@@ -82,6 +82,9 @@ _ZOTERO_WRITE_TEST_MODULES = frozenset({
     "test_v076_full_auto",
     "test_v076_pdf_coverage_check",
     "test_v078_html_entity",
+    "test_v079_metadata_normalization",
+    "test_v079_anonymous_author_warning",
+    "test_v079_zotero_trash_protection",
 })
 
 

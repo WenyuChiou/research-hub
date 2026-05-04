@@ -780,6 +780,17 @@ def _authors_to_creators(authors: list[str] | str) -> list[dict]:
     return creators
 
 
+def _smart_journal_fallback(candidate: dict) -> str:
+    """Replace the legacy literal 'preprint' fallback with a smarter default."""
+    venue = (candidate.get("venue") or "").strip()
+    if venue:
+        return venue
+    doi = (candidate.get("doi") or "").strip().lower()
+    if doi.startswith("10.48550/arxiv."):
+        return "arXiv"
+    return ""
+
+
 def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[dict]:
     """Convert search candidates to flat papers_input.json shape.
 
@@ -841,7 +852,7 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
             "metadata_year": candidate.get("metadata_year"),
             "abstract": abstract_text or "(no abstract)",
             "abstract_source": candidate.get("abstract_source") or "",
-            "journal": candidate.get("venue") or "preprint",
+            "journal": _smart_journal_fallback(candidate),
             "slug": slug,
             "sub_category": cluster_slug or "",
             "summary": summary_text,

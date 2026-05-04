@@ -151,6 +151,22 @@ def _unescape_html_in_paper(pp: dict) -> None:
                         author[name_field] = decoded
 
 
+def _normalize_paper_metadata(pp: dict) -> None:
+    """Fix common backend metadata quirks before validation."""
+    doi = (pp.get("doi") or "").strip().lower()
+    is_arxiv = doi.startswith("10.48550/arxiv.")
+
+    journal = (pp.get("journal") or "").strip()
+    if journal.lower() == "preprint":
+        pp["journal"] = "arXiv" if is_arxiv else ""
+    elif not journal and is_arxiv:
+        pp["journal"] = "arXiv"
+
+    volume = (pp.get("volume") or "").strip()
+    if volume and re.match(r"^(abs|pdf)/", volume):
+        pp["volume"] = ""
+
+
 def _validate_paper_input(pp: dict, idx: int) -> list[str]:
     """Validate one paper entry before any Zotero writes."""
     errors: list[str] = []
@@ -192,7 +208,31 @@ def _validate_paper_input(pp: dict, idx: int) -> list[str]:
             f"Paper {idx}: 'key_findings' must be a list of strings "
             f"(got {type(pp['key_findings']).__name__})"
         )
+
+    def _is_anon_author(author) -> bool:
+        if isinstance(author, dict):
+            value = (author.get("name") or author.get("lastName") or "").strip().lower()
+        elif isinstance(author, str):
+            value = author.strip().lower()
+        else:
+            return True
+        return value in {"", "anonymous", "anon", "unknown", "n/a", "none"}
+
+    authors_list = pp.get("authors") or []
+    if isinstance(authors_list, list) and authors_list and all(
+        _is_anon_author(author) for author in authors_list
+    ):
+        errors.append(
+            f"Paper {idx}: WARN -- all authors are anonymous/unknown. "
+            f"Source: DOI={pp.get('doi', '?')}. The paper will still ingest "
+            f"but check whether you really want it; some preprint DOIs "
+            f"return 'Anonymous' before metadata is finalized."
+        )
     return errors
+
+
+def _is_nonfatal_paper_error(err: str) -> bool:
+    return ("missing field '" in err and "pipeline will KeyError" in err) or "WARN --" in err
 
 
 def _write_error_log(logs_dir: Path, errors: list[dict]) -> Path:
@@ -698,6 +738,7 @@ def run_pipeline(
             for idx, paper in enumerate(papers):
                 _auto_generate_missing_fields(paper, cluster_slug)
                 _unescape_html_in_paper(paper)
+                _normalize_paper_metadata(paper)
                 paper_errors = _validate_paper_input(paper, idx)
                 missing_doi_only = (
                     not dry_run
@@ -710,12 +751,17 @@ def run_pipeline(
                 valid_papers.append(paper)
                 if dry_run:
                     for err in paper_errors:
-                        if "missing field '" in err and "pipeline will KeyError" in err:
+                        if _is_nonfatal_paper_error(err):
                             nonfatal_errors.append(err)
                         else:
                             all_errors.append(err)
                 else:
-                    all_errors.extend(paper_errors)
+                    nonfatal_errors.extend(
+                        err for err in paper_errors if _is_nonfatal_paper_error(err)
+                    )
+                    all_errors.extend(
+                        err for err in paper_errors if not _is_nonfatal_paper_error(err)
+                    )
             if all_errors:
                 p("\n=== INPUT VALIDATION FAILED ===")
                 for err in all_errors:
@@ -733,10 +779,13 @@ def run_pipeline(
                 p("\n=== INPUT VALIDATION WARNINGS ===")
                 for err in nonfatal_errors:
                     p(f"  !!{err}")
-                p(
-                    f"\nContinuing dry-run with {len(nonfatal_errors)} non-fatal warnings. "
-                    "A real ingest would fail before any writes."
-                )
+                if dry_run:
+                    p(
+                        f"\nContinuing dry-run with {len(nonfatal_errors)} non-fatal warnings. "
+                        "A real ingest would fail before any writes."
+                    )
+                else:
+                    p(f"\nContinuing ingest with {len(nonfatal_errors)} non-fatal warnings.")
 
         dedup = _load_or_build_dedup(cfg, dry_run=dry_run)
 

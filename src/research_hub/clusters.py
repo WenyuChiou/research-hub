@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import shutil
+import sys
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -55,6 +56,27 @@ def _try_sync_zotero_collection_name(key: str, vault_name: str) -> None:
         )
         logger.warning(msg)
         print(msg, file=_sys.stderr)
+
+
+def _try_restore_zotero_collection(key: str) -> tuple[bool, str]:
+    """Best-effort: clear Zotero's deleted flag for a collection."""
+    try:
+        from research_hub.zotero.client import ZoteroDualClient
+
+        zot = ZoteroDualClient().web
+        coll = zot.collection(key)
+        version = coll.get("version") or coll.get("data", {}).get("version")
+        data = dict(coll.get("data", {}))
+        if not data.get("deleted"):
+            return (True, f"{key}: already active (no restore needed)")
+        data["deleted"] = 0
+        data.setdefault("key", key)
+        if version:
+            data["version"] = version
+        zot.update_collection(data)
+        return (True, f"{key}: restored from Zotero trash")
+    except Exception as exc:
+        return (False, f"{key}: restore failed: {exc}")
 
 
 @dataclass
@@ -556,12 +578,25 @@ def cascade_delete_cluster(
             data["collections"] = collections
             zot.update_item(data)
         if delete_zotero_collection:
-            try:
-                ZoteroDualClient().delete_collection(cluster.zotero_collection_key)
-            except Exception as exc:
+            other_holders = [
+                other.slug
+                for other in ClusterRegistry(cfg.clusters_file).list()
+                if other.slug != slug
+                and (other.zotero_collection_key or "").strip() == cluster.zotero_collection_key
+            ]
+            if other_holders:
                 print(
-                    f"warning: failed to delete Zotero coll {cluster.zotero_collection_key}: {exc}"
+                    f"WARN: refusing to delete Zotero coll {cluster.zotero_collection_key} "
+                    f"because it is still bound by: {', '.join(other_holders)}",
+                    file=sys.stderr,
                 )
+            else:
+                try:
+                    ZoteroDualClient().delete_collection(cluster.zotero_collection_key)
+                except Exception as exc:
+                    print(
+                        f"warning: failed to delete Zotero coll {cluster.zotero_collection_key}: {exc}"
+                    )
 
     dedup_path = cfg.research_hub_dir / "dedup_index.json"
     dedup = DedupIndex.load(dedup_path)
