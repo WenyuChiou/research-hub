@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.79.0 (2026-05-03)
+
+Metadata quality + Zotero trash safety.
+
+### Added
+- `_normalize_paper_metadata(pp)` now runs after `_unescape_html_in_paper`
+  in the ingest pipeline. It fixes:
+  - `journal: "preprint"` -> `"arXiv"` for arXiv DOIs, else empty
+  - `volume: "abs/<id>"` or `"pdf/<id>"` -> empty
+  - empty journal + `10.48550/arXiv.*` DOI -> `"arXiv"`
+- `discover.py:_smart_journal_fallback` replaces the legacy
+  `or "preprint"` literal so callers that bypass `run_pipeline`
+  still get the same arXiv fallback behavior.
+- Anonymous-author WARN support: when all authors are
+  `Anonymous`/`Unknown`/empty, ingest still proceeds but logs
+  `WARN -- all authors are anonymous/unknown` as a non-fatal warning.
+- doctor `cluster/zotero_trashed` check warns when any vault-bound
+  Zotero collection is in the trash.
+- `clusters restore-zotero-coll [--cluster slug] [--apply]` restores
+  trashed cluster collections by clearing Zotero's `deleted` flag.
+- `cascade_delete_cluster --delete-zotero-collection` now refuses to
+  delete a Zotero collection still bound by another cluster.
+- 16 new tests across `tests/test_v079_*.py`.
+
+Tests: 2091 -> 2107.
+
 ## v0.78.0 (2026-05-03)
 
 Single-bug hotfix: HTML-entity decoding before Zotero write.

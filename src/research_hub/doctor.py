@@ -566,6 +566,50 @@ def check_cluster_pdf_coverage(cfg) -> CheckResult:
     )
 
 
+def check_cluster_zotero_trashed(cfg) -> CheckResult:
+    """WARN when a vault cluster's bound Zotero collection is in the trash."""
+    from research_hub.clusters import ClusterRegistry
+    from research_hub.zotero.client import get_client
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    try:
+        zot = get_client()
+    except Exception:
+        return CheckResult(
+            "cluster/zotero_trashed",
+            "INFO",
+            "Zotero client unavailable; trash check skipped",
+        )
+
+    trashed: list[str] = []
+    for cluster in registry.list():
+        if not cluster.zotero_collection_key:
+            continue
+        try:
+            coll = zot.collection(cluster.zotero_collection_key)
+        except Exception:
+            continue
+        if coll.get("data", {}).get("deleted"):
+            trashed.append(
+                f"{cluster.slug}: {cluster.zotero_collection_key} "
+                f"({coll.get('data', {}).get('name', '?')})"
+            )
+
+    if trashed:
+        return CheckResult(
+            "cluster/zotero_trashed",
+            "WARN",
+            f"{len(trashed)} cluster(s) bound to a trashed Zotero collection",
+            remedy="Run: python -m research_hub clusters restore-zotero-coll --apply",
+            details="\n  ".join(trashed[:10]),
+        )
+    return CheckResult(
+        "cluster/zotero_trashed",
+        "OK",
+        "All cluster Zotero collections are active (not trashed)",
+    )
+
+
 def check_manifest_orphan_cluster(cfg) -> CheckResult:
     """INFO on manifest entries that reference deleted clusters."""
     from research_hub.clusters import ClusterRegistry
@@ -1115,6 +1159,7 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
             check_cluster_test_pattern,
             check_cluster_collection_collision,
             check_cluster_pdf_coverage,
+            check_cluster_zotero_trashed,
             check_manifest_orphan_cluster,
         ):
             try:

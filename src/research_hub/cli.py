@@ -487,6 +487,54 @@ def _clusters_sync_names(
     return 0
 
 
+def _clusters_restore_zotero_coll(slug_filter: str | None, apply: bool) -> int:
+    cfg = get_config()
+    from research_hub.clusters import _try_restore_zotero_collection
+    from research_hub.zotero.client import ZoteroDualClient
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    clusters = registry.list()
+    if slug_filter:
+        cluster = registry.get(slug_filter)
+        if cluster is None:
+            print(f"Cluster not found: {slug_filter}", file=sys.stderr)
+            return 2
+        clusters = [cluster]
+
+    zot = ZoteroDualClient().web
+    targets: list[tuple[str, str, str]] = []
+    for cluster in clusters:
+        key = (cluster.zotero_collection_key or "").strip()
+        if not key:
+            continue
+        try:
+            coll = zot.collection(key)
+        except Exception:
+            continue
+        if coll.get("data", {}).get("deleted"):
+            targets.append((cluster.slug, key, coll.get("data", {}).get("name", "")))
+
+    if not targets:
+        print("No trashed cluster Zotero collections found.")
+        return 0
+
+    print(f"{'Slug':<55} {'Key':<10} {'Name':<40}")
+    for slug, key, name in targets:
+        print(f"{slug:<55} {key:<10} {name:<40}")
+    if not apply:
+        print("")
+        print("Preview only. Re-run with --apply to restore.")
+        return 0
+
+    failures = 0
+    for _slug, key, _name in targets:
+        ok, msg = _try_restore_zotero_collection(key)
+        print(f"  {msg}")
+        if not ok:
+            failures += 1
+    return 0 if failures == 0 else 1
+
+
 def _clusters_resolve_collision(
     slug: str,
     *,
@@ -568,6 +616,9 @@ def _clusters_resolve_collision(
     target = registry.get(target_slug or "")
     if target is None:
         print(f"Cluster not found: {target_slug}", file=sys.stderr)
+        return 2
+    if target.slug == slug:
+        print("--into target must differ from the source cluster", file=sys.stderr)
         return 2
     if not force_shared:
         print("--into requires --force-shared", file=sys.stderr)
@@ -3471,6 +3522,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Audit only this cluster slug (default: all)",
     )
+    restore_p = clusters_subparsers.add_parser(
+        "restore-zotero-coll",
+        help="Restore a cluster's Zotero collection from trash (clear deleted flag)",
+    )
+    restore_p.add_argument("--cluster", default=None, help="Single cluster slug (default: scan all)")
+    restore_p.add_argument("--apply", action="store_true", help="Apply restore (default: preview)")
     sync_names = clusters_subparsers.add_parser(
         "sync-names",
         help="Detect and fix cluster.name drift between vault and Zotero",
@@ -4798,6 +4855,8 @@ def main(argv: list[str] | None = None) -> int:
             return _clusters_scaffold_missing()
         if args.clusters_command == "audit":
             return _clusters_audit(args.cluster)
+        if args.clusters_command == "restore-zotero-coll":
+            return _clusters_restore_zotero_coll(args.cluster, args.apply)
         if args.clusters_command == "sync-names":
             return _clusters_sync_names(args.cluster, args.apply, args.direction)
         if args.clusters_command == "resolve-collision":
