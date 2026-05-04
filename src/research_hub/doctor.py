@@ -205,6 +205,12 @@ def check_cluster_orphan_papers(cfg) -> CheckResult:
     for sub in raw_dir.iterdir():
         if not sub.is_dir() or sub.name.startswith(".") or sub.name in {"pdfs", "attachments"}:
             continue
+        # v0.81: skip soft-delete folders (mirrors vault/sync.list_cluster_notes
+        # which has the same exclusion). raw/_deleted_<slug>/ holds notes
+        # that were intentionally moved out of a cluster; they are NOT
+        # orphan papers needing rebind.
+        if sub.name.startswith("_deleted_"):
+            continue
         if sub.name not in bound_dirs:
             md_count = sum(1 for _ in sub.glob("*.md"))
             if md_count > 0:

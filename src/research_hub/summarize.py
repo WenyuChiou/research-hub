@@ -48,6 +48,7 @@ class PaperSummary:
     """One LLM-generated summary entry for a single paper."""
 
     paper_slug: str
+    summary: str = ""           # v0.81: 1-2 sentence TL;DR for `## Summary` block
     key_findings: list[str] = field(default_factory=list)
     methodology: str = ""
     relevance: str = ""
@@ -224,6 +225,7 @@ def build_summarize_prompt(
             "summaries": [
                 {
                     "paper_slug": papers[0]["slug"],
+                    "summary": "1-2 sentence TL;DR (what the paper does + the headline finding).",
                     "key_findings": [
                         "Finding 1, one sentence.",
                         "Finding 2, one sentence.",
@@ -257,12 +259,17 @@ def _validate_entry(entry: dict, valid_slugs: set[str]) -> tuple[Optional[PaperS
         return None, "key_findings is empty"
     methodology = str(entry.get("methodology", "") or "").strip()
     relevance = str(entry.get("relevance", "") or "").strip()
+    summary = str(entry.get("summary", "") or "").strip()
     if not methodology:
         return None, "methodology is empty"
     if not relevance:
         return None, "relevance is empty"
+    # v0.81: summary is OPTIONAL (older LLM outputs and abstract-too-thin
+    # cases may legitimately produce only findings/methodology/relevance).
+    # When present, it fills the `## Summary` block instead of leaving [TODO].
     return PaperSummary(
         paper_slug=slug,
+        summary=summary,
         key_findings=findings,
         methodology=methodology,
         relevance=relevance,
@@ -272,6 +279,10 @@ def _validate_entry(entry: dict, valid_slugs: set[str]) -> tuple[Optional[PaperS
 # -- write back ---------------------------------------------------------
 
 
+_SUMMARY_BLOCK_RE = re.compile(
+    r"(##\s+Summary\n\n>\s+\[!abstract\]\n)(?:>[^\n]*\n)+(\^summary)",
+    re.MULTILINE,
+)
 _FINDINGS_BLOCK_RE = re.compile(
     r"(##\s+Key Findings\n\n>\s+\[!success\]\n)(?:>[^\n]*\n)+(\^findings)",
     re.MULTILINE,
@@ -287,6 +298,12 @@ _RELEVANCE_BLOCK_RE = re.compile(
 
 
 def _replace_obsidian_block(text: str, summary: PaperSummary) -> str:
+    # v0.81: also fill `## Summary` block when summary text present.
+    # Previously this block was only ever set to "[TODO] <title>" by the
+    # ingest pipeline and never overwritten; even when claude returned
+    # substantive Key Findings the Summary block stayed [TODO].
+    if summary.summary:
+        text = _SUMMARY_BLOCK_RE.sub(rf"\1> {summary.summary}\n\2", text)
     findings_block = "".join(f"> - {f}\n" for f in summary.key_findings)
     text = _FINDINGS_BLOCK_RE.sub(rf"\1{findings_block}\2", text)
     text = _METHODOLOGY_BLOCK_RE.sub(rf"\1> {summary.methodology}\n\2", text)
@@ -298,7 +315,9 @@ def _build_zotero_note_html(paper_meta: dict, summary: PaperSummary) -> str:
     title = paper_meta.get("title", "(no title)")
     abstract = paper_meta.get("abstract", "")
     findings_html = "".join(f"<li>{f}</li>" for f in summary.key_findings)
-    html = f"<h1>Summary</h1><p>{title}</p>"
+    # v0.81: include the explicit summary if claude returned one.
+    summary_html = f"<p>{summary.summary}</p>" if summary.summary else f"<p>{title}</p>"
+    html = f"<h1>Summary</h1>{summary_html}"
     if abstract:
         html += f"<h2>Abstract</h2><p>{abstract}</p>"
     html += "<h2>Key Findings</h2><ul>" + findings_html + "</ul>"
