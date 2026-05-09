@@ -59,8 +59,32 @@ Both writes must succeed for a paper to count as "applied". A Zotero write failu
 
 ## Verification
 
+This skill's contract is exercised end-to-end by the test suite. The
+suites stub the LLM CLI but execute real Obsidian markdown writes against
+a fixture vault and real Zotero child-note writes against a mocked Zotero
+adapter. Rollback semantics (markdown rolls back if Zotero write fails)
+are explicitly tested.
+
 ```bash
-# Dry-run (just emit prompt + show what LLM produced)
+# Run the full paper-summarize suite (23 tests)
+python -m pytest -q \
+  tests/test_v069_summarize.py \
+  tests/test_v073_parallel_summarize.py \
+  tests/test_v080_resummarize.py
+```
+
+Coverage breakdown:
+
+| Test file | Count | What it covers |
+|---|---|---|
+| `tests/test_v069_summarize.py` | 17 | Prompt builder shape, validator (rejects unknown slugs / empty fields / wrong types), Obsidian + Zotero apply path, rollback when Zotero fails, no-LLM-on-PATH fallback |
+| `tests/test_v073_parallel_summarize.py` | 3 | Parallel summarize across multiple clusters, ordering, error isolation |
+| `tests/test_v080_resummarize.py` | 3 | Re-summarize behaviour: idempotent on same input, overwrite on different LLM output, --no-zotero path |
+
+For a manual smoke check against a live vault:
+
+```bash
+# Dry-run (emit prompt + show LLM output, no writes)
 research-hub summarize --cluster <slug>
 
 # Live run (writes to Obsidian + Zotero)
