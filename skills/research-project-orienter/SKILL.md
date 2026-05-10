@@ -76,7 +76,7 @@ Single message in this exact structure:
 - ...
 
 **Experiments** (<count>, by status):
-- <status>: <id> — <hypothesis (one line)>
+- <status>: <id> — <hypothesis or method, one line; "(no hypothesis)" if both absent>
 - ...
 
 **Main entrypoints**:

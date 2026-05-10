@@ -1,6 +1,6 @@
 ---
 name: paper-summarize
-description: After research-hub ingests a cluster of papers, fill the per-paper Key Findings + Methodology + Relevance sections in BOTH Obsidian markdown and the Zotero child note. Use when the user says "summarize this cluster's papers", "fill the TODO Findings", or "I just ran auto and don't know what these papers are about". Invokes `claude` / `codex` / `gemini` (whichever is on PATH) on each paper's abstract.
+description: After research-hub ingests a cluster of cited papers, fill the per-paper Key Findings + Methodology + Relevance sections in BOTH Obsidian markdown and the Zotero child note. Use when the user says "fill the TODO Key Findings/Methodology blocks left by research-hub auto", "I just ran auto and don't know what these papers are about", or "summarize the papers in cluster X". Invokes `claude` / `codex` / `gemini` (whichever is on PATH) on each paper's abstract. NOT for summarizing the user's own manuscript draft — that's `paper-memory-builder`. NOT for cluster-level briefs — that's `research-hub notebooklm generate`. This skill is per-cited-paper only.
 ---
 
 # paper-summarize

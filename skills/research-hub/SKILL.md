@@ -1,6 +1,6 @@
 ---
 name: research-hub
-description: Operate research-hub workflows for literature discovery, source ingest, Zotero/Obsidian/NotebookLM organization, dashboard inspection, and vault maintenance. Use when the user asks to find papers, build a knowledge base, organize references, upload to NotebookLM, generate research briefs, inspect clusters, or maintain a research vault.
+description: Operate research-hub workflows for literature discovery, source ingest into Zotero/Obsidian/NotebookLM, dashboard inspection, and vault maintenance. Use when the user asks to find papers, build a knowledge base, ingest a folder of PDFs, upload to NotebookLM, generate research briefs, inspect clusters, or maintain a research vault. NOT for auditing or cleaning up an existing Zotero library — that's `zotero-library-curator` (read-only audit) plus `zotero-skills` (for CRUD).
 ---
 
 # research-hub
@@ -13,12 +13,12 @@ This skill drives the `research-hub` Python CLI. Before running any
 command from this skill, verify the CLI is installed:
 
 ```bash
-research-hub --version
+research-hub doctor
 ```
 
-If that command is **not found**, the user installed only the Claude
-Code marketplace plugin and is missing the Python CLI. Stop and tell
-them:
+If that command is **not found** (vs. emitting a health report), the
+user installed only the Claude Code marketplace plugin and is missing
+the Python CLI. Stop and tell them:
 
 > This skill needs the `research-hub` CLI. Please run:
 >

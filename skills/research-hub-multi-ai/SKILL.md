@@ -28,10 +28,10 @@ If only one delegate is needed this round, **use the leaf skill directly**. Do n
 The router emits commands that go through the `research-hub` CLI in many cases. Before producing a plan, verify the CLI exists:
 
 ```bash
-research-hub --version
+research-hub doctor
 ```
 
-If `research-hub` is **not found**, the user installed only the Claude Code marketplace plugin. Stop and tell them:
+If that command is **not found** (vs. emitting a health report), the user installed only the Claude Code marketplace plugin. Stop and tell them:
 
 > This skill orchestrates `research-hub` CLI commands across multiple AIs, but the CLI itself isn't installed. Please run:
 >

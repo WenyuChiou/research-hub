@@ -1,6 +1,6 @@
 ---
 name: paper-memory-builder
-description: Convert a paper draft + figures + Zotero metadata into reusable .paper/claims.yml and .paper/figures.yml files so the academic-writing-skills skill can do writing, revision, and audit passes without re-reading the manuscript every time. Use when the user asks to "build paper memory", "extract claims from this manuscript", or "prepare this paper for AI-assisted writing".
+description: Convert a paper draft + figures + Zotero metadata into reusable .paper/claims.yml and .paper/figures.yml files so the academic-writing-skills skill can do writing, revision, and audit passes without re-reading the manuscript every time. Use when the user asks to "build paper memory", "extract claims from this manuscript", or "prepare this paper for AI-assisted writing". NOT for summarizing cited papers in a literature cluster — that's `paper-summarize`. This skill is for the user's own manuscript draft only.
 ---
 
 # paper-memory-builder

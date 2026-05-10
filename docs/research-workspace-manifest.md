@@ -117,29 +117,44 @@ yet". `current_stage` is free-form but conventionally one of
 
 ## Schema: `.research/experiment_matrix.yml`
 
-Tracks every experiment a project has run. Append-only by convention.
+Tracks every experiment OR verification run a project has executed.
+Append-only by convention. Two row shapes are accepted: hypothesis-driven
+experiment rows (modelling work) and verification rows (skill / tooling
+validation). Pick whichever fits the project; mixing both shapes in one
+matrix is also fine.
 
 ```yaml
 experiments:
+  # Hypothesis-driven experiment row
   - id: "E1-baseline"
     hypothesis: "ABM without behavioral adaptation matches FEMA depth grids."
     method: "baseline ABM run, no adaptation layer"
     inputs: ["data/harvey/", "config/baseline.yaml"]
     outputs: ["outputs/E1/"]
-    status: "complete"                       # planned | running | complete | abandoned
+    status: "complete"
     finding: "RMSE 0.42 m vs FEMA. Acceptable baseline."
     notes: "see decisions.md 2026-02-14"
-  - id: "E2-coupled"
-    hypothesis: "Coupling reduces RMSE by >15%."
-    method: "ABM + CAT, daily exchange"
-    inputs: ["data/harvey/", "config/coupled.yaml"]
-    outputs: ["outputs/E2/"]
-    status: "running"
-    finding: ""
-    notes: ""
+
+  # Verification row (e.g. skill smoke test, tooling validation)
+  - id: "research-hub"
+    status: "pass"
+    tier: "T1"
+    method: "doctor health check + search 'agent-based modeling' --limit 3"
+    artifacts: "docs/verification.md (per-skill detail)"
+    last_run: "2026-04-25"
 ```
 
-**Required fields per row**: `id`, `hypothesis`, `status`.
+**Required fields per row:** `id`, `status`.
+
+**Optional fields:**
+
+- `hypothesis` — include for hypothesis-driven rows; omit for verification rows.
+- `method`, `inputs`, `outputs`, `finding`, `notes` — typical for experiment rows.
+- `tier` (T1 / T2 / T3), `artifacts`, `last_run` (YYYY-MM-DD) — typical for verification rows.
+
+**`status` enum:** `planned | running | complete | abandoned` for experiments;
+`pass | caveat | pending | not_yet | fail` for verification runs. Readers
+should treat any unknown value as informational rather than erroring.
 
 ## Schema: `.research/data_dictionary.yml`
 

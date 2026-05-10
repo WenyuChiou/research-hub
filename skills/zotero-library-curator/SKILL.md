@@ -30,7 +30,7 @@ two modes:
 Before running, verify at least one is present:
 
 ```bash
-research-hub --version 2>/dev/null  # if research-hub CLI installed
+research-hub doctor 2>/dev/null  # if research-hub CLI installed
 ls ~/.claude/skills/zotero-skills/SKILL.md 2>/dev/null  # if zotero-skills skill installed
 ```
 
