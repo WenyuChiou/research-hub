@@ -81,6 +81,21 @@ research-hub serve --dashboard
 
 Use `--no-nlm` for first-run smoke tests or when NotebookLM browser automation is not configured.
 
+### Discover (search + AI fit-check)
+
+Two-phase interactive flow when you want a human / AI in the loop on which papers actually belong in a cluster. Replaces the `auto` one-shot ingest when topic boundaries are fuzzy.
+
+```bash
+research-hub discover new --cluster project-topic --query "agent-based modeling flood adaptation"
+# → emits search results + a fit-check scoring prompt; stashes state
+
+# Run the fit-check prompt through your AI of choice, paste the scores back
+research-hub discover continue --cluster project-topic --scores scores.json
+# → applies scores, emits papers_input.json for ingest
+```
+
+`research-hub fit-check {emit|apply|audit|drift}` exposes the underlying gates separately when you want to re-score an existing cluster or audit drift over time. `discover variants` emits a query-variation prompt to widen recall before fit-check narrows it.
+
 ### Local Source Folder
 
 ```bash
@@ -98,6 +113,30 @@ research-hub notebooklm upload --cluster project-topic
 research-hub notebooklm generate --cluster project-topic --type brief
 research-hub notebooklm download --cluster project-topic
 ```
+
+### Synthesize cluster pages
+
+Generate or refresh per-cluster synthesis pages in the Obsidian vault (uses cluster memory + paper summaries to produce a navigable overview note).
+
+```bash
+research-hub synthesize --cluster project-topic
+research-hub synthesize --cluster project-topic --graph-colors  # also paint the graph view
+```
+
+Run `synthesize` after `paper-summarize` has filled the per-paper notes; the synthesis page reads from those.
+
+### Cluster memory
+
+Maintain a structured memory registry per cluster — durable notes the AI can reload across sessions without re-reading every paper.
+
+```bash
+research-hub memory list --cluster project-topic
+research-hub memory read --cluster project-topic
+research-hub memory emit --cluster project-topic   # AI extraction prompt
+research-hub memory apply --cluster project-topic --payload memory.json
+```
+
+Use `memory emit/apply` to refresh the registry after a major round of new papers; use `read` from another session to reload context cheaply.
 
 ### Maintenance
 
