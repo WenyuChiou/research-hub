@@ -15,7 +15,9 @@
 
 Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp4](docs/demo/dashboard-walkthrough.mp4)
 
-> 📚 Part of the [**agentic AI learning roadmap**](https://github.com/WenyuChiou/awesome-agentic-ai-zh) — a 7-stage curated path for building agentic AI, multilingual (zh-TW · zh-CN · English). This workspace is referenced in §13 (research workflow skills).
+> 📚 Part of the [**agentic AI learning roadmap**](https://github.com/WenyuChiou/awesome-agentic-ai-zh) — a 7-stage curated path for building agentic AI, multilingual (zh-TW · zh-Hans · English). This workspace is referenced in §13 (research workflow skills).
+
+> 🧪 **Real-use signal:** in daily use by 1 PhD researcher (Lehigh CEE) tracking 7+ research clusters across Zotero + Obsidian + NotebookLM. Shipping since Apr 2026, current release: v0.81.0.
 
 ---
 
@@ -62,6 +64,27 @@ topic or source folder
   -> bundle/upload/generate with NotebookLM when enabled
   -> cache answers as crystals and structured memory
 ```
+
+---
+
+## Is this for me? — vs alternatives
+
+research-hub does not replace Zotero, Obsidian, or NotebookLM. It connects them so an AI agent can operate the workflow.
+
+| What you can do | Zotero alone | NotebookLM alone | Generic RAG | Obsidian-Zotero plugin | research-hub |
+|---|---:|---:|---:|---:|---:|
+| Search arXiv + Semantic Scholar in one command | No | No | DIY | No | Yes |
+| Ingest into Zotero and Obsidian and NotebookLM | No | No | DIY | Partial | Yes |
+| AI brief from your collection | No | Manual | DIY | No | Yes |
+| Cached canonical answers | No | No | Re-fetches | No | Yes |
+| Structured memory layer | No | No | Usually chunks | No | Yes |
+| Direct AI-agent control via MCP | No | No | DIY | No | Yes |
+| Live dashboard with action buttons | No | No | No | No | Yes |
+| Per-cluster Obsidian Bases dashboard | No | No | No | No | Yes |
+| No OpenAI/Anthropic API key required | n/a | Yes | Usually no | n/a | Yes |
+| Local-first vault you own | Partial | No | Depends | Yes | Yes |
+
+The practical fit: research-hub is most useful if you already use at least two of Zotero, Obsidian, and NotebookLM and want your AI assistant to run the repetitive steps.
 
 ---
 
@@ -247,27 +270,6 @@ research-hub zotero backfill --tags --notes --apply
 | Cluster repair | `research-hub clusters rebind --emit` then `--apply` | Rebinds orphaned notes |
 | Obsidian Bases | `research-hub bases emit --cluster <slug>` | Generated `.base` dashboard |
 | Web search | `research-hub websearch "query"` / `web_search` | Tavily, Brave, Google CSE, DDG fallback |
-
----
-
-## vs alternatives
-
-research-hub does not replace Zotero, Obsidian, or NotebookLM. It connects them so an AI agent can operate the workflow.
-
-| What you can do | Zotero alone | NotebookLM alone | Generic RAG | Obsidian-Zotero plugin | research-hub |
-|---|---:|---:|---:|---:|---:|
-| Search arXiv + Semantic Scholar in one command | No | No | DIY | No | Yes |
-| Ingest into Zotero and Obsidian and NotebookLM | No | No | DIY | Partial | Yes |
-| AI brief from your collection | No | Manual | DIY | No | Yes |
-| Cached canonical answers | No | No | Re-fetches | No | Yes |
-| Structured memory layer | No | No | Usually chunks | No | Yes |
-| Direct AI-agent control via MCP | No | No | DIY | No | Yes |
-| Live dashboard with action buttons | No | No | No | No | Yes |
-| Per-cluster Obsidian Bases dashboard | No | No | No | No | Yes |
-| No OpenAI/Anthropic API key required | n/a | Yes | Usually no | n/a | Yes |
-| Local-first vault you own | Partial | No | Depends | Yes | Yes |
-
-The practical fit: research-hub is most useful if you already use at least two of Zotero, Obsidian, and NotebookLM and want your AI assistant to run the repetitive steps.
 
 ---
 
