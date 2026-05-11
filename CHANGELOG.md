@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.85.0 (2026-05-11)
+
+Crystal readability + prompt-quality polish.
+
+### Changed
+- `Crystal.to_markdown` now emits `based_on_papers:` as a multiline YAML list
+  instead of a single-line JSON array. Reading mode + Obsidian Properties view
+  show one paper per line, instead of an unreadable 1.5 KB comma-separated
+  string blob. Backward compatible: `_parse_frontmatter` was extended to
+  parse both new multiline YAML lists and legacy single-line JSON arrays.
+- `emit_crystal_prompt` now gives the generator clearer instructions for
+  `tldr` / `gist` / `full` distinction:
+  - tldr = scan in 5s (newspaper headline)
+  - gist = mental model in 30s (3-4 sentences, ~80 words, elevator pitch)
+  - full = understand in 2 min (concrete examples + nuance, never restate
+    gist with more words)
+- New rule: **inline jargon definitions on first mention**. Field-specific
+  terms (RAG, ABM, HRI, HCI, parasocial, agentic LLM, social semiotics) get
+  a 5-10 word inline definition in parentheses on first mention. Cleans up
+  the jargon-heavy prose that domain newcomers were getting stuck on.
+- `evidence` and `confidence` instructions tightened: claims must be
+  concrete + falsifiable; confidence defaults to medium, high requires 3+
+  papers converging, low for sparse/contradictory evidence.
+
+### Why
+2026-05-11 review of fresh-pipeline crystal output (23 papers,
+llm-agents-social-interaction cluster) flagged three readability issues:
+(1) huge frontmatter array, (2) tldr/gist/full layers blurring together,
+(3) jargon density too high for cross-disciplinary readers. This commit
+makes the source-side fix; existing crystals can be regenerated via
+`research-hub crystal emit/apply` for a clean reformat.
+
 ## v0.84.0 (2026-05-11)
 
 Unify paper-slug formula + add safety net to prevent broken cross-ref wikilinks.

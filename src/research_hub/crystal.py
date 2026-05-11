@@ -60,13 +60,19 @@ class Crystal:
         from research_hub.markdown_conventions import wikilink as _wikilink, wrap_callout
 
         tldr_body = wrap_callout("abstract", self.tldr.strip(), block_id="tldr")
+        # v0.85+: multiline YAML for based_on_papers (was single-line JSON).
+        # Reading mode + Properties view show each paper as a clean line item
+        # instead of an unreadable comma-separated string blob.
+        based_on_lines = ["based_on_papers:"]
+        for paper in self.based_on_papers:
+            based_on_lines.append(f"  - {paper}")
         lines = [
             "---",
             "type: crystal",
             f"cluster: {self.cluster_slug}",
             f"question_slug: {self.question_slug}",
             f'question: "{_escape_yaml(self.question)}"',
-            f"based_on_papers: {json.dumps(self.based_on_papers, ensure_ascii=False)}",
+            *based_on_lines,
             f"based_on_paper_count: {self.based_on_paper_count}",
             f"last_generated: {self.last_generated}",
             f"generator: {self.generator}",
@@ -210,11 +216,12 @@ def emit_crystal_prompt(cfg, cluster_slug: str, *, question_slugs: list[str] | N
         "## Instructions",
         "",
         "- Return ONE JSON object, nothing else.",
-        "- `tldr`: one sentence.",
-        "- `gist`: a short paragraph.",
-        "- `full`: a more detailed answer.",
-        "- `evidence`: 1-5 claim-to-paper mappings using cluster paper slugs.",
-        "- `confidence`: one of `high`, `medium`, `low`.",
+        "- **`tldr`**: ONE sentence, scannable in 5 seconds. The 'newspaper headline' version — what is the single most important takeaway.",
+        "- **`gist`**: 3-4 sentences (max ~80 words). The 'mental model in 30 seconds' version. Think of this as the elevator pitch for a curious-but-non-expert reader.",
+        "- **`full`**: 1-3 paragraphs. The 'understand it properly in 2 minutes' version. Add concrete examples, paper-specific details, and any nuance that didn't fit in the gist. NEVER simply restate the gist with more words.",
+        "- **Inline jargon definitions** — the first time you use a field-specific term anywhere in tldr/gist/full (e.g. RAG, ABM, HRI, HCI, parasocial, social semiotics, agentic LLM), give a 5-10 word inline definition in parentheses on first mention. Example: 'agentic LLM (LLMs that act through tool-use loops)'. After the first mention you can use the bare term freely.",
+        "- **`evidence`**: 1-5 claim-to-paper mappings using cluster paper slugs. Each `claim` is a concrete, falsifiable statement (not 'X is important').",
+        "- **`confidence`**: one of `high`, `medium`, `low`. Use `medium` by default; use `high` only when 3+ papers strongly converge, `low` when the cluster's evidence is sparse or contradictory.",
         "",
         "## Output JSON schema",
         "",
@@ -408,23 +415,59 @@ def _normalize_confidence(value: str) -> str:
 
 
 def _parse_frontmatter(frontmatter: str) -> dict[str, Any]:
+    """Parse minimal YAML frontmatter.
+
+    Handles:
+    - `key: "quoted string"`
+    - `key: [json, list]` (single-line)
+    - `key:` followed by `  - item` lines (multiline YAML list — v0.85+)
+    - `key: bare value`
+    """
     out: dict[str, Any] = {}
-    for line in frontmatter.splitlines():
+    lines = frontmatter.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         if ":" not in line:
+            i += 1
             continue
         key, _, value = line.partition(":")
         key = key.strip()
         value = value.strip()
+        # v0.85+ multiline YAML list: `key:` then indented `  - item` lines
+        if not value:
+            items: list[str] = []
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j]
+                if next_line.startswith(("  - ", "  -\t")) or next_line.lstrip().startswith("- "):
+                    item = next_line.lstrip().removeprefix("- ").strip()
+                    if (item.startswith('"') and item.endswith('"')) or (item.startswith("'") and item.endswith("'")):
+                        item = item[1:-1]
+                    items.append(item)
+                    j += 1
+                else:
+                    break
+            if items:
+                out[key] = items
+                i = j
+                continue
+            out[key] = ""
+            i += 1
+            continue
         if value.startswith('"') and value.endswith('"'):
             out[key] = value[1:-1]
+            i += 1
             continue
         if value.startswith("[") and value.endswith("]"):
             try:
                 out[key] = json.loads(value)
             except json.JSONDecodeError:
                 out[key] = []
+            i += 1
             continue
         out[key] = value
+        i += 1
     return out
 
 
