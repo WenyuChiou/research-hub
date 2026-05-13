@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.88.3 (2026-05-13) — TL;DR mobile readability fix + stale-artifact refresh
+
+A field-discovered v0.88 #6 polish bug: the brief mirror's `## TL;DR`
+block was being filled with the NotebookLM archive header
+(``Source: <url>`` / ``Downloaded: <ts>`` / ``Sources: <n>`` /
+``Saved briefings: <list>``) instead of synthesis prose. On iPhone
+the very first thing the user saw above the fold was a download
+receipt, not the synthesis intro — exactly the affordance v0.88 #6
+was meant to provide.
+
+Root cause: `_first_paragraph` in `notebooklm/download.py` picked the
+first non-heading paragraph, but the archive header block looks like
+a plain (non-heading) paragraph, so it won.
+
+### Fix
+
+`_first_paragraph` now (a) strips leading heading lines from each
+block so `### Section\nProse...` blocks still surface their prose
+body, (b) skips blocks that are >=80% `Key: value` archive-header
+lines (Source / Downloaded / Sources / Saved briefings / Notebook /
+Generated / Cluster), (c) skips table separator rows, bullet-only
+lines, and bold-only label paragraphs, and (d) requires the
+selected paragraph to be >=20 chars and end with sentence
+punctuation (`.?!`).
+
+### Tests
+
+- `test_v088_brief_tldr.py::test_first_paragraph_skips_archive_metadata_header`
+- `test_v088_brief_tldr.py::test_tldr_skips_table_separator_and_bold_label_lines`
+- `test_v088_brief_tldr.py::test_tldr_block_with_archive_header_uses_synthesis_prose`
+
+All existing v0.88 #6 tests still pass.
+
+### Live vault refresh
+
+Three pre-v0.88.0 stale artifacts in the user's vault were refreshed
+out-of-band:
+
+- `hub/human-water-llm/human-water-llm.base` and
+  `hub/llm-agents-social-interaction/llm-agents-social-interaction.base`
+  re-emitted with `--force` so both clusters now expose the v0.88 #9
+  "Reading queue" landing tab (5 views, was 4).
+- `hub/human-water-llm/notebooklm-brief-20260513T041410Z.md` re-mirrored
+  through the patched code path; TL;DR now reads "The current paradigm
+  in Flood Risk Management is bifurcated between computationally
+  expensive hydrodynamic simulations and data-driven machine learning..."
+  followed by `**Cluster:** [[human-water-llm/00_overview|...]]`.
+- `vault rebuild-overviews` re-ran across both clusters so MOCs and
+  `_HOME.md` reflect current paper counts and the latest brief link.
+
+No CLI changes; the patch is internal.
+
 ## v0.88.2 (2026-05-13) — paper retype CLI
 
 Closes the second v0.88.1 backlog item from V088_PLAN.md acceptance:

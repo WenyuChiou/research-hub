@@ -133,18 +133,57 @@ def _find_executive_summary(text: str) -> str:
 
 
 def _first_paragraph(text: str) -> str:
-    """Fall back to the first non-heading paragraph of the brief."""
-    chunks: list[str] = []
+    """Fall back to the first non-heading, non-metadata paragraph of the brief.
+
+    v0.88.3: skip the archive header block (lines like
+    ``Source: <url>`` / ``Downloaded: <ts>`` / ``Sources: <n>`` /
+    ``Saved briefings: <list>``) so the TL;DR shows actual synthesis
+    prose, not the download receipt. Also skip table separator rows,
+    bullet/list lines, and bold-only paragraphs that don't read like a
+    sentence on mobile.
+    """
+    import re
+
+    metadata_re = re.compile(
+        r"^(Source|Downloaded|Sources|Saved briefings?|Notebook|Generated|Cluster)\s*:",
+        re.IGNORECASE,
+    )
+
+    def _is_metadata_block(block: str) -> bool:
+        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+        if not lines:
+            return True
+        # If >=80% of lines look like "Key: value" archive headers, skip.
+        meta_hits = sum(1 for ln in lines if metadata_re.match(ln))
+        return meta_hits >= max(1, int(len(lines) * 0.8))
+
+    def _looks_like_prose(block: str) -> bool:
+        text = block.strip()
+        if not text:
+            return False
+        # Tables / dividers / bullet-only / bold-label-only — reject as TL;DR.
+        if text.startswith(("|", "*", "-", "> ")):
+            return False
+        # Require at least one full sentence (>=20 chars and ends with .?!).
+        if len(text) < 20:
+            return False
+        return any(text.rstrip().endswith(p) for p in (".", "?", "!", "。", "？", "！"))
+
     for raw in (text or "").split("\n\n"):
-        line = raw.strip()
-        if not line:
+        block = raw.strip()
+        if not block:
             continue
-        if line.startswith("#"):
+        # Strip leading heading lines (e.g. `### 1. Section title\n`) so a
+        # block like "### Section\nProse..." still surfaces its prose body.
+        prose_lines = [ln for ln in block.splitlines() if not ln.lstrip().startswith("#")]
+        prose = "\n".join(prose_lines).strip()
+        if not prose:
             continue
-        chunks.append(line)
-        if len(chunks) >= 1:
-            break
-    return chunks[0] if chunks else ""
+        if _is_metadata_block(prose):
+            continue
+        if _looks_like_prose(prose):
+            return prose
+    return ""
 
 
 def source_dois_for_cluster(vault_root: Path, cluster_slug: str) -> list[str]:

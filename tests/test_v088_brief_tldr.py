@@ -91,3 +91,60 @@ def test_tldr_block_handles_brief_with_no_recognised_heading() -> None:
     assert "## TL;DR" in block
     # Falls back to first paragraph
     assert "flat prose" in block
+
+
+def test_first_paragraph_skips_archive_metadata_header() -> None:
+    """v0.88.3 regression — TL;DR was grabbing `Source: <url>` /
+    `Downloaded: <ts>` / `Sources: <n>` archive header instead of the
+    synthesis intro, leaving readers staring at download receipts on
+    mobile.
+    """
+    text = (
+        "# Cluster Title\n\n"
+        "Source: https://notebooklm.google.com/notebook/xyz\n"
+        "Downloaded: 20260513T041410Z\n"
+        "Sources: 12\n"
+        "Saved briefings: Briefing Doc\n\n"
+        "# Comparative Analysis of AI-Driven Frameworks\n\n"
+        "### 1. Thematic Synthesis: Limitations of Conventional Models\n"
+        "The current paradigm in flood risk management is bifurcated between "
+        "hydrodynamic simulations and data-driven ML approaches.\n\n"
+        "**Table 1: Comparative Analysis**\n"
+    )
+    para = _first_paragraph(text)
+    assert "Source:" not in para
+    assert "Downloaded:" not in para
+    assert "Sources:" not in para
+    assert "current paradigm" in para or "hydrodynamic" in para
+
+
+def test_tldr_skips_table_separator_and_bold_label_lines() -> None:
+    """Tables and bold-only label paragraphs shouldn't surface as TL;DR
+    body — they read like noise on mobile."""
+    text = (
+        "# Brief\n\n"
+        "| Col A | Col B |\n| :--- | :--- |\n| x | y |\n\n"
+        "**Bold label only**\n\n"
+        "This is the first real prose paragraph that should be selected.\n"
+    )
+    para = _first_paragraph(text)
+    assert "first real prose paragraph" in para
+    assert "| Col" not in para
+
+
+def test_tldr_block_with_archive_header_uses_synthesis_prose() -> None:
+    """End-to-end: when artifact text begins with the NLM archive header
+    block, the TL;DR block should still surface synthesis content, not
+    the download receipt."""
+    art = _art(
+        "# Cluster\n\n"
+        "Source: https://example/notebook/xyz\n"
+        "Downloaded: 20260513T041410Z\n"
+        "Sources: 12\n"
+        "Saved briefings: Briefing Doc\n\n"
+        "# Synthesis Title\n\n"
+        "The synthesis body actually discusses substantive findings here.\n"
+    )
+    block = _build_tldr_and_cluster_block(art, "demo")
+    assert "Downloaded:" not in block
+    assert "synthesis body" in block
