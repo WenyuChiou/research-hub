@@ -76,7 +76,7 @@ class CrossrefBackend:
             "rows": min(limit, 100),
             "select": (
                 "DOI,title,author,issued,container-title,type,is-referenced-by-count,"
-                "volume,issue,page"
+                "volume,issue,page,event,publisher,archive"
             ),
         }
         filters = []
@@ -127,8 +127,14 @@ class CrossrefBackend:
         issued = work.get("issued") or {}
         date_parts = issued.get("date-parts") or [[]]
         year = date_parts[0][0] if date_parts and date_parts[0] else None
-        venue_list = work.get("container-title") or []
-        venue = venue_list[0] if venue_list else ""
+        # v0.87.1 #2: venue fallback chain. Crossref puts venue in different
+        # places for different doc types: journal articles use `container-title`;
+        # conference proceedings use `event.name` or `proceedings-title`;
+        # preprints (Authorea, EarthArXiv, OSF) use `publisher` or `archive`.
+        # Without this chain, 6 papers in the user's vault have blank journals
+        # (V2 audit, V088_PLAN.md §2): höhn / kim / qiao-thematic / fu /
+        # ranaweera / taormina.
+        venue = _resolve_venue(work)
         doi = (work.get("DOI") or "").lower()
         # v0.68.5: Crossref returns `page` as a single string already in the
         # canonical "first-last" form (e.g. "123-145"). volume / issue may be
@@ -151,3 +157,51 @@ class CrossrefBackend:
             issue=str(work.get("issue") or ""),
             pages=str(work.get("page") or ""),
         )
+
+
+def _resolve_venue(work: dict) -> str:
+    """v0.87.1 #2: fallback chain for the venue field in a Crossref work record.
+
+    Order: container-title → event.name (or event as bare string) →
+    proceedings-title → publisher → archive. First non-empty wins.
+
+    Returns "" when nothing resolves.
+    """
+    container = work.get("container-title")
+    if isinstance(container, list) and container:
+        for value in container:
+            text = str(value or "").strip()
+            if text:
+                return text
+    elif isinstance(container, str) and container.strip():
+        return container.strip()
+
+    event = work.get("event")
+    if isinstance(event, dict):
+        text = str(event.get("name", "") or "").strip()
+        if text:
+            return text
+    elif isinstance(event, str) and event.strip():
+        return event.strip()
+
+    proceedings = work.get("proceedings-title")
+    if isinstance(proceedings, list) and proceedings:
+        text = str(proceedings[0] or "").strip()
+        if text:
+            return text
+    elif isinstance(proceedings, str) and proceedings.strip():
+        return proceedings.strip()
+
+    publisher = work.get("publisher")
+    if isinstance(publisher, str) and publisher.strip():
+        return publisher.strip()
+
+    archive = work.get("archive")
+    if isinstance(archive, list) and archive:
+        text = str(archive[0] or "").strip()
+        if text:
+            return text
+    elif isinstance(archive, str) and archive.strip():
+        return archive.strip()
+
+    return ""
