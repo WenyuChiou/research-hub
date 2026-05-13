@@ -2320,7 +2320,20 @@ def _dashboard(
     viewport_width: int = 1440,
     viewport_height: int = 900,
     full_page: bool = False,
+    markdown_summary: bool = False,
+    markdown_summary_out: str | None = None,
 ) -> int:
+    if markdown_summary:
+        from pathlib import Path as _Path
+
+        from research_hub.dashboard.markdown_summary import write_dashboard_markdown_summary
+
+        cfg = require_config()
+        out_p = _Path(markdown_summary_out) if markdown_summary_out else None
+        path = write_dashboard_markdown_summary(cfg, out_path=out_p)
+        print(f"Wrote markdown summary: {path}")
+        return 0
+
     if sample:
         from research_hub.sample_vault import generate_sample_dashboard
 
@@ -4411,6 +4424,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Capture the entire scrolled page instead of the visible viewport",
     )
+    dashboard_parser.add_argument(
+        "--markdown-summary",
+        action="store_true",
+        help="v0.88 #11: write `.research_hub/dashboard-summary.md` — an "
+             "Obsidian-internal mobile-friendly version with paper counts, "
+             "ingest backlog, and doctor status. Linkable from `_HOME.md`.",
+    )
+    dashboard_parser.add_argument(
+        "--markdown-summary-out",
+        metavar="PATH",
+        default=None,
+        help="Override the markdown summary output path (default: "
+             "`<vault>/.research_hub/dashboard-summary.md`)",
+    )
 
     vault_parser = subparsers.add_parser("vault", help="Vault maintenance commands")
     vault_subparsers = vault_parser.add_subparsers(dest="vault_command", required=True)
@@ -5684,6 +5711,8 @@ def main(argv: list[str] | None = None) -> int:
             viewport_width=args.viewport_width,
             viewport_height=args.viewport_height,
             full_page=args.full_page,
+            markdown_summary=getattr(args, "markdown_summary", False),
+            markdown_summary_out=getattr(args, "markdown_summary_out", None),
         )
     if args.command == "vault":
         if args.vault_command == "graph-colors":
