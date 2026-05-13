@@ -13,6 +13,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytest.skip(
+    "v0.86 replaced NotebookLM ask browser automation with notebooklm-py RPC",
+    allow_module_level=True,
+)
+
 
 @pytest.fixture
 def mock_cluster():

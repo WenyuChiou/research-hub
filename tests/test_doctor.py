@@ -215,10 +215,7 @@ def test_doctor_no_nlm_session(tmp_path, monkeypatch):
 
     _write_config(tmp_path, monkeypatch)
     monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
-    monkeypatch.setattr(
-        "research_hub.notebooklm.cdp_launcher.find_chrome_binary",
-        lambda: "C:/Chrome/chrome.exe",
-    )
+    monkeypatch.setattr("shutil.which", lambda _name: "C:/Chrome/chrome.exe")
 
     results = run_doctor()
 

@@ -12,6 +12,13 @@ from research_hub.notebooklm import client as nlm_client
 from research_hub.notebooklm.client import BriefingArtifact, NotebookHandle, NotebookLMClient
 from research_hub.notebooklm import upload as nlm_upload
 
+import pytest
+
+pytest.skip(
+    "v0.86 removed DOM briefing extraction and browser polish shims",
+    allow_module_level=True,
+)
+
 
 def _cfg(tmp_path: Path) -> SimpleNamespace:
     research_hub_dir = tmp_path / ".research_hub"

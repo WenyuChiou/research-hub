@@ -17,7 +17,8 @@ def mock_deps():
          patch("research_hub.auto.upload_cluster") as mock_upload_cluster, \
          patch("research_hub.auto.generate_artifact") as mock_generate_artifact, \
          patch("research_hub.auto.download_briefing_for_cluster") as mock_download, \
-         patch("research_hub.auto._run_search") as mock_run_search:
+         patch("research_hub.auto._run_search") as mock_run_search, \
+         patch("research_hub.auto.detect_llm_cli", return_value=None):
 
         mock_cfg = MagicMock()
         mock_cfg.root = MagicMock()

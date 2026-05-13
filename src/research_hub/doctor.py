@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1142,12 +1143,11 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
         except Exception as exc:
             chrome_binary = None
             if isinstance(exc, PermissionError):
-                try:
-                    from research_hub.notebooklm.cdp_launcher import find_chrome_binary
-
-                    chrome_binary = find_chrome_binary()
-                except Exception:
-                    chrome_binary = None
+                chrome_binary = (
+                    shutil.which("chrome")
+                    or shutil.which("google-chrome")
+                    or shutil.which("msedge")
+                )
             if chrome_binary:
                 results.append(
                     CheckResult(

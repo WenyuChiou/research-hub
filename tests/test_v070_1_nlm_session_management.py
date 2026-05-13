@@ -23,6 +23,11 @@ from pathlib import Path
 
 import pytest
 
+pytest.skip(
+    "v0.86 replaced browser/session_health plumbing with notebooklm-py auth shims",
+    allow_module_level=True,
+)
+
 from research_hub.notebooklm.session_health import (
     ImportResult,
     SessionHealth,

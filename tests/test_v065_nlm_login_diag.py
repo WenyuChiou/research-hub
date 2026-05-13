@@ -15,6 +15,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.skip(
+    "v0.86 removed the custom Playwright login diagnostics",
+    allow_module_level=True,
+)
+
 
 # --- helpers ---------------------------------------------------------------
 

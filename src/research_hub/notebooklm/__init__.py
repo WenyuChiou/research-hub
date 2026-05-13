@@ -1,7 +1,16 @@
-"""NotebookLM integration (v0.4.x)."""
+"""NotebookLM integration backed by notebooklm-py."""
 
+from research_hub.notebooklm.auth import (
+    ImportResult,
+    check_session_health,
+    default_session_dir,
+    default_state_file,
+    import_session,
+    login_interactive,
+    login_interactive_cdp,
+    login_nlm,
+)
 from research_hub.notebooklm.bundle import BundleReport, bundle_cluster
-from research_hub.notebooklm.browser import LaunchConfig
 from research_hub.notebooklm.client import (
     BriefingArtifact,
     NotebookHandle,
@@ -9,7 +18,6 @@ from research_hub.notebooklm.client import (
     NotebookLMError,
     UploadResult,
 )
-from research_hub.notebooklm.session import PlaywrightSession, SessionConfig, login_interactive
 from research_hub.notebooklm.upload import (
     DownloadReport,
     UploadReport,
@@ -23,18 +31,22 @@ __all__ = [
     "BriefingArtifact",
     "BundleReport",
     "DownloadReport",
+    "ImportResult",
     "NotebookHandle",
     "NotebookLMClient",
     "NotebookLMError",
-    "PlaywrightSession",
-    "SessionConfig",
     "UploadReport",
     "UploadResult",
     "bundle_cluster",
+    "check_session_health",
+    "default_session_dir",
+    "default_state_file",
     "download_briefing_for_cluster",
     "generate_artifact",
+    "import_session",
     "login_interactive",
-    "LaunchConfig",
+    "login_interactive_cdp",
+    "login_nlm",
     "read_latest_briefing",
     "upload_cluster",
 ]

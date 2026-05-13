@@ -1,97 +1,41 @@
-"""Ad-hoc Q&A against a cluster's NotebookLM notebook.
-
-Adapted from PleasePrompto/notebooklm-skill (MIT):
-https://github.com/PleasePrompto/notebooklm-skill
-
-Patterns reused with attribution:
-  - selector chains for query input and responses
-  - 3-read stability polling for streaming answer text
-  - thinking-message detection
-  - human-like typing delays
-"""
+"""Ad-hoc Q&A against a cluster's NotebookLM notebook."""
 
 from __future__ import annotations
 
 import json
-import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from research_hub.notebooklm.browser import (
-    dismiss_overlay,
-    default_session_dir,
-    default_state_file,
-    launch_nlm_context,
-)
-
-QUERY_INPUT_SELECTORS = (
-    'chat-panel textarea',
-    'textarea[formcontrolname="query"]',
-    'textarea[aria-label="Query box"]',
-    'textarea[placeholder*="Start typing"]',
-    'textarea[placeholder*="Ask"]',
-    'textarea[aria-label*="問題"]',
-    'textarea[aria-label*="查詢"]',
-    'textarea[aria-label*="問いかけ"]',
-    'textarea[aria-label*="询问"]',
-    'textarea[aria-label*="질문"]',
-    'div[contenteditable="true"][role="textbox"]',
-    'textarea:not([formcontrolname="discoverSourcesQuery"])',
-)
-
-RESPONSE_SELECTORS = (
-    "chat-message .message-content",
-    "div.chat-message-text",
-    "message-content",
-    'message[role="assistant"] .markdown',
-    '[role="log"] [role="listitem"]:last-child',
-)
-
-THINKING_MESSAGE_SELECTORS = (
-    "div.thinking-message",
-    '[aria-label*="Thinking"]',
-    '[aria-label*="思考中"]',
-    '[aria-label*="생각"]',
-    ".loading-indicator",
-)
+from research_hub.notebooklm.auth import default_state_file
+from research_hub.notebooklm.client import NotebookLMClient, _parse_notebook_id
 
 
-def _dismiss_overlay(page) -> None:
-    """Dismiss any overlay backdrop that would intercept clicks.
+@dataclass
+class AskCitation:
+    """Structured citation linking answer text to a source paper."""
 
-    NotebookLM occasionally pops an onboarding / add-source dialog when
-    a notebook URL is opened fresh. The backdrop
-    ``.cdk-overlay-backdrop-showing`` blocks pointer events. Press
-    Escape up to three times — each press dismisses one dialog layer.
-    """
-    for _ in range(3):
-        backdrop = page.locator(".cdk-overlay-backdrop-showing").first
-        try:
-            if backdrop.count() == 0:
-                return
-        except Exception:
-            return
-        try:
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(300)
-        except Exception:
-            return
+    source_id: str
+    citation_number: int = 0
+    cited_text: str = ""
+    start_char: int = 0
+    end_char: int = 0
 
 
 @dataclass
 class AskResult:
     ok: bool
     answer: str = ""
+    error: str = ""
+    references: list[AskCitation] = field(default_factory=list)
     artifact_path: Path | None = None
     latency_seconds: float = 0.0
-    error: str = ""
 
 
 def _open_debug_log(research_hub_dir: Path) -> Path:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = research_hub_dir / ("nlm-debug-{0}.jsonl".format(timestamp))
+    path = research_hub_dir / f"nlm-debug-{timestamp}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -106,79 +50,6 @@ def _log_jsonl(path: Path, event: dict) -> None:
         pass
 
 
-def _human_type(page, selector: str, text: str) -> None:
-    """Type ``text`` into ``selector`` with randomized per-char delays."""
-    element = page.locator(selector).first
-    element.click()
-    for char in text:
-        element.type(char, delay=random.randint(25, 75))
-        if random.random() < 0.08:
-            time.sleep(random.uniform(0.2, 0.6))
-
-
-def _find_query_input(page):
-    for selector in QUERY_INPUT_SELECTORS:
-        loc = page.locator(selector).first
-        try:
-            loc.wait_for(state="visible", timeout=3_000)
-            return selector
-        except Exception:
-            continue
-    raise RuntimeError("Could not find NotebookLM query input. UI may have changed.")
-
-
-def _read_response_text(page) -> str:
-    for selector in RESPONSE_SELECTORS:
-        loc = page.locator(selector).last
-        try:
-            if loc.count() == 0:
-                continue
-            return (loc.inner_text() or "").strip()
-        except Exception:
-            continue
-    return ""
-
-
-def _is_thinking(page) -> bool:
-    for selector in THINKING_MESSAGE_SELECTORS:
-        loc = page.locator(selector).first
-        try:
-            if loc.count() > 0:
-                return True
-        except Exception:
-            continue
-    return False
-
-
-def _wait_for_stable_answer(
-    page,
-    *,
-    timeout_sec: int = 120,
-    stable_reads_required: int = 3,
-    poll_interval_sec: float = 1.0,
-) -> str:
-    """Poll response selectors until text stabilizes across consecutive reads."""
-    start = time.time()
-    last_text = ""
-    stable_count = 0
-    while time.time() - start < timeout_sec:
-        if _is_thinking(page):
-            stable_count = 0
-            last_text = ""
-            time.sleep(poll_interval_sec)
-            continue
-        text = _read_response_text(page)
-        if text and text == last_text:
-            stable_count += 1
-            if stable_count >= stable_reads_required:
-                return text
-        else:
-            stable_count = 1
-            last_text = text
-        time.sleep(poll_interval_sec)
-    return last_text
-
-
 def ask_cluster_notebook(
     cluster,
     cfg,
@@ -188,15 +59,16 @@ def ask_cluster_notebook(
     timeout_sec: int = 120,
 ) -> AskResult:
     """Ask a question against the cluster's NotebookLM notebook."""
+    started = time.time()
     debug_log = _open_debug_log(cfg.research_hub_dir)
     _log_jsonl(
         debug_log,
         {
             "kind": "ask_start",
             "cluster_slug": getattr(cluster, "slug", ""),
+            "question": question,
             "headless": headless,
             "timeout_sec": timeout_sec,
-            "question": question,
         },
     )
     if not question.strip():
@@ -204,73 +76,62 @@ def ask_cluster_notebook(
         return AskResult(ok=False, error="Question must be non-empty.")
 
     notebook_url = getattr(cluster, "notebooklm_notebook_url", "") or ""
-    if not notebook_url:
-        error = (
-            "Cluster '{0}' has no notebooklm_notebook_url. Run `research-hub notebooklm "
-            "upload --cluster {0}` first."
-        ).format(cluster.slug)
+    notebook_id = getattr(cluster, "notebooklm_notebook_id", "") or _parse_notebook_id(notebook_url)
+    if not notebook_id:
+        error = f"Cluster '{cluster.slug}' has no notebooklm_notebook_url."
         _log_jsonl(debug_log, {"kind": "ask_error", "error": error})
         return AskResult(ok=False, error=error)
 
-    session_dir = default_session_dir(cfg.research_hub_dir)
     state_file = default_state_file(cfg.research_hub_dir)
+    if not state_file.exists():
+        error = "No NLM session. Run `research-hub notebooklm login` first."
+        _log_jsonl(debug_log, {"kind": "ask_error", "error": error})
+        return AskResult(ok=False, error=error)
 
-    start = time.time()
+    client = None
     try:
-        with launch_nlm_context(
-            user_data_dir=session_dir,
-            headless=headless,
-            state_file=state_file,
-        ) as (_, page):
-            _log_jsonl(debug_log, {"kind": "ask_navigate", "url": notebook_url})
-            page.goto(notebook_url)
-            try:
-                page.wait_for_load_state("networkidle", timeout=10_000)
-            except Exception:
-                pass
-            dismiss_overlay(page)
-            query_selector = _find_query_input(page)
-            _log_jsonl(debug_log, {"kind": "ask_input_found", "selector": query_selector})
-            _human_type(page, query_selector, question)
-            page.keyboard.press("Enter")
-            _log_jsonl(debug_log, {"kind": "ask_submitted"})
-            answer = _wait_for_stable_answer(
-                page,
-                timeout_sec=timeout_sec,
-                stable_reads_required=3,
-            )
+        client = NotebookLMClient(state_file, headless=headless, timeout_sec=timeout_sec)
+        result = client.ask(notebook_id, question=question)
     except Exception as exc:
-        latency = time.time() - start
-        error = "Ask failed for cluster '{0}': {1}".format(cluster.slug, exc)
+        latency = time.time() - started
+        _log_jsonl(debug_log, {"kind": "ask_error", "error": str(exc), "latency_seconds": latency})
+        return AskResult(ok=False, error=str(exc), latency_seconds=latency)
+    finally:
+        if client is not None:
+            client.close()
+
+    latency = time.time() - started
+    if not result.get("ok"):
+        error = result.get("error", "unknown error")
         _log_jsonl(debug_log, {"kind": "ask_error", "error": error, "latency_seconds": latency})
         return AskResult(ok=False, error=error, latency_seconds=latency)
 
-    latency = time.time() - start
-    if not answer:
-        error = (
-            "No answer received within {0}s (NotebookLM may still be generating)."
-        ).format(timeout_sec)
-        _log_jsonl(debug_log, {"kind": "ask_timeout", "error": error, "latency_seconds": latency})
-        return AskResult(ok=False, error=error, latency_seconds=latency)
-
-    safe_slug = Path(cluster.slug).name
-    artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    artifact_path = artifacts_dir / ("ask-{0}.md".format(timestamp))
-    body = (
-        "# Ad-hoc question - {0}\n\n"
-        "- Asked: {1}\n"
-        "- Notebook: {2}\n"
-        "- Latency: {3:.1f}s\n\n"
-        "## Question\n\n{4}\n\n"
-        "## Answer\n\n{5}\n"
-    ).format(cluster.slug, timestamp, notebook_url, latency, question, answer)
-    artifact_path.write_text(body, encoding="utf-8")
+    references = [
+        AskCitation(
+            source_id=item.get("source_id", ""),
+            citation_number=item.get("citation_number", 0),
+            cited_text=item.get("cited_text", ""),
+            start_char=item.get("start_char", 0),
+            end_char=item.get("end_char", 0),
+        )
+        for item in result.get("references", [])
+    ]
+    answer = result.get("answer", "")
+    artifact_path = _write_ask_artifact(
+        cluster,
+        cfg,
+        question=question,
+        answer=answer,
+        notebook_url=notebook_url or f"https://notebooklm.google.com/notebook/{notebook_id}",
+        latency_seconds=latency,
+        references=references,
+    )
     _log_jsonl(
         debug_log,
         {
             "kind": "ask_ok",
+            "answer_len": len(answer),
+            "ref_count": len(references),
             "artifact_path": str(artifact_path),
             "latency_seconds": latency,
         },
@@ -278,6 +139,38 @@ def ask_cluster_notebook(
     return AskResult(
         ok=True,
         answer=answer,
+        references=references,
         artifact_path=artifact_path,
         latency_seconds=latency,
     )
+
+
+def _write_ask_artifact(
+    cluster,
+    cfg,
+    *,
+    question: str,
+    answer: str,
+    notebook_url: str,
+    latency_seconds: float,
+    references: list[AskCitation],
+) -> Path:
+    safe_slug = Path(cluster.slug).name
+    artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    artifact_path = artifacts_dir / f"ask-{timestamp}.md"
+    body = (
+        f"# Ad-hoc question - {cluster.slug}\n\n"
+        f"- Asked: {timestamp}\n"
+        f"- Notebook: {notebook_url}\n"
+        f"- Latency: {latency_seconds:.1f}s\n\n"
+        f"## Question\n\n{question}\n\n"
+        f"## Answer\n\n{answer}\n"
+    )
+    if references:
+        body += "\n## References\n\n"
+        for ref in references:
+            body += f"- [{ref.citation_number}] {ref.source_id}: {ref.cited_text}\n"
+    artifact_path.write_text(body, encoding="utf-8")
+    return artifact_path

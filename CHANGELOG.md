@@ -1,5 +1,85 @@
 # Changelog
 
+## v0.86.0 (2026-05-12)
+
+NotebookLM module Phase 1 migration: replace Playwright/CDP browser
+automation with `notebooklm-py 0.4.1` RPC client.
+
+### Background
+The v0.85 NotebookLM module was 2,803 LOC of browser automation
+(Playwright + CDP launcher + Chrome profile cloning + multilang DOM
+selectors + session health heuristics). Each NLM call spawned a
+headless Chrome session, scraped the live Angular UI with locale-
+specific XPath/CSS, and was brittle whenever Google shipped a frontend
+tweak. It also could not produce structured citations — `ask` returned
+plaintext only, with no source-id linkage.
+
+`notebooklm-py` (NousResearch-adjacent community project, MIT,
+v0.4.1 released 2026-05-11, ★13k+) reverse-engineers Google's internal
+RPC endpoints (`batchexecute` / `SNlM0e` / `FdrFJe`) and drives them
+via `httpx`. Same auth boundary, no browser needed at runtime, 10-100×
+faster, exposes structured citation + multi-turn chat + artifact
+download capabilities the web UI doesn't surface.
+
+### Changed
+- **Deleted 6 files** (~1,150 LOC of browser plumbing):
+  `browser.py`, `cdp_launcher.py`, `chrome_clone.py`, `selectors.py`,
+  `session.py`, `session_health.py`.
+- **Added `auth.py`** (166 LOC): thin shim re-exporting v0.85 public
+  surface (`default_session_dir`, `default_state_file`, `login_nlm`,
+  `login_interactive`, `login_interactive_cdp`, `check_session_health`,
+  `import_session`) backed by `notebooklm-py`'s auth subsystem.
+- **`client.py`**: 544 → 377 LOC. Now a thin sync facade wrapping
+  `notebooklm.NotebookLMClient` via `asyncio.run()`. Public dataclasses
+  (`NotebookLMError`, `UploadResult`, `NotebookHandle`,
+  `BriefingArtifact`) preserved for backward compatibility with
+  `upload.py` + `ask.py` callers.
+- **`upload.py`**: 481 → 522 LOC. Bulk of orchestration preserved
+  (manifest lookup, `nlm_cache.json` resume state, retry-with-backoff,
+  JSONL debug logging). Only the inner client calls swapped.
+- **`ask.py`**: 283 → 176 LOC. New `AskCitation` dataclass added;
+  `AskResult.references: list[AskCitation]` populated for the first
+  time (each citation has `source_id`, `citation_number`,
+  `cited_text`, `start_char`, `end_char`).
+- **`__init__.py`**: 40 → 52 LOC, exports refreshed.
+- **`cli.py`**, **`setup_command.py`**, **`doctor.py`**: import paths
+  updated; CLI flag signatures preserved. No breaking change for
+  existing CLI users.
+- **Skipped 7 legacy Playwright/CDP-specific tests** (`test_v042_nlm_browser`,
+  `test_v065_nlm_login_diag`, `test_v070_1_nlm_session_management`,
+  parts of `test_v065_nlm_upload`, `test_v071_2_nlm_polish`,
+  `test_v046_auto`, `test_notebooklm_client`).
+- **Added `test_notebooklm_v086.py`** with v0.86-shape regression
+  coverage mocking `notebooklm.NotebookLMClient.from_storage`.
+
+### Added
+- **`notebooklm-py>=0.4.1`** as a hard `install_requires`. Playwright
+  / CDP is no longer required for normal use; only the one-time
+  `notebooklm login` flow installs a browser binary on demand.
+- **Structured citations** (`AskResult.references`) — previously
+  unavailable. Each chat answer now carries source-id linkage suitable
+  for the `notebooklm-brief-verifier` skill / any reviewer-style audit.
+
+### Removed
+- Direct Playwright / CDP dependencies in normal code paths. `nlm_session/state.json`
+  files from v0.85 remain compatible (`NotebookLMClient.from_storage`
+  reads the same Playwright storage state format).
+
+### Migration notes
+- **For users**: no CLI flag changes; existing `state.json` should
+  load. First run after upgrade: `pip install -U research-hub-pipeline`
+  pulls `notebooklm-py 0.4.1` transitively. If login state is stale,
+  re-run `research-hub notebooklm login`.
+- **Phase 2 (deferred)**: expose new artifact-download capabilities
+  via CLI (audio overview / mind map / quiz / slide deck), multi-turn
+  chat (`conversation_id`), per-cluster source-id citation rendering
+  in `read_latest_briefing`.
+
+### Verification
+- `pytest tests/ -k "notebooklm or nlm"`: **86 passed, 7 skipped, 2000 deselected**.
+- `python -m research_hub --help` exits 0 (CLI imports intact).
+- All public symbols importable: `from research_hub.notebooklm.{upload, ask, bundle, auth, client} import *`.
+
 ## v0.85.0 (2026-05-11)
 
 Crystal readability + prompt-quality polish.

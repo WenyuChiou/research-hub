@@ -2604,16 +2604,15 @@ def _preflight_nlm_session(cfg, *, op_name: str) -> int | None:
     browser launches a 30-second deep-stack failure. Returns None when
     OK to proceed, or an exit code (1) with a one-line actionable hint
     printed to stderr when not."""
-    from research_hub.notebooklm.browser import default_session_dir, default_state_file
-    from research_hub.notebooklm.session_health import check_session_health
+    from research_hub.notebooklm.auth import default_state_file, check_session_health
 
-    session_dir = default_session_dir(cfg.research_hub_dir)
     state_file = default_state_file(cfg.research_hub_dir)
-    health = check_session_health(session_dir, state_file)
-    if health.looks_logged_in:
+    health = check_session_health(state_file)
+    if health.get("ok"):
         return None
     print(
-        f"[notebooklm {op_name}] session check failed: {health.actionable_hint()}",
+        f"[notebooklm {op_name}] session check failed: {health.get('reason', 'auth invalid')}. "
+        "Run `research-hub notebooklm login` to sign in.",
         file=sys.stderr,
     )
     return 1
@@ -5331,15 +5330,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.notebooklm_command == "login":
             from pathlib import Path as _Path
 
-            from research_hub.notebooklm.browser import default_session_dir, default_state_file, login_nlm
-            from research_hub.notebooklm.session import login_interactive, login_interactive_cdp
+            from research_hub.notebooklm.auth import (
+                default_session_dir,
+                default_state_file,
+                login_interactive,
+                login_interactive_cdp,
+                login_nlm,
+            )
 
             cfg = get_config()
             session_dir = default_session_dir(cfg.research_hub_dir)
             # v0.70.1: --import-from short-circuits the interactive flow by
             # copying a logged-in session profile from another vault.
             if args.import_from:
-                from research_hub.notebooklm.session_health import import_session
+                from research_hub.notebooklm.auth import import_session
                 src_vault = _Path(args.import_from).expanduser().resolve()
                 src_research_hub = src_vault / ".research_hub"
                 src_session = default_session_dir(src_research_hub)

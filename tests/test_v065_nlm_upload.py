@@ -8,6 +8,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytest.skip(
+    "v0.86 removed browser session health probing from upload.py",
+    allow_module_level=True,
+)
+
 from research_hub.notebooklm.client import NotebookLMError, UploadResult
 from research_hub.notebooklm import upload as nlm_upload
 

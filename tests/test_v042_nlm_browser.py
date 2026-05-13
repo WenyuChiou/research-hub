@@ -13,6 +13,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytest.skip(
+    "v0.86 removed the Playwright/CDP browser layer in favor of notebooklm-py",
+    allow_module_level=True,
+)
+
 
 def test_patchright_importable():
     import patchright.sync_api  # noqa: F401

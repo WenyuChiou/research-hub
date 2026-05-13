@@ -28,7 +28,7 @@ def detect_host() -> str | None:
 def run_notebooklm_login() -> int:
     """Launch the standard NotebookLM login flow used by the CLI."""
     from research_hub.config import get_config
-    from research_hub.notebooklm.browser import default_session_dir, default_state_file, login_nlm
+    from research_hub.notebooklm.auth import default_session_dir, default_state_file, login_nlm
 
     cfg = get_config()
     session_dir = default_session_dir(cfg.research_hub_dir)
