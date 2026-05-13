@@ -26,11 +26,13 @@ def test_build_cluster_base_returns_valid_yaml():
     assert "views" in parsed
 
 
-def test_build_cluster_base_has_4_views():
+def test_build_cluster_base_has_5_views():
+    """v0.88 #9: a 5th 'Reading queue' view (status==unread) was added as
+    the FIRST/default landing tab. Total view count is now 5, not 4."""
     inputs = ClusterBaseInputs(cluster_slug="x", cluster_name="X")
     parsed = yaml.safe_load(build_cluster_base(inputs))
     view_names = [v["name"] for v in parsed["views"]]
-    assert view_names == ["Papers", "Crystals", "Open Questions", "Recent activity"]
+    assert view_names == ["Reading queue", "Papers", "Crystals", "Open Questions", "Recent activity"]
 
 
 def test_build_cluster_base_filters_use_topic_cluster():

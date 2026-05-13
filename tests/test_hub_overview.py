@@ -119,7 +119,13 @@ def test_paper_bullet_sorts_by_year_desc_then_author_asc(tmp_path):
 
     path = populate_overview(cluster_slug=slug, vault_root=tmp_path)
 
-    bullets = _section(path.read_text(encoding="utf-8"), "Papers in this cluster").splitlines()
+    # v0.88 #8: section now starts with a `> [!info] Auto-generated ...`
+    # callout (visual fence to discourage edits). Drop it and the blank line
+    # that follows so the bullet-list assertion still works.
+    bullets = [
+        line for line in _section(path.read_text(encoding="utf-8"), "Papers in this cluster").splitlines()
+        if line and not line.startswith("> [!info]")
+    ]
     assert bullets == [
         "- [[adams2026]]: *Adams Paper*",
         "- [[baker2026]]: *Baker Paper*",
