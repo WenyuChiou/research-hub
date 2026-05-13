@@ -252,6 +252,32 @@ class NotebookLMClient:
         except Exception as exc:
             raise NotebookLMError(f"failed to download briefing: {exc}") from exc
 
+    def download_slide_deck(
+        self,
+        handle: NotebookHandle,
+        *,
+        output_path: Path,
+        output_format: str = "pdf",
+    ) -> Path:
+        """Download the latest slide deck for a notebook (PDF or PPTX).
+
+        Returns the saved path. Raises NotebookLMError on RPC failure.
+        """
+        async def _go():
+            await self._client.artifacts.download_slide_deck(
+                handle.notebook_id,
+                output_path=str(output_path),
+                output_format=output_format,
+            )
+            return output_path
+
+        try:
+            return self._run(_go())
+        except _UpstreamError as exc:
+            raise NotebookLMError(f"failed to download slide deck: {exc}") from exc
+        except Exception as exc:
+            raise NotebookLMError(f"failed to download slide deck: {exc}") from exc
+
     def trigger_briefing(self, notebook_id: str | None = None) -> str:
         return self._trigger_generation("brief", notebook_id)
 
@@ -263,6 +289,9 @@ class NotebookLMClient:
 
     def trigger_video_overview(self, notebook_id: str | None = None) -> str:
         return self._trigger_generation("video", notebook_id)
+
+    def trigger_slide_deck(self, notebook_id: str | None = None) -> str:
+        return self._trigger_generation("slide_deck", notebook_id)
 
     def ask(
         self,
@@ -328,6 +357,8 @@ class NotebookLMClient:
                 status = await self._client.artifacts.generate_mind_map(notebook_id)
             elif kind == "video":
                 status = await self._client.artifacts.generate_video(notebook_id)
+            elif kind == "slide_deck":
+                status = await self._client.artifacts.generate_slide_deck(notebook_id)
             else:
                 raise ValueError(f"Unknown generation kind: {kind}")
             task_id = getattr(status, "task_id", "") or getattr(status, "id", "")

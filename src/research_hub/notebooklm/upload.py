@@ -404,6 +404,65 @@ def download_briefing_for_cluster(
     )
 
 
+def download_slide_deck_for_cluster(
+    cluster,
+    cfg,
+    *,
+    headless: bool = False,
+    output_format: str = "pdf",
+) -> DownloadReport:
+    """Download the latest slide deck artifact and save it under .research_hub/artifacts/<cluster>/.
+
+    Mirrors the briefing flow's storage layout (timestamped file in the
+    artifacts dir + nlm_cache.json entry), but does not write a `.md`
+    mirror — slide decks are PDF/PPTX binaries, not markdown.
+    """
+    log_path = _open_debug_log(cfg.research_hub_dir)
+    _log_jsonl(
+        log_path,
+        {"kind": "download_slide_deck_start", "cluster_slug": cluster.slug, "format": output_format},
+    )
+    cache_path = cfg.research_hub_dir / "nlm_cache.json"
+    cache = _load_nlm_cache(cache_path)
+    cluster_cache = cache.setdefault(cluster.slug, {})
+
+    safe_slug = Path(cluster.slug).name
+    artifacts_dir = cfg.research_hub_dir / "artifacts" / safe_slug
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y%m%dT%H%M%SZ")
+    suffix = "pptx" if output_format.lower() == "pptx" else "pdf"
+    out_path = artifacts_dir / f"slide-deck-{timestamp}.{suffix}"
+
+    state_file = default_state_file(cfg.research_hub_dir)
+    client = _make_client(state_file, headless=headless)
+    try:
+        handle = _resolve_notebook_handle(client, cluster, cluster_cache, create_if_missing=False)
+        _log_jsonl(log_path, {"kind": "download_navigate", "notebook_url": handle.url})
+        client.download_slide_deck(handle, output_path=out_path, output_format=output_format)
+    finally:
+        getattr(client, "close", lambda: None)()
+
+    cluster_cache.setdefault("artifacts", {})
+    cluster_cache["artifacts"]["slide_deck"] = {
+        "path": str(out_path),
+        "downloaded_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "format": suffix,
+        "size_bytes": out_path.stat().st_size if out_path.exists() else 0,
+    }
+    _save_nlm_cache(cache_path, cache)
+    _log_jsonl(log_path, {"kind": "download_slide_deck_ok", "artifact_path": str(out_path)})
+
+    return DownloadReport(
+        cluster_slug=cluster.slug,
+        notebook_name=handle.url,
+        artifact_path=out_path,
+        char_count=out_path.stat().st_size if out_path.exists() else 0,
+        titles=[],
+        brief_md_path=None,
+    )
+
+
 def read_latest_briefing(cluster, cfg) -> str:
     """Return the most recently downloaded briefing text for a cluster."""
     cluster_slug = cluster if isinstance(cluster, str) else cluster.slug

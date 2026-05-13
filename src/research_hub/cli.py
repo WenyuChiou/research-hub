@@ -2763,9 +2763,12 @@ def _nlm_upload(
     return 0 if report.fail_count == 0 else 1
 
 
-def _nlm_download(cluster_slug: str, artifact_type: str, headless: bool) -> int:
-    from research_hub.notebooklm.upload import download_briefing_for_cluster
-
+def _nlm_download(
+    cluster_slug: str,
+    artifact_type: str,
+    headless: bool,
+    slide_format: str = "pdf",
+) -> int:
     cfg = get_config()
     rc = _preflight_nlm_session(cfg, op_name="download")
     if rc is not None:
@@ -2774,6 +2777,20 @@ def _nlm_download(cluster_slug: str, artifact_type: str, headless: bool) -> int:
     cluster = registry.get(cluster_slug)
     if cluster is None:
         raise ValueError(f"Cluster not found: {cluster_slug}")
+
+    if artifact_type == "slide-deck":
+        from research_hub.notebooklm.upload import download_slide_deck_for_cluster
+
+        report = download_slide_deck_for_cluster(
+            cluster, cfg, headless=headless, output_format=slide_format,
+        )
+        print(f"Saved: {report.artifact_path}")
+        print(f"  format: {slide_format}")
+        print(f"  size: {report.char_count} bytes")
+        return 0
+
+    # default: brief
+    from research_hub.notebooklm.upload import download_briefing_for_cluster
 
     report = download_briefing_for_cluster(cluster, cfg, headless=headless)
     print(f"Saved: {report.artifact_path}")
@@ -2816,9 +2833,11 @@ def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
         raise ValueError(f"Cluster not found: {cluster_slug}")
 
     if artifact_type == "all":
-        kinds = ["brief", "audio", "mind_map", "video"]
+        kinds = ["brief", "audio", "mind_map", "video", "slide_deck"]
     elif artifact_type == "mind-map":
         kinds = ["mind_map"]
+    elif artifact_type == "slide-deck":
+        kinds = ["slide_deck"]
     else:
         kinds = [artifact_type]
 
@@ -4506,9 +4525,15 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_download.add_argument("--cluster", required=True)
     nlm_download.add_argument(
         "--type",
-        choices=["brief"],
+        choices=["brief", "slide-deck"],
         default="brief",
-        help="Artifact type to download (v0.9.0: brief only; audio/mind-map/video land in v0.9.1)",
+        help="Artifact type to download (v0.87: brief, slide-deck; audio/mind-map/video planned for v0.87.1)",
+    )
+    nlm_download.add_argument(
+        "--slide-format",
+        choices=["pdf", "pptx"],
+        default="pdf",
+        help="When --type slide-deck, choose file format (default: pdf)",
     )
     nlm_download.add_argument("--headless", action="store_true", default=False)
     nlm_download.add_argument("--visible", dest="headless", action="store_false")
@@ -4521,7 +4546,7 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_generate.add_argument("--cluster", required=True)
     nlm_generate.add_argument(
         "--type",
-        choices=["brief", "audio", "mind-map", "video", "all"],
+        choices=["brief", "audio", "mind-map", "video", "slide-deck", "all"],
         default="brief",
     )
     nlm_generate.add_argument("--headless", action="store_true", default=False)
@@ -5526,7 +5551,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.notebooklm_command == "upload":
             return _nlm_upload(args.cluster, args.dry_run, args.headless, args.create_if_missing)
         if args.notebooklm_command == "download":
-            return _nlm_download(args.cluster, args.type, args.headless)
+            return _nlm_download(
+                args.cluster,
+                args.type,
+                args.headless,
+                slide_format=getattr(args, "slide_format", "pdf"),
+            )
         if args.notebooklm_command == "read-briefing":
             return _nlm_read_briefing(args.cluster)
         if args.notebooklm_command == "generate":
