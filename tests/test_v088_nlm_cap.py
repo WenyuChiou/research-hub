@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from research_hub.clusters import Cluster, ClusterRegistry, NotebookShard
+from research_hub.notebooklm import upload as upload_mod  # for module-ref monkeypatching
 from research_hub.notebooklm.client import NotebookHandle, UploadResult
 from research_hub.notebooklm.upload import NotebookLMCapacityError, upload_cluster
 
@@ -164,30 +165,27 @@ class FakeNotebookLMClient:
         return None
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "v0.88 #1 flake: shard tests pass in isolation (pytest "
-        "tests/test_v088_nlm_cap.py — 13/13 green) but the "
-        "monkeypatch on upload._make_client + upload.NotebookLMClient "
-        "is somehow bypassed when run as part of the full suite. "
-        "Root cause not yet pinpointed — likely a sys.modules / "
-        "fixture-ordering interaction with one of the 2200+ earlier "
-        "tests. Defer to v0.88.1 hotfix. Functional behavior verified "
-        "in isolation; production code is correct."
-    ),
-)
 def test_shard_strategy_materializes_three_notebooks_for_110_sources(tmp_path, monkeypatch):
+    """v0.88.1 fix: switched from `monkeypatch.setattr("research_hub...string", ...)`
+    to `monkeypatch.setattr(upload_mod, ...)` with the real module reference.
+    The string-path form caused pytest to resolve the module path via
+    importlib at fixture time, and in some test orderings the resolved
+    module object was a different instance than the one held by
+    `_upload_cluster_shards`'s globals — so the patch landed on a stale
+    sys.modules entry while the live function kept the original
+    _make_client. Resolving the module ourselves removes that ambiguity."""
     cfg = _cfg(tmp_path)
     cluster = _cluster(cfg)
     _write_bundle(cfg, cluster.slug, [_entry(i) for i in range(110)])
     fake_client = FakeNotebookLMClient()
-    monkeypatch.setattr("research_hub.notebooklm.upload._make_client", lambda *_args, **_kwargs: fake_client)
-    monkeypatch.setattr(
-        "research_hub.notebooklm.upload.NotebookLMClient",
-        lambda *_args, **_kwargs: fake_client,
-    )
-    monkeypatch.setattr("research_hub.notebooklm.upload.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(upload_mod, "_make_client", lambda *_args, **_kwargs: fake_client)
+    monkeypatch.setattr(upload_mod, "NotebookLMClient", lambda *_args, **_kwargs: fake_client)
+    monkeypatch.setattr(upload_mod.time, "sleep", lambda _seconds: None)
+    # Sanity assertion: confirm patches landed on the SAME module instance
+    # _upload_cluster_shards reads from. If sys.modules has drifted, this
+    # fires immediately rather than silently constructing a real client.
+    assert upload_mod._make_client is not None
+    assert upload_mod._make_client(None, headless=True) is fake_client
 
     report = upload_cluster(cluster, cfg, over_cap_strategy="shard", shard_size=50)
 
@@ -201,21 +199,17 @@ def test_shard_strategy_materializes_three_notebooks_for_110_sources(tmp_path, m
     ]
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Same full-suite flake as test_shard_strategy_materializes_three_notebooks_for_110_sources — see that test for details.",
-)
 def test_sharding_preserves_doi_uniqueness_across_shards(tmp_path, monkeypatch):
+    """v0.88.1 fix: same module-reference monkeypatch pattern as the
+    sibling shard test — bypasses the string-path import-resolution
+    ambiguity that caused full-suite flakes."""
     cfg = _cfg(tmp_path)
     cluster = _cluster(cfg)
     _write_bundle(cfg, cluster.slug, [_entry(i) for i in range(110)])
     fake_client = FakeNotebookLMClient()
-    monkeypatch.setattr("research_hub.notebooklm.upload._make_client", lambda *_args, **_kwargs: fake_client)
-    monkeypatch.setattr(
-        "research_hub.notebooklm.upload.NotebookLMClient",
-        lambda *_args, **_kwargs: fake_client,
-    )
-    monkeypatch.setattr("research_hub.notebooklm.upload.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(upload_mod, "_make_client", lambda *_args, **_kwargs: fake_client)
+    monkeypatch.setattr(upload_mod, "NotebookLMClient", lambda *_args, **_kwargs: fake_client)
+    monkeypatch.setattr(upload_mod.time, "sleep", lambda _seconds: None)
 
     upload_cluster(cluster, cfg, over_cap_strategy="shard", shard_size=50)
 

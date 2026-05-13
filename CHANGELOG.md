@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.88.1 (2026-05-13) — fix the 2 shard-test flakes
+
+v0.88.0 shipped with two `@pytest.mark.xfail(strict=False)`-marked
+sharding tests in `tests/test_v088_nlm_cap.py`. They passed in
+isolation but failed in full suite because the
+`monkeypatch.setattr("research_hub.notebooklm.upload._make_client", ...)`
+string-path form was being bypassed for `_upload_cluster_shards`'s
+internal call — the real `NotebookLMClient` was constructed and
+tried to load auth from a non-existent state file.
+
+### Root cause
+
+`monkeypatch.setattr(string_path, value)` resolves the module via
+`importlib.import_module` at fixture-setup time. In some
+test-ordering combinations the resolved module object differed from
+the one cached in `sys.modules` that `_upload_cluster_shards`
+closed over — likely a residue of a much earlier test that did
+`importlib.reload` or replaced the entry. The patch landed on a
+stale module instance while the live function kept resolving names
+against the original.
+
+### Fix
+
+Switched the 2 sharding tests from string-path to
+module-reference monkeypatching:
+
+```python
+from research_hub.notebooklm import upload as upload_mod
+
+# Was:
+monkeypatch.setattr("research_hub.notebooklm.upload._make_client", lam)
+# Now:
+monkeypatch.setattr(upload_mod, "_make_client", lam)
+```
+
+The module-reference form patches whichever module instance the
+test itself imported, which is also the instance that
+`_upload_cluster_shards` reads from (same import chain). Removed
+the `@pytest.mark.xfail` decorators.
+
+Added a sanity assertion in the primary shard test:
+
+```python
+assert upload_mod._make_client(None, headless=True) is fake_client
+```
+
+This fires immediately if a future test ordering re-introduces the
+drift — instead of silently constructing a real client.
+
+### Verification
+
+Full suite: **2289 passed**, 23 skipped, 6 deselected, **2 xfailed**
+(down from 4 — these are the pre-existing v0.31 xfails, not v0.88
+ones), 1 xpassed, **0 failed**.
+
+The 2 sharding tests now PASS in both isolation and full suite.
+
 ## v0.88.0 (2026-05-13) — "scale + UX"
 
 Closes V088_PLAN.md v0.88 scope (11 issues from the post-v0.87
