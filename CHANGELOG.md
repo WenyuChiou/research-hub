@@ -1,5 +1,98 @@
 # Changelog
 
+## v0.87.0 (2026-05-13) — "trust the ingest"
+
+Closes the silent-failure gaps surfaced by the human-water-llm
+shakedown audit (4-agent review on the freshly-ingested 12-paper
+LLM-for-Human-Water-Systems cluster). The theme: when `ingest` /
+`upload` / `download` returns success, the user must be able to
+trust that the underlying state actually matches.
+
+Full plan + locked decisions: `V087_PLAN.md`.
+
+### Highlights
+
+- **D1 doctor false-positive fixed** — `doctor` was always reporting
+  `[!!] nlm_session: No saved session` on v0.86 vaults because it
+  still probed the v0.85 directory layout. It now checks the canonical
+  notebooklm-py file path (`nlm_sessions/state.json`).
+
+- **N1 NotebookLM ingest validator** — flags sources that finished
+  with `status=READY` but actually ingested only landing-page chrome
+  (IEEE Xplore "Unable to Load Page", EGU abstract-list header, ASCE
+  "Vol , No" metadata strip). Writes `.ingest_validation.json` and
+  surfaces a `[warn]` block. Advisory — does not fail the upload.
+
+- **N2 cluster-synthesis brief prompt** — replaced
+  `ReportFormat.BRIEFING_DOC` (NLM's single-source default) with
+  `ReportFormat.CUSTOM` + a synthesis-oriented `CLUSTER_SYNTHESIS_PROMPT`
+  so the brief covers all sources instead of focusing on whichever
+  one NLM ranks first.
+
+- **Z1 PDF attach per-paper reasoning** — `--with-pdfs` now reports
+  per-paper outcome with a real reason (paywall_403, not_found_404,
+  no_oa_record, zenodo_dataset, network_error, …) instead of the
+  v0.86 silent zero. Summary serialized into the ingest run JSON.
+
+- **O1+O2+MOC vault wayfinding** — new `vault/hub_overview.py`
+  idempotently populates `hub/<slug>/00_overview.md` with a Papers
+  list (year DESC, author ASC), a NotebookLM-brief wikilink, and a
+  Related-MOCs section. `notebooklm download` now writes a `.md`
+  mirror of the brief into the vault (preserving the immutable `.txt`
+  archive at `.research_hub/artifacts/...`). MOC notes
+  (`hub/_moc/LLM-Agents.md`, `hub/_moc/Water-Resources.md`) auto-
+  scaffold on first cluster with the matching slug keyword.
+
+- **O4 fit-check → ingest gap reporter** — writes
+  `hub/<slug>/.ingest_gap.json` whenever fit-check accepts more
+  papers than ingest writes. On the human-water-llm cluster this
+  surfaces the 3 papers (Making Waves, Embracing LLM, IWMS-LLM) that
+  Semantic Scholar rate-limit lost in the v0.86 round.
+
+- **Q3 slide-deck artifact** — `notebooklm download --type slide-deck`
+  with `--slide-format {pdf,pptx}`. `notebooklm generate --type
+  slide-deck` triggers generation; the `all` alias adds slide-deck
+  to the multi-artifact sweep. Other artifacts (audio/video/mind-map/
+  infographic/quiz/flashcards) deferred to v0.87.1.
+
+- **Q5 kept-by-user Zotero collections** — new sidecar at
+  `<vault>/.research_hub/zotero_kept_collections.json` plus
+  `zotero mark-kept --all-orphans | --collection KEY | --remove KEY |
+  --list`. `zotero gc` defaults to `--respect-kept` ON; pass
+  `--no-respect-kept` for audit mode. Test-pattern matches still
+  surface even on kept collections.
+
+### Locked v0.87.0 decisions
+
+1. Tag scheme `topic:<slug>` — new code emits `topic:`, legacy
+   `cluster/<slug>` migration deferred to v0.87.1.
+2. MOC notes promoted into v0.87.0 (was v0.88).
+3. Slide-deck is the only artifact in v0.87.0 download parity.
+4. Synthesis prompt locked (see `client.py:CLUSTER_SYNTHESIS_PROMPT`).
+5. Orphan Zotero collections: live-marked 94 entries as
+   kept-by-user during the v0.87 ship cycle.
+
+### Tests
+
+2113 passed, 23 skipped, 0 failed (+32 new tests over v0.86.3 baseline
+of 2081). New regression files: `test_v087_zotero_kept.py`,
+`test_v087_notebooklm_synthesis.py`, `test_hub_overview.py`,
+`test_notebooklm_brief_mirror.py`, `test_moc.py`,
+`test_v087_ingest_gap.py`, `test_v087_slide_deck.py`,
+`test_v087_nlm_ingest_validator.py`,
+`test_v087_pdf_attach_reporting.py`.
+
+### v0.87.1 backlog (already specced in V087_PLAN.md)
+
+- Z2 abstract fallback chain (Crossref → OpenAlex inverted-index)
+- Z3 venue fallback chain (DOI-prefix overrides for Zenodo / ASCE)
+- Z4 Zotero child-note Obsidian-URI backlink
+- Z5 legacy `cluster/<slug>` → `topic:<slug>` tag migration
+- O3 post-ingest paper-summarize autorun (fill Key Findings /
+  Methodology / Relevance from abstract)
+- N3 download parity for audio / video / mind-map / infographic /
+  quiz / flashcards / custom-report
+
 ## v0.86.3 (2026-05-13)
 
 CI hotfix wave 2 — three pre-existing failures surfaced by v0.86.2.
