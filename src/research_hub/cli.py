@@ -2664,12 +2664,20 @@ def _vault_tag_migrate(*, cluster_slug: str | None, dry_run: bool) -> int:
     return 0
 
 
-def _vault_rebuild_overviews(*, cluster_slug: str | None) -> int:
+def _vault_rebuild_overviews(
+    *,
+    cluster_slug: str | None,
+    force_rebuild: bool = False,
+) -> int:
     """Re-run populate_overview + ensure_moc for every cluster (v0.87.1 §5)."""
     from research_hub.vault.hub_overview import populate_all_overviews
 
     cfg = get_config()
-    results = populate_all_overviews(cfg, cluster_slug_filter=cluster_slug)
+    results = populate_all_overviews(
+        cfg,
+        cluster_slug_filter=cluster_slug,
+        force_rebuild=force_rebuild,
+    )
     if not results:
         print("(no clusters processed)")
         return 0
@@ -4543,6 +4551,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Restrict to a single cluster slug (default: walk all clusters)",
     )
+    vault_rebuild.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass the overview rebuild debounce marker",
+    )
     vault_tag_migrate = vault_subparsers.add_parser(
         "tag-migrate",
         help="Backfill topic:<slug> tag into existing paper-note frontmatter (v0.87.1)",
@@ -5801,7 +5814,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.vault_command == "polish-markdown":
             return _vault_polish_markdown(cluster=args.cluster, dry_run=args.dry_run)
         if args.vault_command == "rebuild-overviews":
-            return _vault_rebuild_overviews(cluster_slug=args.cluster)
+            return _vault_rebuild_overviews(
+                cluster_slug=args.cluster,
+                force_rebuild=args.force,
+            )
         if args.vault_command == "tag-migrate":
             return _vault_tag_migrate(
                 cluster_slug=args.cluster,

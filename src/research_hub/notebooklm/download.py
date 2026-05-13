@@ -43,6 +43,7 @@ def mirror_brief_and_populate_overview(
         vault_root=vault_root,
         brief_md_path=brief_md_path,
         moc_links=moc_links,
+        force_rebuild=True,
     )
     return brief_md_path
 

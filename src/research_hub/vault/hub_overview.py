@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +12,14 @@ from research_hub.security import safe_join
 
 
 OVERVIEW_FILENAME = "00_overview.md"
+PAPERS_BY_YEAR_FILENAME = "01_papers_by_year.md"
 PAPERS_HEADING = "Papers in this cluster"
 BRIEF_HEADING = "NotebookLM brief"
 MOC_HEADING = "Related MOCs"
+PAPER_PAGINATION_THRESHOLD = 30
+RECENT_PAPERS_LIMIT = 12
+FIT_SCORE_PAPERS_LIMIT = 20
+REBUILD_DEBOUNCE_THRESHOLD = 10
 
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
@@ -47,12 +53,23 @@ def populate_overview(
     vault_root: Path,
     brief_md_path: Path | None = None,
     moc_links: list[str] | None = None,
+    force_rebuild: bool = False,
 ) -> Path:
     """Idempotently populate ``hub/<cluster_slug>/00_overview.md``."""
 
     root = Path(vault_root)
     overview_path = _overview_path(root, cluster_slug)
     overview_path.parent.mkdir(parents=True, exist_ok=True)
+    current_paper_count = len(_paper_note_paths(root, cluster_slug))
+
+    if _should_debounce_overview_rebuild(
+        root,
+        cluster_slug,
+        current_paper_count=current_paper_count,
+        overview_path=overview_path,
+        force_rebuild=force_rebuild,
+    ):
+        return overview_path
 
     if overview_path.exists():
         existing = overview_path.read_text(encoding="utf-8", errors="ignore")
@@ -102,6 +119,7 @@ def populate_overview(
     new_text = _join_preamble_and_sections(preamble, rendered_sections)
     if not overview_path.exists() or overview_path.read_text(encoding="utf-8", errors="ignore") != new_text:
         overview_path.write_text(new_text, encoding="utf-8")
+    _write_rebuild_marker(root, cluster_slug, current_paper_count, since_last_rebuild=0)
     return overview_path
 
 
@@ -428,6 +446,7 @@ def populate_all_overviews(
     cfg,
     *,
     cluster_slug_filter: str | None = None,
+    force_rebuild: bool = False,
 ) -> list[tuple[str, Path]]:
     """Re-run populate_overview + ensure_moc for every cluster in the registry.
 
@@ -470,6 +489,7 @@ def populate_all_overviews(
                 vault_root=vault_root,
                 brief_md_path=brief_md,
                 moc_links=moc_links,
+                force_rebuild=force_rebuild,
             )
             written.append((slug, overview_path))
         except Exception as exc:  # noqa: BLE001 — surface per-cluster failures, continue with rest
@@ -523,12 +543,117 @@ def _paper_bullet(note_path: Path) -> str:
     return f"- [[{note_path.stem}]]: *{title}*"
 
 
+def _paper_alias_bullet(note_path: Path) -> str:
+    meta = _read_frontmatter(note_path)
+    title = _single_line(meta.get("title") or note_path.stem)
+    return f"- [[{note_path.stem}|{title}]]"
+
+
 def _overview_path(vault_root: Path, cluster_slug: str) -> Path:
     return safe_join(vault_root, "hub", cluster_slug, OVERVIEW_FILENAME)
 
 
 def _raw_cluster_dir(vault_root: Path, cluster_slug: str) -> Path:
     return safe_join(vault_root, "raw", cluster_slug)
+
+
+def _papers_by_year_path(vault_root: Path, cluster_slug: str) -> Path:
+    return safe_join(vault_root, "hub", cluster_slug, PAPERS_BY_YEAR_FILENAME)
+
+
+def _rebuild_marker_path(vault_root: Path, cluster_slug: str) -> Path:
+    return safe_join(
+        vault_root,
+        ".research_hub",
+        "clusters",
+        f"{cluster_slug}.rebuild_marker.json",
+    )
+
+
+def _paper_note_paths(vault_root: Path, cluster_slug: str) -> list[Path]:
+    raw_dir = _raw_cluster_dir(vault_root, cluster_slug)
+    if not raw_dir.exists():
+        return []
+    return [
+        path
+        for path in raw_dir.glob("*.md")
+        if path.name not in {OVERVIEW_FILENAME, "index.md"}
+    ]
+
+
+def _should_debounce_overview_rebuild(
+    vault_root: Path,
+    cluster_slug: str,
+    *,
+    current_paper_count: int,
+    overview_path: Path,
+    force_rebuild: bool,
+) -> bool:
+    if force_rebuild:
+        return False
+    if not overview_path.exists():
+        return False
+    sidecar_missing = not _papers_by_year_path(vault_root, cluster_slug).exists()
+    if current_paper_count > PAPER_PAGINATION_THRESHOLD and sidecar_missing:
+        return False
+
+    marker_path = _rebuild_marker_path(vault_root, cluster_slug)
+    marker = _read_rebuild_marker(marker_path)
+    if not marker:
+        return False
+
+    last_count = _nonnegative_int(
+        marker.get("last_rebuild_paper_count"),
+        current_paper_count,
+    )
+    if current_paper_count < last_count:
+        return False
+
+    marker_since = _nonnegative_int(marker.get("since_last_rebuild"), 0)
+    paper_delta = current_paper_count - last_count
+    since_last_rebuild = max(marker_since, paper_delta)
+    if since_last_rebuild >= REBUILD_DEBOUNCE_THRESHOLD:
+        return False
+
+    if since_last_rebuild != marker_since:
+        _write_rebuild_marker(
+            vault_root,
+            cluster_slug,
+            last_count,
+            since_last_rebuild=since_last_rebuild,
+            last_rebuild_at=str(marker.get("last_rebuild_at", "") or _utc_now_iso()),
+        )
+    return True
+
+
+def _read_rebuild_marker(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_rebuild_marker(
+    vault_root: Path,
+    cluster_slug: str,
+    last_rebuild_paper_count: int,
+    *,
+    since_last_rebuild: int,
+    last_rebuild_at: str | None = None,
+) -> Path:
+    path = _rebuild_marker_path(vault_root, cluster_slug)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "last_rebuild_at": last_rebuild_at or _utc_now_iso(),
+        "last_rebuild_paper_count": int(last_rebuild_paper_count),
+        "since_last_rebuild": int(since_last_rebuild),
+    }
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def _split_preamble(md: str) -> tuple[str, str]:
@@ -723,26 +848,82 @@ def _wrap_auto_section(body: str) -> str:
 
 
 def _render_papers_section(vault_root: Path, cluster_slug: str) -> str:
-    raw_dir = _raw_cluster_dir(vault_root, cluster_slug)
-    if not raw_dir.exists():
-        return _wrap_auto_section("(no papers found)")
-    notes = [
-        path
-        for path in raw_dir.glob("*.md")
-        if path.name not in {OVERVIEW_FILENAME, "index.md"}
-    ]
+    notes = _paper_note_paths(vault_root, cluster_slug)
     if not notes:
         return _wrap_auto_section("(no papers found)")
     notes.sort(key=_paper_sort_key)
+    if len(notes) > PAPER_PAGINATION_THRESHOLD:
+        _render_papers_by_year_sidecar(vault_root, cluster_slug)
+        recent = notes[:RECENT_PAPERS_LIMIT]
+        fit_score_ranked = sorted(notes, key=_fit_score_sort_key)[
+            :FIT_SCORE_PAPERS_LIMIT
+        ]
+        full_list = "\n".join(f"> {_paper_bullet(path)}" for path in notes)
+        body = "\n\n".join(
+            [
+                f"### Recent (top {RECENT_PAPERS_LIMIT})\n\n"
+                + "\n".join(_paper_bullet(path) for path in recent),
+                f"### Most-cited (top {FIT_SCORE_PAPERS_LIMIT} by fit score)\n\n"
+                + "\n".join(_paper_bullet(path) for path in fit_score_ranked),
+                f"Full list by year: [[{PAPERS_BY_YEAR_FILENAME[:-3]}|Papers by year]]",
+                f"> [!details]- Full list ({len(notes)} papers)\n{full_list}",
+            ]
+        )
+        return _wrap_auto_section(body)
     bullets = "\n".join(_paper_bullet(path) for path in notes)
     return _wrap_auto_section(bullets)
 
 
-def _paper_sort_key(note_path: Path) -> tuple[int, str, str]:
+def _render_papers_by_year_sidecar(vault_root: Path, cluster_slug: str) -> Path:
+    notes = _paper_note_paths(vault_root, cluster_slug)
+    notes.sort(key=_paper_sort_key)
+    path = _papers_by_year_path(vault_root, cluster_slug)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    generated_at = _existing_generated_at(path) or _utc_now_iso()
+
+    grouped: dict[int, list[Path]] = {}
+    for note_path in notes:
+        year = _year_value(_read_frontmatter(note_path).get("year"))
+        grouped.setdefault(year, []).append(note_path)
+
+    parts = [
+        "---",
+        "type: papers-by-year",
+        f"cluster: {cluster_slug}",
+        f"generated_at: {generated_at}",
+        f"total_papers: {len(notes)}",
+        "---",
+        "",
+        f"# Papers by year - {cluster_slug}",
+        "",
+        "> [!info] Auto-generated. Edits will be overwritten.",
+        "",
+    ]
+    for year in sorted(grouped, reverse=True):
+        year_label = str(year) if year else "Unknown"
+        year_notes = grouped[year]
+        parts.append(f"## {year_label} ({len(year_notes)} papers)")
+        parts.append("")
+        parts.extend(_paper_alias_bullet(note_path) for note_path in year_notes)
+        parts.append("")
+
+    text = "\n".join(parts).rstrip() + "\n"
+    if not path.exists() or path.read_text(encoding="utf-8", errors="ignore") != text:
+        path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _paper_sort_key(note_path: Path) -> tuple[int, float, str, str]:
     meta = _read_frontmatter(note_path)
     year = _year_value(meta.get("year"))
+    ingested_at = _timestamp_value(meta.get("ingested_at"))
     author = _first_author(meta.get("authors"))
-    return (-year, author.lower(), note_path.stem)
+    return (-year, -ingested_at, author.lower(), note_path.stem)
+
+
+def _fit_score_sort_key(note_path: Path) -> tuple[float, tuple[int, float, str, str]]:
+    meta = _read_frontmatter(note_path)
+    return (-_score_value(meta), _paper_sort_key(note_path))
 
 
 def _generated_brief_body(brief_md_path: Path | None) -> str | None:
@@ -793,11 +974,55 @@ def _parse_scalar(value: str) -> Any:
     return value.strip().strip('"').strip("'")
 
 
+def _existing_generated_at(path: Path) -> str:
+    if not path.exists():
+        return ""
+    value = _read_frontmatter(path).get("generated_at")
+    return str(value or "").strip()
+
+
 def _year_value(value: Any) -> int:
     try:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return 0
+
+
+def _nonnegative_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _score_value(meta: dict[str, Any]) -> float:
+    for key in ("fit_score", "score", "relevance_score"):
+        value = meta.get(key)
+        if value is None:
+            continue
+        try:
+            return float(str(value).strip())
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _timestamp_value(value: Any) -> float:
+    raw = str(value or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).timestamp()
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _first_author(value: Any) -> str:
