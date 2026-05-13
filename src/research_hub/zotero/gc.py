@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Iterable
 
 # Single source of truth — doctor.check_cluster_test_pattern imports this list.
@@ -34,12 +36,67 @@ class GCCandidate:
     reasons: list[str] = field(default_factory=list)
 
 
+KEPT_FILE_NAME = "zotero_kept_collections.json"
+
+
+def kept_file_path(research_hub_dir: Path) -> Path:
+    """Canonical path to the kept-collections registry inside the vault."""
+    return research_hub_dir / KEPT_FILE_NAME
+
+
+def load_kept_keys(research_hub_dir: Path) -> set[str]:
+    """Load the user-curated set of Zotero collection keys to skip in gc.
+
+    The file is created by `research-hub zotero mark-kept` and read by
+    `research-hub zotero gc --respect-kept`. Missing or malformed file
+    returns an empty set rather than raising.
+    """
+    path = kept_file_path(research_hub_dir)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return set()
+    except json.JSONDecodeError:
+        return set()
+    kept = data.get("kept") if isinstance(data, dict) else None
+    if not isinstance(kept, list):
+        return set()
+    return {str(key).strip() for key in kept if str(key).strip()}
+
+
+def save_kept_keys(
+    research_hub_dir: Path,
+    keys: Iterable[str],
+    *,
+    note: str | None = None,
+) -> Path:
+    """Persist a set of kept Zotero collection keys atomically.
+
+    Writes `{"kept": [...], "marked_at": ISO8601, "note": ...}` into
+    `<research_hub_dir>/zotero_kept_collections.json`. Sorted for stable
+    diffs. Returns the written path.
+    """
+    path = kept_file_path(research_hub_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "kept": sorted({str(key).strip() for key in keys if str(key).strip()}),
+        "marked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    if note:
+        payload["note"] = note
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
 def scan_zotero_for_gc(
     zot,
     vault_keys: set[str],
     *,
     include_test_pattern: bool = True,
     age_days: int = DEFAULT_AGE_DAYS,
+    kept_keys: set[str] | None = None,
 ) -> list[GCCandidate]:
     """Walk the Zotero web library and return collection delete candidates."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=age_days)
@@ -73,7 +130,12 @@ def scan_zotero_for_gc(
                         break
 
             if key and key not in vault_keys:
-                reasons.append("orphan-from-vault")
+                if kept_keys and key in kept_keys:
+                    # User explicitly marked this collection as kept; skip the
+                    # orphan flag so it never appears as a gc candidate.
+                    pass
+                else:
+                    reasons.append("orphan-from-vault")
 
             if reasons:
                 out.append(

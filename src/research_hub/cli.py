@@ -1283,10 +1283,94 @@ def _paper_resummarize(
     return 0 if not apply_result.errors else 1
 
 
-def _zotero_gc(*, apply: bool, yes: bool, no_test_pattern: bool, age_days: int) -> int:
+def _zotero_mark_kept(
+    *,
+    all_orphans: bool,
+    add_keys: list[str] | None,
+    remove_keys: list[str] | None,
+    show_list: bool,
+    note: str | None,
+) -> int:
+    """Manage the per-vault kept-collection list used by `zotero gc --respect-kept`."""
+    cfg = get_config()
+    from research_hub.zotero.gc import (
+        kept_file_path,
+        load_kept_keys,
+        save_kept_keys,
+        scan_zotero_for_gc,
+    )
+
+    current = load_kept_keys(cfg.research_hub_dir)
+    if show_list:
+        if not current:
+            print("(no kept Zotero collections recorded)")
+            return 0
+        for key in sorted(current):
+            print(key)
+        print(f"\nfile: {kept_file_path(cfg.research_hub_dir)}")
+        return 0
+
+    if all_orphans:
+        from research_hub.zotero.client import get_client
+
+        registry = ClusterRegistry(cfg.clusters_file)
+        vault_keys = {
+            (cluster.zotero_collection_key or "").strip()
+            for cluster in registry.list()
+            if (cluster.zotero_collection_key or "").strip()
+        }
+        zot = get_client()
+        # respect_kept=False here so we re-detect the full orphan set
+        # age_days only affects the "empty>Nd" reason, not orphan-from-vault,
+        # so the default 30 is fine for orphan bulk-marking.
+        candidates = scan_zotero_for_gc(
+            zot,
+            vault_keys,
+            include_test_pattern=False,
+            age_days=30,
+            kept_keys=set(),
+        )
+        new_keys = {c.key for c in candidates if "orphan-from-vault" in c.reasons}
+        merged = current | new_keys
+        save_kept_keys(cfg.research_hub_dir, merged, note=note)
+        added = len(merged) - len(current)
+        print(f"marked {added} additional collection(s) as kept (total: {len(merged)})")
+        return 0
+
+    if add_keys:
+        merged = current | {k.strip() for k in add_keys if k.strip()}
+        save_kept_keys(cfg.research_hub_dir, merged, note=note)
+        added = len(merged) - len(current)
+        print(f"marked {added} collection(s) as kept (total: {len(merged)})")
+        return 0
+
+    if remove_keys:
+        to_remove = {k.strip() for k in remove_keys if k.strip()}
+        merged = current - to_remove
+        save_kept_keys(cfg.research_hub_dir, merged, note=note)
+        removed = len(current) - len(merged)
+        print(f"removed {removed} collection(s) from kept list (total: {len(merged)})")
+        return 0
+
+    print("Usage: research-hub zotero mark-kept --all-orphans | --collection KEY | --remove KEY | --list", file=sys.stderr)
+    return 2
+
+
+def _zotero_gc(
+    *,
+    apply: bool,
+    yes: bool,
+    no_test_pattern: bool,
+    age_days: int,
+    respect_kept: bool = True,
+) -> int:
     cfg = get_config()
     from research_hub.zotero.client import get_client
-    from research_hub.zotero.gc import delete_candidates, scan_zotero_for_gc
+    from research_hub.zotero.gc import (
+        delete_candidates,
+        load_kept_keys,
+        scan_zotero_for_gc,
+    )
 
     registry = ClusterRegistry(cfg.clusters_file)
     vault_keys = {
@@ -1294,12 +1378,14 @@ def _zotero_gc(*, apply: bool, yes: bool, no_test_pattern: bool, age_days: int) 
         for cluster in registry.list()
         if (cluster.zotero_collection_key or "").strip()
     }
+    kept_keys = load_kept_keys(cfg.research_hub_dir) if respect_kept else set()
     zot = get_client()
     candidates = scan_zotero_for_gc(
         zot,
         vault_keys,
         include_test_pattern=not no_test_pattern,
         age_days=age_days,
+        kept_keys=kept_keys,
     )
     if not candidates:
         print("No Zotero GC candidates found.")
@@ -4296,6 +4382,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip test-pattern matching",
     )
     gc_parser.add_argument("--age-days", type=int, default=30)
+    gc_parser.add_argument(
+        "--respect-kept",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Skip collections listed in .research_hub/zotero_kept_collections.json "
+             "(default on; the file is curated by `zotero mark-kept`)",
+    )
+
+    mark_kept_parser = zotero_sub.add_parser(
+        "mark-kept",
+        help="Mark Zotero collections as kept-by-user so `gc --respect-kept` skips them",
+    )
+    mark_kept_scope = mark_kept_parser.add_mutually_exclusive_group(required=True)
+    mark_kept_scope.add_argument(
+        "--all-orphans",
+        action="store_true",
+        help="Mark every currently-orphan Zotero collection as kept",
+    )
+    mark_kept_scope.add_argument(
+        "--collection",
+        action="append",
+        metavar="KEY",
+        help="Mark a specific Zotero collection key as kept (repeatable)",
+    )
+    mark_kept_scope.add_argument(
+        "--remove",
+        action="append",
+        metavar="KEY",
+        help="Remove a key from the kept list (repeatable)",
+    )
+    mark_kept_scope.add_argument(
+        "--list",
+        action="store_true",
+        help="Print the current kept-collection list and exit",
+    )
+    mark_kept_parser.add_argument(
+        "--note",
+        default=None,
+        help="Optional human note recorded with the kept list",
+    )
 
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
@@ -5296,6 +5422,15 @@ def main(argv: list[str] | None = None) -> int:
                 yes=args.yes,
                 no_test_pattern=args.no_test_pattern,
                 age_days=args.age_days,
+                respect_kept=args.respect_kept,
+            )
+        if args.zotero_command == "mark-kept":
+            return _zotero_mark_kept(
+                all_orphans=args.all_orphans,
+                add_keys=args.collection,
+                remove_keys=args.remove,
+                show_list=args.list,
+                note=args.note,
             )
     if args.command == "migrate-yaml":
         return _migrate_yaml(
