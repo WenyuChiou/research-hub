@@ -36,7 +36,7 @@ def login_nlm(
     del headless, timeout_sec, stable_hold_sec
     target = Path(state_file) if state_file is not None else Path(user_data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "notebooklm.cli", "login", "--output", str(target)]
+    cmd = [sys.executable, "-m", "notebooklm.notebooklm_cli", "login", "--storage", str(target)]
     return subprocess.run(cmd, check=False).returncode
 
 

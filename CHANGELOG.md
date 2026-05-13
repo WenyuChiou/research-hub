@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.86.1 (2026-05-13)
+
+Hotfix: `notebooklm login` was broken since v0.86.0 — the subprocess
+in `notebooklm/auth.py:login_nlm` invoked the wrong module path
+(`python -m notebooklm.cli ...`), which is a package, not an
+executable module. Error visible to users:
+
+    No module named notebooklm.cli.__main__;
+    'notebooklm.cli' is a package and cannot be directly executed
+
+The notebooklm-py 0.4.1 CLI entry-point is `notebooklm.notebooklm_cli`
+(and the flag is `--storage`, not `--output`). Patched the single
+subprocess call. All other notebooklm-py usages in research-hub go
+through the Python API, not the CLI, so this is the only affected
+path.
+
+Verified by a fresh login attempt on Windows / Python 3.14.
+
 ## v0.86.0 (2026-05-12)
 
 NotebookLM module Phase 1 migration: replace Playwright/CDP browser
