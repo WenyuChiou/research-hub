@@ -1,5 +1,89 @@
 # Changelog
 
+## v0.87.1 (2026-05-13) — "trust the metadata"
+
+Closes V088_PLAN.md v0.87.1 scope (6 of 7 issues; §4
+paper-summarize autorun deferred to v0.87.2). Theme: every paper
+note that lands in the vault is bibliographically defensible —
+correct venue, correct itemType, substantive abstract.
+
+### Headlines
+
+- **§1 DOI-prefix overrides** (commit f3644e8): Zenodo /
+  Figshare → `dataset` itemType, ASCE 10.1061/ forbids "arXiv"
+  venue, ESSoar / EarthArXiv / SSRN / EGU / arXiv default-venue
+  fills. Runs in `pipeline.py` BEFORE `zot.item_template`, so
+  itemType is correctly chosen at ingest time. 14 unit tests.
+
+- **§2 Crossref venue fallback chain** (commit 906c48d): when
+  `container-title` is empty, walk `event.name` →
+  `proceedings-title` → `publisher` → `archive`. Fixes the 6
+  vault papers with blank journals (höhn / kim / qiao-thematic /
+  fu / ranaweera / taormina) on next re-enrich. 13 unit tests.
+
+- **§3 abstract fallback chain** (commit 3427bd6): new
+  `_is_substantive` predicate rejects 13-char "(no abstract)"
+  placeholders that previously short-circuited the recovery
+  chain. New OpenAlex inverted-index reconstruction step (~80%
+  coverage, not rate-limited like S2). Chain order:
+  Crossref → OpenAlex → Unpaywall → S2, gated by substantive
+  check. 11 unit tests.
+
+- **§5 vault rebuild-overviews** (commit 1280017): new
+  `populate_all_overviews` walks every cluster in the registry
+  and idempotently runs populate_overview + ensure_moc. CLI:
+  `research-hub vault rebuild-overviews [--cluster X]`. Backfills
+  clusters that were ingested before v0.87 (V4 audit found
+  `llm-agents-social-interaction` overview was still bare zh-TW
+  scaffold). 7 unit tests.
+
+- **§6 topic:<slug> tag migration** (commit 24bed9a):
+  `make_raw_md` injects `topic:<topic_cluster>` into the `tags`
+  array; new `vault tag-migrate` CLI backfills the 35 existing
+  paper notes. After migration, Obsidian tag pane shows
+  `topic:human-water-llm` (12) and
+  `topic:llm-agents-social-interaction` (23) — graph color
+  grouping by topic now works. 11 unit tests.
+
+- **§7 live-fix for goldshtein + arnold** (no code; manual data
+  apply): both Zotero items + Obsidian frontmatter updated via
+  one-shot script:
+    - goldshtein2025: publicationTitle "arXiv" → "World
+      Environmental and Water Resources Congress 2025" (via
+      Crossref `event.name` through new §2 chain)
+    - arnold2026:    publicationTitle "Open MIND" → "" (Zenodo
+      dataset, no journal)
+  itemType change (journalArticle → conferencePaper / dataset)
+  must be done manually in Zotero Desktop — pyzotero can't
+  PATCH itemType. Future v0.88 adds a proper CLI for this.
+
+### Deferred to v0.87.2
+
+§4 — `summarize_status: pending|done|failed_no_abstract`
+frontmatter + `research-hub paper summarize --pending` queue
+worker + Dashboard backlog count. V3 audit's highest-impact
+finding (18/35 papers stuck at score-3 due to sticky placeholder
+bodies). Defers to a separate release because it's a Codex round
++ a new CLI surface — better as a single-focus changelog entry.
+
+### Tests
+
+2113 (v0.87.0 baseline) → ~2169 after v0.87.1 (+56 new tests
+across 5 new test files). Per-file:
+  test_v0871_rebuild_overviews        7
+  test_v0871_tag_migrate              11
+  test_v0871_doi_overrides            14
+  test_v0871_venue_fallback           13
+  test_v0871_abstract_fallback        11
+
+### Live verification on user's vault
+
+- All 35 paper notes have `tags: ["topic:<slug>"]`
+- llm-agents-social-interaction/00_overview.md regenerated with
+  Papers + Related MOCs sections
+- goldshtein2025 + arnold2026 venues no longer would-be-rejected
+  by a manuscript reviewer
+
 ## v0.87.0 (2026-05-13) — "trust the ingest"
 
 Closes the silent-failure gaps surfaced by the human-water-llm
