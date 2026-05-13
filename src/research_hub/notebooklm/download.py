@@ -81,11 +81,69 @@ def write_brief_markdown_mirror(
             "",
         ]
     )
+    # v0.88 #6: prepend TL;DR + cluster backlink before the synthesis body so
+    # iPhone users don't have to scroll past 10 KB of generated headings
+    # before they know what they're reading, and the brief can be navigated
+    # back up to its cluster.
+    tldr_block = _build_tldr_and_cluster_block(artifact, cluster_slug)
     brief_md_path.write_text(
-        frontmatter + body + ("" if body.endswith("\n") else "\n"),
+        frontmatter + tldr_block + body + ("" if body.endswith("\n") else "\n"),
         encoding="utf-8",
     )
     return brief_md_path
+
+
+def _build_tldr_and_cluster_block(artifact, cluster_slug: str) -> str:
+    """Extract the first 3-5 sentences of the brief as TL;DR (capped 500 chars).
+
+    Pulls from the NLM brief's `Executive Summary` block when present, else
+    from the brief's opening paragraph. Always followed by an explicit
+    `**Cluster:**` backlink wikilink.
+    """
+    cluster_line = f"**Cluster:** [[{cluster_slug}/00_overview|{cluster_slug}]]"
+
+    text = (getattr(artifact, "text", "") or "").strip()
+    # Try to find an Executive Summary / Overview section first.
+    summary_text = _find_executive_summary(text) or _first_paragraph(text)
+    if not summary_text:
+        return f"\n## TL;DR\n\n_(brief body has no extractable summary yet)_\n\n{cluster_line}\n\n"
+
+    truncated = summary_text.strip()
+    if len(truncated) > 500:
+        truncated = truncated[:497].rstrip() + "..."
+    return f"\n## TL;DR\n\n{truncated}\n\n{cluster_line}\n\n"
+
+
+def _find_executive_summary(text: str) -> str:
+    """Pull the body of an `## Executive Summary` (or `## Overview`) section."""
+    import re
+
+    for heading in ("Executive Summary", "Overview", "Key Themes", "Key Findings"):
+        pattern = re.compile(
+            rf"^##[ \t]+{re.escape(heading)}[ \t]*\n(.*?)(?=^##[ \t]|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+        m = pattern.search(text)
+        if m:
+            body = m.group(1).strip()
+            if body:
+                return body
+    return ""
+
+
+def _first_paragraph(text: str) -> str:
+    """Fall back to the first non-heading paragraph of the brief."""
+    chunks: list[str] = []
+    for raw in (text or "").split("\n\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            continue
+        chunks.append(line)
+        if len(chunks) >= 1:
+            break
+    return chunks[0] if chunks else ""
 
 
 def source_dois_for_cluster(vault_root: Path, cluster_slug: str) -> list[str]:
