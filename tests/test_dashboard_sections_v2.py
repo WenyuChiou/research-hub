@@ -15,6 +15,7 @@ from research_hub.dashboard.sections import (
     _render_archived_section,
     _render_cross_cluster_labels,
     _render_label_breakdown,
+    _summarize_pending_backlog,
 )
 from research_hub.dashboard.types import (
     BriefingPreview,
@@ -203,6 +204,41 @@ def test_library_section_renders_papers_without_status_badges():
     assert 'reading-status' not in html
     assert 'class="status-badge' not in html
     assert 'title="Zotero"' not in html
+
+
+def test_library_section_renders_summarize_backlog(tmp_path):
+    raw = tmp_path / "raw" / "agents"
+    raw.mkdir(parents=True)
+    (raw / "paper-one.md").write_text(
+        '---\ntitle: "A"\nsummarize_status: pending\n---\nbody\n',
+        encoding="utf-8",
+    )
+    (raw / "paper-two.md").write_text(
+        '---\ntitle: "B"\nsummarize_status: done\n---\nbody\n',
+        encoding="utf-8",
+    )
+    html = LibrarySection().render(
+        _data(vault_root=str(tmp_path), clusters=[_cluster()], total_clusters=1, total_papers=1)
+    )
+    assert "Papers awaiting summary:" in html
+    assert "<strong>1</strong>" in html
+    assert "research-hub paper summarize --pending" in html
+    assert "<code>agents</code>: 1 pending" in html
+
+
+def test_summarize_pending_backlog_counts_by_cluster(tmp_path):
+    for cluster in ("a", "b"):
+        cluster_dir = tmp_path / "raw" / cluster
+        cluster_dir.mkdir(parents=True)
+        (cluster_dir / "paper.md").write_text(
+            '---\ntitle: "A"\nsummarize_status: pending\n---\nbody\n',
+            encoding="utf-8",
+        )
+
+    total, counts = _summarize_pending_backlog(str(tmp_path))
+
+    assert total == 2
+    assert counts == {"a": 1, "b": 1}
 
 
 def test_library_section_renders_binding_links_per_cluster():

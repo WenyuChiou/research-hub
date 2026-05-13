@@ -958,6 +958,71 @@ def _cmd_summarize(args, cfg) -> int:
     return 0 if not apply_result.errors else 1
 
 
+def _vault_summarize_status_migrate(cluster_slug: str | None, dry_run: bool) -> int:
+    from collections import Counter
+
+    from research_hub.vault.summarize_migrate import migrate_existing_to_pending_status
+
+    cfg = get_config()
+    results = migrate_existing_to_pending_status(
+        cfg.root,
+        cluster_slug_filter=cluster_slug,
+        dry_run=dry_run,
+    )
+    counts = Counter(action for _path, action in results)
+    mode = "would flip" if dry_run else "flipped"
+    print(f"{counts.get('pending', 0):4d} notes {mode} pending")
+    print(f"{counts.get('done', 0):4d} notes {mode} done")
+    print(f"{counts.get('failed_no_abstract', 0):4d} notes {mode} failed_no_abstract")
+    print(f"{counts.get('already_set', 0):4d} already_set")
+    skipped = sum(count for action, count in counts.items() if action.startswith("skipped_"))
+    if skipped:
+        print(f"{skipped:4d} skipped")
+    if dry_run:
+        print("")
+        print("Preview only. Re-run with --apply to write summarize_status.")
+    return 0
+
+
+def _paper_summarize_pending(args) -> int:
+    from collections import Counter
+
+    from research_hub.paper_summarize import summarize_pending
+
+    if not args.pending:
+        print("Specify --pending to run the summarize queue.", file=sys.stderr)
+        return 2
+    cfg = get_config()
+    try:
+        results = summarize_pending(
+            cfg,
+            cluster_slug_filter=args.cluster,
+            backend=args.cli,
+            max_papers=args.max_papers,
+            dry_run=args.dry_run,
+        )
+    except Exception as exc:
+        print(f"paper summarize failed: {exc}", file=sys.stderr)
+        return 1
+
+    counts = Counter(result.action for result in results)
+    print(
+        f"processed: {len(results)}  "
+        f"done: {counts.get('done', 0)}  "
+        f"failed_no_abstract: {counts.get('failed_no_abstract', 0)}  "
+        f"errors: {counts.get('error', 0)}"
+    )
+    if args.dry_run:
+        print(
+            f"dry-run: would_summarize={counts.get('would_summarize', 0)}  "
+            f"would_fail_no_abstract={counts.get('would_fail_no_abstract', 0)}"
+        )
+    for result in results:
+        if result.error:
+            print(f"  ERROR {result.path}: {result.error}", file=sys.stderr)
+    return 0 if not counts.get("error", 0) else 1
+
+
 def _cmd_memory(args, cfg) -> int:
     from research_hub.memory import (
         apply_memory,
@@ -1526,6 +1591,8 @@ def _paper_command(args) -> int:
             apply=args.apply,
             llm_cli=args.llm_cli,
         )
+    if args.paper_command == "summarize":
+        return _paper_summarize_pending(args)
     return 2
 
 
@@ -4345,6 +4412,27 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Actually write the new tag into frontmatter",
     )
+    vault_summary_migrate = vault_subparsers.add_parser(
+        "summarize-status-migrate",
+        help="Backfill summarize_status frontmatter for paper notes (v0.87.2)",
+    )
+    vault_summary_migrate.add_argument(
+        "--cluster",
+        default=None,
+        help="Restrict to a single cluster slug (default: walk all clusters)",
+    )
+    vault_summary_migrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="Report changes without writing (default)",
+    )
+    vault_summary_migrate.add_argument(
+        "--apply",
+        dest="dry_run",
+        action="store_false",
+        help="Actually write summarize_status frontmatter",
+    )
 
     bases_parser = subparsers.add_parser("bases", help="Obsidian Bases (.base) generator")
     bases_sub = bases_parser.add_subparsers(dest="bases_command", required=True)
@@ -4800,6 +4888,15 @@ def build_parser() -> argparse.ArgumentParser:
     resummarize_p.add_argument("--cluster", required=True)
     resummarize_p.add_argument("--apply", action="store_true")
     resummarize_p.add_argument("--llm-cli", default=None)
+    paper_summarize_p = paper_sub.add_parser(
+        "summarize",
+        help="Run the v0.87.2 summarize_status pending queue",
+    )
+    paper_summarize_p.add_argument("--pending", action="store_true")
+    paper_summarize_p.add_argument("--cluster", default=None)
+    paper_summarize_p.add_argument("--cli", choices=["claude", "codex", "gemini"], default="claude")
+    paper_summarize_p.add_argument("--max-papers", type=int, default=None)
+    paper_summarize_p.add_argument("--dry-run", action="store_true")
 
     discover_parser = subparsers.add_parser(
         "discover",
@@ -5501,6 +5598,11 @@ def main(argv: list[str] | None = None) -> int:
             return _vault_rebuild_overviews(cluster_slug=args.cluster)
         if args.vault_command == "tag-migrate":
             return _vault_tag_migrate(
+                cluster_slug=args.cluster,
+                dry_run=args.dry_run,
+            )
+        if args.vault_command == "summarize-status-migrate":
+            return _vault_summarize_status_migrate(
                 cluster_slug=args.cluster,
                 dry_run=args.dry_run,
             )

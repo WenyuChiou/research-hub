@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 
 import requests
 
+from research_hub.paper_summarize import is_bad_abstract, pending_sections_markdown
+
 def make_paper_slug(author, year, title) -> str:
     """Compute canonical paper slug (without .md extension).
 
@@ -182,6 +184,7 @@ def make_raw_md(
     ingestion_source: str = "research-hub-v0.3.0",
     verified: bool | None = None,
     verified_at: str = "",
+    include_pending_summary_sections: bool = True,
 ):
     title = item_data['title'].replace('"', "'")
     authors = item_data['authors']
@@ -191,7 +194,7 @@ def make_raw_md(
     issue = item_data.get('issue', '')
     pages = item_data.get('pages', '')
     doi = item_data['doi']
-    abstract = item_data['abstract']
+    abstract = item_data['abstract'] or ""
     tags = item_data['tags']
     key = item_data['key']
 
@@ -249,7 +252,11 @@ def make_raw_md(
     if wiki_links:
         related_section = "\n## Related Concepts\n\n" + "  ".join(wiki_links) + "\n"
 
+    summarize_status = "failed_no_abstract" if is_bad_abstract(str(abstract)) else "pending"
     abstract_section = f"\n## Abstract\n\n{abstract}\n" if abstract else ""
+    pending_summary_sections = ""
+    if include_pending_summary_sections:
+        pending_summary_sections = "\n" + pending_sections_markdown() + "\n"
     doi_line = f'doi: "{doi}"' if doi else 'doi: ""'
 
     citation_line = journal
@@ -275,6 +282,7 @@ ingested_at: "{ingested_at}"
 ingestion_source: "{ingestion_source}"
 topic_cluster: "{topic_cluster}"
 cluster_queries: {cluster_queries_yaml}
+summarize_status: {summarize_status}
 {pdf_path_line}verified: {"null" if verified is None else ("true" if verified else "false")}
 verified_at: "{verified_at}"
 status: unread
@@ -286,7 +294,7 @@ status: unread
 **Year:** {year}
 **Citation:** {citation_line}
 {"**DOI:** " + doi if doi else ""}
-{abstract_section}{related_section}{notes_section}
+{abstract_section}{related_section}{notes_section}{pending_summary_sections}
 ---
 *Source: Zotero key `{key}`*
 """

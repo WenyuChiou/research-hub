@@ -614,6 +614,7 @@ def _render_obsidian_note(
         cluster_queries=[_query_for_paper(pp, query)] if cluster_slug else [],
         verified=pp.get("verified"),
         verified_at=pp.get("verified_at", ""),
+        include_pending_summary_sections=False,
     )
     if fit_warning:
         content = content.replace('verified_at: "', 'fit_warning: true\nverified_at: "', 1)

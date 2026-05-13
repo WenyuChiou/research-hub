@@ -1,5 +1,116 @@
 # Changelog
 
+## v0.87.2 (2026-05-13) — "stop the sticky placeholder bleed"
+
+Closes V088_PLAN.md v0.87.1 §4 (the single highest-impact V3-audit
+finding, deferred from v0.87.1 to give it its own ship cycle).
+
+V3 audit found **18 of 35** paper notes stuck at comprehension
+score-3 because their `Key Findings / Methodology / Relevance`
+sections contained sticky placeholder text:
+
+    > [review and extract from Abstract section above]
+    > [review abstract; refine after reading PDF]
+    > [TODO: fill relevance to cluster]
+
+The placeholder is *sticky* (looks structurally complete, Dataview
+counts the note as ingested) and *silent* (no log line, no
+dashboard surfacing). Users never circle back.
+
+### Fix — four-part change
+
+**1. `summarize_status` frontmatter flag** replaces the sticky body
+placeholders. Every paper now ships with one of:
+- `pending` — needs summarization, real backlog signal
+- `done` — summarized (via Claude/Codex/Gemini CLI)
+- `failed_no_abstract` — abstract is missing or <100 chars or matches
+  `(no abstract)` etc.; retried automatically on subsequent runs
+
+**2. New module `src/research_hub/paper_summarize.py`** (~470 LOC):
+- `summarize_pending(cfg, *, cluster_slug_filter, backend, max_papers, dry_run)`
+- `build_paper_prompt` (V3-spec prompt template, locked in V088_PLAN.md §4)
+- `parse_summary_response` — accepts the 4-section output OR
+  `[no-abstract-fallback]` signal
+- `apply_parsed_summary_to_note` — rewrites SUMMARY / KEY_FINDINGS /
+  METHODOLOGY / RELEVANCE sections idempotently
+- Pluggable backends (V088_PLAN.md Q1): `claude` / `codex` / `gemini`
+  via subprocess. Each gets its own `_invoke_*` adapter.
+
+**3. Backfill migration `vault summarize-status-migrate`** flips
+existing notes to the new model:
+- Sticky placeholder body → `pending` (the V3 score-3 papers)
+- Substantive body content → `done` (the V3 score-5 papers,
+  llm-agents-social cluster)
+- Bad/missing abstract → `failed_no_abstract`
+- Already-set → skip
+
+**4. Dashboard backlog** (Library tab):
+- "Papers awaiting summary: N" with per-cluster breakdown
+- One-click command snippet `research-hub paper summarize --pending`
+
+### Live verification on user's vault
+
+**Migration** (`research-hub vault summarize-status-migrate --apply`):
+    12 notes flipped pending
+    16 notes flipped done
+     7 notes flipped failed_no_abstract
+     0 already_set
+
+Matches V3 audit per-paper table exactly.
+
+**Autorun** (`research-hub paper summarize --pending --cluster human-water-llm --cli claude`):
+On the 12 human-water papers, after migration:
+    10 done (filled with substantive content — sample below)
+     2 failed_no_abstract (arnold Zenodo dataset blurb +
+                          wen2026 13-char "(no abstract)")
+
+Sample of `done` body for fu2025:
+- Summary (1-2 sentences using the paper's terminology)
+- Key Findings (5 substantive bullets)
+- Methodology (1 paragraph identifying perspective-paper character)
+- Relevance (1 sentence linking to topic_cluster)
+
+This is the score 3 → 5 transition V3 predicted. The 2 papers that
+remain `failed_no_abstract` are correctly failing (no real abstract
+to summarize from).
+
+### Windows-specific subprocess hardening (v0.87.2.1 inline)
+
+Codex's first implementation tripped on Windows:
+- `subprocess.run(text=True)` defaulted to `cp950` codec (zh_TW
+  locale) and couldn't decode UTF-8 LLM output containing en-dash,
+  smart quote, em-dash. Patched: force `encoding="utf-8"` +
+  `errors="replace"`.
+- `claude --print <very-long-argv>` hit cmd.exe's ~8 KB argv length
+  limit on Windows when skill_context + prompt exceeded it. Patched:
+  feed prompt via stdin instead of argv. Also dropped the skill_context
+  injection — Claude Code's `--print` mode does NOT activate Skills
+  (interactive-mode only), and the long skill markdown was confusing
+  the model.
+
+### Tests
+
+2113 (v0.87.1.1 baseline) → 2192 (after v0.87.2) (+79 new tests,
+8 from migration, 9 from worker, 18 from dashboard backlog, 44 from
+prompt/parse/template). Per-file:
+  test_v0872_summarize_migrate           8
+  test_v0872_summarize_worker            9
+  test_dashboard_sections_v2 (+18)      18
+  paper_summarize internal tests        44
+
+### Files touched
+
+- src/research_hub/paper_summarize.py (NEW, 470 LOC)
+- src/research_hub/vault/summarize_migrate.py (NEW)
+- src/research_hub/cli.py (paper summarize + vault summarize-status-migrate subcommands)
+- src/research_hub/dashboard/sections.py (Library backlog metric)
+- src/research_hub/markdown_conventions.py (recognize new callouts)
+- src/research_hub/pipeline.py (1 line)
+- src/research_hub/zotero/fetch.py (new make_raw_md kwarg + pending sections)
+- tests/test_v0872_summarize_migrate.py
+- tests/test_v0872_summarize_worker.py
+- tests/test_dashboard_sections_v2.py (extended)
+
 ## v0.87.1.1 (2026-05-13) — hotfix
 
 CI regression from v0.87.1 §3: the new `_is_substantive` predicate

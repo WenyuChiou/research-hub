@@ -54,6 +54,19 @@ BLOCK_ID_BY_SECTION = {
     "核心問題": "core-question",
 }
 
+_SUMMARY_PENDING_CALLOUT = (
+    "> [!warning] Summary pending\n"
+    "> Run `research-hub paper summarize --pending` to fill this\n"
+    "> section from the abstract via paper-summarize."
+)
+
+_SUMMARY_STICKY_PLACEHOLDERS = (
+    "[review and extract from Abstract section above]",
+    "[review abstract; refine after reading PDF]",
+    "[TODO: fill relevance to cluster]",
+    "[TODO: fill from abstract]",
+)
+
 
 def wrap_callout(kind: str, body: str, *, block_id: str | None = None) -> str:
     """Wrap ``body`` in a ``> [!kind]`` Obsidian callout.
@@ -197,18 +210,24 @@ def summary_section_to_callout(
             return "- (none supplied)"
         return "\n".join("- " + line for line in lines)
 
+    def _pending_or_callout(kind: str, body: str, block_id: str) -> str:
+        lowered = body.lower()
+        if any(placeholder.lower() in lowered for placeholder in _SUMMARY_STICKY_PLACEHOLDERS):
+            return _SUMMARY_PENDING_CALLOUT + "\n^" + block_id + "\n"
+        return wrap_callout(kind, body.strip(), block_id=block_id)
+
     parts: list[str] = []
     parts.append("## Summary\n\n")
     parts.append(wrap_callout("abstract", (summary or "(no summary)").strip(), block_id="summary"))
     parts.append("\n")
     parts.append("## Key Findings\n\n")
-    parts.append(wrap_callout("success", _bullets(key_findings), block_id="findings"))
+    parts.append(_pending_or_callout("success", _bullets(key_findings), "findings"))
     parts.append("\n")
     parts.append("## Methodology\n\n")
-    parts.append(wrap_callout("info", (methodology or "(no methodology)").strip(), block_id="methodology"))
+    parts.append(_pending_or_callout("info", (methodology or "(no methodology)").strip(), "methodology"))
     parts.append("\n")
     parts.append("## Relevance\n\n")
-    parts.append(wrap_callout("note", (relevance or "(no relevance)").strip(), block_id="relevance"))
+    parts.append(_pending_or_callout("note", (relevance or "(no relevance)").strip(), "relevance"))
     return "".join(parts)
 
 

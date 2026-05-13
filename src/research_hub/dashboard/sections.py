@@ -154,6 +154,54 @@ def _all_papers_with_cluster(data) -> list[tuple[object, object]]:
     return out
 
 
+def _summarize_pending_backlog(vault_root: str) -> tuple[int, dict[str, int]]:
+    if not vault_root:
+        return 0, {}
+    raw_root = Path(vault_root) / "raw"
+    if not raw_root.exists():
+        return 0, {}
+    from research_hub.paper import _parse_frontmatter
+
+    counts: dict[str, int] = {}
+    total = 0
+    for cluster_dir in sorted(raw_root.iterdir()):
+        if not cluster_dir.is_dir() or cluster_dir.name.startswith("_"):
+            continue
+        for note_path in sorted(cluster_dir.glob("*.md")):
+            if note_path.name in {"00_overview.md", "index.md"}:
+                continue
+            try:
+                meta = _parse_frontmatter(note_path.read_text(encoding="utf-8", errors="ignore"))
+            except OSError:
+                continue
+            if str(meta.get("summarize_status", "") or "").strip() != "pending":
+                continue
+            counts[cluster_dir.name] = counts.get(cluster_dir.name, 0) + 1
+            total += 1
+    return total, counts
+
+
+def _render_summarize_backlog(vault_root: str) -> str:
+    total, counts = _summarize_pending_backlog(vault_root)
+    breakdown = ""
+    if total > 0:
+        rows = "".join(
+            f"<li><code>{html_escape(slug)}</code>: {count} pending</li>"
+            for slug, count in sorted(counts.items())
+        )
+        breakdown = f'<ul class="summary-backlog-breakdown">{rows}</ul>'
+    return f"""
+          <section class="summary-backlog">
+            <p class="summary-backlog-metric">Papers awaiting summary: <strong>{total}</strong></p>
+            <button type="button" class="copy-cmd-btn" data-text="research-hub paper summarize --pending">
+              Copy summarize command
+            </button>
+            <code>research-hub paper summarize --pending</code>
+            {breakdown}
+          </section>
+    """
+
+
 def _persona(data) -> str:
     return str(_attr(data, "persona", "researcher") or "researcher")
 
@@ -658,6 +706,7 @@ class LibrarySection(DashboardSection):
         </section>
         """
         vault_root = str(_attr(data, "vault_root", "") or "")
+        summarize_backlog = _render_summarize_backlog(vault_root)
         cards = "".join(
             self._cluster_card(c, _show_zotero_column(data), vault_root, persona) for c in clusters
         )
@@ -668,6 +717,7 @@ class LibrarySection(DashboardSection):
         )
         return f"""
         <section id="tab-library" class="dash-panel dash-panel-library" role="tabpanel">
+          {summarize_backlog}
           {cross_cluster_labels}
           <div class="cluster-stack">{cards}</div>
         </section>
