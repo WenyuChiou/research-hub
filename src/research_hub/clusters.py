@@ -114,6 +114,16 @@ class CascadeReport:
 
 
 @dataclass
+class NotebookShard:
+    notebook_id: str
+    notebook_url: str
+    notebook_name: str
+    source_count: int
+    source_doi_list: list[str]
+    created_at: str
+
+
+@dataclass
 class Cluster:
     """Stable named container for a line of inquiry."""
 
@@ -125,10 +135,34 @@ class Cluster:
     notebooklm_notebook: str = ""
     notebooklm_notebook_url: str = ""
     notebooklm_notebook_id: str = ""
+    notebooklm_shards: list[NotebookShard] = field(default_factory=list)
     moc_links: list[str] = field(default_factory=list)
     created_at: str = ""
     first_query: str = ""
     description: str = ""
+
+
+def _load_notebooklm_shards(value: object) -> list[NotebookShard]:
+    if not isinstance(value, list):
+        return []
+    shards: list[NotebookShard] = []
+    for item in value:
+        if isinstance(item, NotebookShard):
+            shards.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        shards.append(
+            NotebookShard(
+                notebook_id=str(item.get("notebook_id", "") or ""),
+                notebook_url=str(item.get("notebook_url", "") or ""),
+                notebook_name=str(item.get("notebook_name", "") or ""),
+                source_count=int(item.get("source_count", 0) or 0),
+                source_doi_list=[str(doi) for doi in (item.get("source_doi_list") or [])],
+                created_at=str(item.get("created_at", "") or ""),
+            )
+        )
+    return shards
 
 
 def score_cluster_match(query_tokens: set[str], cluster: "Cluster") -> int:
@@ -189,6 +223,7 @@ class ClusterRegistry:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         for slug, cluster_dict in (data.get("clusters") or {}).items():
             clean = {key: value for key, value in cluster_dict.items() if key != "slug"}
+            clean["notebooklm_shards"] = _load_notebooklm_shards(clean.get("notebooklm_shards"))
             self.clusters[slug] = Cluster(slug=slug, **clean)
 
     def save(self) -> None:
@@ -346,6 +381,7 @@ class ClusterRegistry:
         notebooklm_notebook: str | None = None,
         notebooklm_notebook_url: str | None = None,
         notebooklm_notebook_id: str | None = None,
+        notebooklm_shards: list[NotebookShard] | None = None,
         sync_zotero: bool = True,
         force_shared: bool = False,
     ) -> Cluster:
@@ -375,6 +411,8 @@ class ClusterRegistry:
             cluster.notebooklm_notebook_url = notebooklm_notebook_url
         if notebooklm_notebook_id is not None:
             cluster.notebooklm_notebook_id = notebooklm_notebook_id
+        if notebooklm_shards is not None:
+            cluster.notebooklm_shards = notebooklm_shards
         self.save()
         if sync_zotero and cluster.zotero_collection_key and cluster.name:
             _try_sync_zotero_collection_name(cluster.zotero_collection_key, cluster.name)

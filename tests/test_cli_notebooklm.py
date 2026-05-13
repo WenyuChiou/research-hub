@@ -12,6 +12,7 @@ def test_build_parser_accepts_notebooklm_upload_and_generate_flags():
     assert upload_args.cluster == "alpha"
     assert upload_args.dry_run is True
     assert upload_args.headless is False
+    assert upload_args.over_cap_strategy == "fail"
 
     generate_args = build_parser().parse_args(["notebooklm", "generate", "--cluster", "alpha", "--type", "all", "--visible"])
     assert generate_args.notebooklm_command == "generate"
@@ -29,7 +30,13 @@ def test_main_routes_notebooklm_upload_and_generate(monkeypatch, mock_require_co
 
     calls = []
 
-    monkeypatch.setattr(cli, "_nlm_upload", lambda cluster, dry_run, headless, create_if_missing: calls.append(("upload", cluster, dry_run, headless, create_if_missing)) or 0)
+    monkeypatch.setattr(
+        cli,
+        "_nlm_upload",
+        lambda cluster, dry_run, headless, create_if_missing, **kwargs: calls.append(
+            ("upload", cluster, dry_run, headless, create_if_missing, kwargs)
+        ) or 0,
+    )
     monkeypatch.setattr(cli, "_nlm_generate", lambda cluster, artifact_type, headless: calls.append(("generate", cluster, artifact_type, headless)) or 0)
     monkeypatch.setattr(cli, "_nlm_ask", lambda cluster, *, question, headless, timeout_sec: calls.append(("ask", cluster, question, headless, timeout_sec)) or 0)
 
@@ -37,7 +44,7 @@ def test_main_routes_notebooklm_upload_and_generate(monkeypatch, mock_require_co
     assert cli.main(["notebooklm", "generate", "--cluster", "alpha", "--type", "mind-map"]) == 0
     assert cli.main(["notebooklm", "ask", "--cluster", "alpha", "--question", "What?"]) == 0
     assert calls == [
-        ("upload", "alpha", True, False, True),
+        ("upload", "alpha", True, False, True, {"over_cap_strategy": "fail", "shard_size": 50}),
         ("generate", "alpha", "mind-map", False),
         ("ask", "alpha", "What?", True, 120),
     ]

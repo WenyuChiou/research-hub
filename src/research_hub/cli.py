@@ -2913,12 +2913,78 @@ def _nlm_upload(
     dry_run: bool,
     headless: bool,
     create_if_missing: bool,
+    over_cap_strategy: str = "fail",
+    shard_size: int = 50,
+) -> int:
+    from research_hub.notebooklm.upload import (
+        NotebookLMCapacityError,
+        check_cluster_capacity,
+        upload_cluster,
+    )
+
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(cluster_slug)
+    if cluster is None:
+        raise ValueError(f"Cluster not found: {cluster_slug}")
+
+    try:
+        if over_cap_strategy == "fail":
+            check_cluster_capacity(cluster, cfg)
+        if not dry_run:
+            rc = _preflight_nlm_session(cfg, op_name="upload")
+            if rc is not None:
+                return rc
+        report = upload_cluster(
+            cluster,
+            cfg,
+            dry_run=dry_run,
+            headless=headless,
+            create_if_missing=create_if_missing,
+            over_cap_strategy=over_cap_strategy,
+            shard_size=shard_size,
+        )
+    except NotebookLMCapacityError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(f"Notebook: {report.notebook_name or '(planned)'}")
+    if report.notebook_url:
+        print(f"Notebook URL: {report.notebook_url}")
+    print(
+        f"Uploads: {report.success_count} succeeded, "
+        f"{report.fail_count} failed, "
+        f"{report.skipped_already_uploaded} skipped from cache"
+    )
+    if report.over_cap_skipped:
+        print(f"Over-cap pruned ({report.over_cap_strategy}): {len(report.over_cap_skipped)} source(s)")
+        for entry in report.over_cap_skipped:
+            print(f"  [SKIP] {_display_entry(entry)}")
+    for result in report.uploaded:
+        status = "OK" if result.success else "FAIL"
+        print(f"  [{status}] {result.source_kind}: {result.path_or_url}")
+        if result.error:
+            print(f"       {result.error}")
+    return 0 if report.fail_count == 0 else 1
+
+
+def _display_entry(entry: dict) -> str:
+    doi = str(entry.get("doi", "") or "").strip() or "(no DOI)"
+    title = str(entry.get("title", "") or "").strip() or "(untitled)"
+    return f"{doi}  {title}"
+
+
+def _nlm_shard(
+    cluster_slug: str,
+    strategy: str,
+    shard_size: int,
+    dry_run: bool,
+    headless: bool,
 ) -> int:
     from research_hub.notebooklm.upload import upload_cluster
 
     cfg = get_config()
     if not dry_run:
-        rc = _preflight_nlm_session(cfg, op_name="upload")
+        rc = _preflight_nlm_session(cfg, op_name="shard")
         if rc is not None:
             return rc
     registry = ClusterRegistry(cfg.clusters_file)
@@ -2931,21 +2997,17 @@ def _nlm_upload(
         cfg,
         dry_run=dry_run,
         headless=headless,
-        create_if_missing=create_if_missing,
+        over_cap_strategy="shard",
+        shard_size=shard_size,
+        shard_strategy=strategy,
     )
-    print(f"Notebook: {report.notebook_name or '(planned)'}")
-    if report.notebook_url:
-        print(f"Notebook URL: {report.notebook_url}")
-    print(
-        f"Uploads: {report.success_count} succeeded, "
-        f"{report.fail_count} failed, "
-        f"{report.skipped_already_uploaded} skipped from cache"
-    )
-    for result in report.uploaded:
-        status = "OK" if result.success else "FAIL"
-        print(f"  [{status}] {result.source_kind}: {result.path_or_url}")
-        if result.error:
-            print(f"       {result.error}")
+    refreshed = ClusterRegistry(cfg.clusters_file).get(cluster_slug)
+    shards = list(getattr(refreshed, "notebooklm_shards", []) or []) if refreshed is not None else []
+    print(f"Shards: {len(shards)} notebook(s)")
+    for shard in shards:
+        print(f"  - {shard.notebook_name}: {shard.source_count} sources {shard.notebook_url}")
+    if dry_run:
+        print(f"Planned uploads: {report.success_count}")
     return 0 if report.fail_count == 0 else 1
 
 
@@ -4803,6 +4865,25 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_upload.add_argument("--headless", action="store_true", default=False)
     nlm_upload.add_argument("--visible", dest="headless", action="store_false")
     nlm_upload.add_argument("--create-if-missing", action="store_true", default=True)
+    nlm_upload.add_argument(
+        "--over-cap-strategy",
+        choices=["fail", "top-n-recent", "top-n-cited", "fit-score", "shard"],
+        default="fail",
+        help="How to handle clusters above NotebookLM's 50-source cap (default: fail)",
+    )
+    nlm_upload.add_argument(
+        "--shard-size",
+        type=int,
+        default=50,
+        help="Sources per NotebookLM shard when --over-cap-strategy shard is used",
+    )
+    nlm_shard = nlm_sub.add_parser("shard", help="Split a cluster into NotebookLM source-cap shards")
+    nlm_shard.add_argument("--cluster", required=True)
+    nlm_shard.add_argument("--strategy", choices=["recent", "cited", "fit"], required=True)
+    nlm_shard.add_argument("--shard-size", type=int, default=50)
+    nlm_shard.add_argument("--dry-run", action="store_true")
+    nlm_shard.add_argument("--headless", action="store_true", default=False)
+    nlm_shard.add_argument("--visible", dest="headless", action="store_false")
     nlm_download = nlm_sub.add_parser(
         "download",
         help="Download a generated NotebookLM artifact (briefing) back to the vault",
@@ -5864,7 +5945,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.notebooklm_command == "bundle":
             return _notebooklm_bundle(args.cluster, download_pdfs=args.download_pdfs)
         if args.notebooklm_command == "upload":
-            return _nlm_upload(args.cluster, args.dry_run, args.headless, args.create_if_missing)
+            return _nlm_upload(
+                args.cluster,
+                args.dry_run,
+                args.headless,
+                args.create_if_missing,
+                over_cap_strategy=args.over_cap_strategy,
+                shard_size=args.shard_size,
+            )
+        if args.notebooklm_command == "shard":
+            return _nlm_shard(
+                args.cluster,
+                args.strategy,
+                args.shard_size,
+                args.dry_run,
+                args.headless,
+            )
         if args.notebooklm_command == "download":
             return _nlm_download(
                 args.cluster,

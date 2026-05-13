@@ -35,6 +35,9 @@ BAD_TITLE_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
 
 # Legacy test monkeypatch anchors. The RPC implementation no longer uses them.
 open_cdp_session = None
+Entry = dict[str, Any]
+OVER_CAP_STRATEGIES = frozenset({"fail", "top-n-recent", "top-n-cited", "fit-score", "shard"})
+SHARD_ORDER_STRATEGIES = frozenset({"recent", "cited", "fit"})
 
 BRIEFING_OFF_TOPIC_SECTION = """### Off-topic papers
 
@@ -107,6 +110,10 @@ class IngestValidationReport:
         return "\n".join(lines)
 
 
+class NotebookLMCapacityError(NotebookLMError):
+    """Raised when a cluster exceeds NotebookLM's per-notebook source cap."""
+
+
 @dataclass
 class UploadReport:
     cluster_slug: str
@@ -119,6 +126,8 @@ class UploadReport:
     errors: list[dict] = field(default_factory=list)
     dry_run: bool = False
     ingest_validation: IngestValidationReport | None = None
+    over_cap_skipped: list[Entry] = field(default_factory=list)
+    over_cap_strategy: str = "fail"
 
     @property
     def success_count(self) -> int:
@@ -369,6 +378,268 @@ def _manifest_doi_list(manifest: dict) -> list[str]:
     return dois
 
 
+def _uploadable_entries(manifest: dict) -> list[Entry]:
+    return [
+        entry
+        for entry in manifest.get("entries", [])
+        if isinstance(entry, dict) and entry.get("action", "skip") != "skip"
+    ]
+
+
+def check_cluster_capacity(cluster, cfg, *, rate_limit_cap: int = 50) -> None:
+    """Raise before browser/session work when the latest bundle exceeds the cap."""
+    bundle_dir = _find_latest_bundle(cfg.research_hub_dir / "bundles", cluster.slug)
+    if bundle_dir is None:
+        raise FileNotFoundError(
+            "No bundle found for cluster '{0}'. Run `research-hub notebooklm bundle "
+            "--cluster {0}` first.".format(cluster.slug)
+        )
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    source_count = len(_uploadable_entries(manifest))
+    if source_count > rate_limit_cap:
+        raise NotebookLMCapacityError(_capacity_error_message(cluster, source_count, rate_limit_cap))
+
+
+def _entry_key(entry: Entry) -> str:
+    return str(entry.get("pdf_path") or entry.get("url") or entry.get("doi") or "")
+
+
+def _entry_doi(entry: Entry) -> str:
+    return str(entry.get("doi", "") or "").strip()
+
+
+def _entry_title(entry: Entry) -> str:
+    return str(entry.get("title", "") or "").strip()
+
+
+def _capacity_error_message(cluster, source_count: int, cap: int) -> str:
+    overflow = max(0, source_count - cap)
+    cluster_name = getattr(cluster, "name", "") or getattr(cluster, "slug", "")
+    cluster_slug = getattr(cluster, "slug", "")
+    source_word = "source" if overflow == 1 else "sources"
+    return (
+        f"NotebookLM source cap exceeded for cluster '{cluster_name}' ({cluster_slug}): "
+        f"{source_count} sources, {overflow} {source_word} over the {cap}-source cap. "
+        "NotebookLM accepts at most 50 sources per notebook. Re-run with "
+        "`--over-cap-strategy top-n-recent`, `top-n-cited`, or `fit-score` to prune "
+        "explicitly, or use `--over-cap-strategy shard --shard-size 50` / "
+        f"`research-hub notebooklm shard --cluster {cluster_slug} --strategy recent` "
+        "to split the cluster into multiple notebooks. No sources were uploaded."
+    )
+
+
+def _load_entry_frontmatter(entry: Entry) -> dict[str, Any]:
+    path_value = str(entry.get("obsidian_path", "") or "")
+    if not path_value:
+        return {}
+    note_path = Path(path_value)
+    try:
+        text = note_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {}
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end < 0:
+        return {}
+    body = text[3:end]
+    try:
+        import yaml
+
+        parsed = yaml.safe_load(body) or {}
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        meta: dict[str, str] = {}
+        for line in body.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            meta[key.strip()] = value.strip().strip("\"'")
+        return meta
+
+
+def _entry_value(entry: Entry, frontmatter: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = entry.get(key)
+        if value not in (None, ""):
+            return value
+        value = frontmatter.get(key)
+        if value not in (None, ""):
+            return value
+    return ""
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value or "").strip()
+    if not text:
+        return default
+    try:
+        return int(float(text))
+    except ValueError:
+        return default
+
+
+def _entry_recency_value(entry: Entry, frontmatter: dict[str, Any]) -> str:
+    value = _entry_value(
+        entry,
+        frontmatter,
+        "ingested_at",
+        "created_at",
+        "published_at",
+        "published",
+        "publication_date",
+        "published_date",
+    )
+    if value:
+        return str(value)
+    year = _entry_value(entry, frontmatter, "year", "publication_year")
+    year_int = _as_int(year)
+    return f"{year_int:04d}" if year_int else ""
+
+
+def _load_fit_score_map(cfg, cluster_slug: str) -> dict[str, int]:
+    candidates: list[Path] = []
+    hub_root = getattr(cfg, "hub", None)
+    if hub_root is not None:
+        candidates.append(Path(hub_root) / cluster_slug / ".fit_check_accepted.json")
+    raw_root = getattr(cfg, "raw", None)
+    if raw_root is not None:
+        candidates.append(Path(raw_root) / cluster_slug / ".fit_check_accepted.json")
+
+    scores: dict[str, int] = {}
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            items = payload.get("accepted") or payload.get("scores") or []
+        elif isinstance(payload, list):
+            items = payload
+        else:
+            items = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            doi = str(item.get("doi", "") or "").strip().lower()
+            if doi:
+                scores[doi] = _as_int(item.get("score"))
+    return scores
+
+
+def _ranked_entries(
+    entries: list[Entry],
+    strategy: str,
+    cfg,
+    cluster_slug: str,
+) -> list[tuple[int, Entry]]:
+    frontmatter_by_index = {index: _load_entry_frontmatter(entry) for index, entry in enumerate(entries)}
+    fit_scores = _load_fit_score_map(cfg, cluster_slug) if strategy == "fit-score" else {}
+
+    def key(item: tuple[int, Entry]) -> tuple[Any, ...]:
+        index, entry = item
+        frontmatter = frontmatter_by_index[index]
+        title = (_entry_title(entry) or str(frontmatter.get("title", "") or "")).lower()
+        recency = _entry_recency_value(entry, frontmatter)
+        citations = _as_int(
+            _entry_value(
+                entry,
+                frontmatter,
+                "citation_count",
+                "cited_by_count",
+                "is_referenced_by_count",
+                "references_count",
+            )
+        )
+        if strategy == "top-n-recent":
+            return (recency, citations, title)
+        if strategy == "top-n-cited":
+            return (citations, recency, title)
+        if strategy == "fit-score":
+            doi = _entry_doi(entry).lower()
+            score = _as_int(_entry_value(entry, frontmatter, "fit_score", "score"), fit_scores.get(doi, 0))
+            if doi in fit_scores:
+                score = fit_scores[doi]
+            return (score, recency, citations, title)
+        return (0, -index)
+
+    return sorted(enumerate(entries), key=key, reverse=True)
+
+
+def _prune_manifest_for_cap(
+    manifest: dict,
+    cluster,
+    cfg,
+    *,
+    strategy: str,
+    rate_limit_cap: int,
+    log_path: Path,
+) -> tuple[dict, list[Entry]]:
+    source_entries = _uploadable_entries(manifest)
+    if len(source_entries) <= rate_limit_cap:
+        return manifest, []
+    if strategy == "fail":
+        raise NotebookLMCapacityError(_capacity_error_message(cluster, len(source_entries), rate_limit_cap))
+    if strategy not in {"top-n-recent", "top-n-cited", "fit-score"}:
+        return manifest, []
+
+    ranked = _ranked_entries(source_entries, strategy, cfg, getattr(cluster, "slug", ""))
+    kept = [entry for _index, entry in ranked[:rate_limit_cap]]
+    skipped = [dict(entry) for _index, entry in ranked[rate_limit_cap:]]
+    skipped_actions = [
+        entry
+        for entry in manifest.get("entries", [])
+        if isinstance(entry, dict) and entry.get("action", "skip") == "skip"
+    ]
+    _log_jsonl(
+        log_path,
+        {
+            "kind": "upload_over_cap_pruned",
+            "cluster_slug": getattr(cluster, "slug", ""),
+            "strategy": strategy,
+            "source_count": len(source_entries),
+            "cap": rate_limit_cap,
+            "skipped_count": len(skipped),
+            "skipped": [{"doi": _entry_doi(entry), "title": _entry_title(entry)} for entry in skipped],
+        },
+    )
+    pruned_manifest = dict(manifest)
+    pruned_manifest["entries"] = kept + skipped_actions
+    return pruned_manifest, skipped
+
+
+def _shard_order_strategy(strategy: str) -> str:
+    if strategy == "cited":
+        return "top-n-cited"
+    if strategy == "fit":
+        return "fit-score"
+    return "top-n-recent"
+
+
+def _dedup_doi_list(entries: list[Entry]) -> list[str]:
+    seen: set[str] = set()
+    dois: list[str] = []
+    for entry in entries:
+        doi = _entry_doi(entry)
+        if not doi or doi in seen:
+            continue
+        seen.add(doi)
+        dois.append(doi)
+    return dois
+
+
+def _chunk_entries(entries: list[Entry], shard_size: int) -> list[list[Entry]]:
+    return [entries[index:index + shard_size] for index in range(0, len(entries), shard_size)]
+
+
 def _attempt_upload(
     client,
     entry: dict,
@@ -408,6 +679,182 @@ def _attempt_upload(
     return last_result
 
 
+def _ordered_shard_entries(manifest: dict, cfg, cluster_slug: str, shard_strategy: str) -> list[Entry]:
+    if shard_strategy not in SHARD_ORDER_STRATEGIES:
+        raise ValueError("--strategy must be one of: recent, cited, fit")
+    entries = _uploadable_entries(manifest)
+    ranked = _ranked_entries(entries, _shard_order_strategy(shard_strategy), cfg, cluster_slug)
+    return [entry for _index, entry in ranked]
+
+
+def _plan_shard_dry_run(
+    report: UploadReport,
+    manifest: dict,
+    cfg,
+    cluster,
+    notebook_name: str,
+    *,
+    shard_size: int,
+    shard_strategy: str,
+) -> None:
+    ordered = _ordered_shard_entries(manifest, cfg, getattr(cluster, "slug", ""), shard_strategy)
+    chunks = _chunk_entries(ordered, shard_size)
+    total = len(chunks) or 1
+    for shard_index, chunk in enumerate(chunks, start=1):
+        shard_name = f"{notebook_name} [{shard_index}/{total}]"
+        for entry in chunk:
+            key = _entry_key(entry)
+            report.uploaded.append(
+                UploadResult(
+                    source_kind=entry.get("action", "?"),
+                    path_or_url=key,
+                    success=True,
+                    title=f"{shard_name}: {_entry_title(entry)}".strip(),
+                )
+            )
+    report.notebook_name = notebook_name
+
+
+def _upload_cluster_shards(
+    cluster,
+    cfg,
+    manifest: dict,
+    report: UploadReport,
+    cache: dict,
+    cluster_cache: dict,
+    log_path: Path,
+    notebook_name: str,
+    *,
+    create_if_missing: bool,
+    headless: bool,
+    rate_limit_cap: int,
+    shard_size: int,
+    shard_strategy: str,
+) -> UploadReport:
+    from research_hub.clusters import ClusterRegistry, NotebookShard
+
+    if shard_size < 1:
+        raise ValueError("--shard-size must be at least 1")
+    if shard_size > rate_limit_cap:
+        raise ValueError(f"--shard-size must be <= {rate_limit_cap} for NotebookLM")
+
+    ordered = _ordered_shard_entries(manifest, cfg, getattr(cluster, "slug", ""), shard_strategy)
+    chunks = _chunk_entries(ordered, shard_size)
+    state_file = default_state_file(cfg.research_hub_dir)
+    retry_count = 0
+    shards: list[NotebookShard] = []
+    shard_cache = cluster_cache.setdefault("shard_uploaded_sources", {})
+    report.notebook_name = notebook_name
+
+    client = _make_client(state_file, headless=headless)
+    try:
+        total = len(chunks) or 1
+        for shard_index, chunk in enumerate(chunks, start=1):
+            shard_name = f"{notebook_name} [{shard_index}/{total}]"
+            handle = (
+                _find_or_create_notebook(client, shard_name)
+                if create_if_missing
+                else client.open_notebook_by_name(shard_name)
+            )
+            _set_active_notebook(client, handle.notebook_id)
+            if shard_index == 1:
+                prior_url = (cluster.notebooklm_notebook_url or "").strip()
+                report.notebook_was_reused = bool(prior_url and prior_url == handle.url)
+                report.notebook_url = handle.url
+                report.notebook_id = handle.notebook_id
+            _log_jsonl(
+                log_path,
+                {
+                    "kind": "upload_shard_opened",
+                    "cluster_slug": getattr(cluster, "slug", ""),
+                    "shard_index": shard_index,
+                    "shard_total": total,
+                    "notebook_url": handle.url,
+                    "notebook_id": handle.notebook_id,
+                    "notebook_name": handle.name,
+                    "source_count": len(chunk),
+                },
+            )
+
+            uploaded_sources = {str(item) for item in shard_cache.get(shard_name, [])}
+            for entry in chunk:
+                key = _entry_key(entry)
+                if key in uploaded_sources:
+                    report.skipped_already_uploaded += 1
+                    _log_jsonl(log_path, {"kind": "upload_cached_skip", "key": key, "shard": shard_name})
+                    continue
+
+                result = _attempt_upload(client, entry, log_path)
+                if result is None:
+                    continue
+                report.uploaded.append(result)
+                retry_count += max(0, _count_attempts_for_key(log_path, key) - 1)
+                if result.success:
+                    uploaded_sources.add(key)
+                else:
+                    report.errors.append({"source": key, "error": result.error, "shard": shard_name})
+                time.sleep(BETWEEN_UPLOADS_SEC)
+
+            shard_cache[shard_name] = sorted(uploaded_sources)
+            created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            shards.append(
+                NotebookShard(
+                    notebook_id=handle.notebook_id,
+                    notebook_url=handle.url,
+                    notebook_name=handle.name,
+                    source_count=len(chunk),
+                    source_doi_list=_dedup_doi_list(chunk),
+                    created_at=created_at,
+                )
+            )
+            safe_slug = Path(cluster.slug).name
+            report.ingest_validation = validate_uploaded_sources(
+                client,
+                handle,
+                _manifest_doi_list({"entries": chunk}),
+                cluster_slug=safe_slug,
+                artifacts_dir=cfg.research_hub_dir / "artifacts" / safe_slug,
+            )
+    finally:
+        getattr(client, "close", lambda: None)()
+
+    cluster_cache["shards"] = [
+        {
+            "notebook_url": shard.notebook_url,
+            "notebook_id": shard.notebook_id,
+            "notebook_name": shard.notebook_name,
+            "source_count": shard.source_count,
+            "source_doi_list": shard.source_doi_list,
+            "created_at": shard.created_at,
+        }
+        for shard in shards
+    ]
+    cluster_cache["last_synced"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _save_nlm_cache(cfg.research_hub_dir / "nlm_cache.json", cache)
+
+    bind_kwargs = {"notebooklm_shards": shards}
+    if shards:
+        bind_kwargs.update(
+            {
+                "notebooklm_notebook_url": shards[0].notebook_url,
+                "notebooklm_notebook_id": shards[0].notebook_id,
+            }
+        )
+    ClusterRegistry(cfg.clusters_file).bind(slug=cluster.slug, **bind_kwargs)
+
+    _log_jsonl(
+        log_path,
+        {
+            "kind": "upload_run_complete",
+            "success_count": report.success_count,
+            "fail_count": report.fail_count,
+            "retry_count": retry_count,
+            "shard_count": len(shards),
+        },
+    )
+    return report
+
+
 _upload_with_retry = _attempt_upload
 
 
@@ -419,11 +866,26 @@ def upload_cluster(
     create_if_missing: bool = True,
     headless: bool = False,
     rate_limit_cap: int = 50,
+    over_cap_strategy: str = "fail",
+    shard_size: int = 50,
+    shard_strategy: str = "recent",
 ) -> UploadReport:
     """Upload a cluster bundle to NotebookLM, resuming from ``nlm_cache.json``."""
     from research_hub.clusters import ClusterRegistry
 
-    report = UploadReport(cluster_slug=cluster.slug, dry_run=dry_run)
+    if over_cap_strategy not in OVER_CAP_STRATEGIES:
+        raise ValueError("--over-cap-strategy must be one of: fail, top-n-recent, top-n-cited, fit-score, shard")
+    if over_cap_strategy == "shard":
+        if shard_size < 1:
+            raise ValueError("--shard-size must be at least 1")
+        if shard_size > rate_limit_cap:
+            raise ValueError(f"--shard-size must be <= {rate_limit_cap} for NotebookLM")
+
+    report = UploadReport(
+        cluster_slug=cluster.slug,
+        dry_run=dry_run,
+        over_cap_strategy=over_cap_strategy,
+    )
     bundle_dir = _find_latest_bundle(cfg.research_hub_dir / "bundles", cluster.slug)
     if bundle_dir is None:
         raise FileNotFoundError(
@@ -441,6 +903,7 @@ def upload_cluster(
             "manifest_entries": len(manifest.get("entries", [])),
             "headless": headless,
             "dry_run": dry_run,
+            "over_cap_strategy": over_cap_strategy,
         },
     )
 
@@ -449,6 +912,55 @@ def upload_cluster(
     cluster_cache = cache.setdefault(cluster.slug, {})
     uploaded_sources: set[str] = {str(item) for item in cluster_cache.get("uploaded_sources", [])}
     notebook_name = cluster.notebooklm_notebook or cluster.name
+
+    if over_cap_strategy == "shard":
+        if dry_run:
+            _plan_shard_dry_run(
+                report,
+                manifest,
+                cfg,
+                cluster,
+                notebook_name,
+                shard_size=shard_size,
+                shard_strategy=shard_strategy,
+            )
+            _log_jsonl(
+                log_path,
+                {
+                    "kind": "upload_run_complete",
+                    "success_count": report.success_count,
+                    "fail_count": report.fail_count,
+                    "retry_count": 0,
+                    "dry_run": True,
+                    "shard_count": len(_chunk_entries(_uploadable_entries(manifest), shard_size)),
+                },
+            )
+            return report
+        return _upload_cluster_shards(
+            cluster,
+            cfg,
+            manifest,
+            report,
+            cache,
+            cluster_cache,
+            log_path,
+            notebook_name,
+            create_if_missing=create_if_missing,
+            headless=headless,
+            rate_limit_cap=rate_limit_cap,
+            shard_size=shard_size,
+            shard_strategy=shard_strategy,
+        )
+
+    manifest, over_cap_skipped = _prune_manifest_for_cap(
+        manifest,
+        cluster,
+        cfg,
+        strategy=over_cap_strategy,
+        rate_limit_cap=rate_limit_cap,
+        log_path=log_path,
+    )
+    report.over_cap_skipped = over_cap_skipped
 
     if dry_run:
         _plan_dry_run(report, manifest, uploaded_sources, notebook_name, rate_limit_cap)
@@ -490,12 +1002,13 @@ def upload_cluster(
         )
 
         uploads = 0
+        source_count = len(_uploadable_entries(manifest))
         for entry in manifest.get("entries", []):
             action = entry.get("action", "skip")
             if action == "skip":
                 continue
             if uploads >= rate_limit_cap:
-                break
+                raise NotebookLMCapacityError(_capacity_error_message(cluster, source_count, rate_limit_cap))
 
             key = str(entry.get("pdf_path") or entry.get("url") or entry.get("doi") or "")
             if key in uploaded_sources:
