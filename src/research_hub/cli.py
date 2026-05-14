@@ -4375,6 +4375,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dxt_parser.add_argument("--out", type=Path, default=Path("research-hub.dxt"))
 
+    describe_parser = subparsers.add_parser(
+        "describe",
+        help="Emit JSON manifest of CLI subcommands, MCP tools, env vars, skills (v0.89)",
+    )
+    describe_parser.add_argument(
+        "--filter",
+        choices=["subcommands", "mcp_tools", "env_vars", "skills", "personae"],
+        default=None,
+        help="Emit only one subtree of the manifest",
+    )
+    describe_parser.add_argument(
+        "--pretty",
+        action="store_true",
+        default=False,
+        help="Indent JSON output for human inspection",
+    )
+
     ask_parser = subparsers.add_parser(
         "ask",
         help="Ask a natural-language question about a cluster (task-level, v0.33+)",
@@ -6132,7 +6149,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _main_dispatch(args, parser) -> int:
-    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "package-dxt", "context"}
+    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "package-dxt", "describe", "context"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()
@@ -6250,6 +6267,11 @@ def _main_dispatch(args, parser) -> int:
         return _cmd_where(args)
     if args.command == "package-dxt":
         return _package_dxt(args.out)
+    if args.command == "describe":
+        from research_hub.describe import describe_manifest
+
+        print(describe_manifest(filter=args.filter, pretty=args.pretty, parser=parser))
+        return 0
     if args.command == "ask":
         cfg = require_config()
         from research_hub.workflows import ask_cluster as _ask
