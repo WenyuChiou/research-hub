@@ -4259,7 +4259,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--vault", default=None, help="Vault root directory")
     setup_parser.add_argument(
         "--persona",
-        choices=["researcher", "analyst", "humanities", "internal"],
+        choices=["researcher", "analyst", "humanities", "internal", "agent"],
         default=None,
         help="Persona to initialize",
     )
@@ -4272,6 +4272,11 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--skip-install", action="store_true")
     setup_parser.add_argument("--skip-login", action="store_true")
     setup_parser.add_argument("--skip-sample", action="store_true")
+    setup_parser.add_argument(
+        "--autonomous",
+        action="store_true",
+        help="Non-interactive bootstrap: probe env + vault + auth + emit JSON report (v0.89)",
+    )
     setup_parser.add_argument(
         "--no-browser",
         action="store_true",
