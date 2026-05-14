@@ -17,7 +17,69 @@ Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp
 
 > 📚 Part of the [**agentic AI learning roadmap**](https://github.com/WenyuChiou/awesome-agentic-ai-zh) — a 7-stage curated path for building agentic AI, multilingual (zh-TW · zh-Hans · English). This workspace is referenced in §13 (research workflow skills).
 
-> 🧪 **Real-use signal:** in daily use by 1 PhD researcher (Lehigh CEE) tracking 7+ research clusters across Zotero + Obsidian + NotebookLM. Shipping since Apr 2026, current release: v0.81.0.
+> 🧪 **Real-use signal:** in daily use by 1 PhD researcher (Lehigh CEE) tracking 7+ research clusters across Zotero + Obsidian + NotebookLM. Shipping since Apr 2026, docs updated for v0.89.0.
+
+---
+
+## Install + first run
+
+Pick the path that matches the operator: a human researcher or the autonomous agent itself.
+
+## Personae
+
+research-hub supports two primary user personae:
+
+- **Human researcher** (Wei-Ling persona): hydrology postdoc, knows Python pip + DOIs, never touched Claude / MCP / Obsidian. Start with [Human quickstart](#human-quickstart).
+- **Autonomous agent** (Claude Cowork / OpenClaw / Hermes host): the AI itself is the operator, not a human. Start with [Autonomous agent quickstart](#autonomous-agent-quickstart).
+
+## Required env vars
+
+<!-- env-vars-table-start -->
+
+| Name | Required | Purpose |
+|---|---|---|
+| `ZOTERO_API_KEY` | yes | Zotero web API auth, required for paper ingestion |
+| `ZOTERO_LIBRARY_ID` | yes | Zotero library identifier |
+| `SEMANTIC_SCHOLAR_API_KEY` | no | Lifts S2 rate limit from shared anonymous to 1 req/sec dedicated |
+| `TAVILY_API_KEY` | no | Web search backend (alternative to DDG) |
+| `BRAVE_API_KEY` | no | Web search backend (alternative to DDG) |
+
+<!-- env-vars-table-end -->
+
+## Autonomous agent quickstart
+
+For Cowork-style hosts:
+
+```bash
+pip install research-hub-pipeline
+python -m research_hub describe > capabilities.json
+python -m research_hub setup --autonomous --vault ./vault --persona agent
+# emits BootstrapReport JSON; exit code 0 if ready, 1 otherwise
+```
+
+Then drive operations via CLI `--json` mode or the bundled MCP server (`research-hub-mcp`). All report-shaped commands accept `--json`; capability introspection lives in `research-hub describe`.
+
+**Note**: NotebookLM upload still requires one-time human-driven `research-hub notebooklm login` browser-based Google OAuth. Headless agent completion is upstream-blocked by Google's auth flow.
+
+## Human quickstart
+
+| You already have | First command |
+|---|---|
+| Zotero + Obsidian + NotebookLM | `pip install research-hub-pipeline[playwright,secrets]` then `research-hub setup` |
+| Zotero + Obsidian, no NotebookLM | `pip install research-hub-pipeline[secrets]` then `research-hub setup --skip-login` |
+| Obsidian + local PDFs only | `pip install research-hub-pipeline[import,secrets]` then `research-hub setup --persona analyst` |
+| Nothing yet | `pip install research-hub-pipeline` then `research-hub dashboard --sample` |
+
+Python 3.10+ is required. Add `[mcp]` if you want standalone MCP server dependencies.
+
+| Persona | Best for | Install extra |
+|---|---|---|
+| Researcher | STEM papers, DOI/arXiv, Zotero-first workflows | `[playwright,secrets]` |
+| Humanities | books, quotes, URL-only sources, Zotero + Obsidian | `[playwright,secrets]` |
+| Analyst | industry research, local PDFs/reports, no Zotero required | `[import,secrets]` |
+| Internal KM | lab/company knowledge bases, mixed file types | `[import,secrets]` |
+
+Field presets for `discover new`, `search`, and related planning flows are `cs`, `bio`, `med`, `physics`, `math`, `social`, `econ`, `chem`, `astro`, `edu`, and `general`. There is no `hydrology` preset; use `general` intentionally.
 
 ---
 
@@ -85,71 +147,6 @@ research-hub does not replace Zotero, Obsidian, or NotebookLM. It connects them 
 | Local-first vault you own | Partial | No | Depends | Yes | Yes |
 
 The practical fit: research-hub is most useful if you already use at least two of Zotero, Obsidian, and NotebookLM and want your AI assistant to run the repetitive steps.
-
----
-
-## Install + first run
-
-### Option A: preview without accounts
-
-```bash
-pip install research-hub-pipeline
-research-hub dashboard --sample
-```
-
-No Zotero, no NotebookLM, no API keys. This opens the end-state dashboard on a bundled sample vault.
-
-### Option B: local-first Obsidian workflow
-
-If you mainly use Obsidian and local files:
-
-```bash
-pip install research-hub-pipeline[import,secrets]
-research-hub setup --persona analyst
-research-hub import-folder ./papers --cluster my-local-review
-research-hub serve --dashboard
-```
-
-Add NotebookLM later with `[playwright]` if you want browser-based brief generation.
-
-### Option C: full Zotero + Obsidian + NotebookLM workflow
-
-```bash
-pip install research-hub-pipeline[playwright,secrets]
-research-hub setup
-research-hub auto "your research topic"
-```
-
-For a first smoke test without NotebookLM automation:
-
-```bash
-research-hub auto "your research topic" --no-nlm
-```
-
-### Let your AI install it
-
-Paste this into Claude Desktop, Claude Code, Cursor, Continue, ChatGPT, Gemini, or another shell-capable AI:
-
-```text
-Please install research-hub on my machine. It is a Python package that turns
-Zotero, Obsidian, and NotebookLM into an AI-operable research workspace.
-
-1. Check `python --version`. If it is below 3.10, tell me to upgrade first.
-2. Run `pip install research-hub-pipeline[playwright,secrets]`.
-3. Run `research-hub setup`. Stop and pass me the prompts as they appear.
-   Answer the Zotero question on my behalf only if I already told you.
-   Chrome-based NotebookLM login may open; I will finish it.
-4. Ask me for a topic and run `research-hub auto "TOPIC"`.
-```
-
-| Persona | Best for | Install extra |
-|---|---|---|
-| Researcher | STEM papers, DOI/arXiv, Zotero-first workflows | `[playwright,secrets]` |
-| Humanities | books, quotes, URL-only sources, Zotero + Obsidian | `[playwright,secrets]` |
-| Analyst | industry research, local PDFs/reports, no Zotero required | `[import,secrets]` |
-| Internal KM | lab/company knowledge bases, mixed file types | `[import,secrets]` |
-
-Python 3.10+ is required. Optional extras: `[playwright]` for NotebookLM, `[import]` for local PDF/DOCX/MD/TXT/URL ingest, `[secrets]` for OS-keyring credential storage, `[mcp]` for MCP server dependencies.
 
 ---
 
@@ -302,10 +299,10 @@ Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.m
 
 Status:
 
-- Latest: v0.68.3; see [CHANGELOG](CHANGELOG.md) for package history.
-- MCP tools: 83.
+- Current docs target: v0.89.0; see [CHANGELOG](CHANGELOG.md) for package history.
+- MCP tools: inspect the live list with `python -m research_hub describe --filter mcp_tools`.
 - REST endpoints: 12 at `/api/v1/*`.
-- Bundled skills: 9 (see `skills/` directory).
+- Bundled skills: inspect the live list with `python -m research_hub describe --filter skills`.
 
 Developer setup:
 

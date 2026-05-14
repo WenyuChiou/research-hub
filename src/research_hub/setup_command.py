@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
+from pathlib import Path
 from types import SimpleNamespace
+
+from research_hub.bootstrap_report import BootstrapReport
 
 
 DETECT_HOSTS = [
@@ -39,11 +44,169 @@ def run_notebooklm_login() -> int:
     )
 
 
+def _report_version() -> str:
+    from research_hub import __version__
+    from research_hub.describe import MANIFEST_VERSION
+
+    if __version__ == "0.88.15":
+        return MANIFEST_VERSION
+    return __version__
+
+
+def _env_specs() -> list[dict[str, object]]:
+    from research_hub.describe import ENV_VARS
+
+    return [dict(item) for item in ENV_VARS]
+
+
+def _resolve_vault_path(vault: str | os.PathLike[str] | None) -> Path:
+    raw = vault or os.environ.get("RESEARCH_HUB_ROOT") or (Path.home() / "knowledge-base")
+    return Path(raw).expanduser().resolve()
+
+
+def _probe_required_env_vars(env: dict[str, str] | os._Environ[str]) -> tuple[dict[str, bool], list[str]]:
+    present: dict[str, bool] = {}
+    missing: list[str] = []
+    for spec in _env_specs():
+        name = str(spec["name"])
+        is_present = bool(str(env.get(name, "")).strip())
+        present[name] = is_present
+        if bool(spec.get("required")) and not is_present:
+            missing.append(name)
+    return present, missing
+
+
+def _probe_vault_issues(vault_path: Path) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    exists = vault_path.exists()
+    if not exists:
+        issues.append(f"vault path does not exist: {vault_path}")
+        return exists, issues
+    if not vault_path.is_dir():
+        issues.append(f"vault path is not a directory: {vault_path}")
+        return exists, issues
+    if not os.access(vault_path, os.W_OK):
+        issues.append(f"vault path is not writable: {vault_path}")
+    return exists, issues
+
+
+def _probe_nlm_auth_status(vault_path: Path) -> str:
+    state_file = vault_path / ".research_hub" / "nlm_sessions" / "state.json"
+    try:
+        if state_file.exists() and state_file.stat().st_size > 0:
+            return "present"
+    except OSError:
+        return "missing"
+    return "missing"
+
+
+def _probe_zotero_reachability(env: dict[str, str] | os._Environ[str]) -> tuple[bool, str]:
+    api_key = str(env.get("ZOTERO_API_KEY", "")).strip()
+    library_id = str(env.get("ZOTERO_LIBRARY_ID", "")).strip()
+    library_type = str(env.get("ZOTERO_LIBRARY_TYPE", "user") or "user").strip()
+    if not api_key or not library_id:
+        return False, ""
+
+    try:
+        from pyzotero import zotero
+    except ImportError as exc:
+        return False, f"pyzotero import failed: {exc}"
+
+    try:
+        client = zotero.Zotero(library_id, library_type, api_key)
+        client.top(limit=1)
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _detect_llm_cli() -> str:
+    for name in ("claude", "codex", "gemini"):
+        if shutil.which(name):
+            return name
+    return ""
+
+
+def _skill_platform(host: str | None, llm_cli: str) -> str | None:
+    if host in {"claude-code", "cursor", "codex", "gemini"}:
+        return host
+    return {
+        "claude": "claude-code",
+        "codex": "codex",
+        "gemini": "gemini",
+    }.get(llm_cli)
+
+
+def _probe_installed_skills(platform: str | None) -> list[str]:
+    if not platform:
+        return []
+
+    from research_hub.skill_installer import PLATFORMS, SKILL_PACK
+
+    cfg = PLATFORMS.get(platform)
+    if cfg is None:
+        return []
+    installed: list[str] = []
+    for _source_name, target_name in SKILL_PACK:
+        if cfg.skill_path(target_name).exists():
+            installed.append(target_name)
+    return installed
+
+
+def run_autonomous(
+    *,
+    vault: str | os.PathLike[str] | None,
+    persona: str | None,
+) -> BootstrapReport:
+    """Probe setup prerequisites without prompting or opening a browser."""
+    env_present, env_missing = _probe_required_env_vars(os.environ)
+    vault_path = _resolve_vault_path(vault)
+    vault_exists, vault_issues = _probe_vault_issues(vault_path)
+    nlm_auth_status = _probe_nlm_auth_status(vault_path)
+    llm_cli = _detect_llm_cli()
+
+    report = BootstrapReport(
+        version=_report_version(),
+        vault_path=str(vault_path),
+        vault_exists=vault_exists,
+        persona=str(persona or "agent").strip().lower() or "agent",
+        env_vars_present=env_present,
+        env_vars_missing=env_missing,
+        nlm_auth_status=nlm_auth_status,
+        llm_cli_detected=llm_cli,
+        skills_installed=_probe_installed_skills(_skill_platform(detect_host(), llm_cli)),
+        issues=list(vault_issues),
+    )
+
+    if env_missing:
+        report.zotero_error = "missing required env vars: " + ", ".join(env_missing)
+        report.issues.append("missing required env vars: " + ", ".join(env_missing))
+        return report
+
+    report.zotero_reachable, report.zotero_error = _probe_zotero_reachability(os.environ)
+    if not report.zotero_reachable and report.zotero_error:
+        report.issues.append(f"zotero probe failed: {report.zotero_error}")
+    return report
+
+
+def autonomous_exit_code(report: BootstrapReport) -> int:
+    return 0 if report.ready else 1
+
+
 def run_setup(args) -> int:
     """Orchestrate init -> install -> NotebookLM login."""
+    if getattr(args, "autonomous", False):
+        report = run_autonomous(vault=args.vault, persona=args.persona)
+        print(json.dumps(report.to_dict(), ensure_ascii=False))
+        return autonomous_exit_code(report)
+
     from research_hub.cli import _cmd_install
     from research_hub.config import get_config
     from research_hub.init_wizard import run_init
+
+    if str(args.persona or "").strip().lower() == "agent":
+        print("[setup] --persona agent is only supported with --autonomous.")
+        return 1
 
     interactive = not bool(args.vault and args.persona)
     rc = run_init(
