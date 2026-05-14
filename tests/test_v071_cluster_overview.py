@@ -167,11 +167,18 @@ def test_apply_overview_refuses_to_overwrite_filled_overview_without_force(cfg):
 
     result = apply_overview(cfg, "test-cluster", _valid_payload(), force=False)
     assert result.written is False
-    assert result.ok is False
-    assert "overwrite" in result.error.lower()
+    # v0.88.9: idempotent skip is now reported as ok=True + skipped=True
+    # (was ok=False with an "overwrite" error string). Auto step renders
+    # this as a friendly "preserved hand-curated overview" success line
+    # instead of the old false-FAIL noise.
+    assert result.ok is True
+    assert result.skipped is True
+    assert "force=true" in result.skip_reason.lower()
+    assert result.error == ""
 
     forced = apply_overview(cfg, "test-cluster", _valid_payload(), force=True)
     assert forced.written is True
+    assert forced.skipped is False
     assert "This cluster studies LLM-based agents for flood response." in overview_path.read_text(encoding="utf-8")
 
 
@@ -217,3 +224,81 @@ def test_overview_report_to_dict_serializes_paths():
     payload = report.to_dict()
     assert payload["prompt_path"] == str(Path("/tmp/prompt.md"))
     assert payload["apply_result"]["overview_path"] == str(Path("/tmp/00_overview.md"))
+    # v0.88.9: skipped + skip_reason are part of the serialised payload
+    assert "skipped" in payload["apply_result"]
+    assert "skip_reason" in payload["apply_result"]
+
+
+def test_overview_cluster_propagates_idempotent_skip_as_ok(cfg, monkeypatch):
+    """v0.88.9: when apply_overview detects hand-curated content and
+    refuses to overwrite, overview_cluster (the CLI-facing wrapper)
+    must propagate this as ``report.ok=True`` so the auto step renders
+    it as a friendly skip, not a FAIL."""
+    overview_path = cfg.hub / "test-cluster" / "00_overview.md"
+    overview_path.write_text(
+        _template_text(
+            "Test Cluster", "test-cluster",
+            tldr_line="Substantive hand-written summary the user already curated.",
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: "claude")
+    monkeypatch.setattr(
+        "research_hub.auto._invoke_llm_cli",
+        lambda cli, prompt: str(_valid_payload()).replace("'", '"'),
+    )
+
+    report = overview_cluster(cfg, "test-cluster", apply=True)
+
+    assert report.ok is True, "skipped should not propagate as failure"
+    assert report.error == ""
+    assert report.apply_result is not None
+    assert report.apply_result.skipped is True
+    assert report.apply_result.written is False
+    # User content must be preserved verbatim.
+    assert "Substantive hand-written summary" in overview_path.read_text(encoding="utf-8")
+
+
+def test_auto_run_cluster_overview_step_renders_skip_as_success(monkeypatch):
+    """v0.88.9: end-to-end check that _run_cluster_overview_step logs
+    the skip case as a positive step (ok=True) with a friendly detail
+    line. Previously this was a noisy [FAIL] in the auto report even
+    though nothing was actually broken."""
+    from research_hub.auto import AutoReport, _run_cluster_overview_step
+
+    fake_apply = OverviewApplyResult(
+        cluster_slug="x",
+        ok=True,
+        written=False,
+        skipped=True,
+        skip_reason="overview already hand-curated; use force=True to overwrite",
+    )
+
+    def fake_overview_cluster(cfg, slug, *, llm_cli=None, apply=False, force=False):
+        return OverviewReport(
+            cluster_slug=slug,
+            ok=True,
+            cli_used="claude",
+            apply_result=fake_apply,
+        )
+
+    monkeypatch.setattr(
+        "research_hub.cluster_overview.overview_cluster",
+        fake_overview_cluster,
+    )
+
+    report = AutoReport(cluster_slug="x", cluster_created=False)
+    _run_cluster_overview_step(
+        cfg=SimpleNamespace(),
+        slug="x",
+        llm_cli="claude",
+        report=report,
+        started=0.0,
+        print_progress=False,
+    )
+
+    step = next(s for s in report.steps if s.name == "cluster_overview")
+    assert step.ok is True, "idempotent skip must NOT log as FAIL"
+    assert "skipped" in step.detail.lower() or "preserved" in step.detail.lower()
+    assert "FAIL" not in step.detail.upper()

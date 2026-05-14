@@ -39,6 +39,13 @@ class OverviewApplyResult:
     error: str = ""
     written: bool = False
     overview_path: Optional[Path] = None
+    # v0.88.9: distinguish "no-op because user already curated this
+    # overview" from "operation failed". Without this, the auto step
+    # logs FAIL "overview already filled; use force=True to overwrite"
+    # on every successful re-ingest of an existing cluster — pure
+    # noise that hides real failures in the same column.
+    skipped: bool = False
+    skip_reason: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -47,6 +54,8 @@ class OverviewApplyResult:
             "error": self.error,
             "written": self.written,
             "overview_path": str(self.overview_path) if self.overview_path else None,
+            "skipped": self.skipped,
+            "skip_reason": self.skip_reason,
         }
 
 
@@ -298,12 +307,19 @@ def apply_overview(cfg, cluster_slug, payload, *, force: bool = False) -> Overvi
             title = _extract_title_from_frontmatter(existing_frontmatter, title_default)
         existing_tldr = _extract_tldr_text(existing_text)
         if existing_tldr and not existing_tldr.startswith(_CHINESE_TEMPLATE_MARKER) and not force:
+            # v0.88.9: this is a deliberate idempotent skip protecting
+            # the user's hand-curated TL;DR. Report ``ok=True``,
+            # ``skipped=True`` so the auto step can render it as a
+            # success-with-skip ("preserved hand-curated overview")
+            # instead of FAIL.
             return OverviewApplyResult(
                 cluster_slug=cluster_slug,
-                ok=False,
-                error="overview already filled; use force=True to overwrite",
+                ok=True,
+                error="",
                 written=False,
                 overview_path=overview_path,
+                skipped=True,
+                skip_reason="overview already hand-curated; use force=True to overwrite",
             )
 
     body = _render_overview_markdown(cluster_slug, title, overview)

@@ -1,5 +1,80 @@
 # Changelog
 
+## v0.88.9 (2026-05-14) — Stage B follow-ups: cluster_overview false-FAIL + crystals timeout
+
+Two unrelated polish fixes both surfaced by today's Stage B live
+re-ingest of `ml-flood-forecasting` (15 papers via `auto`):
+
+### Fix #1 — `cluster_overview` skip is no longer a false-FAIL
+
+Field-discovered in every Stage A + Stage B `auto` run today: the
+auto report unconditionally logged
+
+```
+[FAIL] cluster_overview overview already filled; use force=True to overwrite
+```
+
+even on completely successful re-ingests. The "failure" was actually
+an idempotency guard protecting the user's hand-curated TL;DR — a
+deliberate no-op, not an error. Mixing it into the FAIL column hides
+real failures behind boilerplate noise.
+
+### Fix
+
+`OverviewApplyResult` gains two fields — `skipped: bool = False` and
+`skip_reason: str = ""` — to distinguish "deliberate idempotent skip"
+from "operation failed".
+
+`apply_overview` in `cluster_overview.py`: when the existing TL;DR is
+real user content (not the Chinese template marker) and `force` is
+False, returns `ok=True, skipped=True, skip_reason="overview already
+hand-curated; use force=True to overwrite"`.
+
+`_run_cluster_overview_step` in `auto.py`: renders the skip case as
+a positive step with the friendly detail
+``skipped: overview already hand-curated; use force=True to overwrite``.
+
+### Tests
+
+- `tests/test_v071_cluster_overview.py::test_apply_overview_refuses_to_overwrite_filled_overview_without_force`
+  — updated to assert `ok=True / skipped=True / error=""` (was
+  `ok=False / error contains "overwrite"`)
+- `tests/test_v071_cluster_overview.py::test_overview_cluster_propagates_idempotent_skip_as_ok`
+  — new, end-to-end via `overview_cluster` wrapper to ensure the
+  skip propagates as `report.ok=True` to callers
+- `tests/test_v071_cluster_overview.py::test_auto_run_cluster_overview_step_renders_skip_as_success`
+  — new, asserts `_run_cluster_overview_step` logs the case as
+  `step.ok=True` with `"skipped"` / `"preserved"` in detail and no
+  `FAIL` token
+- `tests/test_v071_cluster_overview.py::test_overview_report_to_dict_serializes_paths`
+  — extended to assert the new `skipped` + `skip_reason` keys are in
+  the JSON serialisation
+
+### Behaviour change for downstream
+
+If you have automation that polled `OverviewApplyResult.ok` for
+"did I write the overview?" you should now check `.written` instead.
+The `.ok` field reflects "did the operation complete cleanly",
+which now (correctly) includes the idempotent skip.
+
+### Fix #2 — `_run_crystal_step` LLM CLI timeout bumped 180 s → 600 s
+
+Stage B logged ``[FAIL] crystals  claude failed: Command [...]
+timed out after 180.0 seconds; prompt saved to crystal-prompt.md``.
+Crystal generation is the longest LLM call in the pipeline (10
+cards × ~50 papers' worth of context); the inherited 180 s default
+in `_invoke_llm_cli` was just too short for full clusters with the
+Claude CLI.
+
+`_run_crystal_step` in `auto.py` now passes `timeout_sec=600.0`
+explicitly to `_invoke_llm_cli`. Default for other steps (overview,
+summary) stays at 180 s — those are short prompts. The 10-min cap
+matches the codex-delegate pattern documented in CLAUDE.md.
+
+When this still times out (genuinely stuck CLI), the prompt remains
+on disk at ``artifacts/<slug>/crystal-prompt.md`` so the user can
+rerun manually — same fallback behaviour as before.
+
 ## v0.88.8 (2026-05-13) — fix v0.88.6 layer-2 attribute typo (.status → .action)
 
 Field-discovered in live Stage B (15-paper grow on

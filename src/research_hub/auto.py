@@ -526,7 +526,11 @@ def _run_crystal_step(
         return
 
     try:
-        raw_response = _invoke_llm_cli(cli_name, prompt)
+        # v0.88.10: crystals are the longest LLM call in the pipeline (10
+        # cards × ~50 papers' worth of context); the default 180 s
+        # _invoke_llm_cli timeout was tripping out in real Stage B runs
+        # with full-size clusters. Bump to 600 s for this step only.
+        raw_response = _invoke_llm_cli(cli_name, prompt, timeout_sec=600.0)
     except Exception as exc:
         _step_log(report, "crystals", False, _elapsed(started, report),
                   f"{cli_name} failed: {exc}; prompt saved to {prompt_path}",
@@ -578,8 +582,13 @@ def _run_cluster_overview_step(
                   overview_report.error or "overview step failed", print_progress)
         return
 
-    if overview_report.apply_result and overview_report.apply_result.written:
+    apply = overview_report.apply_result
+    if apply and apply.written:
         detail = f"wrote 00_overview.md via {overview_report.cli_used or 'saved payload'}"
+    elif apply and apply.skipped:
+        # v0.88.9: idempotent skip — user's hand-curated TL;DR was
+        # preserved. Not a failure, just reuse.
+        detail = f"skipped: {apply.skip_reason or 'preserved hand-curated overview'}"
     elif overview_report.prompt_path:
         detail = f"no LLM CLI on PATH; prompt saved to {overview_report.prompt_path}"
     else:
