@@ -475,7 +475,13 @@ class NotebookLMClient:
             return
         try:
             from pathlib import Path as _Path
-            save_cookies_to_storage(cookie_jar, _Path(str(storage_path)))
+            storage_path_obj = _Path(str(storage_path))
+            save_cookies_to_storage(cookie_jar, storage_path_obj)
+            # G3 P1 #2: rotating cookie persistence also writes state.json
+            # — re-tighten to 0600 each time so cookie rotation doesn't
+            # silently relax perms back to 0644 on some platforms.
+            from research_hub.notebooklm.auth import _tighten_state_file_perms
+            _tighten_state_file_perms(storage_path_obj)
         except Exception as exc:
             # v0.90.0 G1#2 fix: still best-effort (don't poison successful
             # operation), but surface the failure so the next session's

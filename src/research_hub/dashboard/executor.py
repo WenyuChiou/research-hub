@@ -14,6 +14,62 @@ from research_hub.dashboard.manage_commands import (
     build_compose_draft_command,
     build_manage_command,
 )
+from research_hub.security import validate_slug
+
+
+# v0.90.0 G3 P1 #1: argv-injection guard for dashboard inputs.
+#
+# Pre-fix, any caller who got past the localhost CSRF + Origin gate
+# (browser exploit, malicious local app, or a leaked API token) could
+# POST slug="--help" / slug="--apply --force" / target_cluster="--debug"
+# and those values went straight into subprocess argv. Not RCE (no
+# shell=True), but trivial DoS + unintended-flag misuse.
+#
+# `validate_slug` (used by MCP server but not the dashboard until now)
+# rejects anything outside [a-z0-9_-] for slug-shaped fields. For
+# free-form fields like new_name / label / query, reject only leading
+# '-' so genuine values like "My Cluster" / "read" pass through.
+_SLUG_SHAPED_FIELDS = (
+    "target_cluster", "cluster_slug", "cluster", "target", "into",
+)
+_FREEFORM_FIELDS = (
+    "new_name", "name", "label", "status", "query",
+    "kind", "type", "scored",
+    # NOT "outline" -- markdown bullets legitimately start with '-' and the
+    # value is flag-bound (`--outline VALUE`), so argparse cannot re-parse
+    # the value as a new flag. Code-review P1 fix during v0.90.0 Wave 3.
+)
+
+
+def _reject_argv_flag(value: object, *, field: str) -> str:
+    """Reject argv flag injection via dashboard fields (G3 P1 #1)."""
+    s = "" if value is None else str(value)
+    if s.startswith("-"):
+        raise ValueError(
+            f"dashboard field {field}={value!r}: cannot start with '-' "
+            "(argv flag injection refused)"
+        )
+    return s
+
+
+def _validate_dashboard_inputs(slug: str | None, fields: dict[str, Any]) -> None:
+    """Apply argv-injection guards + slug-shape check (G3 P1 #1).
+
+    Raises ValueError on any rejected field. Caller wraps the executor
+    entry points so the failure surfaces to /api/exec as an error rather
+    than a silent subprocess flag injection.
+    """
+    if slug:
+        # Strict slug shape for the primary positional argument
+        validate_slug(slug, field="slug")
+    for f in _SLUG_SHAPED_FIELDS:
+        v = fields.get(f)
+        if v:  # non-empty
+            validate_slug(str(v), field=f)
+    for f in _FREEFORM_FIELDS:
+        v = fields.get(f)
+        if v is not None and v != "":
+            _reject_argv_flag(v, field=f)
 
 ALLOWED_ACTIONS = frozenset(
     {
@@ -87,6 +143,9 @@ def _tokenize_builder_output(cmd_str: str | None, *, action: str) -> list[str]:
 
 
 def _build_command_args(action: str, slug: str | None, fields: dict[str, Any]) -> list[str]:
+    # G3 P1 #1: validate all dashboard-supplied inputs before they reach argv
+    _validate_dashboard_inputs(slug, fields)
+
     base = [sys.executable, "-m", "research_hub"]
 
     manage_actions = {

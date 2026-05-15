@@ -25,6 +25,29 @@ def default_state_file(research_hub_dir: Path) -> Path:
     return research_hub_dir / "nlm_sessions" / "state.json"
 
 
+def _tighten_state_file_perms(target: Path) -> None:
+    """Chmod state.json to user-only (G3 P1 #2).
+
+    Pre-fix the parent dir got chmod 0700 via chmod_sensitive but the
+    state.json file itself stayed at default umask (0644 on POSIX,
+    world-readable). state.json holds Google session cookies; any
+    local user could read it and hijack the NLM session. On Windows,
+    chmod_sensitive is currently a no-op (G3 P2 #14 will fix that in
+    a separate wave); the POSIX path tightens to 0600 immediately.
+    """
+    if not target.is_file():
+        return
+    try:
+        from research_hub.security import chmod_sensitive
+        chmod_sensitive(target, mode=0o600)
+    except Exception as exc:
+        print(
+            f"  [nlm] WARN could not tighten {target} permissions: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def login_nlm(
     user_data_dir: Path,
     *,
@@ -38,7 +61,11 @@ def login_nlm(
     target = Path(state_file) if state_file is not None else Path(user_data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "notebooklm.notebooklm_cli", "login", "--storage", str(target)]
-    return subprocess.run(cmd, check=False).returncode
+    rc = subprocess.run(cmd, check=False).returncode
+    if rc == 0:
+        # G3 P1 #2: tighten newly-created state.json permissions.
+        _tighten_state_file_perms(target)
+    return rc
 
 
 def login_interactive_cdp(
