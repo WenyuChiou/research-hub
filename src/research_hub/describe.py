@@ -61,6 +61,16 @@ def _first_line(text: str | None) -> str:
     return text.strip().splitlines()[0].strip()
 
 
+# NOTE on argparse private-API usage (v0.89.1, flagged by code-review):
+# `_actions`, `_choices_actions`, and `argparse._SubParsersAction` are
+# implementation details, not part of the public argparse contract.
+# They are stable across CPython 3.10–3.14 (the supported range) and
+# the defensive `getattr(..., [])` defaults absorb any future shape
+# drift without crashing. If a future Python version removes these
+# attributes, fix here: walk `parser._actions` -> action.choices for
+# subparsers, switch to a maintained introspection library, or fall
+# back to grepping CLI --help text. See test_v089_describe.py for
+# the contract this introspection must preserve.
 def _parser_supports_json(parser: argparse.ArgumentParser) -> bool:
     for action in getattr(parser, "_actions", []):
         option_strings = getattr(action, "option_strings", ())

@@ -69,7 +69,11 @@ def _emit_cli_json(command: str, rc: int, report) -> None:
         "version": __version__,
         "report": _json_safe(report),
     }
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    # v0.89.1: default=str catches the edge cases _json_safe returns
+    # verbatim (datetime, bytes, Exception instances, custom objects)
+    # — the v0.89.0 code-review skill flagged these would crash
+    # json.dumps. Cheap belt-and-suspenders.
+    print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
 
 
 def _stdout_to_stderr(enabled: bool):

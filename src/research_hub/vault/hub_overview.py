@@ -203,10 +203,17 @@ def populate_home(cfg) -> Path:
 
     reading_queue_body = _render_home_reading_queue(vault_root, clusters, limit=5)
     briefs_body = _render_home_recent_briefs(vault_root, clusters, limit=3)
-    dashboard_path = vault_root / ".research_hub" / "dashboard.html"
+    # v0.89.1: prefer the live HTTP dashboard (works on iOS Obsidian
+    # too if the user is on the same network) and the in-vault markdown
+    # mirror (always works, mobile-friendly). The previous file:///C:/...
+    # link only worked on the same desktop where serve --dashboard had
+    # written the static HTML, and broke entirely on iOS — W3 audit
+    # finding from the v0.88.9 pass.
     dashboard_body = (
-        f"- [Dashboard HTML]({dashboard_path.as_uri()}) (desktop only — open with `research-hub dashboard --open`)\n"
-        f"- [Markdown summary](.research_hub/dashboard-summary.md) (Obsidian-internal, mobile-friendly)"
+        "- [Dashboard (live)](http://127.0.0.1:8765/) "
+        "(start with `research-hub serve --dashboard`)\n"
+        "- [Markdown summary](.research_hub/dashboard-summary.md) "
+        "(Obsidian-internal, works on iOS / mobile)"
     )
 
     sections = {
