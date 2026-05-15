@@ -324,6 +324,14 @@ def _download_pdf_to_temp(url: str, *, max_mb: int = 25) -> Path | None:
 def _download_pdf_to_temp_result(url: str, *, max_mb: int = 25) -> _PdfDownloadResult:
     """Download a PDF URL and retain the reason when it cannot be saved."""
 
+    # v0.90.0 G1#5/#6 fix:
+    # - wrap requests.get(stream=True) in `with` so the connection is released
+    #   even when we early-return; pre-fix held connections until GC, which
+    #   starved the pool at N=1000 paper batches.
+    # - clean up partial temp files on write_bytes failure so a disk-full or
+    #   interrupted write doesn't leave 0-byte / partial .pdf cruft in
+    #   tempfile.gettempdir(). Happy-path cleanup is the caller's job
+    #   (see _upload_local_pdf call sites' try/finally local_path.unlink()).
     parsed = urlparse(url)
     if parsed.netloc.endswith(".test") and parsed.path.lower().endswith(".pdf"):
         # Reserved .test URLs are used throughout the unit suite; keep them
@@ -334,31 +342,54 @@ def _download_pdf_to_temp_result(url: str, *, max_mb: int = 25) -> _PdfDownloadR
         try:
             target.write_bytes(content)
         except Exception:
+            _cleanup_partial_temp_pdf(target)
             return _PdfDownloadResult(None, reason="network_error")
         return _PdfDownloadResult(target, bytes=len(content))
     try:
         response = requests.get(url, timeout=60, stream=True)
     except Exception:
         return _PdfDownloadResult(None, reason="network_error")
-    status = _response_status(response)
-    if not response.ok:
-        return _PdfDownloadResult(None, status=status, reason=_http_failure_reason(status))
+    # Always close the streaming response to release the connection
+    # back to the pool, regardless of which early-return branch fires.
+    # `with requests.get(...)` would be cleaner but fails with test
+    # mocks that don't implement __enter__/__exit__ — using a manual
+    # try/finally + .close() works with both real Response objects and
+    # Mock fakes.
     try:
-        content = response.content
-    except Exception:
-        return _PdfDownloadResult(None, status=status, reason="network_error")
-    if len(content) > max_mb * 1024 * 1024:
-        return _PdfDownloadResult(None, status=status, reason="pdf_invalid")
-    content_type = str((response.headers or {}).get("Content-Type", "") or "").lower()
-    if "pdf" not in content_type and not content.startswith(b"%PDF"):
-        return _PdfDownloadResult(None, status=status, reason="pdf_invalid")
-    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
-    target = Path(tempfile.gettempdir()) / f"rh_pdf_{digest}.pdf"
+        status = _response_status(response)
+        if not response.ok:
+            return _PdfDownloadResult(None, status=status, reason=_http_failure_reason(status))
+        try:
+            content = response.content
+        except Exception:
+            return _PdfDownloadResult(None, status=status, reason="network_error")
+        if len(content) > max_mb * 1024 * 1024:
+            return _PdfDownloadResult(None, status=status, reason="pdf_invalid")
+        content_type = str((response.headers or {}).get("Content-Type", "") or "").lower()
+        if "pdf" not in content_type and not content.startswith(b"%PDF"):
+            return _PdfDownloadResult(None, status=status, reason="pdf_invalid")
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+        target = Path(tempfile.gettempdir()) / f"rh_pdf_{digest}.pdf"
+        try:
+            target.write_bytes(content)
+        except Exception:
+            _cleanup_partial_temp_pdf(target)
+            return _PdfDownloadResult(None, status=status, reason="network_error")
+        return _PdfDownloadResult(target, status=status, bytes=len(content))
+    finally:
+        try:
+            response.close()
+        except Exception:
+            pass
+
+
+def _cleanup_partial_temp_pdf(target: Path) -> None:
+    """Best-effort removal of a half-written temp PDF (G1#5)."""
     try:
-        target.write_bytes(content)
+        target.unlink(missing_ok=True)
     except Exception:
-        return _PdfDownloadResult(None, status=status, reason="network_error")
-    return _PdfDownloadResult(target, status=status, bytes=len(content))
+        # Cleanup is best-effort; OS will sweep tempdir eventually.
+        pass
 
 
 def _response_status(response) -> int | None:
