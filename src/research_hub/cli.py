@@ -61,18 +61,42 @@ def _json_safe(value):
 
 
 def _emit_cli_json(command: str, rc: int, report) -> None:
+    """Emit a structured JSON envelope for any CLI subcommand under --json.
+
+    Envelope shape (v0.91.0 W5 contract, schema_version 1.0):
+
+        {
+          "schema_version": "1.0",
+          "ok": bool,                 # rc == 0
+          "command": str,             # subcommand name, e.g. "auto"
+          "version": str,             # research_hub.__version__
+          "report": <_json_safe(report)>,   # per-command shape
+        }
+
+    The ENVELOPE is versioned and stable. The `report` payload shape
+    is per-command — agents reasoning against `_emit_cli_json` output
+    should branch on `command` to know what to expect inside `report`.
+    Per-Report schema_version is tracked for v0.92 (G2 audit #8 follow-up).
+
+    Forward-compat: pre-v0.91 envelopes lack `schema_version` entirely.
+    A reader that sees the key MISSING should treat the envelope as
+    schema 0 (legacy) and continue — the {ok, command, version, report}
+    keys are present in every version since v0.89.0.
+
+    v0.89.1: default=str catches the edge cases _json_safe returns
+    verbatim (datetime, bytes, Exception instances, custom objects)
+    — the v0.89.0 code-review skill flagged these would crash
+    json.dumps. Cheap belt-and-suspenders.
+    """
     from research_hub import __version__
 
     payload = {
+        "schema_version": "1.0",
         "ok": rc == 0,
         "command": command,
         "version": __version__,
         "report": _json_safe(report),
     }
-    # v0.89.1: default=str catches the edge cases _json_safe returns
-    # verbatim (datetime, bytes, Exception instances, custom objects)
-    # — the v0.89.0 code-review skill flagged these would crash
-    # json.dumps. Cheap belt-and-suspenders.
     print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
 
 

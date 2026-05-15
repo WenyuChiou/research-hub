@@ -91,6 +91,40 @@ When bumping an unversioned format:
 3. Document the field set in this file.
 4. Update any third-party parser docs that exist.
 
+## CLI `--json` envelope (v0.91.0 W5)
+
+Not a file format, but a parseable contract that agents depend on.
+Every CLI subcommand invoked with `--json` emits an envelope of
+fixed shape — agents can branch on `command` to know what's inside
+`report`.
+
+```json
+{
+  "schema_version": "1.0",
+  "ok": true,
+  "command": "auto",
+  "version": "0.91.0",
+  "report": { /* per-command shape */ }
+}
+```
+
+| Field | Type | Stability |
+|---|---|---|
+| `schema_version` | `"1.0"` | envelope contract; bump = breaking |
+| `ok` | `rc == 0` | stable; flips with exit code |
+| `command` | str | stable; matches argparse subcommand name |
+| `version` | `research_hub.__version__` | stable; tracks package version |
+| `report` | varies | per-command shape; see G2 #8 follow-up for full standardization (tracked for v0.92) |
+
+For now, the `report` payload mirrors the underlying Report
+dataclass (or dict) returned by the command handler, run through
+`_json_safe` to handle dataclasses / Path / nested types / datetime
+/ bytes / Exception. **Until per-Report `schema_version` lands
+(v0.92), agents should treat report-internal field names as
+implementation details — use `command` to dispatch.**
+
+Source: `src/research_hub/cli.py:_emit_cli_json`.
+
 ## See also
 
 - v0.89.1 G2 audit summary: `~/.claude/plans/delegated-puzzling-umbrella.md`
