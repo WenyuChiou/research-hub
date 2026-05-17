@@ -13,8 +13,27 @@
 ## [Unreleased]
 
 _Both v1.0 blockers (W6 API-freeze + Phase A authenticity gate) are
-landed. v1.0.0 follows a ≥1-week bake period on v0.95.0rc2. Phase B
-(UI 80/20 — ⌘K palette + mobile) is post-1.0 (v1.1)._
+landed. v1.0.0 follows a ≥1-week bake period on v0.95.0rc2. Phase C
+(below) lands in this patch-stream BEFORE the 1.0.0 tag. Phase B
+(UI 80/20 — ⌘K palette + mobile) and Phase D (Zotero metadata
+correctness) are post-1.0 (v1.1)._
+
+### Added
+
+- **Fail-closed first-run guard (Phase C).** With relevance
+  checking on (the default) and no `claude`/`codex`/`gemini` judge
+  on PATH, `research-hub auto` now exits BEFORE the slow
+  multi-backend search with actionable 3-option guidance — instead
+  of running the full search and leaving a silent empty vault
+  (Phase A would quarantine every paper `relevance_unjudged`). Does
+  NOT weaken fail-closed: the sole opt-out is the pre-existing,
+  explicit `--no-fit-check` (which still runs L0/L1/L3 authenticity,
+  just no relevance filter).
+- End-of-run quarantine summary in `auto`'s next-steps — counts
+  grouped by reason plus the `research-hub quarantine
+  list|show|restore` recovery commands, so a short/empty vault is
+  auditable instead of a mystery. Reuses Phase A `list_quarantine`
+  (no fresh directory scan).
 
 ## v0.95.0rc2 (2026-05-17) — v1.0 blockers cleared (RC2)
 

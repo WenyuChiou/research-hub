@@ -278,6 +278,30 @@ def auto_pipeline(
         report.total_duration_sec = time.time() - started
         return report
 
+    # Phase C: fail-closed first-run guard — surface a missing LLM judge
+    # BEFORE the slow multi-backend search instead of after an empty
+    # vault. Does NOT weaken the gate: the only opt-out is the explicit,
+    # pre-existing --no-fit-check (do_fit_check=False), which still runs
+    # L0/L1/L3 authenticity, just no relevance filter.
+    if do_fit_check and not (llm_cli or detect_llm_cli()):
+        if print_progress:
+            print(
+                "No relevance judge (claude / codex / gemini) on PATH.\n"
+                "  Relevance checking is fail-closed: every paper would be\n"
+                "  quarantined (NOT written to the vault). Choose one:\n"
+                "    - install / log in a judge CLI, then re-run, OR\n"
+                "    - re-run with --no-fit-check (papers still pass\n"
+                "      L0/L1/L3 authenticity; NOT relevance-filtered), OR\n"
+                "    - run 'research-hub doctor' to check setup."
+            )
+        report.ok = False
+        report.error = (
+            "no relevance judge on PATH (fail-closed); re-run with "
+            "--no-fit-check or install claude/codex/gemini"
+        )
+        report.total_duration_sec = time.time() - started
+        return report
+
     # 3 + 4. Search ??papers_input.json
     try:
         search_kwargs = {"max_papers": max_papers, "cluster_slug": slug}
@@ -353,7 +377,7 @@ def auto_pipeline(
             _run_crystal_step(cfg, slug, llm_cli, report, started, print_progress)
         report.total_duration_sec = time.time() - started
         if print_progress:
-            _print_next_steps(report, slug, do_crystals=do_crystals)
+            _print_next_steps(report, slug, cfg, do_crystals=do_crystals)
         return report
 
     # 6, 7, 8, 9 ??NotebookLM
@@ -399,7 +423,7 @@ def auto_pipeline(
 
     report.total_duration_sec = time.time() - started
     if print_progress:
-        _print_next_steps(report, slug, do_crystals=do_crystals)
+        _print_next_steps(report, slug, cfg, do_crystals=do_crystals)
     return report
 
 
@@ -607,7 +631,7 @@ def _run_cluster_overview_step(
     _step_log(report, "cluster_overview", True, _elapsed(started, report), detail, print_progress)
 
 
-def _print_next_steps(report: AutoReport, slug: str, *, do_crystals: bool) -> None:
+def _print_next_steps(report: AutoReport, slug: str, cfg, *, do_crystals: bool) -> None:
     """Print copy-paste-ready commands so users know what to do after auto."""
     print()
     print("=" * 60)
@@ -626,6 +650,32 @@ def _print_next_steps(report: AutoReport, slug: str, *, do_crystals: bool) -> No
         if report.nlm_error:
             print(f"  Last NLM error: {report.nlm_error}")
     print()
+    # Phase C: make the fail-closed gate auditable instead of a silent
+    # empty/short vault. Reuse Phase A's list_quarantine (NOT a fresh
+    # dir-scan) for the full L0-L4 picture for this cluster.
+    try:
+        from collections import Counter
+
+        from research_hub.authenticity import list_quarantine
+
+        q_rows = list_quarantine(cfg, cluster=slug)
+    except Exception as exc:  # best-effort UX affordance; never fatal
+        q_rows = []
+        print(f"  [quarantine] summary unavailable for {slug} ({type(exc).__name__})")
+    if q_rows:
+        by_reason = Counter((r.get("reason") or "unknown") for r in q_rows)
+        print()
+        print(
+            f"  [quarantine] {len(q_rows)} paper(s) currently quarantined for "
+            f"cluster {slug} (fail-closed authenticity gate; not in the vault):"
+        )
+        for reason, count in sorted(by_reason.items()):
+            print(f"    - {reason}: {count}")
+        print("  Review / recover:")
+        print(f"    research-hub quarantine list --cluster {slug}")
+        print(f"    research-hub quarantine show <paper-slug> --cluster {slug}")
+        print(f"    research-hub quarantine restore <paper-slug> --cluster {slug}")
+        print()
     print("Next steps (copy-paste any of these):")
     print()
     print("  # See your new cluster in the live dashboard")
