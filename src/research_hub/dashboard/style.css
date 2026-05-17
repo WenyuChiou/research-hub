@@ -1584,3 +1584,121 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   color: var(--fg-mute);
   font-size: 0.85rem;
 }
+
+/* ===== Phase B / v1.1: ⌘K command palette ===== */
+/* Reuses the existing OKLch tokens; adds nothing to :root. */
+.cmdk {
+  border: 1px solid var(--fg-mute);
+  border-radius: 12px;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  width: min(640px, 92vw);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.28);
+}
+.cmdk::backdrop { background: rgba(0, 0, 0, 0.45); }
+.cmdk-box { display: flex; flex-direction: column; }
+.cmdk-input {
+  border: 0;
+  border-bottom: 1px solid var(--fg-mute);
+  background: transparent;
+  color: var(--fg-strong);
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 14px 16px;
+  outline: none;
+}
+.cmdk-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+.cmdk-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 44px;            /* touch target */
+}
+.cmdk-item.is-sel { background: var(--accent, oklch(75% 0.13 75 / 0.22)); }
+.cmdk-kind {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-mute);
+  min-width: 3.2em;
+}
+.cmdk-kind--action { color: oklch(60% 0.13 75); }
+.cmdk-label { color: var(--fg-strong); font-weight: 600; }
+.cmdk-hint { color: var(--fg-mute); font-size: 0.85rem; }
+.cmdk-foot {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-top: 1px solid var(--fg-mute);
+  color: var(--fg-mute);
+  font-size: 0.78rem;
+}
+.cmdk-foot kbd {
+  border: 1px solid var(--fg-mute);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-right: 2px;
+}
+.cmdk-mode { margin-left: auto; font-style: italic; }
+
+/* ===== Phase B / v1.1: mobile (W3 iOS finding) ===== */
+/* CSS-radio tab architecture is preserved; below 720px the tab
+   strip stacks (accordion-like) and tables become card lists.
+   Desktop rules above are untouched. */
+@media (max-width: 720px) {
+  .app, main[role="main"] { padding-left: 8px; padding-right: 8px; }
+  .header-bar { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+  /* Tab strip: stack full-width so each section is reachable
+     without horizontal scroll. The :checked radios still drive
+     which panel shows. */
+  .tabs label, .tab-label, nav label {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 44px;
+    line-height: 44px;
+  }
+
+  /* Wide tables → card list: each row stacks, each cell labelled
+     via its data-label (falls back to no label if absent). */
+  table.library, table.responsive-cards { border: 0; }
+  table.library thead, table.responsive-cards thead {
+    position: absolute;
+    left: -9999px;
+  }
+  table.library tr, table.responsive-cards tr {
+    display: block;
+    margin-bottom: 12px;
+    border: 1px solid var(--fg-mute);
+    border-radius: 8px;
+    padding: 8px;
+  }
+  table.library td, table.responsive-cards td {
+    display: block;
+    text-align: left;
+    padding: 4px 6px;
+  }
+  table.library td::before, table.responsive-cards td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    color: var(--fg-mute);
+  }
+
+  button, .btn, summary { min-height: 44px; }
+  .cmdk { width: 96vw; }
+  .cmdk-list { max-height: 60vh; }
+}

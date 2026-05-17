@@ -1202,4 +1202,109 @@
   applyLibraryFilters();
   csrfToken = doc.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
   detectLiveMode();
+
+  // ===== Phase B / v1.1: command palette (Cmd/Ctrl+K) =====
+  // Collapses the ~154-command discovery problem into one fuzzy,
+  // keyboard-driven list. Manifest = /api/palette (the union of
+  // executor.ALLOWED_ACTIONS + describe subcommands; no parallel
+  // list). DELIBERATE 80/20 SCOPE: the palette COPIES the
+  // `research-hub <cmd>` command to the clipboard (universal — works
+  // in static AND live, zero mis-exec risk). Exec-from-palette with
+  // per-action argument forms is intentionally deferred to v1.2
+  // (would need a form UI to be safe); documented, not a silent gap.
+  function initCommandPalette() {
+    const dlg = doc.getElementById("cmdk");
+    const input = doc.getElementById("cmdk-input");
+    const list = doc.getElementById("cmdk-list");
+    const modeEl = doc.getElementById("cmdk-mode");
+    if (!dlg || !input || !list || typeof dlg.showModal !== "function") {
+      return; // <dialog> unsupported or markup absent — no-op, no error
+    }
+    let entries = [];
+    let loaded = false;
+    let sel = 0;
+
+    function cmdFor(e) {
+      return "research-hub " + e.label; // action ids map 1:1 to CLI verbs
+    }
+    function render(items) {
+      list.innerHTML = "";
+      items.forEach(function (e, i) {
+        const li = doc.createElement("li");
+        li.className = "cmdk-item" + (i === sel ? " is-sel" : "");
+        li.setAttribute("role", "option");
+        li.setAttribute("aria-selected", i === sel ? "true" : "false");
+        li.innerHTML =
+          '<span class="cmdk-kind cmdk-kind--' + e.kind + '">' +
+          e.kind + "</span><span class=\"cmdk-label\">" + e.label +
+          "</span>" + (e.hint ? '<span class="cmdk-hint">' + e.hint + "</span>" : "");
+        li.addEventListener("click", function () { sel = i; choose(); });
+        list.appendChild(li);
+      });
+    }
+    function filtered() {
+      const q = input.value.trim().toLowerCase();
+      if (!q) return entries;
+      return entries.filter(function (e) {
+        return (e.label + " " + (e.hint || "")).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    function refresh() {
+      const items = filtered();
+      if (sel >= items.length) sel = Math.max(0, items.length - 1);
+      render(items);
+      return items;
+    }
+    function choose() {
+      const items = filtered();
+      const e = items[sel];
+      if (!e) return;
+      copyText(cmdFor(e), function () {
+        modeEl.textContent = "copied: " + cmdFor(e);
+      });
+      setTimeout(function () { dlg.close(); }, 350);
+    }
+    async function load() {
+      if (loaded) return;
+      try {
+        const r = await fetch("/api/palette");
+        const d = await r.json();
+        entries = [].concat(d.actions || [], d.subcommands || []);
+        loaded = true;
+      } catch (_) {
+        entries = [];
+      }
+    }
+    function open() {
+      load().then(function () {
+        sel = 0;
+        input.value = "";
+        modeEl.textContent = LIVE_MODE.active ? "live" : "static";
+        refresh();
+        dlg.showModal();
+        input.focus();
+      });
+    }
+    input.addEventListener("input", function () { sel = 0; refresh(); });
+    input.addEventListener("keydown", function (ev) {
+      const items = filtered();
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault(); sel = Math.min(items.length - 1, sel + 1); refresh();
+      } else if (ev.key === "ArrowUp") {
+        ev.preventDefault(); sel = Math.max(0, sel - 1); refresh();
+      } else if (ev.key === "Enter") {
+        ev.preventDefault(); choose();
+      }
+    });
+    doc.addEventListener("keydown", function (ev) {
+      const tag = (ev.target && ev.target.tagName) || "";
+      const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) {
+        ev.preventDefault(); open();
+      } else if (ev.key === "/" && !typing && !dlg.open) {
+        ev.preventDefault(); open();
+      }
+    });
+  }
+  initCommandPalette();
 })();

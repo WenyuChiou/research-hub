@@ -371,6 +371,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._write_json(500, {"error": str(exc)})
             return
 
+        if path == "/api/palette":
+            # Phase B / v1.1: ⌘K command-palette manifest. Union of
+            # executor.ALLOWED_ACTIONS + describe subcommands — no
+            # parallel command list (contract locked by
+            # tests/test_v110_ui_palette.py).
+            try:
+                from research_hub.dashboard.palette import build_palette_manifest
+
+                self._write_json(200, build_palette_manifest())
+            except Exception as exc:
+                logger.exception("palette manifest failed")
+                self._write_json(500, {"error": str(exc)})
+            return
+
         if path == "/api/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")

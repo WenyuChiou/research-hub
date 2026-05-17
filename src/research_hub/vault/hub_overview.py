@@ -157,7 +157,7 @@ def ensure_moc(vault_root: Path, name: str, *, description: str = "") -> Path:
 
 HOME_FILENAME = "_HOME.md"
 _HOME_SECTION_RE = re.compile(
-    r"(##[ \t]+)(Clusters|Reading queue|Recent NotebookLM briefs|Dashboard)([ \t]*\n)(.*?)(?=^##[ \t]|\Z)",
+    r"(##[ \t]+)(Start here|Clusters|Reading queue|Recent NotebookLM briefs|Dashboard)([ \t]*\n)(.*?)(?=^##[ \t]|\Z)",
     re.MULTILINE | re.DOTALL,
 )
 
@@ -238,7 +238,22 @@ def populate_home(cfg) -> Path:
         "(Obsidian-internal, works on iOS / mobile)"
     )
 
+    # Phase B / v1.1 (W3 discoverability): a ≤3-tap "Start here"
+    # wayfinding block at the very top of _HOME.md. Prepend-only —
+    # existing sections are neither removed nor reordered.
+    start_here_body = (
+        "1. **Pick a cluster** → see [[#Clusters]] below.\n"
+        "2. **What to read next** → [[#Reading queue]].\n"
+        "3. **Full dashboard** → [[#Dashboard]] "
+        "(live HTTP, or the iOS-friendly markdown mirror).\n"
+        "\n"
+        "_New here?_ `research-hub init --sample` for a demo vault, "
+        "or `research-hub serve --dashboard` then press "
+        "<kbd>⌘/Ctrl</kbd>+<kbd>K</kbd> for the command palette."
+    )
+
     sections = {
+        "Start here": start_here_body,
         "Clusters": clusters_body,
         "Reading queue": reading_queue_body,
         "Recent NotebookLM briefs": briefs_body,
@@ -327,6 +342,28 @@ def _refresh_home_sections(text: str, sections: dict[str, str]) -> str:
             return match.group(0)
         return f"{match.group(1)}{heading_name}{match.group(3)}\n{new_body}\n\n"
 
+    # Phase B / v1.1: existing _HOME.md files predate the "Start
+    # here" block — the regex can only REPLACE a section that's
+    # already present, so inject it once (prepend, right after the
+    # `# Research Hub` title). Subsequent passes refresh it in place
+    # via the regex (idempotent). Prepend-only: no existing section
+    # is moved or dropped.
+    if "## Start here" not in text and "Start here" in sections:
+        block = f"## Start here\n{sections['Start here']}\n\n"
+        m = re.search(r"^#[ \t]+.*\n", text, re.MULTILINE)
+        if m:
+            text = text[: m.end()] + "\n" + block + text[m.end():]
+        else:
+            # No `# ` H1 (hand-edited vault). NEVER prepend above a
+            # leading `---\n…\n---\n` frontmatter block — that would
+            # corrupt Obsidian YAML parsing. Insert after it; only
+            # absolute-top when there is no frontmatter at all.
+            fm = re.match(r"^---\n.*?\n---\n", text, re.DOTALL)
+            if fm:
+                text = text[: fm.end()] + "\n" + block + text[fm.end():]
+            else:
+                text = block + text
+
     new_text = _HOME_SECTION_RE.sub(replace, text)
     # Normalize trailing newlines so subsequent passes don't drift.
     return new_text.rstrip("\n") + "\n"
@@ -334,7 +371,7 @@ def _refresh_home_sections(text: str, sections: dict[str, str]) -> str:
 
 def _build_home_from_scratch(sections: dict[str, str]) -> str:
     body_parts = ["# Research Hub", ""]
-    for heading in ("Clusters", "Reading queue", "Recent NotebookLM briefs", "Dashboard"):
+    for heading in ("Start here", "Clusters", "Reading queue", "Recent NotebookLM briefs", "Dashboard"):
         body_parts.append(f"## {heading}")
         body_parts.append("")
         body_parts.append(sections[heading])
