@@ -1,5 +1,77 @@
 # Changelog
 
+> **Format (v0.95.0+):** entries follow a lightweight
+> [Keep a Changelog](https://keepachangelog.com) convention going
+> forward — within each version use `### Added / Changed /
+> Deprecated / Removed / Fixed / Security` where applicable, and
+> flag breaking changes with a **BREAKING:** prefix. Per-release
+> migration steps are mirrored in [UPGRADE.md](UPGRADE.md). Entries
+> before v0.95.0 predate this convention and are kept verbatim
+> (retrofitting 90+ historical entries was judged higher-risk than
+> the consistency gain — G4 audit #3).
+
+## [Unreleased]
+
+_W6 (CLI + MCP rationalize with deprecation, G2 #11-12) is the only
+remaining 1.0 blocker — brief prepared, deferred to a Codex-quota-
+available session per the Complex Task Protocol. v1.0.0 follows a
+bake period on v0.95.0rc1._
+
+## v0.95.0rc1 (2026-05-17) — Release-engineering hardening (RC)
+
+First release candidate. Phase 3 of the post-v0.89.1 stabilization
+plan: dependency/CI hygiene, deeper wheel smoke, doc polish, and
+the MCP docstring correction. Shipped THROUGH the new mechanical
+release gate (`scripts/release-check.sh` — full suite incl e2e —
++ the pre-push hook) introduced in Phase 1; this is the gate's
+first dogfood.
+
+### Added
+
+- `.github/dependabot.yml` — weekly pip + github-actions update
+  PRs, patch-grouped (G5 #19).
+- `constraints.txt` — documented upper-bound anchor for
+  `pip install -e . -c constraints.txt` (not a hash lockfile;
+  research-hub is a library).
+- CI `pip-audit --strict` step (non-gating) for supply-chain
+  visibility (G5 #19).
+- Wheel install-smoke in `publish.yml`: runs `init --sample` +
+  `describe --json` against the BUILT wheel, asserting `_HOME.md`
+  + bundled skills/mcp_tools resolve — catches missing wheel data
+  files that import-only smoke can't (G5 #4).
+- Python 3.14 CI cell (experimental, `continue-on-error`, runs but
+  does not gate) so the classifier claim is exercised honestly
+  (G5 #17).
+
+### Changed
+
+- All 7 runtime deps now have upper bounds (`notebooklm-py
+  >=0.4.1,<0.5.0` tight semver-zero cap; others next-major). The
+  v0.88.10 "100% NLM upload broken" incident was an unbounded
+  `notebooklm-py` minor-version kwarg drift (G5 #18).
+- CI gated matrix is 3.10–3.13 (was 3.10–3.12); 3.14 added as the
+  non-gating experimental cell above.
+- `README.md`: added the `init --sample` quickstart row + the
+  bare-`research-hub`-prints-help note; Python support wording now
+  "CI-gated 3.10–3.13; 3.14 experimental".
+- `UPGRADE.md`: replaced the stale "to v0.30" framing with a
+  current universal-path header + a v0.89→v0.95 migration section.
+- `CHANGELOG.md`: adopts the Keep-a-Changelog forward convention
+  (this entry is the first; history kept verbatim — G4 #3).
+
+### Fixed
+
+- **MCP docstrings (G4 #4, must-fix).** Five tool docstrings
+  (`mark_paper`, `move_paper`, `merge_clusters`, `get_citations`,
+  `emit_assignment_prompt`) previously stated enums/return shapes
+  that did NOT match the real delegate bodies — a confidently
+  wrong docstring is worse than a vague one for agent
+  introspection. Rewritten against verified
+  `operations.py` / `citation_graph.py` / `clusters.py` /
+  `topic.py` bodies and `help()`-checked. E.g. `mark_paper`'s
+  valid statuses are `{unread, reading, deep-read, cited}` (was
+  wrongly documented as `read|skimmed|archived`).
+
 ## v0.91.1 (2026-05-16) — Hotfix: 2 real W8 CI regressions
 
 v0.91.0 shipped to PyPI but its CI test job was RED on clean

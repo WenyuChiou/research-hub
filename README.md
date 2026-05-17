@@ -17,7 +17,7 @@ Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp
 
 > 📚 Part of the [**agentic AI learning roadmap**](https://github.com/WenyuChiou/awesome-agentic-ai-zh) — a 7-stage curated path for building agentic AI, multilingual (zh-TW · zh-Hans · English). This workspace is referenced in §13 (research workflow skills).
 
-> 🧪 **Real-use signal:** in daily use by 1 PhD researcher (Lehigh CEE) tracking 7+ research clusters across Zotero + Obsidian + NotebookLM. Shipping since Apr 2026, docs updated for v0.89.0.
+> 🧪 **Real-use signal:** in daily use by 1 PhD researcher (Lehigh CEE) tracking 7+ research clusters across Zotero + Obsidian + NotebookLM. Shipping since Apr 2026, docs updated for v0.95.0.
 
 ---
 
@@ -68,9 +68,19 @@ Then drive operations via CLI `--json` mode or the bundled MCP server (`research
 | Zotero + Obsidian + NotebookLM | `pip install research-hub-pipeline[playwright,secrets]` then `research-hub setup` |
 | Zotero + Obsidian, no NotebookLM | `pip install research-hub-pipeline[secrets]` then `research-hub setup --skip-login` |
 | Obsidian + local PDFs only | `pip install research-hub-pipeline[import,secrets]` then `research-hub setup --persona analyst` |
-| Nothing yet | `pip install research-hub-pipeline` then `research-hub dashboard --sample` |
+| Just want to see it work (≤5 min, no accounts) | `pip install research-hub-pipeline` then `research-hub init --sample` |
+| Nothing yet, browser preview only | `pip install research-hub-pipeline` then `research-hub dashboard --sample` |
 
-Python 3.10+ is required. Add `[mcp]` if you want standalone MCP server dependencies.
+`research-hub init --sample` (v0.89.1) copies a bundled demo vault
+(5 papers + clusters + crystals + `_HOME.md`) and skips every
+Zotero / NotebookLM / LLM probe — open `<vault>/_HOME.md` in
+Obsidian to explore, then `research-hub setup --vault <vault>` when
+you're ready for real accounts. Running bare `research-hub` (no
+subcommand) now prints help instead of starting the pipeline.
+
+Python 3.10+ is required (CI-gated 3.10–3.13; 3.14 runs in CI as an
+experimental, non-gating cell). Add `[mcp]` if you want standalone
+MCP server dependencies.
 
 | Persona | Best for | Install extra |
 |---|---|---|
@@ -299,7 +309,7 @@ Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.m
 
 Status:
 
-- Current docs target: v0.89.0; see [CHANGELOG](CHANGELOG.md) for package history.
+- Current docs target: v0.95.0; see [CHANGELOG](CHANGELOG.md) for package history, [docs/stable-api.md](docs/stable-api.md) for the supported API surface, and [docs/file-formats.md](docs/file-formats.md) for parseable state-file schemas.
 - MCP tools: inspect the live list with `python -m research_hub describe --filter mcp_tools`.
 - REST endpoints: 12 at `/api/v1/*`.
 - Bundled skills: inspect the live list with `python -m research_hub describe --filter skills`.

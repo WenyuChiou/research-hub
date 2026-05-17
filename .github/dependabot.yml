@@ -1,0 +1,24 @@
+# v0.95.0 W9 (G5 #19): automated dependency + Action update PRs.
+# Complements the pip-audit CI step — dependabot opens the PR, the
+# CI matrix (3.10–3.14 × 3 OS) + pytest gate it before merge.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Group patch bumps so the upper-bounded deps don't open 7 PRs/week.
+    groups:
+      runtime-patches:
+        update-types: ["patch"]
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "ci"

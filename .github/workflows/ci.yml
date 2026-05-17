@@ -11,11 +11,29 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    # v0.95.0 W9 (G5 #17): the gated matrix is 3.10–3.13 (hard — must
+    # be green to merge/release). 3.14 is added per-OS via `include`
+    # with experimental:true so it RUNS (honest: classifiers claim
+    # 3.14, CI exercises it) but does NOT gate (pydantic-v1/3.14 has
+    # known compat warnings; a 3.14-only red must not wedge every
+    # release). README marks 3.14 experimental. Promote to the hard
+    # matrix once the pydantic-v1 path is resolved.
+    continue-on-error: ${{ matrix.experimental || false }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.14"
+            experimental: true
+          - os: windows-latest
+            python-version: "3.14"
+            experimental: true
+          - os: macos-latest
+            python-version: "3.14"
+            experimental: true
 
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +51,16 @@ jobs:
 
       - name: Install defuddle CLI
         run: npm install -g defuddle-cli
+        continue-on-error: true
+
+      - name: Dependency CVE scan (pip-audit)
+        # v0.95.0 W9 (G5 #19): supply-chain scan. Non-blocking for now
+        # (continue-on-error) so a transitive-dep CVE doesn't wedge the
+        # whole matrix overnight; surfaces in the job summary. Promote to
+        # blocking once the dependency set is known-clean.
+        run: |
+          pip install pip-audit
+          pip-audit --strict --desc || true
         continue-on-error: true
 
       - name: Run tests

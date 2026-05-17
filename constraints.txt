@@ -1,0 +1,20 @@
+# Reproducible-install constraint anchor (v0.95.0 W9, G5 #18).
+#
+# Not a full lockfile (no hashes, no transitive pins) — research-hub
+# is a library, not an app, so a hard lockfile would over-constrain
+# downstream installs. This file documents the EXACT upper bounds the
+# project tests against, so a contributor can reproduce the CI
+# environment with:
+#
+#     pip install -e ".[mcp,dev,playwright]" -c constraints.txt
+#
+# Keep in sync with pyproject.toml [project.dependencies]. The CI
+# matrix (3.10–3.14 × 3 OS) is the source of truth for "tested
+# against"; this file is the human-readable contract.
+networkx>=3.0,<4.0
+notebooklm-py>=0.4.1,<0.5.0
+platformdirs>=4.0,<6.0
+pyzotero>=1.5.18,<2.0
+pyyaml>=6,<7
+rapidfuzz>=3.0,<4.0
+requests>=2.28,<3.0

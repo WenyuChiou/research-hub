@@ -1,8 +1,40 @@
 # Upgrade Guide
 
-This guide covers migration from older research-hub releases to v0.30. If you're upgrading from a release within the last few weeks, the path is usually `pip install -U research-hub-pipeline`. If you've been on a much older release, read the section that matches your starting version.
+**For any recent upgrade the path is just:**
+
+```bash
+pip install -U research-hub-pipeline
+research-hub doctor
+```
+
+Per-release migration steps (when a release needs one) live in the
+[CHANGELOG](CHANGELOG.md) under each version's entry — search the
+CHANGELOG for "Migration" / "migrate". The CHANGELOG is the
+authoritative, always-current source; this file is the cross-major
+backup checklist + a historical appendix for very old releases.
 
 > **Backup first.** Before any upgrade that crosses a major version: copy your `~/.research_hub/` config dir AND your vault's `.research_hub/` dir somewhere safe. The vault `.md` files don't need backup (they're never destructively modified by upgrades).
+
+## v0.89 → v0.95
+
+- **v0.89.1**: `research-hub vault rebuild-overviews --force` once to
+  refresh `_HOME.md`'s dashboard link (HTTP, iOS-friendly).
+- **v0.90.0**: no migration. Silent-failure breadcrumbs +
+  resource-leak + dashboard-injection fixes are transparent.
+- **v0.91.0**: hidden state files (`clusters.yaml`,
+  `dedup_index.json`, `manifest.jsonl`) gained a `schema_version`
+  field — old files load fine (treated as 1.0); no action needed.
+  Third-party tools parsing those files: see
+  [docs/file-formats.md](docs/file-formats.md).
+- **v0.95.0**: dependency upper bounds tightened. If you pin
+  transitive deps, reconcile against `constraints.txt`. Windows:
+  config/secret files are now ACL-restricted to your user on first
+  write (no action needed).
+
+Older version-specific sections below are kept for anyone upgrading
+from a pre-v0.30 release; most users never need them.
+
+---
 
 ---
 

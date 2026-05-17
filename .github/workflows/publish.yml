@@ -51,6 +51,19 @@ jobs:
             exit 1
           fi
 
+      # v0.95.0 W10 (G5 #4): deepen the wheel smoke. The import + version
+      # check above can't catch missing DATA files in the wheel (sample
+      # vault, skills_data) — those only fail when a subcommand actually
+      # uses them. Exercise the v0.89.1 hero path (init --sample) + the
+      # agent-facing describe manifest against the INSTALLED wheel, in a
+      # temp dir, with closed stdin (no prompts).
+      - name: Smoke-test installed wheel (init --sample + describe)
+        run: |
+          SMOKE_VAULT=$(mktemp -d)/demo
+          /tmp/wheel_test/bin/python -m research_hub init --sample --vault "$SMOKE_VAULT" </dev/null
+          test -f "$SMOKE_VAULT/_HOME.md" || { echo "::error::init --sample did not produce _HOME.md — sample_vault data missing from wheel"; exit 1; }
+          /tmp/wheel_test/bin/python -m research_hub describe --json | /tmp/wheel_test/bin/python -c "import sys,json; d=json.load(sys.stdin); assert d['version']=='${GITHUB_REF_NAME#v}', d['version']; assert d['skills'], 'skills_data missing from wheel'; assert d['mcp_tools'], 'mcp tools empty'; print('wheel smoke OK:', len(d['subcommands']), 'subcommands,', len(d['mcp_tools']), 'mcp tools,', len(d['skills']), 'skills')"
+
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__

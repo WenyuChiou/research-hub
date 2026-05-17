@@ -598,7 +598,21 @@ def get_references(identifier: str, limit: int = 20) -> list[dict[str, Any]] | d
 
 
 def get_citations(identifier: str, limit: int = 20) -> list[dict[str, Any]] | dict[str, str]:
-    """List papers that cite the given paper."""
+    """List papers that cite the given paper (forward citations).
+
+    Delegates to ``research_hub.citation_graph.CitationGraphClient``
+    (Semantic Scholar Graph API).
+
+    Args:
+        identifier: a DOI (``10.xxxx/...``), arXiv id (``2401.12345``),
+            or Semantic Scholar paper id. Bare titles are NOT accepted.
+        limit: max results (default 20).
+
+    Returns: a list of ``CitationNode`` dicts — each has
+    ``{paper_id, title, doi, year, authors, venue, citation_count,
+    url, pdf_url}`` — or ``{"error": ...}`` on failure (bad
+    identifier / upstream down).
+    """
     try:
         identifier = _validate_mcp_args(identifier=identifier)["identifier"]
         from research_hub.citation_graph import CitationGraphClient
@@ -649,7 +663,20 @@ def remove_paper(identifier: str, include_zotero: bool = False, dry_run: bool = 
 
 
 def mark_paper(slug: str, status: str) -> dict[str, Any]:
-    """Update reading status for a note."""
+    """Update the reading status of a paper note.
+
+    Delegates to ``research_hub.operations.mark_paper``.
+
+    Args:
+        slug: the paper note slug (lowercase ``[a-z0-9_-]``).
+        status: one of ``unread`` | ``reading`` | ``deep-read`` |
+            ``cited`` (``research_hub.operations.VALID_STATUSES``).
+            Written to the note's ``status`` frontmatter field. An
+            unrecognised value raises ValueError → ``{"error": ...}``.
+
+    Returns: ``{"updated": [<note paths>], "status": <status>}`` on
+    success, or ``{"error": ...}`` on failure.
+    """
     try:
         slug = _validate_mcp_args(slug=slug)["slug"]
         from research_hub.operations import mark_paper as _mark
@@ -660,7 +687,18 @@ def mark_paper(slug: str, status: str) -> dict[str, Any]:
 
 
 def move_paper(slug: str, to_cluster: str) -> dict[str, Any]:
-    """Move a note to a different cluster."""
+    """Move a paper note from its current cluster to another.
+
+    Delegates to ``research_hub.operations.move_paper``.
+
+    Args:
+        slug: paper note slug (lowercase ``[a-z0-9_-]``).
+        to_cluster: destination cluster slug. The note's ``.md``
+            file is moved on disk into the destination cluster dir.
+
+    Returns: ``{"from": <source path>, "to": <dest path>,
+    "cluster": <to_cluster>}`` on success, or ``{"error": ...}``.
+    """
     try:
         validated = _validate_mcp_args(slug=slug, to_cluster=to_cluster)
         slug = validated["slug"]
@@ -742,7 +780,23 @@ def search_vault(
 
 
 def merge_clusters(source: str, into: str) -> dict[str, Any]:
-    """Merge one cluster into another."""
+    """Merge all papers from one cluster into another, then delete the source.
+
+    Delegates to ``research_hub.clusters.ClusterRegistry.merge``.
+
+    Args:
+        source: slug of the cluster to drain + remove.
+        into: slug of the surviving destination cluster.
+
+    Effect: every ``*.md`` note under ``source`` is moved to
+    ``into`` (via ``move_paper``), then ``source`` is popped from
+    the registry and ``clusters.yaml`` is re-saved. Destructive +
+    not auto-reversible. A missing source/target raises ValueError
+    → ``{"error": ...}``.
+
+    Returns: ``{"source": <slug>, "target": <slug>, "moved": <int>}``
+    on success, or ``{"error": ...}``.
+    """
     try:
         validated = _validate_mcp_args(source=source, into=into)
         source = validated["source"]
@@ -873,7 +927,25 @@ def propose_subtopics(cluster_slug: str, target_count: int = 5) -> dict:
 
 
 def emit_assignment_prompt(cluster_slug: str, subtopics: list[dict]) -> dict:
-    """Build the Phase 2 assignment prompt."""
+    """Build the topic-build Phase 2 (sub-topic assignment) LLM prompt.
+
+    Part of the multi-phase ``topic build`` flow: Phase 1 proposes
+    sub-topics for a cluster; Phase 2 (this tool) emits the prompt
+    that asks an LLM to assign each paper to one of those
+    sub-topics.
+
+    Args:
+        cluster_slug: the cluster being organised.
+        subtopics: list of dicts matching
+            ``research_hub.topic.SubtopicProposal`` — i.e.
+            ``{"slug": str, "title": str, "description": str}``
+            (``description`` optional, defaults to ``""``).
+
+    Returns: ``{"prompt": <str>, "paper_count": <int>}`` — the
+    prompt text ready to hand to claude/codex/gemini plus the
+    cluster's paper count — or ``{"error": ...}``. This tool does
+    NOT call an LLM itself; it only constructs the prompt text.
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config

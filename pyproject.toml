@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "0.91.1"
+version = "0.95.0rc1"
 description = "AI-operable research workspace for Zotero, Obsidian, and NotebookLM. Use any two, or all three, through CLI, MCP, REST, and dashboard."
 readme = "README.md"
 license = {text = "MIT"}
@@ -17,14 +17,19 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
 ]
+# v0.95.0 W9 (G5 #18): upper bounds on every runtime dep. Pre-fix
+# all deps were unbounded; v0.88.10 shipped "100% NLM upload broken"
+# from a notebooklm-py minor-version kwarg drift with zero guard.
+# Caps are next-major for stable libs, tight for 0.x (any minor can
+# break). Reproducible installs: pip install -e . -c constraints.txt.
 dependencies = [
-    "networkx>=3.0",
-    "notebooklm-py>=0.4.1",
-    "platformdirs>=4.0",
-    "pyzotero>=1.5.18",
-    "pyyaml>=6",
-    "rapidfuzz>=3.0",
-    "requests>=2.28",
+    "networkx>=3.0,<4.0",
+    "notebooklm-py>=0.4.1,<0.5.0",
+    "platformdirs>=4.0,<6.0",
+    "pyzotero>=1.5.18,<2.0",
+    "pyyaml>=6,<7",
+    "rapidfuzz>=3.0,<4.0",
+    "requests>=2.28,<3.0",
 ]
 
 [project.urls]
