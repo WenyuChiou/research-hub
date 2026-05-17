@@ -113,6 +113,23 @@ quarantine*. Full statement, layer table, and triage:
   `/inheritance:r` as an invalid parameter. Net worst case is now
   "secrets not OS-hardened + one warning", never "tool bricked".
   Pure-helper regression coverage added in `test_v030_security.py`.
+- **`doctor` reported a false `[OK] nlm_session` for a server-side
+  dead NotebookLM session.** The check tested only
+  `state.json` existence + non-zero size, so an expired Google
+  session showed healthy in `doctor` while every real NLM
+  operation failed at the preflight probe — the operator had no
+  way to learn the session was dead short of attempting an upload.
+  The file-present branch now calls the same already-proven
+  `check_session_health()` probe the CLI preflight uses: live →
+  `OK`; Google-rejected (auth) → `WARN` with a
+  `research-hub notebooklm login` remedy; probe could not complete
+  (offline / timeout / unexpected) → `WARN "liveness unverified"`
+  with NO remedy, so an offline `doctor` run is not misled into
+  claiming the session is dead. File-missing/empty, the outer
+  "Could not check" guard, and the no-config branch are unchanged.
+  3 regression tests added in `test_doctor.py`. Full auto-Google
+  re-login is out of scope (Google 2FA / bot-detection makes
+  headless login infeasible); this makes the *detection* honest.
 
 ### Security
 

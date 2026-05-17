@@ -1179,7 +1179,33 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
         try:
             session_file = cfg.research_hub_dir / "nlm_sessions" / "state.json"
             if session_file.exists() and session_file.stat().st_size > 0:
-                results.append(CheckResult("nlm_session", "OK", str(session_file)))
+                # File presence alone does NOT mean the session is live.
+                # Google invalidates sessions server-side before the cookie's
+                # nominal expiry; the old file-existence check reported [OK]
+                # while every real NLM op failed at preflight.
+                from research_hub.notebooklm.auth import check_session_health
+                health = check_session_health(session_file)
+                if health["ok"]:
+                    results.append(CheckResult("nlm_session", "OK", str(session_file)))
+                elif "auth" in str(health.get("reason", "")).lower():
+                    results.append(
+                        CheckResult(
+                            "nlm_session",
+                            "WARN",
+                            f"Session file present but Google rejected it ({health.get('reason')})",
+                            remedy="Run: research-hub notebooklm login",
+                        )
+                    )
+                else:
+                    # Offline / timeout / unexpected -- probe could not complete.
+                    # Do NOT claim the session is dead; keep doctor useful offline.
+                    results.append(
+                        CheckResult(
+                            "nlm_session",
+                            "WARN",
+                            f"Session file present; liveness unverified ({health.get('reason')})",
+                        )
+                    )
             else:
                 results.append(
                     CheckResult(

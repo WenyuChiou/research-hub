@@ -84,6 +84,10 @@ def test_doctor_all_green(tmp_path, monkeypatch, capsys):
         "research_hub.defuddle_extract.find_defuddle_binary",
         lambda: "C:/npm/defuddle.cmd",
     )
+    monkeypatch.setattr(
+        "research_hub.notebooklm.auth.check_session_health",
+        lambda _p: {"ok": True, "reason": "ok", "expires_at": None},
+    )
 
     results = run_doctor()
 
@@ -343,3 +347,65 @@ def test_doctor_output_mentions_defuddle_check(tmp_path, monkeypatch, capsys):
     assert any(result.name == "defuddle_cli" and result.status == "INFO" for result in results)
     assert print_doctor_report(results) == 0
     assert "defuddle_cli" in capsys.readouterr().out
+
+
+def test_nlm_session_present_and_healthy(tmp_path, monkeypatch):
+    """File present + probe healthy -> nlm_session OK."""
+    from research_hub.doctor import run_doctor
+
+    root, _ = _write_config(tmp_path, monkeypatch)
+    session_root = root / ".research_hub" / "nlm_sessions"
+    session_root.mkdir(parents=True)
+    (session_root / "state.json").write_text('{"cookies": []}', encoding="utf-8")
+    monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
+    monkeypatch.setattr(
+        "research_hub.notebooklm.auth.check_session_health",
+        lambda _p: {"ok": True, "reason": "ok", "expires_at": None},
+    )
+
+    results = run_doctor()
+
+    nlm = next(r for r in results if r.name == "nlm_session")
+    assert nlm.status == "OK"
+
+
+def test_nlm_session_present_but_auth_rejected(tmp_path, monkeypatch):
+    """File present + probe returns auth invalid -> WARN with login remedy."""
+    from research_hub.doctor import run_doctor
+
+    root, _ = _write_config(tmp_path, monkeypatch)
+    session_root = root / ".research_hub" / "nlm_sessions"
+    session_root.mkdir(parents=True)
+    (session_root / "state.json").write_text('{"cookies": []}', encoding="utf-8")
+    monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
+    monkeypatch.setattr(
+        "research_hub.notebooklm.auth.check_session_health",
+        lambda _p: {"ok": False, "reason": "auth invalid", "expires_at": None},
+    )
+
+    results = run_doctor()
+
+    nlm = next(r for r in results if r.name == "nlm_session")
+    assert nlm.status == "WARN"
+    assert nlm.remedy and "notebooklm login" in nlm.remedy
+
+
+def test_nlm_session_present_probe_offline(tmp_path, monkeypatch):
+    """File present + probe returns unexpected/offline error -> WARN with no remedy (not dead)."""
+    from research_hub.doctor import run_doctor
+
+    root, _ = _write_config(tmp_path, monkeypatch)
+    session_root = root / ".research_hub" / "nlm_sessions"
+    session_root.mkdir(parents=True)
+    (session_root / "state.json").write_text('{"cookies": []}', encoding="utf-8")
+    monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
+    monkeypatch.setattr(
+        "research_hub.notebooklm.auth.check_session_health",
+        lambda _p: {"ok": False, "reason": "unexpected error: net down", "expires_at": None},
+    )
+
+    results = run_doctor()
+
+    nlm = next(r for r in results if r.name == "nlm_session")
+    assert nlm.status == "WARN"
+    assert not nlm.remedy  # Must NOT claim session is dead when probe could not run
