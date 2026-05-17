@@ -50,6 +50,15 @@ def _compose_hub_tags(pp: dict, cluster_slug: str | None, batch_label: str = "")
     # (see pipeline.py zot.item_template call), so this matches reality.
     doc_type = pp.get("doc_type") or pp.get("publication_type") or "journalArticle"
     hub_tags.append(f"type/{doc_type}")
+    # Phase D (v1.1): surface the Phase A fit_score as a compact tag so
+    # the relevance verdict is visible in Zotero too (Obsidian gets the
+    # full provenance block). Omit entirely when no numeric score —
+    # never tag legacy / unscored papers with a bogus fit/ value.
+    prov = pp.get("provenance")
+    fit_score = prov.get("fit_score") if isinstance(prov, dict) else pp.get("fit_score")
+    if isinstance(fit_score, (int, float)) and not isinstance(fit_score, bool):
+        bucket = "high" if fit_score >= 5 else "mid" if fit_score >= 3 else "low"
+        hub_tags.append(f"fit/{bucket}")
     backend = pp.get("source") or pp.get("found_in")
     if backend:
         hub_tags.append(f"src/{backend}")
@@ -57,6 +66,41 @@ def _compose_hub_tags(pp: dict, cluster_slug: str | None, batch_label: str = "")
         hub_tags.append(f"batch:{batch_label}")
     existing = pp.get("tags") or []
     return list(dict.fromkeys(existing + hub_tags))
+
+
+def _zotero_item_type(pp: dict) -> str:
+    """Map a candidate paper to a Zotero itemType (Phase D, v1.1).
+
+    Search backends set doc_type / publication_type / source but
+    never item_type, so historically the pipeline filed EVERY paper
+    as a journalArticle — wrong BibTeX export for arXiv / preprint /
+    conference items. This is the type-aware fallback for
+    ``pp.get("item_type", "") or _zotero_item_type(pp)``; an
+    explicitly-supplied pp["item_type"] still wins (no behaviour
+    change for that path). Pure dict reads + string match — no LLM
+    (L5 invariant) and no new Zotero schema.
+    """
+    raw = " ".join(
+        str(pp.get(key, "") or "")
+        for key in ("item_type", "doc_type", "publication_type", "source", "found_in")
+    ).lower()
+    if any(
+        t in raw
+        for t in ("arxiv", "biorxiv", "medrxiv", "preprint", "posted-content", "ssrn", "osf")
+    ):
+        # "posted-content" is Crossref's type for preprints.
+        return "preprint"
+    if any(t in raw for t in ("conference", "proceedings", "inproceedings")):
+        return "conferencePaper"
+    if any(t in raw for t in ("thesis", "dissertation", "phdthesis", "mastersthesis")):
+        return "thesis"
+    if any(t in raw for t in ("report", "techreport", "working paper", "white paper")):
+        return "report"
+    if "book" in raw and any(t in raw for t in ("section", "chapter")):
+        return "bookSection"
+    if "book" in raw:
+        return "book"
+    return "journalArticle"
 
 
 def _slugify(text: str) -> str:
@@ -96,6 +140,27 @@ def _build_note_html(pp: dict) -> str:
     note += "</ul>"
     note += "<h2>Methodology</h2><p>" + methodology + "</p>"
     note += "<h2>Relevance</h2><p>" + relevance + "</p>"
+    # Phase D (v1.1): mirror the Phase A provenance summary into the
+    # Zotero child note (Obsidian frontmatter already carries the full
+    # block). Pure dict reads + string join — no LLM (L5 invariant),
+    # no new Zotero item fields. Skipped entirely when absent.
+    prov = pp.get("provenance")
+    if isinstance(prov, dict) and prov:
+        resolved_via = str(prov.get("resolved_via", "") or "")
+        corroboration = str(prov.get("corroboration", "") or "")
+        checked_at = str(prov.get("doi_checked_at", "") or "")
+        fit_score = prov.get("fit_score")
+        parts: list[str] = []
+        if resolved_via:
+            parts.append("resolved via " + resolved_via)
+        if corroboration:
+            parts.append(corroboration)
+        if isinstance(fit_score, (int, float)) and not isinstance(fit_score, bool):
+            parts.append("fit score " + str(fit_score))
+        if checked_at:
+            parts.append("DOI checked " + checked_at)
+        if parts:
+            note += "<h2>Provenance</h2><p>" + "; ".join(parts) + "</p>"
     return note
 
 
@@ -468,7 +533,7 @@ def write_papers_to_zotero(
         # search backends (e.g. ASCE paper tagged "arXiv", Zenodo dataset
         # tagged "Open MIND" journal) get fixed before they reach Zotero.
         apply_doi_prefix_overrides(pp)
-        item_type = pp.get("item_type", "") or "journalArticle"
+        item_type = pp.get("item_type", "") or _zotero_item_type(pp)
         template = zot.item_template(item_type)
         template["title"] = pp["title"]
         template["creators"] = pp["authors"]
