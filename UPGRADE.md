@@ -30,6 +30,20 @@ backup checklist + a historical appendix for very old releases.
   transitive deps, reconcile against `constraints.txt`. Windows:
   config/secret files are now ACL-restricted to your user on first
   write (no action needed).
+- **v0.95.0rc2 — BREAKING (behavioural), fit_check fail-closed**:
+  the literature authenticity gate makes `fit_check`
+  **fail-closed**. Previously, if no LLM relevance judge was on
+  PATH, an `auto`/`ingest` run that requested fit-check kept ALL
+  papers (silent fail-open). Now those papers are **quarantined**
+  (`relevance_unjudged`), not ingested. Action: either run with
+  `--no-fit-check` (explicit, unchanged behaviour), or configure
+  an LLM CLI (`claude`/`codex`/`gemini`) so fit-check can score,
+  then `research-hub quarantine list` → `restore` anything wrongly
+  held. A genuinely unresolvable DOI / failed `doi.org` HEAD also
+  now quarantines (`doi_unresolved` / `doi_check_unavailable`)
+  rather than entering the vault — inspect with `quarantine show`.
+  CLI/MCP renames are non-breaking (old names warn, removed in
+  v1.0.0 — see `docs/stable-api.md`).
 
 Older version-specific sections below are kept for anyone upgrading
 from a pre-v0.30 release; most users never need them.

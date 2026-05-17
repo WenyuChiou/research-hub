@@ -12,10 +12,60 @@
 
 ## [Unreleased]
 
-_W6 (CLI + MCP rationalize with deprecation, G2 #11-12) is the only
-remaining 1.0 blocker — brief prepared, deferred to a Codex-quota-
-available session per the Complex Task Protocol. v1.0.0 follows a
-bake period on v0.95.0rc1._
+_Both v1.0 blockers (W6 API-freeze + Phase A authenticity gate) are
+landed. v1.0.0 follows a ≥1-week bake period on v0.95.0rc2. Phase B
+(UI 80/20 — ⌘K palette + mobile) is post-1.0 (v1.1)._
+
+## v0.95.0rc2 (2026-05-17) — v1.0 blockers cleared (RC2)
+
+Both remaining v1.0 blockers landed, each Codex-delegated and
+shipped through the mechanical release gate. This RC bakes before
+v1.0.0.
+
+### Added
+
+- **Literature authenticity gate** (`research_hub.authenticity`,
+  commit `7466989`). Mechanical, fail-closed answer to "can it
+  guarantee papers are real". Every candidate passes L0–L5 before
+  entering `raw/` or is quarantined with the failing layer + reason:
+  L0 no-identifier, L1 `doi.org` HEAD (<400; network/timeout
+  fail-CLOSED → `doi_check_unavailable`, never assume-valid), L2
+  cross-backend corroboration (LABEL only — single-source-resolvable
+  is real, never quarantined), L3 metadata integrity, L4 fit_check.
+  Accepted papers gain a deterministic `provenance` frontmatter
+  block. New `research-hub quarantine list|show|restore`.
+- L5 invariant lock: `test_authenticity_l5_invariant.py` fails CI
+  if any LLM-call symbol appears in the bibliographic-frontmatter
+  span (no-LLM-bibliography is now a tested contract, not prose).
+
+### Changed
+
+- **BREAKING (behavioural): L4 fit_check fail-OPEN → fail-CLOSED.**
+  Previously, if no LLM relevance judge was available, ALL papers
+  were kept. Now they are quarantined `relevance_unjudged`. A run
+  with `--no-fit-check` is unaffected; a run that requested
+  fit-check but has no LLM CLI now produces an explicit quarantine
+  instead of a silent keep-all. Migration: `research-hub
+  quarantine list` to review, `restore` after configuring an LLM
+  CLI or accepting without fit-check. (UPGRADE.md updated.)
+- **CLI/MCP rationalize with deprecation** (commit `5935d2d`, W6,
+  G2 #11-12). Canonical names: `notebooklm ask` / `paper
+  summarize` / `tidy`; MCP `ask_cluster(source=,mode=)` /
+  `cluster_rebind(action=)` / `read_cluster_memory(kind=)`. Every
+  old CLI alias + old MCP tool still works as a thin wrapper
+  emitting `DeprecationWarning` (`removed_in="v1.0.0"`). See
+  `docs/stable-api.md` `### Deprecated` table.
+
+### Process note
+
+Both deliverables were Codex-delegated. W6's raw output included
+unrequested config.py/clusters.py drift (Codex misdiagnosed the
+known local icacls env pollution) — caught + reverted by the
+mandatory CLAUDE.md #5 diff-review before commit. Phase A's prompt
+carried the W6 lesson forward as an explicit anti-misdiagnosis
+guard; Codex correctly reported the same env block instead of
+"fixing" it in source. Both shipped only after a full suite incl
+e2e on fresh `--basetemp` (env-immune) passed (2472/0, 2484/0).
 
 ## v0.95.0rc1 (2026-05-17) — Release-engineering hardening (RC)
 
