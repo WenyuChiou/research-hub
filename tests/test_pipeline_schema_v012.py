@@ -8,7 +8,6 @@ def test_validate_all_required_core_fields_reported():
     errors = pipeline._validate_paper_input({}, 0)
 
     assert any("missing required field 'title'" in err for err in errors)
-    assert any("missing required field 'doi'" in err for err in errors)
     assert any("missing required field 'authors'" in err for err in errors)
     assert any("missing required field 'year'" in err for err in errors)
 

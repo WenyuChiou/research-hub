@@ -235,8 +235,8 @@ def test_stage_5_run_pipeline_ingests_valid_papers_and_rejects_no_doi(pipeline_c
     assert "topic_cluster:" in text
     assert "llm-agents-for-abm" in text
     log_text = (pipeline_cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
-    assert "SKIPPED invalid input" in log_text
-    assert "missing required field 'doi'" in log_text
+    assert "AUTHENTICITY GATE" in log_text
+    assert "missing-doi L0:no_identifier" in log_text
 
 
 def test_stage_6_bundle_downloads_pdfs_and_reports_failures(pipeline_cfg, monkeypatch):
@@ -436,8 +436,20 @@ def test_cross_stage_auto_reuses_cluster_and_adds_papers(pipeline_cfg, monkeypat
     monkeypatch.setattr(auto_mod, "_run_search", fake_search)
     monkeypatch.setattr(auto_mod, "run_pipeline", fake_run_pipeline)
 
-    first = auto_mod.auto_pipeline("LLM agents for ABM", do_nlm=False, print_progress=False)
-    second = auto_mod.auto_pipeline("LLM agents for ABM", do_nlm=False, print_progress=False)
+    first = auto_mod.auto_pipeline(
+        "LLM agents for ABM",
+        do_nlm=False,
+        do_fit_check=False,
+        do_cluster_overview=False,
+        print_progress=False,
+    )
+    second = auto_mod.auto_pipeline(
+        "LLM agents for ABM",
+        do_nlm=False,
+        do_fit_check=False,
+        do_cluster_overview=False,
+        print_progress=False,
+    )
 
     assert first.ok and second.ok
     assert len(ClusterRegistry(pipeline_cfg.clusters_file).list()) == 1
@@ -470,7 +482,14 @@ def test_cross_stage_auto_with_crystals_no_cli_is_best_effort(pipeline_cfg, monk
     monkeypatch.setattr(auto_mod, "run_pipeline", fake_run_pipeline)
     monkeypatch.setattr(auto_mod, "detect_llm_cli", lambda: None)
 
-    report = auto_mod.auto_pipeline("LLM agents for ABM", do_nlm=False, do_crystals=True, print_progress=False)
+    report = auto_mod.auto_pipeline(
+        "LLM agents for ABM",
+        do_nlm=False,
+        do_crystals=True,
+        do_fit_check=False,
+        do_cluster_overview=False,
+        print_progress=False,
+    )
 
     assert report.ok is True
     crystal_step = next(step for step in report.steps if step.name == "crystals")

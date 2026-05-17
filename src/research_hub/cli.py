@@ -351,6 +351,47 @@ def _dedup(args) -> int:
     return 1
 
 
+def _quarantine(args) -> int:
+    from research_hub.authenticity import list_quarantine, restore_quarantine, show_quarantine
+
+    cfg = get_config()
+    if args.quarantine_command == "list":
+        rows = list_quarantine(cfg, cluster=getattr(args, "cluster", None))
+        if not rows:
+            print("no quarantined candidates")
+            return 0
+        print(f"{'cluster':24} {'slug':32} {'layer':6} {'reason':24} date")
+        for row in rows:
+            print(
+                f"{row['cluster'][:24]:24} "
+                f"{row['slug'][:32]:32} "
+                f"{row['layer'][:6]:6} "
+                f"{row['reason'][:24]:24} "
+                f"{row['date']}"
+            )
+        return 0
+    if args.quarantine_command == "show":
+        try:
+            payload = show_quarantine(cfg, args.slug, cluster=getattr(args, "cluster", None))
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        return 0
+    if args.quarantine_command == "restore":
+        try:
+            result = restore_quarantine(cfg, args.slug, args.cluster)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"restored {result['slug']} to {result['papers_input']}")
+        return 0
+    return 2
+
+
 def _clusters_list() -> int:
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
@@ -4655,7 +4696,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the v0.71.0 LLM-driven cluster overview auto-fill",
     )
     auto_parser.add_argument("--no-fit-check", action="store_true",
-                             help="Skip the v0.70.0 LLM-judge fit-check between search and ingest (default: on when LLM CLI present)")
+                             help="Skip the fail-closed LLM-judge fit-check between search and ingest")
     auto_parser.add_argument("--fit-check-threshold", type=int, default=3,
                              help="Minimum 0-5 score for a paper to pass fit-check (default: 3 = tangentially related and above)")
     auto_parser.add_argument(
@@ -4854,6 +4895,32 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit machine-readable JSON report on stdout (v0.89)",
     )
+
+    quarantine_parser = subparsers.add_parser(
+        "quarantine",
+        help="Inspect and restore authenticity-gate quarantine entries",
+    )
+    quarantine_subparsers = quarantine_parser.add_subparsers(
+        dest="quarantine_command",
+        required=True,
+    )
+    quarantine_list = quarantine_subparsers.add_parser(
+        "list",
+        help="List quarantined candidates",
+    )
+    quarantine_list.add_argument("--cluster", default=None, help="Restrict to a cluster")
+    quarantine_show = quarantine_subparsers.add_parser(
+        "show",
+        help="Show a quarantined candidate JSON payload",
+    )
+    quarantine_show.add_argument("slug")
+    quarantine_show.add_argument("--cluster", default=None)
+    quarantine_restore = quarantine_subparsers.add_parser(
+        "restore",
+        help="Restore a quarantined candidate to papers_input.json",
+    )
+    quarantine_restore.add_argument("slug")
+    quarantine_restore.add_argument("--cluster", required=True)
 
     clusters_parser = subparsers.add_parser("clusters", help="Manage topic clusters")
     clusters_subparsers = clusters_parser.add_subparsers(dest="clusters_command", required=True)
@@ -6521,6 +6588,8 @@ def _main_dispatch(args, parser) -> int:
         )
     if args.command == "ingest":
         return _cmd_ingest(args, emit_json=args.json)
+    if args.command == "quarantine":
+        return _quarantine(args)
     if args.command == "import-folder":
         dep_error = _import_folder_dep_precheck(args)
         if dep_error is not None:

@@ -84,6 +84,7 @@ def test_auto_pipeline_prints_next_steps(monkeypatch, capsys, tmp_path):
         max_papers=1,
         do_nlm=False,
         do_crystals=False,
+        do_fit_check=False,
         print_progress=True,
     )
     out = capsys.readouterr().out
@@ -128,6 +129,7 @@ def test_auto_pipeline_crystal_step_falls_back_to_prompt_file(monkeypatch, tmp_p
         max_papers=1,
         do_nlm=False,
         do_crystals=True,
+        do_fit_check=False,
         print_progress=False,
     )
     assert report.ok
@@ -187,6 +189,7 @@ def test_auto_pipeline_crystal_step_invokes_detected_cli(monkeypatch, tmp_path):
         max_papers=1,
         do_nlm=False,
         do_crystals=True,
+        do_fit_check=False,
         print_progress=False,
     )
     crystal_step = next(s for s in report.steps if s.name == "crystals")

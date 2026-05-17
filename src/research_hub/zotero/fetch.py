@@ -34,6 +34,11 @@ def safe_filename(author, year, title):
     """Compute the .md filename for a paper note. Delegates to make_paper_slug."""
     return f"{make_paper_slug(author, year, title)}.md"
 
+
+def _yaml_scalar(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', "'")
+
+
 def get_all_items(base, collection_key):
     items = []
     start = 0
@@ -186,6 +191,7 @@ def make_raw_md(
     verified_at: str = "",
     include_pending_summary_sections: bool = True,
     moc_links: list[str] | None = None,
+    provenance: dict | None = None,
 ):
     title = item_data['title'].replace('"', "'")
     authors = item_data['authors']
@@ -275,6 +281,23 @@ def make_raw_md(
     if include_pending_summary_sections:
         pending_summary_sections = "\n" + pending_sections_markdown() + "\n"
     doi_line = f'doi: "{doi}"' if doi else 'doi: ""'
+    provenance = provenance or item_data.get("provenance") or {}
+    provenance_block = ""
+    if provenance:
+        backends = provenance.get("backends") or []
+        if not isinstance(backends, list):
+            backends = [str(backends)]
+        backends_yaml = '[' + ', '.join(f'"{_yaml_scalar(str(item))}"' for item in backends) + ']'
+        fit_score = provenance.get("fit_score")
+        fit_score_yaml = "null" if fit_score in (None, "") else str(fit_score)
+        provenance_block = (
+            "provenance:\n"
+            f'  resolved_via: "{_yaml_scalar(str(provenance.get("resolved_via", "")))}"\n'
+            f'  corroboration: "{_yaml_scalar(str(provenance.get("corroboration", "")))}"\n'
+            f"  backends: {backends_yaml}\n"
+            f'  doi_checked_at: "{_yaml_scalar(str(provenance.get("doi_checked_at", "")))}"\n'
+            f"  fit_score: {fit_score_yaml}\n"
+        )
 
     citation_line = journal
     if volume: citation_line += f", {volume}"
@@ -302,6 +325,7 @@ cluster_queries: {cluster_queries_yaml}
 summarize_status: {summarize_status}
 {pdf_path_line}verified: {"null" if verified is None else ("true" if verified else "false")}
 verified_at: "{verified_at}"
+{provenance_block}\
 status: unread
 ---
 

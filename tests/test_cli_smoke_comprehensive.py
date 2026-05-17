@@ -41,6 +41,7 @@ SUBCOMMANDS_THAT_MUST_EXIST = [
     "synthesize",
     "sync",
     "pipeline",
+    "quarantine",
     "notebooklm",
     "fit-check",
     "autofill",

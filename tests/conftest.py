@@ -49,6 +49,22 @@ def _block_real_webbrowser_open(monkeypatch):
     monkeypatch.setattr(webbrowser, "open", lambda *args, **kwargs: True)
 
 
+@pytest.fixture(autouse=True)
+def _block_real_authenticity_head(monkeypatch):
+    """Default authenticity HEAD checks to success in legacy tests.
+
+    The dedicated authenticity tests override this fixture per-test to assert
+    404, offline, and cache behavior without letting old ingest tests perform
+    real network calls for fixture DOIs like 10.1000/example.
+    """
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "requests.head",
+        lambda *args, **kwargs: SimpleNamespace(status_code=200),
+    )
+
+
 # v0.71.0: test files in this set explicitly verify Zotero write paths
 # (using FakeZotero, mocked get_client, or run_backfill). The autouse
 # below leaves their env alone so they can exercise the real code path

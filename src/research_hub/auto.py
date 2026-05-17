@@ -297,10 +297,9 @@ def auto_pipeline(
         report.error = "Search returned 0 papers ??try a different topic or backend"
         return report
 
-    # v0.70.0: LLM-judge fit-check between search and ingest. Drops off-topic
-    # results before they hit Zotero/Obsidian. Best-effort: skips silently
-    # when no LLM CLI on PATH so users without claude/codex/gemini still get
-    # the pre-v0.70.0 behavior (ingest everything search returns).
+    # LLM-judge fit-check between search and ingest. Phase A makes this
+    # fail-closed: unjudged or low-score papers go to quarantine before
+    # Zotero/Obsidian writes.
     if do_fit_check:
         papers = _run_fit_check_step(
             cfg, papers, topic, slug, llm_cli,
@@ -696,33 +695,32 @@ def _run_fit_check_step(
     started: float,
     print_progress: bool,
 ) -> list[dict]:
-    """v0.70.0: LLM-judge filter between search and ingest.
+    """LLM-judge relevance gate between search and ingest.
 
-    Drops off-topic papers BEFORE they hit Zotero/Obsidian, fixing the
-    "auto found 8 papers but 2 are off-topic" problem reported on the
-    flood-relocation cluster (Llorca AV-relocation + Komleva Soviet-era
-    reservoir slipped in via keyword "household relocation" alone).
+    Phase A makes this fail-closed: unjudged or low-score candidates are
+    quarantined before they can reach Zotero or Obsidian.
 
-    Reuses the existing `fit_check.emit_prompt` + `fit_check.apply_scores`
-    machinery (Gate 1) — same scoring rubric used by the manual
-    `discover new` / `discover continue` flow.
-
-    Best-effort:
-    - No LLM CLI on PATH → skip silently, keep all papers (graceful degrade).
-    - LLM returns malformed JSON → skip, keep all (don't drop on parser error).
-    - All papers rejected (threshold too high?) → keep all (fallback: better
-      to ingest noise than nothing).
     """
     if not papers:
         return papers
 
     from research_hub.auto import detect_llm_cli  # avoid circular at module load
+    from research_hub.authenticity import quarantine_paper
 
     cli = llm_cli or detect_llm_cli()
     if not cli:
+        for paper in papers:
+            quarantine_paper(
+                cfg,
+                paper,
+                cluster_slug=slug,
+                layer="L4",
+                reason="relevance_unjudged",
+                details={"detail": "no LLM CLI on PATH"},
+            )
         _step_log(report, "fit_check", True, _elapsed(started, report),
-                  f"skipped (no LLM CLI on PATH); kept all {len(papers)}", print_progress)
-        return papers
+                  f"quarantined all {len(papers)} (no LLM CLI on PATH)", print_progress)
+        return []
 
     try:
         from research_hub.fit_check import emit_prompt, apply_scores
@@ -741,32 +739,70 @@ def _run_fit_check_step(
         raw = _invoke_llm_cli(cli, prompt)
         payload = _extract_first_json(raw)
         if payload is None:
+            for paper in papers:
+                quarantine_paper(
+                    cfg,
+                    paper,
+                    cluster_slug=slug,
+                    layer="L4",
+                    reason="relevance_unjudged",
+                    details={"detail": f"LLM ({cli}) returned unparseable JSON"},
+                )
             _step_log(report, "fit_check", False, _elapsed(started, report),
-                      f"LLM ({cli}) returned unparseable JSON; kept all {len(papers)}", print_progress)
-            return papers
+                      f"LLM ({cli}) returned unparseable JSON; quarantined all {len(papers)}", print_progress)
+            return []
 
         fit_report = apply_scores(slug, papers, payload, threshold=threshold)
-        accepted_dois = {a.doi.lower() for a in fit_report.accepted if a.doi}
-        accepted_titles = {a.title.strip().lower() for a in fit_report.accepted if a.title}
-        kept = [
-            p for p in papers
-            if p.get("doi", "").lower() in accepted_dois
-            or p.get("title", "").strip().lower() in accepted_titles
-        ]
-        if not kept:
-            _step_log(report, "fit_check", True, _elapsed(started, report),
-                      f"all {len(papers)} rejected by threshold={threshold}; "
-                      f"keeping all as fallback (lower threshold or revise topic)",
-                      print_progress)
-            return papers
+        accepted_dois = {a.doi.lower(): a.score for a in fit_report.accepted if a.doi}
+        accepted_titles = {
+            a.title.strip().lower(): a.score
+            for a in fit_report.accepted
+            if a.title
+        }
+        rejected_dois = {a.doi.lower(): a.score for a in fit_report.rejected if a.doi}
+        rejected_titles = {
+            a.title.strip().lower(): a.score
+            for a in fit_report.rejected
+            if a.title
+        }
+        kept: list[dict] = []
+        for paper in papers:
+            doi_key = str(paper.get("doi", "") or "").lower()
+            title_key = str(paper.get("title", "") or "").strip().lower()
+            score = accepted_dois.get(doi_key, accepted_titles.get(title_key))
+            if score is not None:
+                provenance = dict(paper.get("provenance") or {})
+                provenance["fit_score"] = score
+                paper["provenance"] = provenance
+                kept.append(paper)
+                continue
+            low_score = rejected_dois.get(doi_key, rejected_titles.get(title_key))
+            quarantine_paper(
+                cfg,
+                paper,
+                cluster_slug=slug,
+                layer="L4",
+                reason="low_relevance",
+                details={"fit_score": low_score},
+            )
         _step_log(report, "fit_check", True, _elapsed(started, report),
-                  f"kept {len(kept)}/{len(papers)} (threshold={threshold}, cli={cli})",
+                  f"kept {len(kept)}/{len(papers)}; quarantined {len(papers) - len(kept)} "
+                  f"(threshold={threshold}, cli={cli})",
                   print_progress)
         return kept
     except Exception as exc:
+        for paper in papers:
+            quarantine_paper(
+                cfg,
+                paper,
+                cluster_slug=slug,
+                layer="L4",
+                reason="relevance_unjudged",
+                details={"detail": f"fit_check error: {exc}"},
+            )
         _step_log(report, "fit_check", False, _elapsed(started, report),
-                  f"fit_check error: {exc}; kept all {len(papers)}", print_progress)
-        return papers
+                  f"fit_check error: {exc}; quarantined all {len(papers)}", print_progress)
+        return []
 
 
 def _ensure_zotero_collection(registry, cluster, slug: str, report: AutoReport, print_progress: bool) -> None:

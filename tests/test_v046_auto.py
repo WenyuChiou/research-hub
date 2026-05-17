@@ -18,6 +18,7 @@ def mock_deps():
          patch("research_hub.auto.generate_artifact") as mock_generate_artifact, \
          patch("research_hub.auto.download_briefing_for_cluster") as mock_download, \
          patch("research_hub.auto._run_search") as mock_run_search, \
+         patch("research_hub.auto._run_fit_check_step", side_effect=lambda cfg, papers, *a, **k: papers), \
          patch("research_hub.auto.detect_llm_cli", return_value=None):
 
         mock_cfg = MagicMock()

@@ -25,7 +25,7 @@ from research_hub.zotero.client import add_note, check_duplicate, get_client
 from research_hub.zotero.fetch import make_raw_md
 
 
-REQUIRED_FIELDS_CORE = ["title", "doi", "authors", "year"]
+REQUIRED_FIELDS_CORE = ["title", "authors", "year"]
 REQUIRED_FIELDS_ZOTERO = ["abstract", "journal"]
 REQUIRED_FIELDS_NOTE = ["summary", "key_findings", "methodology", "relevance"]
 logger = logging.getLogger(__name__)
@@ -605,6 +605,7 @@ def _render_obsidian_note(
         "doi": pp["doi"],
         "abstract": pp["abstract"],
         "tags": pp.get("tags", []),
+        "provenance": pp.get("provenance"),
     }
     cluster_queries_for_note = [_query_for_paper(pp, query)] if cluster_slug else []
     # v0.88 #5: derive MOC backlinks at note-creation time so every paper
@@ -625,6 +626,7 @@ def _render_obsidian_note(
         verified_at=pp.get("verified_at", ""),
         include_pending_summary_sections=False,
         moc_links=moc_links_for_note,
+        provenance=pp.get("provenance"),
     )
     if fit_warning:
         content = content.replace('verified_at: "', 'fit_warning: true\nverified_at: "', 1)
@@ -731,10 +733,10 @@ def run_pipeline(
     explicit_batch_label = requested_batch_label is not None
     manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
     dedup_path = cfg.research_hub_dir / "dedup_index.json"
-    fit_rejected_by_doi, fit_rejected_by_title = _load_fit_check_rejections(cfg, cluster_slug)
     fit_warnings = 0
     fit_accepted = 0
     fit_rejected = 0
+    fit_candidates_in = 0
     fit_key_terms: list[str] = []
     if fit_check and cluster_slug:
         from research_hub.fit_check import _extract_key_terms, _read_definition_from_overview
@@ -889,6 +891,41 @@ def run_pipeline(
         pending_zotero_papers: list[dict] = []
         target_collection_key = cluster_coll or collection_key
 
+        from research_hub.authenticity import verify_authenticity
+
+        fit_candidates_in = len(papers) if fit_check else 0
+        accepted_papers, quarantined_papers = verify_authenticity(
+            papers,
+            cfg,
+            cluster_slug=cluster_slug,
+            do_fit_check=fit_check,
+            fit_check_threshold=fit_check_threshold,
+        )
+        papers = accepted_papers
+        p(
+            f"\n=== AUTHENTICITY GATE ===\n"
+            f"accepted: {len(accepted_papers)}; quarantined: {len(quarantined_papers)}"
+        )
+        for item in quarantined_papers:
+            p(
+                "  QUARANTINED "
+                f"{item.get('slug', '(unknown)')} "
+                f"{item.get('layer', '')}:{item.get('reason', '')}"
+            )
+            if fit_check and item.get("layer") == "L4":
+                fit_rejected += 1
+            manifest.append(
+                new_entry(
+                    cluster=str(item.get("cluster") or cluster_slug or ""),
+                    query=_query_for_paper(item.get("raw_candidate", {}), query),
+                    action="quarantine",
+                    doi=item.get("raw_candidate", {}).get("doi", ""),
+                    title=item.get("raw_candidate", {}).get("title", ""),
+                    error=str(item.get("reason", "")),
+                    batch_label=resolved_batch_label,
+                )
+            )
+
         for i, pp in enumerate(papers):
             p(f"\n--- Paper {i+1}: {pp['title'][:60]}...")
             query_text = _query_for_paper(pp, query)
@@ -898,25 +935,6 @@ def run_pipeline(
                     f"ingest={pp.get('year')} doi-lookup={pp.get('metadata_year')}"
                 )
             if fit_check:
-                doi_key = str(pp.get("doi", "") or "").strip().lower()
-                title_key = str(pp.get("title", "") or "").strip().lower()
-                rejected_item = fit_rejected_by_doi.get(doi_key) or fit_rejected_by_title.get(title_key)
-                if rejected_item is not None and int(rejected_item.get("score", 0)) < fit_check_threshold:
-                    fit_rejected += 1
-                    p("  SKIPPED fit-check below threshold")
-                    manifest.append(
-                        new_entry(
-                            cluster=cluster_slug or "",
-                            query=query_text,
-                            action="skip-fit-check",
-                            doi=pp.get("doi", ""),
-                            title=pp.get("title", ""),
-                            error="below fit-check threshold",
-                            batch_label=resolved_batch_label,
-                        )
-                    )
-                    zr.append({"title": pp["title"], "status": "SKIPPED_FIT_CHECK", "key": ""})
-                    continue
                 fit_accepted += 1
                 if fit_key_terms:
                     from research_hub.fit_check import term_overlap
@@ -1258,7 +1276,7 @@ def run_pipeline(
         )
         if fit_check:
             p(
-                f"fit-check: {len(papers)} in, {fit_accepted} accepted, "
+                f"fit-check: {fit_candidates_in} in, {fit_accepted} accepted, "
                 f"{fit_rejected} rejected, {fit_warnings} warnings"
             )
         if not dry_run:

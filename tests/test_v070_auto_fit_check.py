@@ -10,9 +10,9 @@ keyword-based fit_check because they shared vocabulary.
 This test file pins the v0.70.0 behavior:
   - fit-check runs between search and ingest (not after)
   - LLM-rejected papers never hit Zotero/Obsidian
-  - graceful fallback when no LLM CLI on PATH (keep all)
-  - graceful fallback when LLM returns malformed JSON (keep all)
-  - safety: if EVERY paper is rejected, keep all (better noise than nothing)
+  - fail-closed quarantine when no LLM CLI is available
+  - fail-closed quarantine when LLM JSON is malformed
+  - if EVERY paper is rejected, none proceed to ingest
   - threshold parameter actually filters
 """
 
@@ -36,6 +36,13 @@ def _make_papers(*titles_and_dois):
     ]
 
 
+def _fit_cfg(tmp_path):
+    root = tmp_path / "vault"
+    research_hub_dir = root / ".research_hub"
+    research_hub_dir.mkdir(parents=True, exist_ok=True)
+    return SimpleNamespace(root=root, raw=root / "raw", hub=root / "hub", research_hub_dir=research_hub_dir)
+
+
 def _mock_step_log_capture():
     """Capture _step_log calls so we can assert on the message detail."""
     captured: list[tuple] = []
@@ -44,22 +51,22 @@ def _mock_step_log_capture():
     return captured, fake
 
 
-def test_fit_check_keeps_all_when_no_llm_cli(monkeypatch):
-    """Best-effort: no CLI on PATH → skip silently, return all papers."""
+def test_fit_check_quarantines_all_when_no_llm_cli(monkeypatch, tmp_path):
+    """Fail-closed: no CLI on PATH quarantines all papers."""
     monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: None)
-    cfg = SimpleNamespace(raw=None)
+    cfg = _fit_cfg(tmp_path)
     papers = _make_papers(("A", "10/a"), ("B", "10/b"))
     report = AutoReport(cluster_slug="x", cluster_created=False)
 
     kept = _run_fit_check_step(cfg, papers, "topic", "x", None, 3, report, 0.0, False)
 
-    assert len(kept) == 2
-    assert kept == papers
+    assert kept == []
     assert report.steps[-1].name == "fit_check"
-    assert "skipped" in report.steps[-1].detail.lower()
+    assert "quarantined all 2" in report.steps[-1].detail.lower()
+    assert len(list((cfg.research_hub_dir / "quarantine" / "x").glob("*.json"))) == 2
 
 
-def test_fit_check_filters_by_llm_score(monkeypatch):
+def test_fit_check_filters_by_llm_score(monkeypatch, tmp_path):
     """Happy path: LLM scores 2 papers, threshold drops the low one."""
     monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: "claude")
     monkeypatch.setattr("research_hub.auto._invoke_llm_cli", lambda cli, prompt: '''
@@ -68,7 +75,7 @@ def test_fit_check_filters_by_llm_score(monkeypatch):
             {"doi": "10/b", "score": 1, "reason": "off topic"}
         ]}
     ''')
-    cfg = SimpleNamespace(raw=None, hub=None)
+    cfg = _fit_cfg(tmp_path)
     papers = _make_papers(("Paper A", "10/a"), ("Paper B", "10/b"))
     report = AutoReport(cluster_slug="x", cluster_created=False)
 
@@ -76,29 +83,31 @@ def test_fit_check_filters_by_llm_score(monkeypatch):
 
     assert len(kept) == 1
     assert kept[0]["doi"] == "10/a"
+    assert kept[0]["provenance"]["fit_score"] == 5
     detail = report.steps[-1].detail
     assert "kept 1/2" in detail
+    assert "quarantined 1" in detail
 
 
-def test_fit_check_keeps_all_on_unparseable_llm_json(monkeypatch):
-    """LLM responded but JSON is broken → log failure, keep all (don't drop)."""
+def test_fit_check_quarantines_all_on_unparseable_llm_json(monkeypatch, tmp_path):
+    """LLM responded but JSON is broken, so all papers are quarantined."""
     monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: "claude")
     monkeypatch.setattr("research_hub.auto._invoke_llm_cli", lambda cli, prompt: "not JSON")
-    cfg = SimpleNamespace(raw=None, hub=None)
+    cfg = _fit_cfg(tmp_path)
     papers = _make_papers(("A", "10/a"), ("B", "10/b"))
     report = AutoReport(cluster_slug="x", cluster_created=False)
 
     kept = _run_fit_check_step(cfg, papers, "topic", "x", None, 3, report, 0.0, False)
 
-    assert len(kept) == 2
+    assert kept == []
     assert report.steps[-1].name == "fit_check"
     assert report.steps[-1].ok is False
     assert "unparseable" in report.steps[-1].detail.lower()
+    assert len(list((cfg.research_hub_dir / "quarantine" / "x").glob("*.json"))) == 2
 
 
-def test_fit_check_safety_fallback_when_all_rejected(monkeypatch):
-    """If threshold rejects EVERY paper (rubric mismatch / threshold too
-    high), fall back to keeping all rather than ingesting nothing."""
+def test_fit_check_quarantines_all_when_all_rejected(monkeypatch, tmp_path):
+    """If threshold rejects every paper, none proceed to ingest."""
     monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: "claude")
     monkeypatch.setattr("research_hub.auto._invoke_llm_cli", lambda cli, prompt: '''
         {"scores": [
@@ -106,18 +115,17 @@ def test_fit_check_safety_fallback_when_all_rejected(monkeypatch):
             {"doi": "10/b", "score": 0, "reason": "off"}
         ]}
     ''')
-    cfg = SimpleNamespace(raw=None, hub=None)
+    cfg = _fit_cfg(tmp_path)
     papers = _make_papers(("A", "10/a"), ("B", "10/b"))
     report = AutoReport(cluster_slug="x", cluster_created=False)
 
     kept = _run_fit_check_step(cfg, papers, "topic", "x", None, 3, report, 0.0, False)
 
-    # safety fallback: all kept, log says so
-    assert len(kept) == 2
-    assert "fallback" in report.steps[-1].detail.lower()
+    assert kept == []
+    assert "quarantined 2" in report.steps[-1].detail.lower()
 
 
-def test_fit_check_lower_threshold_keeps_more(monkeypatch):
+def test_fit_check_lower_threshold_keeps_more(monkeypatch, tmp_path):
     """threshold=2 should keep papers scoring 2 that threshold=3 rejects."""
     monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: "claude")
     monkeypatch.setattr("research_hub.auto._invoke_llm_cli", lambda cli, prompt: '''
@@ -126,7 +134,7 @@ def test_fit_check_lower_threshold_keeps_more(monkeypatch):
             {"doi": "10/b", "score": 2, "reason": "borderline"}
         ]}
     ''')
-    cfg = SimpleNamespace(raw=None, hub=None)
+    cfg = _fit_cfg(tmp_path)
     papers = _make_papers(("A", "10/a"), ("B", "10/b"))
     report = AutoReport(cluster_slug="x", cluster_created=False)
 
@@ -154,12 +162,12 @@ def test_fit_check_returns_empty_when_input_empty(monkeypatch):
     assert invoked == []  # short-circuited
 
 
-def test_fit_check_explicit_cli_overrides_detection(monkeypatch):
+def test_fit_check_explicit_cli_overrides_detection(monkeypatch, tmp_path):
     """Passing llm_cli should bypass detect_llm_cli."""
     monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: None)  # no CLI
     monkeypatch.setattr("research_hub.auto._invoke_llm_cli",
                         lambda cli, prompt: '{"scores": [{"doi": "10/a", "score": 5}]}')
-    cfg = SimpleNamespace(raw=None, hub=None)
+    cfg = _fit_cfg(tmp_path)
     papers = _make_papers(("A", "10/a"))
     report = AutoReport(cluster_slug="x", cluster_created=False)
 
@@ -174,7 +182,7 @@ def test_fit_check_explicit_cli_overrides_detection(monkeypatch):
 
 
 @pytest.fixture
-def mock_auto_deps():
+def mock_auto_deps(tmp_path):
     """Wire in mocks for cfg, registry, search, ingest, NLM — same shape
     as test_v046_auto.py's mock_deps fixture."""
     with patch("research_hub.auto.get_config") as mock_get_config, \
@@ -186,11 +194,14 @@ def mock_auto_deps():
          patch("research_hub.auto.download_briefing_for_cluster") as mock_download, \
          patch("research_hub.auto._run_search") as mock_run_search:
 
+        root = tmp_path / "vault"
         mock_cfg = MagicMock()
-        mock_cfg.root = MagicMock()
-        (mock_cfg.root / "papers_input.json").write_text = MagicMock()
-        mock_cfg.raw = MagicMock()
-        (mock_cfg.raw / "x").exists = lambda: False  # so report.papers_ingested stays from filter
+        mock_cfg.root = root
+        mock_cfg.raw = root / "raw"
+        mock_cfg.hub = root / "hub"
+        mock_cfg.research_hub_dir = root / ".research_hub"
+        for path in (mock_cfg.raw, mock_cfg.hub, mock_cfg.research_hub_dir):
+            path.mkdir(parents=True, exist_ok=True)
         mock_get_config.return_value = mock_cfg
 
         registry_instance = MagicMock()
