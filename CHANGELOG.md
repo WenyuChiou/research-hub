@@ -59,6 +59,17 @@ graph rebuild (link out to the real tools instead)._
   re-probes session health *after* rotating cookies; a rotation that
   does not preserve a usable session (server-side re-auth) returns
   non-zero instead of exit 0.
+- **F7: doi.org anti-bot 418 no longer quarantines every valid paper.**
+  The authenticity gate's DOI resolver sent the default
+  `python-requests` User-Agent, which doi.org/Cloudflare answer with
+  HTTP 418 — read as `doi_unresolved` → **every** peer-reviewed paper
+  fail-closed-quarantined (reproduced: `accepted: 0; quarantined: 2`,
+  `DOIs accessible: 0`; the same DOI returns 200 with a real UA). Fix:
+  send a real `User-Agent`; classify 408/418/425/429/5xx + network
+  errors as *transient* (bounded retry + backoff, **not** cached as a
+  permanent miss, surfaced as `*_check_unavailable`); genuine 404/410
+  stay fail-closed `doi_unresolved` so the anti-fabrication guarantee
+  is unchanged. A 0/malformed status also fails closed.
 
 ### Removed
 - **Dead `notebooklm login` flags:** `--cdp`, `--chrome-binary`,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -392,6 +393,47 @@ def restore_quarantine(cfg, slug: str, cluster: str) -> dict:
     }
 
 
+# F7: doi.org / Cloudflare serve HTTP 418 to the default ``python-requests``
+# User-Agent (a bot fingerprint), which the gate previously read as
+# ``doi_unresolved`` and fail-closed-quarantined every valid paper. A real
+# UA makes the same DOI return 200/302. Empirically verified 2026-05-18.
+_DOI_RESOLVE_UA = "research-hub (+https://github.com/WenyuChiou/research-hub)"
+# Transient = "blocked / rate-limited / retry later", NOT "this DOI is fake".
+# 404/410 stay permanent so the anti-fabrication guarantee is preserved.
+_TRANSIENT_HTTP_STATUS = frozenset({408, 418, 425, 429, 500, 502, 503, 504})
+
+
+def _resolve_head_with_retry(url: str, *, attempts: int = 3) -> tuple[int | None, bool]:
+    """HEAD *url* with a real User-Agent and bounded backoff.
+
+    Returns ``(status_code, transient)``. ``transient`` is True when the
+    final attempt was a rate-limit / anti-bot / network failure
+    (HTTP 408/418/425/429/5xx or a RequestException) rather than a
+    definitive answer — the caller must NOT treat that as a fake DOI and
+    must NOT cache it as a permanent failure.
+    """
+    status_code: int | None = None
+    for attempt in range(attempts):
+        try:
+            response = requests.head(
+                url,
+                allow_redirects=True,
+                timeout=8,
+                headers={"User-Agent": _DOI_RESOLVE_UA},
+            )
+            status_code = int(getattr(response, "status_code", 0) or 0)
+            # `status_code and ...`: a 0/falsy code (malformed response) is
+            # NOT a definitive answer — fall through to retry, then transient,
+            # so it can never resolve to ok=True (fail-closed).
+            if status_code and status_code not in _TRANSIENT_HTTP_STATUS:
+                return status_code, False
+        except requests.RequestException:
+            status_code = None
+        if attempt < attempts - 1:
+            time.sleep(0.5 * (2 ** attempt))
+    return status_code, True
+
+
 def _resolve_identifier(paper: dict, cache: DoiResolveCache, cache_path: Path) -> ResolveOutcome:
     key_url_source = _identifier_key_url_source(paper)
     if key_url_source is None:
@@ -408,16 +450,23 @@ def _resolve_identifier(paper: dict, cache: DoiResolveCache, cache_path: Path) -
         return cached
 
     checked_at = _utc_now_iso()
-    try:
-        response = requests.head(url, allow_redirects=True, timeout=8)
-        status_code = int(getattr(response, "status_code", 0) or 0)
-        ok = status_code < 400
-        reason = "" if ok else _unresolved_reason_for(source)
-    except requests.RequestException:
-        status_code = None
-        ok = False
-        reason = _unavailable_reason_for(source)
+    status_code, transient = _resolve_head_with_retry(url)
+    if transient:
+        # F7: rate-limit / anti-bot / network blip — NOT evidence the DOI
+        # is fabricated. Surface as check-unavailable and do NOT cache, so
+        # a later run retries fresh instead of inheriting a poisoned miss.
+        return ResolveOutcome(
+            ok=False,
+            key=key,
+            resolved_via=source,
+            checked_at=checked_at,
+            status_code=status_code,
+            reason=_unavailable_reason_for(source),
+            url=url,
+        )
 
+    ok = status_code is not None and status_code < 400
+    reason = "" if ok else _unresolved_reason_for(source)
     outcome = ResolveOutcome(
         ok=ok,
         key=key,
