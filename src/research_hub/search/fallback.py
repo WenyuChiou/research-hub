@@ -44,6 +44,15 @@ _BACKEND_REGISTRY: dict[str, type[SearchBackend]] = {
 }
 
 DEFAULT_BACKENDS = ("openalex", "arxiv", "semantic-scholar", "crossref", "dblp")
+PREPRINT_BACKENDS = ("arxiv", "biorxiv", "chemrxiv", "medrxiv")
+GRAY_DOC_TYPES = (
+    "preprint",
+    "posted-content",
+    "report",
+    "book-chapter",
+    "paratext",
+    "dataset",
+)
 
 FIELD_PRESETS: dict[str, tuple[str, ...]] = {
     "cs": ("openalex", "arxiv", "semantic-scholar", "dblp", "crossref"),
@@ -77,6 +86,24 @@ REGION_PRESETS: dict[str, tuple[str, ...]] = {
     "kr": ("openalex", "kci", "crossref"),
     "cjk": ("openalex", "cinii", "kci", "crossref"),
 }
+
+
+def apply_peer_reviewed(
+    backends: Sequence[str],
+    exclude_types: Sequence[str],
+    min_confidence: float,
+) -> tuple[tuple[str, ...], tuple[str, ...], float]:
+    """Return (backends, exclude_types, min_confidence) hardened to peer-reviewed-only.
+
+    Drops preprint-only backends, adds gray-literature doc types to
+    exclude_types, and floors min_confidence at 0.5.
+    """
+    backend_tuple = tuple(backends)
+    hardened_backends = tuple(
+        backend for backend in backend_tuple if backend not in PREPRINT_BACKENDS
+    ) or backend_tuple
+    hardened_exclude_types = tuple(dict.fromkeys((*exclude_types, *GRAY_DOC_TYPES)))
+    return hardened_backends, hardened_exclude_types, max(min_confidence, 0.5)
 
 
 def resolve_backends_for_field(field: str) -> tuple[str, ...]:

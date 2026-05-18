@@ -140,6 +140,7 @@ class ArxivBackend:
                 if name
             ],
             venue="arXiv",
+            doc_type="preprint",
             url=paper_url or "",
             citation_count=0,
             pdf_url=f"https://arxiv.org/pdf/{arxiv_id}.pdf",

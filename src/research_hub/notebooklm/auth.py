@@ -68,44 +68,6 @@ def login_nlm(
     return rc
 
 
-def login_interactive_cdp(
-    user_data_dir: Path,
-    *,
-    timeout_sec: int = 300,
-    stable_hold_sec: int = 5,
-    chrome_binary: str | None = None,
-    keep_open: bool = False,
-) -> int:
-    """Alias kept for CLI back-compat. CDP is no longer used."""
-    del chrome_binary, keep_open
-    return login_nlm(
-        user_data_dir,
-        state_file=default_state_file(user_data_dir.parent.parent),
-        timeout_sec=timeout_sec,
-        stable_hold_sec=stable_hold_sec,
-    )
-
-
-def login_interactive(
-    user_data_dir: Path,
-    *,
-    use_system_chrome: bool = False,
-    timeout_sec: int = 300,
-    stable_hold_sec: int = 5,
-    from_chrome_profile: bool = False,
-    chrome_profile_path=None,
-    chrome_profile_name: str = "Default",
-) -> int:
-    """Alias kept for CLI back-compat."""
-    del use_system_chrome, from_chrome_profile, chrome_profile_path, chrome_profile_name
-    return login_nlm(
-        user_data_dir,
-        state_file=default_state_file(user_data_dir.parent.parent),
-        timeout_sec=timeout_sec,
-        stable_hold_sec=stable_hold_sec,
-    )
-
-
 def check_session_health(state_file: Path) -> dict[str, Any]:
     """Return ``ok``, ``reason``, and ``expires_at`` for a storage state."""
     state_file = Path(state_file)
@@ -127,10 +89,13 @@ def require_session_health(state_file: Path) -> None:
     if health.get("ok"):
         return
     reason = str(health.get("reason") or "auth invalid")
+    from research_hub._invocation import recommended_cli_invocation
+
+    command = f"{recommended_cli_invocation()} notebooklm login"
     raise RequiresAuthRefresh(
         service="NotebookLM",
-        fix_command="python -m research_hub notebooklm login",
-        message=f"NotebookLM session check failed: {reason}. Run: python -m research_hub notebooklm login",
+        fix_command=command,
+        message=f"NotebookLM session check failed: {reason}. Run: {command}",
     )
 
 
@@ -215,7 +180,7 @@ def login_from_browser(
     Requires ``rookiepy`` to be installed: ``pip install 'research-hub[browser-auth]'``.
 
     Precedence (in CLI dispatch):
-        --import-from > --from-browser > interactive (--cdp / default)
+        --import-from > --from-browser > interactive default
 
     Args:
         state_file: Path where the storage state JSON will be written.

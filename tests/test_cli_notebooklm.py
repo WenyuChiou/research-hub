@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 # ---------------------------------------------------------------------------
 # Regression tests for the __main__ guard bug:
@@ -137,6 +139,27 @@ def test_notebooklm_login_does_not_silently_succeed_without_invoking_subprocess(
         "login_nlm was never called. The CLI returned exit 0 without invoking the "
         "upstream login subprocess — this is the silent-no-op regression."
     )
+
+
+def test_notebooklm_login_help_hides_dead_flags_keeps_real_paths(capsys):
+    from research_hub.cli import build_parser
+
+    with pytest.raises(SystemExit) as exc_info:
+        build_parser().parse_args(["notebooklm", "login", "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    for removed in ("--cdp", "--from-chrome-profile", "--keep-open", "--timeout"):
+        assert removed not in help_text
+    assert "--import-from" in help_text
+    assert "--from-browser" in help_text
+
+
+def test_notebooklm_login_rejects_removed_cdp_flag():
+    from research_hub.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["notebooklm", "login", "--cdp"])
 
 
 def test_build_parser_accepts_notebooklm_upload_and_generate_flags():

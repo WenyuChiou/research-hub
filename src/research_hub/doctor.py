@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -774,6 +775,25 @@ def check_nlm_chrome_orphans() -> CheckResult:
     )
 
 
+def check_nlm_auth_paths() -> CheckResult:
+    """Report available NotebookLM re-authentication paths."""
+    from research_hub._invocation import recommended_cli_invocation
+
+    inv = recommended_cli_invocation()
+    interactive = f"{inv} notebooklm login"
+    if importlib.util.find_spec("rookiepy") is not None:
+        return CheckResult(
+            "nlm_auth_paths",
+            "OK",
+            f"interactive: {interactive}; --from-browser: available (rookiepy installed)",
+        )
+    return CheckResult(
+        "nlm_auth_paths",
+        "INFO",
+        f"interactive: {interactive}; --from-browser: unavailable (rookiepy not installed)",
+    )
+
+
 def run_doctor(*, strict: bool = False) -> list[CheckResult]:
     """Run all health checks and return results.
 
@@ -1174,6 +1194,11 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
                 remedy="pip install 'research-hub-pipeline[playwright]'",
             )
         )
+
+    try:
+        results.append(check_nlm_auth_paths())
+    except Exception as exc:
+        results.append(CheckResult("nlm_auth_paths", "INFO", f"Could not check: {exc}"))
 
     if cfg is not None:
         try:

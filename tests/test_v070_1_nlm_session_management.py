@@ -206,7 +206,7 @@ def test_preflight_nlm_session_returns_exit_code_when_not_logged_in(tmp_path, ca
     assert rc == 1
     captured = capsys.readouterr()
     assert "session check failed" in captured.err
-    assert "research-hub notebooklm login" in captured.err
+    assert "notebooklm login" in captured.err
 
 
 def test_preflight_nlm_session_returns_none_when_logged_in(tmp_path):

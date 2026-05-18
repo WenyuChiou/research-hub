@@ -31,6 +31,8 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from research_hub._invocation import recommended_cli_invocation
+
 if TYPE_CHECKING:
     pass
 
@@ -101,7 +103,7 @@ def keepalive_once(cfg: Any) -> int:
     1. Resolve the state file from *cfg*.
     2. ``check_session_health`` — if the session is revoked, print an actionable
        WARN and return 1 (non-zero so schedulers surface the failure; never raise).
-    3. If healthy, call ``rotate_and_persist_session`` and return 0 on success.
+    3. If healthy, call ``rotate_and_persist_session`` and re-probe before success.
 
     Args:
         cfg: A ``HubConfig``-like object exposing ``research_hub_dir: Path``.
@@ -115,19 +117,32 @@ def keepalive_once(cfg: Any) -> int:
             default_state_file,
         )
 
+        inv = recommended_cli_invocation()
         state_file = default_state_file(cfg.research_hub_dir)
         health = check_session_health(state_file)
         if not health.get("ok"):
             reason = health.get("reason", "unknown")
             print(
                 f"[nlm-keepalive] WARN NLM session revoked server-side "
-                f"(reason: {reason}) — run: research-hub notebooklm login --from-browser",
+                f"(reason: {reason}) -- run: {inv} notebooklm login",
                 file=sys.stderr,
             )
             return 1
 
         ok = rotate_and_persist_session(state_file)
-        return 0 if ok else 1
+        if not ok:
+            return 1
+
+        post_health = check_session_health(state_file)
+        if not post_health.get("ok"):
+            print(
+                "[nlm-keepalive] WARN keepalive: cookies rotated but session is "
+                "no longer valid (likely server-side re-auth required); "
+                f"run {inv} notebooklm login",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
     except Exception as exc:  # noqa: BLE001
         print(
             f"[nlm-keepalive] WARN keepalive_once failed unexpectedly "
@@ -189,7 +204,7 @@ def _resolve_task_command(cfg: Any) -> tuple[str, Path | None]:
 
     Strategy
     --------
-    1. If ``shutil.which("research-hub")`` finds an installed console-script,
+    1. If the recommended invocation is the installed console-script,
        use it directly.  No wrapper file is needed.
     2. Otherwise (source checkout): derive the repo root from this module's
        location (``parents[3]``), validate it, write a ``.cmd`` wrapper that
@@ -205,8 +220,9 @@ def _resolve_task_command(cfg: Any) -> tuple[str, Path | None]:
         *wrapper_path_or_None* is the ``.cmd`` path that will be/was written,
         or ``None`` when the console-script path is used.
     """
-    console_script = shutil.which("research-hub")
-    if console_script:
+    invocation = recommended_cli_invocation()
+    if invocation == "research-hub":
+        console_script = shutil.which("research-hub") or "research-hub"
         # Installed path — run directly; no wrapper needed.
         task_cmd = f'"{console_script}" notebooklm keepalive'
         return task_cmd, None

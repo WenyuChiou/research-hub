@@ -36,7 +36,7 @@ Coverage plan:
        E1. bare --from-browser → args.from_browser=='auto', login_from_browser(browser=None)
        E2. --from-browser chrome → login_from_browser(browser='chrome')
        E3. rc propagated from login_from_browser
-       E4. --from-browser takes precedence over interactive branches
+       E4. --from-browser takes precedence over default interactive login
        E5. --import-from takes precedence over --from-browser
        E6. rookiepy-missing (rc!=0) → actionable message printed
 """
@@ -260,7 +260,46 @@ class TestKeepaliveOnce:
         assert "revoked" in captured.err or "WARN" in captured.err, (
             f"Expected WARN in stderr; got: {captured.err!r}"
         )
-        assert "login --from-browser" in captured.err
+        assert "notebooklm login" in captured.err
+
+    def test_post_rotation_probe_failure_warns_returns_nonzero(
+        self, tmp_path: Path, monkeypatch, capsys
+    ):
+        """B3: rotation success but post-probe not-ok returns non-zero and warns."""
+        cfg = _make_cfg(tmp_path)
+        sf = _write_state(tmp_path)
+        health_results = [
+            {"ok": True, "reason": "ok"},
+            {"ok": False, "reason": "auth invalid"},
+        ]
+        rotate_calls: list = []
+
+        import research_hub.notebooklm.auth as rh_auth
+        monkeypatch.setattr(
+            rh_auth,
+            "check_session_health",
+            lambda path: health_results.pop(0),
+        )
+        monkeypatch.setattr(
+            rh_auth,
+            "default_state_file",
+            lambda research_hub_dir: sf,
+        )
+
+        import research_hub.notebooklm.keepalive as ka_mod
+        monkeypatch.setattr(
+            ka_mod,
+            "rotate_and_persist_session",
+            lambda state_file: (rotate_calls.append(state_file), True)[1],
+        )
+
+        rc = ka_mod.keepalive_once(cfg)
+
+        assert rc != 0
+        assert rotate_calls == [sf]
+        captured = capsys.readouterr()
+        assert "cookies rotated" in captured.err
+        assert "notebooklm login" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -752,17 +791,16 @@ class TestCLIFromBrowser:
 
         assert rc == 1
 
-    def test_from_browser_takes_precedence_over_interactive(
+    def test_from_browser_takes_precedence_over_interactive_default(
         self, tmp_path: Path, monkeypatch
     ):
-        """E4: --from-browser takes precedence over --cdp / default interactive path."""
+        """E4: --from-browser takes precedence over default interactive path."""
         cfg = _make_cfg(tmp_path)
         monkeypatch.setattr("research_hub.cli.get_config", lambda: cfg)
 
         import research_hub.notebooklm.auth as rh_auth
         from_browser_calls: list = []
         login_nlm_calls: list = []
-        login_cdp_calls: list = []
 
         monkeypatch.setattr(
             rh_auth,
@@ -774,19 +812,12 @@ class TestCLIFromBrowser:
             "login_nlm",
             lambda *a, **kw: (login_nlm_calls.append(True), 0)[1],
         )
-        monkeypatch.setattr(
-            rh_auth,
-            "login_interactive_cdp",
-            lambda *a, **kw: (login_cdp_calls.append(True), 0)[1],
-        )
 
         from research_hub import cli
-        # Even with --cdp, --from-browser should win
-        rc = cli.main(["notebooklm", "login", "--from-browser", "--cdp"])
+        rc = cli.main(["notebooklm", "login", "--from-browser"])
 
         assert from_browser_calls, "--from-browser must have been called"
         assert not login_nlm_calls, "login_nlm must NOT be called when --from-browser is set"
-        assert not login_cdp_calls, "login_cdp must NOT be called when --from-browser is set"
 
     def test_import_from_takes_precedence_over_from_browser(
         self, tmp_path: Path, monkeypatch

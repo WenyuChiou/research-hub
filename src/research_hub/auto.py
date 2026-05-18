@@ -17,6 +17,7 @@ from research_hub.clusters import ClusterRegistry, slugify
 from research_hub.config import get_config
 from research_hub.discover import _to_papers_input
 from research_hub.errors import MissingExternalTool
+from research_hub._invocation import recommended_cli_invocation
 from research_hub.notebooklm.bundle import bundle_cluster
 from research_hub.notebooklm.upload import (
     download_briefing_for_cluster,
@@ -25,7 +26,7 @@ from research_hub.notebooklm.upload import (
 )
 from research_hub.pipeline import run_pipeline
 from research_hub.search import search_papers
-from research_hub.search.fallback import FIELD_PRESETS
+from research_hub.search.fallback import FIELD_PRESETS, apply_peer_reviewed
 from research_hub.vault.graph_config import refresh_graph_from_vault
 
 
@@ -170,6 +171,7 @@ def auto_pipeline(
     zotero_batch_size: int = 50,
     with_pdfs: bool = False,
     with_summary: bool = False,
+    peer_reviewed: bool = False,
 ) -> AutoReport:
     """End-to-end ingest + optional NotebookLM publish.
 
@@ -244,8 +246,19 @@ def auto_pipeline(
 
     # Print plan if dry_run; do NOT execute remaining steps
     if dry_run:
+        backends, exclude_types, min_confidence = _resolve_search_options(
+            field=field,
+            peer_reviewed=peer_reviewed,
+        )
+        filter_note = ""
+        if peer_reviewed:
+            filter_note = (
+                f", exclude_types={','.join(exclude_types)}, "
+                f"min_confidence={min_confidence:g}"
+            )
         plan_lines = [
-            f"  search {topic!r} (max_papers={max_papers}, backends=arxiv+semantic_scholar)",
+            f"  search {topic!r} (max_papers={max_papers}, "
+            f"backends={'+'.join(backends)}{filter_note})",
         ]
         if do_fit_check:
             cli_for_plan = llm_cli or detect_llm_cli() or "(none on PATH — will skip)"
@@ -304,7 +317,12 @@ def auto_pipeline(
 
     # 3 + 4. Search ??papers_input.json
     try:
-        search_kwargs = {"max_papers": max_papers, "cluster_slug": slug}
+        search_kwargs = {
+            "max_papers": max_papers,
+            "cluster_slug": slug,
+        }
+        if peer_reviewed:
+            search_kwargs["peer_reviewed"] = True
         if field is not None:
             search_kwargs["field"] = field
         papers = _run_search(topic, **search_kwargs)
@@ -642,11 +660,12 @@ def _print_next_steps(report: AutoReport, slug: str, cfg, *, do_crystals: bool) 
     if report.brief_path:
         print(f"  Brief:      {report.brief_path}")
     if report.nlm_deferred:
-        print("  [NLM] skipped (check: research-hub notebooklm login). Resume with:")
-        print(f"    research-hub notebooklm bundle   --cluster {slug}")
-        print(f"    research-hub notebooklm upload   --cluster {slug}")
-        print(f"    research-hub notebooklm generate --cluster {slug} --type brief")
-        print(f"    research-hub notebooklm download --cluster {slug} --type brief")
+        inv = recommended_cli_invocation()
+        print(f"  [NLM] skipped (check: {inv} notebooklm login). Resume with:")
+        print(f"    {inv} notebooklm bundle   --cluster {slug}")
+        print(f"    {inv} notebooklm upload   --cluster {slug}")
+        print(f"    {inv} notebooklm generate --cluster {slug} --type brief")
+        print(f"    {inv} notebooklm download --cluster {slug} --type brief")
         if report.nlm_error:
             print(f"  Last NLM error: {report.nlm_error}")
     print()
@@ -957,16 +976,47 @@ def _elapsed(started: float, report: AutoReport) -> float:
     return time.time() - started
 
 
-def _run_search(topic: str, *, max_papers: int, cluster_slug: str, field: Optional[str] = None) -> list[dict]:
+def _resolve_search_options(
+    *,
+    field: Optional[str] = None,
+    peer_reviewed: bool = False,
+) -> tuple[tuple[str, ...], tuple[str, ...], float]:
+    backends = tuple(
+        FIELD_PRESETS[field] if field else ("arxiv", "semantic-scholar", "openalex", "crossref")
+    )
+    exclude_types: tuple[str, ...] = ()
+    min_confidence = 0.0
+    if peer_reviewed:
+        backends, exclude_types, min_confidence = apply_peer_reviewed(
+            backends,
+            exclude_types,
+            min_confidence,
+        )
+    return backends, exclude_types, min_confidence
+
+
+def _run_search(
+    topic: str,
+    *,
+    max_papers: int,
+    cluster_slug: str,
+    field: Optional[str] = None,
+    peer_reviewed: bool = False,
+) -> list[dict]:
     """Run arxiv + semantic_scholar search, return papers_input dicts."""       
 
 
     # v0.49.4: search arxiv + semantic-scholar + openalex + crossref so the
     # pipeline survives semantic-scholar rate-limiting and one-backend gaps.
-    backends = list(FIELD_PRESETS[field]) if field else ["arxiv", "semantic-scholar", "openalex", "crossref"]
+    backends, exclude_types, min_confidence = _resolve_search_options(
+        field=field,
+        peer_reviewed=peer_reviewed,
+    )
     results = search_papers(
         topic,
         backends=backends,
+        exclude_types=exclude_types,
+        min_confidence=min_confidence,
         limit=max_papers,
     )
     return _to_papers_input([asdict(r) for r in results], cluster_slug)

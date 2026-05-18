@@ -187,7 +187,8 @@ def test_auto_nlm_failure_does_not_abort_pipeline(mock_deps, capsys):
     mock_deps["registry_instance"].get.return_value = MagicMock()
     mock_deps["upload_cluster"].side_effect = RuntimeError("login expired")
 
-    with patch("research_hub.auto._run_crystal_step") as mock_crystals:
+    with patch("research_hub.auto._run_crystal_step") as mock_crystals, \
+         patch("research_hub.auto.recommended_cli_invocation", return_value="research-hub"):
         report = auto_pipeline(
             topic="NLM Deferred Topic",
             do_nlm=True,

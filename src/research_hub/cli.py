@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 from contextlib import nullcontext, redirect_stdout
 import json
 import os
@@ -30,6 +31,7 @@ from research_hub.search.fallback import (
     DEFAULT_BACKENDS,
     FIELD_PRESETS,
     REGION_PRESETS,
+    apply_peer_reviewed,
     resolve_backends_for_field,
     resolve_backends_for_region,
 )
@@ -53,6 +55,12 @@ _CLI_DEPRECATED_ALIASES: dict[tuple[str, ...], tuple[str, str]] = {
     ("cleanup",): ("research-hub cleanup", "research-hub tidy"),
     ("label-bulk",): ("research-hub label-bulk", "research-hub paper bulk-relabel"),
 }
+
+_PEER_REVIEWED_HELP = (
+    "Peer-reviewed only: drop preprint backends, exclude preprint/report/dataset "
+    "doc types, require >=1-backend corroboration. Excludes gray literature "
+    "(arXiv/bioRxiv/Zenodo)."
+)
 
 
 def _cli_deprecated_alias(argv: list[str] | tuple[str, ...]) -> tuple[str, str] | None:
@@ -3732,8 +3740,10 @@ def _preflight_nlm_session(cfg, *, op_name: str) -> int | None:
     browser launches a 30-second deep-stack failure. Returns None when
     OK to proceed, or an exit code (1) with a one-line actionable hint
     printed to stderr when not."""
+    from research_hub._invocation import recommended_cli_invocation
     from research_hub.notebooklm.auth import default_state_file, require_session_health
 
+    inv = recommended_cli_invocation()
     state_file = default_state_file(cfg.research_hub_dir)
     try:
         require_session_health(state_file)
@@ -3741,7 +3751,7 @@ def _preflight_nlm_session(cfg, *, op_name: str) -> int | None:
         reason = str(exc).split(": ", 1)[1] if ": " in str(exc) else str(exc)
         print(
             f"[notebooklm {op_name}] session check failed: {reason}. "
-            "Run `research-hub notebooklm login` to sign in.",
+            f"Run `{inv} notebooklm login` to sign in.",
             file=sys.stderr,
         )
         return 1
@@ -4403,6 +4413,7 @@ def _auto(
     batch_label: str | None = None,
     with_pdfs: bool = False,
     with_summary: bool = False,
+    peer_reviewed: bool = False,
     emit_json: bool = False,
 ) -> int:
     from research_hub.auto import auto_pipeline
@@ -4450,6 +4461,7 @@ def _auto(
             "zotero_batch_size": zotero_batch_size,
             "llm_cli": llm_cli,
             "dry_run": dry_run,
+            "peer_reviewed": peer_reviewed,
             "print_progress": not emit_json,
         }
         if with_pdfs:
@@ -4815,6 +4827,11 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--field", default=None,
                              choices=["cs", "bio", "med", "physics", "math", "social", "econ", "chem", "astro", "edu", "general"],
                              help="Field preset for backend selection")
+    auto_parser.add_argument(
+        "--peer-reviewed",
+        action="store_true",
+        help=_PEER_REVIEWED_HELP,
+    )
     auto_parser.add_argument("--no-nlm", action="store_true",
                              help="Skip NotebookLM bundle/upload/generate/download")
     auto_parser.add_argument("--with-crystals", action="store_true",
@@ -5377,6 +5394,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude-type",
         default="",
         help="Comma-separated list of doc types to exclude (e.g. 'book-chapter,report,paratext')",
+    )
+    search_parser.add_argument(
+        "--peer-reviewed",
+        action="store_true",
+        help=_PEER_REVIEWED_HELP,
     )
     search_parser.add_argument(
         "--exclude",
@@ -6075,46 +6097,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
-    nlm_login = nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
-    nlm_login.add_argument(
-        "--cdp",
-        action="store_true",
-        help="CDP attach mode (RECOMMENDED): launches real Chrome as a subprocess with "
-             "--remote-debugging-port and has Playwright connect over CDP. Chrome never knows "
-             "it is being automated, so Google's bot check does not fire. Fixes the "
-             "'This browser or app may have security concerns' block.",
-    )
-    nlm_login.add_argument(
-        "--chrome-binary",
-        default=None,
-        help="Path to chrome.exe (CDP mode). Auto-detected if omitted.",
-    )
-    nlm_login.add_argument(
-        "--use-system-chrome",
-        action="store_true",
-        help="Launch the installed Chrome binary (channel=chrome) instead of bundled Chromium",
-    )
-    nlm_login.add_argument(
-        "--from-chrome-profile",
-        action="store_true",
-        help="Clone your existing Chrome profile (with Google auth cookies already present) into "
-             "the session dir so Google does not trigger bot detection. Chrome MUST be closed first.",
-    )
-    nlm_login.add_argument(
-        "--chrome-profile-path",
-        default=None,
-        help="Override the auto-detected Chrome user data dir (the folder containing 'Default')",
-    )
-    nlm_login.add_argument(
-        "--chrome-profile-name",
-        default="Default",
-        help="Which Chrome profile to clone (default: Default; try 'Profile 1' etc.)",
-    )
-    nlm_login.add_argument(
-        "--timeout",
-        type=int,
-        default=300,
-        help="Max seconds to wait for login (default: 300)",
+    nlm_login = nlm_sub.add_parser(
+        "login",
+        help="Authenticate NotebookLM",
+        description=(
+            "Authenticate NotebookLM. Three paths: (1) default interactive Google "
+            "sign-in in a real terminal (press ENTER when the NotebookLM homepage "
+            "loads); (2) --import-from <other-vault> copies a logged-in session "
+            "from another vault; (3) --from-browser [browser] imports cookies via "
+            "rookiepy (requires the research-hub[browser-auth] extra; rookiepy has "
+            "no prebuilt wheel for Python 3.14)."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  research-hub notebooklm login\n"
+            "  research-hub notebooklm login --import-from <other-vault>\n"
+            "  research-hub notebooklm login --from-browser chrome"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     nlm_login.add_argument(
         "--import-from",
@@ -6128,13 +6128,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite",
         action="store_true",
         help="With --import-from: replace the current vault's logged-in session if one exists.",
-    )
-    nlm_login.add_argument(
-        "--keep-open",
-        action="store_true",
-        help="(CDP mode) Do NOT auto-close on login detection. Keeps Chrome open "
-             "so you can inspect the DOM with F12 DevTools. Press Enter in the "
-             "terminal when finished.",
     )
     nlm_login.add_argument(
         "--from-browser",
@@ -6868,6 +6861,7 @@ def _main_dispatch(args, parser) -> int:
             zotero_batch_size=args.zotero_batch_size,
             llm_cli=args.llm_cli,
             dry_run=args.dry_run,
+            peer_reviewed=args.peer_reviewed,
             append=args.append,
             force=args.force,
             show=args.show,
@@ -7241,6 +7235,13 @@ def _main_dispatch(args, parser) -> int:
         else:
             backends = DEFAULT_BACKENDS
         exclude_types = _parse_csv_terms(args.exclude_type)
+        min_confidence = args.min_confidence
+        if args.peer_reviewed:
+            backends, exclude_types, min_confidence = apply_peer_reviewed(
+                backends,
+                exclude_types,
+                min_confidence,
+            )
         exclude_terms = _parse_negative_terms(args.exclude)
         if args.enrich:
             candidates = ["-"] if args.query == "-" else [item.strip() for item in re.split(r"[\n,]+", args.query) if item.strip()]
@@ -7261,7 +7262,7 @@ def _main_dispatch(args, parser) -> int:
             backends=backends,
             exclude_types=exclude_types,
             exclude_terms=exclude_terms,
-            min_confidence=args.min_confidence,
+            min_confidence=min_confidence,
             rank_by=args.rank_by,
             backend_trace=args.backend_trace,
             emit_json=args.json,
@@ -7436,17 +7437,17 @@ def _main_dispatch(args, parser) -> int:
         if args.notebooklm_command == "login":
             from pathlib import Path as _Path
 
+            from research_hub._invocation import recommended_cli_invocation
             from research_hub.notebooklm.auth import (
                 default_session_dir,
                 default_state_file,
-                login_interactive,
-                login_interactive_cdp,
                 login_nlm,
             )
 
             cfg = get_config()
             session_dir = default_session_dir(cfg.research_hub_dir)
-            # Precedence: --import-from > --from-browser > interactive (--cdp / default)
+            inv = recommended_cli_invocation()
+            # Precedence: --import-from > --from-browser > interactive default.
             #
             # v0.70.1: --import-from short-circuits the interactive flow by
             # copying a logged-in session profile from another vault.
@@ -7483,34 +7484,34 @@ def _main_dispatch(args, parser) -> int:
                     print("[notebooklm login --from-browser] Login successful.")
                     print("Verify with: research-hub notebooklm keepalive")
                 else:
-                    print(
-                        "[notebooklm login --from-browser] FAILED (exit code "
-                        f"{rc}). If rookiepy is not installed, run:\n"
-                        "  pip install 'research-hub[browser-auth]'",
-                        file=sys.stderr,
-                    )
+                    version_info = sys.version_info
+                    if hasattr(version_info, "major"):
+                        version_tuple = (version_info.major, version_info.minor)
+                    else:
+                        version_tuple = (version_info[0], version_info[1])
+                    rookiepy_missing = importlib.util.find_spec("rookiepy") is None
+                    if rookiepy_missing and version_tuple >= (3, 14):
+                        print(
+                            "--from-browser needs rookiepy, which has no prebuilt wheel "
+                            f"for Python {version_tuple[0]}.{version_tuple[1]} "
+                            "(building it needs a Rust toolchain). Non-interactive "
+                            "cookie import is unavailable on this Python. Use one of: "
+                            f"(1) interactive login in a terminal: `{inv} notebooklm login` "
+                            "then press ENTER; (2) copy a logged-in session: "
+                            f"`{inv} notebooklm login --import-from <other-vault>`.",
+                            file=sys.stderr,
+                        )
+                    else:
+                        print(
+                            "[notebooklm login --from-browser] FAILED (exit code "
+                            f"{rc}). If rookiepy is not installed, run:\n"
+                            "  pip install 'research-hub[browser-auth]'",
+                            file=sys.stderr,
+                        )
                 return rc
-            if args.cdp:
-                return login_interactive_cdp(
-                    session_dir,
-                    timeout_sec=args.timeout,
-                    chrome_binary=args.chrome_binary,
-                    keep_open=args.keep_open,
-                )
-            chrome_path = _Path(args.chrome_profile_path) if args.chrome_profile_path else None
-            if not args.from_chrome_profile and not args.use_system_chrome and not chrome_path:
-                return login_nlm(
-                    session_dir,
-                    state_file=default_state_file(cfg.research_hub_dir),
-                    timeout_sec=args.timeout,
-                )
-            return login_interactive(
+            return login_nlm(
                 session_dir,
-                use_system_chrome=args.use_system_chrome,
-                timeout_sec=args.timeout,
-                from_chrome_profile=args.from_chrome_profile,
-                chrome_profile_path=chrome_path,
-                chrome_profile_name=args.chrome_profile_name,
+                state_file=default_state_file(cfg.research_hub_dir),
             )
         if args.notebooklm_command == "bundle":
             return _notebooklm_bundle(args.cluster, download_pdfs=args.download_pdfs)
