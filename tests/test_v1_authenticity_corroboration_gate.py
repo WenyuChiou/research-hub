@@ -353,3 +353,53 @@ def test_l2_uncorroborated_quarantine_restore_roundtrip(tmp_path, monkeypatch):
     result = restore_quarantine(cfg, slug, "agents")
     data = json.loads(Path(result["papers_input"]).read_text(encoding="utf-8"))
     assert any(p.get("doi") == "10.9999/uncorr" for p in data)
+
+
+# (h) predatory-prefix BOUNDARY guard: a different registrant whose prefix
+# string-extends a denylisted one ("10.550410" vs denylisted "10.55041")
+# must NOT be quarantined as predatory_venue.
+def test_predatory_prefix_boundary_no_false_positive(tmp_path, monkeypatch):
+    from research_hub.authenticity import verify_authenticity
+
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+
+    # 10.550410 is a distinct registrant; bare startswith("10.55041") would
+    # wrongly match it. Corroborated so L2b is not the variable under test.
+    paper = _paper(
+        "Legit Different Registrar",
+        doi="10.550410/legit.2026.1",
+        citation_count=4,
+        found_in=["crossref", "openalex"],
+    )
+    accepted, quarantined = verify_authenticity([paper], cfg, cluster_slug="agents")
+
+    assert any(p["doi"] == "10.550410/legit.2026.1" for p in accepted), (
+        f"non-denylisted registrant must NOT be quarantined as predatory; "
+        f"quarantined={[(q['reason'], q.get('details')) for q in quarantined]}"
+    )
+    assert not any(q["reason"] == "predatory_venue" for q in quarantined)
+
+
+# (h2) bioRxiv-exemption BOUNDARY guard: "10.11010/x" string-extends the
+# bioRxiv registrant "10.1101" but is a different registrant — it must NOT
+# be exempted; single-source + 0 citations → quarantined uncorroborated.
+def test_biorxiv_exemption_boundary_not_over_exempted(tmp_path, monkeypatch):
+    from research_hub.authenticity import verify_authenticity
+
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+
+    paper = _paper(
+        "Not Actually bioRxiv",
+        doi="10.11010/not-biorxiv.1",
+        citation_count=0,
+        source="openalex",
+    )
+    accepted, quarantined = verify_authenticity([paper], cfg, cluster_slug="agents")
+
+    assert accepted == [], f"10.11010 must not be bioRxiv-exempted; accepted={accepted}"
+    assert len(quarantined) == 1
+    assert quarantined[0]["reason"] == "uncorroborated", (
+        f"expected uncorroborated, got {quarantined[0]['reason']}"
+    )

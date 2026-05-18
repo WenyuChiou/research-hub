@@ -209,8 +209,16 @@ def verify_authenticity(
             predatory_prefixes = _PREDATORY_DOI_PREFIXES | frozenset(
                 getattr(cfg, "predatory_doi_prefixes", None) or ()
             )
+            # Match on the registrant boundary, not a bare string prefix:
+            # "10.550410/x" must NOT match the denylisted "10.55041" (a
+            # different, possibly legitimate registrant). A DOI is
+            # "<prefix>/<suffix>", so require exact-prefix or prefix + "/".
             matched_prefix = next(
-                (pfx for pfx in predatory_prefixes if doi_norm.startswith(pfx)),
+                (
+                    pfx
+                    for pfx in predatory_prefixes
+                    if doi_norm == pfx or doi_norm.startswith(pfx + "/")
+                ),
                 None,
             )
             if matched_prefix:
@@ -240,10 +248,16 @@ def verify_authenticity(
                 is_preprint_exempt = (
                     bool(arxiv_id)
                     or bool(pmid)
-                    or doi_for_preprint.startswith("10.1101")  # bioRxiv / medRxiv
+                    # bioRxiv / medRxiv registrant — boundary match so
+                    # "10.11010/x" (a different registrant) is NOT exempted.
+                    or doi_for_preprint == "10.1101"
+                    or doi_for_preprint.startswith("10.1101/")
                 )
                 if not is_preprint_exempt:
-                    min_cit = int(getattr(cfg, "min_corroboration_citations", 1))
+                    try:
+                        min_cit = int(getattr(cfg, "min_corroboration_citations", 1))
+                    except (TypeError, ValueError):
+                        min_cit = 1
                     raw_cit = paper.get("citation_count")
                     try:
                         n_cit = int(raw_cit) if raw_cit is not None else 0
