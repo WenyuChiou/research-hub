@@ -328,6 +328,25 @@ quarantine*. Full statement, layer table, and triage:
   hardening. The `RESEARCH_HUB_SKIP_ACL_HARDENING=1` escape hatch
   is unchanged.
 
+- **Corroboration-gated ingest (`authenticity.py` L2; PR #42).**
+  The authenticity gate previously accepted any HTTP-resolvable
+  identifier, so predatory CrossRef-member journals (e.g. IJSREM
+  `10.55041`, IJASRE `10.31695`) — whose DOIs resolve 200 — passed.
+  The gate now (a) quarantines a curated predatory DOI-registrant
+  denylist (`L2 predatory_venue`; extend via
+  `cfg.predatory_doi_prefixes`), and (b) enforces the
+  already-computed corroboration signal: a `single-source`
+  candidate is quarantined (`L2 uncorroborated`) **unless** it is an
+  arXiv / PMID / bioRxiv-medRxiv (`10.1101`) preprint or has
+  `citation_count >= cfg.min_corroboration_citations` (default 1).
+  **Operational impact (intended, not a bug):** real ingests now
+  quarantine materially more single-source, zero-citation,
+  non-preprint papers — this is the fail-closed predatory
+  protection working as designed. All quarantines are **recoverable**
+  (`research-hub quarantine restore`); loosen via
+  `cfg.min_corroboration_citations`. Registrant matching is
+  boundary-anchored (`10.55041` does not match `10.550410`).
+
 ## v0.95.0rc2 (2026-05-17) — v1.0 blockers cleared (RC2)
 
 Both remaining v1.0 blockers landed, each Codex-delegated and
