@@ -568,13 +568,21 @@ class TestCLIParser:
 
     def test_reparent_clusters_help_parses(self):
         """Verify the subcommand is registered and --help exits 0."""
-        import subprocess, sys
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        # Repo root derived from this test's location so it works on any
+        # checkout / OS / CI runner (no hardcoded machine-specific path).
+        # tests/<this file> -> parents[1] is the repo root containing src/.
+        repo_root = Path(__file__).resolve().parents[1]
         result = subprocess.run(
             [sys.executable, "-m", "research_hub.cli", "zotero", "reparent-clusters", "--help"],
             capture_output=True,
             text=True,
-            cwd="C:/Users/wenyu/Desktop/research-hub",
-            env={**__import__("os").environ, "PYTHONPATH": "src"},
+            cwd=str(repo_root),
+            env={**os.environ, "PYTHONPATH": str(repo_root / "src")},
         )
         assert result.returncode == 0, f"--help failed:\n{result.stderr}"
         assert "reparent" in result.stdout.lower() or "parent" in result.stdout.lower()
