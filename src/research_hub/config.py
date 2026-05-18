@@ -106,6 +106,7 @@ class HubConfig:
         config_zotero_collections: dict[str, dict] = {}
         config_persona: str | None = None
         config_no_zotero: bool = False
+        config_disable_pdf_fallback: bool = False
         config_unpaywall_email: str | None = None
         zotero: dict = {}
 
@@ -125,6 +126,7 @@ class HubConfig:
             config_clusters_file = data.get("clusters_file")
             config_persona = data.get("persona")
             config_no_zotero = bool(data.get("no_zotero", False))
+            config_disable_pdf_fallback = bool(data.get("disable_pdf_fallback", False))
             zotero = data.get("zotero", {})
             config_unpaywall_email = data.get("unpaywall_email")
             config_zotero_api_key = zotero.get("api_key")
@@ -182,6 +184,9 @@ class HubConfig:
         self.persona = str(config_persona or os.environ.get("RESEARCH_HUB_PERSONA", "")).strip().lower()
         self.no_zotero = config_no_zotero or (
             os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in {"1", "true", "yes"}
+        )
+        self.disable_pdf_fallback = config_disable_pdf_fallback or (
+            os.environ.get("RESEARCH_HUB_DISABLE_PDF_FALLBACK", "").lower() in {"1", "true", "yes"}
         )
         self.unpaywall_email = str(
             config_unpaywall_email or os.environ.get("UNPAYWALL_EMAIL", "")

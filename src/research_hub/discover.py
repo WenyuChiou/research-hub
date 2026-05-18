@@ -716,7 +716,14 @@ def discover_continue(
         )
         in accepted_keys
     ]
-    papers_input = _to_papers_input(accepted_candidates, cluster_slug)
+    pdfs_dir = getattr(cfg, "root", None)
+    pdfs_dir = (Path(pdfs_dir) / "pdfs") if pdfs_dir is not None else None
+    papers_input = _to_papers_input(
+        accepted_candidates,
+        cluster_slug,
+        pdfs_dir=pdfs_dir,
+        disable_pdf_fallback=getattr(cfg, "disable_pdf_fallback", False),
+    )
 
     target = out_path if out_path is not None else (dest / PAPERS_INPUT_FILENAME)
     target.write_text(json.dumps(papers_input, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -791,7 +798,13 @@ def _smart_journal_fallback(candidate: dict) -> str:
     return ""
 
 
-def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[dict]:
+def _to_papers_input(
+    candidates: list[dict],
+    cluster_slug: str | None,
+    *,
+    pdfs_dir: Path | None = None,
+    disable_pdf_fallback: bool = False,
+) -> list[dict]:
     """Convert search candidates to flat papers_input.json shape.
 
     v0.49.4: derive a synthetic ``10.48550/arXiv.<id>`` DOI for arxiv hits
@@ -842,8 +855,27 @@ def _to_papers_input(candidates: list[dict], cluster_slug: str | None) -> list[d
         if not abstract_final and doi:
             try:
                 from research_hub.search.abstract_recovery import recover_abstract
+                from research_hub.notebooklm.pdf_fetcher import _filename_from_doi
+                from research_hub.utils.doi import normalize_doi
 
-                recovered = recover_abstract(doi, timeout=10)
+                pdf_path: Path | None = None
+                if pdfs_dir is not None and not disable_pdf_fallback:
+                    normalized = normalize_doi(doi) if doi else ""
+                    if normalized:
+                        candidate_path = pdfs_dir / f"{_filename_from_doi(normalized)}.pdf"
+                        if candidate_path.exists():
+                            pdf_path = candidate_path
+                        else:
+                            # Secondary: slug-based <slug>.pdf convention.
+                            cand_slug = slug  # already computed above in this loop
+                            slug_path = pdfs_dir / f"{cand_slug}.pdf"
+                            if slug_path.exists():
+                                pdf_path = slug_path
+
+                if pdf_path is not None:
+                    recovered = recover_abstract(doi, timeout=10, pdf_path=pdf_path)
+                else:
+                    recovered = recover_abstract(doi, timeout=10)
                 if recovered.text:
                     abstract_final = recovered.text
                     if not candidate.get("abstract_source"):

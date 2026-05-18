@@ -1402,7 +1402,12 @@ def _paper_enrich_existing(
     items = list_zotero_collection_items(zot, cluster.zotero_collection_key)
     if limit > 0:
         items = items[:limit]
-    plans = plan_enrichment(items)
+    pdfs_dir = cfg.root / "pdfs"
+    plans = plan_enrichment(
+        items,
+        pdfs_dir=pdfs_dir,
+        disable_pdf_fallback=getattr(cfg, "disable_pdf_fallback", False),
+    )
     if not plans:
         print("No enrichment candidates found.")
         return 0

@@ -93,6 +93,10 @@ def enrich_candidates(
 
         if resolved is not None and not resolved.abstract and resolved.doi:
             try:
+                # pdf_path not supplied: search enrichment resolves candidates by
+                # identifier and has no access to a local PDF directory — PDF fallback
+                # is out of scope here and would require threading cfg through the
+                # entire enrich_candidates call chain. pdf_path defaults to None.
                 recovered = recover_abstract(resolved.doi)
             except Exception as exc:
                 logger.debug("abstract recovery failed for %s: %s", resolved.doi, exc)

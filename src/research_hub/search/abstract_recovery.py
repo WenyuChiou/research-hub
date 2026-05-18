@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
@@ -161,7 +163,97 @@ def _recover_from_openalex(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     return RecoveredAbstract(text="", source="")
 
 
-def recover_abstract(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
+_BOILERPLATE_RE = re.compile(
+    r"(?i)(all\s+rights\s+reserved|copyright\s+\d{4}|doi:\s*10\.\d"
+    r"|received:\s*\w+\s+\d{4}|published\s+online|arxiv:\s*\d{4})"
+)
+
+_ABSTRACT_HEADER_RE = re.compile(r"(?mi)^[ \t]*abstract\b[ \t]*$")
+
+_SECTION_STOP_RE = re.compile(
+    r"(?mi)^[ \t]*(?:(?:\d+[\.\s]+)?introduction|keywords?|ccs\s+concepts"
+    r"|index\s+terms|(?:\d+[\.\s]+)[A-Z][a-z])\b"
+)
+
+
+def _extract_abstract_from_text(full_text: str) -> str | None:
+    """Extract abstract from the first 6000 chars of PDF full text.
+
+    Heuristic order:
+    1. Locate an "Abstract" section header; capture until a section-stop.
+    2. Fall back to the 2nd double-newline-separated paragraph.
+
+    Returns None if the extracted text is <200 chars, matches a boilerplate
+    pattern, or appears to be column-interleaved/garbled (space ratio <0.08
+    or >30% single-char "words"). Returns None on any exception.
+    """
+    try:
+        chunk = full_text[:6000]
+
+        candidate: str | None = None
+
+        header_match = _ABSTRACT_HEADER_RE.search(chunk)
+        if header_match:
+            after = chunk[header_match.end():]
+            stop_match = _SECTION_STOP_RE.search(after)
+            candidate = after[: stop_match.start()].strip() if stop_match else after.strip()
+
+        if not candidate:
+            # Fall back to 2nd double-newline-separated paragraph
+            paragraphs = [p.strip() for p in re.split(r"\n\n+", chunk) if p.strip()]
+            if len(paragraphs) >= 2:
+                candidate = paragraphs[1]
+
+        if not candidate:
+            return None
+
+        # Collapse internal whitespace
+        candidate = re.sub(r"[ \t]+", " ", candidate).strip()
+
+        if len(candidate) < 200:
+            return None
+
+        if _BOILERPLATE_RE.search(candidate):
+            return None
+
+        # Garbled / column-interleaved text heuristic
+        if len(candidate) > 0:
+            space_ratio = candidate.count(" ") / len(candidate)
+            if space_ratio < 0.08:
+                return None
+            words = candidate.split()
+            if words:
+                single_char_ratio = sum(1 for w in words if len(w) == 1) / len(words)
+                if single_char_ratio > 0.30:
+                    return None
+
+        return candidate[:4000]
+    except Exception:
+        return None
+
+
+def _recover_from_local_pdf(pdf_path: Path) -> str:
+    """Extract abstract text from a local PDF file.
+
+    Returns "" (empty string) when pdf_path is None, does not exist,
+    extraction raises, or no substantive abstract can be parsed from
+    the PDF text. Never raises.
+    """
+    if pdf_path is None or not pdf_path.exists():
+        return ""
+    try:
+        from research_hub.importer import _extract_pdf
+    except Exception:
+        return ""
+    try:
+        text = _extract_pdf(pdf_path)
+    except Exception:
+        return ""
+    abs_text = _extract_abstract_from_text(text or "")
+    return abs_text or ""
+
+
+def recover_abstract(doi: str, *, timeout: int = 10, pdf_path: Path | None = None) -> RecoveredAbstract:
     """Try Crossref → Unpaywall → OpenAlex → Semantic Scholar for a missing abstract.
 
     v0.87.1 #3:
@@ -172,6 +264,11 @@ def recover_abstract(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     - Order preserves v0.72 invariant: Unpaywall (which can return a
       non-text oa_url-only record) is checked before OpenAlex so its
       oa_url fallback stays reachable when every source has no text.
+
+    v0.95.0 (pdf_path): when all 4 online sources return non-substantive
+    results AND a local PDF path is supplied, extract the abstract from
+    the PDF text as a last resort. Fail-safe: returns nothing rather
+    than write garbage. Pass pdf_path=None (the default) to disable.
     """
     if not doi:
         return RecoveredAbstract(text="", source="")
@@ -191,6 +288,13 @@ def recover_abstract(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     semantic_scholar = _recover_from_semantic_scholar(doi, timeout=timeout)
     if _is_substantive(semantic_scholar.text):
         return semantic_scholar
+
+    # Last-resort: extract abstract from local PDF (only when all 4 online
+    # sources returned non-substantive and a pdf_path was supplied).
+    if pdf_path is not None:
+        pdf_abs = _recover_from_local_pdf(pdf_path)
+        if _is_substantive(pdf_abs):
+            return RecoveredAbstract(text=pdf_abs, source="local-pdf")
 
     # v0.72 invariant: when Unpaywall has only an oa_url (no abstract text),
     # surface that so downstream tools can still fetch the OA PDF.

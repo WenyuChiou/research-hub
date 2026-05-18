@@ -44,6 +44,26 @@ quarantine*. Full statement, layer table, and triage:
 
 ### Added
 
+- **PDF-text abstract fallback (last-resort, fail-safe).** When all four
+  online metadata sources (Crossref, Unpaywall, OpenAlex, Semantic Scholar)
+  return no substantive abstract AND a local PDF is present in the vault's
+  `pdfs/` directory, `recover_abstract` now extracts the abstract from the
+  PDF text as a final link in the chain. The extraction heuristic locates
+  an "Abstract" section header, captures until the next section stop, and
+  falls back to the second double-newline-separated paragraph. Extracted
+  text is rejected if shorter than 200 chars, matches a boilerplate pattern
+  (copyright, DOI stamp, etc.), or appears column-interleaved/garbled
+  (space ratio < 0.08 or > 30% single-char "words") — the extractor returns
+  nothing rather than writing garbage (`failed_no_abstract` is preserved).
+  Provenance is written as `abstract_source: local-pdf` via the existing
+  `recovered.source` write-back. Opt-out: set `disable_pdf_fallback: true`
+  in `config.json` or `RESEARCH_HUB_DISABLE_PDF_FALLBACK=1`. Wired at the
+  `paper enrich-existing` re-run path (`zotero/enrich.py`) and the
+  `discover_continue` ingest path (`discover.py`). **Scope note:** this
+  feature does NOT retroactively fix papers whose PDFs are not present; for
+  paywalled papers, place PDFs in `~/knowledge-base/pdfs/` named by DOI
+  then run `paper enrich-existing <cluster> --apply` followed by
+  `paper summarize --pending --cluster <cluster> --cli claude`.
 - **Fail-closed first-run guard (Phase C).** With relevance
   checking on (the default) and no `claude`/`codex`/`gemini` judge
   on PATH, `research-hub auto` now exits BEFORE the slow

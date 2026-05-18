@@ -134,7 +134,10 @@ def test_cli_paper_enrich_existing_writes_manifest_entries(tmp_path, monkeypatch
     )
     monkeypatch.setattr(
         "research_hub.zotero.enrich.plan_enrichment",
-        lambda items: [
+        # Accept the v0.95.0 keyword-only params (pdfs_dir,
+        # disable_pdf_fallback) the real signature gained — the cli path
+        # now passes them; a too-strict stub would TypeError.
+        lambda items, **_kwargs: [
             EnrichPlan(
                 item_key="ITEM1",
                 title="Example",

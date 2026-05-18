@@ -55,6 +55,8 @@ def plan_enrichment(
     items: list[dict] | None = None,
     *,
     rate_limit_rps: float = 5.0,
+    pdfs_dir: Path | None = None,
+    disable_pdf_fallback: bool = False,
 ) -> list[EnrichPlan]:
     """Identify empty Zotero fields and plan DOI-based metadata fill-ins.
 
@@ -62,6 +64,12 @@ def plan_enrichment(
     per item). For 250+ items that's 500 calls — Crossref's polite-pool
     allows ~50 rps, OpenAlex caps at ~10 rps. Default 5 rps stays safely
     under both. Override via rate_limit_rps for explicit faster/slower.
+
+    pdfs_dir: when supplied (and disable_pdf_fallback is False), abstract
+    recovery will also attempt to extract the abstract from a local PDF
+    as a last resort (after all 4 online metadata sources fail).
+    disable_pdf_fallback: honour cfg.disable_pdf_fallback; forces pdf_path
+    to None so the PDF fallback link is never reached.
     """
     import time as _time
     if items is None:
@@ -106,8 +114,34 @@ def plan_enrichment(
         if "abstractNote" in empty_fields and "abstractNote" not in fields_to_fill:
             try:
                 from research_hub.search.abstract_recovery import recover_abstract
+                from research_hub.notebooklm.pdf_fetcher import _filename_from_doi
+                from research_hub.utils.doi import normalize_doi
 
-                recovered = recover_abstract(doi)
+                pdf_path: Path | None = None
+                if pdfs_dir is not None and not disable_pdf_fallback:
+                    normalized = normalize_doi(doi) if doi else ""
+                    if normalized:
+                        candidate_doi = pdfs_dir / f"{_filename_from_doi(normalized)}.pdf"
+                        if candidate_doi.exists():
+                            pdf_path = candidate_doi
+                        else:
+                            # Also try slug-based name (<slug>.pdf) derived from
+                            # the item title, as a secondary convention.
+                            item_data = item.get("data", {})
+                            item_title = str(item_data.get("title", "") or "")
+                            if item_title:
+                                from research_hub.clusters import slugify
+                                slug_candidate = pdfs_dir / f"{slugify(item_title)[:80]}.pdf"
+                                if slug_candidate.exists():
+                                    pdf_path = slug_candidate
+
+                # Mirror discover.py: only pass pdf_path when present so a
+                # stubbed/old-signature recover_abstract still works and the
+                # bare `except` below can't silently swallow a TypeError.
+                if pdf_path is not None:
+                    recovered = recover_abstract(doi, pdf_path=pdf_path)
+                else:
+                    recovered = recover_abstract(doi)
             except Exception:
                 recovered = None
             if recovered and recovered.text:
