@@ -30,8 +30,17 @@ def _make_web_with_existing(name: str, key: str):
 
 
 def _make_web_with_no_match():
+    """Mock whose collections() returns:
+    - first call: [] (so _find_existing_collection_key_by_name finds no "Brand New Topic")
+    - second call: the parent "research-hub" with key "PARENTKEY" (so
+      ensure_parent_collection resolves it and does NOT create a new one)
+    create_collections is then called exactly once for the cluster collection,
+    with parentCollection="PARENTKEY", and returns key "NEWKEY1"."""
     web = MagicMock(spec=["collections", "create_collections"])
-    web.collections.return_value = []
+    web.collections.side_effect = [
+        [],  # _find_existing_collection_key_by_name("Brand New Topic") → no match
+        [{"data": {"key": "PARENTKEY", "name": "research-hub", "parentCollection": False}}],
+    ]
     web.create_collections.return_value = {
         "successful": {"0": {"key": "NEWKEY1", "data": {"key": "NEWKEY1"}}}
     }
@@ -69,9 +78,23 @@ def test_ensure_zotero_collection_creates_when_no_match(monkeypatch):
     _ensure_zotero_collection(registry, cluster, "brand-new-topic", report, print_progress=False)
 
     assert cluster.zotero_collection_key == "NEWKEY1"
-    web.create_collections.assert_called_once()
-    args = web.create_collections.call_args[0][0]
-    assert args == [{"name": "Brand New Topic"}]
+    # With zotero_parent_collection="research-hub" (default), the path resolves
+    # the parent collection (mocked to return key "PARENTKEY") then creates the
+    # cluster collection nested under it.  No separate parent-create call is
+    # made because the mock's second collections() call finds "research-hub".
+    all_calls = web.create_collections.call_args_list
+    cluster_calls = [
+        c for c in all_calls
+        if c[0][0][0].get("name") == "Brand New Topic"
+    ]
+    assert cluster_calls, f"cluster collection creation not found; calls: {all_calls}"
+    # The cluster collection must have a parentCollection set to the resolved
+    # parent key — this is the nesting guard this file exists to protect.
+    cluster_payload = cluster_calls[0][0][0][0]
+    assert cluster_payload.get("name") == "Brand New Topic"
+    assert cluster_payload.get("parentCollection") == "PARENTKEY", (
+        f"cluster collection must be nested under the parent; got: {cluster_payload}"
+    )
 
 
 def test_ensure_zotero_collection_does_not_create_on_pagination_match(monkeypatch):

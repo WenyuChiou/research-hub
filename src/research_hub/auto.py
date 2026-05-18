@@ -903,7 +903,24 @@ def _ensure_zotero_collection(registry, cluster, slug: str, report: AutoReport, 
                 _step_log(report, "zotero.bind", True, 0.0,
                           f"reused existing collection {existing_key} for {slug}", print_progress)
                 return
-        result = web.create_collections([{"name": cluster.name}])
+        from research_hub.config import get_config as _get_config
+        from research_hub.zotero.client import ensure_parent_collection as _ensure_parent
+        try:
+            _cfg = _get_config()
+            _parent_name = getattr(_cfg, "zotero_parent_collection", "research-hub")
+        except Exception:
+            _parent_name = "research-hub"
+        # Resolve the dual-client instance for caching; web is already unwrapped above
+        _dual = getattr(zot, "_dual_ref", None)
+        if _dual is None:
+            # zot was returned by get_client() which is the dual-client; build a
+            # thin wrapper so ensure_parent_collection has a .web attribute
+            from types import SimpleNamespace as _SN
+            _dual = _SN(web=web)
+        _parent_key: str | bool = _ensure_parent(_dual, _parent_name) if _parent_name else False
+        result = web.create_collections(
+            [{"name": cluster.name, "parentCollection": _parent_key if _parent_key else False}]
+        )
         # pyzotero returns {"successful": {"0": {"key": "ABC123", ...}}, ...}
         successful = (result or {}).get("successful", {}) if isinstance(result, dict) else {}
         first = next(iter(successful.values()), None) if successful else None

@@ -799,7 +799,15 @@ def _clusters_resolve_collision(
         return 0
 
     if new:
-        result = zot.create_collections([{"name": cluster.name, "parentCollection": False}])
+        from research_hub.zotero.client import ensure_parent_collection as _ensure_parent_cli
+        _parent_name_cli = getattr(cfg, "zotero_parent_collection", "research-hub")
+        # zot here is a raw pyzotero client from get_client(); wrap for ensure_parent_collection
+        from types import SimpleNamespace as _SN_cli
+        _dual_cli = _SN_cli(web=zot)
+        _parent_key_cli = _ensure_parent_cli(_dual_cli, _parent_name_cli) if _parent_name_cli else False
+        result = zot.create_collections(
+            [{"name": cluster.name, "parentCollection": _parent_key_cli if _parent_key_cli else False}]
+        )
         successful = (result or {}).get("successful", {}) if isinstance(result, dict) else {}
         first = next(iter(successful.values()), None) if successful else None
         new_key = (first or {}).get("key") or (first or {}).get("data", {}).get("key")
@@ -1751,6 +1759,128 @@ def _zotero_mark_kept(
 
     print("Usage: research-hub zotero mark-kept --all-orphans | --collection KEY | --remove KEY | --list", file=sys.stderr)
     return 2
+
+
+def _zotero_reparent_clusters(*, parent: str, apply: bool) -> int:
+    """Nest existing cluster Zotero collections under a parent ("mother") collection.
+
+    DRY-RUN (default, ``--apply`` not passed): lists each cluster with its
+    current parentCollection and what action would be taken.  The parent
+    collection is NOT created in dry-run mode.
+
+    ``--apply``: ensures the parent exists (creates if missing), then calls
+    ``update_collection`` for any cluster collection not yet nested under it.
+    Already-nested collections are skipped (idempotent).  Never deletes
+    anything.
+    """
+    cfg = get_config()
+    from research_hub.zotero.client import ZoteroDualClient, ensure_parent_collection
+
+    registry = ClusterRegistry(cfg.clusters_file)
+    clusters = [c for c in registry.list() if (c.zotero_collection_key or "").strip()]
+
+    if not clusters:
+        print("No clusters with Zotero collection keys found.")
+        return 0
+
+    if not parent:
+        print("ERROR: --parent is empty; pass a non-empty collection name.", file=sys.stderr)
+        return 2
+
+    if not apply:
+        # Dry-run: resolve parent key only if possible via listing, do NOT create
+        print(f"DRY-RUN: would reparent {len(clusters)} cluster collection(s) under '{parent}'")
+        print(f"{'cluster':<40} {'key':<12} {'current_parent':<20} {'action'}")
+        print("-" * 90)
+        # Best-effort: try to read current parent data without writes
+        try:
+            dual = ZoteroDualClient()
+            web = dual.web
+            # Build map of collection key -> data
+            coll_map: dict[str, dict] = {}
+            start = 0
+            while True:
+                chunk = web.collections(limit=100, start=start)
+                if not chunk:
+                    break
+                for c in chunk:
+                    d = c.get("data", {})
+                    coll_map[d.get("key", "")] = d
+                if len(chunk) < 100:
+                    break
+                start += 100
+            # Find parent key in existing collections
+            parent_key_dr: str | None = next(
+                (
+                    d["key"]
+                    for d in coll_map.values()
+                    if d.get("parentCollection") is False and d.get("name") == parent
+                ),
+                None,
+            )
+            for cluster in clusters:
+                key = (cluster.zotero_collection_key or "").strip()
+                d = coll_map.get(key, {})
+                current_parent = d.get("parentCollection", "?")
+                if parent_key_dr and current_parent == parent_key_dr:
+                    action = "already nested (skip)"
+                elif parent_key_dr is None:
+                    action = f"would create '{parent}' then nest"
+                else:
+                    action = f"would move under {parent_key_dr}"
+                print(f"{cluster.slug:<40} {key:<12} {str(current_parent):<20} {action}")
+        except Exception as exc:
+            print(f"(could not fetch Zotero collections for preview: {exc})")
+            for cluster in clusters:
+                key = (cluster.zotero_collection_key or "").strip()
+                print(f"{cluster.slug:<40} {key:<12} {'?':<20} would reparent")
+        print()
+        print("Re-run with --apply to execute.")
+        return 0
+
+    # --- Apply mode ---
+    dual = ZoteroDualClient()
+    parent_key = ensure_parent_collection(dual, parent)
+    if not parent_key:
+        print(f"ERROR: Could not find or create parent collection '{parent}'.", file=sys.stderr)
+        return 1
+
+    web = dual.web
+    # Build current collection data map
+    coll_map_apply: dict[str, dict] = {}
+    start = 0
+    while True:
+        chunk = web.collections(limit=100, start=start)
+        if not chunk:
+            break
+        for c in chunk:
+            d = c.get("data", {})
+            coll_map_apply[d.get("key", "")] = d
+        if len(chunk) < 100:
+            break
+        start += 100
+
+    moved = 0
+    skipped = 0
+    errors = 0
+    for cluster in clusters:
+        key = (cluster.zotero_collection_key or "").strip()
+        d = coll_map_apply.get(key, {})
+        current_parent = d.get("parentCollection")
+        if current_parent == parent_key:
+            print(f"  [skip] {cluster.slug} ({key}) already nested under {parent_key}")
+            skipped += 1
+            continue
+        try:
+            dual.update_collection(key, parent_key=parent_key)
+            print(f"  [ok]   {cluster.slug} ({key}) reparented under {parent_key}")
+            moved += 1
+        except Exception as exc:
+            print(f"  [err]  {cluster.slug} ({key}): {exc}", file=sys.stderr)
+            errors += 1
+
+    print(f"\nDone: {moved} moved, {skipped} already nested, {errors} error(s).")
+    return 0 if errors == 0 else 1
 
 
 def _zotero_gc(
@@ -5906,6 +6036,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional human note recorded with the kept list",
     )
 
+    reparent_parser = zotero_sub.add_parser(
+        "reparent-clusters",
+        help="Nest existing cluster Zotero collections under a parent ('mother') collection",
+    )
+    reparent_parser.add_argument(
+        "--parent",
+        default=None,
+        metavar="NAME",
+        help="Name of the parent collection (default: cfg.zotero_parent_collection, "
+             "i.e. 'research-hub' unless overridden in config)",
+    )
+    reparent_parser.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="Execute the reparenting (default: dry-run only)",
+    )
+
     nlm_parser = subparsers.add_parser("notebooklm", help="NotebookLM operations")
     nlm_sub = nlm_parser.add_subparsers(dest="notebooklm_command", required=True)
     nlm_login = nlm_sub.add_parser("login", help="Interactive one-time Google sign-in")
@@ -7103,6 +7251,10 @@ def _main_dispatch(args, parser) -> int:
                 show_counts=getattr(args, "show_counts", False),
                 by_pattern=getattr(args, "by_pattern", None),
             )
+        if args.zotero_command == "reparent-clusters":
+            cfg = get_config()
+            parent = args.parent if args.parent is not None else getattr(cfg, "zotero_parent_collection", "research-hub")
+            return _zotero_reparent_clusters(parent=parent, apply=args.apply)
     if args.command == "migrate-yaml":
         return _migrate_yaml(
             assign_cluster=args.assign_cluster,

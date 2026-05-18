@@ -145,6 +145,129 @@ def test_get_formatted_joins_list_from_read():
     assert "@article{second}" in result
 
 
+def _make_dual_for_update(fetched_data: dict) -> tuple:
+    """Build a ZoteroDualClient (no __init__) with a mocked web for update_collection tests.
+
+    ``fetched_data`` is placed under ``coll["data"]``.  Returns ``(dual, web_mock)``
+    where ``web_mock.update_collection`` records its call argument.
+    """
+    from unittest.mock import MagicMock
+    from research_hub.zotero.client import ZoteroDualClient
+
+    dual = ZoteroDualClient.__new__(ZoteroDualClient)
+    web = MagicMock(spec=["collection", "update_collection"])
+    # collection() returns a full collection dict with a "data" sub-dict
+    coll_payload = {
+        "key": fetched_data["key"],
+        "version": fetched_data.get("version", 5),
+        "data": dict(fetched_data),
+    }
+    web.collection.return_value = coll_payload
+    web.update_collection.return_value = {}
+    dual.web = web
+    dual._require_web = lambda: None  # no credentials check in unit tests
+    return dual, web
+
+
+def test_update_collection_name_only_preserves_parent_collection():
+    """Changing only the name must not blank or drop parentCollection."""
+    dual, web = _make_dual_for_update({
+        "key": "K1",
+        "version": 3,
+        "name": "Old Name",
+        "parentCollection": "PKEY",
+    })
+
+    dual.update_collection("K1", name="New Name")
+
+    web.update_collection.assert_called_once()
+    sent = web.update_collection.call_args[0][0]
+    # The full collection dict was passed; data must be mutated in-place
+    assert sent["data"]["name"] == "New Name"
+    assert sent["data"]["parentCollection"] == "PKEY", (
+        "parentCollection must be preserved when only name changes"
+    )
+
+
+def test_update_collection_parent_only_preserves_name():
+    """Changing only the parent must not blank or drop the existing name."""
+    dual, web = _make_dual_for_update({
+        "key": "K2",
+        "version": 7,
+        "name": "Keep This Name",
+        "parentCollection": False,
+    })
+
+    dual.update_collection("K2", parent_key="NEWPARENT")
+
+    web.update_collection.assert_called_once()
+    sent = web.update_collection.call_args[0][0]
+    assert sent["data"]["name"] == "Keep This Name", (
+        "name must be preserved when only parentCollection changes"
+    )
+    assert sent["data"]["parentCollection"] == "NEWPARENT"
+
+
+def test_update_collection_both_name_and_parent():
+    """Both name and parentCollection can be changed in one call."""
+    dual, web = _make_dual_for_update({
+        "key": "K3",
+        "version": 2,
+        "name": "Original",
+        "parentCollection": "OLD_PARENT",
+        "relations": {},
+    })
+
+    dual.update_collection("K3", name="Renamed", parent_key="NEW_PARENT")
+
+    web.update_collection.assert_called_once()
+    sent = web.update_collection.call_args[0][0]
+    assert sent["data"]["name"] == "Renamed"
+    assert sent["data"]["parentCollection"] == "NEW_PARENT"
+    # Other fields on data (relations) must not be dropped
+    assert sent["data"]["relations"] == {}
+
+
+def test_update_collection_payload_derived_from_fetched_collection():
+    """The dict passed to web.update_collection must include the fetched collection's
+    data fields, not a hand-built minimal payload that could blank existing fields."""
+    dual, web = _make_dual_for_update({
+        "key": "K4",
+        "version": 11,
+        "name": "Existing",
+        "parentCollection": "P",
+        "extra_field": "preserved",
+    })
+
+    dual.update_collection("K4", parent_key="P2")
+
+    sent = web.update_collection.call_args[0][0]
+    # Must be the full collection object (has "data" sub-dict), not a flat payload
+    assert "data" in sent, "payload must be the full collection dict with a 'data' key"
+    assert sent["data"]["extra_field"] == "preserved", (
+        "extra fields in data must survive the PATCH (not blanked)"
+    )
+
+
+def test_update_collection_fallback_on_missing_data():
+    """If the fetched collection has no 'data' key, fall back to minimal payload (no crash)."""
+    from unittest.mock import MagicMock
+    from research_hub.zotero.client import ZoteroDualClient
+
+    dual = ZoteroDualClient.__new__(ZoteroDualClient)
+    web = MagicMock(spec=["collection", "update_collection"])
+    # Unusual shape: no "data" key
+    web.collection.return_value = {"key": "K5", "version": 99}
+    web.update_collection.return_value = {}
+    dual.web = web
+    dual._require_web = lambda: None
+
+    # Must not raise; should still call web.update_collection
+    dual.update_collection("K5", name="X", parent_key="PX")
+
+    web.update_collection.assert_called_once()
+
+
 def test_read_zotero_key_from_frontmatter(tmp_path):
     from research_hub.cli import _read_zotero_key_from_frontmatter
 

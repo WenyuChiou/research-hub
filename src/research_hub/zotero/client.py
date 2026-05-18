@@ -278,6 +278,71 @@ def safe_api_call(func, *args, max_retries=3, **kwargs):
     raise Exception("Max retries exceeded")
 
 
+def ensure_parent_collection(client, name: str) -> str | None:
+    """Idempotent: find or create a top-level Zotero collection named ``name``.
+
+    Parameters
+    ----------
+    client:
+        A :class:`ZoteroDualClient` instance (or anything with a ``.web``
+        attribute that exposes ``create_collections`` and ``collections``).
+    name:
+        The human-readable name for the parent ("mother") collection.
+        If falsy, returns ``None`` immediately (nesting disabled).
+
+    Returns the collection key (string) or ``None`` on any failure.
+
+    The resolved key is cached on ``client._parent_collection_cache`` so
+    repeated calls within one run skip the network lookup.
+
+    Design notes
+    ------------
+    - Only matches TOP-LEVEL collections (``parentCollection == False``) to
+      avoid accidentally reusing a nested collection that happens to share the
+      name.  Zotero returns ``False`` (bool) for top-level in the API
+      response.
+    - On failure (network error, missing credentials, etc.) returns ``None``
+      and never raises — the caller degrades gracefully to top-level behavior.
+    """
+    if not name:
+        return None
+    # Per-instance cache: avoids repeated list() calls within a single run
+    cache = getattr(client, "_parent_collection_cache", {})
+    if name in cache:
+        return cache[name]
+    try:
+        web = getattr(client, "web", None) or client
+        # Paginate to find an existing top-level collection by exact name
+        start = 0
+        while True:
+            chunk = web.collections(limit=100, start=start)
+            if not chunk:
+                break
+            for c in chunk:
+                data = c.get("data", {})
+                parent = data.get("parentCollection")
+                if parent is False and data.get("name") == name:
+                    key = data["key"]
+                    cache[name] = key
+                    client._parent_collection_cache = cache
+                    return key
+            if len(chunk) < 100:
+                break
+            start += 100
+        # Not found — create as top-level
+        result = web.create_collections([{"name": name, "parentCollection": False}])
+        successful = (result or {}).get("successful", {}) if isinstance(result, dict) else {}
+        first = next(iter(successful.values()), None) if successful else None
+        new_key = (first or {}).get("key") or (first or {}).get("data", {}).get("key")
+        if new_key:
+            cache[name] = new_key
+            client._parent_collection_cache = cache
+            return new_key
+        return None
+    except Exception:
+        return None
+
+
 class ZoteroDualClient:
     """Dual-mode Zotero client: local API for fast reads, Web API for writes.
 
@@ -432,6 +497,15 @@ class ZoteroDualClient:
             [{"name": name, "parentCollection": parent_key}]
         )
 
+    def ensure_parent_collection(self, name: str) -> str | None:
+        """Return the key of the named top-level collection, creating it if absent.
+
+        Returns None if ``name`` is falsy or any Zotero call fails (best-effort,
+        never raises into the caller).  The resolved key is cached on the instance
+        so repeated calls within a run skip the network lookup.
+        """
+        return ensure_parent_collection(self, name)
+
     # --- UPDATE (web API, reads version from local/web) ---
     def update_item(self, key, updates: dict):
         self._require_web()
@@ -480,12 +554,50 @@ class ZoteroDualClient:
         coll = self._read("collection", collection_key)
         return self.web.delete_collection(coll)
 
-    def update_collection(self, key: str, name: str) -> dict:
-        """PATCH Zotero collection name. Reads version internally."""
+    def update_collection(
+        self,
+        key: str,
+        name: str | None = None,
+        parent_key: str | bool | None = None,
+    ) -> dict:
+        """PATCH Zotero collection name and/or parentCollection.
+
+        ``parent_key=False`` sets the collection to top-level (Zotero API
+        convention).  ``parent_key=None`` (default) means "do not change the
+        parent".  ``name=None`` means "do not change the name".
+
+        Uses the pyzotero-idiomatic full-collection PATCH: fetches the full
+        collection object, mutates only the requested fields in ``data``, and
+        passes the full collection dict to ``web.update_collection`` so no
+        existing field (tags, relations, etc.) is silently dropped or blanked.
+
+        If the fetched collection has no ``data`` key (unexpected shape), falls
+        back to the prior minimal-payload behavior so the caller never crashes.
+        """
         self._require_web()
         coll = self.web.collection(key)
-        version = coll.get("version") or coll.get("data", {}).get("version")
-        return self.web.update_collection({"key": key, "version": version, "name": name})
+        data = coll.get("data") if isinstance(coll, dict) else None
+        if data is None:
+            # Fallback: shape not as expected — build minimal payload as before
+            version = coll.get("version") if isinstance(coll, dict) else None
+            payload: dict = {"key": key, "version": version}
+            if name is not None:
+                payload["name"] = name
+            else:
+                payload["name"] = ""
+            if parent_key is not None:
+                payload["parentCollection"] = parent_key
+            return self.web.update_collection(payload)
+        # Mutate only the requested fields; all other fields are preserved as-is
+        if name is not None:
+            data["name"] = name
+        if parent_key is not None:
+            data["parentCollection"] = parent_key
+        # Ensure top-level version is consistent with data["version"] for pyzotero
+        if "version" not in coll and "version" in data:
+            coll = dict(coll)
+            coll["version"] = data["version"]
+        return self.web.update_collection(coll)
 
     # --- TEMPLATES ---
     def get_template(self, item_type="journalArticle"):

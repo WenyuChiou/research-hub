@@ -44,6 +44,25 @@ quarantine*. Full statement, layer table, and triage:
 
 ### Added
 
+- **Configurable Zotero parent ("mother") collection (`zotero_parent_collection`,
+  default `"research-hub"`).** New cluster Zotero collections are now
+  automatically nested under a single top-level parent collection instead of
+  being created at the library root.  Configure via `zotero.parent_collection`
+  (nested) or top-level `zotero_parent_collection` in `config.json`, or via the
+  `RESEARCH_HUB_ZOTERO_PARENT_COLLECTION` env var.  Set to empty string or
+  `""` to disable nesting and preserve legacy top-level behavior (backward
+  compatible).  The parent collection is created automatically on first use
+  (idempotent).  New helper `ensure_parent_collection(client, name)` in
+  `research_hub.zotero.client` is used by all three cluster-collection creation
+  paths (`clusters.py`, `auto.py`, `cli.py clusters rebind --new`).
+
+- **`research-hub zotero reparent-clusters`** — one-shot command to migrate
+  existing top-level cluster collections under the parent collection.
+  Dry-run by default (shows cluster slug, Zotero key, current parent, and
+  proposed action); pass `--apply` to execute.  `--parent <name>` overrides
+  the config default.  Idempotent: already-nested collections are skipped and
+  reported.  Never deletes anything.
+
 - **PDF-text abstract fallback (last-resort, fail-safe).** When all four
   online metadata sources (Crossref, Unpaywall, OpenAlex, Semantic Scholar)
   return no substantive abstract AND a local PDF is present in the vault's

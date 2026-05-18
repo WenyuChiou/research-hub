@@ -324,11 +324,16 @@ class ClusterRegistry:
         except Exception:
             return
         try:
-            from research_hub.zotero.client import ZoteroDualClient
+            from research_hub.zotero.client import ZoteroDualClient, ensure_parent_collection
 
-            zot = ZoteroDualClient().web
-            resp = zot.create_collections([{"name": cluster.name}])
-            if resp.get("successful"):
+            dual = ZoteroDualClient()
+            web = dual.web
+            parent_name = getattr(cfg, "zotero_parent_collection", "research-hub")
+            parent_key: str | bool = ensure_parent_collection(dual, parent_name) if parent_name else False
+            resp = web.create_collections(
+                [{"name": cluster.name, "parentCollection": parent_key if parent_key else False}]
+            )
+            if resp and isinstance(resp, dict) and resp.get("successful"):
                 new_key = list(resp["successful"].values())[0]["key"]
                 cluster.zotero_collection_key = new_key
                 self.save()
