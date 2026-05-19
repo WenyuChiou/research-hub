@@ -111,6 +111,27 @@ graph rebuild (link out to the real tools instead)._
   cause. (`notebooklm-py` was already pinned `<0.5.0`; this drift is
   server-side, so honest reporting is the only available remedy.)
 
+### Fixed (PR-C — deep F7)
+- **Transient DOI-resolution failures defer instead of being
+  fail-closed-quarantined as fraud.** PR-B's minimal F7 fix stopped the
+  *cache* poisoning but the authenticity gate still quarantined ANY
+  `not ok` at L1 — including `*_check_unavailable` (doi.org / Crossref
+  rate-limit or network blip after the bounded retry). A sustained
+  rate-limit window therefore still rejected valid papers, requiring
+  manual `quarantine restore`. Now the L1 branch splits by reason
+  family: transient → distinct `L1-deferred` layer (reported as
+  "deferred, retryable"; recovers on a later run / `quarantine
+  restore`); permanent (`*_unresolved`, 404/410, no-identifier,
+  predatory/metadata/fit/uncorroborated) → unchanged `L1` quarantine.
+  The paper is still held out of ingest in both cases (fail-closed —
+  the anti-fabrication L0–L5 guarantee is unchanged; a fabricated DOI
+  returns 404 → permanent → quarantined). `auto` now reports
+  `N quarantined, D deferred` distinctly, and an all-deferred run says
+  the papers were *not* rejected and how to retry, instead of
+  "quarantined". (An optional `quarantine retry-deferred` convenience
+  CLI is deferred to a later follow-up — existing `quarantine restore`
+  already recovers deferred entries.)
+
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 
 > **Not yet released — staged on `release-prep/v1.0.0`.** The cut

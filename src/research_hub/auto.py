@@ -381,13 +381,16 @@ def auto_pipeline(
         written = len(list(raw_dir.glob("*.md"))) if raw_dir.exists() else 0
         report.papers_ingested = written
         try:
-            from research_hub.authenticity import list_quarantine
-            quarantined = len(list_quarantine(cfg, cluster=slug))
+            from research_hub.authenticity import DEFERRED_LAYER, list_quarantine
+            q_rows = list_quarantine(cfg, cluster=slug)
+            deferred = sum(1 for r in q_rows if r.get("layer") == DEFERRED_LAYER)
+            quarantined = len(q_rows) - deferred
         except Exception:
+            deferred = 0
             quarantined = 0
         detail = (
-            f"{written} written, {quarantined} quarantined "
-            f"(of {attempted} candidate(s)) in raw/{slug}/"
+            f"{written} written, {quarantined} quarantined, "
+            f"{deferred} deferred (of {attempted} candidate(s)) in raw/{slug}/"
         )
         # F6: candidates existed but the vault got nothing (all rejected
         # by fit-check / the fail-closed authenticity gate). Render the
@@ -403,11 +406,22 @@ def auto_pipeline(
         else:
             _step_log(report, "ingest", False, _elapsed(started, report),
                       detail + " -- nothing reached the vault", print_progress)
-            report.error = (
-                f"ingest wrote 0 papers ({quarantined} quarantined of "
-                f"{attempted}); inspect: research-hub quarantine list "
-                f"--cluster {slug}"
-            )
+            if deferred and not quarantined:
+                # Pure transient failure (doi.org / Crossref rate-limit):
+                # the papers are NOT rejected — retry once the resolver
+                # is reachable (re-run, or `quarantine restore`).
+                report.error = (
+                    f"ingest wrote 0 papers; {deferred} deferred "
+                    f"(transient resolver failure -- not rejected; retry: "
+                    f"re-run, or research-hub quarantine restore "
+                    f"<paper-slug> --cluster {slug})"
+                )
+            else:
+                report.error = (
+                    f"ingest wrote 0 papers ({quarantined} quarantined, "
+                    f"{deferred} deferred of {attempted}); inspect: "
+                    f"research-hub quarantine list --cluster {slug}"
+                )
     except Exception as exc:
         _step_log(report, "ingest", False, _elapsed(started, report), str(exc), print_progress)
         report.ok = False
@@ -705,21 +719,40 @@ def _print_next_steps(report: AutoReport, slug: str, cfg, *, do_crystals: bool) 
     try:
         from collections import Counter
 
-        from research_hub.authenticity import list_quarantine
+        from research_hub.authenticity import DEFERRED_LAYER, list_quarantine
 
         q_rows = list_quarantine(cfg, cluster=slug)
     except Exception as exc:  # best-effort UX affordance; never fatal
         q_rows = []
+        DEFERRED_LAYER = "L1-deferred"
         print(f"  [quarantine] summary unavailable for {slug} ({type(exc).__name__})")
     if q_rows:
-        by_reason = Counter((r.get("reason") or "unknown") for r in q_rows)
+        # PR-C: keep this footer consistent with the ingest step — show
+        # deferred (transient, retryable) distinctly from quarantined
+        # (rejected by the fail-closed gate), not lumped as "quarantined".
+        deferred_rows = [r for r in q_rows if r.get("layer") == DEFERRED_LAYER]
+        quar_rows = [r for r in q_rows if r.get("layer") != DEFERRED_LAYER]
         print()
-        print(
-            f"  [quarantine] {len(q_rows)} paper(s) currently quarantined for "
-            f"cluster {slug} (fail-closed authenticity gate; not in the vault):"
-        )
-        for reason, count in sorted(by_reason.items()):
-            print(f"    - {reason}: {count}")
+        if quar_rows:
+            print(
+                f"  [quarantine] {len(quar_rows)} paper(s) quarantined for "
+                f"cluster {slug} (fail-closed authenticity gate; not in the "
+                f"vault):"
+            )
+            for reason, count in sorted(
+                Counter((r.get("reason") or "unknown") for r in quar_rows).items()
+            ):
+                print(f"    - {reason}: {count}")
+        if deferred_rows:
+            print(
+                f"  [deferred] {len(deferred_rows)} paper(s) NOT rejected -- "
+                f"transient resolver failure (rate-limit/unreachable); "
+                f"retryable for cluster {slug}:"
+            )
+            for reason, count in sorted(
+                Counter((r.get("reason") or "unknown") for r in deferred_rows).items()
+            ):
+                print(f"    - {reason}: {count}")
         print("  Review / recover:")
         print(f"    research-hub quarantine list --cluster {slug}")
         print(f"    research-hub quarantine show <paper-slug> --cluster {slug}")
