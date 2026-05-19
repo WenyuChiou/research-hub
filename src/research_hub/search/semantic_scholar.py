@@ -73,6 +73,17 @@ class SemanticScholarClient:
         # Also normalize an explicit api_key=" " arg the same way
         elif isinstance(api_key, str):
             api_key = api_key.strip() or None
+        if isinstance(api_key, str):
+            try:
+                api_key.encode("latin-1")
+            except UnicodeEncodeError:
+                logger.warning(
+                    "%s is not ASCII/latin-1 (looks like a placeholder or "
+                    "mojibake); ignoring it and querying Semantic Scholar "
+                    "anonymously.",
+                    SEMANTIC_SCHOLAR_API_KEY_ENV,
+                )
+                api_key = None
         self.api_key = api_key
         # Authenticated clients can poll faster; cap the throttle so a
         # key-holder doesn't waste the rate budget.

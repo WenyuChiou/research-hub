@@ -79,6 +79,15 @@ graph rebuild (link out to the real tools instead)._
   permanent miss, surfaced as `*_check_unavailable`); genuine 404/410
   stay fail-closed `doi_unresolved` so the anti-fabrication guarantee
   is unchanged. A 0/malformed status also fails closed.
+- **F7 completion: access-blocked resolver statuses defer.** DOI HEAD
+  statuses other than resolved 2xx/3xx or definitive 404/410
+  non-registration (for example 401/403/406/451 anti-bot walls) now
+  route to `doi_check_unavailable` / `L1-deferred` instead of permanent
+  `doi_unresolved` / `L1` quarantine.
+- **Semantic Scholar API keys are validated before use.** A
+  non-latin-1 `SEMANTIC_SCHOLAR_API_KEY` now emits a clear warning and
+  is ignored so the backend queries anonymously instead of crashing while
+  requests encodes the `x-api-key` header.
 
 ### Removed
 - **Dead `notebooklm login` flags:** `--cdp`, `--chrome-binary`,
