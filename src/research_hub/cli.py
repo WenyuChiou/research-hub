@@ -6169,7 +6169,8 @@ def build_parser() -> argparse.ArgumentParser:
             "loads); (2) --import-from <other-vault> copies a logged-in session "
             "from another vault; (3) --from-browser [browser] imports cookies via "
             "rookiepy (requires the research-hub[browser-auth] extra; rookiepy has "
-            "no prebuilt wheel for Python 3.14)."
+            "no prebuilt wheel for Python 3.14); (4) --wait-file PATH — sign in "
+            "in the browser then create PATH (no terminal/ENTER; scriptable)."
         ),
         epilog=(
             "Examples:\n"
@@ -6191,6 +6192,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite",
         action="store_true",
         help="With --import-from: replace the current vault's logged-in session if one exists.",
+    )
+    nlm_login.add_argument(
+        "--wait-file",
+        default=None,
+        metavar="PATH",
+        help="Non-interactive: instead of pressing ENTER, sign in in the "
+             "browser window then create this file (e.g. `touch PATH`, or an "
+             "automation wrapper does it). research-hub polls for it and "
+             "saves the session automatically. No terminal/ENTER needed.",
+    )
+    nlm_login.add_argument(
+        "--wait-timeout",
+        type=int,
+        default=300,
+        metavar="SECONDS",
+        help="With --wait-file: max seconds to wait for the signal file "
+             "before failing closed (default: 300; nothing is saved on timeout).",
     )
     nlm_login.add_argument(
         "--from-browser",
@@ -7498,6 +7516,8 @@ def _main_dispatch(args, parser) -> int:
         return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
     if args.command == "notebooklm":
         if args.notebooklm_command == "login":
+            if args.wait_timeout != 300 and args.wait_file is None:
+                parser.error("--wait-timeout requires --wait-file")
             from pathlib import Path as _Path
 
             from research_hub._invocation import recommended_cli_invocation
@@ -7575,6 +7595,8 @@ def _main_dispatch(args, parser) -> int:
             return login_nlm(
                 session_dir,
                 state_file=default_state_file(cfg.research_hub_dir),
+                wait_file=args.wait_file,
+                wait_timeout=args.wait_timeout,
             )
         if args.notebooklm_command == "bundle":
             return _notebooklm_bundle(args.cluster, download_pdfs=args.download_pdfs)
