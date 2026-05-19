@@ -88,6 +88,17 @@ graph rebuild (link out to the real tools instead)._
   non-latin-1 `SEMANTIC_SCHOLAR_API_KEY` now emits a clear warning and
   is ignored so the backend queries anonymously instead of crashing while
   requests encodes the `x-api-key` header.
+- **DOI resolve cache auto-migrates pre-PR-#51 poisoning.** The F7
+  completion (anti-bot HEAD defers, PR #51) was silently neutralised on
+  any DOI cached under the old non-transient classification -- the
+  cache-hit short-circuit returned the stale `doi_unresolved` outcome
+  before the new logic ran. `DoiResolveCache.load` now performs a
+  one-shot schema 1.0 -> 1.1 migration that prunes
+  `reason="doi_unresolved"` entries whose `status_code` is not in
+  `{404, 410}` (genuine non-existence) and rewrites the cache at the
+  new schema version. Entries with status 404/410, success entries, and
+  any other reason are preserved. Idempotent; logged at WARNING when
+  any entry is pruned.
 
 ### Removed
 - **Dead `notebooklm login` flags:** `--cdp`, `--chrome-binary`,

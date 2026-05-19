@@ -88,7 +88,7 @@ def test_l1_doi_404_quarantines_and_uses_cache(tmp_path, monkeypatch):
 
     cache_path = cfg.research_hub_dir / "doi_resolve_cache.json"
     payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "1.0"
+    assert payload["schema_version"] == "1.1"
     assert "doi:10.1000/missing" in payload["results"]
 
     def fail_if_called(*_args, **_kwargs):

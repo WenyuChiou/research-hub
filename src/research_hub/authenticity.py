@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import unicodedata
@@ -18,6 +19,8 @@ from research_hub.locks import file_lock
 from research_hub.security import atomic_write_text
 from research_hub.utils.doi import extract_arxiv_id
 
+logger = logging.getLogger(__name__)
+
 try:
     from rapidfuzz import fuzz
 except ImportError:  # pragma: no cover - rapidfuzz is a declared dependency
@@ -31,7 +34,7 @@ except ImportError:  # pragma: no cover - rapidfuzz is a declared dependency
     fuzz = _FuzzFallback()
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 DOI_RESOLVE_CACHE = "doi_resolve_cache.json"
 QUARANTINE_DIR = "quarantine"
 # PR-C (deep F7): a TRANSIENT identifier-resolution failure (doi.org /
@@ -81,6 +84,26 @@ class ResolveOutcome:
         )
 
 
+def _is_pre_f7_poisoned(outcome: ResolveOutcome) -> bool:
+    """Return True for stale fail-closed cache entries from before PR #51.
+
+    These are old ``doi_unresolved`` outcomes for statuses that the F7
+    resolver now treats as transient/unavailable rather than definitive
+    non-registration. Genuine 404/410 misses and status-less legacy entries
+    are preserved. status_code=0 is provably never written to disk by
+    the current resolver: _resolve_head_with_retry's if status_code
+    and status_code < 400 guard is falsy for 0, so the loop falls
+    through to the transient return, and the transient branch in
+    _resolve_identifier returns BEFORE calling cache.put.
+    """
+    if outcome.reason != "doi_unresolved":
+        return False
+    status_code = outcome.status_code
+    if status_code is None:
+        return False
+    return status_code not in _DEFINITIVE_NOTFOUND_HTTP_STATUS
+
+
 class DoiResolveCache:
     """Small JSON cache for identifier resolution outcomes."""
 
@@ -95,12 +118,37 @@ class DoiResolveCache:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return cls()
-        results = {
-            key: ResolveOutcome.from_dict(value)
-            for key, value in data.get("results", {}).items()
-            if isinstance(value, dict)
-        }
-        return cls(results)
+        if not isinstance(data, dict):
+            return cls()
+        loaded_version = str(data.get("schema_version", "1.0") or "1.0")
+        raw_results = data.get("results", {})
+        if not isinstance(raw_results, dict):
+            raw_results = {}
+        results: dict[str, ResolveOutcome] = {}
+        pruned = 0
+        needs_migration = loaded_version != SCHEMA_VERSION
+        for key, value in raw_results.items():
+            if not isinstance(value, dict):
+                continue
+            outcome = ResolveOutcome.from_dict(value)
+            if needs_migration and _is_pre_f7_poisoned(outcome):
+                pruned += 1
+                continue
+            results[key] = outcome
+        instance = cls(results)
+        if needs_migration:
+            instance.save(path)
+            if pruned:
+                logger.warning(
+                    "DoiResolveCache migrated schema %s -> %s: pruned %d "
+                    "stale `doi_unresolved` entr%s from before PR #51 "
+                    "(anti-bot HEAD statuses now defer, see CHANGELOG).",
+                    loaded_version,
+                    SCHEMA_VERSION,
+                    pruned,
+                    "y" if pruned == 1 else "ies",
+                )
+        return instance
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
