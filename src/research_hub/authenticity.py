@@ -406,24 +406,28 @@ def restore_quarantine(cfg, slug: str, cluster: str) -> dict:
     }
 
 
-# F7: doi.org / Cloudflare serve HTTP 418 to the default ``python-requests``
-# User-Agent (a bot fingerprint), which the gate previously read as
-# ``doi_unresolved`` and fail-closed-quarantined every valid paper. A real
-# UA makes the same DOI return 200/302. Empirically verified 2026-05-18.
+# F7: resolver HEAD failures are only fabrication evidence when the
+# registry gives a definitive non-registration answer (HTTP 404/410).
+# Anti-bot/access/rate-limit failures (401/403/406/418/429/451/5xx) and
+# network errors are deferred as ``*_check_unavailable``. Empirically
+# verified against doi.org / Cloudflare blocks on 2026-05-18.
 _DOI_RESOLVE_UA = "research-hub (+https://github.com/WenyuChiou/research-hub)"
-# Transient = "blocked / rate-limited / retry later", NOT "this DOI is fake".
-# 404/410 stay permanent so the anti-fabrication guarantee is preserved.
-_TRANSIENT_HTTP_STATUS = frozenset({408, 418, 425, 429, 500, 502, 503, 504})
+# Only definitive non-registration (HTTP 404/410) fails closed as
+# `*_unresolved`; every other resolver HEAD failure -- anti-bot
+# 401/403/406/418/451, rate-limit 429, 5xx, network error -- defers as
+# `*_check_unavailable`. Anti-fabrication guarantee = 404/410 + the L2
+# corroboration layer; both unchanged.
+_DEFINITIVE_NOTFOUND_HTTP_STATUS = frozenset({404, 410})
 
 
 def _resolve_head_with_retry(url: str, *, attempts: int = 3) -> tuple[int | None, bool]:
     """HEAD *url* with a real User-Agent and bounded backoff.
 
     Returns ``(status_code, transient)``. ``transient`` is True when the
-    final attempt was a rate-limit / anti-bot / network failure
-    (HTTP 408/418/425/429/5xx or a RequestException) rather than a
-    definitive answer — the caller must NOT treat that as a fake DOI and
-    must NOT cache it as a permanent failure.
+    final attempt was an access / anti-bot / rate-limit / network
+    failure rather than a definitive answer. Only 2xx/3xx and HTTP
+    404/410 are definitive; every other status must NOT be treated as a
+    fake DOI and must NOT be cached as a permanent failure.
     """
     status_code: int | None = None
     for attempt in range(attempts):
@@ -435,10 +439,9 @@ def _resolve_head_with_retry(url: str, *, attempts: int = 3) -> tuple[int | None
                 headers={"User-Agent": _DOI_RESOLVE_UA},
             )
             status_code = int(getattr(response, "status_code", 0) or 0)
-            # `status_code and ...`: a 0/falsy code (malformed response) is
-            # NOT a definitive answer — fall through to retry, then transient,
-            # so it can never resolve to ok=True (fail-closed).
-            if status_code and status_code not in _TRANSIENT_HTTP_STATUS:
+            if status_code and status_code < 400:
+                return status_code, False
+            if status_code in _DEFINITIVE_NOTFOUND_HTTP_STATUS:
                 return status_code, False
         except requests.RequestException:
             status_code = None
@@ -883,4 +886,3 @@ def _int_or_none(value: Any) -> int | None:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
