@@ -45,6 +45,15 @@ graph rebuild (link out to the real tools instead)._
   instead of a generic `pip install` hint that cannot succeed there.
 
 ### Fixed
+- `zotero gc` / `zotero mark-kept --all-orphans`: a real cluster
+  collection whose Zotero key drifted from its `cluster.zotero_collection_key`
+  binding (e.g. a Zotero-truncated date-prefixed name like
+  `20260518-machine-learning-flood-forecas`) is no longer mis-flagged as an
+  orphan candidate. New conservative, suppression-only name-normalization
+  match (`_normalize_collection_name` + bidirectional prefix match, min
+  12-char guard). No rebind/merge/delete-logic change; strictly fewer GC
+  candidates. PR-A's non-empty hard-skip remains as an independent safety
+  net.
 - **arXiv hits no longer leak past `--exclude-type preprint`.** The
   arXiv backend left `doc_type` empty, so the type filter silently
   missed every raw arXiv result (bioRxiv/chemRxiv already set it).

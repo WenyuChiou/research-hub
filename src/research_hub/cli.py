@@ -1725,13 +1725,24 @@ def _zotero_mark_kept(
         return 0
 
     if all_orphans:
+        from research_hub.clusters import slugify
         from research_hub.zotero.client import get_client
 
         registry = ClusterRegistry(cfg.clusters_file)
+        clusters = registry.list()
         vault_keys = {
             (cluster.zotero_collection_key or "").strip()
-            for cluster in registry.list()
+            for cluster in clusters
             if (cluster.zotero_collection_key or "").strip()
+        }
+        vault_name_slugs = {
+            slugify(cluster.name)
+            for cluster in clusters
+            if (cluster.name or "").strip()
+        } | {
+            (cluster.slug or "").strip()
+            for cluster in clusters
+            if (cluster.slug or "").strip()
         }
         zot = get_client()
         # respect_kept=False here so we re-detect the full orphan set
@@ -1743,6 +1754,7 @@ def _zotero_mark_kept(
             include_test_pattern=False,
             age_days=30,
             kept_keys=set(),
+            vault_name_slugs=vault_name_slugs,
         )
         # PR-A: include BOTH orphan reasons. A non-empty orphan
         # (`orphan-with-items(N)`) is exactly the real-data collection a
@@ -1906,6 +1918,7 @@ def _zotero_gc(
     respect_kept: bool = True,
 ) -> int:
     cfg = get_config()
+    from research_hub.clusters import slugify
     from research_hub.zotero.client import get_client
     from research_hub.zotero.gc import (
         delete_candidates,
@@ -1914,10 +1927,20 @@ def _zotero_gc(
     )
 
     registry = ClusterRegistry(cfg.clusters_file)
+    clusters = registry.list()
     vault_keys = {
         (cluster.zotero_collection_key or "").strip()
-        for cluster in registry.list()
+        for cluster in clusters
         if (cluster.zotero_collection_key or "").strip()
+    }
+    vault_name_slugs = {
+        slugify(cluster.name)
+        for cluster in clusters
+        if (cluster.name or "").strip()
+    } | {
+        (cluster.slug or "").strip()
+        for cluster in clusters
+        if (cluster.slug or "").strip()
     }
     kept_keys = load_kept_keys(cfg.research_hub_dir) if respect_kept else set()
     zot = get_client()
@@ -1927,6 +1950,7 @@ def _zotero_gc(
         include_test_pattern=not no_test_pattern,
         age_days=age_days,
         kept_keys=kept_keys,
+        vault_name_slugs=vault_name_slugs,
     )
     if not candidates:
         print("No Zotero GC candidates found.")

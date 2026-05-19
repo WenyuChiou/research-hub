@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,56 @@ TEST_PATTERNS = [
     "Beta",
 ]
 DEFAULT_AGE_DAYS = 30
+
+# 4–8 leading date digits (YYYY..YYYYMMDD) + optional T/_-separated time
+# (HHMMSS, ≤6 digits) + a required separator. Deliberately NOT `\d*`
+# (unbounded) — a tight bound keeps non-date numeric prefixes (e.g. a Unix
+# timestamp) un-stripped, so such names stay LESS likely to be name-matched
+# and thus stay flagged (the safe over-flag→under-flag direction).
+_DATE_PREFIX_RE = re.compile(r"^\d{4,8}(?:[T_]\d{0,6})?[-_ ]+")
+_NAME_MATCH_MIN_LEN = 12
+
+
+def _normalize_collection_name(name: str) -> str:
+    """Strip a leading (possibly Zotero-truncated) date prefix then slugify.
+
+    e.g. '20260518-machine-learning-flood-forecas'
+         -> 'machine-learning-flood-forecas'
+    Reuses `research_hub.clusters.slugify` (imported lazily to avoid any
+    import cycle between zotero.gc and clusters).
+    """
+    from research_hub.clusters import slugify  # lazy: avoid import cycle
+
+    stripped = _DATE_PREFIX_RE.sub("", name or "")
+    return slugify(stripped)
+
+
+def _name_recognised(name: str, vault_name_slugs: set[str] | None) -> bool:
+    """True if the normalized collection name prefix-matches a known
+    cluster name/slug in BOTH directions (handles Zotero's name
+    truncation either way). Min length guard avoids coincidental short
+    matches.
+
+    Accepted conservative edge case: the bidirectional prefix match can
+    suppress a *genuine* orphan whose normalized name shares a long
+    (≥12-char) prefix with a real cluster slug. This is intentional —
+    over-flagging real data was the bug; an occasional harmless
+    under-flag (orphan left in Zotero, never deleted) is the safe
+    direction. ``delete_candidates``' non-empty hard-skip (PR-A) is the
+    independent second safety net.
+    """
+    if not vault_name_slugs:
+        return False
+    norm = _normalize_collection_name(name)
+    if len(norm) < _NAME_MATCH_MIN_LEN:
+        return False
+    for v in vault_name_slugs:
+        if (
+            len(v) >= _NAME_MATCH_MIN_LEN
+            and (norm.startswith(v) or v.startswith(norm))
+        ):
+            return True
+    return False
 
 
 @dataclass
@@ -97,8 +148,12 @@ def scan_zotero_for_gc(
     include_test_pattern: bool = True,
     age_days: int = DEFAULT_AGE_DAYS,
     kept_keys: set[str] | None = None,
+    vault_name_slugs: set[str] | None = None,
 ) -> list[GCCandidate]:
-    """Walk the Zotero web library and return collection delete candidates."""
+    """Walk the Zotero web library and return collection delete candidates.
+
+    ``vault_name_slugs`` suppresses orphan flags for name-recognised collections.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=age_days)
     out: list[GCCandidate] = []
     start = 0
@@ -133,6 +188,13 @@ def scan_zotero_for_gc(
                 if kept_keys and key in kept_keys:
                     # User explicitly marked this collection as kept; skip the
                     # orphan flag so it never appears as a gc candidate.
+                    pass
+                elif _name_recognised(name, vault_name_slugs):
+                    # Name-recognised: a real cluster collection whose key drifted
+                    # (e.g. Zotero-truncated date-prefixed name). Suppress the
+                    # orphan flag exactly like an explicit kept_keys entry. The
+                    # empty>Nd / test-pattern reasons above are unaffected, so an
+                    # empty recognised collection can still be flagged junk.
                     pass
                 elif num_items == 0 and num_collections == 0:
                     # Empty orphan — safe junk, eligible for --yes auto-GC
