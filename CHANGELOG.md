@@ -103,7 +103,9 @@ graph rebuild (link out to the real tools instead)._
   0-quarantined result (e.g. empty search) keeps the lenient path with
   an honest `N written, M quarantined (of K candidates)` message.
 - **F8: `notebooklm upload` no longer exits 0 when 0 sources were
-  transferred.** When NotebookLM's source API drifts under the pinned
+  transferred.** _(Root cause later revised — the common cause is the
+  URL-quality skip, not the upstream API; see the "Fixed (F8 real fix)"
+  entry above.)_ When NotebookLM's source API drifts under the pinned
   `notebooklm-py` (e.g. `Sources data ... is not a list (NoneType)`)
   the notebook is created but no sources land; the old code returned 0
   because `fail_count == 0`. A non-dry-run upload that transfers,
@@ -144,6 +146,23 @@ graph rebuild (link out to the real tools instead)._
   leftover from a previous run can't auto-trigger before sign-in. This
   formalizes (in Python, testable) the signal-pipe technique used to
   recover the maintainer's expired session.
+
+### Fixed (F8 real fix)
+- **`auto` can now actually upload publisher-URL clusters to
+  NotebookLM.** Diagnosed 2026-05-19: an all-URL cluster (DOIs →
+  ScienceDirect/Elsevier) uploaded 0 sources because every entry was
+  `likely_error_page` (our local probe can't read the anti-bot wall)
+  and the conservative URL-quality gate skipped them all — and `auto`
+  called `upload_cluster` positionally with no way to override, so
+  there was no path to rescue it through the pipeline. The earlier F8
+  message also mis-blamed a NotebookLM API change (the
+  `SourcesAPI.list ... NoneType` warning was a red herring — listing an
+  empty new notebook). The conservative skip is intentional design and
+  is **unchanged**; instead `--include-suspect-urls` is now exposed on
+  `auto` and threaded `auto → auto_pipeline → upload_cluster`, and the
+  0-sources error message now lists the real likely cause first (URL
+  sources skipped → re-run with `--include-suspect-urls`) instead of
+  pointing at the upstream API.
 
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 

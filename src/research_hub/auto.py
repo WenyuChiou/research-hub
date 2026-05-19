@@ -172,6 +172,7 @@ def auto_pipeline(
     with_pdfs: bool = False,
     with_summary: bool = False,
     peer_reviewed: bool = False,
+    include_suspect_urls: bool = False,
 ) -> AutoReport:
     """End-to-end ingest + optional NotebookLM publish.
 
@@ -452,7 +453,10 @@ def auto_pipeline(
                   f"{bundle_report.pdf_count} PDFs", print_progress)
 
         nlm_step = "nlm.upload"
-        upload_report = upload_cluster(cluster, cfg, headless=False)
+        upload_report = upload_cluster(
+            cluster, cfg, headless=False,
+            include_suspect_urls=include_suspect_urls,
+        )
         report.nlm_uploaded = upload_report.success_count
         report.notebook_url = upload_report.notebook_url
         _step_log(report, "nlm.upload", True, _elapsed(started, report),        

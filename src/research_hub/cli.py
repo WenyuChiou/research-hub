@@ -3877,10 +3877,11 @@ def _nlm_upload(
         if result.error:
             print(f"       {result.error}")
     # F8: a non-dry-run upload that transferred, cached, and pruned
-    # *nothing* is not a success. This is the symptom of NotebookLM's
-    # source API drifting under the pinned upstream `notebooklm-py`
-    # (e.g. "Sources data ... is not a list (NoneType)") — the notebook
-    # gets created but 0 sources land, and the old code returned 0.
+    # *nothing* is not a success. Most common real cause (diagnosed
+    # 2026-05-19): every URL source was skipped by the URL-quality
+    # pre-check (`failed_no_abstract` on publisher/anti-bot pages) — see
+    # `upload_skip_error_page` events. Less common: empty bundle, or an
+    # actual upstream `notebooklm-py` API drift. List causes honestly.
     if (
         not report.dry_run
         and report.fail_count == 0
@@ -3889,12 +3890,12 @@ def _nlm_upload(
         and not report.over_cap_skipped
     ):
         print(
-            "ERROR: 0 sources uploaded, cached, or pruned. Either the "
-            "cluster bundle was empty, or NotebookLM's source API changed "
-            "and the pinned `notebooklm-py` could not transfer sources "
-            "(see any 'Sources data ... is not a list' warning above). "
-            "The notebook may exist but holds no sources -- not a clean "
-            "upload.",
+            "ERROR: 0 sources uploaded, cached, or pruned. Likely causes "
+            "(check the upload log above): (1) all URL sources skipped by "
+            "the URL-quality pre-check -- re-run with --include-suspect-urls; "
+            "(2) the cluster bundle was empty; (3) an upstream notebooklm-py "
+            "API drift ('Sources data ... is not a list'). The notebook may "
+            "exist but holds no sources -- not a clean upload.",
             file=sys.stderr,
         )
         return 1
@@ -4477,6 +4478,7 @@ def _auto(
     with_pdfs: bool = False,
     with_summary: bool = False,
     peer_reviewed: bool = False,
+    include_suspect_urls: bool = False,
     emit_json: bool = False,
 ) -> int:
     from research_hub.auto import auto_pipeline
@@ -4525,6 +4527,7 @@ def _auto(
             "llm_cli": llm_cli,
             "dry_run": dry_run,
             "peer_reviewed": peer_reviewed,
+            "include_suspect_urls": include_suspect_urls,
             "print_progress": not emit_json,
         }
         if with_pdfs:
@@ -4894,6 +4897,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--peer-reviewed",
         action="store_true",
         help=_PEER_REVIEWED_HELP,
+    )
+    auto_parser.add_argument(
+        "--include-suspect-urls",
+        action="store_true",
+        help="Upload URL sources even if the URL-quality pre-check flags "
+             "them likely_error_page (e.g. publisher/anti-bot pages our "
+             "local probe can't read). NotebookLM fetches URLs server-side, "
+             "so this rescues clusters that would otherwise upload 0 sources "
+             "(F8). Use this when an `auto` run reports the 0-sources "
+             "upload error. Default conservative skip is unchanged.",
     )
     auto_parser.add_argument("--no-nlm", action="store_true",
                              help="Skip NotebookLM bundle/upload/generate/download")
@@ -6943,6 +6956,7 @@ def _main_dispatch(args, parser) -> int:
             llm_cli=args.llm_cli,
             dry_run=args.dry_run,
             peer_reviewed=args.peer_reviewed,
+            include_suspect_urls=args.include_suspect_urls,
             append=args.append,
             force=args.force,
             show=args.show,
