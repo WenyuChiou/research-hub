@@ -35,7 +35,7 @@ Zotero); L2 is a provenance *label*, not a gate.
 | Layer | Check | On fail |
 |---|---|---|
 | **L0** provenance | Has at least one identifier (DOI / arXiv / PMID / OpenAlex) | quarantine `no_identifier` |
-| **L1** resolution | `doi.org` HEAD (or arXiv/PMID resolver) returns `<400`. Network error / timeout is **fail-closed** — never assumed valid | quarantine `doi_unresolved` / `doi_check_unavailable` |
+| **L1** resolution | `doi.org` HEAD (real User-Agent, bounded retry) or arXiv/PMID resolver returns `<400`. Still **fail-closed** — never assumed valid | **permanent** (404/410 → `*_unresolved`): quarantine `L1`. **transient** (rate-limit/unreachable after retry → `*_check_unavailable`): layer `L1-deferred` — *not rejected*, recovers on re-run / `quarantine restore` |
 | **L2** corroboration | Cross-backend agreement on title/author/year | **label only** — single-source-but-resolvable is real and is **not** quarantined; recorded as `single-source` vs `corroborated` |
 | **L3** integrity | Authors not truncated/anonymous, no mojibake, plausible year, venue sanity | quarantine `metadata_invalid` |
 | **L4** relevance | `fit_check` LLM-judge score ≥ threshold. **Fail-closed:** no judge available ⇒ quarantine, never keep-all | quarantine `relevance_unjudged` / `low_relevance` |

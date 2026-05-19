@@ -34,6 +34,15 @@ except ImportError:  # pragma: no cover - rapidfuzz is a declared dependency
 SCHEMA_VERSION = "1.0"
 DOI_RESOLVE_CACHE = "doi_resolve_cache.json"
 QUARANTINE_DIR = "quarantine"
+# PR-C (deep F7): a TRANSIENT identifier-resolution failure (doi.org /
+# Crossref rate-limit or network blip, after PR-B's bounded retry) is
+# NOT evidence the paper is fake. It is still held out of ingest
+# (fail-closed — we could not verify), but recorded under this distinct
+# layer so it is reported as "deferred (retryable)" rather than
+# "quarantined (rejected)", and recovers on a later run / `quarantine
+# restore` once the resolver is reachable. Permanent failures
+# (`*_unresolved`, 404/410) keep layer "L1" — anti-fabrication unchanged.
+DEFERRED_LAYER = "L1-deferred"
 _KNOWN_VENUE_STRAGGLERS = {"arxiv", "open mind"}
 _LLM_UNJUDGED_REASONS = {"relevance_unjudged"}
 
@@ -158,13 +167,17 @@ def verify_authenticity(
 
             outcome = _resolve_identifier(paper, cache, cache_path)
             if not outcome.ok:
+                reason = outcome.reason or "doi_unresolved"
+                # Transient (rate-limit / unreachable after retry) ->
+                # deferred-retryable; permanent (404/410, no id) -> L1.
+                layer = DEFERRED_LAYER if is_transient_reason(reason) else "L1"
                 quarantined.append(
                     quarantine_paper(
                         cfg,
                         paper,
                         cluster_slug=cluster_slug,
-                        layer="L1",
-                        reason=outcome.reason or "doi_unresolved",
+                        layer=layer,
+                        reason=reason,
                         details={
                             "status_code": outcome.status_code,
                             "url": outcome.url,
@@ -537,6 +550,18 @@ def _unavailable_reason_for(source: str) -> str:
     if source == "arxiv.org":
         return "arxiv_check_unavailable"
     return "identifier_check_unavailable"
+
+
+def is_transient_reason(reason: str) -> bool:
+    """True for a transient identifier-resolution failure (the
+    `*_check_unavailable` family emitted by ``_unavailable_reason_for``
+    when the resolver was rate-limited / unreachable AFTER PR-B's
+    bounded retry). Permanent failures (`*_unresolved`, `no_identifier`,
+    predatory/metadata/fit/uncorroborated) are NOT transient and stay
+    fail-closed-quarantined. Keyed on the canonical suffix so it stays
+    correct if new sources are added to ``_unavailable_reason_for``.
+    """
+    return reason.endswith("_check_unavailable")
 
 
 def _metadata_integrity_reason(paper: dict) -> str:
