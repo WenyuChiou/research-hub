@@ -3813,7 +3813,8 @@ def _notebooklm_bundle(cluster_slug: str, download_pdfs: bool = False) -> int:
     print(f"Bundle written to {report.bundle_dir}")
     print(
         f"Papers: {len(report.entries)} total "
-        f"({report.pdf_count} PDFs, {report.url_count} URLs, {report.skip_count} skipped)"
+        f"({report.pdf_count} PDFs, {report.url_count} URLs, "
+        f"{report.text_count} abstracts, {report.skip_count} skipped)"
     )
     return 0
 

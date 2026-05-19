@@ -24,6 +24,7 @@ class BundleEntry:
     pdf_path: str = ""
     pdf_source: str = ""
     url: str = ""
+    text: str = ""
     skip_reason: str = ""
     url_quality: str = ""
     url_quality_reason: str = ""
@@ -44,6 +45,10 @@ class BundleReport:
     @property
     def url_count(self) -> int:
         return sum(1 for entry in self.entries if entry.action == "url")
+
+    @property
+    def text_count(self) -> int:
+        return sum(1 for entry in self.entries if entry.action == "text")
 
     @property
     def skip_count(self) -> int:
@@ -76,6 +81,34 @@ def _parse_note_metadata(md_path: Path) -> dict[str, str]:
             value = match.group(1).strip()
             meta[key] = _normalize_doi(value) if key == "doi" else value
     return meta
+
+
+def _extract_abstract(md_path: Path, meta: dict[str, str]) -> str:
+    """F8 content ladder rung 3: the paper's abstract as a self-describing
+    text source. Pulls the `## Abstract` section from the note body (the
+    abstract is not a frontmatter key). Returns "" if absent/placeholder
+    so the caller can fall through to the URL rung. Prefixed with
+    title/DOI so the NotebookLM text source is identifiable."""
+    try:
+        body = md_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    m = re.search(r"^##\s+Abstract\s*\n(.+?)(?=\n##|\Z)", body,
+                  re.MULTILINE | re.DOTALL)
+    if not m:
+        return ""
+    abstract = m.group(1).strip()
+    # Skip empty / TODO-placeholder abstracts (research-hub leaves these
+    # when summarize had no abstract — uploading them is noise).
+    if len(abstract) < 40 or abstract.lower().startswith(("[", "todo", "n/a")):
+        return ""
+    header = []
+    if meta.get("title"):
+        header.append(meta["title"])
+    if meta.get("doi"):
+        header.append(f"DOI: {meta['doi']}")
+    prefix = ("\n".join(header) + "\n\n") if header else ""
+    return (prefix + "Abstract\n" + abstract)[:8000]
 
 
 def _find_pdf_for_doi(
@@ -280,6 +313,23 @@ def bundle_cluster(
             report.entries.append(entry)
             continue
 
+        # F8 content ladder rung 3: no PDF (local or OA-fetched). Prefer
+        # the abstract as a copied-text source over a paywalled URL that
+        # NotebookLM can't read. A *good* URL (not likely_error_page —
+        # e.g. an open landing page with full text) is still better than
+        # an abstract, so only take the text rung when there is no URL or
+        # the URL is the suspect/paywall kind.
+        if not url or entry.url_quality == "likely_error_page":
+            abstract = _extract_abstract(note_path, meta)
+            if abstract:
+                entry.action = "text"
+                entry.text = abstract
+                if url:
+                    entry.url = url  # keep for provenance/manifest
+                    entry.skip_reason = "paywall URL -> abstract text used"
+                report.entries.append(entry)
+                continue
+
         if url:
             entry.action = "url"
             entry.url = url
@@ -306,6 +356,7 @@ def bundle_cluster(
                 "created_at": report.created_at,
                 "pdf_count": report.pdf_count,
                 "url_count": report.url_count,
+                "text_count": report.text_count,
                 "skip_count": report.skip_count,
                 "entries": [asdict(entry) for entry in report.entries],
             },
@@ -329,6 +380,7 @@ def bundle_cluster(
     else:
         print(f"  pdf: {report.pdf_count}")
     print(f"  url: {report.url_count}")
+    print(f"  text (abstract): {report.text_count}")
     print(f"  skip: {report.skip_count}")
     return report
 
@@ -341,7 +393,8 @@ def _render_readme(cluster, report: BundleReport) -> str:
         f"- Created at: {report.created_at}",
         (
             f"- Papers: {len(report.entries)} total "
-            f"({report.pdf_count} PDFs, {report.url_count} URLs, {report.skip_count} skipped)"
+            f"({report.pdf_count} PDFs, {report.url_count} URLs, "
+            f"{report.text_count} abstracts, {report.skip_count} skipped)"
         ),
         "",
         "## Upload to NotebookLM (manual fallback)",
@@ -368,7 +421,7 @@ def _render_readme(cluster, report: BundleReport) -> str:
     ]
     skipped = [entry for entry in report.entries if entry.action == "skip"]
     if not skipped:
-        lines.append("_None; every paper has either a PDF or a URL._")
+        lines.append("_None; every paper has a PDF, a URL, or an abstract text source._")
     else:
         for entry in skipped:
             lines.append(

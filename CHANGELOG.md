@@ -164,6 +164,22 @@ graph rebuild (link out to the real tools instead)._
   sources skipped → re-run with `--include-suspect-urls`) instead of
   pointing at the upstream API.
 
+### Added (F8 first-principles fix — content-priority ladder)
+- **NotebookLM bundles now upload the abstract as a text source when no
+  PDF is obtainable, instead of a paywalled URL.** First-principles
+  diagnosis: NLM needs *content*, not a URL — a paywalled publisher DOI
+  carries none. Local PDF (rung 1) and Unpaywall/OA PDF (rung 2, via
+  `fetch_paper_pdf`) already worked; the gap was rung 3. `bundle.py`
+  now: no PDF + (no URL or a `likely_error_page` paywall URL) + a real
+  `## Abstract` in the note → emits `action="text"` carrying the
+  abstract (title/DOI-prefixed); a *good* (non-suspect) URL is still
+  preferred (full text). `NotebookLMClient.upload_text` →
+  `sources.add_text`; `upload.py` dispatches `action="text"`;
+  `BundleReport.text_count`. Net: an all-paywall-URL cluster that
+  previously uploaded 0 sources now uploads the abstracts — real
+  content NotebookLM can synthesise. The conservative URL-quality gate
+  and `--include-suspect-urls` override (band-aid) are unchanged.
+
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 
 > **Not yet released — staged on `release-prep/v1.0.0`.** The cut

@@ -216,6 +216,8 @@ class NotebookLMClient:
         *,
         file_path: Path | None = None,
         url: str = "",
+        text: str = "",
+        title: str = "",
     ) -> UploadResult:
         async def _go():
             if file_path is not None:
@@ -227,18 +229,34 @@ class NotebookLMClient:
                 # this single bug, masked by 3-retry indiscriminate backoff
                 # in upload.py::_attempt_upload.
                 return await self._client.sources.add_file(notebook_id, file_path=str(file_path))
+            if text:
+                # F8 content ladder: when no PDF/OA is available, the
+                # abstract (already in the vault) is uploaded as a
+                # copied-text source — real content NotebookLM can use,
+                # vs a paywall URL it can't.
+                return await self._client.sources.add_text(
+                    notebook_id, title=title or "Untitled", content=text
+                )
             return await self._client.sources.add_url(notebook_id, url=url)
 
-        source_kind = "pdf" if file_path is not None else "url"
-        path_or_url = str(file_path) if file_path is not None else url
+        if file_path is not None:
+            source_kind, path_or_url = "pdf", str(file_path)
+        elif text:
+            source_kind, path_or_url = "text", (title or text[:60])
+        else:
+            source_kind, path_or_url = "url", url
         try:
             source = self._run(_go())
-            title = getattr(source, "title", "") or (file_path.name if file_path else url)
+            source_title = getattr(source, "title", "") or (
+                file_path.name if file_path is not None
+                else title if text          # F8: keep caller's paper title
+                else url
+            )
             return UploadResult(
                 source_kind=source_kind,
                 path_or_url=path_or_url,
                 success=True,
-                title=title,
+                title=source_title,
             )
         except _UpstreamError as exc:
             return UploadResult(source_kind=source_kind, path_or_url=path_or_url, error=str(exc))
@@ -256,6 +274,12 @@ class NotebookLMClient:
         if not notebook_id:
             raise NotebookLMError("upload_url requires an active notebook_id")
         return self.upload_source(notebook_id, url=url)
+
+    def upload_text(self, text: str, *, title: str = "") -> UploadResult:
+        notebook_id = getattr(self, "_active_notebook_id", "")
+        if not notebook_id:
+            raise NotebookLMError("upload_text requires an active notebook_id")
+        return self.upload_source(notebook_id, text=text, title=title)
 
     def set_active_notebook(self, notebook_id: str) -> None:
         self._active_notebook_id = notebook_id

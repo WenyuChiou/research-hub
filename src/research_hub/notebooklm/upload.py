@@ -715,6 +715,12 @@ def _attempt_upload(
             result = client.upload_pdf(Path(entry["pdf_path"]))
         elif action == "url":
             result = client.upload_url(entry["url"])
+        elif action == "text":
+            # F8 content ladder: abstract uploaded as a copied-text
+            # source (real content) when no PDF/OA is available.
+            result = client.upload_text(
+                entry.get("text", ""), title=entry.get("title", "")
+            )
         else:
             _log_jsonl(log_path, {"kind": "upload_skip", "action": action, "key": key})
             return None
