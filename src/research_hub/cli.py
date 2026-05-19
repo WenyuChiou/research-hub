@@ -3876,6 +3876,28 @@ def _nlm_upload(
         print(f"  [{status}] {result.source_kind}: {result.path_or_url}")
         if result.error:
             print(f"       {result.error}")
+    # F8: a non-dry-run upload that transferred, cached, and pruned
+    # *nothing* is not a success. This is the symptom of NotebookLM's
+    # source API drifting under the pinned upstream `notebooklm-py`
+    # (e.g. "Sources data ... is not a list (NoneType)") — the notebook
+    # gets created but 0 sources land, and the old code returned 0.
+    if (
+        not report.dry_run
+        and report.fail_count == 0
+        and report.success_count == 0
+        and report.skipped_already_uploaded == 0
+        and not report.over_cap_skipped
+    ):
+        print(
+            "ERROR: 0 sources uploaded, cached, or pruned. Either the "
+            "cluster bundle was empty, or NotebookLM's source API changed "
+            "and the pinned `notebooklm-py` could not transfer sources "
+            "(see any 'Sources data ... is not a list' warning above). "
+            "The notebook may exist but holds no sources -- not a clean "
+            "upload.",
+            file=sys.stderr,
+        )
+        return 1
     return 0 if report.fail_count == 0 else 1
 
 

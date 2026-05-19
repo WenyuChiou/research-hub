@@ -62,6 +62,35 @@ def test_auto_research_topic_failure(monkeypatch):
     assert "0 papers" in result["error"]
 
 
+def test_auto_research_topic_all_quarantined_surfaces_error(monkeypatch):
+    """PR-B path B: an all-quarantined run keeps ok=True (safety gate
+    working) but MUST surface report.error to MCP agent callers — gating
+    the error field on `not ok` hid the quarantine warning, making it
+    indistinguishable from a clean 0-result."""
+    from research_hub import mcp_server as m
+    from research_hub.auto import AutoReport, AutoStepResult
+
+    monkeypatch.setattr(
+        "research_hub.auto.auto_pipeline",
+        lambda topic, **kw: AutoReport(
+            cluster_slug="x", cluster_created=True, ok=True,
+            papers_ingested=0,
+            error=("ingest wrote 0 papers (2 quarantined of 2); inspect: "
+                   "research-hub quarantine list --cluster x"),
+            steps=[AutoStepResult(name="ingest", ok=False,
+                                  detail="0 written, 2 quarantined")],
+        ),
+    )
+    from tests._mcp_helpers import _get_mcp_tool
+
+    tool = _get_mcp_tool(m.mcp, "auto_research_topic")
+    result = tool.fn(topic="all quarantined topic")
+    assert result["ok"] is True
+    assert result["papers_ingested"] == 0
+    assert "quarantine list" in result["error"]      # the PR-B fix
+    assert result["steps"][0]["ok"] is False
+
+
 def test_cleanup_garbage_dry_run(monkeypatch):
     from research_hub import mcp_server as m
 

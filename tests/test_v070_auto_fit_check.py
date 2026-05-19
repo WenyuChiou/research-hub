@@ -242,7 +242,10 @@ def test_auto_pipeline_runs_fit_check_by_default(mock_auto_deps, monkeypatch):
     )
 
     assert report.ok
-    assert report.papers_ingested == 1  # filtered down from 3
+    # PR-B: authoritative count — run_pipeline mocked (writes 0 files) so
+    # papers_ingested is 0. The fit-check 3->1 filtering is asserted via
+    # the fit_check step below, not via this (now write-truthful) counter.
+    assert report.papers_ingested == 0
     fit_steps = [s for s in report.steps if s.name == "fit_check"]
     assert len(fit_steps) == 1
     assert "kept 1/3" in fit_steps[0].detail
@@ -262,7 +265,9 @@ def test_auto_pipeline_skips_fit_check_when_disabled(mock_auto_deps, monkeypatch
     )
 
     assert report.ok
-    assert report.papers_ingested == 2
+    # PR-B: authoritative count. run_pipeline is mocked so it writes no
+    # files -> 0 written (was the old buggy tentative len(papers)==2).
+    assert report.papers_ingested == 0
     assert all(s.name != "fit_check" for s in report.steps)
     assert invoked == []  # LLM never invoked
 
@@ -297,6 +302,8 @@ def test_auto_pipeline_fit_check_threshold_param_propagates(mock_auto_deps, monk
         "topic", do_nlm=False, fit_check_threshold=2, print_progress=False,
     )
 
-    assert report.papers_ingested == 2
+    # PR-B: authoritative count. run_pipeline is mocked so it writes no
+    # files -> 0 written (was the old buggy tentative len(papers)==2).
+    assert report.papers_ingested == 0
     fit_step = [s for s in report.steps if s.name == "fit_check"][0]
     assert "threshold=2" in fit_step.detail

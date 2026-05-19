@@ -2544,7 +2544,14 @@ def auto_research_topic(
             "brief_path": str(report.brief_path) if report.brief_path else None,
             "total_duration_sec": report.total_duration_sec,
             "steps": [{"name": s.name, "ok": s.ok, "detail": s.detail} for s in report.steps],
-            "error": report.error if not report.ok else "",
+            # PR-B: surface report.error unconditionally. Path B keeps
+            # report.ok=True on an all-quarantined run (the safety gate
+            # working) but sets report.error with the quarantine hint;
+            # gating on `not report.ok` hid that from MCP agent callers,
+            # who would see {ok:true, papers_ingested:0, error:""} —
+            # indistinguishable from a clean 0-result. report.error is ""
+            # on genuinely clean runs, so this is safe.
+            "error": report.error,
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}

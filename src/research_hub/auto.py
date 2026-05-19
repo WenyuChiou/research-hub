@@ -372,12 +372,42 @@ def auto_pipeline(
         rc = run_pipeline(**run_kwargs)
         if rc != 0:
             raise RuntimeError("pipeline returned exit code " + str(rc))        
-        # Count actual ingested files (anything in raw/<slug>/ now)
+        # F6: the count must be authoritative. Previously, when EVERY
+        # candidate was quarantined the raw dir was never created, the
+        # `exists()` guard was skipped, and the tentative `len(papers)`
+        # survived -> `[OK] ingest N papers` printed despite 0 written.
         raw_dir = cfg.raw / slug
-        if raw_dir.exists():
-            report.papers_ingested = len(list(raw_dir.glob("*.md")))
-        _step_log(report, "ingest", True, _elapsed(started, report),
-                  f"{report.papers_ingested} papers in raw/{slug}/", print_progress)
+        attempted = report.papers_ingested  # tentative len(papers)
+        written = len(list(raw_dir.glob("*.md"))) if raw_dir.exists() else 0
+        report.papers_ingested = written
+        try:
+            from research_hub.authenticity import list_quarantine
+            quarantined = len(list_quarantine(cfg, cluster=slug))
+        except Exception:
+            quarantined = 0
+        detail = (
+            f"{written} written, {quarantined} quarantined "
+            f"(of {attempted} candidate(s)) in raw/{slug}/"
+        )
+        # F6: candidates existed but the vault got nothing (all rejected
+        # by fit-check / the fail-closed authenticity gate). Render the
+        # ingest step as [FAIL] with an honest count + actionable hint so
+        # it can never read as `[OK] ingest N papers` again. We do NOT
+        # flip report.ok / abort: quarantine-of-all is the safety gate
+        # working as designed, not an orchestration crash, and the
+        # end-of-run quarantine summary (more actionable) still prints.
+        ingest_ok = not (written == 0 and attempted > 0)
+        if ingest_ok:
+            _step_log(report, "ingest", True, _elapsed(started, report),
+                      detail, print_progress)
+        else:
+            _step_log(report, "ingest", False, _elapsed(started, report),
+                      detail + " -- nothing reached the vault", print_progress)
+            report.error = (
+                f"ingest wrote 0 papers ({quarantined} quarantined of "
+                f"{attempted}); inspect: research-hub quarantine list "
+                f"--cluster {slug}"
+            )
     except Exception as exc:
         _step_log(report, "ingest", False, _elapsed(started, report), str(exc), print_progress)
         report.ok = False

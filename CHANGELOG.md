@@ -91,6 +91,26 @@ graph rebuild (link out to the real tools instead)._
   section, are never offered in the interactive prompt, and are
   excluded from `--yes`. Empty/test junk GC is unchanged.
 
+### Fixed (PR-B)
+- **F6: `auto` no longer prints `[OK] ingest N papers` when 0 were
+  written.** When every candidate was quarantined by the fail-closed
+  authenticity gate the raw dir was never created, the `exists()` guard
+  was skipped, and the tentative `len(papers)` count survived — the
+  pipeline reported a clean ingest of N papers while the vault got
+  nothing. The count is now authoritative (`0` when nothing written);
+  an all-quarantined ingest is reported as a failed step with an
+  actionable `quarantine list` hint, not `[OK]`. A 0-written /
+  0-quarantined result (e.g. empty search) keeps the lenient path with
+  an honest `N written, M quarantined (of K candidates)` message.
+- **F8: `notebooklm upload` no longer exits 0 when 0 sources were
+  transferred.** When NotebookLM's source API drifts under the pinned
+  `notebooklm-py` (e.g. `Sources data ... is not a list (NoneType)`)
+  the notebook is created but no sources land; the old code returned 0
+  because `fail_count == 0`. A non-dry-run upload that transfers,
+  caches, and prunes nothing is now a non-zero error naming the likely
+  cause. (`notebooklm-py` was already pinned `<0.5.0`; this drift is
+  server-side, so honest reporting is the only available remedy.)
+
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 
 > **Not yet released — staged on `release-prep/v1.0.0`.** The cut
