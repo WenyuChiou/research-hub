@@ -1674,6 +1674,7 @@ def _zotero_mark_kept(
 
     cfg = get_config()
     from research_hub.zotero.gc import (
+        is_orphan_candidate,
         kept_file_path,
         load_kept_keys,
         lookup_collection_names_and_counts,
@@ -1743,7 +1744,12 @@ def _zotero_mark_kept(
             age_days=30,
             kept_keys=set(),
         )
-        new_keys = {c.key for c in candidates if "orphan-from-vault" in c.reasons}
+        # PR-A: include BOTH orphan reasons. A non-empty orphan
+        # (`orphan-with-items(N)`) is exactly the real-data collection a
+        # user most wants `--all-orphans` to protect from future gc noise;
+        # keying on the bare "orphan-from-vault" string would silently drop
+        # it now that the reason is split.
+        new_keys = {c.key for c in candidates if is_orphan_candidate(c)}
         merged = current | new_keys
         save_kept_keys(cfg.research_hub_dir, merged, note=note)
         added = len(merged) - len(current)
@@ -1926,33 +1932,68 @@ def _zotero_gc(
         print("No Zotero GC candidates found.")
         return 0
 
+    def _is_non_empty(c) -> bool:
+        return c.num_items > 0 or c.num_collections > 0
+
+    junk = [c for c in candidates if not _is_non_empty(c)]
+    non_empty = [c for c in candidates if _is_non_empty(c)]
+
+    def _print_rows(rows) -> None:
+        for candidate in rows:
+            print(
+                f"{candidate.key}\t{candidate.name}\t{candidate.num_items}\t"
+                f"{candidate.num_collections}\t{', '.join(candidate.reasons)}"
+            )
+
     print("key\tname\titems\tsubcollections\treasons")
-    for candidate in candidates:
+    _print_rows(junk)
+    if non_empty:
+        print("")
         print(
-            f"{candidate.key}\t{candidate.name}\t{candidate.num_items}\t"
-            f"{candidate.num_collections}\t{', '.join(candidate.reasons)}"
+            f"-- NON-EMPTY ORPHANS ({len(non_empty)}) -- review only; gc "
+            f"CANNOT delete these (hard-skipped at the delete layer). If "
+            f"they are stale duplicates, reconcile via cluster rebind/merge --"
         )
+        _print_rows(non_empty)
     if not apply:
         print("")
         print("Preview only. Re-run with --apply to delete candidates.")
         return 0
 
-    selected = list(candidates)
+    # `delete_candidates` already hard-skips any non-empty collection
+    # (gc.py). PR-A makes that pre-existing guarantee *honest* at the
+    # selection layer too: non-empty orphans are never even offered for
+    # deletion (no misleading "type name to delete" prompt that the
+    # delete layer would then refuse) — they are listed for review only.
+    # Reuse the partition computed above for the grouped display.
+    non_empty_skipped = len(non_empty)
+    deletable = junk
+
     if not yes:
         kept: list = []
-        for candidate in candidates:
-            answer = input(f"Delete {candidate.name} ({candidate.key})? [y/N] ").strip().lower()
+        for candidate in deletable:
+            answer = input(
+                f"Delete {candidate.name} ({candidate.key})? [y/N] "
+            ).strip().lower()
             if answer in {"y", "yes"}:
                 kept.append(candidate)
         selected = kept
     else:
+        # --yes auto-selects only safe junk: empty + test-pattern +
+        # orphan-from-vault, all three (on the already non-empty-filtered set).
         selected = [
             candidate
-            for candidate in candidates
+            for candidate in deletable
             if any(reason.startswith("empty>") for reason in candidate.reasons)
             and any(reason.startswith("test-pattern(") for reason in candidate.reasons)
             and "orphan-from-vault" in candidate.reasons
         ]
+    if non_empty_skipped:
+        print(
+            f"Skipped {non_empty_skipped} non-empty orphan(s) -- gc cannot "
+            f"delete these (hard-skipped at the delete layer). Reconcile via "
+            f"cluster rebind/merge if they are stale duplicates."
+        )
     results = delete_candidates(zot, selected)
     ok_count = sum(1 for status in results.values() if status == "ok")
     print(f"Deleted {ok_count}/{len(selected)} collection(s).")

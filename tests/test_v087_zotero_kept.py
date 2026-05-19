@@ -74,7 +74,8 @@ def test_scan_with_kept_keys_excludes_them_from_orphan_results() -> None:
         ("KEEPME", "Risk perception", 44, 0),
         ("DROPME", "scratch-collection", 0, 0),
     ])
-    # Without kept_keys, both show up as orphan-from-vault
+    # Without kept_keys, both are orphans (KEEPME non-empty ->
+    # orphan-with-items(44); DROPME empty -> orphan-from-vault)
     candidates = scan_zotero_for_gc(zot, vault_keys=set())
     assert {c.key for c in candidates} == {"KEEPME", "DROPME"}
 

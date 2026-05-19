@@ -134,8 +134,17 @@ def scan_zotero_for_gc(
                     # User explicitly marked this collection as kept; skip the
                     # orphan flag so it never appears as a gc candidate.
                     pass
-                else:
+                elif num_items == 0 and num_collections == 0:
+                    # Empty orphan — safe junk, eligible for --yes auto-GC
+                    # (only together with empty>Nd + test-pattern).
                     reasons.append("orphan-from-vault")
+                else:
+                    # PR-A: a non-empty orphan holds real items/subcollections
+                    # (e.g. a stale date-prefixed duplicate from an earlier
+                    # pipeline run). It must NEVER be auto-deleted by --yes and
+                    # must require a strong, item-count-aware confirm. Distinct
+                    # reason keeps it out of the --yes (orphan-from-vault) set.
+                    reasons.append(f"orphan-with-items({num_items})")
 
             if reasons:
                 out.append(
@@ -188,6 +197,20 @@ def lookup_collection_names_and_counts(zot, keys: Iterable[str]) -> dict[str, di
             break
         start += 200
     return out
+
+
+def is_orphan_candidate(candidate: GCCandidate) -> bool:
+    """True if the candidate is an orphan (not bound to any cluster),
+    whether empty (`orphan-from-vault`) or non-empty
+    (`orphan-with-items(N)`). PR-A split the reason in two; any site that
+    used to key on ``"orphan-from-vault"`` to mean "is an orphan" (e.g.
+    ``mark-kept --all-orphans``) must use this so non-empty orphans —
+    exactly the real-data collections users most want to protect — are
+    not silently dropped.
+    """
+    return "orphan-from-vault" in candidate.reasons or any(
+        reason.startswith("orphan-with-items(") for reason in candidate.reasons
+    )
 
 
 def delete_candidates(zot, candidates: Iterable[GCCandidate]) -> dict[str, str]:

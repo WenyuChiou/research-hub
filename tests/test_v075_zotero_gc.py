@@ -72,13 +72,18 @@ def test_scan_zotero_for_gc_skips_recent_empty_collection():
     assert candidates == [GCCandidate(key="A1", name="fresh-empty", num_items=0, num_collections=0, date_added="2026-04-25T00:00:00Z", reasons=["orphan-from-vault"])]
 
 
-def test_scan_zotero_for_gc_marks_orphan_without_test_pattern():
+def test_scan_zotero_for_gc_marks_non_empty_orphan_distinctly():
+    # PR-A: a non-empty orphan (4 real items) must NOT be the plain
+    # `orphan-from-vault` reason (which --yes can auto-delete together with
+    # empty+test) — it gets the distinct `orphan-with-items(N)` reason so it
+    # is never auto-deleted and triggers a strong confirm.
     zot = _ZotCollections([_collection("A1", "survey", num_items=4)])
 
     candidates = scan_zotero_for_gc(zot, set())
 
     assert len(candidates) == 1
-    assert candidates[0].reasons == ["orphan-from-vault"]
+    assert candidates[0].reasons == ["orphan-with-items(4)"]
+    assert "orphan-from-vault" not in candidates[0].reasons
 
 
 def test_delete_candidates_returns_ok_and_error():

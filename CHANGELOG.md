@@ -78,6 +78,19 @@ graph rebuild (link out to the real tools instead)._
   `--timeout`, and the unused `login_interactive` /
   `login_interactive_cdp` aliases they delegated to.
 
+### Fixed (PR-A)
+- **`zotero gc` no longer presents non-empty real collections as
+  deletion candidates.** Any Zotero collection whose key was not a
+  *current* cluster binding was flagged `orphan-from-vault` — including
+  stale non-empty date-prefixed duplicate collections holding real
+  items. `delete_candidates` already hard-skipped non-empty collections
+  (so no data could actually be lost), but the **output falsely implied
+  a data-loss risk**, eroding trust in the tool. Now: non-empty orphans
+  get a distinct `orphan-with-items(N)` reason, are listed under a
+  separate "NON-EMPTY ORPHANS — review only; gc cannot delete these"
+  section, are never offered in the interactive prompt, and are
+  excluded from `--yes`. Empty/test junk GC is unchanged.
+
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 
 > **Not yet released — staged on `release-prep/v1.0.0`.** The cut
