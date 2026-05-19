@@ -7,6 +7,7 @@ import inspect
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -55,17 +56,107 @@ def login_nlm(
     headless: bool = False,
     timeout_sec: int = 300,
     stable_hold_sec: int = 5,
+    wait_file: Path | None = None,
+    wait_timeout: int = 300,
 ) -> int:
-    """Open notebooklm-py's one-time login flow and save storage state."""
+    """Open notebooklm-py's one-time login flow and save storage state.
+
+    When *wait_file* is set the interactive ENTER gate is replaced by a
+    file signal (non-interactive); see ``_login_with_wait_file``.
+    """
     del headless, timeout_sec, stable_hold_sec
     target = Path(state_file) if state_file is not None else Path(user_data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "notebooklm.notebooklm_cli", "login", "--storage", str(target)]
-    rc = subprocess.run(cmd, check=False).returncode
+    if wait_file is None:
+        rc = subprocess.run(cmd, check=False).returncode
+    else:
+        rc = _login_with_wait_file(cmd, Path(wait_file), int(wait_timeout), target)
     if rc == 0:
         # G3 P1 #2: tighten newly-created state.json permissions.
         _tighten_state_file_perms(target)
     return rc
+
+
+def _kill_proc(proc) -> None:
+    """terminate -> wait -> kill escalation (POSIX-safe; SIGTERM-ignoring
+    children would otherwise leak/zombie)."""
+    try:
+        proc.terminate()
+    except OSError:
+        return
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+def _login_with_wait_file(
+    cmd: list[str],
+    wait_file: Path,
+    wait_timeout: int,
+    state_file: Path,
+) -> int:
+    """Non-interactive login: replace the upstream `input("press ENTER")`
+    gate with a file signal. The user (or an automation wrapper) creates
+    *wait_file* once the NotebookLM homepage has loaded; we then write the
+    newline that triggers the upstream `context.storage_state(...)` save.
+    No terminal / ENTER needed. Fail-closed: if *wait_file* never appears
+    within *wait_timeout* seconds, the subprocess is killed and a
+    non-zero code is returned (nothing is saved)."""
+    # Never inherit a stale signal from a previous run.
+    try:
+        wait_file.unlink()
+    except OSError:
+        pass
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    deadline = time.monotonic() + max(1, wait_timeout)
+    try:
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                # upstream exited on its own (e.g. an error) pre-signal
+                return proc.returncode
+            if wait_file.exists():
+                try:
+                    if proc.stdin is not None:
+                        proc.stdin.write(b"\n")
+                        proc.stdin.flush()
+                        proc.stdin.close()
+                except OSError:
+                    pass
+                try:
+                    return proc.wait(timeout=120)
+                except subprocess.TimeoutExpired:
+                    # The newline was fed and upstream saves storage_state
+                    # BEFORE it exits, so the file may already be written
+                    # with loose perms even though we report failure.
+                    # Tighten defensively (G3 P1 #2 invariant) before
+                    # killing the slow-to-exit process.
+                    try:
+                        _tighten_state_file_perms(state_file)
+                    except Exception:  # noqa: BLE001 - best-effort
+                        pass
+                    _kill_proc(proc)
+                    return 1
+            time.sleep(1.0)
+        # signal never arrived -> fail-closed (nothing saved). Close
+        # stdin first so the upstream read sees a clean EOF.
+        try:
+            if proc.stdin is not None:
+                proc.stdin.close()
+        except OSError:
+            pass
+        _kill_proc(proc)
+        return 124
+    finally:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
 
 
 def check_session_health(state_file: Path) -> dict[str, Any]:

@@ -132,6 +132,19 @@ graph rebuild (link out to the real tools instead)._
   CLI is deferred to a later follow-up — existing `quarantine restore`
   already recovers deferred entries.)
 
+### Added (PR-D)
+- **`notebooklm login --wait-file PATH` — non-interactive login (no
+  terminal/ENTER).** The upstream login blocks on `input("press
+  ENTER")`, which can't be driven headless/scripted. With `--wait-file`
+  you sign in in the browser then create PATH (`touch PATH`, or an
+  automation wrapper does it); research-hub polls for it and feeds the
+  newline that triggers the upstream session save. `--wait-timeout`
+  (default 300s) fails closed — on timeout the subprocess is terminated
+  and nothing is saved. Stale signal files are cleared first so a
+  leftover from a previous run can't auto-trigger before sign-in. This
+  formalizes (in Python, testable) the signal-pipe technique used to
+  recover the maintainer's expired session.
+
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 
 > **Not yet released — staged on `release-prep/v1.0.0`.** The cut
