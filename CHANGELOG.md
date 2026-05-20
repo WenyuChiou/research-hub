@@ -414,6 +414,24 @@ graph rebuild (link out to the real tools instead)._
   code path is unchanged — `monkeypatch` scope is per-test,
   reverting at teardown.
 
+### Removed
+
+- **Legacy root `plugin.json` deleted** (Phase 7 Wave B from the
+  `WenyuChiou/ai-research-skills` marketplace-maturity tracker — see
+  research-hub issue
+  [#60](https://github.com/WenyuChiou/research-hub/issues/60)). The
+  file was an early Cowork-plugin placeholder with a self-described
+  TODO ("Convert to full Cowork plugin manifest when plugin schema is
+  finalized") that never got migrated. It declared 3 skill paths,
+  one of which (`skills/knowledge-base/SKILL.md`) was the long-removed
+  `knowledge-base` alias, while 11 actual skill dirs ship under
+  `skills/`. The active manifest is `.claude-plugin/plugin.json`,
+  which uses Claude Code marketplace auto-discovery and is unaffected.
+  `grep -rn 'plugin\.json'` against `tests/` + `src/` + non-meta docs
+  returns zero references to the root file — it is a pure orphan.
+  Removing it removes a misleading source of truth without touching
+  any install / marketplace / test path.
+
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 
 > **Not yet released — staged on `release-prep/v1.0.0`.** The cut
