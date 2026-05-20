@@ -6202,19 +6202,23 @@ def build_parser() -> argparse.ArgumentParser:
         "login",
         help="Authenticate NotebookLM",
         description=(
-            "Authenticate NotebookLM. Three paths: (1) default interactive Google "
+            "Authenticate NotebookLM. Five paths: (1) default interactive Google "
             "sign-in in a real terminal (press ENTER when the NotebookLM homepage "
             "loads); (2) --import-from <other-vault> copies a logged-in session "
             "from another vault; (3) --from-browser [browser] imports cookies via "
             "rookiepy (requires the research-hub[browser-auth] extra; rookiepy has "
             "no prebuilt wheel for Python 3.14); (4) --wait-file PATH — sign in "
-            "in the browser then create PATH (no terminal/ENTER; scriptable)."
+            "in the browser then create PATH (no terminal/ENTER; scriptable); "
+            "(5) --auto-detect — fully automatic, research-hub polls the "
+            "patchright Chromium cookies and saves when notebooklm.google.com "
+            "appears (no terminal, no wait-file, no click.confirm response)."
         ),
         epilog=(
             "Examples:\n"
             "  research-hub notebooklm login\n"
             "  research-hub notebooklm login --import-from <other-vault>\n"
-            "  research-hub notebooklm login --from-browser chrome"
+            "  research-hub notebooklm login --from-browser chrome\n"
+            "  research-hub notebooklm login --auto-detect"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -6245,8 +6249,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=300,
         metavar="SECONDS",
-        help="With --wait-file: max seconds to wait for the signal file "
-             "before failing closed (default: 300; nothing is saved on timeout).",
+        help="With --wait-file or --auto-detect: max seconds to wait for "
+             "the detection signal before failing closed (default: 300; "
+             "nothing is saved on timeout).",
+    )
+    nlm_login.add_argument(
+        "--auto-detect",
+        action="store_true",
+        help="Fully automatic: research-hub polls the patchright Chromium "
+             "profile's cookies for notebooklm.google.com once the browser "
+             "opens. When you sign in and land on the NotebookLM homepage, "
+             "the session is saved automatically. No terminal/ENTER, no "
+             "wait-file touch, no click.confirm response needed.",
     )
     nlm_login.add_argument(
         "--from-browser",
@@ -7555,8 +7569,14 @@ def _main_dispatch(args, parser) -> int:
         return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
     if args.command == "notebooklm":
         if args.notebooklm_command == "login":
-            if args.wait_timeout != 300 and args.wait_file is None:
-                parser.error("--wait-timeout requires --wait-file")
+            if args.wait_timeout != 300 and args.wait_file is None and not args.auto_detect:
+                parser.error("--wait-timeout requires --wait-file or --auto-detect")
+            if args.auto_detect and args.wait_file is not None:
+                parser.error("--auto-detect and --wait-file are mutually exclusive")
+            if args.auto_detect and (args.import_from or args.from_browser is not None):
+                parser.error(
+                    "--auto-detect cannot be combined with --import-from or --from-browser",
+                )
             from pathlib import Path as _Path
 
             from research_hub._invocation import recommended_cli_invocation
@@ -7636,6 +7656,7 @@ def _main_dispatch(args, parser) -> int:
                 state_file=default_state_file(cfg.research_hub_dir),
                 wait_file=args.wait_file,
                 wait_timeout=args.wait_timeout,
+                auto_detect=args.auto_detect,
             )
         if args.notebooklm_command == "bundle":
             return _notebooklm_bundle(args.cluster, download_pdfs=args.download_pdfs)

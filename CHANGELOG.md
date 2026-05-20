@@ -44,6 +44,20 @@ graph rebuild (link out to the real tools instead)._
   the two paths that work (interactive in a terminal / `--import-from`)
   instead of a generic `pip install` hint that cannot succeed there.
 
+### Added
+- **`notebooklm login --auto-detect` — fully automatic zero-touch login.**
+  Replaces the half-automatic `--wait-file` flow (which still required a
+  manual file-touch after browser sign-in). With `--auto-detect`,
+  research-hub polls the patchright Chromium profile's Cookies SQLite
+  read-only for a `notebooklm.google.com` host_key. When you sign in
+  and land on the NotebookLM homepage, the cookie appears, the script
+  feeds both `\n` (any pending `input()` ENTER) and `y\n` (any pending
+  `click.confirm` "Save anyway?" fallback) to the SDK subprocess, and
+  the session is saved automatically. No terminal, no wait-file touch,
+  no click.confirm response. Fail-closed on `--wait-timeout`
+  (default 300 s): nothing is saved on timeout. Mutually exclusive with
+  `--wait-file`, `--import-from`, `--from-browser`.
+
 ### Fixed
 - **Ingest skips a paper missing one or more required core fields
   instead of aborting the whole batch.** A real-world `auto` run (LLM

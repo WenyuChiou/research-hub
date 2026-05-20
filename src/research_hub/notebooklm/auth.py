@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -58,17 +59,26 @@ def login_nlm(
     stable_hold_sec: int = 5,
     wait_file: Path | None = None,
     wait_timeout: int = 300,
+    auto_detect: bool = False,
 ) -> int:
     """Open notebooklm-py's one-time login flow and save storage state.
 
-    When *wait_file* is set the interactive ENTER gate is replaced by a
-    file signal (non-interactive); see ``_login_with_wait_file``.
+    Three orchestration modes:
+    - default (no flag): interactive ENTER gate in a real terminal.
+    - ``wait_file=PATH``: file-signal gate (see ``_login_with_wait_file``).
+    - ``auto_detect=True``: cookies-poll gate (see ``_login_with_auto_detect``).
+      Fully automatic: research-hub polls the patchright Chromium profile's
+      cookies for ``notebooklm.google.com`` after the user signs in and
+      lands on the NotebookLM homepage. No ENTER, no wait_file touch, no
+      click.confirm response needed.
     """
     del headless, timeout_sec, stable_hold_sec
     target = Path(state_file) if state_file is not None else Path(user_data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "notebooklm.notebooklm_cli", "login", "--storage", str(target)]
-    if wait_file is None:
+    if auto_detect:
+        rc = _login_with_auto_detect(cmd, int(wait_timeout), target)
+    elif wait_file is None:
         rc = subprocess.run(cmd, check=False).returncode
     else:
         rc = _login_with_wait_file(cmd, Path(wait_file), int(wait_timeout), target)
@@ -144,6 +154,135 @@ def _login_with_wait_file(
             time.sleep(1.0)
         # signal never arrived -> fail-closed (nothing saved). Close
         # stdin first so the upstream read sees a clean EOF.
+        try:
+            if proc.stdin is not None:
+                proc.stdin.close()
+        except OSError:
+            pass
+        _kill_proc(proc)
+        return 124
+    finally:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+
+
+def _patchright_cookies_db() -> Path:
+    """Resolve the path to the patchright Chromium profile's Cookies SQLite.
+
+    Prefers the notebooklm-py SDK's own ``get_browser_profile_dir`` helper
+    so research-hub stays in lock-step with whatever layout the SDK uses;
+    falls back to the documented ``~/.notebooklm/profiles/default/
+    browser_profile`` location if the helper is unavailable (older SDK).
+    """
+    try:
+        from notebooklm.cli.session import get_browser_profile_dir
+        return Path(get_browser_profile_dir()) / "Default" / "Cookies"
+    except Exception:  # noqa: BLE001 - any SDK breakage falls through
+        return (
+            Path.home()
+            / ".notebooklm"
+            / "profiles"
+            / "default"
+            / "browser_profile"
+            / "Default"
+            / "Cookies"
+        )
+
+
+def _cookies_db_modified_since(cookies_db: Path, baseline_mtime: float) -> bool:
+    """True iff the Cookies SQLite has been written after baseline_mtime.
+    Pair with _has_notebooklm_cookie to prove the row is FRESH (the
+    user signed in in this session) rather than stale (left over from a
+    previous login that may have been revoked server-side). Tolerant of
+    a missing file (returns False)."""
+    try:
+        return cookies_db.stat().st_mtime > baseline_mtime
+    except OSError:
+        return False
+
+
+def _has_notebooklm_cookie(cookies_db: Path) -> bool:
+    """True iff Chromium's Cookies SQLite contains at least one row with
+    ``host_key`` matching ``notebooklm.google.com``.
+
+    Tolerant of: file not yet existing (browser still starting); SQLite
+    lock contention (chromium writing); any other transient I/O error.
+    Each transient returns ``False`` so the calling loop simply polls
+    again on the next iteration. Opened read-only via the SQLite URI
+    ``mode=ro`` so we never contend with chromium's write locks.
+    """
+    if not cookies_db.exists():
+        return False
+    try:
+        uri = f"file:{cookies_db.as_posix()}?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=2) as conn:
+            cur = conn.execute(
+                "SELECT 1 FROM cookies WHERE host_key LIKE ? LIMIT 1",
+                ("%notebooklm.google.com",),
+            )
+            return cur.fetchone() is not None
+    except sqlite3.Error:
+        return False
+    except Exception:  # noqa: BLE001 - defensive against unexpected I/O
+        return False
+
+
+def _login_with_auto_detect(
+    cmd: list[str],
+    timeout: int,
+    state_file: Path,
+) -> int:
+    """Fully-automatic login: poll the patchright Chromium profile's
+    Cookies SQLite for a ``notebooklm.google.com`` host_key. When the
+    cookie appears, feed the subprocess ``\\n`` (any pending ``input()``
+    ENTER prompt) AND ``y\\n`` (any pending ``click.confirm`` "Save
+    authentication anyway?" prompt) in one write so the upstream save
+    fires whichever path the SDK actually takes.
+
+    Fail-closed: if no notebooklm.google.com cookie appears within
+    ``timeout`` seconds the subprocess is killed and a non-zero exit
+    code is returned (nothing is saved).
+    """
+    cookies_db = _patchright_cookies_db()
+    # W1 (PR-D review): anti-stale-cookie guard. Snapshot the Cookies
+    # file mtime BEFORE launching the subprocess. The detection trigger
+    # requires BOTH (a) a notebooklm.google.com row AND (b) the file was
+    # written after launch -- proving the user actually signed in in
+    # this session rather than us picking up a stale cookie left behind
+    # from a previous (possibly-revoked) login.
+    try:
+        pre_launch_mtime = cookies_db.stat().st_mtime if cookies_db.exists() else 0.0
+    except OSError:
+        pre_launch_mtime = 0.0
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    deadline = time.monotonic() + max(1, timeout)
+    poll_interval = 1.0  # match _login_with_wait_file for consistency
+    try:
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                return proc.returncode
+            if _has_notebooklm_cookie(cookies_db) and _cookies_db_modified_since(cookies_db, pre_launch_mtime):
+                try:
+                    if proc.stdin is not None:
+                        proc.stdin.write(b"\ny\n")
+                        proc.stdin.flush()
+                        proc.stdin.close()
+                except OSError:
+                    pass
+                try:
+                    return proc.wait(timeout=120)
+                except subprocess.TimeoutExpired:
+                    try:
+                        _tighten_state_file_perms(state_file)
+                    except Exception:  # noqa: BLE001 - best-effort
+                        pass
+                    _kill_proc(proc)
+                    return 1
+            time.sleep(poll_interval)
+        # detection never arrived -> fail-closed (nothing saved).
         try:
             if proc.stdin is not None:
                 proc.stdin.close()
