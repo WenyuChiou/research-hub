@@ -45,6 +45,20 @@ graph rebuild (link out to the real tools instead)._
   instead of a generic `pip install` hint that cannot succeed there.
 
 ### Fixed
+- **L2 corroboration augments single-source DOIs with direct CrossRef
+  metadata verify.** A paper found by only one search backend (e.g.
+  `source: 'openalex'`) was quarantined `L2 / uncorroborated` even when
+  its DOI was independently confirmable via CrossRef. The gate now
+  does a direct `https://api.crossref.org/works/{doi}` metadata fetch
+  for such papers; if CrossRef returns a record whose title/year/
+  authors match per the existing `_records_agree` predicate
+  (`fuzz.token_set_ratio >= 85`, `|year_delta| <= 1`, surname
+  intersection >= 1), CrossRef is recorded as a verified backend and
+  the paper passes L2. Strictly augmentative: CrossRef is an
+  authoritative metadata source, this only adds an existing-paper
+  evidence check; the L2 corroboration bar itself is unchanged. Result
+  cached in `crossref_verify_cache.json` (schema 1.0); failures are
+  fail-quiet and not cached.
 - `zotero gc` / `zotero mark-kept --all-orphans`: a real cluster
   collection whose Zotero key drifted from its `cluster.zotero_collection_key`
   binding (e.g. a Zotero-truncated date-prefixed name like

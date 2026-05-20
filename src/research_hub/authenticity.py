@@ -16,6 +16,7 @@ import requests
 
 from research_hub.dedup import normalize_doi, normalize_title
 from research_hub.locks import file_lock
+from research_hub.search.crossref import CrossrefBackend
 from research_hub.security import atomic_write_text
 from research_hub.utils.doi import extract_arxiv_id
 
@@ -36,6 +37,8 @@ except ImportError:  # pragma: no cover - rapidfuzz is a declared dependency
 
 SCHEMA_VERSION = "1.1"
 DOI_RESOLVE_CACHE = "doi_resolve_cache.json"
+CROSSREF_VERIFY_SCHEMA_VERSION = "1.0"
+CROSSREF_VERIFY_CACHE = "crossref_verify_cache.json"
 QUARANTINE_DIR = "quarantine"
 # PR-C (deep F7): a TRANSIENT identifier-resolution failure (doi.org /
 # Crossref rate-limit or network blip, after PR-B's bounded retry) is
@@ -176,6 +179,64 @@ class DoiResolveCache:
         return self.results.pop(key, None) is not None
 
 
+class CrossrefVerifyCache:
+    """Small JSON cache for direct CrossRef metadata verification outcomes."""
+
+    def __init__(self, results: dict[str, dict[str, Any]] | None = None) -> None:
+        self.results = results or {}
+
+    @classmethod
+    def load(cls, path: Path) -> "CrossrefVerifyCache":
+        if not path.exists():
+            return cls()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return cls()
+        if not isinstance(data, dict):
+            return cls()
+        raw_results = data.get("results", {})
+        if not isinstance(raw_results, dict):
+            return cls()
+        results: dict[str, dict[str, Any]] = {}
+        for key, value in raw_results.items():
+            if not isinstance(value, dict):
+                continue
+            verified = value.get("verified")
+            if not isinstance(verified, bool):
+                continue
+            results[str(key)] = {
+                "verified": verified,
+                "checked_at": str(value.get("checked_at", "") or ""),
+            }
+        return cls(results)
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": CROSSREF_VERIFY_SCHEMA_VERSION,
+            "results": {
+                key: value
+                for key, value in sorted(self.results.items())
+            },
+        }
+        with file_lock(path):
+            atomic_write_text(
+                path,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+    def get(self, key: str) -> dict[str, Any] | None:
+        return self.results.get(key)
+
+    def put(self, key: str, verified: bool) -> None:
+        self.results[key] = {
+            "verified": bool(verified),
+            "checked_at": _utc_now_iso(),
+        }
+
+
 def verify_authenticity(
     papers: list[dict],
     cfg,
@@ -192,6 +253,8 @@ def verify_authenticity(
     """
     cache_path = Path(cfg.research_hub_dir) / DOI_RESOLVE_CACHE
     cache = DoiResolveCache.load(cache_path)
+    crossref_cache_path = Path(cfg.research_hub_dir) / CROSSREF_VERIFY_CACHE
+    crossref_cache = CrossrefVerifyCache.load(crossref_cache_path)
     accepted: list[dict] = []
     quarantined: list[dict] = []
     fit_scores = _load_fit_scores(cfg, cluster_slug) if do_fit_check else {}
@@ -295,6 +358,12 @@ def verify_authenticity(
                     )
                 )
                 continue
+
+            # L2 augment (PR-A, 2026-05): direct CrossRef-by-DOI metadata verify
+            # for single-source papers with a DOI. Strictly augmentative: adds a
+            # verified backend; never bypasses the L2 gate that follows.
+            if _corroboration_label(paper) == "single-source":
+                _crossref_verify_corroboration(paper, crossref_cache, crossref_cache_path)
 
             # L2b: uncorroborated single-source gate — enforces already-computed signal
             corro = _corroboration_label(paper)
@@ -655,6 +724,149 @@ def _metadata_integrity_reason(paper: dict) -> str:
     if has_straggler and has_real:
         return "straggler venue conflicts with real venue"
     return ""
+
+
+def _crossref_verify_corroboration(
+    paper: dict,
+    cache: "CrossrefVerifyCache",
+    cache_path: Path,
+) -> bool:
+    """Augment ``paper`` in-place with a verified CrossRef record.
+
+    Runs only when the existing corroboration is single-source and the paper
+    has a DOI not already CrossRef-corroborated. Returns True iff CrossRef
+    confirmed and the paper was augmented; False otherwise.
+
+    Strictly augmentative: only appends to ``paper['source_records']`` and
+    ``paper['backends']``; never removes or downgrades anything. CrossRef
+    errors fail quiet so the existing L2 gate continues unchanged.
+    """
+    doi = normalize_doi(str(paper.get("doi", "") or ""))
+    if not doi:
+        return False
+    if _corroboration_label(paper) != "single-source":
+        return False
+    backend_names = _backend_names(paper)
+    if any(name.casefold() == "crossref" for name in backend_names):
+        return False
+
+    key = f"doi:{doi}"
+    existing_backend = next(
+        (name for name in backend_names if name.casefold() != "crossref"),
+        "candidate",
+    )
+    paper_record = {
+        "source": existing_backend,
+        "title": str(paper.get("title", "") or ""),
+        "year": paper.get("year"),
+        "authors": _authors_as_list(paper.get("authors")),
+    }
+
+    cached = cache.get(key)
+    if cached is not None:
+        if not bool(cached.get("verified")):
+            return False
+        _append_crossref_corroboration(paper, _crossref_record_from_paper(paper))
+        return True
+
+    try:
+        result, crossref_status, response_missing = _crossref_get_paper_with_status(doi)
+    except Exception as exc:
+        logger.debug("CrossRef DOI metadata verification failed for %s: %s", doi, exc)
+        return False
+
+    if result is None:
+        # 200-with-empty-body is a transient CrossRef API anomaly (the
+        # response was OK but `message` was empty/missing) -- treat as
+        # transient, do NOT cache. Per the F7-style spec: only definitive
+        # outcomes (200+match, 200+mismatch, 404) are cached; every other
+        # status/state retries on next run.
+        if response_missing or crossref_status == 200 or (
+            crossref_status is not None
+            and crossref_status >= 400
+            and crossref_status != 404
+        ):
+            return False
+        cache.put(key, verified=False)
+        cache.save(cache_path)
+        return False
+
+    crossref_record = {
+        "source": "crossref",
+        "title": str(result.title or ""),
+        "year": result.year,
+        "authors": _authors_as_list(result.authors),
+    }
+    if not _records_agree([paper_record, crossref_record]):
+        cache.put(key, verified=False)
+        cache.save(cache_path)
+        return False
+
+    _append_crossref_corroboration(paper, crossref_record)
+    cache.put(key, verified=True)
+    cache.save(cache_path)
+    return True
+
+
+def _crossref_get_paper_with_status(doi: str) -> tuple[Any, int | None, bool]:
+    backend = CrossrefBackend()
+    status_code: int | None = None
+    response_missing = False
+    original_request = getattr(backend, "_request", None)
+
+    if callable(original_request):
+
+        def tracked_request(*args: Any, **kwargs: Any) -> Any:
+            nonlocal response_missing, status_code
+            response = original_request(*args, **kwargs)
+            if response is None:
+                response_missing = True
+                return None
+            try:
+                status_code = int(getattr(response, "status_code", 0) or 0)
+            except (TypeError, ValueError):
+                status_code = None
+            return response
+
+        backend._request = tracked_request  # type: ignore[method-assign]
+
+    return backend.get_paper(doi), status_code, response_missing
+
+
+def _crossref_record_from_paper(paper: dict) -> dict[str, Any]:
+    return {
+        "source": "crossref",
+        "title": str(paper.get("title", "") or ""),
+        "year": paper.get("year"),
+        "authors": _authors_as_list(paper.get("authors")),
+    }
+
+
+def _append_crossref_corroboration(paper: dict, crossref_record: dict[str, Any]) -> None:
+    backends = paper.get("backends")
+    if isinstance(backends, str):
+        backend_values = [backends]
+    elif isinstance(backends, list):
+        backend_values = backends
+    else:
+        backend_values = []
+    if not any(str(name).casefold() == "crossref" for name in backend_values):
+        backend_values.append("crossref")
+    paper["backends"] = backend_values
+
+    source_records = paper.get("source_records")
+    if not isinstance(source_records, list):
+        source_records = []
+        paper["source_records"] = source_records
+    source_records.append(crossref_record)
+
+
+def _authors_as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return list(value)
+    return [value]
 
 
 def _corroboration_label(paper: dict) -> str:
