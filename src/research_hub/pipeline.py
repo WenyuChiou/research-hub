@@ -237,6 +237,20 @@ def _validate_paper_input(pp: dict, idx: int) -> list[str]:
     return errors
 
 
+def _only_missing_required_field_errors(errors: list[str]) -> bool:
+    """True iff every error in *errors* is a "missing required field 'X'"
+    error from _validate_paper_input.
+
+    Used to classify a paper as "skip but don't abort the batch" when the
+    search backend returned an entry missing one of REQUIRED_FIELDS_CORE
+    (e.g., a CrossRef record with empty authors, or an OpenAlex entry
+    missing year). The remaining valid papers in the same batch still
+    write to Zotero/Obsidian; this skip is real-run only -- dry_run
+    keeps the strict surfacing of all validation issues.
+    """
+    return bool(errors) and all("missing required field" in err for err in errors)
+
+
 def _is_nonfatal_paper_error(err: str) -> bool:
     return ("missing field '" in err and "pipeline will KeyError" in err) or "WARN --" in err
 
@@ -778,12 +792,12 @@ def run_pipeline(
                 _unescape_html_in_paper(paper)
                 _normalize_paper_metadata(paper)
                 paper_errors = _validate_paper_input(paper, idx)
-                missing_doi_only = (
-                    not dry_run
-                    and paper_errors
-                    and all("missing required field 'doi'" in err for err in paper_errors)
-                )
-                if missing_doi_only:
+                # PR-C: a paper missing one or more required core fields
+                # (e.g. CrossRef returning an entry with empty `authors`) is
+                # skipped from THIS batch, not allowed to abort the whole
+                # ingest. Dry-run keeps the strict surfacing so all
+                # validation issues stay visible.
+                if not dry_run and _only_missing_required_field_errors(paper_errors):
                     skipped_invalid.append((idx, paper, paper_errors))
                     continue
                 valid_papers.append(paper)

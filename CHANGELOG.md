@@ -45,6 +45,23 @@ graph rebuild (link out to the real tools instead)._
   instead of a generic `pip install` hint that cannot succeed there.
 
 ### Fixed
+- **Ingest skips a paper missing one or more required core fields
+  instead of aborting the whole batch.** A real-world `auto` run (LLM
+  reservoir management search) hit a CrossRef return with empty
+  `authors: []` and the pipeline fail-fast-aborted the entire ingest
+  with "INPUT VALIDATION FAILED" even though 2 other valid papers
+  were ready to write. The previous `missing_doi_only` skip branch
+  was inert (`doi` is not in any required-fields list, so
+  `_validate_paper_input` never emitted "missing required field
+  'doi'") and is replaced by a working
+  `_only_missing_required_field_errors` predicate covering every
+  field in `REQUIRED_FIELDS_CORE` (title / authors / year). When
+  every error for a paper is a "missing required field 'X'" error,
+  that paper is skipped from the batch with a logged "SKIPPED invalid
+  input" entry, and the remaining valid papers still write to Zotero /
+  Obsidian. Strict dry-run behaviour is preserved (every validation
+  issue surfaces) so the operator sees the full picture before a real
+  run.
 - **L1-deferred-but-L2-corroborated papers no longer fail-close at
   `L1-deferred`.** When the DOI resolver HEAD is transient-blocked
   (anti-bot 401/403/406/418/451/etc. -- classified as
