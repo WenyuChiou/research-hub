@@ -394,21 +394,25 @@ graph rebuild (link out to the real tools instead)._
   previously uploaded 0 sources now uploads the abstracts — real
   content NotebookLM can synthesise. The conservative URL-quality gate
   and `--include-suspect-urls` override (band-aid) are unchanged.
-- **`tests/test_artifact_delete_endpoint.py::artifact_server` fixture
-  flake on CI** (master had been red on this for ≥3 consecutive
-  runs: `26185448887`, `26191738564`, `26192402510`). The fixture
-  constructed a `ThreadingHTTPServer(("127.0.0.1", 0), ...)`, whose
+- **`socket.getfqdn` CI flake — autouse stub in `tests/conftest.py`**
+  (master had been red on this for ≥3 consecutive runs:
+  `26185448887`, `26191738564`, `26192402510`). Multiple test files
+  construct `ThreadingHTTPServer(("127.0.0.1", 0), ...)` whose
   `server_bind()` calls `socket.getfqdn("127.0.0.1")`. On macOS
   GitHub Actions runners (and Bonjour/mDNS-equipped environments
-  generally) the reverse-DNS lookup of `127.0.0.1` can hang 30+
-  seconds before `pytest-timeout` fires — Python stdlib
+  generally) the reverse-DNS lookup hangs 30+ seconds before
+  `pytest-timeout` fires — Python stdlib
   [issue14914](https://bugs.python.org/issue14914), 14-year-old bug.
-  Fix: `monkeypatch.setattr(socket, "getfqdn", lambda *_a, **_kw:
-  "localhost")` at fixture entry, so server construction is
-  deterministic. Production code path unchanged — the
-  `http_server.DashboardHandler` / `ThreadingHTTPServer` shape stays
-  identical, only the test fixture stubs `socket.getfqdn` within its
-  own scope.
+  The first attempt of this fix patched only the
+  `artifact_server` fixture in `test_artifact_delete_endpoint.py`,
+  but the next CI re-run surfaced the same flake at
+  `test_dashboard_executor_e2e.py::test_e2e_sse_event_after_action`.
+  `grep -rln 'ThreadingHTTPServer'` found **7 test files** with the
+  same construction pattern, so the fix promoted to a
+  `conftest.py`-level autouse fixture (`_stub_socket_getfqdn`) that
+  stubs `socket.getfqdn` for every test in `tests/`. Production
+  code path is unchanged — `monkeypatch` scope is per-test,
+  reverting at teardown.
 
 ## v1.0.0 (PENDING — tag on/after 2026-05-24, post ≥1-week v0.95.0rc2 bake)
 

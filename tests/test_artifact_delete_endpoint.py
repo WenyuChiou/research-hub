@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import http.client
 import json
-import socket
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,15 +21,10 @@ def _post(port: int, path: str, *, token: str = "test-token") -> tuple[int, dict
 
 
 @pytest.fixture
-def artifact_server(tmp_path: Path, monkeypatch):
-    # Python stdlib issue14914 workaround: http.server.HTTPServer.server_bind()
-    # calls socket.getfqdn(host) to populate self.server_name, and on macOS
-    # GitHub Actions runners (and other Bonjour/mDNS environments) the reverse-
-    # DNS lookup for "127.0.0.1" can hang 30+ seconds before pytest-timeout
-    # fires. Stub it to a constant so server construction is deterministic.
-    # See: https://bugs.python.org/issue14914
-    monkeypatch.setattr(socket, "getfqdn", lambda *_args, **_kwargs: "localhost")
-
+def artifact_server(tmp_path: Path):
+    # NB: tests/conftest.py autouse fixture _stub_socket_getfqdn handles the
+    # Python stdlib issue14914 hang at HTTPServer.server_bind() — see that
+    # docstring. This fixture relies on it being active.
     root = tmp_path / "vault"
     root.mkdir()
     broadcaster = events.EventBroadcaster()

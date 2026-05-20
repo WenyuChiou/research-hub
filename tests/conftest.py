@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
 import uuid
 from pathlib import Path
 
@@ -15,6 +16,39 @@ def pytest_configure(config) -> None:
         "markers",
         "stress: stress/load tests (opt-in via pytest tests/stress/)",
     )
+
+
+@pytest.fixture(autouse=True)
+def _stub_socket_getfqdn(monkeypatch):
+    """v1.0+: globally stub `socket.getfqdn` to return "localhost".
+
+    Python stdlib issue14914: `http.server.HTTPServer.server_bind()` calls
+    `socket.getfqdn(host)` to populate `self.server_name`. On macOS GitHub
+    Actions runners (and Bonjour/mDNS-equipped environments generally) the
+    reverse-DNS lookup of "127.0.0.1" can hang 30+ seconds while mDNS
+    queries time out — long enough for `pytest-timeout` to fire and
+    fail the test at setup.
+
+    Confirmed master-red across 3 consecutive CI runs (26185448887,
+    26191738564, 26192402510) on `test_artifact_delete_endpoint.py`. The
+    same construction pattern (`ThreadingHTTPServer(("127.0.0.1", 0), ...)`)
+    is used by at least 7 test files:
+
+      tests/test_artifact_delete_endpoint.py
+      tests/test_dashboard_executor_e2e.py
+      tests/test_dashboard_live_server.py
+      tests/test_v030_security.py
+      tests/test_v052_rest_api.py
+      tests/test_v062_dashboard_stdout_drawer.py
+      tests/test_v064_port_in_use.py
+
+    All benefit from this autouse stub. Production code path is
+    unchanged — `monkeypatch` reverts on test teardown so non-test
+    callers of `socket.getfqdn` see the real implementation.
+
+    See: https://bugs.python.org/issue14914
+    """
+    monkeypatch.setattr(socket, "getfqdn", lambda *_args, **_kwargs: "localhost")
 
 
 @pytest.fixture(autouse=True)
