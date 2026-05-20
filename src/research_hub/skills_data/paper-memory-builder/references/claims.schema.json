@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WenyuChiou/research-hub/blob/master/skills/paper-memory-builder/references/claims.schema.json",
+  "title": ".paper/claims.yml schema",
+  "description": "JSON Schema (Draft 2020-12) for paper-memory-builder's .paper/claims.yml output. Enforces the anti-leakage rule: a claim with empty/absent evidence_artifacts MUST have status: gap and a non-empty gap_reason. Validated by scripts/check_claims_schema.py in CI.",
+  "type": "object",
+  "required": ["claims"],
+  "additionalProperties": true,
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/claim"}
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "required": ["id", "text", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^C[0-9]+$",
+          "description": "Contiguous numbering C1, C2, ... preserved across regenerations."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The claim sentence, copied verbatim from the manuscript."
+        },
+        "status": {
+          "enum": ["draft", "supported", "rejected", "gap"],
+          "description": "draft = under writing/revision; supported = evidence-backed and final; rejected = dropped from manuscript (keep row for audit trail); gap = no evidence yet (requires gap_reason)."
+        },
+        "evidence_artifacts": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "Paths to figures, data files, logs, or outputs that back the claim. May be empty only when status is 'gap' or 'rejected'."
+        },
+        "figure_or_table": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "risk": {
+          "type": "string",
+          "description": "Reviewer-facing concern. Use this for 'evidence exists but is preliminary'; do NOT use this in place of gap_reason for 'no evidence at all'."
+        },
+        "gap_reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required when status='gap'. Single-line plain-English explanation of why no evidence backs the claim yet."
+        },
+        "sentence_in_manuscript": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "Anti-leakage rule: empty or absent evidence_artifacts MUST imply status: gap with a gap_reason.",
+          "if": {
+            "anyOf": [
+              {"not": {"required": ["evidence_artifacts"]}},
+              {"properties": {"evidence_artifacts": {"maxItems": 0}}}
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {"status": {"const": "gap"}},
+                "required": ["status", "gap_reason"]
+              },
+              {
+                "properties": {"status": {"const": "rejected"}},
+                "required": ["status"]
+              }
+            ]
+          }
+        },
+        {
+          "$comment": "If status is 'gap', gap_reason is mandatory.",
+          "if": {"properties": {"status": {"const": "gap"}}, "required": ["status"]},
+          "then": {"required": ["gap_reason"]}
+        }
+      ]
+    }
+  }
+}

@@ -1,6 +1,6 @@
 ---
 name: zotero-library-curator
-description: Audit and curate a Zotero library — find duplicate DOIs, orphan items missing required tags, propose collection rebinds, generate tag hygiene reports, emit preview-only cleanup plans. Use when the user asks to "audit Zotero", "find duplicates", "tag hygiene report", or "propose a Zotero cleanup plan". Defers all CRUD operations to the standalone `zotero-skills` skill or `research-hub zotero` CLI.
+description: Audit and curate a Zotero library — find duplicate DOIs, orphan items missing required tags, propose collection rebinds, identify bloated or under-used collections, generate tag hygiene reports, emit preview-only cleanup plans. Use when the user asks to "audit Zotero", "find duplicates", "tag hygiene report", "which collections are bloated or under-used", or "propose a Zotero cleanup plan". Defers all CRUD operations to the standalone `zotero-skills` skill or `research-hub zotero` CLI. Includes a backup-first reminder before any apply/CRUD handoff suggestion.
 compatibility: Designed for Claude Code. Portable across agentskills.io-compliant hosts; depends on the standalone `zotero-skills` skill OR the `research-hub` CLI for actual Zotero connectivity. On Claude Code the sibling skill lives at ~/.claude/skills/zotero-skills/; on other hosts substitute the host's skills directory.
 ---
 
@@ -98,6 +98,18 @@ Full check details + suggested fixes for each: `references/audit-checks.md`.
 ## Output discipline
 
 Always emit a **preview plan**, never apply. The report has 5 sections that map 1:1 onto the audit checks (skip a section if its check returned no findings) plus a "Suggested follow-ups" section listing concrete CLI commands for the user to run.
+
+The "Suggested follow-ups" section MUST open with a one-line backup
+reminder before any apply/CRUD handoff suggestion:
+
+> **Back up first.** In Zotero desktop: File → Export Library → Zotero
+> RDF. Any modifications via `zotero-skills` or `research-hub zotero
+> ... --apply` are irreversible without this snapshot.
+
+This is required because this skill is read-only but its output
+typically feeds an apply step run by `zotero-skills`. Surfacing the
+backup step at handoff prevents the most common data-loss class
+(accidental tag mass-rename or collection move with no undo).
 
 Full report template: `references/report-template.md`.
 
