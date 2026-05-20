@@ -129,6 +129,95 @@ def test_run_pdf_attach_step_attaches_oa_pdf():
     assert "1 attached" in attach_steps[0].detail
 
 
+def test_run_pdf_attach_step_passes_local_pdfs_dir_to_attach_pdfs(tmp_path):
+    """_run_pdf_attach_step forwards cfg.root/'pdfs' as local_pdfs_dir to attach_pdfs
+    so downloaded PDFs are also saved locally for notebooklm bundle to reuse."""
+    from research_hub.auto import _run_pdf_attach_step, AutoReport
+
+    cluster = SimpleNamespace(zotero_collection_key="TESTKEY")
+    report = AutoReport(cluster_slug="test", cluster_created=False)
+    cfg = SimpleNamespace(root=tmp_path)
+
+    fake_item = {"key": "ITEM1", "data": {"title": "OA paper", "DOI": "10.1234/oa", "itemType": "journalArticle"}}
+    fake_plan = SimpleNamespace(
+        item_key="ITEM1", title="OA", doi="10.1234/oa",
+        arxiv_id="", pdf_url="https://example.com/oa.pdf", source="unpaywall", error="",
+    )
+    fake_summary = SimpleNamespace(ok=1, skip=0, fail=0)
+    fake_results = MagicMock()
+    fake_results.summary = fake_summary
+
+    captured_kwargs = {}
+
+    def _capture_attach(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return fake_results
+
+    with (
+        patch("research_hub.zotero.client.get_client") as mock_gc,
+        patch("research_hub.zotero.pdf_attach.plan_attach_for_items", return_value=[fake_plan]),
+        patch("research_hub.zotero.pdf_attach.attach_pdfs", side_effect=_capture_attach),
+    ):
+        mock_gc.return_value = SimpleNamespace(web=MagicMock(
+            collection_items=MagicMock(return_value=[fake_item])
+        ))
+        _run_pdf_attach_step(cfg, "test", cluster, report, time.time(), False)
+
+    assert "local_pdfs_dir" in captured_kwargs, "attach_pdfs must receive local_pdfs_dir"
+    assert captured_kwargs["local_pdfs_dir"] == tmp_path / "pdfs"
+
+
+def test_save_pdf_locally_copies_with_doi_filename(tmp_path):
+    """_save_pdf_locally writes <doi-slug>.pdf using the re.sub filename convention
+    (same as pdf_fetcher._filename_from_doi: re.sub(r'[^a-z0-9._-]', '_', doi)).
+    Special chars like '(' are replaced — not just '/' and ':'.
+    """
+    import re
+    from research_hub.zotero.pdf_attach import _save_pdf_locally
+
+    pdfs_dir = tmp_path / "pdfs"
+
+    # Standard DOI — both conventions agree
+    src1 = tmp_path / "source1.pdf"
+    src1.write_bytes(b"%PDF-1.4\ntest1")
+    _save_pdf_locally(src1, pdfs_dir, "10.1234/test-paper")
+    expected1 = pdfs_dir / "10.1234_test-paper.pdf"
+    assert expected1.exists(), f"Expected {expected1}"
+    assert expected1.read_bytes() == src1.read_bytes()
+
+    # DOI with special chars — only re.sub convention replaces them
+    src2 = tmp_path / "source2.pdf"
+    src2.write_bytes(b"%PDF-1.4\ntest2")
+    _save_pdf_locally(src2, pdfs_dir, "10.1000/xyz(test)")
+    # re.sub(r'[^a-z0-9._-]', '_', '10.1000/xyz(test)') → '10.1000_xyz_test_'
+    expected2_name = re.sub(r"[^a-z0-9._-]", "_", "10.1000/xyz(test)") + ".pdf"
+    expected2 = pdfs_dir / expected2_name
+    assert expected2.exists(), f"Expected {expected2} for unusual DOI"
+
+
+def test_save_pdf_locally_skips_existing_file(tmp_path):
+    """_save_pdf_locally does not overwrite an already-present PDF, and does not
+    create any additional files when the target already exists."""
+    from research_hub.zotero.pdf_attach import _save_pdf_locally
+
+    src = tmp_path / "source.pdf"
+    src.write_bytes(b"%PDF-1.4\nnew")
+
+    pdfs_dir = tmp_path / "pdfs"
+    pdfs_dir.mkdir()
+    existing = pdfs_dir / "10.1234_x.pdf"
+    existing.write_bytes(b"%PDF-1.4\noriginal")
+
+    _save_pdf_locally(src, pdfs_dir, "10.1234/x")
+
+    # The target file must be unchanged
+    assert existing.read_bytes() == b"%PDF-1.4\noriginal", "existing file must not be overwritten"
+    # No additional files should have been created (catches accidental rename)
+    assert len(list(pdfs_dir.iterdir())) == 1, "no extra files should be created"
+    # Explicit name check: the file at the expected path is still the original
+    assert (pdfs_dir / "10.1234_x.pdf").read_bytes() == b"%PDF-1.4\noriginal"
+
+
 def test_run_pdf_attach_step_exception_is_logged_not_raised():
     """_run_pdf_attach_step never raises — exceptions are logged as failures."""
     from research_hub.auto import _run_pdf_attach_step, AutoReport

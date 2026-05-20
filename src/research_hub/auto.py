@@ -559,7 +559,11 @@ def _run_pdf_attach_step(
             _step_log(report, "pdf.attach", True, _elapsed(started, report),
                       f"0 OA PDFs found for {len(items)} item(s)", print_progress)
             return
-        results = attach_pdfs(web, actionable, rate_limit_rps=1.0)
+        local_pdfs_dir = getattr(cfg, "root", None)
+        if local_pdfs_dir is not None:
+            local_pdfs_dir = local_pdfs_dir / "pdfs"
+        results = attach_pdfs(web, actionable, rate_limit_rps=1.0,
+                               local_pdfs_dir=local_pdfs_dir)
         summary = results.summary
         ok, skip, fail = summary.ok, summary.skip, summary.fail
         _step_log(report, "pdf.attach", True, _elapsed(started, report),

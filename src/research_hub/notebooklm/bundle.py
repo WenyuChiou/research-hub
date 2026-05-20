@@ -130,7 +130,7 @@ def _find_pdf_for_doi(
     if not pdfs_dir.exists() or not normalized:
         return None
 
-    exact = pdfs_dir / f"{normalized.replace('/', '_').replace(':', '_')}.pdf"
+    exact = pdfs_dir / (re.sub(r'[^a-z0-9._-]', '_', normalized) + '.pdf')
     if exact.exists():
         return exact
 
@@ -142,7 +142,7 @@ def _find_pdf_for_doi(
             if tail.lower() in candidate.name.lower():
                 return candidate
 
-    doi_without_prefix = normalized.replace("/", "_")
+    doi_without_prefix = re.sub(r"[^a-z0-9._-]", "_", normalized)
     for candidate in candidates:
         if doi_without_prefix.lower() in candidate.name.lower():
             return candidate

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -13,6 +14,8 @@ from typing import Iterable, Optional
 from urllib.parse import urlparse
 
 import requests
+
+from research_hub.utils.doi import normalize_doi as _normalize_doi
 
 OPENALEX_BASE = "https://api.openalex.org/works/doi"
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
@@ -578,6 +581,31 @@ def _format_bytes(size: int) -> str:
     return f"{size} B"
 
 
+def _save_pdf_locally(src: Path, pdfs_dir: Path, doi: str) -> None:
+    """Copy a successfully-downloaded PDF to the local pdfs/ directory.
+
+    Uses the same filename convention as pdf_fetcher._filename_from_doi
+    (re.sub(r"[^a-z0-9._-]", "_", normalized_doi)) so that all three
+    write-paths (attach_pdfs, pdf_fetcher, bundle download) produce a single
+    canonical file for the same DOI and bundle_cluster finds it without
+    an extra network round-trip.
+
+    Failures are silently swallowed — a missing local copy is inconvenient
+    but must never abort a Zotero upload that already succeeded.
+    """
+    try:
+        normalized = _normalize_doi(doi)
+        if not normalized:
+            return  # malformed DOI — nothing useful to save
+        filename = re.sub(r"[^a-z0-9._-]", "_", normalized) + ".pdf"
+        pdfs_dir.mkdir(parents=True, exist_ok=True)
+        dest = pdfs_dir / filename
+        if not dest.exists():
+            shutil.copy2(src, dest)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def attach_pdfs(
     zot,
     plans: Iterable[PdfAttachPlan],
@@ -585,8 +613,15 @@ def attach_pdfs(
     rate_limit_rps: float = 2.0,
     keep_url_fallback: bool = False,
     max_pdf_size_mb: int = 25,
+    local_pdfs_dir: Path | None = None,
 ) -> dict[str, str]:
-    """Attach PDFs as imported_file items, with optional imported_url fallback."""
+    """Attach PDFs as imported_file items, with optional imported_url fallback.
+
+    When *local_pdfs_dir* is provided, each successfully uploaded PDF is also
+    saved there using the DOI-based filename convention so that
+    bundle_cluster / notebooklm bundle can use the local copy
+    without a second network download.
+    """
     sleep_s = 1.0 / max(rate_limit_rps, 0.1)
     results: dict[str, str] = {}
     entries: list[PdfAttachEntry] = []
@@ -630,6 +665,8 @@ def attach_pdfs(
                 results[plan.item_key] = "ok" if upload_result.startswith("ok:") else upload_result
                 if upload_result.startswith("ok:"):
                     entries.append(_entry(plan, "OK", report_source, bytes=byte_count))
+                    if local_pdfs_dir is not None and plan.doi:
+                        _save_pdf_locally(local_path, local_pdfs_dir, plan.doi)
                 else:
                     entries.append(_entry(plan, "FAIL", report_source, reason=_upload_failure_reason(upload_result), bytes=byte_count))
             finally:
