@@ -218,6 +218,53 @@ def test_post_signal_wait_timeout_tightens_and_fails(tmp_path, monkeypatch):
     assert proc.killed or proc.terminated
 
 
+def test_cookies_path_prefers_modern_network_subdir(tmp_path, monkeypatch):
+    """Hotfix regression: modern Chromium (80+) stores Cookies under
+    ``Default/Network/Cookies``. The pre-hotfix PR-D code hardcoded the
+    legacy ``Default/Cookies`` path -- auto-detect polling looked at the
+    wrong file, the user logged in but the save never fired."""
+    from notebooklm.cli import session as nlm_session
+    profile = tmp_path / "browser_profile"
+    (profile / "Default" / "Network").mkdir(parents=True)
+    (profile / "Default" / "Network" / "Cookies").write_bytes(b"modern")
+    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", lambda: profile)
+
+    result = auth._patchright_cookies_db()
+
+    assert result == profile / "Default" / "Network" / "Cookies"
+    assert result.exists()
+
+
+def test_cookies_path_falls_back_to_legacy_when_only_legacy_exists(tmp_path, monkeypatch):
+    """A user on an old Chromium version with no Network/ subdir gets the
+    legacy ``Default/Cookies`` path. Defensive fallback."""
+    from notebooklm.cli import session as nlm_session
+    profile = tmp_path / "browser_profile"
+    (profile / "Default").mkdir(parents=True)
+    (profile / "Default" / "Cookies").write_bytes(b"legacy")
+    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", lambda: profile)
+
+    result = auth._patchright_cookies_db()
+
+    assert result == profile / "Default" / "Cookies"
+
+
+def test_cookies_path_returns_modern_path_when_neither_exists_yet(
+    tmp_path, monkeypatch,
+) -> None:
+    """At browser startup neither path exists yet. Return the modern
+    path so the next poll iteration finds it the moment chromium writes
+    it (which it will, in the modern location)."""
+    from notebooklm.cli import session as nlm_session
+    profile = tmp_path / "browser_profile"
+    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", lambda: profile)
+
+    result = auth._patchright_cookies_db()
+
+    assert result == profile / "Default" / "Network" / "Cookies"
+    assert not result.exists()    # neither path materialised yet
+
+
 def test_stale_cookie_pre_existing_does_not_false_trigger(tmp_path, monkeypatch):
     """W1 (PR-D review): if the profile already has a stale
     notebooklm.google.com cookie from a previous login (file mtime

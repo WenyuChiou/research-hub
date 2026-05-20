@@ -172,24 +172,37 @@ def _login_with_wait_file(
 def _patchright_cookies_db() -> Path:
     """Resolve the path to the patchright Chromium profile's Cookies SQLite.
 
-    Prefers the notebooklm-py SDK's own ``get_browser_profile_dir`` helper
-    so research-hub stays in lock-step with whatever layout the SDK uses;
-    falls back to the documented ``~/.notebooklm/profiles/default/
-    browser_profile`` location if the helper is unavailable (older SDK).
+    Modern Chromium (80+) stores cookies under ``Default/Network/Cookies``;
+    older versions used the legacy ``Default/Cookies`` path. Prefer modern;
+    fall back to legacy only if modern is missing AND legacy exists. If
+    neither exists yet (chromium still starting), return the modern path so
+    the next poll iteration finds it the moment chromium creates it.
+
+    Uses the notebooklm-py SDK's own ``get_browser_profile_dir`` helper to
+    locate the profile root so research-hub stays in lock-step with whatever
+    layout the SDK uses; falls back to the documented
+    ``~/.notebooklm/profiles/default/browser_profile`` location if the
+    helper is unavailable (older SDK).
     """
     try:
         from notebooklm.cli.session import get_browser_profile_dir
-        return Path(get_browser_profile_dir()) / "Default" / "Cookies"
+        profile = Path(get_browser_profile_dir())
     except Exception:  # noqa: BLE001 - any SDK breakage falls through
-        return (
+        profile = (
             Path.home()
             / ".notebooklm"
             / "profiles"
             / "default"
             / "browser_profile"
-            / "Default"
-            / "Cookies"
         )
+    modern = profile / "Default" / "Network" / "Cookies"
+    legacy = profile / "Default" / "Cookies"
+    if modern.exists():
+        return modern
+    if legacy.exists():
+        return legacy
+    # Neither exists yet -- chromium will create the modern one.
+    return modern
 
 
 def _cookies_db_modified_since(cookies_db: Path, baseline_mtime: float) -> bool:

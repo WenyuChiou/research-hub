@@ -44,6 +44,18 @@ graph rebuild (link out to the real tools instead)._
   the two paths that work (interactive in a terminal / `--import-from`)
   instead of a generic `pip install` hint that cannot succeed there.
 
+### Fixed
+- **`--auto-detect` cookies path hotfix.** PR-D's `_patchright_cookies_db`
+  hardcoded the LEGACY `Default/Cookies` path; modern Chromium (80+,
+  including patchright's bundled chromium-1208) stores cookies under
+  `Default/Network/Cookies`. Result: auto-detect polled the wrong file,
+  never fired, user logged in successfully in the browser but the save
+  never triggered. The path resolver now prefers
+  `Default/Network/Cookies`, falls back to legacy `Default/Cookies`
+  only if modern is missing AND legacy exists; if neither has been
+  written yet (browser starting), returns the modern path so the next
+  poll finds it the moment chromium writes it.
+
 ### Added
 - **`notebooklm login --auto-detect` — fully automatic zero-touch login.**
   Replaces the half-automatic `--wait-file` flow (which still required a
