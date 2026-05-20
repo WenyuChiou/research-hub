@@ -31,6 +31,35 @@ graph rebuild (link out to the real tools instead)._
 - **`doctor` check `nlm_auth_paths`.** Reports which NotebookLM
   re-authentication paths actually work on this machine (interactive
   vs `--from-browser`/rookiepy) and the exact command to run.
+- **`paper-memory-builder` anti-leakage rule + E4 triad.** New JSON
+  Schema at `skills/paper-memory-builder/references/claims.schema.json`
+  enforces: a claim with empty / absent `evidence_artifacts` MUST have
+  `status: gap` and a non-empty `gap_reason`. Two new files alongside:
+  `scripts/check_claims_schema.py` (validator with JSON-pointer-style
+  error paths) and `tests/test_check_claims_schema.py` (14 cases — 1
+  meta, 4 positive, 5 negative, 4 schema-shape guardrails). The
+  binding contract is restated in `skills/paper-memory-builder/SKILL.md`
+  §"Anti-leakage rule" so it survives the SKILL.md-only marketplace
+  install sync. Status enum extended: `draft | supported | rejected |
+  gap`. Closes the long-standing Phase 2 Task B1 + E4 backlog item
+  from the `WenyuChiou/ai-research-skills` plan.
+- **`tests/test_skills_data_parity.py`** (21 cases) — guards the
+  `skills/` ↔ `src/research_hub/skills_data/` byte-parity invariant.
+  ``research_hub.skill_installer`` copies skills from
+  ``skills_data/``, so editing a SKILL.md in ``skills/`` only ships
+  the change to public-repo readers, not to ``research-hub install``
+  users. This test catches the divergence at PR time. Exception list
+  (``SHADOW_ONLY_IN_SKILLS_TREE``) documents intentional shadows; one
+  entry today (``zotero-skills`` vendored copy, scheduled for removal
+  in Phase 2 Wave C).
+- **Backup-first callout in `zotero-library-curator`.** SKILL.md
+  §"Output discipline" + `references/report-template.md` now lead the
+  "Suggested follow-ups" section with a Zotero-RDF backup reminder
+  before any apply/CRUD handoff to `zotero-skills` or
+  `research-hub zotero ... --apply`. Closes the gap surfaced by the
+  `ai-research-skills` Task #27 dogfood walk: read-only audit + apply
+  step are different skills, and the callout was only on the
+  marketplace README — never echoed to the user at handoff time.
 
 ### Changed
 - **`notebooklm login --help` rewritten to the three real paths.**
@@ -43,6 +72,23 @@ graph rebuild (link out to the real tools instead)._
   Detects the missing-rookiepy + no-prebuilt-wheel case and points to
   the two paths that work (interactive in a terminal / `--import-from`)
   instead of a generic `pip install` hint that cannot succeed there.
+- **5 SKILL.md descriptions tightened for keyword overlap with
+  natural-language trigger prompts** (Phase 7 Wave A polish):
+  `research-hub` adds "organize them" (matches the verified trigger
+  prompt "find papers and organize them"); `paper-memory-builder`
+  adds "extract claims, supporting evidence, and figure key numbers"
+  (matches the catalog phrase); `research-design-helper` adds "is my
+  research question sharp enough to be falsifiable?"
+  (matches the verified Phase 5.3.b trigger example);
+  `zotero-library-curator` adds "bloated or under-used" (matches the
+  SKILL body's own audit dimension) plus an explicit RDF-backup
+  reminder line. `research-hub-multi-ai` reframes itself as the
+  **research-domain router** vs `agent-collab-workspace:agent-task-splitter`
+  (generic multi-agent decomposition), documenting the artifact
+  asymmetry (`.coord/multi_ai_plan.md` vs `.coord/plan.yml`) so the
+  two skills no longer silently shadow each other on the same prompt
+  — the routing overlap the `ai-research-skills` Task #27 trigger
+  verification surfaced.
 
 ### Fixed
 - **`auto` / `ingest` now refresh `_HOME.md`, MOC bodies, and cluster

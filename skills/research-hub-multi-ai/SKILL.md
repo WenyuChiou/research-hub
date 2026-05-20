@@ -1,6 +1,6 @@
 ---
 name: research-hub-multi-ai
-description: Router skill that writes `.coord/multi_ai_plan.md` when a single round of work will need two or more delegates (Codex + Gemini, multiple parallel Codex sessions, or a sequence of mixed handoffs). For a single delegate, use `codex-delegate` or `gemini-delegate` directly — do not invoke this skill. The router decides task splitting, dependency ordering, and reconciliation; the leaves execute.
+description: Research-domain router that writes `.coord/multi_ai_plan.md` when a single round of work will need two or more delegates AND the work touches research-hub artifacts (`.research/`, `.paper/`, Zotero/Obsidian/NotebookLM pipelines). For a single delegate, use `codex-delegate` or `gemini-delegate` directly — do not invoke this skill. For generic non-research multi-agent decomposition (pure code refactor, generic translation, no research-hub artifact), use `agent-collab-workspace:agent-task-splitter` instead (different artifact `.coord/plan.yml`, different scope). The router decides task splitting, dependency ordering, and reconciliation; the leaves execute.
 ---
 
 # research-hub Multi-AI Router

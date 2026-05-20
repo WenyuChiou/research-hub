@@ -1,6 +1,6 @@
 ---
 name: paper-memory-builder
-description: Convert a paper draft + figures + Zotero metadata into reusable .paper/claims.yml and .paper/figures.yml files so the academic-writing-skills skill can do writing, revision, and audit passes without re-reading the manuscript every time. Use when the user asks to "build paper memory", "extract claims from this manuscript", or "prepare this paper for AI-assisted writing". NOT for summarizing cited papers in a literature cluster — that's `paper-summarize`. This skill is for the user's own manuscript draft only.
+description: Convert a paper draft + figures + Zotero metadata into reusable .paper/claims.yml and .paper/figures.yml files so the academic-writing-skills skill can do writing, revision, and audit passes without re-reading the manuscript every time. Use when the user asks to "build paper memory", "extract claims from this manuscript", "extract claims, supporting evidence, and figure key numbers", or "prepare this paper for AI-assisted writing". NOT for summarizing cited papers in a literature cluster — that's `paper-summarize`. This skill is for the user's own manuscript draft only.
 ---
 
 # paper-memory-builder
@@ -85,11 +85,43 @@ Do **not** touch `journal_format.md`, `reviewer_comments.md`, or `style_override
 - Don't edit the manuscript file. Read-only.
 - Don't paraphrase claim text. Copy exactly from the manuscript.
 - Don't fabricate figures or claims that aren't in the source.
+- Don't emit an unsupported claim as `status: draft` — see the
+  anti-leakage rule below.
 - Don't write to `.paper/journal_format.md`, `reviewer_comments.md`, or
   `style_overrides.md`. Those are owned by `academic-writing-skills`.
 - Don't write to `.research/` — that's the workspace layer, not the
   paper layer.
 - Don't extract claims from cited works — only from THIS paper.
+
+## Anti-leakage rule (binding contract)
+
+> A claim with empty or absent `evidence_artifacts` MUST have
+> `status: gap` plus a one-line `gap_reason`. Never emit such a claim as
+> `status: draft` or `status: supported`.
+
+This is the contract that prevents an unsupported claim from leaking
+into the downstream writing/audit pipeline as if it were evidenced.
+
+How it manifests in normal use:
+
+- The manuscript intro asserts something the experiment section never
+  backs up → emit it as `status: gap` with a `gap_reason` like
+  "intro claim with no matching E-run output". The writing skill then
+  surfaces it as `[MATERIAL GAP]` rather than treating it as evidenced
+  prose.
+- A claim has evidence pointers but you're not yet sure they back it
+  fully → still `status: draft`; document the doubt in `risk:` rather
+  than emptying `evidence_artifacts`.
+- A claim was dropped from the latest revision → keep the row,
+  flip `status: rejected`; do not delete (audit trail).
+
+The contract is enforced by `scripts/check_claims_schema.py` against
+the JSON Schema at `references/claims.schema.json`. Run the validator
+manually after editing `.paper/claims.yml` by hand:
+
+```bash
+python scripts/check_claims_schema.py <path-to-claims.yml>
+```
 
 ## See also
 

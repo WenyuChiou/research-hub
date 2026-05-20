@@ -28,6 +28,11 @@ The skill always emits a **preview plan**, never applies. If the report has 0 is
 - "benchmarking" has 8 items — consider merging
 
 ### Suggested follow-ups
+
+> **Back up first.** In Zotero desktop: File → Export Library → Zotero
+> RDF. Any modifications via `zotero-skills` or `research-hub zotero ...
+> --apply` are irreversible without this snapshot.
+
 1. Run `research-hub zotero backfill --tags --notes` to fix the 12 missing-tag items
 2. Run `research-hub clusters rebind --emit` to review the 3 mismatches
 3. Manually rename the 2 tag near-duplicates in Zotero desktop
