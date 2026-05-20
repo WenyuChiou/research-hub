@@ -101,7 +101,7 @@ def test_l1_doi_404_quarantines_and_uses_cache(tmp_path, monkeypatch):
     assert calls == ["https://doi.org/10.1000/missing"]
 
 
-def test_l1_request_exception_is_fail_closed(tmp_path, monkeypatch):
+def test_l1_request_exception_falls_through_to_l2_uncorroborated(tmp_path, monkeypatch):
     from research_hub.authenticity import verify_authenticity
 
     cfg = _cfg(tmp_path)
@@ -117,7 +117,14 @@ def test_l1_request_exception_is_fail_closed(tmp_path, monkeypatch):
         cluster_slug="agents",
     )
 
-    assert quarantined[0]["reason"] == "doi_check_unavailable"
+    # PR-B: a transient L1 failure (here, requests.RequestException) is
+    # NOT fabrication evidence -- the paper falls through to L2/L3. With
+    # this fixture (no `source`/`backends`, citation_count missing), the
+    # paper is single-source and L2 fail-closes it as uncorroborated.
+    # The fail-closed contract holds: paper not in vault, reason is NOT
+    # `doi_unresolved` (would be wrong -- exception != fake DOI).
+    assert quarantined[0]["reason"] == "uncorroborated"
+    assert quarantined[0]["reason"] != "doi_unresolved"
 
 
 def test_l2_single_source_accepts_and_two_backends_corroborate(tmp_path, monkeypatch):

@@ -45,6 +45,23 @@ graph rebuild (link out to the real tools instead)._
   instead of a generic `pip install` hint that cannot succeed there.
 
 ### Fixed
+- **L1-deferred-but-L2-corroborated papers no longer fail-close at
+  `L1-deferred`.** When the DOI resolver HEAD is transient-blocked
+  (anti-bot 401/403/406/418/451/etc. -- classified as
+  `*_check_unavailable` by F7 / PR #51), the gate used to quarantine
+  immediately at `L1-deferred` even when L2 corroboration (now augmented
+  by PR #53's CrossRef-by-DOI metadata verify) would confirm it. The
+  gate now lets such papers fall through to L2 / L3 / fit-check; if all
+  pass, the paper is accepted with
+  `provenance.doi_recheck_pending = True` and
+  `provenance.doi_recheck_details = {reason, status_code, url,
+  resolved_via}` so a future tool can re-verify the DOI when the
+  publisher's anti-bot wall lifts. Definitive L1 failure (HTTP 404/410)
+  still fail-closes as `doi_unresolved` / `L1` -- the fabrication
+  guarantee is unchanged; L2 corroboration + L3 metadata integrity
+  remain the fabrication gate. The `L1-deferred` quarantine bucket is
+  structurally empty post-fix; `DEFERRED_LAYER` survives as a public
+  constant used by docs / reporting.
 - **L2 corroboration augments single-source DOIs with direct CrossRef
   metadata verify.** A paper found by only one search backend (e.g.
   `source: 'openalex'`) was quarantined `L2 / uncorroborated` even when

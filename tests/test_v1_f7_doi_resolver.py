@@ -39,7 +39,13 @@ def _cfg(tmp_path: Path) -> SimpleNamespace:
 
 
 def _paper(doi: str = "10.1000/real") -> dict:
-    return {"title": "A Real Paper", "doi": doi, "abstract": "x" * 80}
+    return {
+        "title": "A Real Paper",
+        "doi": doi,
+        "abstract": "x" * 80,
+        "year": 2025,
+        "authors": [{"firstName": "Jane", "lastName": "Doe"}],
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -87,11 +93,21 @@ def test_antibot_access_statuses_defer(
     assert DoiResolveCache.load(cache_path).get(outcome.key) is None
 
 
-def test_http_403_verification_is_l1_deferred(
+def test_http_403_verification_falls_through_to_L2_uncorroborated(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """PR-B: a 403 anti-bot block no longer fail-closes at L1-deferred.
+    The paper falls through to L2; this fixture has no corroboration
+    setup so L2 quarantines it as uncorroborated. The critical
+    anti-fabrication invariants still hold: layer != L1, reason !=
+    doi_unresolved (403 is anti-bot noise, not fabrication evidence).
+    """
     monkeypatch.setattr(auth.requests, "head", lambda *a, **k: _Resp(403))
+    monkeypatch.setattr(
+        "research_hub.search.crossref.requests.get",
+        lambda *a, **k: _Resp(404),  # CrossRef-verify finds no match
+    )
     accepted, quarantined = verify_authenticity(
         [_paper(doi="10.1111/jfr3.70039")],
         _cfg(tmp_path),
@@ -100,8 +116,13 @@ def test_http_403_verification_is_l1_deferred(
 
     assert accepted == []
     assert len(quarantined) == 1
-    assert quarantined[0]["layer"] == DEFERRED_LAYER
-    assert quarantined[0]["reason"] == "doi_check_unavailable"
+    q = quarantined[0]
+    assert q["layer"] == "L2"
+    assert q["reason"] == "uncorroborated"
+    # Anti-fabrication invariants intact:
+    assert q["layer"] != DEFERRED_LAYER         # L1-deferred bucket empty post-PR-B
+    assert q["layer"] != "L1"                   # 403 is not permanent fail-close
+    assert q["reason"] != "doi_unresolved"      # 403 is not fabrication evidence
 
 
 @pytest.mark.parametrize("status_code", [404, 410])

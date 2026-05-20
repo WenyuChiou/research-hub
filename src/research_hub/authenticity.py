@@ -277,26 +277,48 @@ def verify_authenticity(
                 continue
 
             outcome = _resolve_identifier(paper, cache, cache_path)
+            # PR-B: track L1-transient state per iteration (reset each
+            # paper). Falls through to L2 / L3 / fit-check when set; the
+            # paper is admitted only if those further gates pass.
+            doi_recheck_pending = False
+            doi_recheck_details: dict | None = None
             if not outcome.ok:
                 reason = outcome.reason or "doi_unresolved"
-                # Transient (rate-limit / unreachable after retry) ->
-                # deferred-retryable; permanent (404/410, no id) -> L1.
-                layer = DEFERRED_LAYER if is_transient_reason(reason) else "L1"
-                quarantined.append(
-                    quarantine_paper(
-                        cfg,
-                        paper,
-                        cluster_slug=cluster_slug,
-                        layer=layer,
-                        reason=reason,
-                        details={
-                            "status_code": outcome.status_code,
-                            "url": outcome.url,
-                            "resolved_via": outcome.resolved_via,
-                        },
+                if is_transient_reason(reason):
+                    # PR-B: L1 transient (anti-bot / rate-limit /
+                    # unreachable after retry) is NOT fabrication evidence.
+                    # L2 corroboration + L3 metadata integrity remain the
+                    # fabrication gate; mark the paper for a future DOI
+                    # recheck and fall through. If L2/L3 + fit + predatory
+                    # all pass, the paper is accepted with the recheck
+                    # marker so a later run / tool can re-verify the DOI
+                    # when the publisher's anti-bot wall lifts.
+                    doi_recheck_pending = True
+                    doi_recheck_details = {
+                        "reason": reason,
+                        "status_code": outcome.status_code,
+                        "url": outcome.url,
+                        "resolved_via": outcome.resolved_via,
+                    }
+                else:
+                    # Permanent L1: definitive non-registration (HTTP
+                    # 404/410) or no-resolvable-identifier -- fail-closed,
+                    # anti-fabrication unchanged.
+                    quarantined.append(
+                        quarantine_paper(
+                            cfg,
+                            paper,
+                            cluster_slug=cluster_slug,
+                            layer="L1",
+                            reason=reason,
+                            details={
+                                "status_code": outcome.status_code,
+                                "url": outcome.url,
+                                "resolved_via": outcome.resolved_via,
+                            },
+                        )
                     )
-                )
-                continue
+                    continue
 
             integrity_reason = _metadata_integrity_reason(paper)
             if integrity_reason:
@@ -417,6 +439,12 @@ def verify_authenticity(
                     "fit_score": fit_score,
                 }
             )
+            # PR-B: surface the L1-transient marker so a future tool can
+            # re-verify the DOI when the publisher's anti-bot wall lifts.
+            if doi_recheck_pending:
+                provenance["doi_recheck_pending"] = True
+                if doi_recheck_details is not None:
+                    provenance["doi_recheck_details"] = doi_recheck_details
             paper["provenance"] = provenance
             accepted.append(paper)
         except Exception as exc:
