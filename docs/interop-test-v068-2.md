@@ -12,7 +12,7 @@
 | # | Test | Result | Note |
 |---|---|---|---|
 | A | PyPI install reproducibility | ✅ PASS | 9 skills land at expected paths; all SKILL.md frontmatter parses |
-| B | Wheel skills_data == local skills/ | ✅ PASS | byte-identical (only `zotero-skills` vendored dir excluded, as designed) |
+| B | Wheel skills_data == local skills/ | ✅ PASS | byte-identical (v0.68.2 snapshot — vendored `zotero-skills` excluded then; removed in Phase 7 Wave C, post-v1.0) |
 | C | Catalog README walkthrough | ✅ PASS | All 5 steps either executable today or noted with caveat |
 | D | Catalog skill_url ↔ PyPI wheel | ⚠️ Partial | 6/9 byte-identical; 3 differ as expected master-vs-tag skew |
 | E | Catalog `skills.yml` metadata | ❌ FAIL | `research-hub` skill points at deleted path `skills/knowledge-base/` (renamed in v0.68.0) |
@@ -46,10 +46,13 @@ Every SKILL.md has valid frontmatter `name:` matching dir basename.
 ```bash
 diff -r /tmp/venvA/Lib/site-packages/research_hub/skills_data \
         C:/Users/wenyu/Desktop/research-hub/skills/
-# Only difference: skills/zotero-skills (vendored, intentionally excluded from wheel)
+# At v0.68.2: only difference was skills/zotero-skills, the vendored copy
+# intentionally excluded from the wheel. Phase 7 Wave C (post-v1.0) removed
+# that vendored copy entirely; the canonical lives at WenyuChiou/zotero-skills.
 ```
 
-PyPI wheel is **byte-identical to local source for all 9 packaged skills**.
+PyPI wheel is **byte-identical to local source for all 9 packaged skills**
+(historical snapshot at v0.68.2; v0.69+ adds `paper-summarize`).
 
 ---
 

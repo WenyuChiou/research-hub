@@ -34,9 +34,6 @@ V066_SKILLS = (
 LEGACY_SKILLS = ("research-hub", "research-hub-multi-ai")
 ALL_SKILLS = V066_SKILLS + LEGACY_SKILLS
 
-# Third-party / vendored skills under skills/ that we do NOT package
-EXCLUDED_FROM_PACKAGING = {"zotero-skills"}
-
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
     """Tiny YAML-frontmatter parser: only handles `key: value` lines."""

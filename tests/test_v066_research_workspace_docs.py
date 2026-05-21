@@ -27,7 +27,6 @@ V066_SKILLS = (
     # v0.68: Stage 3a/4 design helper
     "research-design-helper",
 )
-EXCLUDED_FROM_PACKAGING = {"zotero-skills"}
 
 
 def test_research_workspace_manifest_doc_exists_and_lists_required_yaml_files():

@@ -29,7 +29,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_ROOT = REPO_ROOT / "skills"
 
 # Source dirs the catalog (and any other downstream consumer) may link to.
-# Excludes `zotero-skills` which is a vendored third-party clone.
+# The vendored `zotero-skills` shadow was removed in Phase 7 Wave C; the
+# canonical lives at WenyuChiou/zotero-skills (separate marketplace plugin).
 EXPECTED_SKILL_DIR_NAMES = frozenset({
     "research-hub",
     "research-hub-multi-ai",
@@ -71,7 +72,7 @@ def test_skill_source_dirs_match_expected_set():
     forces deliberate decisions about downstream link stability."""
     actual = {
         child.name for child in SKILLS_ROOT.iterdir()
-        if child.is_dir() and child.name != "zotero-skills"
+        if child.is_dir()
     }
 
     missing = EXPECTED_SKILL_DIR_NAMES - actual
@@ -99,7 +100,7 @@ def test_skill_data_mirror_dirs_match_expected_set():
     mirror_root = REPO_ROOT / "src" / "research_hub" / "skills_data"
     actual = {
         child.name for child in mirror_root.iterdir()
-        if child.is_dir() and child.name != "zotero-skills"
+        if child.is_dir()
     }
     missing = EXPECTED_SKILL_DIR_NAMES - actual
     extra = actual - EXPECTED_SKILL_DIR_NAMES

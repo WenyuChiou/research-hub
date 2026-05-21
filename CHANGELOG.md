@@ -89,6 +89,32 @@ graph rebuild (link out to the real tools instead)._
   step are different skills, and the callout was only on the
   marketplace README — never echoed to the user at handoff time.
 
+### Removed
+- **Vendored `skills/zotero-skills/` shadow (Phase 7 Wave C).** The
+  308-line vendored copy of the standalone `zotero-skills` plugin has
+  been deleted; the canonical 60-line skill at
+  `WenyuChiou/zotero-skills` is now the single source of truth.
+  Coupled site updates landing in the same commit: `skill_installer.py`
+  drops its `zotero-skills` exclusion (the dir no longer exists to
+  filter), `tests/test_skills_data_parity.py` empties
+  `SHADOW_ONLY_IN_SKILLS_TREE`, `tests/test_v068_3_version_sync.py`
+  and `tests/test_v066_skill_schema.py` drop the now-stale exclusion
+  comments / dead constants, and `docs/interop-test-v068-2.md` notes
+  the historical snapshot vs the post-Wave-C state. Callers that
+  resolve `Skill(skill="zotero-skills")` by bare name will now route
+  to the canonical standalone plugin once that marketplace install
+  exists in their environment. Users who relied on the vendored copy
+  without separately installing `WenyuChiou/zotero-skills` will get a
+  skill-not-found error until they run
+  `git clone https://github.com/WenyuChiou/zotero-skills ~/.claude/skills/zotero-skills`
+  (or `claude plugin install zotero-skills@ai-research-skills --scope user`).
+  Closes Phase 2 backlog Item #3 from the
+  `WenyuChiou/ai-research-skills` plan.
+- **`.claude-plugin/plugin.json` description count corrected**
+  9 → 10 skills (paper-summarize was added in v0.69 but never
+  reflected in the auto-discovery plugin manifest). Picked up the
+  Wave B reviewer P9 follow-up.
+
 ### Fixed
 - **`probe_cleared_failed_no_abstract` now routes to abstract-text fallback.**
   When a URL's `summarize_status` is `failed_no_abstract` and the HTTP probe

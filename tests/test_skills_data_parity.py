@@ -14,9 +14,10 @@ until the code-reviewer subagent flagged it).
 
 If you intentionally need to ship a skill only via the marketplace
 (not via ``research-hub install``), add the skill name to
-``SHADOW_ONLY_IN_SKILLS_TREE`` below with a one-line comment. Today
-the only such case is ``zotero-skills``, the vendored copy that
-Item #3 of Phase 2 is scheduled to remove.
+``SHADOW_ONLY_IN_SKILLS_TREE`` below with a one-line comment. The
+set is currently empty — Phase 7 Wave C removed the vendored
+``zotero-skills`` copy in favor of the canonical standalone plugin
+at ``WenyuChiou/zotero-skills``.
 """
 
 from __future__ import annotations
@@ -32,16 +33,9 @@ SKILLS_TREE = REPO_ROOT / "skills"
 SKILLS_DATA_TREE = REPO_ROOT / "src" / "research_hub" / "skills_data"
 
 # Skills that intentionally live in ``skills/`` but not in
-# ``skills_data/``. Add with a comment explaining why.
-SHADOW_ONLY_IN_SKILLS_TREE: set[str] = {
-    # Vendored copy of the standalone ``zotero-skills`` plugin; the
-    # canonical lives at WenyuChiou/zotero-skills. Phase 2 Wave C
-    # backlog item: delete this directory + update installer + tests
-    # + docs in sync. Until then, the vendored copy is intentionally
-    # absent from skills_data so ``research-hub install`` does not
-    # double-ship it.
-    "zotero-skills",
-}
+# ``skills_data/``. Add with a comment explaining why. Empty since
+# Phase 7 Wave C removed the ``zotero-skills`` vendored shadow.
+SHADOW_ONLY_IN_SKILLS_TREE: set[str] = set()
 
 
 def _list_skill_names(root: Path) -> set[str]:

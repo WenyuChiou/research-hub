@@ -66,10 +66,6 @@ def _discover_skill_pack() -> tuple[tuple[str, str], ...]:
     for child in sorted(base.iterdir()):
         if not child.is_dir():
             continue
-        # Skip vendored third-party skills like zotero-skills that ship
-        # in the editable repo but aren't part of the research-hub pack.
-        if child.name == "zotero-skills":
-            continue
         if not (child / "SKILL.md").exists():
             continue
         source_dir = child.name
