@@ -69,6 +69,15 @@ gate's version==tag assertion stays satisfied._
   (`paper summarize --pending --cluster <slug>`).
 
 ### Added
+- **`docs/literature-review-deliverable.md` — format specification.**
+  Defines the consolidated document the skill pipeline (`search` →
+  `literature-triage-matrix` → `research-design-helper`) produces end
+  to end: the fixed 9-section
+  contract, the `.bib` + `.gaps.yml` companion-file schemas, the
+  per-paper summarization contract (and how it relates to the
+  `paper-summarize` skill), honesty rules, and the bilingual /
+  Markdown+Word bundle convention. A fully synthetic worked example
+  ships in the `ai-research-skills` catalog repo.
 - **`--peer-reviewed` flag on `search` and `auto`.** Drops preprint
   backends (arXiv/bioRxiv/chemRxiv/medRxiv), excludes gray doc types
   (preprint/posted-content/report/book-chapter/paratext/dataset), and
