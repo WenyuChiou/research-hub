@@ -339,19 +339,21 @@ def test_cmd_paper_gaps_empty_llm_response(tmp_path: Path, capsys) -> None:
     assert "empty" in err.lower() or "Prompt saved" in err
 
 
-def test_cmd_paper_gaps_compare_warns(tmp_path: Path, capsys) -> None:
-    """paper gaps --compare emits warning that cross-cluster is not implemented."""
+def test_cmd_paper_gaps_compare_no_llm_empty_cluster_aborts(tmp_path: Path, capsys) -> None:
+    """paper gaps --compare with one empty cluster aborts with a clear error."""
     from research_hub.cli import _cmd_paper_gaps
 
     cfg = _make_cfg(tmp_path)
     cluster_dir = cfg.raw / "floods"
     _write_paper(cluster_dir, "paper1", title="Flood Study")
+    # "llm" cluster dir absent → digest_b.paper_count == 0 → early abort
 
     args = SimpleNamespace(cluster="floods", compare_cluster="llm", no_llm=True, llm_cli=None)
     _cmd_paper_gaps(cfg, args)
 
     err = capsys.readouterr().err
-    assert "not yet implemented" in err or "Wave 5" in err
+    # Should report which cluster is empty
+    assert "llm" in err and ("no papers" in err.lower() or "empty" in err.lower() or "cannot" in err.lower())
 
 
 def test_cmd_paper_gaps_with_mock_llm(tmp_path: Path, capsys) -> None:

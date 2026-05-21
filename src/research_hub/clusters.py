@@ -155,6 +155,7 @@ class Cluster:
     description: str = ""
     status: str = "active"
     archived_at: str = ""
+    group: str = ""  # optional free-text group tag (e.g. "water-resources", "llm-methods")
 
 
 @dataclass

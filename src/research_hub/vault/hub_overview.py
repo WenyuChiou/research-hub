@@ -184,27 +184,44 @@ def populate_home(cfg) -> Path:
     registry = ClusterRegistry(cfg.clusters_file)
     clusters = list(registry.list())
 
-    cluster_lines: list[str] = []
-    for cluster in clusters:
-        slug = (cluster.slug or "").strip()
-        if not slug:
-            continue
-        # Skip archived clusters — their notes live under hub/_archived/<slug>/
-        # and should not appear in the reading queue or Clusters section.
-        if getattr(cluster, "status", "active") == "archived":
-            continue
-        name = (cluster.name or slug).strip()
-        paper_count = _count_papers(vault_root, slug)
-        cluster_queries = [str(getattr(cluster, "first_query", "") or "")]
-        moc_links = derive_moc_links(slug, cluster_queries=cluster_queries)
-        moc_tail = ""
-        if moc_links:
-            moc_wikilinks = " / ".join(f"[[{m}]]" for m in moc_links)
-            moc_tail = f" — {moc_wikilinks}"
-        cluster_lines.append(
-            f"- [[{slug}/00_overview|{name}]] ({paper_count} papers){moc_tail}"
-        )
-    clusters_body = "\n".join(cluster_lines) if cluster_lines else "(no clusters yet)"
+    # F3b: build cluster entries, grouping by the group field when any group is set
+    def _cluster_entry(cluster) -> str:
+        _slug = (cluster.slug or "").strip()
+        _name = (cluster.name or _slug).strip()
+        _paper_count = _count_papers(vault_root, _slug)
+        _cluster_queries = [str(getattr(cluster, "first_query", "") or "")]
+        _moc_links = derive_moc_links(_slug, cluster_queries=_cluster_queries)
+        _moc_tail = ""
+        if _moc_links:
+            _moc_wikilinks = " / ".join(f"[[{m}]]" for m in _moc_links)
+            _moc_tail = f" — {_moc_wikilinks}"
+        return f"- [[{_slug}/00_overview|{_name}]] ({_paper_count} papers){_moc_tail}"
+
+    active_clusters = [
+        c for c in clusters
+        if (c.slug or "").strip()
+        and getattr(c, "status", "active") != "archived"
+    ]
+    has_groups = any(getattr(c, "group", "") for c in active_clusters)
+    if has_groups:
+        _grouped: dict[str, list] = {}
+        for cluster in active_clusters:
+            g = (getattr(cluster, "group", "") or "").strip()
+            _grouped.setdefault(g, []).append(cluster)
+        # Named groups alphabetically, ungrouped last
+        _sorted_groups = sorted(g for g in _grouped if g)
+        if "" in _grouped:
+            _sorted_groups.append("")
+        cluster_lines: list[str] = []
+        for g in _sorted_groups:
+            label = g if g else "Other"
+            cluster_lines.append(f"### {label}")
+            cluster_lines.extend(_cluster_entry(c) for c in _grouped[g])
+            cluster_lines.append("")
+        clusters_body = "\n".join(cluster_lines).strip() or "(no clusters yet)"
+    else:
+        cluster_lines = [_cluster_entry(c) for c in active_clusters]
+        clusters_body = "\n".join(cluster_lines) if cluster_lines else "(no clusters yet)"
 
     reading_queue_body = _render_home_reading_queue(vault_root, clusters, limit=5)
     briefs_body = _render_home_recent_briefs(vault_root, clusters, limit=3)

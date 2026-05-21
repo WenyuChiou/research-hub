@@ -5,13 +5,15 @@ import pytest
 from research_hub.search.fallback import FIELD_PRESETS, _BACKEND_REGISTRY, resolve_backends_for_field
 
 
-def test_resolve_field_cs_returns_5_backends():
+def test_resolve_field_cs_returns_6_backends():
+    """Wave 3 added google-scholar; cs preset now has 6 backends."""
     assert resolve_backends_for_field("cs") == (
         "openalex",
         "arxiv",
         "semantic-scholar",
         "dblp",
         "crossref",
+        "google-scholar",
     )
 
 
@@ -45,7 +47,8 @@ def test_resolve_field_edu_includes_eric():
     assert "eric" in resolve_backends_for_field("edu")
 
 
-def test_resolve_field_general_returns_all_11_backends():
+def test_resolve_field_general_returns_all_13_backends():
+    """Wave 3 added ssrn and google-scholar; general preset now has 13 backends."""
     assert resolve_backends_for_field("general") == (
         "openalex",
         "arxiv",
@@ -55,9 +58,11 @@ def test_resolve_field_general_returns_all_11_backends():
         "pubmed",
         "biorxiv",
         "repec",
+        "ssrn",
         "chemrxiv",
         "nasa-ads",
         "eric",
+        "google-scholar",
     )
 
 

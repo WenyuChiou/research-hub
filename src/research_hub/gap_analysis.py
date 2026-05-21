@@ -353,6 +353,158 @@ def save_gap_prompt(cfg, slug: str, prompt: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Cross-cluster gap analysis (F4b)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CrossClusterGapResult:
+    """Result of writing cross-cluster gap analysis output."""
+
+    written: bool
+    gap_path: Optional[Path] = None
+    overview_a_updated: bool = False
+    overview_b_updated: bool = False
+
+
+def emit_cross_cluster_gap_prompt(
+    digest_a: ClusterDigest, digest_b: ClusterDigest
+) -> str:
+    """Generate an LLM prompt for evidence-anchored cross-cluster gap analysis.
+
+    The prompt asks the LLM to identify what each cluster covers that the other
+    does not, what neither covers, and 3-5 specific bridging research directions
+    — all anchored to specific papers from the provided digests.
+
+    Args:
+        digest_a: ClusterDigest for cluster A.
+        digest_b: ClusterDigest for cluster B.
+
+    Returns:
+        Multi-line string ready to pipe to an LLM CLI.
+    """
+    lines: list[str] = []
+    lines.append("You are a rigorous research synthesis expert.")
+    lines.append(
+        "Your task: identify the intersection space and bridging research directions "
+        "between TWO literature clusters."
+    )
+    lines.append(
+        "CRITICAL RULE: Every gap or bridge you identify must be evidence-anchored — "
+        "cite which specific papers from each cluster demonstrate the gap by their absence "
+        "or by explicit limitations they state. Do NOT infer gaps from general domain knowledge."
+    )
+    lines.append("")
+
+    for label, digest in [("A", digest_a), ("B", digest_b)]:
+        lines.append(f"## Cluster {label}: {digest.name} ({digest.slug})")
+        lines.append(f"Total papers: {digest.paper_count}")
+        lines.append("")
+        lines.append(f"### Paper Summaries — Cluster {label}")
+        lines.append("")
+        for i, paper in enumerate(digest.papers, 1):
+            year_str = f" ({paper.year})" if paper.year else ""
+            doi_str = f" [DOI: {paper.doi}]" if paper.doi else ""
+            lines.append(f"#### {label}{i}: {paper.title}{year_str}{doi_str}")
+            if paper.authors:
+                lines.append(f"**Authors**: {', '.join(paper.authors[:3])}")
+            if paper.summary:
+                lines.append(f"**Summary**: {paper.summary}")
+            if paper.methodology:
+                lines.append(f"**Methodology**: {paper.methodology}")
+            if paper.key_findings:
+                lines.append(f"**Key Findings**: {paper.key_findings}")
+            lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append(
+        "Based ONLY on the papers above (do not use general knowledge), "
+        "identify cross-cluster gaps and bridging opportunities. "
+        "Cite paper codes (e.g. A1, B3) for every claim."
+    )
+    lines.append("")
+    lines.append(
+        "## Required Output Format (Markdown)\n"
+        "\n"
+        "### What Cluster A Covers That B Does Not\n"
+        "- [description] (Papers A1, A2 address X; no equivalent found in Cluster B)\n"
+        "\n"
+        "### What Cluster B Covers That A Does Not\n"
+        "- [description] (Papers B1, B2 address Y; no equivalent found in Cluster A)\n"
+        "\n"
+        "### Intersection Gaps (Neither Cluster Covers)\n"
+        "- [topic or method absent from both] "
+        "(implied by limitations stated in A1, B2, etc.)\n"
+        "\n"
+        "### Bridging Research Directions\n"
+        "Provide exactly 3-5 specific directions that connect both clusters:\n"
+        "'[Insight/method from Cluster A] × [Insight/method from Cluster B] "
+        "→ [Concrete Research Direction]'\n"
+        "\n"
+        "### Evidence Basis\n"
+        "List every paper you cited (title + code e.g. A1, B3), confirming your "
+        "analysis is derived ONLY from these papers.\n"
+    )
+    return "\n".join(lines)
+
+
+def cross_cluster_gap(
+    cfg, slug_a: str, slug_b: str, gap_markdown: str
+) -> CrossClusterGapResult:
+    """Write cross-cluster gap analysis to hub/_cross-cluster/<A>-x-<B>-gaps.md.
+
+    Also adds a ``## Cross-Cluster Analysis`` section with a wikilink to each
+    cluster's ``00_overview.md`` (if the file exists and the section is absent).
+
+    Args:
+        cfg: HubConfig (must have .root or .hub Path attribute).
+        slug_a: First cluster slug.
+        slug_b: Second cluster slug.
+        gap_markdown: LLM-produced Markdown cross-cluster gap analysis text.
+
+    Returns:
+        CrossClusterGapResult with paths and success flags.
+    """
+    cross_hub = _resolve_hub_root(cfg, "_cross-cluster")
+    cross_hub.mkdir(parents=True, exist_ok=True)
+
+    gap_filename = f"{slug_a}-x-{slug_b}-gaps.md"
+    gap_path = cross_hub / gap_filename
+    header = f"# Cross-Cluster Gaps — {slug_a} × {slug_b}\n\n"
+    gap_path.write_text(header + gap_markdown.strip() + "\n", encoding="utf-8")
+    logger.info("Wrote cross-cluster gaps to %s", gap_path)
+
+    result = CrossClusterGapResult(written=True, gap_path=gap_path)
+
+    # Add cross-reference wikilinks to each cluster's 00_overview.md
+    wikilink_stem = gap_filename[:-3]  # strip .md
+    for idx, (slug, other_slug) in enumerate(
+        [(slug_a, slug_b), (slug_b, slug_a)]
+    ):  # idx 0 → A, idx 1 → B
+        overview_path = _resolve_hub_root(cfg, slug) / "00_overview.md"
+        if not overview_path.exists():
+            continue
+        overview_text = overview_path.read_text(encoding="utf-8")
+        cross_heading = "## Cross-Cluster Analysis"
+        if cross_heading in overview_text:
+            continue  # already present — do not duplicate
+        link_line = (
+            f"- [[_cross-cluster/{wikilink_stem}|{slug} × {other_slug} gaps]]"
+        )
+        overview_path.write_text(
+            overview_text.rstrip() + f"\n\n{cross_heading}\n\n{link_line}\n",
+            encoding="utf-8",
+        )
+        if idx == 0:
+            result.overview_a_updated = True
+        else:
+            result.overview_b_updated = True
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

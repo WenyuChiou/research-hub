@@ -403,8 +403,55 @@ def _quarantine(args) -> int:
 def _clusters_list() -> int:
     cfg = get_config()
     registry = ClusterRegistry(cfg.clusters_file)
-    for cluster in registry.list():
-        print(f"{cluster.slug}\t{cluster.name}")
+    clusters = registry.list()
+
+    # F3b: if any cluster has a group, show grouped output; otherwise flat list
+    active = [c for c in clusters if (c.slug or "").strip()]
+    has_groups = any(getattr(c, "group", "") for c in active)
+
+    if has_groups:
+        grouped: dict[str, list] = {}
+        for cluster in active:
+            g = (getattr(cluster, "group", "") or "").strip()
+            grouped.setdefault(g, []).append(cluster)
+        # Named groups alphabetically, ungrouped last
+        sorted_groups = sorted(g for g in grouped if g)
+        if "" in grouped:
+            sorted_groups.append("")
+        for g in sorted_groups:
+            label = g if g else "(ungrouped)"
+            print(f"\n[{label}]")
+            for cluster in grouped[g]:
+                print(f"  {cluster.slug}\t{cluster.name}")
+    else:
+        for cluster in active:
+            print(f"{cluster.slug}\t{cluster.name}")
+    return 0
+
+
+_INVALID_GROUP_CHARS = frozenset('|[]#\n\r\t')
+
+
+def _clusters_set_group(slug: str, group: str) -> int:
+    """Assign or clear the group tag for a cluster (F3b)."""
+    cfg = get_config()
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster = registry.get(slug)
+    if cluster is None:
+        print(f"Cluster not found: {slug!r}", file=sys.stderr)
+        return 1
+    clean_group = group.strip()
+    if clean_group and any(ch in clean_group for ch in _INVALID_GROUP_CHARS):
+        print(
+            f"[set-group] Invalid characters in group name: {clean_group!r}. "
+            "Avoid: | [ ] # and whitespace other than spaces.",
+            file=sys.stderr,
+        )
+        return 1
+    cluster.group = clean_group
+    registry.save()
+    action = f"set to {group.strip()!r}" if group.strip() else "cleared"
+    print(f"[set-group] {slug}: group {action}")
     return 0
 
 
@@ -2218,6 +2265,8 @@ def _cmd_paper_gaps(cfg, args) -> None:
         emit_gap_prompt,
         apply_gap_results,
         save_gap_prompt,
+        emit_cross_cluster_gap_prompt,
+        cross_cluster_gap,
     )
     from research_hub.llm_cli import detect_llm_cli, invoke_llm_cli
 
@@ -2226,13 +2275,43 @@ def _cmd_paper_gaps(cfg, args) -> None:
     forced_cli = getattr(args, "llm_cli", None)
     compare_slug = getattr(args, "compare_cluster", None)
 
-    # Cross-cluster gap analysis is Wave 5 — warn clearly rather than silently ignoring
+    # F4b: Cross-cluster gap analysis
     if compare_slug:
-        print(
-            f"[gaps] --compare '{compare_slug}' is not yet implemented (Wave 5). "
-            "Running single-cluster analysis only.",
-            file=sys.stderr,
-        )
+        digest_a = build_cluster_digest(cfg, slug)
+        digest_b = build_cluster_digest(cfg, compare_slug)
+        # Require both clusters to have at least some papers for a meaningful cross-analysis
+        if digest_a.paper_count == 0 or digest_b.paper_count == 0:
+            empty = slug if digest_a.paper_count == 0 else compare_slug
+            print(
+                f"[gaps] Cluster '{empty}' has no papers. "
+                "Cannot run cross-cluster analysis.",
+                file=sys.stderr,
+            )
+            return
+        cross_prompt = emit_cross_cluster_gap_prompt(digest_a, digest_b)
+        cross_prompt_path = save_gap_prompt(cfg, f"{slug}-x-{compare_slug}", cross_prompt)
+        cli_name = None if no_llm else (forced_cli or detect_llm_cli())
+        if cli_name is None:
+            print(
+                f"[gaps] No LLM CLI detected (or --no-llm).\n"
+                f"[gaps] Cross-cluster prompt saved to: {cross_prompt_path}"
+            )
+            return
+        print(f"[gaps] Invoking {cli_name} for cross-cluster analysis ({slug} x {compare_slug})...")
+        try:
+            gap_text = invoke_llm_cli(cli_name, cross_prompt, timeout_sec=300)
+        except Exception as exc:
+            print(f"[gaps] LLM invocation failed: {exc}", file=sys.stderr)
+            print(f"[gaps] Prompt saved: {cross_prompt_path}", file=sys.stderr)
+            return
+        if not gap_text.strip():
+            print("[gaps] LLM returned empty response.", file=sys.stderr)
+            print(f"[gaps] Prompt saved: {cross_prompt_path}", file=sys.stderr)
+            return
+        result = cross_cluster_gap(cfg, slug, compare_slug, gap_text)
+        if result.written:
+            print(f"[gaps] Cross-cluster gap file: {result.gap_path}")
+        return
 
     print(f"[gaps] Building digest for cluster '{slug}'...")
     digest = build_cluster_digest(cfg, slug)
@@ -5479,6 +5558,13 @@ def build_parser() -> argparse.ArgumentParser:
     clusters_parser = subparsers.add_parser("clusters", help="Manage topic clusters")
     clusters_subparsers = clusters_parser.add_subparsers(dest="clusters_command", required=True)
     clusters_subparsers.add_parser("list", help="List clusters")
+    set_group_p = clusters_subparsers.add_parser(
+        "set-group", help="Assign a cluster to a named group for organised navigation"
+    )
+    set_group_p.add_argument("slug", help="Cluster slug")
+    set_group_p.add_argument(
+        "group", nargs="?", default="", help="Group name (omit to clear)"
+    )
     coverage_p = clusters_subparsers.add_parser("coverage", help="Show cluster coverage/health metrics")
     coverage_p.add_argument("--min-coverage", type=int, default=0, dest="min_coverage")
     coverage_p.add_argument(
@@ -6884,7 +6970,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--compare",
         default=None,
         dest="compare_cluster",
-        help="Second cluster slug for cross-cluster gap analysis (Wave 5)",
+        help="Second cluster slug for cross-cluster gap analysis",
     )
     gaps_p.add_argument(
         "--no-llm",
@@ -7458,6 +7544,8 @@ def _main_dispatch(args, parser) -> int:
             return 0
         if args.clusters_command == "list":
             return _clusters_list()
+        if args.clusters_command == "set-group":
+            return _clusters_set_group(args.slug, getattr(args, "group", ""))
         if args.clusters_command == "show":
             return _clusters_show(args.slug)
         if args.clusters_command == "new":
