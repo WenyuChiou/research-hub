@@ -94,8 +94,11 @@ def _read_title(md_path: Path) -> str:
 
 def remove_paper(identifier: str, include_zotero: bool = False, dry_run: bool = False) -> dict:
     """Remove one or more notes resolved by DOI or slug."""
+    from research_hub.vault.link_updater import remove_paper_links
+
     removed_files: list[str] = []
     zotero_deleted = False
+    links_cleaned: int = 0
     for md_path in _find_note_paths(identifier):
         if include_zotero:
             zotero_key = _frontmatter_value(md_path, "zotero-key")
@@ -107,14 +110,21 @@ def remove_paper(identifier: str, include_zotero: bool = False, dry_run: bool = 
                     zotero_deleted = True
                 except Exception:
                     pass
+        slug = md_path.stem
+        cluster_slug = _frontmatter_value(md_path, "topic_cluster")
         removed_files.append(str(md_path))
         if not dry_run and md_path.exists():
             md_path.unlink()
+            # Cascade: scrub backward wikilinks in sibling notes.
+            # Vault layout: raw/<cluster>/<note>.md → parent.parent = cfg.raw
+            if cluster_slug:
+                links_cleaned += remove_paper_links(slug, md_path.parent.parent, cluster_slug)
     if removed_files and not dry_run:
         _save_index_without_paths([Path(path) for path in removed_files])
     return {
         "removed_files": removed_files,
         "zotero_deleted": zotero_deleted,
+        "links_cleaned": links_cleaned,
         "dry_run": dry_run,
     }
 

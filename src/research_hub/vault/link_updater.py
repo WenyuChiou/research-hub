@@ -64,13 +64,16 @@ def find_related_in_cluster(
     all_notes: list[NoteMeta],
     min_tag_overlap: int = 1,
 ) -> list[NoteMeta]:
-    """Find same-cluster notes ordered by descending tag overlap.
+    """Find same-cluster notes ordered by descending tag overlap (at most 10).
 
     When ``new_note`` has a ``topic_cluster`` set, cluster membership
     alone is sufficient — notes in the same cluster are included even
     when tag overlap is zero. Tag overlap only affects ranking so the
     most topically-similar papers appear first. When ``new_note`` has
     no cluster, fall back to the tag-overlap threshold.
+
+    The result is capped at 10 entries to prevent mega-hub nodes in the
+    Obsidian graph view when a cluster grows large.
     """
     related: list[tuple[int, NoteMeta]] = []
     new_tag_set = set(new_note.tags)
@@ -88,7 +91,7 @@ def find_related_in_cluster(
             if overlap >= min_tag_overlap:
                 related.append((overlap, other))
     related.sort(key=lambda item: (-item[0], item[1].slug))
-    return [item[1] for item in related]
+    return [item[1] for item in related][:10]
 
 
 def add_wikilinks_to_note(
@@ -168,3 +171,42 @@ def update_cluster_links(
                 backward += 1
 
     return {"forward": forward, "backward": backward, "scanned": len(all_notes)}
+
+
+def remove_paper_links(
+    removed_slug: str,
+    vault_raw_dir: Path,
+    cluster_slug: str,
+) -> int:
+    """Scrub *removed_slug* from every Related Papers section in *cluster_slug*.
+
+    Called after a note is deleted so sibling notes don't accumulate phantom
+    wikilinks.  Returns the number of notes that were actually modified.
+    """
+    modified = 0
+    # Build existing_stems once so add_wikilinks_to_note's v0.84.0 safety net
+    # can filter out any slugs that no longer exist on disk.
+    existing_stems = {p.stem for p in vault_raw_dir.rglob("*.md")}
+    for md_path in vault_raw_dir.rglob("*.md"):
+        meta = parse_frontmatter(md_path)
+        if meta is None or meta.topic_cluster != cluster_slug:
+            continue
+        text = md_path.read_text(encoding="utf-8", errors="ignore")
+        match = SECTION_PATTERN.search(text)
+        if not match:
+            continue
+        existing_slugs = re.findall(r"\[\[([^\]]+)\]\]", match.group(2))
+        if removed_slug not in existing_slugs:
+            continue
+        new_slugs = [slug for slug in existing_slugs if slug != removed_slug]
+        if not new_slugs:
+            # Last entry removed — delete the entire Related section so we
+            # don't leave an empty "## Related Papers in This Cluster" header.
+            text = md_path.read_text(encoding="utf-8", errors="ignore")
+            new_text = SECTION_PATTERN.sub(lambda m: m.group(3), text, count=1)
+            if new_text != text:
+                md_path.write_text(new_text, encoding="utf-8")
+                modified += 1
+        elif add_wikilinks_to_note(md_path, new_slugs, existing_stems):
+            modified += 1
+    return modified

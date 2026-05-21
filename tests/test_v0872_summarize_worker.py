@@ -250,3 +250,15 @@ def test_apply_parsed_summary_adds_summary_before_abstract(tmp_path: Path) -> No
     )
 
     assert updated.index("## Summary") < updated.index("## Abstract")
+
+
+# ---------------------------------------------------------------------------
+# RELEVANCE prompt anti-generic guard (v1.1.0)
+# ---------------------------------------------------------------------------
+
+def test_prompt_template_relevance_anti_generic():
+    """RELEVANCE instruction must forbid the generic 'This paper is relevant to...' form."""
+    from research_hub.paper_summarize import PROMPT_TEMPLATE
+
+    assert "Do NOT write" in PROMPT_TEMPLATE
+    assert "SPECIFIC dimension" in PROMPT_TEMPLATE
