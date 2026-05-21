@@ -50,6 +50,16 @@ graph rebuild (link out to the real tools instead)._
   (`paper summarize --pending --cluster <slug>`).
 
 ### Added
+- **`gap-to-topic` skill — a topic-decision dossier.** New 11th packaged
+  skill. Choosing a thesis/proposal topic is a go/no-go decision, not a
+  literature review; `gap-to-topic` produces a `.research/topic_dossier.md`
+  that runs a candidate breakthrough point through a 3-gate AND test —
+  ① is the gap open (adversarial-recall search + a verifiable `.bib`),
+  ② is it a contribution (dead-end history + problem-solving/incremental
+  typing), ③ is it feasible (data/resource accessibility) — and hands the
+  final "is it worth doing" verdict back to the researcher. `skills/gap-to-topic/`
+  (SKILL.md + 3 references + evals) mirrored to `skills_data/`;
+  `.claude-plugin/plugin.json` 10→11 skills, version `0.2.0 → 0.3.0`.
 - **NLM session pre-flight in `auto_pipeline`.**  Before attempting any
   NotebookLM browser work, `auto_pipeline` now calls `check_session_health`
   on the stored `state.json`.  When the session is missing or expired the

@@ -1,0 +1,41 @@
+{
+  "skill": "gap-to-topic",
+  "evals": [
+    {
+      "prompt": "Is this research gap worth pursuing — applying LLMs to X?",
+      "expected_artifacts": [
+        ".research/topic_dossier.md",
+        ".research/topic_dossier.bib",
+        ".research/topic_dossier.gaps.yml"
+      ],
+      "expected_behavior": "Run sections 0-4 in order. Section 0 elicits and types the candidate Socratically (do NOT invent the topic). Section 1 uses adversarial-recall search and emits the .bib companion. Section 4 hands the worth-it verdict back to the researcher and advisor.",
+      "must_not_touch": [
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "Help me pick a thesis topic in agent-based flood modelling.",
+      "expected_artifacts": [
+        ".research/topic_dossier.md",
+        ".research/topic_dossier.bib",
+        ".research/topic_dossier.gaps.yml"
+      ],
+      "expected_behavior": "Elicit candidate breakthrough points Socratically; classify each Type A or B; do NOT decide which topic is best; assemble the 3-gate evidence and leave the choice to the researcher.",
+      "must_not_touch": [
+        ".paper/"
+      ]
+    },
+    {
+      "prompt": "Has someone already done this idea?",
+      "expected_artifacts": [
+        ".research/topic_dossier.md",
+        ".research/topic_dossier.bib",
+        ".research/topic_dossier.gaps.yml"
+      ],
+      "expected_behavior": "Treat as Gate 1 (Open?). Run adversarial-recall search, report a recall-confidence verdict as a headline, and never declare a gap 'open' from corpus-absence alone.",
+      "must_not_touch": [
+        ".paper/"
+      ]
+    }
+  ]
+}
