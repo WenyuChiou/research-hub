@@ -12,6 +12,7 @@
 [![Zotero](https://img.shields.io/badge/Zotero-CC2936?logo=zotero&logoColor=white)](https://www.zotero.org/)
 [![Obsidian](https://img.shields.io/badge/Obsidian-7C3AED?logo=obsidian&logoColor=white)](https://obsidian.md/)
 [![NotebookLM](https://img.shields.io/badge/NotebookLM-4285F4?logo=google&logoColor=white)](https://notebooklm.google.com/)
+[![SafeSkill 60/100](https://img.shields.io/badge/SafeSkill-60%2F100_Use%20with%20Caution-orange)](https://safeskill.dev/scan/wenyuchiou-research-hub)
 
 Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp4](docs/demo/dashboard-walkthrough.mp4)
 
