@@ -50,6 +50,16 @@ graph rebuild (link out to the real tools instead)._
   (`paper summarize --pending --cluster <slug>`).
 
 ### Added
+- **CI `skill-version-guard` job** (`.github/workflows/ci.yml`). Blocks
+  a PR that changes skill content (`skills/` or
+  `src/research_hub/skills_data/`) without also bumping
+  `.claude-plugin/plugin.json` `version`. The marketplace plugin cache
+  directory is keyed on the version string, so an un-bumped
+  skill-content change ships to `master` but never reaches user
+  installs. A 2026-05-21 dogfood verification (finding V1b) caught
+  exactly this — a SKILL.md change merged without a version bump and
+  silently failed to propagate. This guard makes that class of bug a
+  hard CI failure at PR time.
 - **`--peer-reviewed` flag on `search` and `auto`.** Drops preprint
   backends (arXiv/bioRxiv/chemRxiv/medRxiv), excludes gray doc types
   (preprint/posted-content/report/book-chapter/paratext/dataset), and

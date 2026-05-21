@@ -142,3 +142,55 @@ jobs:
         # so that the stress suite is actually selected here.
         run: pytest tests/stress/ -v -o "addopts=" -m stress
         timeout-minutes: 10
+
+  skill-version-guard:
+    # Phase 8.1 / dogfood V1b lesson: a skill-content change that ships to
+    # master without a plugin version bump never reaches user installs —
+    # the marketplace plugin cache directory is keyed on the version string
+    # in .claude-plugin/plugin.json. This job blocks that class of bug at
+    # PR time: if a PR touches skills/ or src/research_hub/skills_data/, it
+    # MUST also bump the plugin version.
+    name: skill-version-guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Skill-content change requires a plugin version bump
+        run: |
+          base='${{ github.event.pull_request.base.sha }}'
+          head='${{ github.event.pull_request.head.sha }}'
+          git fetch --no-tags origin "$base" >/dev/null 2>&1 || true
+          # Use the true common ancestor, not the base-branch tip — the tip
+          # can move after PR creation and produce false positives.
+          merge_base=$(git merge-base "$base" "$head")
+          changed=$(git diff --name-only "$merge_base" "$head")
+          echo "Merge base: $merge_base"
+          echo "Changed files in this PR:"
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(skills|src/research_hub/skills_data)/'; then
+            echo "Skill content changed — a plugin version bump is required."
+            # Compare the version VALUE before/after — robust to reformatting
+            # (a diff-line grep would false-PASS when the line moves unchanged).
+            read_ver() {
+              git show "$1:.claude-plugin/plugin.json" 2>/dev/null \
+                | python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" 2>/dev/null \
+                || echo ''
+            }
+            base_ver=$(read_ver "$merge_base")
+            head_ver=$(read_ver "$head")
+            echo "plugin.json version: base='$base_ver' head='$head_ver'"
+            if [ -z "$head_ver" ]; then
+              echo "::error::Could not read \"version\" from .claude-plugin/plugin.json on the PR head."
+              exit 1
+            fi
+            if [ "$base_ver" = "$head_ver" ]; then
+              echo "::error::This PR changes skill content (skills/ or src/research_hub/skills_data/) but .claude-plugin/plugin.json version is unchanged ('$head_ver'). The marketplace plugin cache is keyed on the version string — an un-bumped change never reaches user installs. Bump the version (see Phase 8.1 / dogfood V1b). Even a non-functional edit needs a bump so the cache invalidates cleanly."
+              exit 1
+            fi
+            echo "OK — skill-content change is paired with a plugin version bump ('$base_ver' -> '$head_ver')."
+          else
+            echo "No skill-content change in this PR — guard not applicable."
+          fi
