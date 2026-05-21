@@ -1,6 +1,6 @@
 ---
 name: research-design-helper
-description: Guide a researcher through 5 Socratic segments — research question sharpening, expected mechanism, identifiability check, validation plan, risk register — and produce `.research/design_brief.md`. Use when the user asks to "frame this research question", "design my study", "help me think through what model to build", "sharpen my hypothesis", "is my research question sharp enough to be falsifiable?", or "before I start coding, walk me through the design". Does NOT write the model spec; does NOT invent the research question — guides the human to articulate them.
+description: Guide a researcher through 5 Socratic segments — research question sharpening, expected mechanism, identifiability check, validation plan, risk register — and produce `.research/design_brief.md`. Use when the user asks to "frame this research question", "design my study", "help me think through what model to build", "sharpen my hypothesis", "is my research question sharp enough to be falsifiable?", or "before I start coding, walk me through the design". Runs AFTER a topic is chosen — it designs the study for a given question; to decide whether a research gap is worth pursuing at all (open / a contribution / feasible), use `gap-to-topic`. Does NOT write the model spec; does NOT invent the research question — guides the human to articulate them.
 ---
 
 # research-design-helper
