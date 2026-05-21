@@ -20,7 +20,8 @@ def mock_deps():
          patch("research_hub.vault.hub_overview.populate_all_overviews"), \
          patch("research_hub.auto._run_search") as mock_run_search, \
          patch("research_hub.auto._run_fit_check_step", side_effect=lambda cfg, papers, *a, **k: papers), \
-         patch("research_hub.auto.detect_llm_cli", return_value="claude"):
+         patch("research_hub.auto.detect_llm_cli", return_value="claude"), \
+         patch("research_hub.notebooklm.auth.check_session_health", return_value={"ok": True}):
         # NOTE: a judge IS present here on purpose. These tests verify
         # auto_pipeline orchestration (search/ingest/NLM wiring) with
         # _run_fit_check_step mocked to a pass-through — they are NOT
@@ -203,6 +204,7 @@ def test_auto_nlm_failure_does_not_abort_pipeline(mock_deps, capsys):
     assert report.nlm_error == "nlm.upload: login expired"
     mock_crystals.assert_called_once()
     assert "[NLM] skipped (check: research-hub notebooklm login). Resume with:" in out
+    assert "session expired. Fix:" not in out  # must not be misclassified as auth error
     assert "research-hub notebooklm bundle   --cluster nlm-deferred-topic" in out
     assert "research-hub notebooklm upload   --cluster nlm-deferred-topic" in out
     assert "research-hub notebooklm generate --cluster nlm-deferred-topic --type brief" in out

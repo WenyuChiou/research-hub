@@ -50,6 +50,16 @@ graph rebuild (link out to the real tools instead)._
   (`paper summarize --pending --cluster <slug>`).
 
 ### Added
+- **NLM session pre-flight in `auto_pipeline`.**  Before attempting any
+  NotebookLM browser work, `auto_pipeline` now calls `check_session_health`
+  on the stored `state.json`.  When the session is missing or expired the
+  pipeline skips NLM gracefully, sets `nlm_deferred=True`, and prints a
+  `[HINT]` pointing at `research-hub notebooklm login` — instead of running
+  a full headless browser session that would crash with an opaque Playwright
+  error.  The `_print_next_steps` footer now distinguishes
+  *"session expired → login first"* from *"transient error → retry"*.
+  Health-check errors are caught so existing behaviour is preserved when
+  the auth module is unavailable.
 - **Summary quality improvements** (4 changes):
   - `link_updater.find_related_in_cluster` capped at **10 results** (was
     unbounded) — prevents mega-hub nodes in the Obsidian graph for large

@@ -413,8 +413,45 @@ def auto_pipeline(
             _print_next_steps(report, slug, cfg, do_crystals=do_crystals)
         return report
 
-    # 6, 7, 8, 9 ??NotebookLM
+    # 6, 7, 8, 9 — NotebookLM
     cluster = registry.get(slug)  # refresh
+
+    # Pre-flight: check NLM session health before attempting any browser work.
+    # A stale / missing state.json produces an opaque browser error deep inside
+    # upload_cluster; catching it here lets us print a clear HINT and skip
+    # gracefully instead.
+    try:
+        from research_hub.notebooklm.auth import check_session_health, default_state_file
+        _state_file = default_state_file(cfg.research_hub_dir)
+        _health = check_session_health(_state_file)
+        if not _health.get("ok"):
+            from research_hub._invocation import recommended_cli_invocation
+            _inv = recommended_cli_invocation()
+            _reason = _health.get("reason", "unknown")
+            report.nlm_deferred = True
+            report.ok = True
+            report.nlm_error = f"nlm.preflight: session not valid ({_reason})"
+            _step_log(report, "nlm.preflight", False, _elapsed(started, report),
+                      f"session not valid — run: {_inv} notebooklm login", print_progress)
+            if print_progress:
+                print(f"  [HINT] NLM session is not valid ({_reason}).")
+                print(f"         Run:  {_inv} notebooklm login")
+                print(f"         Then re-run auto to upload to NotebookLM.")
+            if do_crystals:
+                _run_crystal_step(cfg, slug, effective_cli, report, started, print_progress)
+            report.total_duration_sec = time.time() - started
+            if print_progress:
+                _print_next_steps(report, slug, cfg, do_crystals=do_crystals)
+            return report
+    except ImportError:
+        # Auth module not installed; fall through to normal NLM steps.
+        pass
+    except Exception as exc:
+        # Health check failed at runtime (e.g. file lock, event-loop conflict).
+        # Log and fall through so the normal NLM path handles it.
+        if print_progress:
+            print(f"  [NLM] preflight check failed ({type(exc).__name__}); proceeding.")
+
     nlm_step = "nlm"
     try:
         nlm_step = "nlm.bundle"
@@ -743,7 +780,12 @@ def _print_next_steps(report: AutoReport, slug: str, cfg, *, do_crystals: bool) 
     if report.nlm_deferred:
         from research_hub._invocation import recommended_cli_invocation
         inv = recommended_cli_invocation()
-        print(f"  [NLM] skipped (check: {inv} notebooklm login). Resume with:")
+        is_auth_error = (report.nlm_error or "").startswith("nlm.preflight:")
+        if is_auth_error:
+            print(f"  [NLM] skipped — session expired. Fix:")
+            print(f"    {inv} notebooklm login")
+        else:
+            print(f"  [NLM] skipped (check: {inv} notebooklm login). Resume with:")
         print(f"    {inv} notebooklm bundle   --cluster {slug}")
         print(f"    {inv} notebooklm upload   --cluster {slug}")
         print(f"    {inv} notebooklm generate --cluster {slug} --type brief")
