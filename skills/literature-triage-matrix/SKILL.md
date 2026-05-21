@@ -1,6 +1,6 @@
 ---
 name: literature-triage-matrix
-description: Turn a list of papers (Zotero collection, Obsidian cluster, manual list) into a compact comparison matrix written to .research/literature_matrix.md, instead of generic per-paper summaries. Use when the user asks to "make a literature matrix", "compare these papers by method/data/limitations", or "decide which papers are central to my review".
+description: Turn a list of papers (Zotero collection, Obsidian cluster, manual list) into a compact comparison matrix written to .research/literature_matrix.md, instead of generic per-paper summaries. Use when the user asks to "make a literature matrix", "compare these papers by method/data/limitations", or "decide which papers are central to my review". If the user says "extract the claims from these papers": cross-paper comparison matrix → this skill; claims from their own manuscript draft → `paper-memory-builder`; per-cited-paper Key Findings → `paper-summarize`.
 compatibility: Pure agentskills.io-spec skill. Verified loaded by NousResearch/hermes-agent 0.13.0 via `hermes skills install <github-raw-url>` (security scan: SAFE, status: enabled). Should work on any agentskills.io-compliant host without modification.
 ---
 

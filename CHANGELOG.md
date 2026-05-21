@@ -89,6 +89,26 @@ graph rebuild (link out to the real tools instead)._
   step are different skills, and the callout was only on the
   marketplace README — never echoed to the user at handoff time.
 
+### Changed
+- **`research-workspace` plugin version bumped `0.1.0` → `0.2.0`**
+  (`.claude-plugin/plugin.json`). The marketplace plugin cache is keyed
+  on this version; a dogfood test on 2026-05-20 confirmed fresh
+  `claude plugin install` users were still receiving the pre-Phase-7
+  cached `0.1.0` skill bundle — i.e. the `paper-memory-builder`
+  anti-leakage rule (Phase 7 Wave A) and the `zotero-skills` shadow
+  removal (Wave C) had shipped to `master` but not to user installs.
+  Bumping the plugin version forces a fresh cache directory so those
+  changes actually propagate. No skill behavior changed by the bump
+  itself.
+- **`paper-summarize` and `literature-triage-matrix` descriptions gain
+  an "extract claims" disambiguation clause.** The same dogfood test
+  surfaced a fragile auto-trigger boundary: a user saying "extract
+  claims from these papers" could land at `paper-memory-builder`
+  (own draft), `paper-summarize` (per-cited-paper), or
+  `literature-triage-matrix` (cross-paper matrix). Both descriptions
+  now state the disambiguation explicitly so the router picks
+  correctly.
+
 ### Removed
 - **Vendored `skills/zotero-skills/` shadow (Phase 7 Wave C).** The
   308-line vendored copy of the standalone `zotero-skills` plugin has
