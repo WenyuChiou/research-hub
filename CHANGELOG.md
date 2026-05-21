@@ -12,14 +12,33 @@
 
 ## [Unreleased]
 
-_Post-1.0. Phase B (UI 80/20 — ⌘K command palette + mobile
-breakpoints + `_HOME` wayfinding) and Phase D (Zotero metadata
-correctness — type-aware `itemType` mapping + `fit/<bucket>` tag +
-provenance child-note parity) are staged on
-`feature/v1.1-ui-80-20` for **v1.1**, to merge AFTER v1.0.0 ships.
-UI scope is capped here by decision: the dashboard stays a thin
-status-mirror + palette + onboarding demo; no 3-pane / citation-
-graph rebuild (link out to the real tools instead)._
+_Phase B (UI 80/20 — ⌘K command palette + mobile breakpoints +
+`_HOME` wayfinding) and Phase D (Zotero metadata correctness —
+type-aware `itemType` mapping + `fit/<bucket>` tag + provenance
+child-note parity) are staged on the `feature/v1.1-ui-80-20`
+branch for **v1.2.0**, to merge AFTER v1.1.0 ships. (Version
+designation moved v1.1 → v1.2: the v1.1 slot was reclaimed by the
+post-1.0 batch now recorded under v1.1.0 below. The branch keeps
+its `v1.1` name to avoid disrupting in-flight work — the name no
+longer implies the target version.) UI scope is capped here by
+decision: the dashboard stays a thin status-mirror + palette +
+onboarding demo; no 3-pane / citation-graph rebuild (link out to
+the real tools instead)._
+
+## v1.1.0 (PENDING — bump version constants + tag AFTER v1.0.0 ships on/after 2026-05-24)
+
+_Post-1.0 work accumulated during the v0.95.0rc2 → v1.0.0 bake
+window — Phase 7 Waves A/B/C, Phase 8 Wave 1, and the Ubuntu CI
+OOM guard. Phase 8 Wave 1 was driven by a 2026-05-20 dogfood
+evaluation of the packaged skills, which surfaced the stale
+marketplace plugin cache (fixed by the `.claude-plugin/plugin.json`
+`0.1.0 → 0.2.0` bump) and the "extract claims" trigger ambiguity
+between `paper-summarize` and `literature-triage-matrix`.
+Deliberately NOT folded into the v1.0.0 baked scope (folding it in
+would defeat the rc2 bake). Version constants (`pyproject.toml`,
+`src/research_hub/__init__.py`) remain at `1.0.0`; the bump to
+`1.1.0` is deferred until v1.0.0 is tagged, so the v1.0.0 release
+gate's version==tag assertion stays satisfied._
 
 ### Fixed
 - **`probe_cleared_failed_no_abstract` URL quality signal now triggers text
