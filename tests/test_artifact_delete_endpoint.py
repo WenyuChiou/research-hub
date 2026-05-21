@@ -22,6 +22,9 @@ def _post(port: int, path: str, *, token: str = "test-token") -> tuple[int, dict
 
 @pytest.fixture
 def artifact_server(tmp_path: Path):
+    # NB: tests/conftest.py autouse fixture _stub_socket_getfqdn handles the
+    # Python stdlib issue14914 hang at HTTPServer.server_bind() — see that
+    # docstring. This fixture relies on it being active.
     root = tmp_path / "vault"
     root.mkdir()
     broadcaster = events.EventBroadcaster()

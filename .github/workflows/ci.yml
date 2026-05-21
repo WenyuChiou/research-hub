@@ -138,5 +138,7 @@ jobs:
         continue-on-error: true
 
       - name: Run stress tests
-        run: pytest tests/stress/ -v
+        # Override pyproject.toml addopts (which excludes 'stress' marker by default)
+        # so that the stress suite is actually selected here.
+        run: pytest tests/stress/ -v -o "addopts=" -m stress
         timeout-minutes: 10

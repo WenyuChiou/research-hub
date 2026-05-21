@@ -65,10 +65,14 @@ def cfg(tmp_path, monkeypatch):
         clusters_file=clusters_file,
     )
     shared_get_config = lambda: cfg_obj
+    # Satisfy require_config()'s early-exit check: it calls _resolve_config_path()
+    # before get_config(), and raises SystemExit if neither a config file nor
+    # RESEARCH_HUB_ROOT is found.  Setting the env var to the tmp vault dir makes
+    # require_config() pass through to get_config() without reading a real config file.
+    monkeypatch.setenv("RESEARCH_HUB_ROOT", str(root))
     monkeypatch.setattr(cli, "get_config", shared_get_config, raising=False)
-    monkeypatch.setitem(cli.require_config.__globals__, "get_config", shared_get_config)
-    # Also patch the source module so code that imports get_config directly from
-    # research_hub.config (not via cli.py) is intercepted on CI where no vault exists.
+    # Patch in config.py's own namespace so require_config() → get_config() returns
+    # cfg_obj on all call sites (cli.py + any module that imports get_config directly).
     monkeypatch.setattr("research_hub.config.get_config", shared_get_config)
     return cfg_obj
 
