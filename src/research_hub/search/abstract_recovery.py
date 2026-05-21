@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -64,28 +65,52 @@ def _recover_from_unpaywall(doi: str, *, timeout: int = 10) -> RecoveredAbstract
     return RecoveredAbstract(text="", source="")
 
 
-def _recover_from_semantic_scholar(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
-    try:
-        response = requests.get(
-            f"https://api.semanticscholar.org/graph/v1/paper/DOI:{quote(doi.strip(), safe='')}",
-            params={"fields": "abstract,tldr"},
-            timeout=timeout,
-            headers={"User-Agent": _USER_AGENT},
-        )
-        if response.status_code != 200:
+def _recover_from_semantic_scholar(
+    doi: str, *, timeout: int = 10, _retries: int = 2
+) -> RecoveredAbstract:
+    """Try Semantic Scholar for a DOI abstract.
+
+    Retries up to *_retries* times on HTTP 429 (rate-limit) with
+    exponential back-off (5 s, 10 s).  Callers that process many DOIs
+    in sequence should interleave other work between calls to avoid
+    sustained rate-limiting.
+    """
+    for attempt in range(_retries + 1):
+        try:
+            response = requests.get(
+                f"https://api.semanticscholar.org/graph/v1/paper/DOI:{quote(doi.strip(), safe='')}",
+                params={"fields": "abstract,tldr"},
+                timeout=timeout,
+                headers={"User-Agent": _USER_AGENT},
+            )
+            if response.status_code == 429:
+                if attempt < _retries:
+                    wait = 5 * (2 ** attempt)  # 5 s, then 10 s
+                    logger.debug(
+                        "S2 rate-limited (429) for doi=%s; retrying in %ds (attempt %d/%d)",
+                        doi, wait, attempt + 1, _retries,
+                    )
+                    time.sleep(wait)
+                    continue
+                return RecoveredAbstract(text="", source="")
+            if response.status_code != 200:
+                return RecoveredAbstract(text="", source="")
+            data = response.json() or {}
+            abstract = str(data.get("abstract", "") or "").strip()
+            if abstract:
+                logger.info("abstract recovery: doi=%s source=s2", doi)
+                return RecoveredAbstract(text=abstract, source="s2")
+            tldr = data.get("tldr") or {}
+            tldr_text = str(
+                (tldr.get("text", "") if isinstance(tldr, dict) else "") or ""
+            ).strip()
+            if tldr_text:
+                logger.info("abstract recovery: doi=%s source=s2-tldr", doi)
+                return RecoveredAbstract(text=tldr_text, source="s2-tldr")
             return RecoveredAbstract(text="", source="")
-        data = response.json() or {}
-        abstract = str(data.get("abstract", "") or "").strip()
-        if abstract:
-            logger.info("abstract recovery: doi=%s source=s2", doi)
-            return RecoveredAbstract(text=abstract, source="s2")
-        tldr = data.get("tldr") or {}
-        tldr_text = str((tldr.get("text", "") if isinstance(tldr, dict) else "") or "").strip()
-        if tldr_text:
-            logger.info("abstract recovery: doi=%s source=s2-tldr", doi)
-            return RecoveredAbstract(text=tldr_text, source="s2-tldr")
-    except Exception as exc:
-        logger.debug("Semantic Scholar abstract recovery failed for %s: %s", doi, exc)
+        except Exception as exc:
+            logger.debug("Semantic Scholar abstract recovery failed for %s: %s", doi, exc)
+            break
     return RecoveredAbstract(text="", source="")
 
 

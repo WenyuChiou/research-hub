@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import subprocess
@@ -10,7 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from research_hub.paper import _parse_frontmatter, _split_frontmatter
-from research_hub.search.abstract_recovery import _PLACEHOLDER_PATTERNS
+from research_hub.search.abstract_recovery import (
+    _PLACEHOLDER_PATTERNS,
+    _is_substantive,
+    recover_abstract,
+)
+
+logger = logging.getLogger(__name__)
 
 
 SUMMARY_PENDING_CALLOUT = (
@@ -101,13 +108,34 @@ def summarize_pending(
 
         abstract = extract_markdown_section(text, "Abstract")
         if is_bad_abstract(abstract):
-            if dry_run:
-                results.append(SummarizeResult(note_path, "would_fail_no_abstract"))
+            # Attempt abstract recovery cascade (CrossRef → Unpaywall → OpenAlex →
+            # Semantic Scholar) before marking as failed.  The cascade is already
+            # implemented in recover_abstract(); we just need to call it here.
+            doi = str(meta.get("doi", "") or "").strip()
+            _recovered = recover_abstract(doi) if doi else None
+            if _recovered is not None and _is_substantive(_recovered.text):
+                logger.info(
+                    "abstract recovered for %s via %s",
+                    note_path.name, _recovered.source,
+                )
+                # Patch the Abstract section in-place so future runs also benefit.
+                split = _split_frontmatter(text)
+                if split is not None:
+                    opening, frontmatter, body, newline = split
+                    body = _upsert_section(body, "Abstract", _recovered.text, newline)
+                    text = f"{opening}{frontmatter}{newline}---{newline}{body}"
+                    if not dry_run:
+                        _write_note_text(note_path, text)
+                abstract = _recovered.text
+                # Fall through — let the existing summarization path handle it.
             else:
-                _write_note_text(note_path, set_frontmatter_fields(text, {"summarize_status": "failed_no_abstract"}))
-                results.append(SummarizeResult(note_path, "failed_no_abstract"))
-            processed += 1
-            continue
+                if dry_run:
+                    results.append(SummarizeResult(note_path, "would_fail_no_abstract"))
+                else:
+                    _write_note_text(note_path, set_frontmatter_fields(text, {"summarize_status": "failed_no_abstract"}))
+                    results.append(SummarizeResult(note_path, "failed_no_abstract"))
+                processed += 1
+                continue
 
         if dry_run:
             results.append(SummarizeResult(note_path, "would_summarize", backend=backend))
