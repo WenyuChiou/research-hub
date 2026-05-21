@@ -9,7 +9,12 @@ from research_hub.search.crossref import CrossrefBackend
 from research_hub.search.dblp import DblpBackend
 from research_hub.search.enrich import classify_candidate, enrich_candidates
 from research_hub.search.eric import EricBackend
-from research_hub.search.fallback import iter_new_results, search_papers
+from research_hub.search.fallback import (
+    RecallReport,
+    adversarial_search,
+    iter_new_results,
+    search_papers,
+)
 from research_hub.search.kci import KciBackend
 from research_hub.search.nasa_ads import NasaAdsBackend
 from research_hub.search.openalex import OpenAlexBackend
@@ -36,6 +41,8 @@ __all__ = [
     "KciBackend",
     "WebSearchBackend",
     "search_papers",
+    "adversarial_search",
+    "RecallReport",
     "iter_new_results",
     "enrich_candidates",
     "classify_candidate",

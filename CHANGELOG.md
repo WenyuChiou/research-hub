@@ -60,6 +60,16 @@ graph rebuild (link out to the real tools instead)._
   *"session expired → login first"* from *"transient error → retry"*.
   Health-check errors are caught so existing behaviour is preserved when
   the auth module is unavailable.
+- **Adversarial-recall search — `research-hub search --adversarial`.**
+  A single query phrasing systematically misses papers that use other
+  vocabulary; in topic-scoping search a missed paper makes a research gap
+  look open when it is not. `--adversarial` expands the query into several
+  phrasings (LLM-generated when an LLM CLI is on PATH, deterministic
+  fallback otherwise), searches each, unions the results by `dedup_key`,
+  and prints a recall-confidence verdict (`high`/`medium`/`low`, derived
+  from query saturation) to stderr. New `search/query_expansion.py`;
+  `adversarial_search()` + `RecallReport` added to `search/fallback.py`;
+  `tests/test_search_adversarial.py` (18 cases).
 - **Summary quality improvements** (4 changes):
   - `link_updater.find_related_in_cluster` capped at **10 results** (was
     unbounded) — prevents mega-hub nodes in the Obsidian graph for large

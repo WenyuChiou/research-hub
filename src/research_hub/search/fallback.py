@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
+from dataclasses import dataclass
 import logging
 from collections.abc import Iterable, Sequence
 
@@ -212,6 +213,111 @@ def search_papers(
     )
     ranked = rank(filtered, rank_by=rank_by, relevance_query=query)
     return ranked[:limit]
+
+
+@dataclass
+class RecallReport:
+    """Recall-confidence summary for an adversarial (multi-query) search.
+
+    `confidence` answers: how likely is it that the union of results is the
+    near-complete set of relevant papers? It is derived from saturation —
+    whether later query phrasings stopped contributing new papers.
+    """
+
+    queries_run: int
+    variants: list[str]
+    new_per_query: list[int]  # unique papers each successive variant added
+    total_unique: int
+    saturated: bool
+    confidence: str  # "high" | "medium" | "low"
+
+
+# Recall-confidence bands: the share of total unique papers the LAST query
+# variant still contributed. A small share => the corpus is saturated.
+# Magic numbers by design — expect to recalibrate after real-world runs.
+_RECALL_HIGH_THRESHOLD = 0.05
+_RECALL_MED_THRESHOLD = 0.20
+
+
+def _recall_confidence(new_per_query: list[int]) -> tuple[str, bool]:
+    """Estimate recall confidence from the per-variant new-paper counts.
+
+    Saturation: the last variant added (almost) nothing new -> the corpus is
+    likely exhausted -> high confidence. If every variant keeps adding a
+    meaningful share, the corpus is not exhausted -> low confidence. Fewer
+    than two variants, or zero papers found at all, give no saturation
+    signal -> low confidence (zero results is "found nothing", not "thorough").
+    """
+    if len(new_per_query) < 2:
+        return "low", False
+    total = sum(new_per_query)
+    if total == 0:
+        return "low", False
+    last_share = new_per_query[-1] / total
+    if last_share <= _RECALL_HIGH_THRESHOLD:
+        return "high", True
+    if last_share <= _RECALL_MED_THRESHOLD:
+        return "medium", False
+    return "low", False
+
+
+def adversarial_search(
+    query: str,
+    *,
+    limit: int = 20,
+    max_variants: int = 5,
+    llm_cli: str | None = None,
+    per_query_limit: int | None = None,
+    **search_kwargs,
+) -> tuple[list[SearchResult], RecallReport]:
+    """Search under several query phrasings, union the results, and report
+    how confident we can be that recall is complete.
+
+    A single query phrasing systematically misses papers that use other
+    vocabulary — and a missed paper makes a research gap look open when it is
+    not. This runs `search_papers` once per expanded phrasing, unions by
+    `dedup_key`, re-ranks, and returns a `RecallReport` alongside the results.
+
+    `search_kwargs` is forwarded to `search_papers` (year_from, year_to,
+    backends, exclude_types, exclude_terms, min_confidence, min_citations,
+    rank_by, backend_trace).
+    """
+    from research_hub.search._rank import rank
+    from research_hub.search.query_expansion import expand_query
+
+    variants = expand_query(query, max_variants=max_variants, llm_cli=llm_cli)
+    if not variants:
+        return [], RecallReport(0, [], [], 0, False, "low")
+    if per_query_limit is None:
+        per_query_limit = max(limit * 3, 30)
+
+    rank_by = search_kwargs.pop("rank_by", "smart")
+    logger.info(
+        "adversarial_search: %d query phrasings (per_query_limit=%d) — "
+        "favours completeness over speed",
+        len(variants),
+        per_query_limit,
+    )
+    seen: dict[str, SearchResult] = {}
+    new_per_query: list[int] = []
+    for variant in variants:
+        before = len(seen)
+        hits = search_papers(variant, limit=per_query_limit, **search_kwargs)
+        for result in hits:
+            seen.setdefault(result.dedup_key, result)
+        new_per_query.append(len(seen) - before)
+
+    confidence, saturated = _recall_confidence(new_per_query)
+    report = RecallReport(
+        queries_run=len(variants),
+        variants=variants,
+        new_per_query=new_per_query,
+        total_unique=len(seen),
+        saturated=saturated,
+        confidence=confidence,
+    )
+    ranked = rank(list(seen.values()), rank_by=rank_by, relevance_query=query)
+    return ranked[:limit], report
 
 
 def iter_new_results(

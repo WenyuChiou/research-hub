@@ -2985,24 +2985,52 @@ def _search(
     emit_json: bool = False,
     to_papers_input: bool = False,
     cluster_slug: str | None = None,
+    adversarial: bool = False,
+    max_variants: int = 5,
 ) -> int:
     cfg = get_config()
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
-    from research_hub.search import search_papers as _search_papers
 
-    results = _search_papers(
-        query,
-        limit=limit,
-        year_from=year_from,
-        year_to=year_to,
-        min_citations=min_citations,
-        backends=backends,
-        exclude_types=exclude_types,
-        exclude_terms=exclude_terms,
-        min_confidence=min_confidence,
-        rank_by=rank_by,
-        backend_trace=backend_trace,
-    )
+    if adversarial:
+        from research_hub.search import adversarial_search as _adversarial_search
+
+        results, recall = _adversarial_search(
+            query,
+            limit=limit,
+            max_variants=max_variants,
+            year_from=year_from,
+            year_to=year_to,
+            min_citations=min_citations,
+            backends=backends,
+            exclude_types=exclude_types,
+            exclude_terms=exclude_terms,
+            min_confidence=min_confidence,
+            rank_by=rank_by,
+            backend_trace=backend_trace,
+        )
+        print(
+            f"[recall] {recall.queries_run} query phrasings searched -> "
+            f"{recall.total_unique} unique papers; "
+            f"confidence={recall.confidence}"
+            f"{' (saturated)' if recall.saturated else ''}",
+            file=sys.stderr,
+        )
+    else:
+        from research_hub.search import search_papers as _search_papers
+
+        results = _search_papers(
+            query,
+            limit=limit,
+            year_from=year_from,
+            year_to=year_to,
+            min_citations=min_citations,
+            backends=backends,
+            exclude_types=exclude_types,
+            exclude_terms=exclude_terms,
+            min_confidence=min_confidence,
+            rank_by=rank_by,
+            backend_trace=backend_trace,
+        )
     from research_hub.dedup import normalize_doi
 
     ingested = {normalize_doi(doi) for doi in index.doi_to_hits.keys() if doi}
@@ -5909,6 +5937,19 @@ def build_parser() -> argparse.ArgumentParser:
         default="smart",
         help="Ranking strategy. smart = 2*confidence + recency + relevance (default). citation = legacy v0.15 behavior. year = recency only.",
     )
+    search_parser.add_argument(
+        "--adversarial",
+        action="store_true",
+        help="Adversarial recall: search several LLM-generated query phrasings, "
+        "union the results, and print a recall-confidence verdict to stderr. "
+        "Trades speed for completeness — use when a missed paper is costly.",
+    )
+    search_parser.add_argument(
+        "--max-variants",
+        type=int,
+        default=5,
+        help="With --adversarial: max alternative query phrasings to search (default 5).",
+    )
     search_parser.add_argument("--json", action="store_true", help="Emit JSON array")
     search_parser.add_argument(
         "--to-papers-input",
@@ -7852,6 +7893,8 @@ def _main_dispatch(args, parser) -> int:
             emit_json=args.json,
             to_papers_input=args.to_papers_input,
             cluster_slug=args.cluster,
+            adversarial=args.adversarial,
+            max_variants=args.max_variants,
         )
     if args.command == "websearch":
         return _websearch(
