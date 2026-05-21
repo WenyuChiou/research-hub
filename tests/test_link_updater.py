@@ -7,6 +7,7 @@ from research_hub.vault.link_updater import (
     add_wikilinks_to_note,
     find_related_in_cluster,
     parse_frontmatter,
+    remove_paper_links,
 )
 
 
@@ -117,3 +118,107 @@ def test_add_wikilinks_without_existing_stems_writes_all(tmp_path):
     content = note.read_text(encoding="utf-8")
     assert "[[slug-a]]" in content
     assert "[[slug-b]]" in content
+
+
+# ---------------------------------------------------------------------------
+# top-10 cap (v1.1.0 quality improvement)
+# ---------------------------------------------------------------------------
+
+def test_find_related_caps_at_ten_results():
+    """find_related_in_cluster returns at most 10 notes even for large clusters."""
+    new_note = NoteMeta(Path("new.md"), "New", ["llm"], "cluster-a")
+    # Build 15 sibling notes all in the same cluster.
+    siblings = [
+        NoteMeta(Path(f"p{i}.md"), f"Paper {i}", ["llm"], "cluster-a")
+        for i in range(15)
+    ]
+
+    related = find_related_in_cluster(new_note, siblings)
+
+    assert len(related) <= 10
+
+
+# ---------------------------------------------------------------------------
+# remove_paper_links (v1.1.0)
+# ---------------------------------------------------------------------------
+
+def _make_cluster_note(path: Path, cluster: str, related_slugs: list[str]) -> None:
+    """Write a minimal vault note with a Related Papers section."""
+    links = "\n".join(f"- [[{slug}]]" for slug in related_slugs)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f'---\ntitle: "{path.stem}"\ntopic_cluster: "{cluster}"\n---\n\n'
+        f"## Related Papers in This Cluster\n{links}\n",
+        encoding="utf-8",
+    )
+
+
+def test_remove_paper_links_scrubs_slug_from_siblings(tmp_path):
+    """remove_paper_links must remove the target slug from sibling Related sections."""
+    raw = tmp_path / "raw"
+    (raw / "cluster-a").mkdir(parents=True)
+    _make_cluster_note(raw / "cluster-a" / "paper-a.md", "cluster-a", ["paper-b", "paper-c"])
+    _make_cluster_note(raw / "cluster-a" / "paper-c.md", "cluster-a", ["paper-b"])
+
+    modified = remove_paper_links("paper-b", raw, "cluster-a")
+
+    assert modified == 2
+    for note_path in [raw / "cluster-a" / "paper-a.md", raw / "cluster-a" / "paper-c.md"]:
+        text = note_path.read_text(encoding="utf-8")
+        assert "[[paper-b]]" not in text
+
+
+def test_remove_paper_links_leaves_other_slugs_intact(tmp_path):
+    """Only the removed slug is scrubbed; other wikilinks must survive.
+
+    paper-c.md must exist on disk so the v0.84.0 existing_stems safety
+    net does not filter it out as a broken wikilink.
+    """
+    raw = tmp_path / "raw"
+    (raw / "cluster-a").mkdir(parents=True)
+    _make_cluster_note(raw / "cluster-a" / "paper-a.md", "cluster-a", ["paper-b", "paper-c"])
+    # Create the sibling note so its slug survives the existing_stems filter.
+    _make_cluster_note(raw / "cluster-a" / "paper-c.md", "cluster-a", [])
+
+    remove_paper_links("paper-b", raw, "cluster-a")
+
+    text = (raw / "cluster-a" / "paper-a.md").read_text(encoding="utf-8")
+    assert "[[paper-c]]" in text
+
+
+def test_remove_paper_links_ignores_other_clusters(tmp_path):
+    """Notes in a different cluster must not be modified."""
+    raw = tmp_path / "raw"
+    (raw / "cluster-a").mkdir(parents=True)
+    (raw / "cluster-b").mkdir(parents=True)
+    _make_cluster_note(raw / "cluster-a" / "paper-a.md", "cluster-a", ["paper-b"])
+    _make_cluster_note(raw / "cluster-b" / "paper-x.md", "cluster-b", ["paper-b"])
+
+    modified = remove_paper_links("paper-b", raw, "cluster-a")
+
+    assert modified == 1
+    # cluster-b note untouched
+    assert "[[paper-b]]" in (raw / "cluster-b" / "paper-x.md").read_text(encoding="utf-8")
+
+
+def test_remove_paper_links_returns_zero_when_slug_absent(tmp_path):
+    """Returns 0 when no notes reference the given slug."""
+    raw = tmp_path / "raw"
+    (raw / "cluster-a").mkdir(parents=True)
+    _make_cluster_note(raw / "cluster-a" / "paper-a.md", "cluster-a", ["paper-c"])
+
+    modified = remove_paper_links("nonexistent-slug", raw, "cluster-a")
+
+    assert modified == 0
+
+
+def test_remove_paper_links_removes_entire_section_when_last_slug(tmp_path):
+    """When the removed slug was the only entry, the whole Related section is deleted."""
+    raw = tmp_path / "raw"
+    (raw / "cluster-a").mkdir(parents=True)
+    _make_cluster_note(raw / "cluster-a" / "paper-a.md", "cluster-a", ["paper-b"])
+
+    remove_paper_links("paper-b", raw, "cluster-a")
+
+    text = (raw / "cluster-a" / "paper-a.md").read_text(encoding="utf-8")
+    assert "## Related Papers in This Cluster" not in text

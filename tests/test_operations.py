@@ -299,3 +299,85 @@ def test_cluster_split_keeps_non_matching_notes(tmp_path, monkeypatch):
 
     assert result["moved"] == 0
     assert result["remaining"] == 1
+
+
+# ---------------------------------------------------------------------------
+# remove_paper backward link cascade (v1.1.0)
+# ---------------------------------------------------------------------------
+
+def _write_note_with_links(path: Path, *, cluster: str, related: list[str]) -> None:
+    """Write a note that already has a Related Papers section."""
+    links = "\n".join(f"- [[{slug}]]" for slug in related)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "---\n"
+        f'title: "{path.stem}"\n'
+        f'topic_cluster: "{cluster}"\n'
+        "---\n\n"
+        f"## Related Papers in This Cluster\n{links}\n",
+        encoding="utf-8",
+    )
+
+
+def test_remove_paper_cleans_backward_wikilinks(tmp_path, monkeypatch):
+    """After remove_paper, the removed slug disappears from sibling Related sections."""
+    cfg = _make_config(tmp_path, monkeypatch)
+    # Paper being removed
+    _write_note(cfg.raw / "cluster-a" / "paper-x.md", title="Paper X", cluster="cluster-a")
+    # Sibling notes that reference it
+    _write_note_with_links(
+        cfg.raw / "cluster-a" / "paper-y.md",
+        cluster="cluster-a",
+        related=["paper-x", "paper-z"],
+    )
+    _write_note_with_links(
+        cfg.raw / "cluster-a" / "paper-z.md",
+        cluster="cluster-a",
+        related=["paper-x"],
+    )
+
+    result = remove_paper("paper-x")
+
+    assert result["links_cleaned"] == 2
+    assert "[[paper-x]]" not in (cfg.raw / "cluster-a" / "paper-y.md").read_text(encoding="utf-8")
+    assert "[[paper-x]]" not in (cfg.raw / "cluster-a" / "paper-z.md").read_text(encoding="utf-8")
+
+
+def test_remove_paper_preserves_other_links_in_siblings(tmp_path, monkeypatch):
+    """Only the removed slug is scrubbed; unrelated wikilinks must survive.
+
+    paper-z.md must exist so the v0.84.0 existing_stems safety net
+    keeps it in the Related section after paper-x is removed.
+    """
+    cfg = _make_config(tmp_path, monkeypatch)
+    _write_note(cfg.raw / "cluster-a" / "paper-x.md", title="Paper X", cluster="cluster-a")
+    _write_note_with_links(
+        cfg.raw / "cluster-a" / "paper-y.md",
+        cluster="cluster-a",
+        related=["paper-x", "paper-z"],
+    )
+    # Create paper-z so its slug survives the existing_stems filter.
+    _write_note(cfg.raw / "cluster-a" / "paper-z.md", title="Paper Z", cluster="cluster-a")
+
+    remove_paper("paper-x")
+
+    text = (cfg.raw / "cluster-a" / "paper-y.md").read_text(encoding="utf-8")
+    assert "[[paper-z]]" in text
+
+
+def test_remove_paper_dry_run_does_not_clean_links(tmp_path, monkeypatch):
+    """With dry_run=True nothing is written."""
+    cfg = _make_config(tmp_path, monkeypatch)
+    _write_note(cfg.raw / "cluster-a" / "paper-x.md", title="Paper X", cluster="cluster-a")
+    _write_note_with_links(
+        cfg.raw / "cluster-a" / "paper-y.md",
+        cluster="cluster-a",
+        related=["paper-x"],
+    )
+
+    result = remove_paper("paper-x", dry_run=True)
+
+    # dry_run: file not deleted, links not cleaned
+    assert (cfg.raw / "cluster-a" / "paper-x.md").exists()
+    assert result["links_cleaned"] == 0
+    assert "[[paper-x]]" in (cfg.raw / "cluster-a" / "paper-y.md").read_text(encoding="utf-8")

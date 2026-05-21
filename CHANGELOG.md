@@ -50,6 +50,22 @@ graph rebuild (link out to the real tools instead)._
   (`paper summarize --pending --cluster <slug>`).
 
 ### Added
+- **Summary quality improvements** (4 changes):
+  - `link_updater.find_related_in_cluster` capped at **10 results** (was
+    unbounded) — prevents mega-hub nodes in the Obsidian graph for large
+    clusters.
+  - `remove_paper_links(slug, raw_dir, cluster)` — new function scrubs a
+    deleted paper's slug from every sibling note's Related Papers section;
+    removes the entire section header when the deleted slug was the last
+    entry.
+  - `remove_paper()` now cascades the cleanup automatically and returns
+    `links_cleaned` in its result dict.  `dry_run=True` is respected.
+  - `paper_summarize` RELEVANCE prompt updated to require a **specific
+    dimension** (method / empirical context / finding) rather than
+    accepting a generic "this paper is relevant to [cluster]" sentence.
+  - `crystal emit` prompt now exposes a `first_finding` field per paper
+    (first Key Findings bullet, callout-format aware) to give the LLM
+    more signal per paper.
 - **`docs/literature-review-deliverable.md` — format specification.**
   Defines the consolidated document the skill pipeline (`search` →
   `literature-triage-matrix` → `research-design-helper`) produces end

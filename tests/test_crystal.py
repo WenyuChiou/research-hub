@@ -333,3 +333,67 @@ def test_mcp_emit_and_check_crystals(tmp_path, monkeypatch):
     _get_mcp_tool(mcp, "apply_crystals").fn("test", _make_fake_crystals_json(["what-is-this-field"]))
     checked = _get_mcp_tool(mcp, "check_crystal_staleness").fn("test")
     assert "what-is-this-field" in emitted["prompt"] and checked["crystals"]["what-is-this-field"]["stale"] is False
+
+
+# ---------------------------------------------------------------------------
+# _extract_first_finding + crystal prompt first_finding field (v1.1.0)
+# ---------------------------------------------------------------------------
+
+from research_hub.crystal import _extract_first_finding  # noqa: E402
+
+
+def test_extract_first_finding_returns_first_bullet():
+    """Plain-markdown bullet format (no callout wrapper)."""
+    text = (
+        "---\ntitle: \"P\"\n---\n"
+        "## Key Findings\n"
+        "- Finding A is the key result.\n"
+        "- Finding B is secondary.\n"
+    )
+    assert _extract_first_finding(text) == "Finding A is the key result."
+
+
+def test_extract_first_finding_handles_callout_format():
+    """Obsidian callout format — the actual output of apply_parsed_summary_to_note."""
+    text = (
+        "---\ntitle: \"P\"\n---\n"
+        "## Key Findings\n"
+        "> [!success]\n"
+        "> - Finding A is the key result.\n"
+        "> - Finding B is secondary.\n"
+        "^findings\n"
+    )
+    assert _extract_first_finding(text) == "Finding A is the key result."
+
+
+def test_extract_first_finding_returns_empty_when_no_section():
+    text = "---\ntitle: \"P\"\n---\n## Summary\nSome text.\n"
+    assert _extract_first_finding(text) == ""
+
+
+def test_extract_first_finding_truncates_at_200_chars():
+    long_line = "X" * 250
+    text = f"---\ntitle: \"P\"\n---\n## Key Findings\n- {long_line}\n"
+    result = _extract_first_finding(text)
+    assert len(result) <= 200
+
+
+def test_crystal_prompt_includes_first_finding_field(tmp_path):
+    """emit_crystal_prompt must expose first_finding for each paper (callout format)."""
+    cfg = _make_cluster_with_papers(
+        tmp_path,
+        "test",
+        [("paper-a", "Paper A", "one line")],
+    )
+    # Use the callout format that vault ingest actually writes.
+    note = cfg.raw / "test" / "paper-a.md"
+    note.write_text(
+        note.read_text(encoding="utf-8")
+        + "\n## Key Findings\n> [!success]\n> - First finding here.\n^findings\n",
+        encoding="utf-8",
+    )
+    from research_hub.crystal import emit_crystal_prompt
+
+    prompt = emit_crystal_prompt(cfg, "test")
+    assert "first_finding" in prompt
+    assert "First finding here." in prompt

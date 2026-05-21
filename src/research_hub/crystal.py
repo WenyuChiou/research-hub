@@ -206,6 +206,7 @@ def emit_crystal_prompt(cfg, cluster_slug: str, *, question_slugs: list[str] | N
             f"- year: {paper['year'] or '????'}",
             f"- doi: {paper['doi'] or '(none)'}",
             f"- one_liner: {paper['one_liner'] or '(no one-line summary)'}",
+            f"- first_finding: {paper['first_finding'] or '(none)'}",
             "",
         ])
     lines.extend([f"## Canonical questions to answer ({len(questions)} total)", ""])
@@ -342,6 +343,7 @@ def _read_cluster_papers(cfg, cluster_slug: str) -> list[dict[str, str]]:
             "year": str(fm.get("year", "") or ""),
             "doi": str(fm.get("doi", "") or ""),
             "one_liner": _extract_one_liner(text),
+            "first_finding": _extract_first_finding(text),
         })
     papers.sort(key=lambda item: item["slug"])
     return papers
@@ -366,6 +368,34 @@ def _extract_one_liner(text: str) -> str:
             normalized = re.sub(r"\s+", " ", match.group(1).strip())
             if normalized:
                 return re.split(r"(?<=[.!?])\s+", normalized, maxsplit=1)[0][:200]
+    return ""
+
+
+def _extract_first_finding(text: str) -> str:
+    """Return the first Key Findings bullet (≤200 chars), or '' if absent.
+
+    Handles both plain-markdown bullets and Obsidian callout format
+    (``> [!success]\\n> - bullet``), which is what vault notes produced
+    by ``apply_parsed_summary_to_note`` actually contain.
+    """
+    from research_hub.markdown_conventions import unwrap_callout
+
+    body = _strip_frontmatter(text)
+    match = re.search(
+        r"^##\s+Key\s+Findings\s*\n(.*?)(?=^##\s|\Z)",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        return ""
+    # Strip Obsidian callout wrapper (``> [!kind]`` header + ``> `` prefixes)
+    # before iterating bullets so real vault notes work correctly.
+    section_body = unwrap_callout(match.group(1))
+    for line in section_body.splitlines():
+        line = re.sub(r"^\d+\.\s*", "", line.strip().lstrip("-*•").strip())
+        # Skip bare callout header lines that survive unwrap (e.g. "[!success]")
+        if line and not line.startswith("[!"):
+            return line[:200]
     return ""
 
 

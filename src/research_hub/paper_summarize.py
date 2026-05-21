@@ -44,7 +44,10 @@ Output exactly four sections in markdown:
 1. SUMMARY: 1-2 sentences using the paper's own terminology.
 2. KEY_FINDINGS: 3-5 bullets, each starting with a concrete claim.
 3. METHODOLOGY: 1 paragraph (study type, dataset, sample, primary metric).
-4. RELEVANCE: 1 sentence connecting to "{topic_cluster}".
+4. RELEVANCE: 1 sentence naming the SPECIFIC dimension this paper contributes
+   to "{topic_cluster}" — e.g. a new method, an empirical context, a finding
+   that confirms or challenges prior work.  Do NOT write a generic
+   "This paper is relevant to [cluster]" sentence.
 
 If abstract is <100 chars or says "(no abstract)", output
 `[no-abstract-fallback]` for all four sections. Do NOT hallucinate
