@@ -1,80 +1,141 @@
-# Reference — the §0–§4 topic-decision dossier (blank template)
+# Reference — the topic-decision dossier (blank template)
 
 > The shape `gap-to-topic` emits to `.research/topic_dossier.md`. Each `>`
-> italic note is the section's contract — what it must contain. The dossier
+> italic note is that section's contract — what it must contain. The dossier
 > is a thinking tool: surface uncertainty, do not polish it away.
+>
+> **Reader-first rules** (the dossier is for a researcher, not for the
+> pipeline): lead with the answer; name every candidate in plain words; state
+> each gate verdict in plain language *before* the evidence; keep all tool /
+> API / pipeline mechanics out of the body — they live in Appendix A. Formal
+> enum tokens (`partially-occupied`, `borderline`, …) belong in the
+> `.gaps.yml` companion, not the prose — gloss them in the body.
 
 ---
 
 # Topic Decision Dossier — <topic area>
 
+## Bottom line
+
+> *2–4 sentences, plain language, no jargon. What was evaluated, the verdict
+> for each named candidate (go / no-go / conditional), and the single most
+> important caveat. A reader must get the answer here without reading on.*
+
+<e.g. "Two candidate topics were evaluated. **<Candidate 1 name>** is a
+no-go — the gap is already taken. **<Candidate 2 name>** is a conditional
+go — it is open and feasible, but rests on a medium-confidence search and
+one published caution. Whether to pursue it is your and your advisor's
+call.">
+
 | Field | Value |
 |---|---|
 | Area | <the research area> |
 | Compiled | <YYYY-MM-DD> |
-| Pipeline | research-hub: `search --adversarial --json` → `literature-triage-matrix` → gap-to-topic gates |
 | Verdict grade | Screening-grade — assembles evidence; does NOT decide worth |
 
-## §0 — Candidate breakthrough point(s)
+> *This dossier is a thinking tool, not a polished report. It runs each
+> candidate through a 3-gate test — open AND a contribution AND feasible. A
+> candidate that fails any gate is a no-go. The "is it worth doing" call is
+> handed back to the researcher and advisor.*
+
+## The candidates
 
 > *1–N candidates, articulated WITH the researcher (Socratic — never
-> invented). Each typed: A = method-limitation opening, B = unoccupied-
-> application opening. A multi-gap candidate is decomposed into gap_ids.*
+> invented). Each gets a short readable NAME as its heading. State its
+> opening type in plain words: a method-limitation opening (an existing
+> method cannot do X) or an unoccupied-application opening (no one has
+> applied a capability to a domain). The machine id (`G1`, `G2`, …) is
+> noted once, parenthetically — it is a tag for the `.gaps.yml` companion,
+> not the reader's label.*
 
-- **[G1]** <one-sentence candidate> — **Type A / B**
-- ...
+### Candidate 1 — "<readable name>"
 
-## §1 — Gate ① — Open?
+<one-sentence statement of the candidate>. This is an
+<unoccupied-application opening | method-limitation opening>. *(Machine id:
+`G1`.)*
 
-> *Is the gap genuinely unoccupied? Backed by a COMPLETE, verifiable
-> reference list (real DOIs/arXiv IDs — see the `.bib` companion) and an
-> adversarial-recall verdict. "Absent from my corpus" is not evidence of
-> "open". The recall verdict is a headline, not a footnote.*
+### Candidate 2 — "<readable name>"
 
-- **Recall verdict:** <high / medium / low> — <N query phrasings searched,
-  M unique papers; from `search --adversarial --json`>
-- **Closest prior work:** <papers that bear on whether the gap is filled>
-- **Per-gap openness:** [G1] open / partially-occupied / occupied — ...
+<...>
 
-## §2 — Gate ② — A contribution?
+## Gate 1 — Is the gap still open?
 
-> *Two parts. Dead-end history: is the gap open because the field gave up
-> (a dead end), per `references/dead-end-history.md`? Contribution type:
-> problem-solving vs incremental, per `references/contribution-typing.md` —
-> a descriptive lens, NOT a quality verdict.*
+> *Verdict FIRST, per candidate, in plain words. Then the evidence: the
+> closest prior work, and a one-sentence recall-confidence headline (how
+> much to trust "open"). The complete reference list is the `.bib`
+> companion; the structured comparison is `literature_matrix.md`. How the
+> search was run belongs in Appendix A, not here. "Absent from my corpus" is
+> never proof of "open".*
 
-- **[G1] dead-end status:** genuinely-open / dead-end-stale /
-  dead-end-fundamental / partially-attempted — <evidence + quotes>
-- **[G1] contribution type:** problem-solving / incremental / borderline —
-  <justification citing evidence>
+- **Candidate 1 — <plain verdict>.** <e.g. "Occupied — the gap is already
+  taken." one-sentence why.>
+- **Candidate 2 — <plain verdict>.** <e.g. "Open, with medium confidence.">
 
-## §3 — Gate ③ — Feasible?
+**Closest prior work:** <the papers that bear on whether each gap is filled
+— readable prose, real citations; full list in the `.bib`.>
 
-> *Front-loaded: feasibility must be known BEFORE building the research
-> framework, before spending money and running experiments. Establish data
-> / resource accessibility Socratically — public? cost? time to obtain?*
+**Recall confidence:** <one plain sentence — e.g. "Medium: one search
+backend was unavailable, so a missed paper is possible; re-check before
+relying on an 'open' verdict.">
 
-- **[G1] data / resources:** <what is needed> — <public? cost? lead time?>
-- **[G1] feasibility verdict:** feasible / feasible-with-effort / blocked
+## Gate 2 — Would it be a real contribution?
 
-## §4 — Handed back to the human
+> *Per candidate, two plain-language questions. (1) Has the field already
+> tried this and hit a wall? — a gap can be open because the field gave up.
+> (2) Would this be a new capability, or an extension of existing work? —
+> a descriptive lens, NOT a quality judgment; an extension can be well worth
+> doing. Gloss any verdict in plain words; the formal token goes to
+> `.gaps.yml`. A candidate that already failed Gate 1 is not assessed here.*
+
+- **Candidate <n> — has the field hit a wall here?** <plain answer +
+  evidence; cite the paper(s).>
+- **Candidate <n> — new capability or extension?** <plain answer +
+  one-sentence justification.>
+
+## Gate 3 — Is it feasible?
+
+> *Front-loaded: feasibility must be known BEFORE the research framework is
+> built, before money is spent. Per candidate, in plain words: what data /
+> resources are needed, are they public, what do they cost, how long to
+> obtain. End with a plain verdict (feasible / feasible with effort /
+> blocked). A candidate that failed an earlier gate is not assessed.*
+
+- **Candidate <n> — what it needs:** <data / resources — public? cost? lead
+  time?>
+- **Candidate <n> — feasibility:** <plain verdict + the binding constraint.>
+
+## The decision is yours
 
 > *State explicitly that the dossier stops here. It has assembled the three
-> gate-verdicts; whether the gap is WORTH doing is the researcher's and
-> advisor's call.*
+> gate verdicts; whether a gap is WORTH doing is the researcher's and
+> advisor's call. List, per candidate, the gate outcomes and any conditions
+> the human must resolve before committing.*
 
-The three gates above are assembled evidence, not a verdict. **Whether
-[G1] is worth pursuing is your and your advisor's decision.** A go
-requires all three gates to pass (open AND a contribution AND feasible);
-any gate failing is a no-go.
+The three gates above are assembled evidence, not a verdict. A go requires
+all three to pass (open AND a contribution AND feasible); any gate failing
+is a no-go. **Whether <Candidate N> is worth pursuing is your and your
+advisor's decision.** <Per-candidate: the gate outcomes, and the conditions
+to resolve first.>
 
 ---
 
-## Companion files
+## Appendix A — How this dossier was produced
+
+> *All tool / pipeline / API mechanics live here, out of the reader's way.*
+
+- **Pipeline:** research-hub `search --adversarial --json` →
+  `literature-triage-matrix` → gap-to-topic gates.
+- **Recall mechanics:** <N query phrasings searched, M unique papers;
+  which backends ran; any that were rate-limited / unavailable and the
+  effect on recall confidence.>
+- **Tool / version context:** <research-hub plugin version, run date, any
+  caveats — e.g. set `SEMANTIC_SCHOLAR_API_KEY` for tighter recall.>
+
+## Appendix B — Companion files
 
 ### `<dossier>.bib`
 
-The §1 reference list as BibTeX — the trust artifact that lets the
+The Gate 1 reference list as BibTeX — the trust artifact that lets the
 researcher verify "open" independently. Built from the
 `search --adversarial --json` metadata (NOT from `cite --format bibtex`,
 which resolves only already-ingested Zotero items — see SKILL.md §1
@@ -82,16 +143,18 @@ step 3). Every entry must have a resolvable DOI or arXiv ID.
 
 ### `<dossier>.gaps.yml`
 
-Structured export of §0 gaps + their gate verdicts + open questions, so a
-later pass can list every candidate and its standing.
+Structured export of the candidates + their gate verdicts + open questions,
+so a later pass (or a downstream skill) can list every candidate and its
+standing. This file keeps the machine ids and the formal enum tokens.
 
 ```yaml
 dossier: <topic area>
 generated: "YYYY-MM-DD"
 gaps:
   - id: G1
+    name: "<readable candidate name>"
     statement: "<candidate>"
-    type: A            # A | B
+    type: A            # A = method-limitation | B = unoccupied-application
     open: open         # open | partially-occupied | occupied
     dead_end_status: genuinely-open
     contribution_type: problem-solving

@@ -37,18 +37,26 @@ Not for:
 
 ## What it produces
 
-`.research/topic_dossier.md` — a fixed 5-section document (§0–§4):
+`.research/topic_dossier.md` — a **reader-first** document: it opens with a
+plain-language verdict, runs each candidate through the 3-gate test, and
+keeps all tool / pipeline mechanics in two appendices at the end.
 
-| § | Section | Answers |
-|---|---|---|
-| §0 | Candidate breakthrough point(s) | what topic, typed **A** (a method-limitation opening) or **B** (an unoccupied-application opening) |
-| §1 | Gate ① — **Open?** | is the gap genuinely unoccupied — backed by a complete, verifiable reference list |
-| §2 | Gate ② — **A contribution?** | dead-end history + contribution type (problem-solving vs incremental) |
-| §3 | Gate ③ — **Feasible?** | can the data / resources be obtained in time and budget |
-| §4 | Handed back to the human | the dossier states explicitly that the *"worth it"* verdict is the researcher's + advisor's |
+| Section | What it covers |
+|---|---|
+| Bottom line | the answer up front — verdict per named candidate, in plain words |
+| The candidates | 1–N candidate topics, each given a readable name; opening type stated in plain words (method-limitation vs unoccupied-application) |
+| Gate 1 — Is the gap still open? | is the gap genuinely unoccupied — backed by a complete, verifiable reference list |
+| Gate 2 — Would it be a real contribution? | dead-end history + new-capability-vs-extension |
+| Gate 3 — Is it feasible? | can the data / resources be obtained in time and budget |
+| The decision is yours | the dossier states explicitly the *"worth it"* verdict is the researcher's + advisor's |
+| Appendix A / B | how the dossier was produced (pipeline, recall mechanics) + the companion files |
 
-Plus two machine-readable companions: `<dossier>.bib` (the §1 reference
-list as BibTeX) and `<dossier>.gaps.yml` (structured gaps + open questions).
+(SKILL.md §0–§4 below are the agent's internal workflow steps; they map to
+the reader-facing sections above — §0 → The candidates, §1 → Gate 1, etc.)
+
+Plus two machine-readable companions: `<dossier>.bib` (the Gate 1 reference
+list as BibTeX) and `<dossier>.gaps.yml` (structured candidates + verdicts +
+open questions — keeps the machine ids and enum tokens).
 
 The go/no-go test is a **3-gate AND** — a candidate that fails ANY gate is a
 no-go. The dossier is a thinking tool, not a polished report.
@@ -82,12 +90,17 @@ Run §0–§4 in order. Each section has a fixed contract; do not skip a gate.
 ### §0 — Candidate breakthrough point(s)
 
 Socratic, like `research-design-helper`. Help the user articulate 1–N
-candidates. Do **not** invent the topic. For each, classify the type:
+candidates. Do **not** invent the topic. For each candidate:
 
-- **Type A — method-limitation opening:** an existing method *cannot* do X
-  ("traditional ABM cannot give agent profiles via text").
-- **Type B — unoccupied-application opening:** no one has applied a
-  capability to a domain ("no one has used LLMs for X").
+- **Give it a short, readable name** — it becomes the candidate's heading
+  in the dossier ("The candidates" section). The `G1` / `G2` id is only a
+  machine tag for the `.gaps.yml` companion; it must never be the reader's
+  primary label.
+- **Classify the opening type**, and write it in plain words in the dossier:
+  - **Type A — method-limitation opening:** an existing method *cannot* do X
+    ("traditional ABM cannot give agent profiles via text").
+  - **Type B — unoccupied-application opening:** no one has applied a
+    capability to a domain ("no one has used LLMs for X").
 
 A multi-gap candidate is decomposed into its constituent gaps; every later
 gate runs per gap.
@@ -161,6 +174,6 @@ advisor's call. The skill never makes that call.
 
 ## References
 
-- `references/dossier-template.md` — the blank §0–§4 dossier + companion-file schemas.
+- `references/dossier-template.md` — the blank reader-first dossier + companion-file schemas.
 - `references/dead-end-history.md` — §2 dead-end detection method.
 - `references/contribution-typing.md` — §2 contribution-type classification.

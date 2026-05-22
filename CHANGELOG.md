@@ -22,6 +22,19 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` dossier was organised tool-first and code-first, not
+  reader-first** (`skills/gap-to-topic/`, plugin `0.3.2 → 0.3.3`).  A review
+  of a real dossier found it opened with a metadata table of pipeline / API
+  rows, wove `search --adversarial` / `literature-triage-matrix` / plugin
+  versions through the body, and labelled candidates with bare `[G1]` /
+  `[G2]` codes a researcher cannot decode.  `references/dossier-template.md`
+  is redesigned reader-first: a plain-language **Bottom line** leads; each
+  candidate gets a readable **name** (the `G1` id demoted to a `.gaps.yml`
+  tag); each gate states its verdict in plain words before the evidence; all
+  tool / pipeline / recall mechanics move to **Appendix A**, companion-file
+  notes to **Appendix B**.  SKILL.md "What it produces" + the §0 step updated
+  to match; `.gaps.yml` schema gains a `name:` field.  Mirrored to
+  `src/research_hub/skills_data/gap-to-topic/`.
 - **`gap-to-topic` §1 named `literature-triage-matrix` as the default
   prior-art tool but no step produced its matrix** (`skills/gap-to-topic/`,
   plugin `0.3.1 → 0.3.2`).  The SKILL.md "orchestrates" paragraph + `Inputs`
