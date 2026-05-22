@@ -73,9 +73,10 @@ In priority order:
 4. The user's free-text answers during the §0 and §3 conversational steps.
 
 This skill orchestrates other research-hub capabilities as tools:
-`search --adversarial --json` (§1 step 1 — recall + the metadata the
-`.bib` is built from) and `literature-triage-matrix` (§1 step 2 — turns
-the search results into the prior-art comparison matrix). `paper gaps`
+`search --adversarial --screen --json` (§1 step 1 — recall, the fit-check
+BM25 relevance gate, and the metadata the `.bib` is built from) and
+`literature-triage-matrix` (§1 step 2 — turns the on-topic search results
+into the prior-art comparison matrix). `paper gaps`
 is used only when a relevant ingested cluster already exists — at
 topic-selection time it usually does not, so the
 `search` → `literature-triage-matrix` path is the default. Note:
@@ -110,31 +111,42 @@ gate runs per gap.
 Incomplete recall is the dominant failure mode: a missed paper makes a gap
 look open when it is not. So this gate is **adversarial**:
 
-1. Run `research-hub search --adversarial --json` on the gap — it searches
-   several query phrasings, reports a recall-confidence verdict, and emits
-   full per-paper metadata (title, DOI / arXiv ID, year, authors, venue).
-   If `--adversarial` is unavailable (older CLI), run several query
-   phrasings by hand and record the reduced recall confidence in the dossier.
-2. Feed the retrieved papers to `literature-triage-matrix` (as its
-   input #0 — a Markdown list of titles + DOIs / arXiv IDs) to produce
+1. Run `research-hub search --adversarial --screen --json` on the gap. It
+   searches several query phrasings, reports a recall-confidence verdict,
+   and applies the fit-check BM25 relevance gate. With `--screen --json` the
+   output is an object `{screening_summary, results}`: `results` is the
+   per-paper list (title, DOI / arXiv ID, year, authors, venue, plus a
+   `relevance` field — `score` / `kept` / `tier` / `reason`), and
+   `screening_summary`
+   gives the retrieved / kept / screened-out counts. `--screen` never drops
+   a paper — it tags relevance, so recall stays auditable. If `--adversarial`
+   or `--screen` is unavailable (older CLI), run several query phrasings by
+   hand and record the reduced recall confidence in the dossier.
+2. From `results`, take the **on-topic** papers — those the relevance gate
+   tagged `kept: true` — and feed them to `literature-triage-matrix` (as
+   its input #0, a Markdown list of titles + DOIs / arXiv IDs) to produce
    `.research/literature_matrix.md`: the structured prior-art comparison
    (per paper — method, main claim, evidence, limitation, relevance).
-   This matrix is a **real workflow output** — it is what the openness
-   judgement in step 4 and the §2 gates read, not an assumed
-   pre-existing input. If a `literature_matrix.md` from an earlier run
-   exists, `literature-triage-matrix` appends to it; if the skill is
-   unavailable, reason directly over the `search --json` results and
-   record the reduced structure in the dossier.
+   Papers tagged `kept: false` are off-topic noise — keep them out of the
+   matrix, the `.bib` and the openness reasoning. This matrix is a **real
+   workflow output** — it is what the openness judgement in step 4 and the
+   §2 gates read, not an assumed pre-existing input. If a
+   `literature_matrix.md` from an earlier run exists, `literature-triage-matrix`
+   appends to it; if either skill is unavailable, reason directly over the
+   `results` and record the reduced structure in the dossier.
 3. Build the **complete reference list** (real DOIs / arXiv IDs) as the
-   `.bib` companion **from the `search --json` metadata** — this is the
-   trust artifact; the researcher must be able to verify "open" themselves.
-   Do **not** use `cite --format bibtex` here: `cite` resolves identifiers
-   only against an already-ingested Zotero library, and at topic-selection
-   time the candidate papers are not ingested. Every entry must carry a
-   resolvable DOI or arXiv ID; drop any paper whose identifier did not
-   resolve (an unverifiable reference is not a trust artifact).
+   `.bib` companion **from the on-topic `results` metadata** (the same
+   `kept: true` set as step 2) — this is the trust artifact; the researcher
+   must be able to verify "open" themselves. Do **not** use
+   `cite --format bibtex` here: `cite` resolves identifiers only against an
+   already-ingested Zotero library, and at topic-selection time the
+   candidate papers are not ingested. Every entry must carry a resolvable
+   DOI or arXiv ID; drop any paper whose identifier did not resolve (an
+   unverifiable reference is not a trust artifact).
 4. Record the recall-confidence verdict as a **headline**, not a footnote,
-   and reason the per-gap openness over the step-2 matrix.
+   and report the `screening_summary` counts (retrieved vs on-topic) so the
+   reader sees how much of the corpus was off-topic noise. Reason the
+   per-gap openness over the step-2 matrix.
 
 A gap is never declared "open" on the basis of "absent from my corpus" —
 absence in a corpus is not absence in the literature.
