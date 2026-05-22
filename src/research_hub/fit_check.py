@@ -253,7 +253,7 @@ def term_overlap_batch(
 
 
 # ---------------------------------------------------------------------------
-# v1.x relevance gate -- BM25 + distinctive-term hard gate
+# v1.x relevance gate -- BM25 + bimodal-gap split
 #
 # Replaces the naive ``term_overlap >= 0.1`` no-LLM gate. That gate split the
 # topic into independent unigrams and kept any paper matching 1-of-N common
@@ -261,25 +261,37 @@ def term_overlap_batch(
 # ("water"/"model"/"resources" matched; the discriminating phrase "large
 # language model" was destroyed). Grounded in ASReview / BM25 practice:
 #   * the topic is parsed into 1..3-gram terms so phrases survive intact;
-#   * BM25 IDF is computed from the candidate batch itself, so a term
-#     present in every candidate ("water" in an all-water batch) carries
-#     ~0 weight while a distinctive term carries high weight;
-#   * HARD GATE -- a paper must contain >=1 *distinctive* term (a topic
-#     term appearing in fewer than _DISTINCTIVE_DF_RATIO of the batch); a
-#     generic hydrology paper matches no distinctive term -> rejected;
-#   * cold-start -- if no topic term is distinctive (uniform batch) the
-#     gate cannot discriminate, so every paper is kept and flagged
-#     `relevance_unverified` (never silently auto-pass, never blanket
-#     reject -- a screening gate is recall-biased).
+#   * each paper gets a BM25 score against the topic terms, IDF computed
+#     from the candidate batch itself, so a term present in every candidate
+#     ("water" in an all-water batch) carries ~0 weight while a distinctive
+#     term carries high weight;
+#   * a paper is rejected ONLY when the batch's BM25 scores show a clear
+#     bimodal split -- one large gap spanning most of the score range --
+#     and the paper sits in the low cluster. That is the contamination
+#     signature (a few on-topic papers far above many off-topic ones).
+#   * a focused search returns a smoothly-spread, all-relevant batch with
+#     no dominant gap -> nothing is rejected (kept + flagged
+#     `relevance_unverified`). Recall-biased: never blanket-reject, never
+#     reject on a batch that does not clearly separate.
+#
+# History: an earlier revision used a "must match a distinctive term" hard
+# gate. It over-rejected genuinely on-topic papers in focused-search
+# batches (where no single term is in every paper, so the gate always
+# found a "distinctive" term and rejected papers using other vocabulary --
+# e.g. "LLM" vs "large language model"). The gap-split below replaces it.
 # ---------------------------------------------------------------------------
 
 _BM25_K1 = 1.2
 _BM25_B = 0.75
-# A topic term is "distinctive" when it appears in fewer than this fraction
-# of the candidate batch; above it the term is batch-wide context.
-_DISTINCTIVE_DF_RATIO = 0.6
-# Below this many candidates the batch is too small for IDF to discriminate
-# reliably -- treat as cold-start and defer (keep all, flag for re-screen).
+# At the largest gap between consecutive sorted BM25 scores, the score
+# just ABOVE the gap must be at least this multiple of the score just
+# BELOW it for the batch to count as a real on/off-topic split. This
+# multiplicative test is scale-free -- robust to within-cluster spread,
+# unlike a fraction-of-range test. A focused, uniformly-relevant batch
+# rises smoothly (no adjacent ~2x jump) -> no split -> keep all.
+_GAP_RATIO = 2.0
+# Below this many candidates the batch is too small to read a score
+# distribution -- treat as cold-start and defer (keep all, flag).
 _MIN_BATCH_FOR_GATE = 5
 _TOPIC_STOPLIST = {
     "this", "that", "with", "from", "into", "about", "which", "their",
@@ -314,10 +326,18 @@ def extract_topic_terms(definition: str, max_ngram: int = 3) -> list[str]:
 
 
 def _count_term(text: str, term: str) -> int:
-    """Word-boundary occurrence count of *term* (a word or phrase) in *text*."""
+    """Word-boundary occurrence count of *term* (a word or phrase) in *text*.
+
+    Tolerant of a regular plural: a trailing ``s``/``es`` on the term's
+    final word is optional, so the topic term "large language model" also
+    matches "large language models" — the form papers actually use
+    ("Large Language Models (LLMs)..."). Without this, exact singular
+    matching scrambled the document-frequency counts and the
+    distinctive-term gate then rejected genuinely on-topic papers.
+    """
     if not term:
         return 0
-    return len(re.findall(rf"\b{re.escape(term)}\b", text))
+    return len(re.findall(rf"\b{re.escape(term)}(?:es|s)?\b", text))
 
 
 def bm25_scores(
@@ -365,6 +385,20 @@ def bm25_scores(
     return scores, doc_freq
 
 
+def _cold_start(n: int, reason: str, scores: list[float] | None = None) -> list[dict]:
+    """Keep-all verdict list (recall-biased defer) for a batch the gate
+    cannot screen."""
+    return [
+        {
+            "kept": True,
+            "score": (scores[i] if scores is not None else 0.0),
+            "tier": "cold-start",
+            "reason": f"relevance_unverified: {reason}",
+        }
+        for i in range(n)
+    ]
+
+
 def screen_relevance(candidates: list[dict], definition: str) -> list[dict]:
     """Score and gate candidate papers for topic relevance (no-LLM tier).
 
@@ -372,10 +406,15 @@ def screen_relevance(candidates: list[dict], definition: str) -> list[dict]:
 
         {"kept": bool, "score": float, "tier": str, "reason": str}
 
-    A paper is kept iff it contains at least one *distinctive* topic term
-    (one appearing in fewer than ``_DISTINCTIVE_DF_RATIO`` of the batch).
-    When the topic has no distinctive term in this batch (cold-start /
-    uniform batch) every paper is kept and flagged ``relevance_unverified``.
+    Each paper gets a BM25 score against the topic terms. A paper is
+    rejected ONLY when the batch's sorted scores show a clear bimodal
+    split -- a gap where the score just above it is at least ``_GAP_RATIO``
+    times the score just below it -- and the paper sits in the low cluster
+    (the contamination signature: a few on-topic papers far above many
+    off-topic ones). A focused, uniformly-relevant batch rises smoothly
+    with no such gap, so every paper is kept and flagged
+    ``relevance_unverified`` -- the gate is recall-biased and never rejects
+    on a batch it cannot clearly split.
     """
     n = len(candidates)
     docs = [
@@ -384,69 +423,60 @@ def screen_relevance(candidates: list[dict], definition: str) -> list[dict]:
     ]
     query_terms = extract_topic_terms(definition)
     if not query_terms or n == 0:
-        return [
-            {
-                "kept": True,
-                "score": 0.0,
-                "tier": "cold-start",
-                "reason": "relevance_unverified: topic has no usable terms",
-            }
-            for _ in range(n)
-        ]
+        return _cold_start(n, "topic has no usable terms")
     if n < _MIN_BATCH_FOR_GATE:
-        # Too few candidates for batch IDF to discriminate -- defer.
-        return [
-            {
-                "kept": True,
-                "score": 0.0,
-                "tier": "cold-start",
-                "reason": (
-                    f"relevance_unverified: batch too small to screen "
-                    f"({n} < {_MIN_BATCH_FOR_GATE})"
-                ),
-            }
-            for _ in range(n)
-        ]
+        return _cold_start(
+            n, f"batch too small to screen ({n} < {_MIN_BATCH_FOR_GATE})"
+        )
 
-    scores, doc_freq = bm25_scores(docs, query_terms)
-    distinctive = {
-        term
-        for term in query_terms
-        if 0 < doc_freq.get(term, 0) < _DISTINCTIVE_DF_RATIO * n
-    }
-    if not distinctive:
-        # Uniform batch -- no term discriminates. Defer; never auto-reject.
-        return [
-            {
-                "kept": True,
-                "score": scores[i],
-                "tier": "cold-start",
-                "reason": (
-                    "relevance_unverified: no distinctive topic term in batch"
-                ),
-            }
-            for i in range(n)
-        ]
+    scores, _doc_freq = bm25_scores(docs, query_terms)
+    order = sorted(range(n), key=lambda i: scores[i])
+    sorted_scores = [scores[i] for i in order]
+    if sorted_scores[-1] - sorted_scores[0] <= 0:
+        # Every paper scored identically -- no split is possible.
+        return _cold_start(n, "uniform BM25 scores -- batch not separable", scores)
 
+    # Largest gap between consecutive sorted scores.
+    _gap, gap_idx = max(
+        (sorted_scores[i + 1] - sorted_scores[i], i) for i in range(n - 1)
+    )
+    low_top = sorted_scores[gap_idx]        # highest score below the gap
+    high_bot = sorted_scores[gap_idx + 1]   # lowest score above the gap
+    # Scale-free split test: the cluster above the gap must out-score the
+    # cluster below it by at least _GAP_RATIO x. A uniformly-relevant batch
+    # rises smoothly and never clears this bar.
+    if high_bot < _GAP_RATIO * low_top:
+        return _cold_start(
+            n, "no clear relevance gap -- batch treated as on-topic", scores
+        )
+
+    # Clear bimodal split: sorted positions 0..gap_idx are the low cluster.
+    low = set(order[: gap_idx + 1])
+    cutoff = low_top
     verdicts: list[dict] = []
-    for i, doc in enumerate(docs):
-        hits = sorted(t for t in distinctive if _count_term(doc, t) > 0)
-        if hits:
-            verdicts.append(
-                {
-                    "kept": True,
-                    "score": scores[i],
-                    "tier": "bm25",
-                    "reason": "matched distinctive term(s): " + ", ".join(hits),
-                }
-            )
-        else:
+    for i in range(n):
+        if i in low:
             verdicts.append(
                 {
                     "kept": False,
                     "score": scores[i],
                     "tier": "bm25",
-                    "reason": "no distinctive topic term matched",
+                    "reason": (
+                        f"below the relevance gap (score {scores[i]:.2f} "
+                        f"<= {cutoff:.2f}; off-topic cluster)"
+                    ),
+                }
+            )
+        else:
+            verdicts.append(
+                {
+                    "kept": True,
+                    "score": scores[i],
+                    "tier": "bm25",
+                    "reason": (
+                        f"above the relevance gap (score {scores[i]:.2f} "
+                        f"> {cutoff:.2f})"
+                    ),
                 }
             )
     return verdicts

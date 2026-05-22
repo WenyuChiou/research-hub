@@ -956,7 +956,7 @@ def _run_fit_check_step(
         )
 
         if print_progress:
-            print("[fit-check] no-llm mode: BM25 + distinctive-term relevance gate")
+            print("[fit-check] no-llm mode: BM25 bimodal-gap relevance gate")
 
         definition = topic
         try:
@@ -967,10 +967,11 @@ def _run_fit_check_step(
             pass
 
         # BM25 over 1..3-gram topic terms, IDF self-calibrated on this
-        # batch; a paper is kept only if it matches a *distinctive* topic
-        # term (one rare within the batch). Replaces the old
-        # `term_overlap >= 0.1` gate, which kept any paper sharing one
-        # common word and let generic hydrology papers flood an LLM cluster.
+        # batch; a paper is rejected only when the batch's scores show a
+        # clear bimodal split and the paper sits in the low cluster.
+        # Replaces the old `term_overlap >= 0.1` gate, which kept any paper
+        # sharing one common word and let generic hydrology papers flood
+        # an LLM cluster.
         verdicts = screen_relevance(papers, definition)
         kept: list[dict] = []
         for paper, verdict in zip(papers, verdicts):

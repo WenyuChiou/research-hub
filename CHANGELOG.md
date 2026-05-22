@@ -45,6 +45,25 @@ graph rebuild (link out to the real tools instead)._
   now live once, in the scorecard, so the gate sections carry only the
   evidence (no duplication).  SKILL.md "What it produces" updated.  Mirrored
   to `src/research_hub/skills_data/gap-to-topic/`.
+- **fit-check no-LLM gate over-rejected on-topic papers** (`fit_check.py`).
+  Follow-up to the BM25 relevance gate. Two flaws surfaced on a real
+  focused-search run (an `auto` for "large language model social
+  interaction" quarantined 13/25 papers — several squarely on-topic, e.g.
+  "LLM-enabled Social Agents"):
+  (1) `_count_term` matched terms exactly, so the singular topic term
+  "large language model" never matched the plural "large language models"
+  that papers actually use — wrecking the document-frequency counts;
+  (2) the "must match a distinctive term" hard gate is wrong for a focused
+  batch — no single term is in every paper, so the gate always found some
+  rare term and rejected papers using other vocabulary ("LLM" vs "large
+  language model").
+  Fixes: `_count_term` now tolerates a regular plural (`(?:es|s)?`); and
+  the gate is rebuilt as a **bimodal-gap split** — papers are rejected only
+  when the sorted BM25 scores show a clear gap whose upper cluster
+  out-scores the lower by >= 2x (the contamination signature). A focused,
+  uniformly-relevant batch rises smoothly with no such gap and is kept
+  whole. Recall-biased: never rejects on a batch it cannot clearly split.
+
 - **`gap-to-topic` dossier was organised tool-first and code-first, not
   reader-first** (`skills/gap-to-topic/`, plugin `0.3.2 → 0.3.3`).  A review
   of a real dossier found it opened with a metadata table of pipeline / API

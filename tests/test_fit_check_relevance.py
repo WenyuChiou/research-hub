@@ -1,11 +1,20 @@
-"""BM25 + distinctive-term relevance gate (the no-LLM fit-check tier).
+"""BM25 relevance gate (the no-LLM fit-check tier).
 
-Regression cover for the `llm-water-resources` contamination: the legacy
-gate (`term_overlap >= 0.1` over independent unigrams) kept any paper
-sharing one common word, so a cluster named for LLMs filled 88% with
-generic hydrology papers. The new gate parses the topic into 1..3-gram
-terms and requires a paper to match a *distinctive* term -- one rare
-within the candidate batch.
+History — two failure modes this gate has had to survive:
+
+  1. The legacy gate (`term_overlap >= 0.1` over independent unigrams) kept
+     any paper sharing one common word, so an LLM cluster filled 88% with
+     generic hydrology papers.
+  2. The first redesign used a "must match a distinctive term" hard gate.
+     It over-rejected genuinely on-topic papers in a focused-search batch
+     (no single term is in every paper, so the gate always found a
+     "distinctive" term and rejected papers using other vocabulary).
+
+The current gate scores every paper with BM25 (IDF self-calibrated on the
+batch) and rejects a paper ONLY when the sorted scores show a clear
+bimodal split -- a gap where the cluster above out-scores the cluster
+below by >= 2x. A focused, uniformly-relevant batch rises smoothly and is
+kept whole.
 """
 
 from __future__ import annotations
@@ -25,18 +34,16 @@ _TOPIC = "large language model water resources"
 
 def test_topic_terms_keep_multiword_phrase():
     terms = extract_topic_terms(_TOPIC)
-    # The discriminating phrase survives intact (the legacy split destroyed it).
     assert "large language model" in terms
     assert "water resources" in terms
-    # ...and the unigrams are still present for fallback matching.
     assert "language" in terms
 
 
 def test_topic_terms_drop_stopwords_and_short_words():
     terms = extract_topic_terms("a study using the large language model")
-    assert "study" not in terms          # stoplisted
-    assert "using" not in terms          # stoplisted
-    assert "the" not in terms            # stoplisted
+    assert "study" not in terms
+    assert "using" not in terms
+    assert "the" not in terms
     assert "large language model" in terms
 
 
@@ -45,24 +52,33 @@ def test_topic_terms_empty_definition():
 
 
 # ---------------------------------------------------------------------------
-# bm25_scores -- IDF self-calibration
+# bm25_scores -- IDF self-calibration + plural-tolerant matching
 # ---------------------------------------------------------------------------
 
 def test_bm25_distinctive_term_outweighs_common_term():
-    """A term in every doc gets ~0 IDF; a rare term gets high IDF, so the
-    doc carrying the rare term scores far higher."""
     docs = [
-        "water water water large language model",  # has the rare phrase
+        "water water water large language model",
         "water water water hydrology model",
         "water water water streamflow model",
         "water water water irrigation model",
     ]
-    query = ["water", "large language model"]
-    scores, doc_freq = bm25_scores(docs, query)
-    assert doc_freq["water"] == 4                  # common -> in every doc
-    assert doc_freq["large language model"] == 1   # rare -> one doc
-    assert scores[0] == max(scores)                # rare-term doc wins
+    scores, doc_freq = bm25_scores(docs, ["water", "large language model"])
+    assert doc_freq["water"] == 4
+    assert doc_freq["large language model"] == 1
+    assert scores[0] == max(scores)
     assert scores[0] > 2 * scores[1]
+
+
+def test_bm25_matches_plural_form():
+    """Papers write "Large Language Models" (plural); the singular topic
+    term must still match it, or document-frequency counts go wrong."""
+    docs = [
+        "we study large language models for tasks",   # plural
+        "a large language model is used here",        # singular
+        "hydrology and streamflow only",              # neither
+    ]
+    _scores, doc_freq = bm25_scores(docs, ["large language model"])
+    assert doc_freq["large language model"] == 2     # both plural & singular
 
 
 def test_bm25_empty_docs():
@@ -72,7 +88,7 @@ def test_bm25_empty_docs():
 
 
 # ---------------------------------------------------------------------------
-# screen_relevance -- the gate
+# screen_relevance -- the gap-split gate
 # ---------------------------------------------------------------------------
 
 # 3 genuine LLM x water-resources papers ...
@@ -83,7 +99,7 @@ _GENUINE = [
                     "hydrological model for streamflow in water resources.",
     },
     {
-        "title": "Retrieval-augmented large language model for water resources decisions",
+        "title": "Retrieval-augmented large language models for water resources decisions",
         "abstract": "A large language model with retrieval augmentation "
                     "supports water resources management decisions.",
     },
@@ -134,58 +150,61 @@ _HYDROLOGY = [
 ]
 
 
-def test_off_topic_hydrology_papers_are_rejected():
-    """The core regression: in a realistic mixed batch the pure-hydrology
-    papers (no LLM term) are REJECTED while the genuine LLM papers are
-    KEPT -- the old gate kept everything sharing 'water'/'model'."""
-    batch = _GENUINE + _HYDROLOGY        # 10 papers -> gate is active
+def test_contaminated_batch_rejects_the_off_topic_cluster():
+    """The core regression: a contaminated batch (a few LLM-water papers
+    far out-scoring many generic hydrology papers) shows a clear >=2x gap
+    -> the hydrology cluster is rejected, the LLM papers kept."""
+    batch = _GENUINE + _HYDROLOGY        # 10 papers
     verdicts = screen_relevance(batch, _TOPIC)
 
     genuine = verdicts[: len(_GENUINE)]
     hydrology = verdicts[len(_GENUINE):]
-
-    assert all(v["kept"] for v in genuine), "genuine LLM papers must be kept"
+    assert all(v["kept"] for v in genuine), "LLM-water papers must be kept"
     assert not any(v["kept"] for v in hydrology), "hydrology papers must be rejected"
-    # Every genuine paper outscores every hydrology paper.
     assert min(v["score"] for v in genuine) > max(v["score"] for v in hydrology)
     assert all(v["tier"] == "bm25" for v in verdicts)
-    assert "no distinctive topic term" in hydrology[0]["reason"]
+    assert "below the relevance gap" in hydrology[0]["reason"]
+    assert "above the relevance gap" in genuine[0]["reason"]
 
 
-def test_genuine_paper_verdict_cites_matched_term():
-    batch = _GENUINE + _HYDROLOGY
-    verdicts = screen_relevance(batch, _TOPIC)
-    assert "large language model" in verdicts[0]["reason"]
-
-
-def test_small_batch_defers_not_rejects():
-    """A handful of candidates is too few for IDF to discriminate -- the
-    gate must keep them all and flag cold-start, never blanket-reject."""
-    batch = _GENUINE                     # 3 papers -> below the gate floor
+def test_focused_uniform_batch_is_kept_whole():
+    """A focused search returns an all-relevant batch whose BM25 scores
+    rise smoothly -- no adjacent >=2x jump -- so nothing is rejected."""
+    batch = [
+        {"title": f"Large language model water resources study {i}",
+         "abstract": "A large language model applied to water resources "
+                     f"and hydrological modeling, case {i}."}
+        for i in range(8)
+    ]
     verdicts = screen_relevance(batch, _TOPIC)
     assert all(v["kept"] for v in verdicts)
     assert all(v["tier"] == "cold-start" for v in verdicts)
     assert all("relevance_unverified" in v["reason"] for v in verdicts)
 
 
-def test_uniform_batch_with_no_distinctive_term_defers():
-    """When every candidate carries the topic phrase, nothing is
-    *distinctive* within the batch -- keep all, flag cold-start, never
-    blanket-reject genuine papers."""
+def test_small_batch_defers_not_rejects():
+    """Fewer than 5 candidates is too few to read a score distribution --
+    keep all, flag cold-start, never blanket-reject."""
+    verdicts = screen_relevance(_GENUINE, _TOPIC)      # 3 papers
+    assert all(v["kept"] for v in verdicts)
+    assert all(v["tier"] == "cold-start" for v in verdicts)
+    assert all("relevance_unverified" in v["reason"] for v in verdicts)
+
+
+def test_identical_scores_batch_defers():
+    """Every candidate identical -> no gap is possible -> keep all."""
     batch = [
-        {"title": f"LLM study {i}",
-         "abstract": "A large language model agent for water resources."}
-        for i in range(8)
+        {"title": "Large language model water resources",
+         "abstract": "A large language model for water resources."}
+        for _ in range(6)
     ]
     verdicts = screen_relevance(batch, _TOPIC)
     assert all(v["kept"] for v in verdicts)
     assert all(v["tier"] == "cold-start" for v in verdicts)
-    assert all("no distinctive topic term" in v["reason"] for v in verdicts)
 
 
 def test_empty_definition_defers_all():
-    batch = _GENUINE + _HYDROLOGY
-    verdicts = screen_relevance(batch, "")
+    verdicts = screen_relevance(_GENUINE + _HYDROLOGY, "")
     assert all(v["kept"] for v in verdicts)
     assert all(v["tier"] == "cold-start" for v in verdicts)
 
