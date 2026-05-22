@@ -22,6 +22,28 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` dossier — section-by-section rework for researcher value**
+  (`skills/gap-to-topic/`, plugin `0.3.7 → 0.3.8`).  A section-by-section
+  review with the maintainer, plus a Codex evaluation, reworked
+  `references/dossier-template.md`:
+  - **Decision scorecard** is now a 5-point Likert per gate — each gate is
+    a claim rated 1–5 (strongly agree … strongly disagree); the cell is
+    `N/5 label — description`; a topic is worth pursuing only if every gate
+    rates 3 or higher.
+  - **Gate 2** gains "What it would contribute" (one explicit claim) and a
+    "Minimum validation sketch"; a caution paper is summarised by the kind
+    of risk it raises, not offloaded to the reader.
+  - **Gate 3** gains "Design feasibility", a "Scale outline", and an
+    explicit proposal-vs-dissertation feasibility split — it is no longer
+    only a data-availability test.
+  - **The decision is yours** is framed consistently as a conditional
+    recommendation; the upgrade/kill test is written as concrete artifacts;
+    a failed candidate gets a salvage-path line.
+  - **Appendix A** is recast from a tool log into a method note (search
+    scope, inclusion criteria, automated-vs-judgement).
+  - **What's in this deliverable** gains a file tree.
+  SKILL.md "What it produces" updated.  Mirrored to
+  `src/research_hub/skills_data/gap-to-topic/`.
 - **`gap-to-topic` dossier reworked to read as a plain summary report**
   (`skills/gap-to-topic/`, plugin `0.3.6 → 0.3.7`).  A review found the
   dossier still did not read cleanly in Word: the candidate roster showed
