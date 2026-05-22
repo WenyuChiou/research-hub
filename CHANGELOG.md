@@ -22,6 +22,17 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` dossier — added tables for scannability**
+  (`skills/gap-to-topic/`, plugin `0.3.3 → 0.3.4`).  Follow-up to the
+  reader-first redesign: the verdicts were still spread across prose bullets
+  in each gate section.  `references/dossier-template.md` now puts a
+  **Decision scorecard** table in the Bottom line (candidates × the 3 gates
+  + verdict, with a `✓`/`✗`/`~`/`—` cell convention), a **roster table** in
+  The candidates, and turns Appendix A (how it was produced) and Appendix B
+  (companion files) into tables.  Gate 1–3 bodies keep prose — the verdicts
+  now live once, in the scorecard, so the gate sections carry only the
+  evidence (no duplication).  SKILL.md "What it produces" updated.  Mirrored
+  to `src/research_hub/skills_data/gap-to-topic/`.
 - **`gap-to-topic` dossier was organised tool-first and code-first, not
   reader-first** (`skills/gap-to-topic/`, plugin `0.3.2 → 0.3.3`).  A review
   of a real dossier found it opened with a metadata table of pipeline / API
