@@ -22,6 +22,21 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` dossier reworked to read as a plain summary report**
+  (`skills/gap-to-topic/`, plugin `0.3.6 → 0.3.7`).  A review found the
+  dossier still did not read cleanly in Word: the candidate roster showed
+  an `id` column of `G1`/`G2` codes; the Decision scorecard used
+  `✓ ✗ ~` glyphs and the jargon verdicts "No-go / Conditional go / Go";
+  there was no index of the bundle's files.  `references/dossier-template.md`
+  now: drops the `id` column (the `G1`/`G2` ids stay only in `.gaps.yml`)
+  and states "why it could be a gap" in plain words; drops the scorecard
+  glyphs for plain words; replaces the verdict jargon with plain phrasing
+  ("Do not pursue — as stated" / "Worth pursuing — only if its open
+  conditions hold" / "Worth pursuing"); adds a "What's in this deliverable"
+  index section; gives the Bottom line one plain paragraph per candidate.
+  The `.gaps.yml` schema moved to a trailing "not emitted" reference block.
+  SKILL.md "What it produces" updated.  Mirrored to
+  `src/research_hub/skills_data/gap-to-topic/`.
 - **`gap-to-topic` §1 now applies the fit-check relevance gate**
   (`skills/gap-to-topic/`, plugin `0.3.5 → 0.3.6`).  `search --screen`
   (PR #84) wired the BM25 relevance gate into the `search` command; §1 now

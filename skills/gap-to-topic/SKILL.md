@@ -37,19 +37,22 @@ Not for:
 
 ## What it produces
 
-`.research/topic_dossier.md` — a **reader-first** document: it opens with a
-plain-language verdict, runs each candidate through the 3-gate test, and
-keeps all tool / pipeline mechanics in two appendices at the end.
+`.research/topic_dossier.md` — a **reader-first summary report**: it must
+read top-to-bottom in Word with no decoding — no codes (`G1`/`G2` stay only
+in `.gaps.yml`), no decorative glyphs, plain-language verdicts ("Do not
+pursue — as stated" / "Worth pursuing — only if its open conditions hold" /
+"Worth pursuing"), tool mechanics kept in Appendix A.
 
 | Section | What it covers |
 |---|---|
-| Bottom line | the answer up front — a plain-language summary plus a **Decision scorecard** table (candidates × the 3 gates + verdict) |
-| The candidates | 1–N candidate topics in a roster table, each given a readable name; opening type stated in plain words (method-limitation vs unoccupied-application) |
-| Gate 1 — Is the gap still open? | is the gap genuinely unoccupied — backed by a complete, verifiable reference list |
+| Bottom line | the answer up front — one plain-language paragraph per candidate plus a **Decision scorecard** table (candidates × the 3 gates + verdict) |
+| What's in this deliverable | an index of the bundle — every file and what information it carries |
+| The candidates | 1–N candidate topics in a roster table, each given a readable name + a plain "why it could be a gap" phrase |
+| Gate 1 — Is the gap still open? | the literature funnel + classification, closest prior work, recall confidence |
 | Gate 2 — Would it be a real contribution? | dead-end history + new-capability-vs-extension |
 | Gate 3 — Is it feasible? | can the data / resources be obtained in time and budget |
-| The decision is yours | the dossier states explicitly the *"worth it"* verdict is the researcher's + advisor's |
-| Appendix A / B | how the dossier was produced (pipeline, recall mechanics) + the companion files |
+| The decision is yours | the dossier states explicitly the *"worth it"* verdict is the researcher's + advisor's; upgrade/kill test per conditional candidate |
+| Appendix A | how the dossier was produced (pipeline, recall mechanics) |
 
 (SKILL.md §0–§4 below are the agent's internal workflow steps; they map to
 the reader-facing sections above — §0 → The candidates, §1 → Gate 1, etc.)
