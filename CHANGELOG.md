@@ -22,6 +22,21 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **fit-check no-LLM gate tuned to catch only blatant contamination**
+  (`fit_check.py`).  The bimodal-gap split's ratio bar was 2x — still too
+  aggressive: a real `auto` run for "large language model social
+  interaction" kept only 6/25, rejecting 19 genuinely on-topic papers
+  ("Multi-Agent Social Simulation", "LLM-based Chatbots", "AI-Mediated
+  Communication") that simply phrase the concept differently than the
+  topic string.  A no-LLM *lexical* gate cannot tell an on-topic paper
+  with different vocabulary from an off-topic one — both score modestly.
+  The gap bar is now **5x**: it fires only on blatant cross-field
+  contamination (pure-hydrology papers in an LLM cluster score ~1 vs ~8
+  for genuine LLM papers — an ~8x gap), while a focused all-relevant
+  batch (scores spread ~2x) is kept whole.  Fine-grained relevance
+  screening is the LLM-judge tier's job; the no-LLM tier is a
+  recall-biased fallback that only catches blatant contamination.
+
 - **`gap-to-topic` dossier — evidence-strength tags + an upgrade/kill test**
   (`skills/gap-to-topic/`, plugin `0.3.4 → 0.3.5`).  A Codex evaluation of a
   real dossier found two gaps: (1) Gate 1 said a gap was "densely populated"

@@ -285,11 +285,19 @@ _BM25_K1 = 1.2
 _BM25_B = 0.75
 # At the largest gap between consecutive sorted BM25 scores, the score
 # just ABOVE the gap must be at least this multiple of the score just
-# BELOW it for the batch to count as a real on/off-topic split. This
-# multiplicative test is scale-free -- robust to within-cluster spread,
-# unlike a fraction-of-range test. A focused, uniformly-relevant batch
-# rises smoothly (no adjacent ~2x jump) -> no split -> keep all.
-_GAP_RATIO = 2.0
+# BELOW it for the batch to count as a real on/off-topic split.
+#
+# Set deliberately high (5x): a no-LLM lexical gate cannot tell an
+# on-topic paper that uses different vocabulary ("multi-agent social
+# simulation" for an "LLM social interaction" topic) from an off-topic
+# one -- both score modestly. A 5x bar fires only on BLATANT cross-field
+# contamination (e.g. pure-hydrology papers in an LLM cluster score ~1
+# while genuine LLM papers score ~8 -- an ~8x gap). A focused search
+# returns an all-relevant batch whose scores spread by ~2x at most, well
+# under the bar -> kept whole. Fine-grained relevance is the LLM judge's
+# job; this no-LLM tier only catches blatant contamination and is
+# otherwise recall-biased (keep all).
+_GAP_RATIO = 5.0
 # Below this many candidates the batch is too small to read a score
 # distribution -- treat as cold-start and defer (keep all, flag).
 _MIN_BATCH_FOR_GATE = 5
