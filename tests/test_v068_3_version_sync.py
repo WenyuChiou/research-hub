@@ -42,6 +42,7 @@ EXPECTED_SKILL_DIR_NAMES = frozenset({
     "zotero-library-curator",
     "research-design-helper",
     "paper-summarize",  # v0.69.0
+    "gap-to-topic",  # added in plugin v0.3.0
 })
 
 
