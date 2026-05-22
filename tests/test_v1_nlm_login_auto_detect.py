@@ -17,6 +17,8 @@ reads live browser state and has no such race.
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -113,16 +115,33 @@ class _FakeSyncPlaywright:
         return self._pw
 
 
-def _install_fake_playwright(monkeypatch, chromium: _FakeChromium) -> _FakePlaywright:
-    """Patch ``playwright.sync_api.sync_playwright`` so the function under
-    test gets our fake. The function does ``from playwright.sync_api import
-    sync_playwright`` at call time, so patching the module attribute is
-    sufficient. Returns the playwright handle so tests can assert ``stop()``
-    was called on it."""
-    import playwright.sync_api as pw_api
+class _FakePlaywrightError(Exception):
+    """Stand-in for ``playwright.sync_api.Error`` -- the real playwright
+    package is an optional dependency and is not installed in CI."""
 
+
+def _inject_playwright_module(monkeypatch, sync_playwright_factory):
+    """Inject a fake ``playwright.sync_api`` module into ``sys.modules``.
+
+    The function under test does ``from playwright.sync_api import
+    sync_playwright`` / ``import Error`` at call time. playwright is an
+    optional dependency (absent in CI), so we synthesise the module rather
+    than patching an attribute on a package that may not be importable.
+    """
+    fake_api = types.ModuleType("playwright.sync_api")
+    fake_api.sync_playwright = sync_playwright_factory
+    fake_api.Error = _FakePlaywrightError
+    pkg = sys.modules.get("playwright") or types.ModuleType("playwright")
+    monkeypatch.setitem(sys.modules, "playwright", pkg)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_api)
+
+
+def _install_fake_playwright(monkeypatch, chromium: _FakeChromium) -> _FakePlaywright:
+    """Install a fake ``playwright.sync_api`` whose ``sync_playwright()``
+    yields a browser stack wrapping *chromium*. Returns the playwright
+    handle so tests can assert ``stop()`` was called on it."""
     fake = _FakeSyncPlaywright(chromium)
-    monkeypatch.setattr(pw_api, "sync_playwright", lambda: fake)
+    _inject_playwright_module(monkeypatch, lambda: fake)
     return fake._pw
 
 
@@ -279,8 +298,6 @@ def test_driver_start_failure_returns_one_and_does_not_raise(tmp_path, monkeypat
     """If the Playwright driver itself fails to start (``sync_playwright().
     start()`` raises), the failure is caught and surfaced as rc 1 rather
     than propagating into the CLI."""
-    import playwright.sync_api as pw_api
-
     state_file = tmp_path / "state.json"
     monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
 
@@ -291,7 +308,7 @@ def test_driver_start_failure_returns_one_and_does_not_raise(tmp_path, monkeypat
         def stop(self):  # pragma: no cover - never reached (start failed)
             pass
 
-    monkeypatch.setattr(pw_api, "sync_playwright", lambda: _BrokenPlaywright())
+    _inject_playwright_module(monkeypatch, lambda: _BrokenPlaywright())
 
     rc = _login_with_auto_detect(state_file, wait_timeout=30)
 
