@@ -968,6 +968,11 @@ def run_pipeline(
         errors: list[dict] = []
         papers_for_notes: list[dict] = []
         pending_zotero_papers: list[dict] = []
+        # Papers whose Zotero item already exists (dedup zotero_hit): the item
+        # is reused (no duplicate created) but the paper is STILL ingested into
+        # research-hub. Collected separately because write_papers_to_zotero
+        # reassigns papers_for_notes below, which would discard direct appends.
+        reused_zotero_papers: list[dict] = []
         target_collection_key = cluster_coll or collection_key
 
         from research_hub.authenticity import verify_authenticity
@@ -1027,7 +1032,15 @@ def run_pipeline(
                 if is_duplicate:
                     obsidian_hit = next((hit for hit in dedup_hits if hit.source == "obsidian"), None)
                     zotero_hit = next((hit for hit in dedup_hits if hit.source == "zotero"), None)
-                    if obsidian_hit and obsidian_hit.obsidian_path:
+                    # Only treat an obsidian_hit as a true duplicate (skip)
+                    # when the note file ACTUALLY EXISTS. A stale dedup-index
+                    # entry pointing at a deleted note must NOT cause a skip;
+                    # fall through so the paper is ingested fresh.
+                    if (
+                        obsidian_hit
+                        and obsidian_hit.obsidian_path
+                        and Path(obsidian_hit.obsidian_path).exists()
+                    ):
                         append_cluster_query_to_existing(
                             Path(obsidian_hit.obsidian_path),
                             query_text,
@@ -1059,6 +1072,17 @@ def run_pipeline(
                                 "key": obsidian_hit.zotero_key or "",
                             }
                         )
+                        continue
+                    if zotero_hit and no_zotero:
+                        # no_zotero mode: zot is None, so the Zotero-item
+                        # reuse ops below would fail. Still ingest the
+                        # note; treat it like any other no_zotero paper.
+                        pp["zotero_key"] = ""
+                        zr.append(
+                            {"title": pp["title"],
+                             "status": "SKIPPED_NO_ZOTERO", "key": ""}
+                        )
+                        papers_for_notes.append(pp)
                         continue
                     if zotero_hit:
                         cluster = clusters.get(cluster_slug) if cluster_slug else None
@@ -1098,25 +1122,26 @@ def run_pipeline(
                                     add_note(zot, zotero_hit.zotero_key, _build_note_html(pp))
                             except Exception as exc:
                                 p(f"  WARN dedup note-add failed: {exc}")
+                        # The Zotero item already exists — its useful work is
+                        # done above (moved into the cluster collection, hub
+                        # tags + note added; NO duplicate Zotero item created).
+                        # The paper is NOT skipped: it must still be ingested
+                        # into research-hub. Reuse the existing Zotero key and
+                        # defer to Obsidian-note creation downstream.
+                        pp["zotero_key"] = zotero_hit.zotero_key or ""
                         manifest.append(
                             new_entry(
                                 cluster=cluster_slug or "",
                                 query=query_text,
-                                action="dup-zotero",
+                                action="ingest-reuse-zotero",
                                 doi=pp["doi"],
                                 title=pp["title"],
                                 zotero_key=zotero_hit.zotero_key or "",
                                 batch_label=resolved_batch_label,
                             )
                         )
-                        p("  SKIPPED dup in Zotero")
-                        zr.append(
-                            {
-                                "title": pp["title"],
-                                "status": "SKIPPED_DUPLICATE",
-                                "key": zotero_hit.zotero_key or "",
-                            }
-                        )
+                        p("  REUSING existing Zotero item; ingesting into cluster")
+                        reused_zotero_papers.append(pp)
                         continue
                 if no_zotero:
                     dup = False
@@ -1157,6 +1182,11 @@ def run_pipeline(
                 log=p,
             )
             errors.extend(zotero_errors)
+
+        # write_papers_to_zotero reassigns papers_for_notes, so add the
+        # reused-Zotero papers AFTER it: they reuse an existing Zotero item but
+        # still need an Obsidian note + cluster binding created downstream.
+        papers_for_notes.extend(reused_zotero_papers)
 
         p("\n=== DOI VALIDATION ===")
         verify_cache = VerifyCache(cfg.research_hub_dir / "verify_cache.json") if verify else None
