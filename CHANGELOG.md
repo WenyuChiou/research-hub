@@ -22,6 +22,23 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **ingest dedup re-scoped to research-hub's own literature** (`pipeline.py`).
+  `auto` for a new topic produced a near-empty cluster — a search returned
+  25 papers, fit-check kept all 25, yet only ~1 Obsidian note was created.
+  Cause: the dedup index was dominated by `source:"zotero"` entries
+  mirroring the user's ENTIRE Zotero library (mostly never managed by
+  research-hub) plus stale `source:"obsidian"` entries pointing at deleted
+  note files. The dedup block treated **any** paper merely present in the
+  Zotero library as a duplicate and `continue`-d past Obsidian-note
+  creation, dropping it from the new cluster. Dedup now skips a paper only
+  when it duplicates research-hub's OWN literature: (1) the `obsidian_hit`
+  branch requires the note file to actually exist on disk — a stale index
+  entry no longer blocks ingest; (2) the `zotero_hit` branch no longer
+  skips — it still reuses the existing Zotero item (moves it into the
+  cluster collection, adds hub tags + note, creates **no** duplicate item)
+  but the paper is now ingested into research-hub with its Obsidian note
+  created and bound to the cluster. New manifest action
+  `ingest-reuse-zotero` records the reuse decision.
 - **fit-check no-LLM relevance gate rewritten** (`fit_check.py`, `auto.py`).
   The old `no_llm_fit_check` gate split the topic into independent unigrams
   and kept any paper matching `>= 0.1` of them — i.e. **1 of 5** words. A
@@ -147,6 +164,22 @@ graph rebuild (link out to the real tools instead)._
   (`paper summarize --pending --cluster <slug>`).
 
 ### Added
+- **`search --screen` — fit-check BM25 relevance gate on the search
+  command** (`cli.py`).  The BM25 relevance gate (`screen_relevance` /
+  `bm25_scores`, from PRs #79/#81/#83) was only applied by the `auto`
+  ingest pipeline; the standalone `search` command returned unscreened,
+  potentially off-topic results.  `search --screen` now runs that same
+  gate over the retrieved papers: each result is tagged with a relevance
+  score + a keep / screened-out verdict, and a screening summary
+  (`N retrieved → M kept, K screened out`) is printed to stderr.  It is
+  **recall-preserving** — no paper is dropped from the output, so a caller
+  can still audit the full retrieved count.  `--json` switches to a
+  `{"screening_summary": {...}, "results": [...]}` object (each result
+  carrying a `relevance` block) when `--screen` is set; without `--screen`
+  the output is byte-identical to before (bare array).  Composable with
+  `--adversarial` / `--max-variants` / `--rank-by` (orthogonal to ranking
+  — `--screen` only annotates).  Reuses the existing gate; no new scorer.
+
 - **`gap-to-topic` skill — a topic-decision dossier.** New 11th packaged
   skill. Choosing a thesis/proposal topic is a go/no-go decision, not a
   literature review; `gap-to-topic` produces a `.research/topic_dossier.md`
