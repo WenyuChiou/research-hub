@@ -64,10 +64,14 @@ In priority order:
 4. The user's free-text answers during the §0 and §3 conversational steps.
 
 This skill orchestrates other research-hub capabilities as tools:
-`search --adversarial` (§1 recall), `cite --format bibtex` (§1 `.bib`),
-and `literature-triage-matrix` (§0/§1 prior art). `paper gaps` is used
-only when a relevant ingested cluster already exists — at topic-selection
-time it usually does not, so `literature-triage-matrix` is the default.
+`search --adversarial --json` (§1 recall + the metadata the `.bib` is
+built from) and `literature-triage-matrix` (§0/§1 prior art). `paper gaps`
+is used only when a relevant ingested cluster already exists — at
+topic-selection time it usually does not, so `literature-triage-matrix`
+is the default. Note: `cite --format bibtex` is **not** used for the §1
+`.bib` — it resolves identifiers only against an already-ingested Zotero
+library, and at topic-selection time the candidate papers are not
+ingested (see §1 step 2).
 
 ## Workflow
 
@@ -91,13 +95,19 @@ gate runs per gap.
 Incomplete recall is the dominant failure mode: a missed paper makes a gap
 look open when it is not. So this gate is **adversarial**:
 
-1. Run `research-hub search --adversarial` on the gap — it searches several
-   query phrasings and reports a recall-confidence verdict. If `--adversarial`
-   is unavailable (older CLI), run several query phrasings by hand and record
-   the reduced recall confidence in the dossier.
-2. Emit the **complete reference list** (real DOIs / arXiv IDs) as the
-   `.bib` companion via `cite --format bibtex` — this is the trust artifact;
-   the researcher must be able to verify "open" themselves.
+1. Run `research-hub search --adversarial --json` on the gap — it searches
+   several query phrasings, reports a recall-confidence verdict, and emits
+   full per-paper metadata (title, DOI / arXiv ID, year, authors, venue).
+   If `--adversarial` is unavailable (older CLI), run several query
+   phrasings by hand and record the reduced recall confidence in the dossier.
+2. Build the **complete reference list** (real DOIs / arXiv IDs) as the
+   `.bib` companion **from the `search --json` metadata** — this is the
+   trust artifact; the researcher must be able to verify "open" themselves.
+   Do **not** use `cite --format bibtex` here: `cite` resolves identifiers
+   only against an already-ingested Zotero library, and at topic-selection
+   time the candidate papers are not ingested. Every entry must carry a
+   resolvable DOI or arXiv ID; drop any paper whose identifier did not
+   resolve (an unverifiable reference is not a trust artifact).
 3. Record the recall-confidence verdict as a **headline**, not a footnote.
 
 A gap is never declared "open" on the basis of "absent from my corpus" —

@@ -22,6 +22,17 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` §1 `.bib` instruction was unworkable** (`skills/gap-to-topic/`,
+  plugin `0.3.0 → 0.3.1`).  SKILL.md §1 step 2 and `references/dossier-template.md`
+  told the skill to emit the §1 reference list via `cite --format bibtex`, but
+  `cite` resolves identifiers only against an already-ingested Zotero library —
+  at topic-selection time the candidate papers are not ingested, so `cite`
+  returns "Could not resolve identifier" for every §1 DOI.  Surfaced by the
+  2026-05-21 dogfood run.  The `.bib` is now built from the
+  `search --adversarial --json` metadata, which the skill already has in hand
+  at §1.  Mirrored to `src/research_hub/skills_data/gap-to-topic/`; plugin
+  version bumped so the marketplace cache invalidates.
+
 - **`probe_cleared_failed_no_abstract` URL quality signal now triggers text
   fallback in the NLM bundle builder** (`notebooklm/bundle.py`).  Springer /
   Wiley paywall skeleton pages return HTTP 200 with no body; the URL quality
