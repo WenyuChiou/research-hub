@@ -76,10 +76,22 @@ published caution. Whether to pursue it is your and your advisor's call.">
 > full list in the `.bib`), and a one-sentence recall-confidence headline
 > (how much to trust "open"). How the search was run belongs in Appendix A.
 > "Absent from my corpus" is never proof of "open".*
+>
+> *Tag each cited work by evidence type — primary study / review / close
+> analogue / caution paper / conference abstract / preprint / data
+> artifact — and end with a one-sentence evidence-mix summary. The reader
+> must see how solid the occupancy signal is without opening
+> `literature_matrix.md`: an "occupied" verdict resting mostly on
+> conference abstracts is weaker than one resting on primary studies.*
 
 **Closest prior work:** <the papers that bear on whether each gap is filled
-— readable prose; full list in the `.bib`, structured comparison in
-`literature_matrix.md`.>
+— readable prose, each tagged by evidence type, e.g. "Smith 2024 (primary
+study)", "Jones 2026 (conference abstract)". Full list in the `.bib`,
+structured comparison in `literature_matrix.md`.>
+
+**Evidence mix:** <one sentence — e.g. "Of the 9 papers on Candidate 1:
+4 primary studies, 1 review, 3 conference abstracts, 1 data artifact — the
+occupancy signal is clear but partly early-stage.">
 
 **Recall confidence:** <one plain sentence — e.g. "Medium: one search
 backend was unavailable, so a missed paper is possible; re-check before
@@ -117,13 +129,22 @@ relying on an 'open' verdict.">
 > *State explicitly that the dossier stops here. It has assembled the three
 > gate verdicts; whether a gap is WORTH doing is the researcher's and
 > advisor's call. Per candidate, name the outcome and the conditions the
-> human must resolve before committing.*
+> human must resolve before committing. For each conditional-go candidate,
+> give an explicit **upgrade / kill test** — the finding that would make it
+> a clear go, and the finding that would make it a no-go — so the threshold
+> logic lives in the dossier, not left for the advisor to supply.*
 
 The three gates above are assembled evidence, not a verdict. A go requires
 all three to pass (open AND a contribution AND feasible); any gate failing
 is a no-go. **Whether <Candidate N> is worth pursuing is your and your
 advisor's decision.** <Per-candidate: the outcome, and the conditions to
 resolve first.>
+
+**Upgrade / kill test — <conditional-go candidate>.** It becomes a clear
+**go** if <the findings that would resolve every open condition favourably>.
+It becomes a **no-go** if <the finding that would fail any gate — e.g. the
+recall re-run surfaces a paper already occupying the gap, or the binding
+resource proves unobtainable within scope>.
 
 ---
 

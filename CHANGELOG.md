@@ -22,6 +22,18 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` dossier — evidence-strength tags + an upgrade/kill test**
+  (`skills/gap-to-topic/`, plugin `0.3.4 → 0.3.5`).  A Codex evaluation of a
+  real dossier found two gaps: (1) Gate 1 said a gap was "densely populated"
+  but the reader had to open `literature_matrix.md` to see the occupancy
+  signal was partly conference abstracts / artifacts, not primary studies;
+  (2) a "conditional go" listed open conditions but no threshold — the
+  advisor still had to supply the kill/upgrade logic.  `references/dossier-template.md`
+  now: Gate 1 tags each cited work by evidence type (primary study / review
+  / close analogue / caution paper / conference abstract / preprint / data
+  artifact) and ends with a one-sentence evidence-mix summary; "The decision
+  is yours" carries an explicit **upgrade / kill test** per conditional-go
+  candidate.  Mirrored to `src/research_hub/skills_data/gap-to-topic/`.
 - **`gap-to-topic` dossier — added tables for scannability**
   (`skills/gap-to-topic/`, plugin `0.3.3 → 0.3.4`).  Follow-up to the
   reader-first redesign: the verdicts were still spread across prose bullets
