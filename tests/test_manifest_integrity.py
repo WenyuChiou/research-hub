@@ -47,6 +47,7 @@ def test_manifest_action_vocabulary_respected():
         "duplicate",
         "dup-obsidian",
         "dup-zotero",
+        "ingest-reuse-zotero",
         "error",
         "updated",
         "archived",
