@@ -951,13 +951,12 @@ def _run_fit_check_step(
 
     if no_llm_fit_check:
         from research_hub.fit_check import (
-            _extract_key_terms,
             _read_definition_from_overview,
-            term_overlap,
+            screen_relevance,
         )
 
         if print_progress:
-            print("[fit-check] no-llm mode: using term-overlap rule-based scoring")
+            print("[fit-check] no-llm mode: BM25 + distinctive-term relevance gate")
 
         definition = topic
         try:
@@ -966,16 +965,23 @@ def _run_fit_check_step(
                 definition = existing
         except Exception:
             pass
-        key_terms = _extract_key_terms(definition)
 
+        # BM25 over 1..3-gram topic terms, IDF self-calibrated on this
+        # batch; a paper is kept only if it matches a *distinctive* topic
+        # term (one rare within the batch). Replaces the old
+        # `term_overlap >= 0.1` gate, which kept any paper sharing one
+        # common word and let generic hydrology papers flood an LLM cluster.
+        verdicts = screen_relevance(papers, definition)
         kept: list[dict] = []
-        for paper in papers:
-            text = paper.get("abstract") or paper.get("title") or ""
-            overlap = term_overlap(text, key_terms)
-            if overlap >= 0.1:
+        for paper, verdict in zip(papers, verdicts):
+            if verdict["kept"]:
                 provenance = dict(paper.get("provenance") or {})
-                provenance["fit_score"] = overlap
-                provenance["fit_check_mode"] = "term_overlap"
+                provenance["fit_score"] = verdict["score"]
+                provenance["fit_check_mode"] = "bm25_relevance"
+                provenance["fit_check_tier"] = verdict["tier"]
+                if verdict["tier"] == "cold-start":
+                    # Kept but unscreened -- mark for later re-screening.
+                    provenance["relevance_unverified"] = True
                 paper["provenance"] = provenance
                 kept.append(paper)
                 continue
@@ -985,11 +991,15 @@ def _run_fit_check_step(
                 cluster_slug=slug,
                 layer="L4",
                 reason="low_relevance",
-                details={"fit_score": overlap, "mode": "term_overlap"},
+                details={
+                    "fit_score": verdict["score"],
+                    "mode": "bm25_relevance",
+                    "detail": verdict["reason"],
+                },
             )
         _step_log(report, "fit_check", True, _elapsed(started, report),
                   f"kept {len(kept)}/{len(papers)}; quarantined {len(papers) - len(kept)} "
-                  "(threshold=0.1, mode=term_overlap)",
+                  "(mode=bm25_relevance)",
                   print_progress)
         return kept
 

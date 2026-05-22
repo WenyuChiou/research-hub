@@ -35,6 +35,26 @@ graph rebuild (link out to the real tools instead)._
   notes to **Appendix B**.  SKILL.md "What it produces" + the §0 step updated
   to match; `.gaps.yml` schema gains a `name:` field.  Mirrored to
   `src/research_hub/skills_data/gap-to-topic/`.
+- **fit-check no-LLM relevance gate rewritten — it was not screening topic
+  at all** (`fit_check.py`, `auto.py`).  The old `no_llm_fit_check` gate
+  split the topic into independent unigrams (`_extract_key_terms`), scored
+  each paper by `term_overlap` (fraction of those words present), and kept
+  it if `overlap >= 0.1` — i.e. matching **1 of 5** words.  A generic
+  hydrology paper trivially matched `water`/`model`/`resources` and passed,
+  while the discriminating phrase "large language model" was destroyed; the
+  `llm-water-resources` cluster ended up **38/43 off-topic**.  The gate now
+  parses the topic into **1–3-gram terms** (phrases survive intact), scores
+  papers with a pure-Python **BM25** whose IDF is self-calibrated on the
+  candidate batch, and applies a **hard gate**: a paper is kept only if it
+  matches a *distinctive* term — one appearing in fewer than 60 % of the
+  batch.  A generic hydrology paper matches no distinctive term and is
+  rejected.  Cold-start (batch < 5 papers, or no distinctive term, or no
+  topic terms) defers — keeps all, flags `relevance_unverified` — never
+  silently auto-passes and never blanket-rejects (the gate is
+  recall-biased).  New public API: `extract_topic_terms`, `bm25_scores`,
+  `screen_relevance`.  Grounded in a research sweep of ASReview (TF-IDF +
+  Naive Bayes) and BM25 screening practice.
+
 - **`gap-to-topic` §1 named `literature-triage-matrix` as the default
   prior-art tool but no step produced its matrix** (`skills/gap-to-topic/`,
   plugin `0.3.1 → 0.3.2`).  The SKILL.md "orchestrates" paragraph + `Inputs`

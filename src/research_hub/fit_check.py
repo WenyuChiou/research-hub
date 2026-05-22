@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -249,6 +250,206 @@ def term_overlap_batch(
             text = str(paper)
         scores.append(term_overlap(text.strip(), key_terms))
     return scores
+
+
+# ---------------------------------------------------------------------------
+# v1.x relevance gate -- BM25 + distinctive-term hard gate
+#
+# Replaces the naive ``term_overlap >= 0.1`` no-LLM gate. That gate split the
+# topic into independent unigrams and kept any paper matching 1-of-N common
+# words, so ``llm-water-resources`` filled with generic hydrology papers
+# ("water"/"model"/"resources" matched; the discriminating phrase "large
+# language model" was destroyed). Grounded in ASReview / BM25 practice:
+#   * the topic is parsed into 1..3-gram terms so phrases survive intact;
+#   * BM25 IDF is computed from the candidate batch itself, so a term
+#     present in every candidate ("water" in an all-water batch) carries
+#     ~0 weight while a distinctive term carries high weight;
+#   * HARD GATE -- a paper must contain >=1 *distinctive* term (a topic
+#     term appearing in fewer than _DISTINCTIVE_DF_RATIO of the batch); a
+#     generic hydrology paper matches no distinctive term -> rejected;
+#   * cold-start -- if no topic term is distinctive (uniform batch) the
+#     gate cannot discriminate, so every paper is kept and flagged
+#     `relevance_unverified` (never silently auto-pass, never blanket
+#     reject -- a screening gate is recall-biased).
+# ---------------------------------------------------------------------------
+
+_BM25_K1 = 1.2
+_BM25_B = 0.75
+# A topic term is "distinctive" when it appears in fewer than this fraction
+# of the candidate batch; above it the term is batch-wide context.
+_DISTINCTIVE_DF_RATIO = 0.6
+# Below this many candidates the batch is too small for IDF to discriminate
+# reliably -- treat as cold-start and defer (keep all, flag for re-screen).
+_MIN_BATCH_FOR_GATE = 5
+_TOPIC_STOPLIST = {
+    "this", "that", "with", "from", "into", "about", "which", "their",
+    "there", "where", "these", "those", "have", "been", "will", "would",
+    "could", "should", "also", "such", "than", "using", "based", "study",
+    "approach", "research", "the", "and", "for", "are", "was", "its",
+    "use", "per", "via",
+}
+
+
+def extract_topic_terms(definition: str, max_ngram: int = 3) -> list[str]:
+    """Extract 1..*max_ngram*-gram terms from a topic definition.
+
+    Unlike :func:`_extract_key_terms` (the legacy unigram split), multi-word
+    concepts such as "large language model" survive as single terms, so a
+    distinctive phrase is not diluted into its common component words.
+    """
+    words = [
+        w.lower()
+        for w in re.findall(r"[A-Za-z][A-Za-z0-9-]*", definition)
+        if len(w) >= 3 and w.lower() not in _TOPIC_STOPLIST
+    ]
+    seen: set[str] = set()
+    terms: list[str] = []
+    for n in range(1, max_ngram + 1):
+        for i in range(len(words) - n + 1):
+            gram = " ".join(words[i : i + n])
+            if gram not in seen:
+                seen.add(gram)
+                terms.append(gram)
+    return terms
+
+
+def _count_term(text: str, term: str) -> int:
+    """Word-boundary occurrence count of *term* (a word or phrase) in *text*."""
+    if not term:
+        return 0
+    return len(re.findall(rf"\b{re.escape(term)}\b", text))
+
+
+def bm25_scores(
+    docs: list[str],
+    query_terms: list[str],
+    k1: float = _BM25_K1,
+    b: float = _BM25_B,
+) -> tuple[list[float], dict[str, int]]:
+    """BM25 score of each doc against *query_terms*.
+
+    IDF is derived from *docs* itself (self-calibrating: a term in every doc
+    gets ~0 IDF, a rare term gets high IDF). Returns ``(per-doc score,
+    document-frequency per term)``.
+    """
+    n_docs = len(docs)
+    if n_docs == 0:
+        return [], {}
+    doc_lens = [max(1, len(re.findall(r"[a-z0-9-]+", d))) for d in docs]
+    avgdl = sum(doc_lens) / n_docs
+    tf_per_doc: list[dict[str, int]] = []
+    doc_freq: dict[str, int] = {term: 0 for term in query_terms}
+    for d in docs:
+        tf = {term: _count_term(d, term) for term in query_terms}
+        tf_per_doc.append(tf)
+        for term, count in tf.items():
+            if count > 0:
+                doc_freq[term] += 1
+    idf = {
+        term: math.log(
+            1 + (n_docs - doc_freq[term] + 0.5) / (doc_freq[term] + 0.5)
+        )
+        for term in query_terms
+    }
+    scores: list[float] = []
+    for tf, dl in zip(tf_per_doc, doc_lens):
+        score = 0.0
+        for term in query_terms:
+            f = tf[term]
+            if f == 0:
+                continue
+            score += idf[term] * (f * (k1 + 1)) / (
+                f + k1 * (1 - b + b * dl / avgdl)
+            )
+        scores.append(round(score, 4))
+    return scores, doc_freq
+
+
+def screen_relevance(candidates: list[dict], definition: str) -> list[dict]:
+    """Score and gate candidate papers for topic relevance (no-LLM tier).
+
+    Returns one verdict dict per candidate, in input order::
+
+        {"kept": bool, "score": float, "tier": str, "reason": str}
+
+    A paper is kept iff it contains at least one *distinctive* topic term
+    (one appearing in fewer than ``_DISTINCTIVE_DF_RATIO`` of the batch).
+    When the topic has no distinctive term in this batch (cold-start /
+    uniform batch) every paper is kept and flagged ``relevance_unverified``.
+    """
+    n = len(candidates)
+    docs = [
+        ((c.get("abstract") or "") + " " + (c.get("title") or "")).lower()
+        for c in candidates
+    ]
+    query_terms = extract_topic_terms(definition)
+    if not query_terms or n == 0:
+        return [
+            {
+                "kept": True,
+                "score": 0.0,
+                "tier": "cold-start",
+                "reason": "relevance_unverified: topic has no usable terms",
+            }
+            for _ in range(n)
+        ]
+    if n < _MIN_BATCH_FOR_GATE:
+        # Too few candidates for batch IDF to discriminate -- defer.
+        return [
+            {
+                "kept": True,
+                "score": 0.0,
+                "tier": "cold-start",
+                "reason": (
+                    f"relevance_unverified: batch too small to screen "
+                    f"({n} < {_MIN_BATCH_FOR_GATE})"
+                ),
+            }
+            for _ in range(n)
+        ]
+
+    scores, doc_freq = bm25_scores(docs, query_terms)
+    distinctive = {
+        term
+        for term in query_terms
+        if 0 < doc_freq.get(term, 0) < _DISTINCTIVE_DF_RATIO * n
+    }
+    if not distinctive:
+        # Uniform batch -- no term discriminates. Defer; never auto-reject.
+        return [
+            {
+                "kept": True,
+                "score": scores[i],
+                "tier": "cold-start",
+                "reason": (
+                    "relevance_unverified: no distinctive topic term in batch"
+                ),
+            }
+            for i in range(n)
+        ]
+
+    verdicts: list[dict] = []
+    for i, doc in enumerate(docs):
+        hits = sorted(t for t in distinctive if _count_term(doc, t) > 0)
+        if hits:
+            verdicts.append(
+                {
+                    "kept": True,
+                    "score": scores[i],
+                    "tier": "bm25",
+                    "reason": "matched distinctive term(s): " + ", ".join(hits),
+                }
+            )
+        else:
+            verdicts.append(
+                {
+                    "kept": False,
+                    "score": scores[i],
+                    "tier": "bm25",
+                    "reason": "no distinctive topic term matched",
+                }
+            )
+    return verdicts
 
 
 def parse_nlm_off_topic(briefing_md: str) -> list[str]:
