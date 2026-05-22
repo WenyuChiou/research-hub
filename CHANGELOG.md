@@ -32,6 +32,23 @@ graph rebuild (link out to the real tools instead)._
   `search --adversarial --json` metadata, which the skill already has in hand
   at §1.  Mirrored to `src/research_hub/skills_data/gap-to-topic/`; plugin
   version bumped so the marketplace cache invalidates.
+- **`notebooklm login --auto-detect` now works** (`notebooklm/auth.py`).
+  The pre-fix implementation shelled out to the upstream `notebooklm login`
+  subprocess and polled the patchright Chromium profile's *on-disk* Cookies
+  SQLite for a `notebooklm.google.com` row. Chromium buffers cookies in
+  memory and flushes them to that store only on a lazy timer, so a
+  freshly-signed-in session stayed invisible on disk for minutes — the poll
+  loop always timed out without ever firing the save. `--auto-detect` now
+  drives the Chromium browser directly via Playwright (same stealth flags
+  the SDK uses) and polls the **live `page.url`**: the moment the page
+  settles on the NotebookLM host — and holds there for 3 consecutive polls,
+  so a mid-redirect flash never triggers a premature save — the session is
+  captured straight from the live browser context via `storage_state`. No
+  terminal ENTER, no subprocess, no disk-cookie race. Fail-closed: a
+  timeout, a browser-launch error, or a driver-start failure all return
+  non-zero without saving and never raise into the CLI. Removed the dead
+  disk-polling helpers (`_patchright_cookies_db`, `_has_notebooklm_cookie`,
+  `_cookies_db_modified_since`).
 
 - **`probe_cleared_failed_no_abstract` URL quality signal now triggers text
   fallback in the NLM bundle builder** (`notebooklm/bundle.py`).  Springer /

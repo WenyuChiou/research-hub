@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -64,24 +64,28 @@ def login_nlm(
     """Open notebooklm-py's one-time login flow and save storage state.
 
     Three orchestration modes:
-    - default (no flag): interactive ENTER gate in a real terminal.
+    - default (no flag): interactive ENTER gate in a real terminal (runs
+      the upstream ``notebooklm login`` subprocess).
     - ``wait_file=PATH``: file-signal gate (see ``_login_with_wait_file``).
-    - ``auto_detect=True``: cookies-poll gate (see ``_login_with_auto_detect``).
-      Fully automatic: research-hub polls the patchright Chromium profile's
-      cookies for ``notebooklm.google.com`` after the user signs in and
-      lands on the NotebookLM homepage. No ENTER, no wait_file touch, no
-      click.confirm response needed.
+    - ``auto_detect=True``: live-page-poll gate (see
+      ``_login_with_auto_detect``). Fully automatic: research-hub drives a
+      Chromium browser itself and polls the live ``page.url``; the session
+      saves the moment the user lands on the NotebookLM homepage. No ENTER,
+      no wait_file touch, no subprocess.
     """
     del headless, timeout_sec, stable_hold_sec
     target = Path(state_file) if state_file is not None else Path(user_data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "notebooklm.notebooklm_cli", "login", "--storage", str(target)]
     if auto_detect:
-        rc = _login_with_auto_detect(cmd, int(wait_timeout), target)
-    elif wait_file is None:
-        rc = subprocess.run(cmd, check=False).returncode
+        # research-hub drives the browser itself and polls the live page
+        # URL -- no upstream subprocess (see _login_with_auto_detect).
+        rc = _login_with_auto_detect(target, int(wait_timeout))
     else:
-        rc = _login_with_wait_file(cmd, Path(wait_file), int(wait_timeout), target)
+        cmd = [sys.executable, "-m", "notebooklm.notebooklm_cli", "login", "--storage", str(target)]
+        if wait_file is None:
+            rc = subprocess.run(cmd, check=False).returncode
+        else:
+            rc = _login_with_wait_file(cmd, Path(wait_file), int(wait_timeout), target)
     if rc == 0:
         # G3 P1 #2: tighten newly-created state.json permissions.
         _tighten_state_file_perms(target)
@@ -169,146 +173,197 @@ def _login_with_wait_file(
                 pass
 
 
-def _patchright_cookies_db() -> Path:
-    """Resolve the path to the patchright Chromium profile's Cookies SQLite.
+# NotebookLM URLs used by the live-poll auto-detect login flow.
+_NLM_URL = "https://notebooklm.google.com/"
+_NLM_HOST = "notebooklm.google.com"
+_GOOGLE_ACCOUNTS_URL = "https://accounts.google.com/"
 
-    Modern Chromium (80+) stores cookies under ``Default/Network/Cookies``;
-    older versions used the legacy ``Default/Cookies`` path. Prefer modern;
-    fall back to legacy only if modern is missing AND legacy exists. If
-    neither exists yet (chromium still starting), return the modern path so
-    the next poll iteration finds it the moment chromium creates it.
 
-    Uses the notebooklm-py SDK's own ``get_browser_profile_dir`` helper to
-    locate the profile root so research-hub stays in lock-step with whatever
-    layout the SDK uses; falls back to the documented
+def _browser_profile_dir() -> Path:
+    """Resolve the persistent Chromium profile directory used for NLM login.
+
+    Uses the notebooklm-py SDK's own ``get_browser_profile_dir`` helper so
+    research-hub stays in lock-step with whatever profile layout the SDK
+    uses; falls back to the documented
     ``~/.notebooklm/profiles/default/browser_profile`` location if the
     helper is unavailable (older SDK).
     """
     try:
         from notebooklm.cli.session import get_browser_profile_dir
-        profile = Path(get_browser_profile_dir())
+        return Path(get_browser_profile_dir())
     except Exception:  # noqa: BLE001 - any SDK breakage falls through
-        profile = (
+        return (
             Path.home()
             / ".notebooklm"
             / "profiles"
             / "default"
             / "browser_profile"
         )
-    modern = profile / "Default" / "Network" / "Cookies"
-    legacy = profile / "Default" / "Cookies"
-    if modern.exists():
-        return modern
-    if legacy.exists():
-        return legacy
-    # Neither exists yet -- chromium will create the modern one.
-    return modern
 
 
-def _cookies_db_modified_since(cookies_db: Path, baseline_mtime: float) -> bool:
-    """True iff the Cookies SQLite has been written after baseline_mtime.
-    Pair with _has_notebooklm_cookie to prove the row is FRESH (the
-    user signed in in this session) rather than stale (left over from a
-    previous login that may have been revoked server-side). Tolerant of
-    a missing file (returns False)."""
-    try:
-        return cookies_db.stat().st_mtime > baseline_mtime
-    except OSError:
-        return False
+@contextmanager
+def _playwright_event_loop():
+    """Restore the default (Proactor) event-loop policy for Playwright on
+    Windows for the duration of the ``with`` block.
 
-
-def _has_notebooklm_cookie(cookies_db: Path) -> bool:
-    """True iff Chromium's Cookies SQLite contains at least one row with
-    ``host_key`` matching ``notebooklm.google.com``.
-
-    Tolerant of: file not yet existing (browser still starting); SQLite
-    lock contention (chromium writing); any other transient I/O error.
-    Each transient returns ``False`` so the calling loop simply polls
-    again on the next iteration. Opened read-only via the SQLite URI
-    ``mode=ro`` so we never contend with chromium's write locks.
+    notebooklm-py sets ``WindowsSelectorEventLoopPolicy`` globally (it fixes
+    an unrelated CLI hang), but Playwright's sync API needs the Proactor
+    loop to spawn the browser subprocess. No-op off Windows. Mirrors the
+    SDK's own ``_windows_playwright_event_loop`` so we do not depend on a
+    private SDK symbol.
     """
-    if not cookies_db.exists():
-        return False
+    if sys.platform != "win32":
+        yield
+        return
+    original = asyncio.get_event_loop_policy()
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     try:
-        uri = f"file:{cookies_db.as_posix()}?mode=ro"
-        with sqlite3.connect(uri, uri=True, timeout=2) as conn:
-            cur = conn.execute(
-                "SELECT 1 FROM cookies WHERE host_key LIKE ? LIMIT 1",
-                ("%notebooklm.google.com",),
-            )
-            return cur.fetchone() is not None
-    except sqlite3.Error:
-        return False
-    except Exception:  # noqa: BLE001 - defensive against unexpected I/O
-        return False
+        yield
+    finally:
+        asyncio.set_event_loop_policy(original)
+
+
+def _is_on_notebooklm_homepage(url: str) -> bool:
+    """True iff *url* is the live NotebookLM app (not a Google sign-in page).
+
+    While the user is signing in, ``page.url`` sits on ``accounts.google.com``
+    (or a NotebookLM ``/login`` interstitial). Once authenticated the page
+    settles on the ``notebooklm.google.com`` host. The ``/login`` guard
+    rejects the brief interstitial NotebookLM itself serves before bouncing
+    to Google.
+    """
+    return _NLM_HOST in url and "/login" not in url
 
 
 def _login_with_auto_detect(
-    cmd: list[str],
-    timeout: int,
     state_file: Path,
+    wait_timeout: int,
 ) -> int:
-    """Fully-automatic login: poll the patchright Chromium profile's
-    Cookies SQLite for a ``notebooklm.google.com`` host_key. When the
-    cookie appears, feed the subprocess ``\\n`` (any pending ``input()``
-    ENTER prompt) AND ``y\\n`` (any pending ``click.confirm`` "Save
-    authentication anyway?" prompt) in one write so the upstream save
-    fires whichever path the SDK actually takes.
+    """Fully-automatic login: research-hub drives the browser directly.
 
-    Fail-closed: if no notebooklm.google.com cookie appears within
-    ``timeout`` seconds the subprocess is killed and a non-zero exit
-    code is returned (nothing is saved).
+    Launches a Chromium persistent context (the same stealth flags the
+    notebooklm-py SDK uses for its own ``login`` command), navigates to
+    the NotebookLM homepage, then polls the LIVE ``page.url``. The moment
+    the page settles on the NotebookLM host -- and stays there for a few
+    consecutive polls, so a mid-redirect flash never triggers a premature
+    save -- the session is captured straight from the live browser context
+    via ``storage_state``. No terminal ENTER, no subprocess, no file signal.
+
+    Why not poll the on-disk Cookies SQLite (the pre-fix approach):
+    Chromium buffers cookies in memory and flushes them to the profile's
+    SQLite store on a lazy timer, so a freshly-signed-in session stays
+    invisible on disk for minutes. Polling ``page.url`` reads live browser
+    state and has no such race.
+
+    Fail-closed: if the homepage is not reached within *wait_timeout*
+    seconds the browser is closed and a non-zero code is returned
+    (nothing is saved).
     """
-    cookies_db = _patchright_cookies_db()
-    # W1 (PR-D review): anti-stale-cookie guard. Snapshot the Cookies
-    # file mtime BEFORE launching the subprocess. The detection trigger
-    # requires BOTH (a) a notebooklm.google.com row AND (b) the file was
-    # written after launch -- proving the user actually signed in in
-    # this session rather than us picking up a stale cookie left behind
-    # from a previous (possibly-revoked) login.
     try:
-        pre_launch_mtime = cookies_db.stat().st_mtime if cookies_db.exists() else 0.0
-    except OSError:
-        pre_launch_mtime = 0.0
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    deadline = time.monotonic() + max(1, timeout)
-    poll_interval = 1.0  # match _login_with_wait_file for consistency
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print(
+            "  [nlm] Playwright is not installed; cannot run --auto-detect "
+            "login.\n        Install it with: pip install 'notebooklm[browser]'",
+            file=sys.stderr,
+        )
+        return 1
+
+    profile_dir = _browser_profile_dir()
     try:
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                return proc.returncode
-            if _has_notebooklm_cookie(cookies_db) and _cookies_db_modified_since(cookies_db, pre_launch_mtime):
-                try:
-                    if proc.stdin is not None:
-                        proc.stdin.write(b"\ny\n")
-                        proc.stdin.flush()
-                        proc.stdin.close()
-                except OSError:
-                    pass
-                try:
-                    return proc.wait(timeout=120)
-                except subprocess.TimeoutExpired:
-                    try:
-                        _tighten_state_file_perms(state_file)
-                    except Exception:  # noqa: BLE001 - best-effort
-                        pass
-                    _kill_proc(proc)
-                    return 1
-            time.sleep(poll_interval)
-        # detection never arrived -> fail-closed (nothing saved).
+        profile_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"  [nlm] cannot create browser profile dir: {exc}", file=sys.stderr)
+        return 1
+
+    launch_kwargs = {
+        "user_data_dir": str(profile_dir),
+        "headless": False,
+        # Same stealth flags notebooklm-py uses for its own login command.
+        "args": [
+            "--disable-blink-features=AutomationControlled",
+            "--password-store=basic",
+        ],
+        "ignore_default_args": ["--enable-automation"],
+    }
+    # The homepage URL must hold for this many consecutive polls before we
+    # trust the sign-in -- guards against capturing a transient flash while
+    # NotebookLM is still bouncing through a redirect.
+    stable_polls_needed = 3
+    poll_interval = 1.0
+
+    with _playwright_event_loop():
+        playwright = None
+        context = None
         try:
-            if proc.stdin is not None:
-                proc.stdin.close()
-        except OSError:
-            pass
-        _kill_proc(proc)
-        return 124
-    finally:
-        if proc.poll() is None:
+            # sync_playwright().start() spawns the Playwright driver
+            # process; doing it inside the try means a driver-start
+            # failure is caught and surfaced as rc 1, never raised
+            # into the CLI.
+            playwright = sync_playwright().start()
+            context = playwright.chromium.launch_persistent_context(**launch_kwargs)
+            page = context.pages[0] if context.pages else context.new_page()
             try:
-                proc.terminate()
-            except OSError:
+                page.goto(_NLM_URL, timeout=30_000)
+            except PlaywrightError:
+                # A navigation hiccup is non-fatal: the poll loop below
+                # re-reads page.url and recovers once the page settles.
                 pass
+
+            print(
+                "  [nlm] Browser opened. Sign in to NotebookLM in the window.\n"
+                "        The session saves automatically once the homepage "
+                "loads -- no ENTER needed.",
+            )
+
+            deadline = time.monotonic() + max(1, wait_timeout)
+            stable = 0
+            while time.monotonic() < deadline:
+                try:
+                    current_url = page.url
+                except PlaywrightError:
+                    # Page transiently unavailable (navigating); treat as
+                    # "not yet on homepage" and keep polling.
+                    current_url = ""
+                stable = stable + 1 if _is_on_notebooklm_homepage(current_url) else 0
+                if stable >= stable_polls_needed:
+                    # Force .google.com cookies for regional users (e.g. a
+                    # TW user lands on .google.com.tw); "commit" resolves
+                    # once Set-Cookie headers are processed. Mirrors the
+                    # SDK's own post-login double-navigation.
+                    for url in (_GOOGLE_ACCOUNTS_URL, _NLM_URL):
+                        try:
+                            page.goto(url, wait_until="commit")
+                        except PlaywrightError:
+                            pass
+                    context.storage_state(path=str(state_file))
+                    context.close()
+                    return 0
+                time.sleep(poll_interval)
+
+            # Homepage never reached within the deadline -> fail-closed.
+            context.close()
+            return 124
+        except Exception as exc:  # noqa: BLE001 - report and fail, never raise
+            print(
+                f"  [nlm] auto-detect login failed: "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+            if context is not None:
+                try:
+                    context.close()
+                except Exception:  # noqa: BLE001 - best-effort cleanup
+                    pass
+            return 1
+        finally:
+            # Always stop the driver process, whatever path we exit on.
+            if playwright is not None:
+                try:
+                    playwright.stop()
+                except Exception:  # noqa: BLE001 - best-effort cleanup
+                    pass
 
 
 def check_session_health(state_file: Path) -> dict[str, Any]:

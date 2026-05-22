@@ -1,309 +1,312 @@
-"""PR-D: ``notebooklm login --auto-detect`` — fully-automatic zero-touch login.
+"""``notebooklm login --auto-detect`` -- fully-automatic zero-touch login.
 
-Replaces the half-automatic ``--wait-file`` flow (which still requires
-the user to ``touch`` a file after browser sign-in) with a cookies-poll
-that detects "user reached the NotebookLM homepage" by looking for a
-``notebooklm.google.com`` row in the patchright Chromium profile's
-Cookies SQLite. When detected, research-hub feeds both ``\\n`` (any
-pending ``input()`` ENTER) AND ``y\\n`` (any pending ``click.confirm``
-"Save anyway?" fallback) so the upstream save fires regardless of which
-prompt path the SDK takes. Fail-closed on timeout (nothing saved).
+research-hub drives a Chromium browser directly and polls the LIVE
+``page.url``. The moment the page settles on the NotebookLM host -- and
+holds there for a few consecutive polls -- the session is captured
+straight from the live browser context via ``storage_state``. No terminal
+ENTER, no upstream subprocess, no on-disk Cookies-SQLite race.
+
+Root-cause history: the pre-fix implementation shelled out to the
+upstream ``notebooklm login`` subprocess and polled the patchright
+Chromium profile's Cookies SQLite on disk. Chromium buffers cookies in
+memory and flushes to that SQLite store only on a lazy timer, so a
+freshly-signed-in session stayed invisible on disk for minutes and the
+poll loop timed out without ever firing the save. Polling ``page.url``
+reads live browser state and has no such race.
 """
 
 from __future__ import annotations
 
-import sqlite3
-import subprocess
 from pathlib import Path
 
 import pytest
 
 import research_hub.notebooklm.auth as auth
 from research_hub.notebooklm.auth import (
-    _has_notebooklm_cookie,
+    _browser_profile_dir,
+    _is_on_notebooklm_homepage,
     _login_with_auto_detect,
 )
 
 
-class _Stdin:
-    """Capture stub that survives .close() (real BytesIO does not)."""
-    def __init__(self):
-        self.buf = b""
-        self.closed = False
-    def write(self, b):
-        self.buf += b
-    def flush(self):
-        pass
-    def close(self):
-        self.closed = True
-    def getvalue(self):
-        return self.buf
-
-
-class _FakeProc:
-    def __init__(self, *, exits_with=None):
-        self.stdin = _Stdin()
-        self._exits_with = exits_with        # not None -> poll() returns it
-        self.returncode = None
-        self.terminated = False
-        self.killed = False
-
-    def poll(self):
-        if self.returncode is not None:
-            return self.returncode
-        if self._exits_with is not None:
-            self.returncode = self._exits_with
-            return self._exits_with
-        return None
-
-    def wait(self, timeout=None):
-        self.returncode = 0
-        return 0
-
-    def terminate(self):
-        self.terminated = True
-
-    def kill(self):
-        self.killed = True
-
-
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
+    """Make the poll loop spin instantly -- detection / timeout is driven
+    by the mocked clock or the page-URL sequence, never by wall time."""
     monkeypatch.setattr(auth.time, "sleep", lambda *_a, **_k: None)
 
 
-def _build_cookies_db(path: Path, *, with_notebooklm: bool) -> None:
-    """Create a real (read-only-poll-compatible) Cookies SQLite stub."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(path)) as conn:
-        conn.execute(
-            "CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT)"
-        )
-        # always seed an unrelated row so the table is non-empty
-        conn.execute(
-            "INSERT INTO cookies VALUES ('accounts.google.com', 'NID', 'x')"
-        )
-        if with_notebooklm:
-            conn.execute(
-                "INSERT INTO cookies VALUES "
-                "('.notebooklm.google.com', 'AUTH', 'y')"
-            )
-        conn.commit()
+# ---------------------------------------------------------------------------
+# Playwright test doubles
+# ---------------------------------------------------------------------------
+
+class _FakePage:
+    """A page whose ``.url`` walks a fixed sequence, one step per read."""
+
+    def __init__(self, url_sequence):
+        self._urls = list(url_sequence)
+        self._idx = 0
+        self.goto_calls: list[str] = []
+
+    @property
+    def url(self) -> str:
+        value = self._urls[min(self._idx, len(self._urls) - 1)]
+        self._idx += 1
+        return value
+
+    def goto(self, url, **_kwargs):
+        self.goto_calls.append(url)
 
 
-# ---- _has_notebooklm_cookie unit tests ----
+class _FakeContext:
+    def __init__(self, page: _FakePage):
+        self.pages = [page]
+        self.storage_saved_to: str | None = None
+        self.closed = False
+
+    def new_page(self):
+        return self.pages[0]
+
+    def storage_state(self, path):
+        self.storage_saved_to = str(path)
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
+
+    def close(self):
+        self.closed = True
 
 
-def test_has_notebooklm_cookie_missing_file_returns_false(tmp_path):
-    assert _has_notebooklm_cookie(tmp_path / "no-such.db") is False
+class _FakeChromium:
+    def __init__(self, context: _FakeContext | None, *, launch_error: Exception | None = None):
+        self._context = context
+        self._launch_error = launch_error
+        self.launch_kwargs: dict | None = None
+
+    def launch_persistent_context(self, **kwargs):
+        self.launch_kwargs = kwargs
+        if self._launch_error is not None:
+            raise self._launch_error
+        return self._context
 
 
-def test_has_notebooklm_cookie_no_matching_row_returns_false(tmp_path):
-    db = tmp_path / "Cookies"
-    _build_cookies_db(db, with_notebooklm=False)
-    assert _has_notebooklm_cookie(db) is False
+class _FakePlaywright:
+    """The handle ``sync_playwright().start()`` returns. ``.stop()`` tears
+    down the driver -- the function under test calls it in a ``finally``."""
+
+    def __init__(self, chromium: _FakeChromium):
+        self.chromium = chromium
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
 
 
-def test_has_notebooklm_cookie_matching_row_returns_true(tmp_path):
-    db = tmp_path / "Cookies"
-    _build_cookies_db(db, with_notebooklm=True)
-    assert _has_notebooklm_cookie(db) is True
+class _FakeSyncPlaywright:
+    """Mimics ``sync_playwright()`` -- ``.start()`` returns the playwright
+    handle (matching the manual start/stop API the function drives)."""
+
+    def __init__(self, chromium: _FakeChromium):
+        self._pw = _FakePlaywright(chromium)
+
+    def start(self) -> _FakePlaywright:
+        return self._pw
 
 
-def test_has_notebooklm_cookie_corrupt_file_returns_false(tmp_path):
-    """Defensive: a Cookies file that's not a SQLite DB (e.g., chromium
-    still writing initial bytes) returns False so the calling loop
-    simply polls again on the next iteration."""
-    db = tmp_path / "Cookies"
-    db.write_bytes(b"not a sqlite file")
-    assert _has_notebooklm_cookie(db) is False
+def _install_fake_playwright(monkeypatch, chromium: _FakeChromium) -> _FakePlaywright:
+    """Patch ``playwright.sync_api.sync_playwright`` so the function under
+    test gets our fake. The function does ``from playwright.sync_api import
+    sync_playwright`` at call time, so patching the module attribute is
+    sufficient. Returns the playwright handle so tests can assert ``stop()``
+    was called on it."""
+    import playwright.sync_api as pw_api
+
+    fake = _FakeSyncPlaywright(chromium)
+    monkeypatch.setattr(pw_api, "sync_playwright", lambda: fake)
+    return fake._pw
 
 
-# ---- _login_with_auto_detect integration tests ----
+# ---------------------------------------------------------------------------
+# _is_on_notebooklm_homepage -- pure unit tests
+# ---------------------------------------------------------------------------
+
+def test_homepage_url_is_recognised():
+    assert _is_on_notebooklm_homepage("https://notebooklm.google.com/") is True
 
 
-def _make_cookies_appear_mid_loop(tmp_path, monkeypatch):
-    """Patch ``_patchright_cookies_db`` to a tmp path; on the first
-    mocked ``time.sleep`` call (mid-poll-loop), materialise a Cookies
-    SQLite that contains the notebooklm.google.com row -- simulating
-    the user signing in and landing on the NotebookLM homepage."""
-    db = tmp_path / "browser_profile" / "Default" / "Cookies"
-    monkeypatch.setattr(auth, "_patchright_cookies_db", lambda: db)
-
-    def _sleep(*_a, **_k):
-        if not db.exists():
-            _build_cookies_db(db, with_notebooklm=True)
-
-    monkeypatch.setattr(auth.time, "sleep", _sleep)
-    return db
+def test_google_signin_url_is_not_homepage():
+    assert _is_on_notebooklm_homepage("https://accounts.google.com/signin") is False
 
 
-def test_cookie_detection_triggers_save(tmp_path, monkeypatch):
-    proc = _FakeProc()
-    monkeypatch.setattr(auth.subprocess, "Popen", lambda *a, **k: proc)
-    _make_cookies_appear_mid_loop(tmp_path, monkeypatch)
+def test_notebooklm_login_interstitial_is_not_homepage():
+    """NotebookLM serves a brief ``/login`` interstitial before bouncing to
+    Google -- it is on the right host but the user is NOT signed in yet."""
+    assert _is_on_notebooklm_homepage("https://notebooklm.google.com/login") is False
 
-    rc = _login_with_auto_detect(["x"], timeout=30, state_file=tmp_path / "s")
+
+def test_empty_url_is_not_homepage():
+    assert _is_on_notebooklm_homepage("") is False
+
+
+# ---------------------------------------------------------------------------
+# _browser_profile_dir
+# ---------------------------------------------------------------------------
+
+def test_browser_profile_dir_uses_sdk_helper(tmp_path, monkeypatch):
+    from notebooklm.cli import session as nlm_session
+
+    profile = tmp_path / "sdk_profile"
+    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", lambda: profile)
+
+    assert _browser_profile_dir() == profile
+
+
+def test_browser_profile_dir_falls_back_when_helper_unavailable(monkeypatch):
+    """If the SDK helper raises, fall back to the documented default path
+    under ``~/.notebooklm`` rather than crashing the login."""
+    from notebooklm.cli import session as nlm_session
+
+    def _boom():
+        raise RuntimeError("SDK changed")
+
+    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", _boom)
+
+    result = _browser_profile_dir()
+
+    assert result == Path.home() / ".notebooklm" / "profiles" / "default" / "browser_profile"
+
+
+# ---------------------------------------------------------------------------
+# _login_with_auto_detect -- integration with a mocked browser
+# ---------------------------------------------------------------------------
+
+def test_reaching_homepage_saves_session(tmp_path, monkeypatch):
+    """The user signs in: page.url moves off accounts.google.com onto the
+    NotebookLM host. After it holds there for the required consecutive
+    polls, storage_state is captured and rc is 0."""
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
+
+    # poll 1: still on Google sign-in. polls 2-4: on the NotebookLM host
+    # (3 consecutive -> stable threshold met -> save).
+    page = _FakePage([
+        "https://accounts.google.com/signin",
+        "https://notebooklm.google.com/",
+        "https://notebooklm.google.com/",
+        "https://notebooklm.google.com/",
+    ])
+    context = _FakeContext(page)
+    chromium = _FakeChromium(context)
+    fake = _install_fake_playwright(monkeypatch, chromium)
+
+    rc = _login_with_auto_detect(state_file, wait_timeout=30)
 
     assert rc == 0
-    # Both ENTER and "Save anyway? y" are fed so the upstream save fires
-    # whichever prompt path the SDK actually takes for this run.
-    assert proc.stdin.getvalue() == b"\ny\n"
-    assert not proc.terminated
+    assert context.storage_saved_to == str(state_file)
+    assert state_file.exists()
+    assert context.closed is True
+    # The driver is always torn down on the way out.
+    assert fake.stopped is True
+    # The post-login double-navigation forces .google.com regional cookies.
+    assert "https://accounts.google.com/" in page.goto_calls
+    assert page.goto_calls.count("https://notebooklm.google.com/") >= 1
+
+
+def test_transient_homepage_flash_does_not_trigger_premature_save(tmp_path, monkeypatch):
+    """A single mid-redirect flash onto the NotebookLM host must NOT fire a
+    save -- the URL has to hold for the consecutive-poll threshold. Here it
+    flashes once, drops back to Google, and never stabilises -> timeout."""
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
+
+    page = _FakePage([
+        "https://notebooklm.google.com/",        # flash
+        "https://accounts.google.com/signin",    # back to sign-in
+        "https://accounts.google.com/signin",
+    ])
+    context = _FakeContext(page)
+    _install_fake_playwright(monkeypatch, _FakeChromium(context))
+
+    # Mocked clock: first call sets the deadline, later calls blow past it.
+    clock = iter([1000.0, 1000.5, 1001.0])
+    monkeypatch.setattr(auth.time, "monotonic", lambda: next(clock, 9_999.0))
+
+    rc = _login_with_auto_detect(state_file, wait_timeout=5)
+
+    assert rc == 124
+    assert context.storage_saved_to is None
+    assert not state_file.exists()
+    assert context.closed is True
 
 
 def test_timeout_is_fail_closed(tmp_path, monkeypatch):
-    """No cookie appears -> deadline expires -> proc killed, rc=124,
-    nothing fed to stdin (no save)."""
-    db = tmp_path / "browser_profile" / "Default" / "Cookies"
-    monkeypatch.setattr(auth, "_patchright_cookies_db", lambda: db)
-    proc = _FakeProc()
-    monkeypatch.setattr(auth.subprocess, "Popen", lambda *a, **k: proc)
-    seq = iter([1000.0, 1000.0])
+    """The user never finishes signing in -> deadline expires -> context
+    closed, rc 124, nothing saved."""
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
 
-    def _clock():
-        try:
-            return next(seq)
-        except StopIteration:
-            return 9_999.0
+    page = _FakePage(["https://accounts.google.com/signin"])
+    context = _FakeContext(page)
+    _install_fake_playwright(monkeypatch, _FakeChromium(context))
 
-    monkeypatch.setattr(auth.time, "monotonic", _clock)
+    clock = iter([1000.0, 2000.0])
+    monkeypatch.setattr(auth.time, "monotonic", lambda: next(clock, 9_999.0))
 
-    rc = _login_with_auto_detect(["x"], timeout=5, state_file=tmp_path / "s")
+    rc = _login_with_auto_detect(state_file, wait_timeout=30)
 
     assert rc == 124
-    assert proc.terminated
-    assert proc.stdin.getvalue() == b""
+    assert context.storage_saved_to is None
+    assert context.closed is True
 
 
-def test_upstream_self_exit_propagates(tmp_path, monkeypatch):
-    """Upstream SDK exits on its own (e.g., browser launch error) before
-    detection; that exit code propagates out without us feeding stdin."""
-    db = tmp_path / "browser_profile" / "Default" / "Cookies"
-    monkeypatch.setattr(auth, "_patchright_cookies_db", lambda: db)
-    proc = _FakeProc(exits_with=3)
-    monkeypatch.setattr(auth.subprocess, "Popen", lambda *a, **k: proc)
-
-    rc = _login_with_auto_detect(["x"], timeout=30, state_file=tmp_path / "s")
-
-    assert rc == 3
-    assert proc.stdin.getvalue() == b""
-
-
-def test_post_signal_wait_timeout_tightens_and_fails(tmp_path, monkeypatch):
-    """Upstream saved storage_state but is slow to EXIT after the signal:
-    proc.wait() times out -> rc 1, BUT perms must still be tightened
-    (the file is on disk with default perms) and the proc killed.
-    Parity guarantee with ``_login_with_wait_file``'s equivalent test."""
+def test_browser_launch_error_returns_one_and_does_not_raise(tmp_path, monkeypatch):
+    """A browser-launch failure is reported and surfaces as rc 1 -- the
+    function never raises into the CLI, and the driver is still stopped."""
     state_file = tmp_path / "state.json"
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
 
-    class _SlowProc(_FakeProc):
-        def wait(self, timeout=None):
-            raise subprocess.TimeoutExpired(cmd=["x"], timeout=timeout)
+    chromium = _FakeChromium(None, launch_error=RuntimeError("chromium missing"))
+    fake = _install_fake_playwright(monkeypatch, chromium)
 
-    proc = _SlowProc()
-    monkeypatch.setattr(auth.subprocess, "Popen", lambda *a, **k: proc)
-    _make_cookies_appear_mid_loop(tmp_path, monkeypatch)
-
-    tightened = {"called": False}
-    monkeypatch.setattr(
-        auth, "_tighten_state_file_perms",
-        lambda *_a, **_k: tightened.__setitem__("called", True),
-    )
-
-    rc = _login_with_auto_detect(["x"], timeout=30, state_file=state_file)
+    rc = _login_with_auto_detect(state_file, wait_timeout=30)
 
     assert rc == 1
-    assert tightened["called"] is True
-    assert proc.killed or proc.terminated
+    assert not state_file.exists()
+    assert fake.stopped is True
 
 
-def test_cookies_path_prefers_modern_network_subdir(tmp_path, monkeypatch):
-    """Hotfix regression: modern Chromium (80+) stores Cookies under
-    ``Default/Network/Cookies``. The pre-hotfix PR-D code hardcoded the
-    legacy ``Default/Cookies`` path -- auto-detect polling looked at the
-    wrong file, the user logged in but the save never fired."""
-    from notebooklm.cli import session as nlm_session
-    profile = tmp_path / "browser_profile"
-    (profile / "Default" / "Network").mkdir(parents=True)
-    (profile / "Default" / "Network" / "Cookies").write_bytes(b"modern")
-    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", lambda: profile)
+def test_driver_start_failure_returns_one_and_does_not_raise(tmp_path, monkeypatch):
+    """If the Playwright driver itself fails to start (``sync_playwright().
+    start()`` raises), the failure is caught and surfaced as rc 1 rather
+    than propagating into the CLI."""
+    import playwright.sync_api as pw_api
 
-    result = auth._patchright_cookies_db()
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
 
-    assert result == profile / "Default" / "Network" / "Cookies"
-    assert result.exists()
+    class _BrokenPlaywright:
+        def start(self):
+            raise RuntimeError("playwright driver did not start")
 
+        def stop(self):  # pragma: no cover - never reached (start failed)
+            pass
 
-def test_cookies_path_falls_back_to_legacy_when_only_legacy_exists(tmp_path, monkeypatch):
-    """A user on an old Chromium version with no Network/ subdir gets the
-    legacy ``Default/Cookies`` path. Defensive fallback."""
-    from notebooklm.cli import session as nlm_session
-    profile = tmp_path / "browser_profile"
-    (profile / "Default").mkdir(parents=True)
-    (profile / "Default" / "Cookies").write_bytes(b"legacy")
-    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", lambda: profile)
+    monkeypatch.setattr(pw_api, "sync_playwright", lambda: _BrokenPlaywright())
 
-    result = auth._patchright_cookies_db()
+    rc = _login_with_auto_detect(state_file, wait_timeout=30)
 
-    assert result == profile / "Default" / "Cookies"
-
-
-def test_cookies_path_returns_modern_path_when_neither_exists_yet(
-    tmp_path, monkeypatch,
-) -> None:
-    """At browser startup neither path exists yet. Return the modern
-    path so the next poll iteration finds it the moment chromium writes
-    it (which it will, in the modern location)."""
-    from notebooklm.cli import session as nlm_session
-    profile = tmp_path / "browser_profile"
-    monkeypatch.setattr(nlm_session, "get_browser_profile_dir", lambda: profile)
-
-    result = auth._patchright_cookies_db()
-
-    assert result == profile / "Default" / "Network" / "Cookies"
-    assert not result.exists()    # neither path materialised yet
-
-
-def test_stale_cookie_pre_existing_does_not_false_trigger(tmp_path, monkeypatch):
-    """W1 (PR-D review): if the profile already has a stale
-    notebooklm.google.com cookie from a previous login (file mtime
-    pre-dates subprocess launch), the polling MUST NOT immediately
-    fire a save. Detection requires fresh writes in THIS session."""
-    db = tmp_path / "browser_profile" / "Default" / "Cookies"
-    _build_cookies_db(db, with_notebooklm=True)
-    # Backdate the mtime so the freshness check fails (no fresh writes).
-    import os
-    old = 1_000_000.0
-    os.utime(db, (old, old))
-
-    monkeypatch.setattr(auth, "_patchright_cookies_db", lambda: db)
-    proc = _FakeProc()
-    monkeypatch.setattr(auth.subprocess, "Popen", lambda *a, **k: proc)
-    # Force a quick timeout so the test doesn't actually wait.
-    seq = iter([2_000_000.0, 2_000_000.0])
-
-    def _clock():
-        try:
-            return next(seq)
-        except StopIteration:
-            return 9_999_999.0
-
-    monkeypatch.setattr(auth.time, "monotonic", _clock)
-
-    rc = _login_with_auto_detect(["x"], timeout=5, state_file=tmp_path / "s")
-
-    # The cookie IS present but the file mtime is older than our
-    # subprocess launch -> NOT a fresh sign-in -> timeout fail-closed.
-    assert rc == 124
-    assert proc.stdin.getvalue() == b""    # nothing fed -> no save
+    assert rc == 1
+    assert not state_file.exists()
 
 
 def test_dispatch_routes_to_auto_detect_when_flag_set(tmp_path, monkeypatch):
-    """`login_nlm(auto_detect=True, ...)` must dispatch to
-    `_login_with_auto_detect`, not `_login_with_wait_file` or a plain
-    `subprocess.run`. Anti-regression for the dispatch precedence."""
+    """``login_nlm(auto_detect=True, ...)`` must dispatch to
+    ``_login_with_auto_detect`` (with the new 2-arg signature), not to
+    ``_login_with_wait_file`` or a plain ``subprocess.run``."""
+    import subprocess
+
     called = {"wait_file": False, "auto_detect": False, "run": False}
+    captured: dict = {}
 
     def fake_run(*a, **k):
         called["run"] = True
@@ -313,8 +316,9 @@ def test_dispatch_routes_to_auto_detect_when_flag_set(tmp_path, monkeypatch):
         called["wait_file"] = True
         return 0
 
-    def fake_auto_detect(*a, **k):
+    def fake_auto_detect(state_file, wait_timeout):
         called["auto_detect"] = True
+        captured["args"] = (state_file, wait_timeout)
         return 0
 
     monkeypatch.setattr(auth.subprocess, "run", fake_run)
@@ -327,9 +331,12 @@ def test_dispatch_routes_to_auto_detect_when_flag_set(tmp_path, monkeypatch):
         tmp_path / "session_dir",
         state_file=state,
         auto_detect=True,
+        wait_timeout=600,
     )
 
     assert rc == 0
     assert called["auto_detect"] is True
     assert called["wait_file"] is False
     assert called["run"] is False
+    # Dispatched with the storage-state target and the timeout, no `cmd`.
+    assert captured["args"] == (state, 600)
