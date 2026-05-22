@@ -26,6 +26,7 @@ import pytest
 import research_hub.notebooklm.auth as auth
 from research_hub.notebooklm.auth import (
     _browser_profile_dir,
+    _context_has_google_session,
     _is_on_notebooklm_homepage,
     _login_with_auto_detect,
 )
@@ -61,13 +62,28 @@ class _FakePage:
 
 
 class _FakeContext:
-    def __init__(self, page: _FakePage):
+    """A browser context. *signed_in* controls whether ``cookies()`` reports
+    a Google master session cookie -- the signal the auto-detect loop pairs
+    with the page URL. Default True so existing success-path tests capture a
+    session; set False to simulate an unauthenticated tab."""
+
+    def __init__(self, page: _FakePage, *, signed_in: bool = True):
         self.pages = [page]
         self.storage_saved_to: str | None = None
         self.closed = False
+        self._signed_in = signed_in
 
     def new_page(self):
         return self.pages[0]
+
+    def cookies(self):
+        if self._signed_in:
+            return [
+                {"name": "SID", "value": "x", "domain": ".google.com"},
+                {"name": "__Secure-1PSID", "value": "y", "domain": ".google.com"},
+            ]
+        # Anonymous tab: notebooklm.google.com sets only analytics cookies.
+        return [{"name": "_ga", "value": "z", "domain": ".notebooklm.google.com"}]
 
     def storage_state(self, path):
         self.storage_saved_to = str(path)
@@ -168,6 +184,39 @@ def test_empty_url_is_not_homepage():
 
 
 # ---------------------------------------------------------------------------
+# _context_has_google_session -- the signed-in signal
+# ---------------------------------------------------------------------------
+
+class _CookieCtx:
+    def __init__(self, cookies, *, raises=False):
+        self._cookies = cookies
+        self._raises = raises
+
+    def cookies(self):
+        if self._raises:
+            raise RuntimeError("context busy")
+        return self._cookies
+
+
+def test_session_cookie_present_is_signed_in():
+    ctx = _CookieCtx([{"name": "SID", "value": "x"}, {"name": "_ga", "value": "y"}])
+    assert _context_has_google_session(ctx) is True
+
+
+def test_no_session_cookie_is_not_signed_in():
+    """An anonymous notebooklm.google.com tab carries only analytics
+    cookies -- no Google master session cookie."""
+    ctx = _CookieCtx([{"name": "_ga", "value": "y"}, {"name": "_gcl_au", "value": "z"}])
+    assert _context_has_google_session(ctx) is False
+
+
+def test_cookie_read_error_is_not_signed_in():
+    """A busy/navigating context that errors on cookies() is treated as
+    not-yet-signed-in so the loop simply polls again."""
+    assert _context_has_google_session(_CookieCtx([], raises=True)) is False
+
+
+# ---------------------------------------------------------------------------
 # _browser_profile_dir
 # ---------------------------------------------------------------------------
 
@@ -251,6 +300,35 @@ def test_transient_homepage_flash_does_not_trigger_premature_save(tmp_path, monk
     monkeypatch.setattr(auth.time, "monotonic", lambda: next(clock, 9_999.0))
 
     rc = _login_with_auto_detect(state_file, wait_timeout=5)
+
+    assert rc == 124
+    assert context.storage_saved_to is None
+    assert not state_file.exists()
+    assert context.closed is True
+
+
+def test_anonymous_tab_on_notebooklm_host_does_not_save(tmp_path, monkeypatch):
+    """Regression: a fresh anonymous tab sits on notebooklm.google.com for a
+    moment before redirecting to the sign-in page. The URL check alone
+    matched it and the pre-fix auto-detect saved a 3-cookie unauthenticated
+    session. Now the loop also requires a Google session cookie -- with
+    none present the save must NOT fire even though the URL looks right."""
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
+
+    # URL is on the NotebookLM host the whole time ...
+    page = _FakePage(["https://notebooklm.google.com/"])
+    # ... but the context has NO Google session cookie (not signed in).
+    context = _FakeContext(page, signed_in=False)
+    _install_fake_playwright(monkeypatch, _FakeChromium(context))
+
+    # Clock lets the poll loop run several real iterations -- so the
+    # session-cookie check actually executes (and returns False) each
+    # pass -- before the deadline trips. (deadline = 1000 + 30 = 1030.)
+    clock = iter([1000.0, 1001.0, 1002.0, 1003.0, 1004.0, 2000.0])
+    monkeypatch.setattr(auth.time, "monotonic", lambda: next(clock, 9_999.0))
+
+    rc = _login_with_auto_detect(state_file, wait_timeout=30)
 
     assert rc == 124
     assert context.storage_saved_to is None
