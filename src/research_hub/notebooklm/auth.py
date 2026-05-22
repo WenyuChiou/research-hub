@@ -224,15 +224,44 @@ def _playwright_event_loop():
 
 
 def _is_on_notebooklm_homepage(url: str) -> bool:
-    """True iff *url* is the live NotebookLM app (not a Google sign-in page).
+    """True iff *url* is on the NotebookLM host (not a Google sign-in page).
 
     While the user is signing in, ``page.url`` sits on ``accounts.google.com``
     (or a NotebookLM ``/login`` interstitial). Once authenticated the page
     settles on the ``notebooklm.google.com`` host. The ``/login`` guard
     rejects the brief interstitial NotebookLM itself serves before bouncing
     to Google.
+
+    NOTE: this URL check is necessary but NOT sufficient on its own -- a
+    fresh anonymous tab also sits on ``notebooklm.google.com`` for a moment
+    before it redirects to the sign-in page. The auto-detect loop pairs it
+    with ``_context_has_google_session`` so an unauthenticated tab is never
+    mistaken for a signed-in one.
     """
     return _NLM_HOST in url and "/login" not in url
+
+
+# Google master session cookies. Their presence in the live browser context
+# proves an authenticated sign-in completed -- an anonymous visitor to
+# notebooklm.google.com carries none of them (the pre-fix auto-detect saved
+# exactly such a 3-cookie anonymous session by trusting the URL alone).
+_SIGNED_IN_COOKIE_NAMES = frozenset({"SID", "__Secure-1PSID", "__Secure-3PSID"})
+
+
+def _context_has_google_session(context) -> bool:
+    """True iff the live browser context holds a Google master session
+    cookie -- the signal that the user has actually signed in.
+
+    Tolerant of a busy/navigating context: any error reading cookies
+    returns False so the calling loop simply polls again.
+    """
+    try:
+        return any(
+            cookie.get("name") in _SIGNED_IN_COOKIE_NAMES
+            for cookie in context.cookies()
+        )
+    except Exception:  # noqa: BLE001 - context busy/navigating -> retry next poll
+        return False
 
 
 def _login_with_auto_detect(
@@ -326,7 +355,17 @@ def _login_with_auto_detect(
                     # Page transiently unavailable (navigating); treat as
                     # "not yet on homepage" and keep polling.
                     current_url = ""
-                stable = stable + 1 if _is_on_notebooklm_homepage(current_url) else 0
+                # Two independent signals must BOTH hold before we trust the
+                # sign-in: the tab is on the NotebookLM host AND the context
+                # carries a Google session cookie. The URL alone is not
+                # enough -- a fresh anonymous tab briefly sits on
+                # notebooklm.google.com before redirecting to the sign-in
+                # page, and trusting the URL there saved an unauthenticated
+                # session.
+                signed_in = _is_on_notebooklm_homepage(
+                    current_url
+                ) and _context_has_google_session(context)
+                stable = stable + 1 if signed_in else 0
                 if stable >= stable_polls_needed:
                     # Force .google.com cookies for regional users (e.g. a
                     # TW user lands on .google.com.tw); "commit" resolves
