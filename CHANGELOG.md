@@ -37,6 +37,17 @@ graph rebuild (link out to the real tools instead)._
   The `.gaps.yml` schema moved to a trailing "not emitted" reference block.
   SKILL.md "What it produces" updated.  Mirrored to
   `src/research_hub/skills_data/gap-to-topic/`.
+- **ingest collapses in-batch duplicate papers** (`pipeline.py`). Two search
+  backends can return the SAME paper under different DOIs (a journal DOI vs a
+  repository/preprint DOI). DOI-keyed search-merge dedup keeps both, and
+  `dedup.check()` cannot catch them either — `dedup.add()` runs only in the
+  note-writing loop, so in-batch siblings stay invisible during Zotero-item
+  creation. Result: two Zotero items for one paper and two notes colliding on
+  an identical filename slug (one silently overwriting the other). A new
+  pre-ingest in-batch dedup pass now collapses candidates sharing a
+  normalized DOI or normalized title (mirrors `DedupIndex.add()`'s >15-char
+  title guard), keeping the first occurrence and logging a `dup-in-batch`
+  manifest entry for each collapsed sibling.
 - **`gap-to-topic` §1 now applies the fit-check relevance gate**
   (`skills/gap-to-topic/`, plugin `0.3.5 → 0.3.6`).  `search --screen`
   (PR #84) wired the BM25 relevance gate into the `search` command; §1 now

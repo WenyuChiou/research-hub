@@ -14,9 +14,15 @@ from pathlib import Path
 
 from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config
-from research_hub.dedup import DedupHit, DedupIndex, build_from_obsidian, build_from_zotero
+from research_hub.dedup import (
+    DedupHit,
+    DedupIndex,
+    build_from_obsidian,
+    build_from_zotero,
+    normalize_title,
+)
 from research_hub.manifest import Manifest, new_entry
-from research_hub.utils.doi import extract_arxiv_id
+from research_hub.utils.doi import extract_arxiv_id, normalize_doi
 from research_hub.verify import VerificationResult, VerifyCache, verify_arxiv, verify_doi, verify_paper
 from research_hub.ingest_diff import compute_ingest_gap, write_gap_sidecar
 from research_hub.vault.hub_overview import derive_moc_links, ensure_moc, populate_overview
@@ -816,6 +822,7 @@ def run_pipeline(
     fit_accepted = 0
     fit_rejected = 0
     fit_candidates_in = 0
+    in_batch_collapsed = 0
     fit_key_terms: list[str] = []
     if fit_check and cluster_slug:
         from research_hub.fit_check import _extract_key_terms, _read_definition_from_overview
@@ -1009,6 +1016,60 @@ def run_pipeline(
                     batch_label=resolved_batch_label,
                 )
             )
+
+        # --- In-batch dedup -------------------------------------------------
+        # Two backends can return the SAME paper under different DOIs (e.g. a
+        # journal DOI vs a repository/preprint DOI). Search-merge dedup is
+        # DOI-keyed, so it keeps both; each would then get its own Zotero item
+        # and the two notes would collide on an identical filename slug (one
+        # silently overwrites the other). dedup.check() in the loop below
+        # cannot catch this either: dedup.add() runs only in the note-writing
+        # loop, so in-batch siblings stay invisible during Zotero creation.
+        # Collapse them here, keeping the first occurrence.
+        deduped_papers: list[dict] = []
+        seen_dois: set[str] = set()
+        seen_titles: set[str] = set()
+        for pp in papers:
+            ndoi = normalize_doi(pp.get("doi", ""))
+            # A real DOI is "10.<registrant>/<suffix>". Sentinel placeholders
+            # some backends emit for an unknown DOI ("N/A", "none", "-") also
+            # normalize to a truthy string; keying on those would false-
+            # collapse genuinely distinct papers. Require the 10./ shape.
+            doi_key = ndoi if (ndoi.startswith("10.") and "/" in ndoi) else ""
+            ntitle = normalize_title(pp.get("title"))
+            # Mirror DedupIndex.add(): only title-match on titles long enough
+            # to be distinctive (>15 normalized chars) to avoid false merges.
+            title_key = ntitle if len(ntitle) > 15 else ""
+            if (doi_key and doi_key in seen_dois) or (
+                title_key and title_key in seen_titles
+            ):
+                p(
+                    f"  [in-batch dup] {pp.get('title', '')[:55]}... "
+                    "collapsed (matches an earlier candidate)"
+                )
+                manifest.append(
+                    new_entry(
+                        cluster=cluster_slug or "",
+                        query=_query_for_paper(pp, query),
+                        action="dup-in-batch",
+                        doi=pp.get("doi", ""),
+                        title=pp.get("title", ""),
+                        batch_label=resolved_batch_label,
+                    )
+                )
+                continue
+            deduped_papers.append(pp)
+            if doi_key:
+                seen_dois.add(doi_key)
+            if title_key:
+                seen_titles.add(title_key)
+        in_batch_collapsed = len(papers) - len(deduped_papers)
+        if in_batch_collapsed:
+            p(
+                f"  [in-batch dedup] collapsed "
+                f"{in_batch_collapsed} same-paper duplicate(s)"
+            )
+        papers = deduped_papers
 
         for i, pp in enumerate(papers):
             p(f"\n--- Paper {i+1}: {pp['title'][:60]}...")
@@ -1387,6 +1448,11 @@ def run_pipeline(
             p(
                 f"fit-check: {fit_candidates_in} in, {fit_accepted} accepted, "
                 f"{fit_rejected} rejected, {fit_warnings} warnings"
+                + (
+                    f", {in_batch_collapsed} in-batch-collapsed"
+                    if in_batch_collapsed
+                    else ""
+                )
             )
         if not dry_run:
             p("\n=== INTEGRATION SUGGESTIONS ===")

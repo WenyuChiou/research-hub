@@ -285,3 +285,129 @@ def test_live_obsidian_note_still_skips(
     assert "dup-obsidian" in actions
     assert "new" not in actions
     assert "ingest-reuse-zotero" not in actions
+
+
+# --- in-batch dedup: same paper from two backends under different DOIs ----
+
+
+def _twin_papers() -> list[dict]:
+    """Two records for the SAME paper as two backends would return it: the
+    title differs only by punctuation (normalize_title collapses that) and
+    each carries a different DOI (a journal DOI vs a repository DOI), so
+    DOI-keyed search-merge dedup keeps both. Distinct slugs so the test
+    proves the in-batch pass collapses them — not a filename overwrite."""
+    base = dict(
+        authors=[{"creatorType": "author", "lastName": "Kota", "firstName": "Sunil"}],
+        year=2025,
+        abstract="Abstract on building effective AI agents.",
+        journal="Journal",
+        summary="Summary",
+        key_findings=["Finding"],
+        methodology="Method",
+        relevance="Relevant",
+        sub_category="agents",
+        citation_count=1,
+    )
+    first = dict(
+        base,
+        title="Building Effective AI Agents: Workflows, Design Patterns and Best Practices",
+        doi="10.1000/journal-doi",
+        slug="kota2025-building-effective-ai-agents",
+    )
+    second = dict(
+        base,
+        # one extra comma -> normalize_title collapses it to == first
+        title="Building Effective AI Agents: Workflows, Design Patterns, and Best Practices",
+        doi="10.1000/repository-doi",
+        slug="kota2025-building-effective-ai-agents-v2",
+    )
+    return [first, second]
+
+
+def _write_inputs(cfg, papers: list[dict]) -> None:
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps({"papers": papers}), encoding="utf-8"
+    )
+
+
+def test_in_batch_same_paper_two_dois_collapses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two backend records for one paper (same normalized title, different
+    DOIs) must collapse to a SINGLE Obsidian note + SINGLE Zotero item.
+    Before the fix each got its own Zotero item (W2FTHN8X incident)."""
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="agents", name="Agents", slug="agents", zotero_collection_key="DEFAULT"
+    )
+    _write_inputs(cfg, _twin_papers())
+
+    dedup = DedupIndex()  # empty: neither twin is in the vault yet
+    z = _mock(monkeypatch, cfg, dedup)
+
+    rc = run_pipeline(dry_run=False, cluster_slug="agents", verify=False)
+
+    assert rc == 0
+    notes = list(cfg.raw.rglob("*.md"))
+    assert len(notes) == 1, f"in-batch twin must collapse to one note: {notes}"
+    created_items = [item for batch in z.created for item in batch]
+    assert len(created_items) == 1, f"exactly one Zotero item expected: {z.created}"
+    actions = _manifest_actions(cfg)
+    assert actions.count("dup-in-batch") == 1
+    assert actions.count("new") == 1
+
+
+def test_in_batch_same_doi_collapses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two records sharing a normalized DOI collapse via the DOI branch —
+    covers the DOI half of the `doi OR title` collapse condition (the twin
+    test above exercises the title half)."""
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="agents", name="Agents", slug="agents", zotero_collection_key="DEFAULT"
+    )
+    first = _paper(1)
+    second = _paper(2)  # different title + slug ...
+    second["doi"] = first["doi"]  # ... but the SAME DOI
+    _write_inputs(cfg, [first, second])
+
+    dedup = DedupIndex()
+    z = _mock(monkeypatch, cfg, dedup)
+
+    rc = run_pipeline(dry_run=False, cluster_slug="agents", verify=False)
+
+    assert rc == 0
+    notes = list(cfg.raw.rglob("*.md"))
+    assert len(notes) == 1, f"same-DOI twin must collapse to one note: {notes}"
+    created_items = [item for batch in z.created for item in batch]
+    assert len(created_items) == 1, f"exactly one Zotero item expected: {z.created}"
+    actions = _manifest_actions(cfg)
+    assert actions.count("dup-in-batch") == 1
+
+
+def test_in_batch_distinct_papers_both_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two genuinely different papers must both survive the in-batch pass —
+    the collapse fires on shared identity, not merely on batch size.
+
+    NOTE: this is an over-collapse guard, not a regression pin — it passes
+    with OR without the fix. The regression is pinned by the two collapse
+    tests above."""
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="agents", name="Agents", slug="agents", zotero_collection_key="DEFAULT"
+    )
+    _write_inputs(cfg, [_paper(1), _paper(2)])
+
+    dedup = DedupIndex()
+    z = _mock(monkeypatch, cfg, dedup)
+
+    rc = run_pipeline(dry_run=False, cluster_slug="agents", verify=False)
+
+    assert rc == 0
+    notes = list(cfg.raw.rglob("*.md"))
+    assert len(notes) == 2, f"distinct papers must not be collapsed: {notes}"
+    actions = _manifest_actions(cfg)
+    assert "dup-in-batch" not in actions
