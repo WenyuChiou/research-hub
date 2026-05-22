@@ -22,6 +22,17 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` §1 now applies the fit-check relevance gate**
+  (`skills/gap-to-topic/`, plugin `0.3.5 → 0.3.6`).  `search --screen`
+  (PR #84) wired the BM25 relevance gate into the `search` command; §1 now
+  uses it.  SKILL.md §1: step 1 runs `search --adversarial --screen --json`
+  and reads the new `{screening_summary, results}` shape (each paper
+  carries a `relevance` field); steps 2-3 build the matrix and `.bib` from
+  the **on-topic** results only (`kept: true`), excluding screened-out
+  off-topic noise; step 4 reports the retrieved-vs-on-topic counts in the
+  recall headline.  `references/dossier-template.md` Appendix A pipeline +
+  recall-mechanics rows updated.  Mirrored to
+  `src/research_hub/skills_data/gap-to-topic/`.
 - **ingest dedup re-scoped to research-hub's own literature** (`pipeline.py`).
   `auto` for a new topic produced a near-empty cluster — a search returned
   25 papers, fit-check kept all 25, yet only ~1 Obsidian note was created.

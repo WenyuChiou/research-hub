@@ -154,15 +154,15 @@ resource proves unobtainable within scope>.
 
 | Item | Detail |
 |---|---|
-| Pipeline | research-hub `search --adversarial --json` → `literature-triage-matrix` → gap-to-topic gates |
-| Recall mechanics | <N query phrasings, M unique papers; which backends ran; any rate-limited / unavailable and the effect on recall confidence> |
+| Pipeline | research-hub `search --adversarial --screen --json` → `literature-triage-matrix` → gap-to-topic gates |
+| Recall mechanics | <N query phrasings, M unique papers; which backends ran; any rate-limited / unavailable and the effect on recall confidence. The `--screen` BM25 relevance gate: retrieved / on-topic / screened-out counts.> |
 | Tool / version | <research-hub plugin version, run date, caveats — e.g. set `SEMANTIC_SCHOLAR_API_KEY` for tighter recall> |
 
 ## Appendix B — Companion files
 
 | File | What it is |
 |---|---|
-| `<dossier>.bib` | The Gate 1 reference list as BibTeX — the trust artifact that lets the researcher verify "open" independently. Built from the `search --adversarial --json` metadata (NOT from `cite --format bibtex`, which resolves only already-ingested Zotero items — see SKILL.md §1 step 3). Every entry must have a resolvable DOI or arXiv ID. |
+| `<dossier>.bib` | The Gate 1 reference list as BibTeX — the trust artifact that lets the researcher verify "open" independently. Built from the on-topic `search --adversarial --screen --json` results (NOT from `cite --format bibtex`, which resolves only already-ingested Zotero items — see SKILL.md §1 step 3). Every entry must have a resolvable DOI or arXiv ID. |
 | `<dossier>.gaps.yml` | Structured export of the candidates + gate verdicts + open questions, so a later pass (or a downstream skill) can list every candidate and its standing. Keeps the machine ids and the formal enum tokens. Schema below. |
 | `literature_matrix.md` | The structured prior-art comparison (`literature-triage-matrix` output): one row per paper — method, claim, evidence, limitation, relevance. |
 
