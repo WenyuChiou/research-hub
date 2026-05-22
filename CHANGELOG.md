@@ -22,6 +22,18 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` §1 named `literature-triage-matrix` as the default
+  prior-art tool but no step produced its matrix** (`skills/gap-to-topic/`,
+  plugin `0.3.1 → 0.3.2`).  The SKILL.md "orchestrates" paragraph + `Inputs`
+  + the §2 component input-contracts all referenced
+  `.research/literature_matrix.md` as an available input, yet the §1
+  numbered procedure only ran `search` — so an agent following §1 literally
+  never built the matrix (a "phantom input"; surfaced by a 2026-05-21
+  workflow audit).  §1 now has an explicit step 2 that feeds the
+  `search --adversarial --json` results to `literature-triage-matrix` to
+  produce the matrix; `.bib` and recall are renumbered to steps 3-4.
+  `references/dossier-template.md` Pipeline line updated.  Mirrored to
+  `src/research_hub/skills_data/gap-to-topic/`.
 - **`gap-to-topic` §1 `.bib` instruction was unworkable** (`skills/gap-to-topic/`,
   plugin `0.3.0 → 0.3.1`).  SKILL.md §1 step 2 and `references/dossier-template.md`
   told the skill to emit the §1 reference list via `cite --format bibtex`, but

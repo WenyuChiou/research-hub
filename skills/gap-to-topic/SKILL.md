@@ -58,20 +58,22 @@ no-go. The dossier is a thinking tool, not a polished report.
 In priority order:
 
 1. A research area or a candidate idea, stated by the user in conversation.
-2. `.research/literature_matrix.md` if it exists — prior-art context.
+2. `.research/literature_matrix.md` — produced in §1 step 2, or reused
+   (appended to) if an earlier run already wrote one.
 3. `.research/claims.yml` if it exists — only when the user is *also*
    drafting a manuscript; its `status: gap` claims cross-link to §2.
 4. The user's free-text answers during the §0 and §3 conversational steps.
 
 This skill orchestrates other research-hub capabilities as tools:
-`search --adversarial --json` (§1 recall + the metadata the `.bib` is
-built from) and `literature-triage-matrix` (§0/§1 prior art). `paper gaps`
+`search --adversarial --json` (§1 step 1 — recall + the metadata the
+`.bib` is built from) and `literature-triage-matrix` (§1 step 2 — turns
+the search results into the prior-art comparison matrix). `paper gaps`
 is used only when a relevant ingested cluster already exists — at
-topic-selection time it usually does not, so `literature-triage-matrix`
-is the default. Note: `cite --format bibtex` is **not** used for the §1
-`.bib` — it resolves identifiers only against an already-ingested Zotero
-library, and at topic-selection time the candidate papers are not
-ingested (see §1 step 2).
+topic-selection time it usually does not, so the
+`search` → `literature-triage-matrix` path is the default. Note:
+`cite --format bibtex` is **not** used for the §1 `.bib` — it resolves
+identifiers only against an already-ingested Zotero library, and at
+topic-selection time the candidate papers are not ingested (see §1 step 3).
 
 ## Workflow
 
@@ -100,7 +102,17 @@ look open when it is not. So this gate is **adversarial**:
    full per-paper metadata (title, DOI / arXiv ID, year, authors, venue).
    If `--adversarial` is unavailable (older CLI), run several query
    phrasings by hand and record the reduced recall confidence in the dossier.
-2. Build the **complete reference list** (real DOIs / arXiv IDs) as the
+2. Feed the retrieved papers to `literature-triage-matrix` (as its
+   input #0 — a Markdown list of titles + DOIs / arXiv IDs) to produce
+   `.research/literature_matrix.md`: the structured prior-art comparison
+   (per paper — method, main claim, evidence, limitation, relevance).
+   This matrix is a **real workflow output** — it is what the openness
+   judgement in step 4 and the §2 gates read, not an assumed
+   pre-existing input. If a `literature_matrix.md` from an earlier run
+   exists, `literature-triage-matrix` appends to it; if the skill is
+   unavailable, reason directly over the `search --json` results and
+   record the reduced structure in the dossier.
+3. Build the **complete reference list** (real DOIs / arXiv IDs) as the
    `.bib` companion **from the `search --json` metadata** — this is the
    trust artifact; the researcher must be able to verify "open" themselves.
    Do **not** use `cite --format bibtex` here: `cite` resolves identifiers
@@ -108,7 +120,8 @@ look open when it is not. So this gate is **adversarial**:
    time the candidate papers are not ingested. Every entry must carry a
    resolvable DOI or arXiv ID; drop any paper whose identifier did not
    resolve (an unverifiable reference is not a trust artifact).
-3. Record the recall-confidence verdict as a **headline**, not a footnote.
+4. Record the recall-confidence verdict as a **headline**, not a footnote,
+   and reason the per-gap openness over the step-2 matrix.
 
 A gap is never declared "open" on the basis of "absent from my corpus" —
 absence in a corpus is not absence in the literature.

@@ -12,7 +12,7 @@
 |---|---|
 | Area | <the research area> |
 | Compiled | <YYYY-MM-DD> |
-| Pipeline | research-hub: `search --adversarial --json` → gap-to-topic gates |
+| Pipeline | research-hub: `search --adversarial --json` → `literature-triage-matrix` → gap-to-topic gates |
 | Verdict grade | Screening-grade — assembles evidence; does NOT decide worth |
 
 ## §0 — Candidate breakthrough point(s)
@@ -78,7 +78,7 @@ The §1 reference list as BibTeX — the trust artifact that lets the
 researcher verify "open" independently. Built from the
 `search --adversarial --json` metadata (NOT from `cite --format bibtex`,
 which resolves only already-ingested Zotero items — see SKILL.md §1
-step 2). Every entry must have a resolvable DOI or arXiv ID.
+step 3). Every entry must have a resolvable DOI or arXiv ID.
 
 ### `<dossier>.gaps.yml`
 
