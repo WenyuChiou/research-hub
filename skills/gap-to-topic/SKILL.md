@@ -43,8 +43,8 @@ keeps all tool / pipeline mechanics in two appendices at the end.
 
 | Section | What it covers |
 |---|---|
-| Bottom line | the answer up front — verdict per named candidate, in plain words |
-| The candidates | 1–N candidate topics, each given a readable name; opening type stated in plain words (method-limitation vs unoccupied-application) |
+| Bottom line | the answer up front — a plain-language summary plus a **Decision scorecard** table (candidates × the 3 gates + verdict) |
+| The candidates | 1–N candidate topics in a roster table, each given a readable name; opening type stated in plain words (method-limitation vs unoccupied-application) |
 | Gate 1 — Is the gap still open? | is the gap genuinely unoccupied — backed by a complete, verifiable reference list |
 | Gate 2 — Would it be a real contribution? | dead-end history + new-capability-vs-extension |
 | Gate 3 — Is it feasible? | can the data / resources be obtained in time and budget |
