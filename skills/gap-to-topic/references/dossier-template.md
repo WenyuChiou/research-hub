@@ -12,7 +12,7 @@
 |---|---|
 | Area | <the research area> |
 | Compiled | <YYYY-MM-DD> |
-| Pipeline | research-hub: `search --adversarial` → `cite` → gap-to-topic gates |
+| Pipeline | research-hub: `search --adversarial --json` → gap-to-topic gates |
 | Verdict grade | Screening-grade — assembles evidence; does NOT decide worth |
 
 ## §0 — Candidate breakthrough point(s)
@@ -32,7 +32,7 @@
 > "open". The recall verdict is a headline, not a footnote.*
 
 - **Recall verdict:** <high / medium / low> — <N query phrasings searched,
-  M unique papers; from `search --adversarial`>
+  M unique papers; from `search --adversarial --json`>
 - **Closest prior work:** <papers that bear on whether the gap is filled>
 - **Per-gap openness:** [G1] open / partially-occupied / occupied — ...
 
@@ -75,9 +75,10 @@ any gate failing is a no-go.
 ### `<dossier>.bib`
 
 The §1 reference list as BibTeX — the trust artifact that lets the
-researcher verify "open" independently. Generated via
-`research-hub cite --format bibtex`. Every entry must have a resolvable
-DOI or arXiv ID.
+researcher verify "open" independently. Built from the
+`search --adversarial --json` metadata (NOT from `cite --format bibtex`,
+which resolves only already-ingested Zotero items — see SKILL.md §1
+step 2). Every entry must have a resolvable DOI or arXiv ID.
 
 ### `<dossier>.gaps.yml`
 
