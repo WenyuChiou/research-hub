@@ -2987,6 +2987,7 @@ def _search(
     cluster_slug: str | None = None,
     adversarial: bool = False,
     max_variants: int = 5,
+    screen: bool = False,
 ) -> int:
     cfg = get_config()
     index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
@@ -3036,13 +3037,55 @@ def _search(
     ingested = {normalize_doi(doi) for doi in index.doi_to_hits.keys() if doi}
     results = [r for r in results if normalize_doi(r.doi) not in ingested]
 
+    # --screen: fit-check BM25 relevance gate. Tags each result, never
+    # drops one (recall-preserving — gap-to-topic Gate 1 audits on the
+    # full retrieved count). Orthogonal to --rank-by (ordering is left
+    # untouched; screening only annotates).
+    verdicts: list[dict] | None = None
+    screening_summary: dict | None = None
+    if screen:
+        from research_hub.fit_check import screen_relevance
+
+        verdicts = screen_relevance([asdict(r) for r in results], query)
+        kept_n = sum(1 for v in verdicts if v["kept"])
+        screening_summary = {
+            "retrieved": len(results),
+            "kept": kept_n,
+            "screened_out": len(results) - kept_n,
+            "tier": (verdicts[0]["tier"] if verdicts else ""),
+        }
+        print(
+            f"[screen] {screening_summary['retrieved']} retrieved -> "
+            f"{screening_summary['kept']} kept, "
+            f"{screening_summary['screened_out']} screened out "
+            f"(gate tier: {screening_summary['tier'] or 'n/a'})",
+            file=sys.stderr,
+        )
+
     if to_papers_input:
         _emit_papers_input_json(results, cluster_slug)
         return 0
     if emit_json:
-        print(json.dumps([asdict(r) for r in results], indent=2, ensure_ascii=False))
+        if screen and verdicts is not None:
+            screened_results = []
+            for result, verdict in zip(results, verdicts):
+                row = asdict(result)
+                row["relevance"] = {
+                    "score": verdict["score"],
+                    "kept": verdict["kept"],
+                    "tier": verdict["tier"],
+                    "reason": verdict["reason"],
+                }
+                screened_results.append(row)
+            print(json.dumps(
+                {"screening_summary": screening_summary, "results": screened_results},
+                indent=2,
+                ensure_ascii=False,
+            ))
+        else:
+            print(json.dumps([asdict(r) for r in results], indent=2, ensure_ascii=False))
         return 0
-    for result in results:
+    for i, result in enumerate(results):
         line = (
             f"{result.title}\t{result.doi or result.arxiv_id}\t"
             f"{result.year or '????'}\t{result.citation_count}\t{result.source}"
@@ -3050,6 +3093,12 @@ def _search(
         if verify:
             verified = bool(result.doi) and verify_doi(result.doi).ok
             line += "\tVERIFIED" if verified else "\tUNVERIFIED"
+        if screen and verdicts is not None:
+            verdict = verdicts[i]
+            line += (
+                f"\t{'KEEP' if verdict['kept'] else 'SCREENED-OUT'}"
+                f"({verdict['score']})"
+            )
         print(line)
     return 0
 
@@ -5950,6 +5999,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=5,
         help="With --adversarial: max alternative query phrasings to search (default 5).",
     )
+    search_parser.add_argument(
+        "--screen",
+        action="store_true",
+        help="Apply the fit-check BM25 relevance gate to the results. Tags "
+        "each paper with a relevance score + keep/screened-out verdict and "
+        "prints a screening summary; does NOT drop papers (recall-preserving). "
+        "Composable with --adversarial / --rank-by / --json. With "
+        "--to-papers-input the summary still prints to stderr but the emitted "
+        "JSON carries no relevance annotations.",
+    )
     search_parser.add_argument("--json", action="store_true", help="Emit JSON array")
     search_parser.add_argument(
         "--to-papers-input",
@@ -7895,6 +7954,7 @@ def _main_dispatch(args, parser) -> int:
             cluster_slug=args.cluster,
             adversarial=args.adversarial,
             max_variants=args.max_variants,
+            screen=args.screen,
         )
     if args.command == "websearch":
         return _websearch(
