@@ -21,13 +21,9 @@ Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp
 
 ---
 
-## Install + first run
-
-Pick the path that matches the operator: a human researcher or the autonomous agent itself.
-
 ## Personae
 
-research-hub supports two primary user personae:
+Pick the path that matches the operator: a human researcher or the autonomous agent itself. research-hub supports two primary operator personae:
 
 - **Human researcher** (Wei-Ling persona): hydrology postdoc, knows Python pip + DOIs, never touched Claude / MCP / Obsidian. Start with [Human quickstart](#human-quickstart).
 - **Autonomous agent** (Claude Cowork / OpenClaw / Hermes host): the AI itself is the operator, not a human. Start with [Autonomous agent quickstart](#autonomous-agent-quickstart).
@@ -302,6 +298,7 @@ research-hub zotero backfill --tags --notes --apply
 | `research-hub auto` finds 0 papers / empty vault | Topic too narrow OR papers were quarantined by the authenticity gate (unresolved DOI, failed integrity, or relevance-unjudged) | Re-run with `--max-papers 20` / rephrase; run `research-hub quarantine list` to see rejected papers + reasons |
 | `research-hub auto` stops before searching: "no relevance judge on PATH" | Fail-closed relevance check and no `claude`/`codex`/`gemini` CLI found | Install a judge CLI, or re-run with `--no-fit-check` to skip relevance judging |
 | NotebookLM upload or generate fails | NotebookLM UI changed or login expired | Run `research-hub notebooklm login`; then resume with `research-hub notebooklm bundle/upload/generate/download --cluster <slug>` |
+| `notebooklm upload` worked yesterday and now fails on auth | Google's `__Secure-1PSIDTS` / `PSIDRTS` cookies expire roughly every 3.5h; `notebooklm keepalive` cannot refresh them server-side | Re-run `research-hub notebooklm login --auto-detect` — the browser opens, the cookies refresh on sign-in, the session saves automatically (no terminal interaction). Takes < 1 minute |
 | `auto --with-crystals` cannot find an LLM CLI | `claude`, `codex`, or `gemini` is not on PATH | Install one, or use `crystal emit` and `crystal apply` manually |
 | Claude Desktop cannot see the MCP server | MCP config is in the wrong file or host was not restarted | Check the host config path and restart Claude Desktop |
 | `init` reports Zotero warnings but you do not use Zotero | Persona expects Zotero | Re-run `research-hub setup --persona analyst` or `--persona internal` |
@@ -314,6 +311,23 @@ For broader checks, run:
 ```bash
 research-hub doctor --autofix
 ```
+
+---
+
+## Known limitations
+
+These are **platform or design boundaries**, not bugs — please do not file
+them as issues. They are documented here so you know what to expect and
+which workaround to reach for.
+
+| Limitation | What's actually happening | What to do |
+|---|---|---|
+| **IEEE Xplore PDFs / URLs are blocked** by anti-bot | IEEE returns an *"Unable to Load Page"* HTML stub to both our URL pre-check AND NotebookLM's server-side fetcher. The bundle ladder flags these as `likely_error_page` and warns. | Either (a) download the PDF through your institutional access and drop it on the Zotero item / upload it in the NotebookLM web UI manually, or (b) skip the IEEE source — the abstract is still in Zotero and the Obsidian note. |
+| **NotebookLM session expires ~every 3.5h** | Google's short-lived `__Secure-1PSIDTS` / `PSIDRTS` cookies are not refreshable by background polling. `notebooklm keepalive` exists but cannot rotate them server-side. | Re-run `research-hub notebooklm login --auto-detect` when a run reports an auth failure — < 1 minute, no terminal interaction. |
+| **`--no-llm-fit-check` can't filter "wrong sub-topic, right field"** | The no-LLM BM25 gate is designed to catch *blatant cross-field contamination* (e.g. pure hydrology with zero AI in an LLM cluster). It cannot tell "AI-agents-in-general" from "AI-agents-in-water-resources" — both score similarly on a lexical-only metric, so the gate is recall-biased and keeps both. | For topic-specific subset filtering, use the **default** LLM-judge path (drop `--no-llm-fit-check`). The LLM-judge layer is what's designed to make semantic relevance calls. |
+| **Cluster-overview LLM auto-fill writes English headings even when the scaffold is Chinese** | `topic.py` writes Chinese section headings (`## 核心問題`, `## 範圍定義`, …) for the empty scaffold, but `apply_overview` re-renders the file with English headings (`## Core Question`, `## Scope`, …) when the LLM fills it in. | Cosmetic — content is correct. If you prefer Chinese headings on the filled overview, hand-curate the section names after the first auto-fill (the markers ensure subsequent runs preserve your edits). |
+| **`auto_pipeline()` Python API stays opt-in for PDFs** (CLI is opt-out) | Programmatic callers — tests, library users — get `with_pdfs=False` by default so the PDF-attach network round-trips don't fire silently. The CLI hands in `True` from `BooleanOptionalAction`. | If you call `auto_pipeline()` directly and want PDFs attached, pass `with_pdfs=True` explicitly. CLI users get the default-on behaviour automatically; use `--no-with-pdfs` to opt out. |
+| **Slow / blocked publisher URLs sometimes poison the NotebookLM bundle** | Some publishers (Wiley paywalls, Frontiers oddly-routed PDFs, IEEE) return either a thin stub or an HTML error page that the bundle ladder admits because the URL pre-check passed. Downstream NotebookLM grounds on the stub instead of the paper. | Run `auto` and inspect the `[warn] N source(s) look like they did not ingest content` block. Replace the listed URLs with PDFs uploaded to the NotebookLM web UI for those papers. |
 
 ---
 
