@@ -32,13 +32,31 @@ Not for:
 In priority order:
 
 1. `.research/project_manifest.yml` if it exists — for project context (research_question may already be partially filled).
-2. `.research/design_brief.md` if it exists — for refresh, not first-run.
-3. `.research/literature_matrix.md` if it exists — for prior-art context when discussing identifiability.
-4. The user's free-text answers during the conversation.
+2. `.research/topic_dossier.gaps.yml` if it exists — Stage 2 handoff from `gap-to-topic` (plugin v0.3.12+). Read only the chosen `gaps[]` entry plus the top-level `open_questions[]`, NOT the full file. The chosen entry is identified by `verdict: conditional-go` (or `verdict: go`); the workflow §0 step pre-fills segment 1 (RQ) from `gaps[].statement` and segment 5 (risks) from `open_questions[]` + the specific concern hinted by `gaps[].feasibility`. This satisfies the conversational-skill rule below — no whole-corpus scan, only one structured handoff record.
+3. `.research/design_brief.md` if it exists — for refresh, not first-run.
+4. `.research/literature_matrix.md` if it exists — for prior-art context when discussing identifiability.
+5. The user's free-text answers during the conversation.
 
 Do NOT scan code, data, or PDFs. This is a conversational skill.
 
 ## Workflow
+
+### §0 — Detect Stage 2 handoff (gap-to-topic)
+
+Before starting the Socratic dialog, check whether `.research/topic_dossier.gaps.yml` exists.
+
+- **If absent** → behave exactly as before (skip to the 5-segment table below; no regression for users who run this skill standalone).
+- **If present** → filter `gaps[]` to entries with `verdict` in `{conditional-go, go}` (no-go verdicts are out of scope for Stage 3a; the user already decided not to pursue them). Then:
+  - **Filtered list has exactly one entry** → that's the chosen candidate. Auto-pre-fill:
+    - **Segment 1 (RQ)** ← `gaps[].statement` as the starting RQ to sharpen (NOT yet the final falsifiable form — segment 1 dialog still runs).
+    - **Segment 5 (Risk register)** ← one row per entry in `open_questions[]`, plus a row for the specific concern indicated by `gaps[].feasibility` (e.g. `feasible-with-effort` → a "binding constraint" risk row).
+    - Tell the user: *"I pre-filled segment 1 (RQ) and segment 5 (risks) from the `.gaps.yml` (Candidate `<id>` — `<verdict>`). Review and revise as we walk through."*
+  - **Filtered list has 2+ entries** → ask the user *"Which candidate are we designing for?"* before pre-filling. Use the user's answer as the chosen `gaps[]` entry. Do not assume.
+  - **Filtered list is empty** (every gap is `no-go`) → tell the user *"No viable candidate in this dossier — every gap is `no-go`. Nothing for Stage 3a to frame."* and stop. Do NOT proceed to the 5-segment dialog on a topic the dossier rejected.
+- **Segments 2 (mechanism), 3 (identifiability), 4 (validation) are NEVER pre-filled.** The `.gaps.yml` doesn't carry that material; pre-filling those segments with non-content corrupts the Socratic dialog. Leave them blank → `_TODO_` until the segment runs.
+- **Provenance.** When you write `.research/design_brief.md`, fill the frontmatter `source:` field with `topic_dossier.gaps.yml#<gap-id>` (e.g. `topic_dossier.gaps.yml#G2`) and the `gap_verdict:` field with a frozen snapshot of `verdict` + the first 60 chars of `verdict_reason`. This makes the brief self-contained — a future reader sees which dossier candidate this design was framed for.
+
+### §1 to §5 — the 5 Socratic segments
 
 Run the 5 Socratic segments **in order**, one at a time. For each, ask the listed questions, capture the user's answer, then save verbatim to the corresponding section of `.research/design_brief.md`. If the user can't answer a segment yet, write `_TODO: <reason>_` and move on; do not fabricate.
 
@@ -64,6 +82,8 @@ status: draft     # draft | reviewed | locked
 ```
 
 If the file already exists, **update don't replace**: keep human-edited sections intact, only fill blanks unless the user explicitly says "regenerate from scratch".
+
+**Provenance protection (v0.3.12+).** If the existing `design_brief.md` has frontmatter `source: topic_dossier.gaps.yml#<old-id>` and a different `gaps[]` entry is now being chosen (different id, OR `.gaps.yml` `generated:` date differs), ASK the user before refreshing — do not silently overwrite provenance. Phrasing: *"This brief was originally framed for `<old-id>` (`<old-verdict>`). The current `.gaps.yml` chooses `<new-id>` (`<new-verdict>`). Refresh and replace the provenance, or keep the old brief and start a new one?"*
 
 After saving, print a short report:
 

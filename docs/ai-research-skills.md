@@ -11,8 +11,8 @@ cover.
 |---|---|---|---|
 | 1. Discover sources | Find papers / data | research-hub | `research-hub`, `literature-triage-matrix` |
 | 2. Ingest + tag | Pull into Zotero / Obsidian | research-hub | `research-hub`, `zotero-library-curator` |
-| **2.5. Decide the topic** | 3-gate go/no-go on a candidate topic; produces a decision dossier | shared | `gap-to-topic` (emits `.gaps.yml` for the chosen candidate — Stage 3a wiring lands in v0.3.12) |
-| **3a. Frame the problem** | Sharpen RQ; design study | **YOU** (creative) | `research-design-helper` (Socratic guide; **v0.3.12+** will pre-fill from `gap-to-topic`'s `.gaps.yml` if present) |
+| **2.5. Decide the topic** | 3-gate go/no-go on a candidate topic; produces a decision dossier | shared | `gap-to-topic` (emits `.gaps.yml` for the chosen candidate — read by Stage 3a in plugin v0.3.12+) |
+| **3a. Frame the problem** | Sharpen RQ; design study | **YOU** (creative) | `research-design-helper` (Socratic guide; pre-fills segments 1 + 5 from `gap-to-topic`'s `.gaps.yml` if present, v0.3.12+) |
 | **3b. Plan artifacts** | Manifest + experiment matrix | mechanical | `research-context-compressor`, `research-project-orienter` |
 | 4. Design & build the model | Implement | YOU + cross-cutting tools | (see Cross-cutting tools below) |
 | 5. Run experiments | Execute | YOU | (cross-cutting) |
@@ -162,9 +162,11 @@ register — and saves the result to `.research/design_brief.md`.
 Does NOT invent the research question or model design; like
 `research-context-compressor`, it leaves blanks rather than guess.
 
-**Reads**: `.research/project_manifest.yml`, optional `design_brief.md`
-(refresh mode), optional `literature_matrix.md` (for prior-art context
-during identifiability discussion).
+**Reads**: `.research/project_manifest.yml`, optional
+`.research/topic_dossier.gaps.yml` (Stage 2 handoff, v0.3.12+ — pre-fills
+segments 1 and 5 from the chosen `gaps[]` entry + `open_questions[]`),
+optional `design_brief.md` (refresh mode), optional `literature_matrix.md`
+(for prior-art context during identifiability discussion).
 **Writes**: `.research/design_brief.md`.
 
 Trigger phrases: "frame this research question", "design my study",
@@ -187,13 +189,17 @@ Word memo via `scripts/dossier_to_docx.js`, v0.3.10+),
 `.research/topic_dossier.bib`, `.research/topic_dossier.gaps.yml`,
 `.research/literature_matrix.md`.
 
-**Handoff to Stage 3a**: `.gaps.yml` is the machine-readable contract
-that `research-design-helper` **will read in v0.3.12+** to pre-fill its
-Socratic dialog (chosen candidate → segment 1 RQ; `open_questions[]` →
-segment 5 risks). The schema (top-level `downstream_consumer:
-research-design-helper` key as forward-compat hook) is documented in
-`references/dossier-template.md` Schema reference section; the wire-up
-itself ships in plugin v0.3.12 (Stage 2 → 3a integration PR).
+**Handoff to Stage 3a (plugin v0.3.12+)**: `.gaps.yml` is the
+machine-readable contract that `research-design-helper` reads to
+pre-fill its Socratic dialog — chosen candidate's `statement` →
+segment 1 RQ; `open_questions[]` → segment 5 risks. Candidate
+selection is verdict-aware (filters `gaps[]` to
+`verdict in {conditional-go, go}`). The schema (with the forward-compat
+`downstream_consumer: research-design-helper` top-level key) is
+documented in `references/dossier-template.md` Schema reference
+section. Provenance flows forward: `design_brief.md` frontmatter
+gets `source: topic_dossier.gaps.yml#<gap-id>` + a `gap_verdict`
+snapshot.
 
 Trigger phrases: "is this research gap worth pursuing", "help me pick
 a thesis topic", "is this idea already taken", "find me a defensible
