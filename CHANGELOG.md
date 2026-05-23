@@ -38,6 +38,27 @@ graph rebuild (link out to the real tools instead)._
   (reproducibility log) → Appendix B Deliverable File List. SKILL.md
   "What it produces" updated to match. Mirrored to
   `src/research_hub/skills_data/gap-to-topic/`.
+- **Cluster overview LLM auto-fill now actually fires on fresh clusters**
+  (`cluster_overview.py`, `vault/hub_overview.py`,
+  `tests/test_v071_cluster_overview.py`, `tests/test_hub_overview.py`).
+  The `_CHINESE_TEMPLATE_MARKER` constant in `cluster_overview.py` and
+  the `_SCAFFOLD_MARKERS` tuple in `vault/hub_overview.py` both stored
+  **mojibake** from a historical cp950 ↔ UTF-8 round-trip, so they never
+  matched the actual Chinese placeholder phrases `topic.py` writes for a
+  new cluster (`一到兩句話說清楚...` for TL;DR, `用一句話寫下...` for
+  核心問題). Net effect: every brand-new cluster was immediately
+  classified as "hand-curated", `apply_overview` silently refused to
+  call the LLM, and the sibling `populate_overview` path likewise
+  refused to refresh those sections — leaving the `00_overview.md`
+  stuck at the empty scaffolding (TL;DR / 核心問題 / 範圍定義 / 領域地圖
+  / 必讀論文 / 時間線 / 開放問題 all blank). The markers are now the
+  real opening phrases (`一到兩句話`, `用一句話寫下`); the legacy
+  mojibake markers stay so vaults whose existing `00_overview.md` still
+  contains the corrupted bytes are still recognised and refreshed
+  cleanly. The test fixture `_template_text` was likewise mojibaked and
+  now mirrors `topic.py` verbatim, plus two dedicated regression tests
+  (one per code path) pin the marker ↔ template round-trip so this
+  can't drift silently again.
 - **`gap-to-topic` dossier — section-by-section rework for researcher value**
   (`skills/gap-to-topic/`, plugin `0.3.7 → 0.3.8`).  A section-by-section
   review with the maintainer, plus a Codex evaluation, reworked

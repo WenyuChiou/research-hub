@@ -19,7 +19,16 @@ from typing import Optional
 from research_hub.summarize import _read_cluster_papers_with_abstracts
 
 
-_CHINESE_TEMPLATE_MARKER = "銝?啣?亥店"
+# The Chinese scaffold written by topic.py for a new cluster opens its
+# TL;DR with this exact phrase. Both the cluster and sub-topic variants
+# start with the same five characters, so this prefix is a reliable
+# "still untouched placeholder" sentinel — keep it in sync with the
+# template in topic.py (lines ~29 / ~101). Historical note: this
+# constant previously stored mojibake from a cp950/UTF-8 round-trip,
+# which never matched the real placeholder, so the auto-fill step
+# always saw the scaffold as hand-curated and silently skipped
+# LLM enrichment.
+_CHINESE_TEMPLATE_MARKER = "一到兩句話"
 
 
 @dataclass

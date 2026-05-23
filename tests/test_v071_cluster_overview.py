@@ -43,7 +43,11 @@ placeholder
 
 
 def _template_text(title: str, cluster_slug: str, tldr_line: str | None = None) -> str:
-    tldr = tldr_line or "銝?啣?亥店隤芣?璆?cluster ?函?蝛嗡?暻潦圾瘙箔?暻澆?憿?"
+    # Mirror the Chinese scaffold in src/research_hub/topic.py (≈line 29).
+    # If you change the placeholder there, change it here too — the marker
+    # constant _CHINESE_TEMPLATE_MARKER in cluster_overview.py only
+    # recognises this exact opening (一到兩句話 / "一到兩句話").
+    tldr = tldr_line or "一到兩句話說清楚這個 cluster 在研究什麼、解決什麼問題。"
     return f"""---
 type: topic-overview
 cluster: {cluster_slug}
@@ -59,10 +63,10 @@ status: draft
 > {tldr}
 ^tldr
 
-## ?詨???
+## 核心問題
 
 > [!question]
-> ?其??亥店撖思?????銝剖??????
+> 用一句話寫下這個領域的中心開放問題。
 ^core-question
 """
 
@@ -156,6 +160,31 @@ def test_apply_overview_preserves_frontmatter_and_anchors(cfg):
     assert "^core-question" in written
     assert "This cluster studies LLM-based agents for flood response." in written
     assert "銝?啣?亥店" not in written
+    # No mojibake (cp950/UTF-8 round-trip residue) leaks into the output ...
+    # ... and the live Chinese placeholder was actually replaced by LLM
+    # content (not silently preserved as "hand-curated").
+    assert "一到兩句話" not in written  # "一到兩句話"
+
+
+def test_apply_overview_treats_chinese_scaffold_placeholder_as_untouched(cfg):
+    """Regression: _CHINESE_TEMPLATE_MARKER must match the placeholder
+    phrase topic.py actually writes for a fresh cluster (一到兩句話...).
+    When it drifted into mojibake the auto-fill step silently treated
+    every brand-new scaffold as "hand-curated" and never called the
+    LLM, so every cluster's overview stayed at the empty template
+    forever. This test pins the round-trip end to end."""
+    overview_path = cfg.hub / "test-cluster" / "00_overview.md"
+    overview_path.write_text(_template_text("Test Cluster", "test-cluster"), encoding="utf-8")
+
+    result = apply_overview(cfg, "test-cluster", _valid_payload(), force=False)
+
+    # Fresh scaffold -> placeholder -> NOT hand-curated -> write the LLM payload.
+    assert result.written is True, (
+        "fresh Chinese scaffold must be detected as a placeholder; if this "
+        "test fails the marker in cluster_overview.py has drifted out of "
+        "sync with topic.py's template (likely re-mojibaked)"
+    )
+    assert result.skipped is False
 
 
 def test_apply_overview_refuses_to_overwrite_filled_overview_without_force(cfg):
