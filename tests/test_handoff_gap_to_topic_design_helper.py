@@ -299,6 +299,48 @@ def test_context_compressor_skill_md_outputs_show_provenance_from_gap() -> None:
     )
 
 
+def test_design_helper_has_brief_to_docx_script_and_skill_md_section() -> None:
+    """v0.3.14 (F4 fast-follow): research-design-helper ships
+    `scripts/brief_to_docx.js` as the sister generator to
+    gap-to-topic's `scripts/dossier_to_docx.js`. The .docx is an
+    optional convenience for human review (not contracted output).
+    """
+    script_path = (
+        REPO_ROOT / "skills" / "research-design-helper" / "scripts" / "brief_to_docx.js"
+    )
+    assert script_path.exists(), (
+        "research-design-helper/scripts/brief_to_docx.js missing — "
+        "v0.3.14 F4 ship contract broken"
+    )
+    # Default stem must be design_brief, not the dossier sibling's default
+    script_text = script_path.read_text(encoding="utf-8")
+    assert '|| "design_brief"' in script_text, (
+        "brief_to_docx.js default stem is not `design_brief` — copy "
+        "from dossier_to_docx.js was incomplete (forgot to change the "
+        "fallback in the ARG line)"
+    )
+    # SKILL.md gains the optional .docx section
+    skill_text = DESIGN_HELPER_SKILL.read_text(encoding="utf-8")
+    assert "## Generate .docx (optional" in skill_text, (
+        "research-design-helper SKILL.md missing the `## Generate .docx "
+        "(optional ...)` section that documents brief_to_docx.js usage"
+    )
+    # Mirror parity check (skills_data/ has the same script)
+    mirror_path = (
+        REPO_ROOT
+        / "src"
+        / "research_hub"
+        / "skills_data"
+        / "research-design-helper"
+        / "scripts"
+        / "brief_to_docx.js"
+    )
+    assert mirror_path.exists(), (
+        "Mirror `src/research_hub/skills_data/research-design-helper/"
+        "scripts/brief_to_docx.js` missing — version-sync test will fail"
+    )
+
+
 def test_design_helper_skill_md_segment_1_no_prefill_annotation_rule() -> None:
     """v0.3.13 (F2 fast-follow): §0 must explicitly forbid writing a
     `_PRE-FILL_`-style annotation inside the design_brief.md file
