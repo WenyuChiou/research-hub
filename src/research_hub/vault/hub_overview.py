@@ -25,8 +25,16 @@ REBUILD_DEBOUNCE_THRESHOLD = 10
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
 _SCAFFOLD_MARKERS = (
-    "銝?啣?亥店",
+    # Mojibake from a legacy cp950 ↔ UTF-8 round-trip — kept so older
+    # vaults whose 00_overview.md still has the corrupted bytes are
+    # still recognised as scaffold and refreshed cleanly.
+    "銝?啣?亥店",
     "?其??亥店撖思?",
+    # Real Chinese openings written by topic.py for fresh clusters
+    # (TL;DR line ~29 / line ~101 and 核心問題 line ~35 / line ~107).
+    # Mirror cluster_overview.py:_CHINESE_TEMPLATE_MARKER for the TL;DR side.
+    "一到兩句話",
+    "用一句話寫下",
     "TODO",
     "[TODO]",
 )
