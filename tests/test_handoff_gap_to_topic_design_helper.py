@@ -387,6 +387,70 @@ def test_design_brief_template_has_placeholder_segments_field() -> None:
     )
 
 
+def test_paper_memory_yaml_schemas_documents_file_sentinel_values() -> None:
+    """v0.3.16 (F-cross2 fast-follow): figures.yml `file:` field has no
+    natural value when figures are embedded inside .docx with no
+    separable source file. v0.3.16 documents sentinel values
+    (`embedded-in-manuscript`, `embedded-in-supporting-information`,
+    `embedded-in-presentation`) in yaml-schemas.md so downstream
+    consumers (academic-writing-skills figure-text checks) know how
+    to interpret them.
+    """
+    schemas_doc = (
+        REPO_ROOT / "skills" / "paper-memory-builder" / "references" / "yaml-schemas.md"
+    )
+    assert schemas_doc.exists(), f"missing yaml-schemas.md: {schemas_doc}"
+    text = schemas_doc.read_text(encoding="utf-8")
+    # All three sentinels must be documented in the schema doc
+    for sentinel in (
+        "embedded-in-manuscript",
+        "embedded-in-supporting-information",
+        "embedded-in-presentation",
+    ):
+        assert sentinel in text, (
+            f"figures.yml `file:` sentinel `{sentinel}` not documented "
+            f"in yaml-schemas.md — F-cross2 ship contract broken"
+        )
+    # W1 hardening: verify the documentation table header is present,
+    # not just sentinel words floating in an example block (table could
+    # be deleted while example still references sentinels)
+    assert "| Sentinel | Use when |" in text, (
+        "yaml-schemas.md sentinel-values TABLE header missing — table "
+        "may have been removed while example YAML still references "
+        "sentinels (W1 from v0.3.16 code-reviewer)"
+    )
+
+
+def test_paper_memory_skill_md_documents_evidence_artifact_scanning() -> None:
+    """v0.3.16 (F-cross3 fast-follow): paper-memory-builder SKILL.md
+    Inputs section now has a "Scanning the paper repo for evidence
+    artifacts" sub-section that documents non-figure evidence types
+    (simulation CSVs, analysis scripts, drawio sources, reviewer-
+    response artifacts) and shows how to populate
+    claims[].evidence_artifacts with their paths.
+    """
+    skill_md = REPO_ROOT / "skills" / "paper-memory-builder" / "SKILL.md"
+    text = skill_md.read_text(encoding="utf-8")
+    inputs_section = _extract_section(text, "## Inputs")
+    assert "Scanning the paper repo" in inputs_section, (
+        "SKILL.md Inputs section missing `### Scanning the paper repo for "
+        "evidence artifacts` sub-section — F-cross3 ship contract broken"
+    )
+    # Must mention all 4 non-figure evidence types (W2 hardening:
+    # was "at least 3 of 4" — tightened to require all 4 so a future
+    # edit can't silently delete one type and still pass the test)
+    for artifact_type in (
+        "Simulation",
+        "Analysis scripts",
+        "Drawio",
+        "Reviewer-response",
+    ):
+        assert artifact_type in inputs_section, (
+            f"Scanning sub-section missing `{artifact_type}` — incomplete "
+            f"coverage of non-figure evidence artifact types"
+        )
+
+
 def test_design_helper_has_brief_to_docx_script_and_skill_md_section() -> None:
     """v0.3.14 (F4 fast-follow): research-design-helper ships
     `scripts/brief_to_docx.js` as the sister generator to

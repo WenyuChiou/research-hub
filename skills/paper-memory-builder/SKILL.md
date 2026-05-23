@@ -48,6 +48,53 @@ In priority order:
 5. **`.research/literature_matrix.md`** — for citation key lookup if the
    manuscript references "Smith 2024" but you need to disambiguate.
 
+### Scanning the paper repo for evidence artifacts (v0.3.16+)
+
+Beyond the manuscript + figures, real research repos typically contain
+sibling artifacts that populate `claims[].evidence_artifacts` for
+non-figure evidence. When scanning, look for:
+
+- **Simulation / experiment outputs** — `*.csv`, `*.parquet`, `*.npz`,
+  `*.h5`, `*.json` log files under `outputs/`, `results/`, or
+  repo-root sibling dirs. Common patterns: `<experiment_id>_log.csv`,
+  `run_log.csv`, `adaptation_log.csv`. These back claims like
+  *"χ²=891, p<0.0001 across 50 runs"* (the chi-squared output came from
+  the per-agent decision log, not from a figure).
+- **Analysis scripts** — `*.py`, `*.R`, `*.jl`, `*.ipynb` files that
+  produce evidence numbers. The script itself is rarely the evidence
+  artifact, but its OUTPUT path is. Trace the script → output pairing
+  if the manuscript cites a number computed by a script.
+- **Drawio / SVG framework diagrams** — `*.drawio`, `*.svg` sources for
+  conceptual figures (e.g. framework architecture, decision-flow
+  diagrams). These often back claim text like *"Figure 1 shows the
+  module architecture"* even when the embedded image in the .docx is
+  rendered from the drawio source.
+- **Reviewer-response artifacts** — `Review Response-YYYYMMDD.docx`
+  files (operator-side response prep). Not consumed by
+  `paper-memory-builder` directly but listed here as a typical sibling
+  artifact; `academic-writing-skills` reviewer-response workflow uses
+  these.
+
+Populate `claims[].evidence_artifacts` with the artifact PATH (relative
+to the paper repo root), not the artifact contents. Example:
+
+```yaml
+- id: C8
+  text: "Chi-squared test on coping-appraisal keywords yields χ²=891, p<0.0001..."
+  evidence_artifacts:
+    - "outputs/llm-abm_decision_log.csv"        # raw per-agent text used in chi-sq
+    - "scripts/analyze_appraisal_keywords.py"   # script that ran the test
+    - "Result section §4.2 (chi-squared paragraph)"  # manuscript anchor
+  figure_or_table: ["TabS5"]
+  status: draft
+```
+
+This makes the audit trail traceable end-to-end: claim → manuscript
+sentence → figure/table reference → underlying data file → analysis
+code. Cross-plugin consumers like `academic-writing-skills` (claim-
+evidence audit) can then verify the chain is intact before accepting
+the claim as supported.
+
 ## Outputs
 
 Write to `<project-root>/.paper/`:

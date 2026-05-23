@@ -66,6 +66,39 @@ figures:
 
 **Required per figure:** `id`, `file`, `supports_claims` (may be `[]`).
 
+### `file:` sentinel values (v0.3.16+)
+
+For figures that have NO separable source file on disk, `file:`
+accepts these documented sentinel values instead of a real path:
+
+| Sentinel | Use when |
+|---|---|
+| `embedded-in-manuscript` | Figure is embedded directly inside the `.docx` / `.tex` / Word manuscript with no separable source file (typical for Word-based research workflows where figures are pasted or rendered inline). |
+| `embedded-in-supporting-information` | Same as above, but for figures in the SI / Appendix manuscript file. |
+| `embedded-in-presentation` | Figure originates in a `.pptx` deck (some workflows author in PowerPoint and export to manuscript). |
+
+Downstream consumers (`academic-writing-skills` figure-text consistency
+checks, future figure-archive tooling) treat sentinel values as
+"present in manuscript, no separable artifact to verify
+independently." This is a documented limitation, NOT a permanent
+solution — a future paper-memory-builder version may add a
+pre-processing step that extracts embedded figures to a
+`.paper/figures/` subdir, at which point the sentinel becomes a real
+path. Until then, the sentinel is the honest representation.
+
+Example:
+
+```yaml
+figures:
+  - id: "Fig2"
+    file: "embedded-in-manuscript"
+    panels: ["(a) baseline", "(b) intervention"]
+    key_numbers: ["10-year simulation", "50 runs"]
+    supports_claims: ["C1", "C4"]
+    caption_in_manuscript: >-
+      Figure 2. Yearly adaptation trajectories ...
+```
+
 ## See also
 
 - `revision_history_schema.md` — schema + append-only rules for `revision_history.yml`.

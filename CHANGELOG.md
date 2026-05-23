@@ -140,6 +140,47 @@ graph rebuild (link out to the real tools instead)._
   `src/research_hub/skills_data/gap-to-topic/scripts/`.
 
 ### Fixed
+- **`paper-memory-builder` doc enhancements — F-cross2 figures.yml
+  sentinel + F-cross3 evidence-artifact scanning** (`skills/paper-memory-builder/SKILL.md`,
+  `skills/paper-memory-builder/references/yaml-schemas.md`,
+  `tests/test_handoff_gap_to_topic_design_helper.py`, plugin
+  `0.3.15 → 0.3.16`). Two small doc improvements surfaced by the
+  Stage 7-8 dogfood (`~/.claude/audits/dogfood_runs/2026-05-23-paper-memory-academic-writing-stage-7-8/VERIFICATION.md`):
+  - **F-cross2 — figures.yml `file:` sentinel values.** The schema
+    requires `figures[].file` (required field), but real-world
+    Word-based research workflows often have figures embedded
+    directly inside the `.docx` manuscript with no separable source
+    file. Adds a `### file: sentinel values (v0.3.16+)` section to
+    `references/yaml-schemas.md` documenting three sentinels:
+    `embedded-in-manuscript`, `embedded-in-supporting-information`,
+    `embedded-in-presentation`. Downstream consumers
+    (academic-writing-skills figure-text checks, future
+    figure-archive tooling) treat these as "present in manuscript,
+    no separable artifact to verify independently." Documented
+    limitation, not a permanent solution — future versions may add
+    a pre-processing step that extracts embedded figures.
+  - **F-cross3 — SKILL.md "Scanning the paper repo for evidence
+    artifacts" sub-section.** The previous Inputs section only
+    described figures + manifest files but real research repos
+    contain many non-figure evidence artifacts (simulation CSVs,
+    analysis scripts, drawio sources, reviewer-response artifacts).
+    The new sub-section documents typical artifact types and shows
+    an example of populating `claims[].evidence_artifacts` with
+    artifact PATHs for non-figure evidence (e.g. a chi-squared test
+    claim might cite an `outputs/llm-abm_decision_log.csv` + the
+    analysis script that ran it, in addition to the manuscript
+    anchor). Makes the audit trail end-to-end traceable.
+  - **Tests:** added 2 new test cases to
+    `test_handoff_gap_to_topic_design_helper.py`:
+    (1) `test_paper_memory_yaml_schemas_documents_file_sentinel_values`
+    asserts all 3 sentinels appear in `yaml-schemas.md`;
+    (2) `test_paper_memory_skill_md_documents_evidence_artifact_scanning`
+    asserts the SKILL.md Inputs section has the new sub-section AND
+    mentions at least 3 non-figure artifact types (Simulation,
+    Analysis scripts, Drawio).
+  - Pure additive prose change. Mirrored to
+    `src/research_hub/skills_data/paper-memory-builder/`.
+
 - **Codex review tightenings — multi-eligible fixture + design_brief
   placeholder marker** (`tests/fixtures/topic_dossier_multi_eligible_sample.gaps.yml`,
   `skills/research-design-helper/references/design_brief_template.md`,
