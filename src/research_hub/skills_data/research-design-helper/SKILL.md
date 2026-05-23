@@ -96,6 +96,34 @@ After saving, print a short report:
   Suggested next: refine the validation baseline, then re-run with "regenerate from scratch" to lock the brief.
 ```
 
+## Generate .docx (optional, plugin v0.3.14+)
+
+After writing `.research/design_brief.md`, an **optional** Word version
+can be generated via the sister script at
+`scripts/brief_to_docx.js`. The `.docx` is a convenience for sharing the
+brief with advisors / committee members who prefer Word — it is NOT
+part of the contracted Stage 3a output and is not consumed by
+downstream skills (Stage 3b reads `design_brief.md` frontmatter + §1
+directly).
+
+```bash
+# From the directory that contains design_brief.md:
+node /path/to/skills/research-design-helper/scripts/brief_to_docx.js design_brief --no-toc
+
+# zh-TW variant (auto-selects Microsoft JhengHei):
+node /path/to/skills/research-design-helper/scripts/brief_to_docx.js design_brief.zh-TW --no-toc
+```
+
+Prerequisite: `npm install -g docx` (one-time). The `--no-toc` flag is
+recommended for design briefs — they're typically short enough that
+Word's auto-generated empty TOC field is more distracting than useful.
+
+The script is a near-byte copy of the `gap-to-topic`
+`scripts/dossier_to_docx.js` generator (same Markdown → Word logic,
+same font auto-selection, same separator-row skip). The dossier's
+verdict-colour regex is inherited verbatim but does not fire on design
+brief content — see `scripts/README.md` for the rationale.
+
 ## Token-saving behavior
 
 - Don't repeat the user's answers back at length — quote in the written brief, summarize one sentence in chat.

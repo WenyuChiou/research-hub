@@ -41,6 +41,37 @@ graph rebuild (link out to the real tools instead)._
   flag still makes sense.
 
 ### Added
+- **`brief_to_docx.js` ships inside `skills/research-design-helper/scripts/`**
+  (plugin `0.3.13 → 0.3.14`). Sister script to
+  `skills/gap-to-topic/scripts/dossier_to_docx.js` — same Markdown → Word
+  converter (heading styles, bullet lists via numbering reference,
+  tables with dual-width DXA, en / zh-TW font auto-select, Markdown
+  separator-row skip), but default stem is `design_brief` instead of
+  `topic_dossier`. Makes the Stage 3a artifact shareable with advisors
+  / committee members who prefer Word over Markdown.
+  - **Not part of the contracted Stage 3a output.** `design_brief.md`
+    remains the canonical artifact; the `.docx` is an optional
+    convenience for human consumption only. Downstream skills (Stage
+    3b `research-context-compressor`) read the `.md` frontmatter +
+    section 1 directly, not the `.docx`.
+  - **Verdict-colour regex inherited verbatim but does NOT fire on
+    design brief content** — no "Do not pursue" / "Not assessed" /
+    "不予推進" / "未評估" strings appear in a design brief. Keeping
+    the regex unchanged means a single fix to the dossier generator
+    lands in both scripts via parallel PRs.
+  - SKILL.md adds `## Generate .docx (optional, plugin v0.3.14+)`
+    section between `## Output` and `## Token-saving behavior`,
+    mirroring the gap-to-topic `§4.5 Generate .docx` pattern.
+  - `scripts/README.md` ships alongside, documenting prereq
+    (`npm install -g docx`), invocation examples (en + zh-TW), and
+    the design-brief-specific deviation (the regex no-op).
+  - New test
+    `test_design_helper_has_brief_to_docx_script_and_skill_md_section`
+    asserts `scripts/brief_to_docx.js` exists, the SKILL.md has the
+    new `## Generate .docx (optional` heading, and the script's
+    default stem is `design_brief` not `topic_dossier`.
+  - Mirrored to `src/research_hub/skills_data/`.
+
 - **Stage 2 → 3a → 3b handoff wiring**
   (`skills/research-design-helper/`, `skills/research-context-compressor/`,
   `tests/fixtures/topic_dossier_sample.gaps.yml`,
