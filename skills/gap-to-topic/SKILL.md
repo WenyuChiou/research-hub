@@ -1,6 +1,6 @@
 ---
 name: gap-to-topic
-description: Turn a research area into a go/no-go decision dossier for ONE candidate thesis/proposal topic — a 3-gate verdict (is the gap open? is it a contribution? is it feasible?) with the evidence laid out so the researcher can verify it. Use when the user asks "is this gap worth pursuing", "help me pick a thesis topic", "is this idea already taken", "find me a defensible research gap", "vet this research idea before I commit", or "should I do this". NOT a literature review (use `literature-triage-matrix` for a comparison matrix) and NOT a study design (use `research-design-helper` once a topic is chosen). Produces a `.research/topic_dossier.md` plus a `.bib` and a `.gaps.yml`.
+description: Turn a research area into a go/no-go decision dossier for ONE candidate thesis/proposal topic — a 3-gate verdict (is the gap open? is it a contribution? is it feasible?) with the evidence laid out so the researcher can verify it. Use when the user asks "is this gap worth pursuing", "help me pick a thesis topic", "is this idea already taken", "find me a defensible research gap", "vet this research idea before I commit", or "should I do this". NOT a literature review (use `literature-triage-matrix` for a comparison matrix) and NOT a study design (use `research-design-helper` once a topic is chosen). Produces a `.research/topic_dossier.md`, a `.research/topic_dossier.docx` (Word, colour-coded), a `.bib`, and a `.gaps.yml`.
 compatibility: Pure agentskills.io-spec skill. Domain-agnostic; works alongside Zotero/Obsidian/NotebookLM workflows but requires none of them.
 ---
 
@@ -37,12 +37,14 @@ Not for:
 
 ## What it produces
 
-`.research/topic_dossier.md` — a **research-grade decision memo**: first
-page enables a decision; the body supports verification; the appendices
-support a re-run. Reads top-to-bottom in Word with no decoding — no codes
-(`G1`/`G2` stay only in `.gaps.yml`), no decorative glyphs, plain-language
-verdicts, decision-relevant tables in the body and reference / log tables
-in the appendices.
+`.research/topic_dossier.md` and `.research/topic_dossier.docx` — a
+**research-grade decision memo** in Markdown and as a colour-coded Word
+document: first page enables a decision; the body supports verification; the
+appendices support a re-run. Reads top-to-bottom in Word with no decoding —
+no codes (`G1`/`G2` stay only in `.gaps.yml`), no decorative glyphs,
+plain-language verdicts, decision-relevant tables in the body and reference /
+log tables in the appendices. Verdict cells are colour-coded in the .docx
+(light red / yellow / green / grey by verdict phrase, bilingual en + zh-TW).
 
 | Section | What it covers |
 |---|---|
@@ -180,6 +182,26 @@ data public? what does it cost? how long to obtain? — and record a verdict.
 The dossier ends by stating explicitly: it has assembled the three
 gate-verdicts; whether the gap is *worth doing* is the researcher's and
 advisor's call. The skill never makes that call.
+
+### §4.5 — Generate .docx
+
+After `.research/topic_dossier.md` is written, run the bundled generator to
+produce the matching Word deliverable:
+
+```bash
+# From the dossier's output directory (e.g. .research/ or en/)
+node /path/to/skills/gap-to-topic/scripts/dossier_to_docx.js topic_dossier [--no-toc]
+```
+
+Prerequisite: `npm install -g docx` (or `cd scripts && npm install docx` for a
+local install). See `scripts/README.md` for full invocation details and the
+zh-TW case.
+
+The script produces `topic_dossier.docx` alongside the `.md`. It colour-codes
+verdict cells (light red / yellow / green / grey), auto-selects font
+(Microsoft JhengHei for zh-TW filenames, Arial otherwise), skips Markdown
+separator rows, and inserts a TOC + page break after the first table (suppress
+with `--no-toc`).
 
 ## Honesty rules
 

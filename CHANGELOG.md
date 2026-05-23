@@ -40,6 +40,23 @@ graph rebuild (link out to the real tools instead)._
   (`--with-pdfs` only) — they are lower-level entry points where an explicit
   flag still makes sense.
 
+### Added
+- **`dossier_to_docx.js` ships inside `skills/gap-to-topic/scripts/`**
+  (plugin `0.3.9 → 0.3.10`). `topic_dossier.docx` is now a first-class
+  contracted deliverable of the `gap-to-topic` skill. The generator converts
+  `topic_dossier.md` to a styled Word document using `docx` 9.x: heading
+  styles (H1/H2 navy, H3 dark grey), bullet lists via numbering reference,
+  tables with dual-width DXA column sizing, bilingual verdict colour coding
+  (light red "Do not pursue" / "不予推進", light yellow conditional
+  "Worth pursuing … only if" / "值得推進…條件", light green unconditional,
+  light grey "Not assessed" / "未評估"), Markdown separator-row skip, and an
+  optional TOC + page break after the first table (`--no-toc` to suppress).
+  Font auto-selects: filename matching `.zh|zh-|zh_|-tw|-cn` → Microsoft
+  JhengHei; else Arial. Prerequisite: `npm install -g docx`. SKILL.md updated
+  with §4.5 "Generate .docx" workflow step; front-matter description and "What
+  it produces" updated to list `.docx` as a first-class artifact. Mirrored to
+  `src/research_hub/skills_data/gap-to-topic/scripts/`.
+
 ### Fixed
 - **`gap-to-topic` dossier reflowed as a 7-section research-grade decision
   memo** (`skills/gap-to-topic/`, plugin `0.3.8 → 0.3.9`). The v0.3.8
