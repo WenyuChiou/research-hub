@@ -79,7 +79,7 @@ def auto_pipeline(
     dry_run: bool = False,
     print_progress: bool = True,
     zotero_batch_size: int = 50,
-    with_pdfs: bool = False,
+    with_pdfs: bool = True,
     with_summary: bool = False,
     peer_reviewed: bool = False,
     include_suspect_urls: bool = False,

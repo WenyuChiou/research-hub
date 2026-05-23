@@ -21,6 +21,25 @@ UI scope is capped here by decision: the dashboard stays a thin
 status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
+### Changed
+- **`auto --with-pdfs` is now ON by default** (`cli.py`, `auto.py`). The `auto`
+  subcommand attaches open-access PDFs from arXiv/OpenAlex/Unpaywall/Crossref
+  to the ingested Zotero items as part of every run; previously `--with-pdfs`
+  had to be opted in explicitly. The flag uses `argparse.BooleanOptionalAction`,
+  so `--no-with-pdfs` is the new opt-out for runs where you only want the
+  NotebookLM bundle. Rationale: the bundle ladder already downloaded the PDFs
+  for NLM but they never made it into Zotero, leaving the
+  `cluster/pdf_coverage` doctor check stuck at 0%. To keep the Python API and
+  CLI in lockstep the `auto_pipeline(..., with_pdfs=True)` default and the
+  `_auto(...)` CLI-handler default were flipped to `True` as well — any
+  programmatic caller that needs the old opt-in must now pass
+  `with_pdfs=False` explicitly. `--full-auto` no longer needs to re-set
+  `--with-pdfs` and was simplified accordingly, which incidentally lets
+  `--full-auto --no-with-pdfs` respect the explicit opt-out (it was silently
+  overridden before). The `ingest` and `run` subcommands stay opt-in
+  (`--with-pdfs` only) — they are lower-level entry points where an explicit
+  flag still makes sense.
+
 ### Fixed
 - **`gap-to-topic` dossier reflowed as a 7-section research-grade decision
   memo** (`skills/gap-to-topic/`, plugin `0.3.8 → 0.3.9`). The v0.3.8

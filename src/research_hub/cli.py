@@ -4930,7 +4930,7 @@ def _auto(
     force: bool = False,
     show: bool = True,
     batch_label: str | None = None,
-    with_pdfs: bool = False,
+    with_pdfs: bool = True,
     with_summary: bool = False,
     peer_reviewed: bool = False,
     include_suspect_urls: bool = False,
@@ -5388,7 +5388,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--full-auto",
         action="store_true",
         help=(
-            "Enable --with-pdfs --with-summary --with-crystals. "
+            "Enable --with-summary --with-crystals (--with-pdfs is already "
+            "on by default; use --no-with-pdfs to disable PDFs). "
             "NotebookLM upload also stays ON by default — pair with "
             "--no-nlm if you want fully local automation without the "
             "browser step (NLM upload uses patchright + Google login)."
@@ -5442,8 +5443,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     auto_parser.add_argument(
         "--with-pdfs",
-        action="store_true",
-        help="Attach open-access PDFs from arXiv/OpenAlex/Unpaywall/Crossref after ingest",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Attach open-access PDFs from arXiv/OpenAlex/Unpaywall/Crossref "
+            "to the Zotero items after ingest (default: on). Use "
+            "--no-with-pdfs to skip the PDF-attach pass."
+        ),
     )
     auto_parser.add_argument(
         "--json",
@@ -7498,7 +7504,10 @@ def _main_dispatch(args, parser) -> int:
         return 0
     if args.command == "auto":
         if args.full_auto:
-            args.with_pdfs = True
+            # --with-pdfs is on by default since the BooleanOptionalAction
+            # flip; we intentionally do NOT force args.with_pdfs = True here
+            # so an explicit --no-with-pdfs (args.with_pdfs == False) is
+            # respected even under --full-auto.
             args.with_summary = True
             args.with_crystals = True
         return _auto(
