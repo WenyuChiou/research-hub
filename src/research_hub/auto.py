@@ -79,7 +79,12 @@ def auto_pipeline(
     dry_run: bool = False,
     print_progress: bool = True,
     zotero_batch_size: int = 50,
-    with_pdfs: bool = True,
+    # NOTE: intentionally False at the Python-API layer while the CLI
+    # default is True. Programmatic callers (tests, library users) stay
+    # opt-in so the PDF-attach network round-trips do not fire unless
+    # the caller explicitly asks for them; CLI users get the default-on
+    # behaviour via the argparse BooleanOptionalAction in cli.py.
+    with_pdfs: bool = False,
     with_summary: bool = False,
     peer_reviewed: bool = False,
     include_suspect_urls: bool = False,

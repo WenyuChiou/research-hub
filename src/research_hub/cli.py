@@ -4930,7 +4930,10 @@ def _auto(
     force: bool = False,
     show: bool = True,
     batch_label: str | None = None,
-    with_pdfs: bool = True,
+    # Programmatic callers (tests, library users) stay opt-in here so the
+    # PDF-attach network round-trips don't fire silently; the CLI hands in
+    # an explicit value from argparse (default-on via BooleanOptionalAction).
+    with_pdfs: bool = False,
     with_summary: bool = False,
     peer_reviewed: bool = False,
     include_suspect_urls: bool = False,

@@ -29,11 +29,11 @@ graph rebuild (link out to the real tools instead)._
   so `--no-with-pdfs` is the new opt-out for runs where you only want the
   NotebookLM bundle. Rationale: the bundle ladder already downloaded the PDFs
   for NLM but they never made it into Zotero, leaving the
-  `cluster/pdf_coverage` doctor check stuck at 0%. To keep the Python API and
-  CLI in lockstep the `auto_pipeline(..., with_pdfs=True)` default and the
-  `_auto(...)` CLI-handler default were flipped to `True` as well — any
-  programmatic caller that needs the old opt-in must now pass
-  `with_pdfs=False` explicitly. `--full-auto` no longer needs to re-set
+  `cluster/pdf_coverage` doctor check stuck at 0%. The Python API
+  `auto_pipeline(..., with_pdfs=False)` deliberately stays opt-in so
+  programmatic callers (tests, library users) don't fire the PDF-attach
+  network round-trips silently — the CLI hands in an explicit `True` from
+  argparse instead. `--full-auto` no longer needs to re-set
   `--with-pdfs` and was simplified accordingly, which incidentally lets
   `--full-auto --no-with-pdfs` respect the explicit opt-out (it was silently
   overridden before). The `ingest` and `run` subcommands stay opt-in
