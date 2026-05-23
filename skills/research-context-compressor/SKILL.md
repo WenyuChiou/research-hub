@@ -87,9 +87,35 @@ Write these to `<project-root>/.research/`:
 - `open_questions.md` — list any obvious unknowns you spotted (e.g.
   undocumented dataset, missing license, ambiguous entrypoint).
 
+**Stage 2 → 3a provenance (v0.3.13+).** If `.research/design_brief.md`
+exists AND its frontmatter sets `source: topic_dossier.gaps.yml#<gap-id>`,
+copy that pointer into the `project_manifest.yml` `provenance.from_gap`
+field as part of every write:
+
+```yaml
+# project_manifest.yml — minimal example showing the v0.3.13 provenance wire
+project_name: "..."
+research_question: |
+  ...  # mirrored from design_brief.md §1 (sharpened RQ)
+current_stage: "design"
+last_updated: "YYYY-MM-DD"
+provenance:
+  from_gap: "topic_dossier.gaps.yml#G2"   # exact copy of design_brief frontmatter `source`
+```
+
+If no `design_brief.md` exists or its frontmatter `source` field is
+empty, omit the `provenance:` block entirely — do NOT write
+`provenance: {}` or `provenance: null`. The schema doc
+(`docs/research-workspace-manifest.md`) records the field as optional;
+absent is the honest state when the upstream chain isn't connected.
+
 If a file already exists, **update don't replace**: keep human-edited
 fields, fill in only the empty ones unless the user said "regenerate from
-scratch".
+scratch". This rule also applies to `provenance.from_gap` — if a
+manifest already has `provenance.from_gap` and the current
+`design_brief.md` source differs, ask the user before overwriting
+(matches the v0.3.12 provenance-protection logic in
+`research-design-helper`).
 
 ## Schema reference
 

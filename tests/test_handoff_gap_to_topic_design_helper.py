@@ -279,6 +279,61 @@ def test_context_compressor_skill_md_reads_design_brief() -> None:
     )
 
 
+def test_context_compressor_skill_md_outputs_show_provenance_from_gap() -> None:
+    """v0.3.13 (F1 fast-follow): compressor Outputs section must show
+    the `provenance.from_gap` field in its example output. The schema
+    doc (`docs/research-workspace-manifest.md`) and the Inputs section
+    both mention the field, but if Outputs doesn't, a prose-driven
+    agent may miss the wire and never emit provenance.from_gap.
+    """
+    text = CONTEXT_COMPRESSOR_SKILL.read_text(encoding="utf-8")
+    outputs_section = _extract_section(text, "## Outputs you must produce")
+    assert "provenance" in outputs_section, (
+        "research-context-compressor Outputs section does not mention "
+        "`provenance` — the Stage 2 → 3a wire example is missing from "
+        "the skill's own Output spec (only documented in the schema doc + Inputs)"
+    )
+    assert "from_gap" in outputs_section, (
+        "Outputs section mentions `provenance` but not `from_gap` — "
+        "the example block must show the full field path"
+    )
+
+
+def test_design_helper_skill_md_segment_1_no_prefill_annotation_rule() -> None:
+    """v0.3.13 (F2 fast-follow): §0 must explicitly forbid writing a
+    `_PRE-FILL_`-style annotation inside the design_brief.md file
+    content. The chat message signals pre-fill; the file content stays
+    clean so segment 1 dialog can simply overwrite the statement with
+    the sharpened RQ.
+
+    Asserts both halves of the rule:
+      (a) the word "verbatim" appears (write the statement as-is), AND
+      (b) an explicit NEGATION of annotation in file content — not
+          just the word "annotation". This guards against future
+          rewrites that drop the prohibition while keeping the word
+          (e.g. "use annotation to mark pre-fill" would be a regression
+          that a presence-only check would miss).
+    """
+    text = DESIGN_HELPER_SKILL.read_text(encoding="utf-8")
+    section_0 = _extract_section(text, "### §0 — Detect Stage 2 handoff")
+    assert "verbatim" in section_0.lower(), (
+        "§0 must tell the agent to write gaps[].statement verbatim"
+    )
+    # Negation regex: any of "do not <words> annotation", "no <words> annotation",
+    # or "forbid <words> annotation" within a short window. Case-insensitive,
+    # multiline. The 0-40 char window allows phrases like "Do not add any
+    # `_PRE-FILL_`-style annotation".
+    assert re.search(
+        r"(?:do not|don't|never|no)[^.]{0,40}annotation|forbid[^.]{0,40}annotation",
+        section_0,
+        re.I | re.S,
+    ), (
+        "§0 must explicitly FORBID `_PRE-FILL_` annotations in file "
+        "content (negation not found near `annotation` — a rewrite "
+        "may have dropped the prohibition while keeping the word)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Schema-reference vs fixture: the upstream skill's schema doc must
 # cover the keys the fixture has.
