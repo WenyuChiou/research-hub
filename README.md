@@ -21,6 +21,75 @@ Traditional Chinese: [README.zh-TW.md](README.zh-TW.md) | [Watch the full-res mp
 
 ---
 
+## Why this exists
+
+Most research tools are good at one part of the workflow:
+
+- Zotero stores citations, metadata, and PDFs.
+- Obsidian stores notes, links, and synthesis.
+- NotebookLM turns source bundles into AI-readable briefs.
+
+The painful part is the handoff. research-hub connects those handoffs so an AI agent can search, ingest, tag, summarize, repair, brief, and inspect your workspace without turning your library into an opaque RAG box.
+
+You do **not** need all three tools on day one.
+
+| Your current stack | What research-hub gives you first |
+|---|---|
+| Zotero + Obsidian | Paper search, Zotero metadata, Markdown notes, tags, Obsidian Bases dashboards |
+| Obsidian + NotebookLM | Local PDF/DOCX/MD/TXT ingest, cluster dashboards, NotebookLM bundles and briefs |
+| Zotero + NotebookLM | Zotero-backed paper selection, namespaced tags, NotebookLM upload/generate/download |
+| Zotero + Obsidian + NotebookLM | Full loop: discover -> ingest -> organize -> brief -> answer -> maintain |
+| No accounts yet | Sample dashboard and local smoke tests before connecting anything |
+
+---
+
+## What it does
+
+research-hub is a local-first orchestration layer for research workflows:
+
+- **CLI:** `research-hub auto`, `import-folder`, `ask`, `doctor`, `tidy`, `clusters`, `zotero`, `notebooklm`, `crystal`, and more.
+- **MCP server:** lets Claude Desktop, Claude Code, Cursor, Continue.dev, Cline, Roo Code, OpenClaw, and other MCP hosts operate the same workflow.
+- **REST API:** exposes `/api/v1/*` for browser-only or HTTP-capable assistants.
+- **Dashboard:** gives humans a live view of clusters, papers, diagnostics, briefs, writing support, and management actions.
+- **Vault format:** writes normal Markdown, frontmatter, `.base` dashboards, cache files, and logs that you can inspect directly.
+- **Authenticity gate (v0.95+):** every discovered paper must resolve to a real identifier (DOI / arXiv / PMID), pass integrity and relevance checks, or it is **quarantined with a recorded reason** and never written to the vault. No fabricated references — inspect rejects with `research-hub quarantine list`.
+
+The core loop:
+
+```text
+topic or source folder
+  -> discover or import sources
+  -> verify authenticity (resolve + integrity + relevance) or quarantine
+  -> enrich metadata
+  -> write Zotero tags/notes when enabled
+  -> write Obsidian Markdown notes and cluster dashboards
+  -> bundle/upload/generate with NotebookLM when enabled
+  -> cache answers as crystals and structured memory
+```
+
+---
+
+## Is this for me? — vs alternatives
+
+research-hub does not replace Zotero, Obsidian, or NotebookLM. It connects them so an AI agent can operate the workflow.
+
+| What you can do | Zotero alone | NotebookLM alone | Generic RAG | Obsidian-Zotero plugin | research-hub |
+|---|---:|---:|---:|---:|---:|
+| Search arXiv + Semantic Scholar in one command | No | No | DIY | No | Yes |
+| Ingest into Zotero and Obsidian and NotebookLM | No | No | DIY | Partial | Yes |
+| AI brief from your collection | No | Manual | DIY | No | Yes |
+| Cached canonical answers | No | No | Re-fetches | No | Yes |
+| Structured memory layer | No | No | Usually chunks | No | Yes |
+| Direct AI-agent control via MCP | No | No | DIY | No | Yes |
+| Live dashboard with action buttons | No | No | No | No | Yes |
+| Per-cluster Obsidian Bases dashboard | No | No | No | No | Yes |
+| No OpenAI/Anthropic API key required | n/a | Yes | Usually no | n/a | Yes |
+| Local-first vault you own | Partial | No | Depends | Yes | Yes |
+
+The practical fit: research-hub is most useful if you already use at least two of Zotero, Obsidian, and NotebookLM and want your AI assistant to run the repetitive steps.
+
+---
+
 ## Personae
 
 Pick the path that matches the operator: a human researcher or the autonomous agent itself. research-hub supports two primary operator personae:
@@ -96,75 +165,6 @@ actionable guidance instead of silently producing an empty vault.
 | Internal KM | lab/company knowledge bases, mixed file types | `[import,secrets]` |
 
 Field presets for `discover new`, `search`, and related planning flows are `cs`, `bio`, `med`, `physics`, `math`, `social`, `econ`, `chem`, `astro`, `edu`, and `general`. There is no `hydrology` preset; use `general` intentionally.
-
----
-
-## Why this exists
-
-Most research tools are good at one part of the workflow:
-
-- Zotero stores citations, metadata, and PDFs.
-- Obsidian stores notes, links, and synthesis.
-- NotebookLM turns source bundles into AI-readable briefs.
-
-The painful part is the handoff. research-hub connects those handoffs so an AI agent can search, ingest, tag, summarize, repair, brief, and inspect your workspace without turning your library into an opaque RAG box.
-
-You do **not** need all three tools on day one.
-
-| Your current stack | What research-hub gives you first |
-|---|---|
-| Zotero + Obsidian | Paper search, Zotero metadata, Markdown notes, tags, Obsidian Bases dashboards |
-| Obsidian + NotebookLM | Local PDF/DOCX/MD/TXT ingest, cluster dashboards, NotebookLM bundles and briefs |
-| Zotero + NotebookLM | Zotero-backed paper selection, namespaced tags, NotebookLM upload/generate/download |
-| Zotero + Obsidian + NotebookLM | Full loop: discover -> ingest -> organize -> brief -> answer -> maintain |
-| No accounts yet | Sample dashboard and local smoke tests before connecting anything |
-
----
-
-## What it does
-
-research-hub is a local-first orchestration layer for research workflows:
-
-- **CLI:** `research-hub auto`, `import-folder`, `ask`, `doctor`, `tidy`, `clusters`, `zotero`, `notebooklm`, `crystal`, and more.
-- **MCP server:** lets Claude Desktop, Claude Code, Cursor, Continue.dev, Cline, Roo Code, OpenClaw, and other MCP hosts operate the same workflow.
-- **REST API:** exposes `/api/v1/*` for browser-only or HTTP-capable assistants.
-- **Dashboard:** gives humans a live view of clusters, papers, diagnostics, briefs, writing support, and management actions.
-- **Vault format:** writes normal Markdown, frontmatter, `.base` dashboards, cache files, and logs that you can inspect directly.
-- **Authenticity gate (v0.95+):** every discovered paper must resolve to a real identifier (DOI / arXiv / PMID), pass integrity and relevance checks, or it is **quarantined with a recorded reason** and never written to the vault. No fabricated references — inspect rejects with `research-hub quarantine list`.
-
-The core loop:
-
-```text
-topic or source folder
-  -> discover or import sources
-  -> verify authenticity (resolve + integrity + relevance) or quarantine
-  -> enrich metadata
-  -> write Zotero tags/notes when enabled
-  -> write Obsidian Markdown notes and cluster dashboards
-  -> bundle/upload/generate with NotebookLM when enabled
-  -> cache answers as crystals and structured memory
-```
-
----
-
-## Is this for me? — vs alternatives
-
-research-hub does not replace Zotero, Obsidian, or NotebookLM. It connects them so an AI agent can operate the workflow.
-
-| What you can do | Zotero alone | NotebookLM alone | Generic RAG | Obsidian-Zotero plugin | research-hub |
-|---|---:|---:|---:|---:|---:|
-| Search arXiv + Semantic Scholar in one command | No | No | DIY | No | Yes |
-| Ingest into Zotero and Obsidian and NotebookLM | No | No | DIY | Partial | Yes |
-| AI brief from your collection | No | Manual | DIY | No | Yes |
-| Cached canonical answers | No | No | Re-fetches | No | Yes |
-| Structured memory layer | No | No | Usually chunks | No | Yes |
-| Direct AI-agent control via MCP | No | No | DIY | No | Yes |
-| Live dashboard with action buttons | No | No | No | No | Yes |
-| Per-cluster Obsidian Bases dashboard | No | No | No | No | Yes |
-| No OpenAI/Anthropic API key required | n/a | Yes | Usually no | n/a | Yes |
-| Local-first vault you own | Partial | No | Depends | Yes | Yes |
-
-The practical fit: research-hub is most useful if you already use at least two of Zotero, Obsidian, and NotebookLM and want your AI assistant to run the repetitive steps.
 
 ---
 
