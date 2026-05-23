@@ -3,6 +3,8 @@ project: ""
 last_updated: ""
 stage: design
 status: draft        # draft | reviewed | locked
+source: ""           # optional — Stage 2 provenance, e.g. `topic_dossier.gaps.yml#G2`
+gap_verdict: ""      # optional — frozen snapshot of <verdict> + first 60 chars of verdict_reason
 ---
 
 # Design brief

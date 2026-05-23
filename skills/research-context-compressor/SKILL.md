@@ -39,27 +39,36 @@ empty (see "What NOT to do"). Skim, do not deep-read.
 
 1. `README.md` at the repo root — project overview. Single most useful
    input.
+2. `.research/design_brief.md` if it exists — Stage 3a handoff from
+   `research-design-helper` (plugin v0.3.12+). Read the frontmatter
+   (`project`, `source`, `gap_verdict`) plus section 1
+   (Research question) only — informs the `project_manifest.yml`
+   `research_question` field. The brief is the authority on the
+   sharpened RQ; the manifest mirrors it. Don't deep-read; skim. If
+   frontmatter `source: topic_dossier.gaps.yml#<id>` is set, copy
+   that gap-id into the manifest's `provenance.from_gap` field
+   (forward-compat with the Stage 2 → 3a wire).
 
 **For code-based research projects** (Python / JS / R / Julia / etc.):
 
-2. `pyproject.toml` / `package.json` / `requirements.txt` /
+3. `pyproject.toml` / `package.json` / `requirements.txt` /
    `renv.lock` / `Project.toml` — primary tools.
-3. `scripts/` and `notebooks/` — main entrypoints.
-4. `data/` and `outputs/` — datasets and artifacts.
+4. `scripts/` and `notebooks/` — main entrypoints.
+5. `data/` and `outputs/` — datasets and artifacts.
 
 **For qualitative / archival / interpretive projects**:
 
-2. `notes/`, `drafts/`, `sources/` — manuscript-track work.
-3. `.obsidian/` — Obsidian vault settings, if present.
-4. Any plain-text bibliography file (`bibliography.md`, `sources.bib`,
+3. `notes/`, `drafts/`, `sources/` — manuscript-track work.
+4. `.obsidian/` — Obsidian vault settings, if present.
+5. Any plain-text bibliography file (`bibliography.md`, `sources.bib`,
    `references.json`).
 
 **For both**:
 
-5. `docs/` — long-form descriptions.
-6. `.git/HEAD` and `git log --oneline -20` — current branch + recent
+6. `docs/` — long-form descriptions.
+7. `.git/HEAD` and `git log --oneline -20` — current branch + recent
    activity, if a git repo.
-7. `.research/` (if it already exists) — for refresh, not first-time
+8. `.research/` (if it already exists) — for refresh, not first-time
    create.
 
 **An empty manifest field is better than an invented one.**

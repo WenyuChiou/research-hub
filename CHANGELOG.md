@@ -41,6 +41,57 @@ graph rebuild (link out to the real tools instead)._
   flag still makes sense.
 
 ### Added
+- **Stage 2 → 3a → 3b handoff wiring**
+  (`skills/research-design-helper/`, `skills/research-context-compressor/`,
+  `tests/fixtures/topic_dossier_sample.gaps.yml`,
+  `tests/test_handoff_gap_to_topic_design_helper.py`, plugin
+  `0.3.11 → 0.3.12`). Two broken wires fixed as one coherent
+  user-facing capability:
+  - **`research-design-helper` reads `.research/topic_dossier.gaps.yml`**
+    as new Input #2. New Workflow §0 preamble auto-pre-fills segment 1
+    (RQ) from the chosen `gaps[].statement` and segment 5 (risks) from
+    `open_questions[]` + the specific concern hinted by
+    `gaps[].feasibility`. Segments 2–4 (mechanism / identifiability /
+    validation) are never pre-filled — the dossier doesn't carry that
+    material and pre-filling with non-content corrupts the Socratic
+    dialog. When the upstream `.gaps.yml` is absent, the skill behaves
+    exactly as before (no regression for standalone users). Candidate
+    selection is verdict-aware: filter `gaps[]` to
+    `verdict in {conditional-go, go}`, then auto-pick if one,
+    ask-the-user if 2+, halt with "nothing to frame" if zero.
+  - **`design_brief.md` frontmatter carries Stage 2 provenance.**
+    Two new optional fields: `source: topic_dossier.gaps.yml#<gap-id>`
+    (URI-fragment pointer to the chosen gap) and `gap_verdict:` (frozen
+    snapshot of `verdict` + first 60 chars of `verdict_reason`). The
+    brief becomes self-contained — a future reader sees which dossier
+    candidate this design was framed for. Provenance-protection: a
+    refresh that would change the `source` gap-id triggers a confirm
+    prompt instead of silent overwrite.
+  - **`research-context-compressor` reads `.research/design_brief.md`**
+    as new Input #2 under "For any project". Reads the frontmatter
+    (`project`, `source`, `gap_verdict`) + section 1 (Research
+    question) only. This implements the long-claimed `pipeline.md`
+    contract; the brief is the authority on the sharpened RQ and the
+    manifest mirrors it. If frontmatter `source` is set, copies that
+    gap-id into the manifest's `provenance.from_gap` field
+    (forward-compat with downstream tools).
+  - **First cross-skill handoff integration test** ships at
+    `tests/test_handoff_gap_to_topic_design_helper.py` with a frozen
+    fixture at `tests/fixtures/topic_dossier_sample.gaps.yml` (copied
+    from the v0.3.10 dogfood example). Asserts: fixture parses + has
+    v0.3.10+ top-level keys + `recall.screen` sub-block + per-gap
+    downstream-consumer fields + `open_questions[].text`; downstream
+    SKILL.md prose lists the handoff input + has the §0 preamble +
+    preserves the absent-`.gaps.yml` fallback; design_brief_template
+    frontmatter has `source` + `gap_verdict`;
+    research-context-compressor mentions `design_brief.md`; the
+    schema reference covers every key the fixture contains (drift
+    detector). Subsequent stage-to-stage wires (3a → 3b proper,
+    6 → 7, …) should follow this test shape.
+  - Mirrored to `src/research_hub/skills_data/`. Pure additive change
+    — no removed inputs, no breaking behaviour, no required new
+    fields. Users without a `.gaps.yml` see identical UX to v0.3.11.
+
 - **`dossier_to_docx.js` ships inside `skills/gap-to-topic/scripts/`**
   (plugin `0.3.9 → 0.3.10`). `topic_dossier.docx` is now a first-class
   contracted deliverable of the `gap-to-topic` skill. The generator converts

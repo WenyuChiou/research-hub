@@ -59,7 +59,7 @@ The same `.paper/` folder is shared with the existing
 | `.research/decisions.md` | shared | humans + skills append | humans + skills read |
 | `.research/open_questions.md` | shared | humans + skills append | humans + skills read |
 | `.research/literature_matrix.md` | research-hub | `literature-triage-matrix` | humans + writing skills |
-| `.research/design_brief.md` | research-hub | `research-design-helper` (v0.68) | `research-context-compressor` (notes presence), `research-project-orienter` (cites), humans |
+| `.research/design_brief.md` | research-hub | `research-design-helper` (v0.68; v0.3.12+ writes Stage 2 provenance to frontmatter) | `research-context-compressor` (v0.3.12+ reads frontmatter + section 1; copies `source` gap-id to manifest `provenance.from_gap`), `research-project-orienter` (cites), humans |
 | `.paper/journal_format.md` | `academic-writing-skills` | writing skill | writing skill |
 | `.paper/claims.yml` | research-hub | `paper-memory-builder` | `academic-writing-skills` |
 | `.paper/figures.yml` | research-hub | `paper-memory-builder` | `academic-writing-skills` |
@@ -142,6 +142,15 @@ paper_or_deliverable: "JOH 2026 second revision"
 recent_activity:                            # `git log --oneline -10` output, optional
   - "abc1234 Refactor CAT coupling layer"
   - "def5678 Add Harvey calibration robustness check"
+
+# Optional: Stage 2 → 3a provenance (written by research-context-compressor v0.3.12+)
+# When .research/design_brief.md frontmatter carries
+# `source: topic_dossier.gaps.yml#<gap-id>`, the compressor copies that
+# pointer here so downstream tools (project-orienter, future audit
+# scripts) can trace the manifest back to the gap-to-topic candidate
+# it was framed for.
+provenance:
+  from_gap: "topic_dossier.gaps.yml#G2"     # gap-id (URI-fragment) from the chosen gap-to-topic candidate
 ```
 
 **Required fields**: `project_name`, `research_area`, `research_question`,
