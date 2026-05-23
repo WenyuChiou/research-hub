@@ -85,6 +85,8 @@ If the file already exists, **update don't replace**: keep human-edited sections
 
 **Provenance protection (v0.3.12+).** If the existing `design_brief.md` has frontmatter `source: topic_dossier.gaps.yml#<old-id>` and a different `gaps[]` entry is now being chosen (different id, OR `.gaps.yml` `generated:` date differs), ASK the user before refreshing — do not silently overwrite provenance. Phrasing: *"This brief was originally framed for `<old-id>` (`<old-verdict>`). The current `.gaps.yml` chooses `<new-id>` (`<new-verdict>`). Refresh and replace the provenance, or keep the old brief and start a new one?"*
 
+**Placeholder marker (v0.3.15+).** When any segment is filled with **test-fit / dogfood placeholder content** (e.g. an AI-generated stub written to exercise the Stage 3a → 3b wire without a real Socratic dialog), record those segment numbers in the frontmatter `placeholder_segments:` list. Example: `placeholder_segments: [2, 3, 4]` means segments 2–4 are placeholders, not from the researcher's actual answers. **Downstream tools should refuse to gate real research on a brief with non-empty `placeholder_segments`.** When all 5 segments are filled by genuine Socratic dialog, leave the list empty (`[]`). This pattern was added after the v0.3.12 dogfood, where segments 2–4 were written as test-fit content to validate the wire — a future reader needs a machine-checkable signal that those segments aren't advisor-ready.
+
 After saving, print a short report:
 
 ```

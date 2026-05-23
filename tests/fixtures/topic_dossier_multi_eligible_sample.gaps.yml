@@ -1,0 +1,102 @@
+# Synthetic fixture — multi-eligible candidates exercise the §0
+# "2+ candidates, ask user" branch (codex C2, v0.3.15).
+#
+# Three gaps total:
+#   G1  → verdict: conditional-go   (eligible — counts toward filter)
+#   G2  → verdict: conditional-go   (eligible — counts toward filter)
+#   G3  → verdict: no-go            (filtered OUT)
+#
+# Filtered eligible-list length = 2, so research-design-helper §0
+# must hit the "ask the user which candidate are we designing for?"
+# branch instead of auto-pre-filling.
+#
+# This is synthetic (not from any real dogfood run) — the
+# topic is a plausible-sounding cross-domain example that does NOT
+# need to be defensible research, only to exercise the schema shape.
+
+dossier: "Synthetic multi-eligible scenario (LLM-augmented modelling)"
+generated: "2026-05-23"
+run_type: "synthetic fixture for codex C2 — §0 2+ candidates branch"
+downstream_consumer: research-design-helper
+recall:
+  tool: research-hub search --adversarial --screen --json
+  query_phrasings: 6
+  unique_papers: 200
+  tool_confidence: medium
+  dossier_confidence: medium
+  screen:
+    gate: fit-check BM25 relevance gate (search --screen)
+    retrieved: 30
+    kept: 28
+    screened_out: 2
+    tier: cold-start
+    note: synthetic — counts plausible, not from a real run
+  note: synthetic fixture, not a real dossier
+pipeline:
+  - research-hub search --adversarial --screen --json
+  - literature-triage-matrix -> literature_matrix.md
+  - .bib from on-topic search --json results
+  - gap-to-topic gates §1-§4
+gaps:
+  - id: G1
+    name: "LLM agents for forecasting in domain A"
+    statement: >-
+      Use LLM agents calibrated on domain-A observational data to predict
+      held-out outcomes; compare against a discrete-choice baseline.
+    type: B
+    open: open
+    open_confidence: medium
+    dead_end_status: partially-attempted
+    dead_end_evidence: >-
+      A 2025 caution paper raises construct-validity concerns for this
+      framing in adjacent domains.
+    contribution_type: borderline
+    borderline_reason: B1
+    feasibility: feasible-with-effort
+    verdict: conditional-go
+    verdict_reason: >-
+      Open (medium confidence); borderline contribution; feasible with a
+      held-out validation pilot against a discrete-choice baseline.
+    linked_claim: null
+  - id: G2
+    name: "LLM-augmented evidence synthesis for domain B"
+    statement: >-
+      Use LLMs to synthesise cross-paper evidence in domain B and flag
+      inconsistencies that human reviewers miss, validated against a
+      gold-standard human-annotated subset.
+    type: B
+    open: open
+    open_confidence: medium
+    dead_end_status: none
+    dead_end_evidence: ""
+    contribution_type: borderline
+    borderline_reason: B2
+    feasibility: feasible-with-effort
+    verdict: conditional-go
+    verdict_reason: >-
+      Open (medium confidence); borderline contribution; feasible with
+      access to a gold-standard human-annotated subset for validation.
+    linked_claim: null
+  - id: G3
+    name: "Generic LLM-as-judge for paper rankings"
+    statement: >-
+      Use LLM as judge to rank papers in domain C by quality.
+    type: B
+    open: occupied
+    dead_end_status: not-assessed
+    contribution_type: not-assessed
+    feasibility: not-assessed
+    verdict: no-go
+    verdict_reason: >-
+      Occupied — multiple existing benchmarks and validated rubrics make
+      this an established sub-field, not a research opening.
+    linked_claim: null
+open_questions:
+  - id: Q1
+    text: >-
+      For G1, is the domain-A observational dataset's held-out subset
+      large enough for adequate statistical power (>= 500 samples)?
+  - id: Q2
+    text: >-
+      For G2, does an existing human-annotated gold-standard subset exist
+      in domain B, or does this require primary annotation?

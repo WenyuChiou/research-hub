@@ -36,6 +36,9 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "topic_dossier_sample.gaps.yml"
+FIXTURE_MULTI_ELIGIBLE = (
+    REPO_ROOT / "tests" / "fixtures" / "topic_dossier_multi_eligible_sample.gaps.yml"
+)
 DESIGN_HELPER_SKILL = (
     REPO_ROOT / "skills" / "research-design-helper" / "SKILL.md"
 )
@@ -296,6 +299,91 @@ def test_context_compressor_skill_md_outputs_show_provenance_from_gap() -> None:
     assert "from_gap" in outputs_section, (
         "Outputs section mentions `provenance` but not `from_gap` — "
         "the example block must show the full field path"
+    )
+
+
+def test_multi_eligible_fixture_parses_and_has_2plus_go_eligible() -> None:
+    """v0.3.15 (codex C2): the multi-eligible fixture exercises the §0
+    2+ candidates branch. Filtering to verdict ∈ {conditional-go, go}
+    must yield 2+ entries — otherwise the fixture has decayed and the
+    branch is once again unexercised.
+    """
+    assert FIXTURE_MULTI_ELIGIBLE.exists(), (
+        f"missing multi-eligible fixture: {FIXTURE_MULTI_ELIGIBLE}"
+    )
+    data = yaml.safe_load(FIXTURE_MULTI_ELIGIBLE.read_text(encoding="utf-8"))
+    go_eligible = [
+        g for g in data["gaps"] if g["verdict"] in {"conditional-go", "go"}
+    ]
+    assert len(go_eligible) >= 2, (
+        f"multi-eligible fixture has only {len(go_eligible)} go-eligible "
+        f"candidate(s); the §0 2+ branch is unexercised. Add another "
+        f"conditional-go or go entry."
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture_path,expected_branch",
+    [
+        (
+            "topic_dossier_sample.gaps.yml",
+            "single-eligible-auto-prefill",
+        ),
+        (
+            "topic_dossier_multi_eligible_sample.gaps.yml",
+            "multi-eligible-ask-user",
+        ),
+    ],
+)
+def test_fixture_parses_and_drives_correct_section_0_branch(
+    fixture_path: str, expected_branch: str
+) -> None:
+    """v0.3.15 (codex C2): both fixtures parse cleanly AND drive
+    distinct §0 branches based on the count of go-eligible candidates
+    (conditional-go or go). Parametrized so a future third fixture
+    (e.g. all-no-go zero-eligible) can be added with one tuple
+    instead of a new test function.
+    """
+    path = REPO_ROOT / "tests" / "fixtures" / fixture_path
+    assert path.exists(), f"missing fixture: {path}"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    go_eligible = [
+        g for g in data["gaps"] if g["verdict"] in {"conditional-go", "go"}
+    ]
+    n = len(go_eligible)
+    if expected_branch == "single-eligible-auto-prefill":
+        assert n == 1, (
+            f"{fixture_path} should drive the auto-prefill branch "
+            f"(exactly 1 go-eligible) but has {n}"
+        )
+    elif expected_branch == "multi-eligible-ask-user":
+        assert n >= 2, (
+            f"{fixture_path} should drive the ask-the-user branch "
+            f"(2+ go-eligible) but has {n}"
+        )
+    elif expected_branch == "zero-eligible-halt":
+        assert n == 0, (
+            f"{fixture_path} should drive the halt branch "
+            f"(0 go-eligible) but has {n}"
+        )
+    else:
+        pytest.fail(f"unknown expected_branch: {expected_branch}")
+
+
+def test_design_brief_template_has_placeholder_segments_field() -> None:
+    """v0.3.15 (codex C4): design_brief frontmatter must accept an
+    optional `placeholder_segments:` field so test-fit / dogfood
+    placeholder content (segments filled by non-Socratic means) can be
+    machine-flagged. A future tool can detect briefs with a non-empty
+    list here and refuse to gate research on them.
+    """
+    text = DESIGN_HELPER_TEMPLATE.read_text(encoding="utf-8")
+    m = re.match(r"\A---\n(.*?)\n---\n", text, re.S)
+    assert m, "design_brief_template.md missing frontmatter"
+    frontmatter = m.group(1)
+    assert "placeholder_segments:" in frontmatter, (
+        "frontmatter missing `placeholder_segments:` — codex C4 "
+        "(placeholder warning pattern) not shipped"
     )
 
 

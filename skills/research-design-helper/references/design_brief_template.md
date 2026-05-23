@@ -5,6 +5,11 @@ stage: design
 status: draft        # draft | reviewed | locked
 source: ""           # optional — Stage 2 provenance, e.g. `topic_dossier.gaps.yml#G2`
 gap_verdict: ""      # optional — frozen snapshot of <verdict> + first 60 chars of verdict_reason
+placeholder_segments: []   # optional — list of segment numbers whose content is test-fit / dogfood placeholder,
+                           #            NOT real Socratic dialog output. Example: [2, 3, 4] means segments 2-4
+                           #            were filled by AI-generated stubs for testing the wire, not by the
+                           #            researcher's actual answers. Downstream tools should refuse to gate
+                           #            real research on a brief with non-empty placeholder_segments.
 ---
 
 # Design brief

@@ -1,7 +1,7 @@
 {
   "name": "research-workspace",
   "description": "11 research-hub skills: literature triage matrix, context compression, project orientation, design dialog, multi-AI routing, NotebookLM brief verification, paper-memory builder, paper summarizer, Zotero curator, the gap-to-topic decision dossier, and the research-hub orchestrator. Auto-discovered from skills/<name>/SKILL.md.",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "author": {
     "name": "Wenyu Chiou"
   },

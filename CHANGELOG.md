@@ -140,6 +140,45 @@ graph rebuild (link out to the real tools instead)._
   `src/research_hub/skills_data/gap-to-topic/scripts/`.
 
 ### Fixed
+- **Codex review tightenings — multi-eligible fixture + design_brief
+  placeholder marker** (`tests/fixtures/topic_dossier_multi_eligible_sample.gaps.yml`,
+  `skills/research-design-helper/references/design_brief_template.md`,
+  `skills/research-design-helper/SKILL.md`,
+  `tests/test_handoff_gap_to_topic_design_helper.py`, plugin
+  `0.3.14 → 0.3.15`). Two follow-ups from the independent Codex
+  evaluation of the v0.3.12 + v0.3.13 + v0.3.14 deliverables
+  (`.ai/codex_eval_report.md`, verdict ship-with-fixes):
+  - **C2 — multi-eligible fixture.** The §0 "2+ candidates, ask the
+    user" branch was documented in SKILL.md and verified by the
+    branch-coverage prose test, but never exercised against a real
+    fixture with multiple `verdict ∈ {conditional-go, go}` entries.
+    New synthetic fixture
+    `tests/fixtures/topic_dossier_multi_eligible_sample.gaps.yml`
+    ships 3 gaps (G1 conditional-go, G2 conditional-go, G3 no-go) so
+    the filter produces 2 eligibles. Two new tests:
+    (a) `test_multi_eligible_fixture_parses_and_has_2plus_go_eligible`
+    asserts the fixture's filter result keeps the 2+ branch
+    exercised (guards against fixture decay), and (b) a
+    parametrized `test_fixture_parses_and_drives_correct_section_0_branch`
+    runs across both fixtures asserting each drives its expected §0
+    branch (auto-pre-fill vs ask-the-user). A future third fixture
+    for the zero-eligible halt branch can be added with one tuple.
+  - **C4 — design_brief placeholder marker.** The v0.3.12 dogfood
+    filled segments 2–4 with test-fit placeholder content (not from
+    real Socratic dialog) and used an ad-hoc `_TEST-FIT-PLACEHOLDER_`
+    inline tag. Codified as a structured frontmatter field:
+    `placeholder_segments: []` (list of segment numbers). Example:
+    `placeholder_segments: [2, 3, 4]` means segments 2–4 are
+    placeholders, downstream tools should refuse to gate real
+    research on a brief with non-empty list. SKILL.md adds a
+    "Placeholder marker (v0.3.15+)" paragraph in the Output section
+    explaining when to use it. New test
+    `test_design_brief_template_has_placeholder_segments_field`
+    asserts the frontmatter accepts the field.
+  - Pure additive: no removed fields, no changed enum tokens, no
+    behaviour change on absent/empty placeholder list. Mirrored to
+    `src/research_hub/skills_data/`.
+
 - **`research-context-compressor` Output spec shows
   `provenance.from_gap`; `research-design-helper` §0 forbids
   in-file pre-fill annotations** (`skills/research-context-compressor/SKILL.md`,
