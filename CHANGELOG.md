@@ -109,6 +109,46 @@ graph rebuild (link out to the real tools instead)._
   `src/research_hub/skills_data/gap-to-topic/scripts/`.
 
 ### Fixed
+- **`research-context-compressor` Output spec shows
+  `provenance.from_gap`; `research-design-helper` §0 forbids
+  in-file pre-fill annotations** (`skills/research-context-compressor/SKILL.md`,
+  `skills/research-design-helper/SKILL.md`,
+  `tests/test_handoff_gap_to_topic_design_helper.py`, plugin
+  `0.3.12 → 0.3.13`). Two minor SKILL.md prose tightenings surfaced
+  by the v0.3.12 Stage 3a + 3b dogfood (`~/.claude/audits/dogfood_runs/2026-05-22-research-design-helper-llm-abm-socio-hydrology/`):
+  - **F1 — compressor Output example now shows `provenance.from_gap`.**
+    The field was registered in `docs/research-workspace-manifest.md`
+    (PR #95) and mentioned in the compressor `## Inputs` section
+    (PR #96), but the `## Outputs you must produce` section had no
+    example — a prose-driven skill is at risk of agents missing the
+    wire. v0.3.13 adds an explicit example block under Outputs
+    showing the `provenance: { from_gap: ... }` shape and codifies
+    the absent-state rule (omit the block when there's no upstream;
+    do NOT write `provenance: {}` or `null`). Provenance-protection
+    on refresh now also explicitly applies to
+    `manifest.provenance.from_gap` (mirrors the v0.3.12 rule in
+    `research-design-helper`).
+  - **F2 — §0 forbids `_PRE-FILL_`-style annotations in
+    `design_brief.md` content.** The v0.3.12 §0 wrote
+    `gaps[].statement` into segment 1 but didn't say HOW to format
+    it. The dogfood agent added a `_PRE-FILL (review/sharpen): ..._`
+    annotation that wouldn't get cleaned up after segment 1 dialog
+    sharpened the RQ. v0.3.13 clarifies: write the statement
+    verbatim, no annotation in the file; the chat-level message
+    flags it as pre-fill. Means segment 1 dialog can simply
+    overwrite the statement with the sharpened RQ — no cleanup
+    step needed.
+  - **Test coverage:** added 2 new test cases to
+    `test_handoff_gap_to_topic_design_helper.py` (14 → 16 total)
+    asserting (1) the compressor Outputs section mentions
+    `provenance` AND `from_gap`, (2) the §0 segment-1 pre-fill rule
+    explicitly forbids `_PRE-FILL_` annotations in file content
+    (negation regex, not just word-presence — guards against
+    rewrites that drop the prohibition).
+  - Pure additive prose change (no removed inputs, no schema
+    changes, no behaviour change on absent upstream). Mirrored to
+    `src/research_hub/skills_data/`.
+
 - **`gap-to-topic` schema reference + research-hub discoverability**
   (`skills/gap-to-topic/references/dossier-template.md`,
   `docs/ai-research-skills.md`, plugin `0.3.10 → 0.3.11`). Two
