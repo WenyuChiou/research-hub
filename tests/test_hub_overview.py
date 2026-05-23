@@ -94,6 +94,45 @@ User-written synthesis stays here.
     assert "Fallback query" not in _section(path.read_text(encoding="utf-8"), "TL;DR")
 
 
+def test_populate_overview_refreshes_fresh_chinese_scaffold(tmp_path):
+    """Regression: the Chinese opening that topic.py writes for a brand-new
+    cluster ("一到兩句話說清楚...") must be recognised as scaffold, not as
+    user-curated content. Otherwise populate_overview leaves the TL;DR
+    stuck at the empty placeholder forever (00_overview is "極大缺失")."""
+    slug = "alpha"
+    _write_cluster_query(tmp_path, slug, "Fallback query")
+    _write_paper(tmp_path, slug, "adams2026", title="Newer Paper", year=2026, authors="Adams, A.")
+    overview_dir = tmp_path / "hub" / slug
+    overview_dir.mkdir(parents=True)
+    (overview_dir / "00_overview.md").write_text(
+        """---
+type: topic-overview
+cluster: alpha
+---
+
+# Alpha
+
+## TL;DR
+
+> [!abstract]
+> 一到兩句話說清楚這個 cluster 在研究什麼、解決什麼問題。
+^tldr
+""",
+        encoding="utf-8",
+    )
+
+    path = populate_overview(cluster_slug=slug, vault_root=tmp_path)
+    written = path.read_text(encoding="utf-8")
+
+    # Scaffold placeholder was replaced (the fallback query / paper-derived
+    # summary now occupies the TL;DR).
+    assert "一到兩句話" not in written, (
+        "fresh Chinese scaffold must be replaced; if this fails, "
+        "_SCAFFOLD_MARKERS in vault/hub_overview.py has drifted out of "
+        "sync with topic.py's template"
+    )
+
+
 def test_populate_overview_handles_missing_brief_gracefully(tmp_path):
     slug = "alpha"
     _write_cluster_query(tmp_path, slug, "Fallback cluster query")
