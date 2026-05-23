@@ -11,7 +11,8 @@ cover.
 |---|---|---|---|
 | 1. Discover sources | Find papers / data | research-hub | `research-hub`, `literature-triage-matrix` |
 | 2. Ingest + tag | Pull into Zotero / Obsidian | research-hub | `research-hub`, `zotero-library-curator` |
-| **3a. Frame the problem** | Sharpen RQ; design study | **YOU** (creative) | `research-design-helper` (Socratic guide) |
+| **2.5. Decide the topic** | 3-gate go/no-go on a candidate topic; produces a decision dossier | shared | `gap-to-topic` (emits `.gaps.yml` for the chosen candidate — Stage 3a wiring lands in v0.3.12) |
+| **3a. Frame the problem** | Sharpen RQ; design study | **YOU** (creative) | `research-design-helper` (Socratic guide; **v0.3.12+** will pre-fill from `gap-to-topic`'s `.gaps.yml` if present) |
 | **3b. Plan artifacts** | Manifest + experiment matrix | mechanical | `research-context-compressor`, `research-project-orienter` |
 | 4. Design & build the model | Implement | YOU + cross-cutting tools | (see Cross-cutting tools below) |
 | 5. Run experiments | Execute | YOU | (cross-cutting) |
@@ -61,6 +62,7 @@ The `research-hub-multi-ai` SKILL.md lists the routing rules.
 | Preparing a manuscript for AI-assisted writing/revision | `paper-memory-builder` | minutes |
 | Just downloaded a NotebookLM brief, want to verify it | `notebooklm-brief-verifier` | minutes |
 | Want a Zotero audit / dedupe / tag hygiene plan (no writes) | `zotero-library-curator` | minutes |
+| Deciding whether a research gap is worth pursuing (open / a contribution / feasible) | `gap-to-topic` | one session |
 | Starting a new study, want to sharpen the RQ + design before coding | `research-design-helper` | one session |
 | General research workflow (search → ingest → organize) | `research-hub` (the original CLI-operating skill) | continuous |
 | Multi-AI handoff (Claude ↔ Codex ↔ Gemini) | `research-hub-multi-ai` | as needed |
@@ -168,6 +170,34 @@ during identifiability discussion).
 Trigger phrases: "frame this research question", "design my study",
 "help me think through what model to build", "sharpen my hypothesis",
 "walk me through the design".
+
+### `gap-to-topic` (v0.3.11)
+Sits between Stage 2 and Stage 3a. Turns a research area into a go/no-go
+decision dossier for 1–N candidate thesis/proposal topics — a 3-gate
+verdict (is the gap **open**? is it a **contribution**? is it
+**feasible**?) with the evidence laid out so the researcher can verify
+it. Deliberately stops short of "is it worth doing" — that call is
+handed back to the researcher + advisor.
+
+**Reads**: user intent (Socratic §0), `research-hub search --adversarial
+--screen --json` results (§1), `.research/literature_matrix.md` (§1
+step 2 output), optional `.research/claims.yml` for cross-link.
+**Writes**: `.research/topic_dossier.md` + `.docx` (research-grade
+Word memo via `scripts/dossier_to_docx.js`, v0.3.10+),
+`.research/topic_dossier.bib`, `.research/topic_dossier.gaps.yml`,
+`.research/literature_matrix.md`.
+
+**Handoff to Stage 3a**: `.gaps.yml` is the machine-readable contract
+that `research-design-helper` **will read in v0.3.12+** to pre-fill its
+Socratic dialog (chosen candidate → segment 1 RQ; `open_questions[]` →
+segment 5 risks). The schema (top-level `downstream_consumer:
+research-design-helper` key as forward-compat hook) is documented in
+`references/dossier-template.md` Schema reference section; the wire-up
+itself ships in plugin v0.3.12 (Stage 2 → 3a integration PR).
+
+Trigger phrases: "is this research gap worth pursuing", "help me pick
+a thesis topic", "is this idea already taken", "find me a defensible
+research gap", "vet this research idea before I commit".
 
 ### `zotero-library-curator` (v0.67)
 Sits one layer above the standalone `zotero-skills` skill. Reads the

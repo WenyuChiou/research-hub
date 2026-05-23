@@ -261,25 +261,62 @@ en/
 
 > The `.gaps.yml` companion is machine-readable and is **not** part of the
 > human dossier above. It keeps the machine ids (`G1`, `G2`) and the formal
-> enum tokens.
+> enum tokens. **Downstream consumer:** `research-design-helper` (Stage 3a)
+> reads the chosen `gaps[]` entry + `open_questions[]` to pre-fill its
+> Socratic dialog.
 
 ```yaml
 dossier: <topic area>
 generated: "YYYY-MM-DD"
+run_type: "<short prose, e.g. 'gap-to-topic re-test on screened search'>"
+downstream_consumer: research-design-helper   # forward-compat hook; Stage 3a reads this
+recall:
+  tool: research-hub search --adversarial --screen --json
+  query_phrasings: 6
+  unique_papers: 435
+  tool_confidence: medium       # high | medium | low
+  dossier_confidence: medium    # high | medium | low
+  screen:                       # the fit-check BM25 relevance gate (search --screen)
+    gate: fit-check BM25 relevance gate (search --screen)
+    retrieved: <int>
+    kept: <int>
+    screened_out: <int>
+    tier: cold-start            # cold-start | <other-tier>
+    note: "<short prose, e.g. why the tier was chosen>"
+  note: "<backend caveat e.g. semantic-scholar rate-limited (HTTP 429)>"
+pipeline:                       # 4-step provenance chain
+  - research-hub search --adversarial --screen --json   # §1 step 1
+  - literature-triage-matrix -> literature_matrix.md     # §1 step 2 (on-topic kept:true)
+  - .bib from on-topic search --json results             # §1 step 3
+  - gap-to-topic gates §1-§4
 gaps:
   - id: G1
     name: "<readable candidate name>"
     statement: "<candidate>"
-    type: A            # A = method-limitation | B = unoccupied-application
-    open: open         # open | partially-occupied | occupied
-    dead_end_status: genuinely-open
-    contribution_type: problem-solving
-    feasibility: feasible
-    linked_claim: null  # claims.yml C-id, only if a manuscript draft exists
+    type: A | B                 # A = method-limitation | B = unoccupied-application
+    open: open                  # open | partially-occupied | occupied | partially-attempted
+    open_confidence: medium     # only if open / partially-occupied — high | medium | low
+    dead_end_status: genuinely-open    # not-assessed | genuinely-open | none |
+                                       # partially-attempted | full-dead-end
+    dead_end_evidence: >-       # paper-grounded prose; only when status != not-assessed
+      "<one-line evidence pointer with author + year + DOI>"
+    contribution_type: problem-solving   # not-assessed | problem-solving |
+                                         # incremental | borderline
+    borderline_reason: B1       # only if contribution_type == borderline; B1 | B2 | B3
+    feasibility: feasible       # not-assessed | feasible | feasible-with-effort | not-feasible
+    verdict: go                 # go | conditional-go | no-go
+    verdict_reason: >-          # one-sentence summary the downstream consumer can quote
+      "<short prose>"
+    linked_claim: null          # claims.yml C-id, only if a manuscript draft exists
 open_questions:
   - id: Q1
     text: "<question the evidence could not settle>"
 ```
+
+**Refresh policy:** when the v0.3.10+ schema is intentionally extended,
+the frozen handoff fixture at `tests/fixtures/topic_dossier_sample.gaps.yml`
+must be updated in the same PR so the cross-skill integration test
+stays meaningful.
 
 The `.bib` companion is the Gate 1 reference list as BibTeX — built from
 the on-topic `search --adversarial --screen --json` results (NOT from

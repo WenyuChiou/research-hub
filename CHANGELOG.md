@@ -58,6 +58,31 @@ graph rebuild (link out to the real tools instead)._
   `src/research_hub/skills_data/gap-to-topic/scripts/`.
 
 ### Fixed
+- **`gap-to-topic` schema reference + research-hub discoverability**
+  (`skills/gap-to-topic/references/dossier-template.md`,
+  `docs/ai-research-skills.md`, plugin `0.3.10 → 0.3.11`). Two
+  contract-vs-reality fixes ahead of the Stage 2 → 3a handoff wiring:
+  - **Schema reference refresh.** The `topic_dossier.gaps.yml` schema
+    in `references/dossier-template.md` was stale relative to what
+    `gap-to-topic` actually emits since v0.3.6 (the `--screen`
+    fit-check integration) and v0.3.9 (the 7-section reflow): missing
+    top-level `run_type` / `recall` (with full `screen` sub-block) /
+    `pipeline`; missing per-gap `open_confidence` /
+    `dead_end_evidence` / `borderline_reason` / `verdict` /
+    `verdict_reason`. The schema is now byte-aligned with the real
+    output and adds a top-level `downstream_consumer:
+    research-design-helper` key as a forward-compat hook recording
+    the contract reader.
+  - **Discoverability.** `docs/ai-research-skills.md` had zero mentions
+    of `gap-to-topic` despite the skill being shipped at v0.3.10.
+    Added a new Stage 2.5 row to the Stages table, a "Deciding whether
+    a research gap is worth pursuing" entry to the When-to-use table,
+    and a full `### gap-to-topic (v0.3.11)` section in All packaged
+    skills documenting Reads / Writes / handoff to Stage 3a /
+    trigger phrases.
+  - Pure additive changes (no removed fields, no enum tokens changed).
+    Mirror at `src/research_hub/skills_data/gap-to-topic/` updated in
+    parity.
 - **`gap-to-topic` dossier reflowed as a 7-section research-grade decision
   memo** (`skills/gap-to-topic/`, plugin `0.3.8 → 0.3.9`). The v0.3.8
   dossier rendered as "Markdown converted to Word" — wide scorecard with
