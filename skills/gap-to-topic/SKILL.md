@@ -37,25 +37,28 @@ Not for:
 
 ## What it produces
 
-`.research/topic_dossier.md` — a **reader-first summary report**: it must
-read top-to-bottom in Word with no decoding — no codes (`G1`/`G2` stay only
-in `.gaps.yml`), no decorative glyphs, plain-language verdicts ("Do not
-pursue — as stated" / "Worth pursuing — only if its open conditions hold" /
-"Worth pursuing"), tool mechanics kept in Appendix A.
+`.research/topic_dossier.md` — a **research-grade decision memo**: first
+page enables a decision; the body supports verification; the appendices
+support a re-run. Reads top-to-bottom in Word with no decoding — no codes
+(`G1`/`G2` stay only in `.gaps.yml`), no decorative glyphs, plain-language
+verdicts, decision-relevant tables in the body and reference / log tables
+in the appendices.
 
 | Section | What it covers |
 |---|---|
-| Bottom line | the answer up front — one plain-language paragraph per candidate plus a **Decision scorecard**: each gate rated 1–5 (Likert), candidates × the 3 gates + verdict |
-| What's in this deliverable | an index of the bundle — every file, what it carries, and a file tree |
-| The candidates | 1–N candidate topics in a roster table, each given a readable name + a plain "why it could be a gap" tag |
-| Gate 1 — Is the gap still open? | the literature funnel + classification, closest prior work and how solid it is, recall confidence |
-| Gate 2 — Would it be a real contribution? | what it would contribute, dead-end history, new-capability-vs-extension, a minimum validation sketch |
-| Gate 3 — Is it feasible? | data / resources, design feasibility, a scale outline, the binding constraint, proposal-vs-dissertation feasibility |
-| The decision is yours | a conditional recommendation pending named checks; an operational upgrade/kill test; a salvage path for a failed candidate |
-| Appendix A | how the dossier was produced — a method note (search scope, inclusion criteria, automated-vs-judgement) |
+| 1. Executive Decision Summary | metadata box; one framing sentence; **per-candidate verdict cards** (small 2-column tables, generator colour-codes the verdict cell); a one-line key uncertainty |
+| 2. Candidate Definitions | per candidate, name + one-sentence statement + a plain "why it could be a gap" tag ("No one has tried this" / "Current methods fall short") |
+| 3. Decision Scorecards | per candidate, a small 3-column table (Gate / Score / Rationale) with the three gates rated 1–5 (Likert) plus a Verdict row; cells colour-coded by the generator |
+| 4. Evidence Base | the search funnel, the prior-art classification, and the closest prior work per candidate with inline evidence-type tags |
+| 5. Gate-by-Gate Assessment | each gate uses a fixed five-field skeleton: Score / Evidence / Interpretation / Risk / Action needed |
+| 6. Risks and Upgrade / Kill Tests | named risks (construct validity, dataset, novelty, reproducibility); operational upgrade / kill test per conditional candidate; salvage path per failed candidate |
+| 7. Recommended Next Steps | formal research-memo prose — the do-not-pursue topic and the conditional topic, with named actions |
+| Appendix A. Search and Screening Protocol | a reproducibility log — search date, databases, query families, retrieved, dedup, inclusion / exclusion, screening, known limitations, recall confidence |
+| Appendix B. Deliverable File List | the file index and the file tree |
 
 (SKILL.md §0–§4 below are the agent's internal workflow steps; they map to
-the reader-facing sections above — §0 → The candidates, §1 → Gate 1, etc.)
+the reader-facing sections above — §0 → §2 Candidate Definitions, §1 → §3
+Decision Scorecards + §4 Evidence Base + §5 Gate 1, etc.)
 
 Plus two machine-readable companions: `<dossier>.bib` (the Gate 1 reference
 list as BibTeX) and `<dossier>.gaps.yml` (structured candidates + verdicts +

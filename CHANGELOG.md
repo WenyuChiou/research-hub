@@ -22,6 +22,22 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Fixed
+- **`gap-to-topic` dossier reflowed as a 7-section research-grade decision
+  memo** (`skills/gap-to-topic/`, plugin `0.3.8 → 0.3.9`). The v0.3.8
+  dossier rendered as "Markdown converted to Word" — wide scorecard with
+  one-letter-wide columns, no decision-level visual cue, too many tables
+  in the body. `references/dossier-template.md` is reorganised: §1
+  Executive Decision Summary (metadata + verdict cards + key uncertainty)
+  → §2 Candidate Definitions (prose, no roster table) → §3 Decision
+  Scorecards (per-candidate small tables, replacing the wide combined
+  one) → §4 Evidence Base → §5 Gate-by-Gate Assessment (each gate uses a
+  fixed Score / Evidence / Interpretation / Risk / Action-needed
+  skeleton) → §6 Risks and Upgrade/Kill Tests (named risks; operational
+  kill-test artifacts; salvage path) → §7 Recommended Next Steps (formal
+  research-memo prose) → Appendix A Search and Screening Protocol
+  (reproducibility log) → Appendix B Deliverable File List. SKILL.md
+  "What it produces" updated to match. Mirrored to
+  `src/research_hub/skills_data/gap-to-topic/`.
 - **`gap-to-topic` dossier — section-by-section rework for researcher value**
   (`skills/gap-to-topic/`, plugin `0.3.7 → 0.3.8`).  A section-by-section
   review with the maintainer, plus a Codex evaluation, reworked
