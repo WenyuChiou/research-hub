@@ -34,5 +34,16 @@ def test_requires_auth_refresh_uses_recommended_invocation(monkeypatch, tmp_path
         require_session_health(tmp_path / "missing-state.json")
 
     command = exc_info.value.next_steps[0]
-    assert "notebooklm login" in command
+    assert "notebooklm login --auto-detect" in command
     assert not command.startswith("python -m research_hub")
+
+
+def test_clean_auth_reason_removes_legacy_upstream_hint():
+    from research_hub.notebooklm.auth import _clean_auth_reason
+
+    reason = (
+        "Authentication expired or invalid. "
+        "Run 'notebooklm login' to re-authenticate."
+    )
+
+    assert _clean_auth_reason(reason) == "Authentication expired or invalid"

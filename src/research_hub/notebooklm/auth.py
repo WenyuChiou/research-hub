@@ -405,6 +405,20 @@ def _login_with_auto_detect(
                     pass
 
 
+def _clean_auth_reason(reason: object) -> str:
+    """Remove upstream reauth hints that point at the legacy command."""
+
+    text = str(reason)
+    legacy_hints = (
+        "Run 'notebooklm login' to re-authenticate.",
+        'Run "notebooklm login" to re-authenticate.',
+        "Run `notebooklm login` to re-authenticate.",
+    )
+    for hint in legacy_hints:
+        text = text.replace(hint, "").strip()
+    return text.rstrip(". ")
+
+
 def check_session_health(state_file: Path) -> dict[str, Any]:
     """Return ``ok``, ``reason``, and ``expires_at`` for a storage state."""
     state_file = Path(state_file)
@@ -414,9 +428,9 @@ def check_session_health(state_file: Path) -> dict[str, Any]:
         ok = asyncio.run(_probe_state_file(state_file))
         return {"ok": ok, "reason": "ok" if ok else "auth invalid", "expires_at": None}
     except AuthError as exc:
-        return {"ok": False, "reason": f"auth error: {exc}", "expires_at": None}
+        return {"ok": False, "reason": f"auth error: {_clean_auth_reason(exc)}", "expires_at": None}
     except Exception as exc:
-        return {"ok": False, "reason": f"unexpected error: {exc}", "expires_at": None}
+        return {"ok": False, "reason": f"unexpected error: {_clean_auth_reason(exc)}", "expires_at": None}
 
 
 def require_session_health(state_file: Path) -> None:
@@ -432,7 +446,7 @@ def require_session_health(state_file: Path) -> None:
     raise RequiresAuthRefresh(
         service="NotebookLM",
         fix_command=command,
-        message=f"NotebookLM session check failed: {reason}. Run: {command}",
+        message=f"NotebookLM session check failed: {reason}",
     )
 
 
