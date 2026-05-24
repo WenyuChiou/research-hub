@@ -86,6 +86,7 @@ def test_v08815_s2_whitespace_does_not_send_x_api_key(monkeypatch) -> None:
     from research_hub.search.semantic_scholar import SemanticScholarClient
 
     monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "   ")
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_RPS", raising=False)
     client = SemanticScholarClient()
     assert client._headers() == {}
     # Also: throttle should NOT be lifted (caller is effectively anonymous)

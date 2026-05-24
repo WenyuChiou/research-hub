@@ -22,10 +22,14 @@ DEFAULT_FIELDS = (
 
 # v0.88.12: env var the user sets if they've applied for a free
 # Semantic Scholar API key (https://www.semanticscholar.org/product/api).
-# Unauthenticated sustained rate is ~100 req per 5 min shared across all
-# anonymous callers — Stage B hit this wall as HTTP 429. With a key,
-# the published limit is ~1 req/sec dedicated per key — ~50× headroom.
+# Unauthenticated access uses a shared public pool and can still return
+# 429 under load. With a key, Semantic Scholar's introductory published
+# limit is 1 request/sec across all endpoints.
 SEMANTIC_SCHOLAR_API_KEY_ENV = "SEMANTIC_SCHOLAR_API_KEY"
+SEMANTIC_SCHOLAR_RPS_ENV = "SEMANTIC_SCHOLAR_RPS"
+DEFAULT_ANONYMOUS_DELAY_SECONDS = 3.0
+DEFAULT_AUTHENTICATED_DELAY_SECONDS = 1.1
+DEFAULT_MAX_RETRIES = 2
 
 
 class RateLimitError(UpstreamRateLimited):
@@ -49,17 +53,18 @@ class SemanticScholarClient:
 
     v0.88.12: when ``SEMANTIC_SCHOLAR_API_KEY`` env var is set, the
     client sends it as the ``x-api-key`` header on every request and
-    drops the polite throttle delay (S2's published authenticated rate
-    is ~1 req/sec, well above our default 3 s polite delay).
+    uses a conservative 1-RPS throttle by default. Advanced users with
+    a higher Semantic Scholar quota may set ``SEMANTIC_SCHOLAR_RPS``.
     """
 
     name = "semantic-scholar"
 
     def __init__(
         self,
-        delay_seconds: float = 3.0,
+        delay_seconds: float = DEFAULT_ANONYMOUS_DELAY_SECONDS,
         timeout: int = 30,
         api_key: str | None = None,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         # If api_key is None, fall back to the env var. Pass api_key=""
         # explicitly to force-disable env lookup (useful for tests).
@@ -85,11 +90,22 @@ class SemanticScholarClient:
                 )
                 api_key = None
         self.api_key = api_key
-        # Authenticated clients can poll faster; cap the throttle so a
-        # key-holder doesn't waste the rate budget.
-        self.delay = 1.0 if api_key else delay_seconds
+        self.delay = self._resolve_delay(
+            api_key=api_key,
+            delay_seconds=delay_seconds,
+        )
         self.timeout = timeout
+        self.max_retries = max(0, int(max_retries))
         self._last_request: float | None = None
+
+    @staticmethod
+    def _resolve_delay(*, api_key: str | None, delay_seconds: float) -> float:
+        rps = _positive_float_env(SEMANTIC_SCHOLAR_RPS_ENV)
+        if rps is not None:
+            return 1.0 / rps
+        if api_key:
+            return DEFAULT_AUTHENTICATED_DELAY_SECONDS
+        return delay_seconds
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -98,6 +114,8 @@ class SemanticScholarClient:
         return headers
 
     def _throttle(self) -> None:
+        if self.delay <= 0:
+            return
         current_time = time.time()
         if self._last_request is None:
             self._last_request = current_time
@@ -109,6 +127,45 @@ class SemanticScholarClient:
             current_time += sleep_for
         self._last_request = current_time
 
+    def _retry_delay(self, response: requests.Response, attempt: int) -> float:
+        headers = getattr(response, "headers", {}) or {}
+        retry_after = headers.get("Retry-After", "")
+        if retry_after:
+            try:
+                return max(0.0, float(retry_after))
+            except ValueError:
+                pass
+        base = self.delay if self.delay > 0 else 1.0
+        return min(30.0, base * (2 ** attempt))
+
+    def _get(self, url: str, **kwargs) -> requests.Response | None:
+        for attempt in range(self.max_retries + 1):
+            self._throttle()
+            try:
+                response = requests.get(
+                    url,
+                    timeout=self.timeout,
+                    headers=self._headers(),
+                    **kwargs,
+                )
+            except requests.exceptions.RequestException:
+                return None
+            if response.status_code != 429:
+                return response
+            retry_delay = self._retry_delay(response, attempt)
+            if attempt >= self.max_retries:
+                return response
+            logger.warning(
+                "semantic-scholar rate-limited (HTTP 429); retrying in %.1fs "
+                "(attempt %d/%d, auth=%s)",
+                retry_delay,
+                attempt + 1,
+                self.max_retries,
+                "api-key" if self.api_key else "anonymous",
+            )
+            time.sleep(retry_delay)
+        return None
+
     def search(
         self,
         query: str,
@@ -117,7 +174,6 @@ class SemanticScholarClient:
         year_to: int | None = None,
     ) -> list[SearchResult]:
         """Search papers by query."""
-        self._throttle()
         params: dict[str, str | int] = {
             "query": query,
             "limit": min(limit, 100),
@@ -128,32 +184,35 @@ class SemanticScholarClient:
             end = "" if year_to is None else str(year_to)
             params["year"] = f"{start}-{end}"
         try:
-            response = requests.get(
+            response = self._get(
                 f"{SEMANTIC_SCHOLAR_BASE}/paper/search",
                 params=params,
-                timeout=self.timeout,
-                headers=self._headers(),
             )
         except requests.exceptions.RequestException:
+            return []
+        if response is None:
             return []
         if response.status_code == 429:
             if self.api_key:
                 # Authenticated 429 = we genuinely exceeded the per-key
-                # rate; back off harder. Anonymous 429 = shared-pool
+                # rate. Anonymous 429 = shared-pool
                 # contention; suggest applying for a key.
                 logger.warning(
-                    "semantic-scholar rate-limited (HTTP 429) WITH API key. "
-                    "Back off harder or check key validity."
+                    "semantic-scholar rate-limited (HTTP 429) WITH API key "
+                    "after %d retry attempt(s). Default is ~1 request/sec; "
+                    "lower %s if your key has a smaller quota.",
+                    self.max_retries,
+                    SEMANTIC_SCHOLAR_RPS_ENV,
                 )
             else:
                 logger.warning(
-                    "semantic-scholar rate-limited (HTTP 429); "
+                    "semantic-scholar rate-limited (HTTP 429) after %d retry attempt(s); "
                     "backend returned 0 results. Consider requesting an API key at "
                     "https://www.semanticscholar.org/product/api#api-key-form and "
                     "exporting it as SEMANTIC_SCHOLAR_API_KEY, "
-                    "or using --backend-trace to see the silent-drop."
+                    "or using --backend-trace to see the silent-drop.",
+                    self.max_retries,
                 )
-            time.sleep(self.delay * 2)
             return []
         try:
             response.raise_for_status()
@@ -163,15 +222,14 @@ class SemanticScholarClient:
 
     def get_paper(self, identifier: str) -> SearchResult | None:
         """Fetch a single paper by DOI, arXiv ID, or Semantic Scholar ID."""
-        self._throttle()
         try:
-            response = requests.get(
+            response = self._get(
                 f"{SEMANTIC_SCHOLAR_BASE}/paper/{identifier}",
                 params={"fields": DEFAULT_FIELDS},
-                timeout=self.timeout,
-                headers=self._headers(),
             )
         except requests.exceptions.RequestException:
+            return None
+        if response is None:
             return None
         if response.status_code == 429:
             raise RateLimitError("Semantic Scholar rate-limited (HTTP 429)")
@@ -194,7 +252,6 @@ class SemanticScholarClient:
         (``arXiv:<arxiv_id>``).  Returns an empty list on any network or API
         failure (never raises).
         """
-        self._throttle()
         url = (
             f"https://api.semanticscholar.org/recommendations/v1"
             f"/papers/forpaper/{paper_id}"
@@ -204,20 +261,22 @@ class SemanticScholarClient:
             "fields": DEFAULT_FIELDS,
         }
         try:
-            response = requests.get(
+            response = self._get(
                 url,
                 params=params,
-                timeout=self.timeout,
-                headers=self._headers(),
             )
         except requests.exceptions.RequestException as exc:
             logger.warning("S2 recommendations network error for %s: %s", paper_id, exc)
             return []
+        if response is None:
+            return []
         if response.status_code == 429:
             logger.warning(
-                "semantic-scholar recommendations rate-limited (HTTP 429) for %s", paper_id
+                "semantic-scholar recommendations rate-limited (HTTP 429) for %s "
+                "after %d retry attempt(s)",
+                paper_id,
+                self.max_retries,
             )
-            time.sleep(self.delay * 2)
             return []
         if response.status_code != 200:
             logger.debug(
@@ -237,3 +296,18 @@ class SemanticScholarClient:
             except Exception:
                 pass
         return results
+
+
+def _positive_float_env(name: str) -> float | None:
+    raw = os.environ.get(name, "")
+    if not raw or not raw.strip():
+        return None
+    try:
+        value = float(raw.strip())
+    except ValueError:
+        logger.warning("%s=%r is not a number; using Semantic Scholar defaults.", name, raw)
+        return None
+    if value <= 0:
+        logger.warning("%s=%r must be positive; using Semantic Scholar defaults.", name, raw)
+        return None
+    return value

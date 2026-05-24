@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from research_hub.search.semantic_scholar import SemanticScholarClient
+from research_hub.search.semantic_scholar import (
+    DEFAULT_AUTHENTICATED_DELAY_SECONDS,
+    SemanticScholarClient,
+)
 
 
 def test_non_latin1_env_api_key_is_ignored(monkeypatch, caplog) -> None:
@@ -42,11 +45,26 @@ def test_whitespace_only_env_api_key_is_anonymous(monkeypatch) -> None:
 
 def test_unset_env_api_key_is_anonymous(monkeypatch) -> None:
     monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_RPS", raising=False)
 
     client = SemanticScholarClient()
 
     assert client.api_key is None
     assert client._headers() == {}
+
+
+def test_invalid_rps_env_falls_back_to_authenticated_default(monkeypatch, caplog) -> None:
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "valid-key-123")
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_RPS", "fast")
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="research_hub.search.semantic_scholar",
+    ):
+        client = SemanticScholarClient()
+
+    assert client.delay == DEFAULT_AUTHENTICATED_DELAY_SECONDS
+    assert "SEMANTIC_SCHOLAR_RPS='fast' is not a number" in caplog.text
 
 
 def test_non_latin1_explicit_arg_api_key_is_ignored(monkeypatch, caplog) -> None:

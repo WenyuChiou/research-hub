@@ -37,8 +37,14 @@ ENV_VARS = [
     {
         "name": "SEMANTIC_SCHOLAR_API_KEY",
         "required": False,
-        "purpose": "Lift S2 rate limit from anonymous-shared to 1 req/sec dedicated",
+        "purpose": "Use an S2 API key; client defaults to a conservative ~1 req/sec throttle",
         "example": "<from https://www.semanticscholar.org/product/api>",
+    },
+    {
+        "name": "SEMANTIC_SCHOLAR_RPS",
+        "required": False,
+        "purpose": "Optional S2 request-rate override for keys with a different quota",
+        "example": "1",
     },
     {
         "name": "TAVILY_API_KEY",

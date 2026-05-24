@@ -88,6 +88,12 @@ research-hub notebooklm download --cluster <slug>
 | LLM CLI 關聯性判斷 | 預設 `research-hub auto` 流程 | 安裝 `claude`、`codex`、`gemini`、`opencode`、`aichat`、`cursor`，設定自訂 adapter，或加 `--no-fit-check` |
 | AI host 整合 | Claude/Codex/Cursor/Gemini/OpenClaw 等 | Tool-calling host 用 MCP/REST；只有已驗證平台才用 `research-hub install --platform ...` |
 
+Semantic Scholar 搜尋有內建節流。沒有 `SEMANTIC_SCHOLAR_API_KEY`
+時會用較慢的匿名速度，因為公共流量共享容量；有 API key 時預設約
+每秒一個 request，遇到 HTTP 429 會依 `Retry-After` 或 exponential
+backoff 自動重試。若你的 key 有不同額度，再設定
+`SEMANTIC_SCHOLAR_RPS`，一般使用者不需要調。
+
 > **第一次跑 `auto` 前請看**：`auto` 預設會做 **fail-closed** 的關聯性判斷。若沒有支援的 LLM CLI，也沒有加 `--no-fit-check`，`auto` 會在搜尋**前**停下並給出修正指引，而不是默默產生空的 vault。
 >
 > **真實性閘門 (v0.95+)**：每篇文獻都必須能解析出真實識別碼（DOI / arXiv / PMID）並通過完整性與關聯性檢查，否則會被 **隔離（quarantine）並記錄原因**，不會寫進 vault。用 `research-hub quarantine list` 檢視被擋下的文獻。

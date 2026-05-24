@@ -154,11 +154,19 @@ inspection can run without them.
 |---|---|---|
 | `ZOTERO_API_KEY` | yes | Zotero web API auth, required for paper ingestion |
 | `ZOTERO_LIBRARY_ID` | yes | Zotero library identifier |
-| `SEMANTIC_SCHOLAR_API_KEY` | no | Lifts S2 rate limit from shared anonymous to 1 req/sec dedicated |
+| `SEMANTIC_SCHOLAR_API_KEY` | no | Uses an S2 API key and defaults to a conservative ~1 request/sec throttle |
+| `SEMANTIC_SCHOLAR_RPS` | no | Optional S2 request-rate override; leave unset unless your key has a different quota |
 | `TAVILY_API_KEY` | no | Web search backend (alternative to DDG) |
 | `BRAVE_API_KEY` | no | Web search backend (alternative to DDG) |
 
 <!-- env-vars-table-end -->
+
+Semantic Scholar searches are deliberately paced. Without
+`SEMANTIC_SCHOLAR_API_KEY`, research-hub uses a slower anonymous delay
+because public traffic shares capacity. With a key, the default is
+approximately one request per second and 429 responses are retried with
+`Retry-After` / exponential backoff. If Semantic Scholar grants your key
+a different quota, set `SEMANTIC_SCHOLAR_RPS` instead of editing code.
 
 ## Operator Modes
 

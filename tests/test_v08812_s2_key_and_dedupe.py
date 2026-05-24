@@ -2,8 +2,8 @@
 
 1. **Semantic Scholar API key (env var pass-through)**. Stage B hit HTTP
    429 from the anonymous shared pool. With ``SEMANTIC_SCHOLAR_API_KEY``
-   set, the client sends ``x-api-key`` header and lifts the polite
-   throttle delay 3.0s → 1.0s.
+   set, the client sends ``x-api-key`` header and uses a conservative
+   ~1 RPS throttle by default.
 
 2. **`vault cleanup-frontmatter --dedupe-lists`** — backfill the
    v0.88.4 list-dedupe across pre-existing notes. W3 found 10/12
@@ -42,18 +42,35 @@ def test_s2_client_no_key_when_env_unset(monkeypatch) -> None:
     from research_hub.search.semantic_scholar import SemanticScholarClient
 
     monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_RPS", raising=False)
     client = SemanticScholarClient()
     assert client.api_key is None
     assert client.delay == 3.0  # default polite delay
 
 
 def test_s2_client_lifts_throttle_with_api_key(monkeypatch) -> None:
-    """Authenticated → drop polite throttle to 1.0s per S2's published rate."""
+    """Authenticated → default to a conservative ~1 RPS S2 throttle."""
+    from research_hub.search.semantic_scholar import (
+        DEFAULT_AUTHENTICATED_DELAY_SECONDS,
+        SemanticScholarClient,
+    )
+
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "key")
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_RPS", raising=False)
+    client = SemanticScholarClient(delay_seconds=10.0)
+    assert client.delay == DEFAULT_AUTHENTICATED_DELAY_SECONDS
+
+
+def test_s2_client_rps_env_overrides_default_delay(monkeypatch) -> None:
+    """SEMANTIC_SCHOLAR_RPS lets higher-quota users tune the throttle."""
     from research_hub.search.semantic_scholar import SemanticScholarClient
 
     monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "key")
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_RPS", "0.5")
+
     client = SemanticScholarClient(delay_seconds=10.0)
-    assert client.delay == 1.0
+
+    assert client.delay == 2.0
 
 
 def test_s2_client_headers_include_x_api_key_when_authenticated(monkeypatch) -> None:

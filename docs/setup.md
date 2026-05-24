@@ -124,9 +124,17 @@ Optional search keys:
 
 ```bash
 SEMANTIC_SCHOLAR_API_KEY=...
+# Optional: only set this if your S2 key has a different quota.
+SEMANTIC_SCHOLAR_RPS=1
 TAVILY_API_KEY=...
 BRAVE_API_KEY=...
 ```
+
+research-hub paces Semantic Scholar calls by default: anonymous traffic
+uses a slower delay, while API-key traffic defaults to about one request
+per second and retries HTTP 429 with `Retry-After` / exponential
+backoff. Keep `SEMANTIC_SCHOLAR_RPS` unset unless Semantic Scholar has
+granted your key a quota other than the default.
 
 NotebookLM upload requires a one-time browser login. The lowest-friction
 path is:
