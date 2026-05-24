@@ -437,10 +437,10 @@ def auto_pipeline(
             report.ok = True
             report.nlm_error = f"nlm.preflight: session not valid ({_reason})"
             _step_log(report, "nlm.preflight", False, _elapsed(started, report),
-                      f"session not valid — run: {_inv} notebooklm login", print_progress)
+                      f"session not valid — run: {_inv} notebooklm login --auto-detect", print_progress)
             if print_progress:
                 print(f"  [HINT] NLM session is not valid ({_reason}).")
-                print(f"         Run:  {_inv} notebooklm login")
+                print(f"         Run:  {_inv} notebooklm login --auto-detect")
                 print(f"         Then re-run auto to upload to NotebookLM.")
             if do_crystals:
                 _run_crystal_step(cfg, slug, effective_cli, report, started, print_progress)
@@ -788,9 +788,9 @@ def _print_next_steps(report: AutoReport, slug: str, cfg, *, do_crystals: bool) 
         is_auth_error = (report.nlm_error or "").startswith("nlm.preflight:")
         if is_auth_error:
             print(f"  [NLM] skipped — session expired. Fix:")
-            print(f"    {inv} notebooklm login")
+            print(f"    {inv} notebooklm login --auto-detect")
         else:
-            print(f"  [NLM] skipped (check: {inv} notebooklm login). Resume with:")
+            print(f"  [NLM] skipped (check: {inv} notebooklm login --auto-detect). Resume with:")
         print(f"    {inv} notebooklm bundle   --cluster {slug}")
         print(f"    {inv} notebooklm upload   --cluster {slug}")
         print(f"    {inv} notebooklm generate --cluster {slug} --type brief")

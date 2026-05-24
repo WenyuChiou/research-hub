@@ -203,7 +203,7 @@ def test_auto_nlm_failure_does_not_abort_pipeline(mock_deps, capsys):
     assert report.nlm_deferred is True
     assert report.nlm_error == "nlm.upload: login expired"
     mock_crystals.assert_called_once()
-    assert "[NLM] skipped (check: research-hub notebooklm login). Resume with:" in out
+    assert "[NLM] skipped (check: research-hub notebooklm login --auto-detect). Resume with:" in out
     assert "session expired. Fix:" not in out  # must not be misclassified as auth error
     assert "research-hub notebooklm bundle   --cluster nlm-deferred-topic" in out
     assert "research-hub notebooklm upload   --cluster nlm-deferred-topic" in out

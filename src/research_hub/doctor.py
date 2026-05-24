@@ -780,7 +780,7 @@ def check_nlm_auth_paths() -> CheckResult:
     from research_hub._invocation import recommended_cli_invocation
 
     inv = recommended_cli_invocation()
-    interactive = f"{inv} notebooklm login"
+    interactive = f"{inv} notebooklm login --auto-detect"
     if importlib.util.find_spec("rookiepy") is not None:
         return CheckResult(
             "nlm_auth_paths",
@@ -1218,7 +1218,7 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
                             "nlm_session",
                             "WARN",
                             f"Session file present but Google rejected it ({health.get('reason')})",
-                            remedy="Run: research-hub notebooklm login",
+                            remedy="Run: research-hub notebooklm login --auto-detect",
                         )
                     )
                 else:
@@ -1237,7 +1237,7 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
                         "nlm_session",
                         "WARN",
                         "No saved session",
-                        remedy="Run: research-hub notebooklm login",
+                        remedy="Run: research-hub notebooklm login --auto-detect",
                     )
                 )
         except Exception:

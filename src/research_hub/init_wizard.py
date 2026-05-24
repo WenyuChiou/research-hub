@@ -369,13 +369,13 @@ def run_init(
 
             run_notebooklm_login()
         except KeyboardInterrupt:
-            print("  Skipped. Run later: research-hub notebooklm login")
+            print("  Skipped. Run later: research-hub notebooklm login --auto-detect")
         except Exception as exc:
-            print(f"  Login failed: {exc}. Run later: research-hub notebooklm login")
+            print(f"  Login failed: {exc}. Run later: research-hub notebooklm login --auto-detect")
     elif interactive and not chrome_ok and persona not in {"analyst", "internal"}:
         answer = input("  Chrome not ready. Run NotebookLM Google login later? [y/N]: ").strip().lower()
         if answer == "y":
-            print("  Run: research-hub notebooklm login")
+            print("  Run: research-hub notebooklm login --auto-detect")
 
     _print_completion_banner(vault, config_path, persona=persona)
     return 0

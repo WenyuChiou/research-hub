@@ -428,7 +428,7 @@ def require_session_health(state_file: Path) -> None:
     reason = str(health.get("reason") or "auth invalid")
     from research_hub._invocation import recommended_cli_invocation
 
-    command = f"{recommended_cli_invocation()} notebooklm login"
+    command = f"{recommended_cli_invocation()} notebooklm login --auto-detect"
     raise RequiresAuthRefresh(
         service="NotebookLM",
         fix_command=command,

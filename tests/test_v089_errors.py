@@ -55,13 +55,13 @@ from research_hub.errors import (
         (
             RequiresAuthRefresh(
                 "NotebookLM",
-                fix_command="python -m research_hub notebooklm login",
+                fix_command="python -m research_hub notebooklm login --auto-detect",
             ),
             {
                 "error_code": "requires_auth_refresh",
-                "message": "NotebookLM session expired. Run: python -m research_hub notebooklm login",
+                "message": "NotebookLM session expired. Run: python -m research_hub notebooklm login --auto-detect",
                 "context": {"service": "NotebookLM"},
-                "next_steps": ["python -m research_hub notebooklm login"],
+                "next_steps": ["python -m research_hub notebooklm login --auto-detect"],
             },
         ),
         (

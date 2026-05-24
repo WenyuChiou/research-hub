@@ -124,7 +124,7 @@ def keepalive_once(cfg: Any) -> int:
             reason = health.get("reason", "unknown")
             print(
                 f"[nlm-keepalive] WARN NLM session revoked server-side "
-                f"(reason: {reason}) -- run: {inv} notebooklm login",
+                f"(reason: {reason}) -- run: {inv} notebooklm login --auto-detect",
                 file=sys.stderr,
             )
             return 1
@@ -138,7 +138,7 @@ def keepalive_once(cfg: Any) -> int:
             print(
                 "[nlm-keepalive] WARN keepalive: cookies rotated but session is "
                 "no longer valid (likely server-side re-auth required); "
-                f"run {inv} notebooklm login",
+                f"run {inv} notebooklm login --auto-detect",
                 file=sys.stderr,
             )
             return 1

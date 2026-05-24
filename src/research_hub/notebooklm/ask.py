@@ -84,7 +84,7 @@ def ask_cluster_notebook(
 
     state_file = default_state_file(cfg.research_hub_dir)
     if not state_file.exists():
-        error = "No NLM session. Run `research-hub notebooklm login` first."
+        error = "No NLM session. Run `research-hub notebooklm login --auto-detect` first."
         _log_jsonl(debug_log, {"kind": "ask_error", "error": error})
         return AskResult(ok=False, error=error)
 

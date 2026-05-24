@@ -387,7 +387,7 @@ def test_nlm_session_present_but_auth_rejected(tmp_path, monkeypatch):
 
     nlm = next(r for r in results if r.name == "nlm_session")
     assert nlm.status == "WARN"
-    assert nlm.remedy and "notebooklm login" in nlm.remedy
+    assert nlm.remedy and "notebooklm login --auto-detect" in nlm.remedy
 
 
 def test_nlm_session_present_probe_offline(tmp_path, monkeypatch):

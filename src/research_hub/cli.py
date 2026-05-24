@@ -4246,7 +4246,7 @@ def _preflight_nlm_session(cfg, *, op_name: str) -> int | None:
         reason = str(exc).split(": ", 1)[1] if ": " in str(exc) else str(exc)
         print(
             f"[notebooklm {op_name}] session check failed: {reason}. "
-            f"Run `{inv} notebooklm login` to sign in.",
+            f"Run `{inv} notebooklm login --auto-detect` to sign in.",
             file=sys.stderr,
         )
         return 1
@@ -8213,7 +8213,7 @@ def _main_dispatch(args, parser) -> int:
                             f"for Python {version_tuple[0]}.{version_tuple[1]} "
                             "(building it needs a Rust toolchain). Non-interactive "
                             "cookie import is unavailable on this Python. Use one of: "
-                            f"(1) interactive login in a terminal: `{inv} notebooklm login` "
+                            f"(1) interactive login in a terminal: `{inv} notebooklm login --auto-detect` "
                             "then press ENTER; (2) copy a logged-in session: "
                             f"`{inv} notebooklm login --import-from <other-vault>`.",
                             file=sys.stderr,
