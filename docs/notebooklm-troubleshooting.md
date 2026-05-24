@@ -31,7 +31,7 @@ Every `upload` / `ask` / `download` / `generate` run writes a structured JSONL l
 **Diagnosis.** Google's frontend detected automation and silently dropped the sources. Pre-v0.42 users hit this constantly because `--disable-blink-features=AutomationControlled` was missing. If you are on v0.42+ and still seeing it:
 
 1. Check `nlm-debug-<UTC>.jsonl` for `"kind": "upload_ok"` lines — if they are there but the UI is empty, Google is rejecting at a layer patchright cannot see.
-2. Run `research-hub notebooklm login` again (fresh session). Sometimes Google invalidates the session between runs.
+2. Run `research-hub notebooklm login --auto-detect` again (fresh session). Sometimes Google invalidates the session between runs.
 3. Delete `.research_hub/nlm_sessions/` entirely and re-login. This wipes `user_data_dir` + `state.json` and forces a fresh fingerprint.
 
 ---
@@ -55,7 +55,7 @@ Every `upload` / `ask` / `download` / `generate` run writes a structured JSONL l
 **Diagnosis.**
 
 1. Is the notebook actually populated? Run `research-hub notebooklm read-briefing --cluster X` first; if that fails the source upload never completed.
-2. Did your Google session expire? Run `research-hub notebooklm login` again.
+2. Did your Google session expire? Run `research-hub notebooklm login --auto-detect` again.
 3. Use `--visible` + `--timeout 300` to watch the question being typed and the generation stream live.
 4. NotebookLM occasionally rotates response DOM selectors. If nothing appears in `RESPONSE_SELECTORS`, open F12 DevTools in a real browser, find the new selector, and add it to `src/research_hub/notebooklm/ask.py::RESPONSE_SELECTORS`.
 

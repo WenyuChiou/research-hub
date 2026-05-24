@@ -181,7 +181,7 @@ curl http://127.0.0.1:8765/api/v1/health
 | AI host cannot see tools | Restart the host after adding MCP config |
 | `research-hub install --platform openclaw` fails | Use MCP/REST or manual `SKILL.md` loading; OpenClaw is not a built-in installer target |
 | `auto` stops before search | Install a supported LLM CLI or pass `--no-fit-check` |
-| NotebookLM upload prompts for login | Run `research-hub notebooklm login` once in a browser-capable session |
+| NotebookLM upload prompts for login | Run `research-hub notebooklm login --auto-detect` once in a browser-capable session |
 
 ## 7. Next Docs
 

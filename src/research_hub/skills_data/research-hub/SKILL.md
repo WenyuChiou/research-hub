@@ -7,19 +7,24 @@ description: Operate research-hub workflows for literature discovery, source ing
 
 research-hub turns Zotero, Obsidian, and NotebookLM into an AI-operable research workspace. It works best with any two of the three tools, and unlocks the full loop when all three are connected.
 
-## Prerequisite check (do this first)
+## Runtime contract (do this first)
 
-This skill drives the `research-hub` Python CLI. Before running any
-command from this skill, verify the CLI is installed:
+This is a runtime-backed skill. The `SKILL.md` instructions teach the
+AI workflow, but the actual search, Zotero writes, Obsidian vault
+updates, NotebookLM bundle/upload/download, dashboard, and MCP tools
+come from the `research-hub` Python CLI.
+
+Before running any workflow command from this skill, check the runtime:
 
 ```bash
+research-hub describe --json
 research-hub doctor
 ```
 
-If that command is **not found** (vs. emitting a health report), the
-host has loaded the skill instructions but the Python CLI is missing.
-This can happen after a marketplace/manual skill install without the
-runtime package. Stop and tell them:
+If `research-hub` is **not found**, the host has loaded the skill
+instructions but the executable runtime is missing. This can happen
+after a marketplace/manual skill install without the Python package.
+Stop and tell them:
 
 > This skill needs the `research-hub` CLI. Please run:
 >
@@ -33,10 +38,67 @@ runtime package. Stop and tell them:
 > automated search, no NotebookLM upload), a lightweight prompt-only
 > skill may be enough; this workflow needs the CLI for tool execution.
 
+If `doctor` runs but reports missing Zotero credentials, missing
+NotebookLM auth, or no supported LLM CLI, adapt instead of pretending
+the full path is ready:
+
+- Missing Zotero: use `import-folder`, sample/dashboard mode, or ask
+  the user to set `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID`.
+- Missing NotebookLM auth: run the first search with `--no-nlm`, then
+  ask the user to complete `research-hub notebooklm login --auto-detect`.
+- Missing LLM CLI for the relevance judge: either install/configure a
+  supported CLI (`claude`, `codex`, `gemini`, `opencode`, `aichat`,
+  `cursor`, or a custom adapter) or add `--no-fit-check` and clearly
+  state that relevance filtering was skipped.
+
 Do **not** invent or simulate `research-hub` output if the CLI is
 missing.
 
 Default language policy: answer the user in their language. Generate durable research notes, metadata, and citations in English unless the user explicitly asks for another language.
+
+## Agent preflight protocol
+
+For AI hosts such as Claude Code, Codex, Gemini CLI, Cursor, OpenClaw,
+Hermes, or generic API clients, use this sequence unless the user gives
+a narrower command:
+
+1. Capability check:
+
+   ```bash
+   research-hub describe --json
+   research-hub doctor
+   ```
+
+2. First safe literature run, without NotebookLM:
+
+   ```bash
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm
+   ```
+
+3. If the run stops before search because no relevance judge is on
+   PATH, choose one of these explicit paths:
+
+   ```bash
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm --no-fit-check
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm --llm-cli codex
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm --llm-cli gemini
+   ```
+
+4. Add NotebookLM only after the local Zotero/Obsidian path works:
+
+   ```bash
+   research-hub notebooklm login --auto-detect
+   research-hub notebooklm bundle --cluster <slug>
+   research-hub notebooklm upload --cluster <slug>
+   research-hub notebooklm generate --cluster <slug> --type brief
+   research-hub notebooklm download --cluster <slug>
+   ```
+
+5. For machine-readable automation, prefer commands with `--json` when
+   available, or use the MCP/REST surfaces exposed by `research-hub serve`.
+
+This protocol is intentionally staged: verify runtime first, ingest a
+small cluster second, then add browser-dependent NotebookLM work last.
 
 ## Pick The Right Entry Point
 
@@ -108,7 +170,7 @@ research-hub crystal emit --cluster project-topic
 ### NotebookLM
 
 ```bash
-research-hub notebooklm login
+research-hub notebooklm login --auto-detect
 research-hub notebooklm bundle --cluster project-topic
 research-hub notebooklm upload --cluster project-topic
 research-hub notebooklm generate --cluster project-topic --type brief
@@ -172,6 +234,8 @@ installer target exists.
 
 ## Guardrails
 
+- Do not assume installing `ai-research-skills` or copying `SKILL.md`
+  installed the `research-hub` CLI; check the runtime explicitly.
 - Always run `research-hub doctor` when setup state is uncertain.
 - Do not invent DOIs, citations, or paper metadata; use search/enrich/verify commands.
 - Do not delete clusters without reviewing cascade impact.
