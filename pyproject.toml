@@ -24,7 +24,7 @@ classifiers = [
 # break). Reproducible installs: pip install -e . -c constraints.txt.
 dependencies = [
     "networkx>=3.0,<4.0",
-    "notebooklm-py>=0.4.1,<0.5.0",
+    "notebooklm-py>=0.4.1,<0.6.0",
     "platformdirs>=4.0,<6.0",
     "pyzotero>=1.5.18,<2.0",
     "pyyaml>=6,<7",
