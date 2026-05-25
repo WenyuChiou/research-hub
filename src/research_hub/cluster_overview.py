@@ -30,6 +30,43 @@ from research_hub.summarize import _read_cluster_papers_with_abstracts
 # LLM enrichment.
 _CHINESE_TEMPLATE_MARKER = "一到兩句話"
 
+# Other scaffold sentinels written by `vault/hub_overview.py:_render_tldr`
+# when `populate_overview` runs BEFORE this `apply_overview` step in the
+# `auto` flow. populate_overview overwrites the Chinese scaffold with one
+# of these fallbacks, so the Chinese marker alone is not enough — without
+# these we'd silently classify a populate_overview-mangled scaffold as
+# "hand-curated" and never call the LLM.
+_ENGLISH_FALLBACK_TLDR = "No cluster summary available yet."
+
+
+def _is_scaffold_tldr(text: str, cluster_query: str, cluster_slug: str) -> bool:
+    """Return True if the TL;DR is still scaffold content, not user-curated.
+
+    Recognises:
+      * empty string
+      * the Chinese scaffold from topic.py (`一到兩句話...`)
+      * the English fallback string from `_render_tldr` when
+        `_overview_tldr` returns nothing usable
+      * an exact match against the cluster's query string (the most common
+        populate_overview fallback — `_overview_tldr` returns the query
+        when no NLM brief is available)
+      * an exact match (case-insensitive) against the slug humanised — the
+        last-resort fallback in `_overview_tldr`
+    """
+    text = (text or "").strip()
+    if not text:
+        return True
+    if text.startswith(_CHINESE_TEMPLATE_MARKER):
+        return True
+    if text == _ENGLISH_FALLBACK_TLDR:
+        return True
+    if cluster_query and text.strip() == cluster_query.strip():
+        return True
+    slug_humanised = cluster_slug.replace("-", " ").strip()
+    if slug_humanised and text.lower() == slug_humanised.lower():
+        return True
+    return False
+
 
 @dataclass
 class ClusterOverview:
@@ -315,7 +352,21 @@ def apply_overview(cfg, cluster_slug, payload, *, force: bool = False) -> Overvi
             frontmatter = existing_frontmatter
             title = _extract_title_from_frontmatter(existing_frontmatter, title_default)
         existing_tldr = _extract_tldr_text(existing_text)
-        if existing_tldr and not existing_tldr.startswith(_CHINESE_TEMPLATE_MARKER) and not force:
+        # Look up the cluster's query so the topic-string fallback that
+        # `populate_overview` writes can be recognised as scaffold (PR #91
+        # was half-fix — see _is_scaffold_tldr docstring).
+        try:
+            from research_hub.clusters import ClusterRegistry
+            _reg = ClusterRegistry(getattr(cfg, "clusters_file", Path(cfg.research_hub_dir) / "clusters.yaml"))
+            _cluster_obj = _reg.get(cluster_slug)
+            # NOTE: the Cluster dataclass field is `first_query`, NOT `query`
+            # — `create(query=...)` stores it as `first_query`. Reading the
+            # wrong attribute returns "" silently and the topic-string
+            # scaffold check below never fires.
+            _cluster_query = (getattr(_cluster_obj, "first_query", "") or "") if _cluster_obj else ""
+        except Exception:
+            _cluster_query = ""
+        if existing_tldr and not _is_scaffold_tldr(existing_tldr, _cluster_query, cluster_slug) and not force:
             # v0.88.9: this is a deliberate idempotent skip protecting
             # the user's hand-curated TL;DR. Report ``ok=True``,
             # ``skipped=True`` so the auto step can render it as a

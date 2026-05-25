@@ -187,6 +187,84 @@ def test_apply_overview_treats_chinese_scaffold_placeholder_as_untouched(cfg):
     assert result.skipped is False
 
 
+def test_apply_overview_treats_populate_overview_topic_string_as_scaffold(tmp_path):
+    """Regression: PR #91 was half-fix. In the real `auto` flow,
+    `populate_overview` (vault/hub_overview.py) runs BEFORE
+    `apply_overview` (cluster_overview.py) and overwrites the Chinese
+    scaffold TL;DR with the cluster's topic-string fallback ("LLM for
+    flood forecasting..."). The marker `一到兩句話` then no longer
+    matches, so `apply_overview` silently classified the topic string as
+    "hand-curated" and never called the LLM. This test pins the
+    extended scaffold check that recognises the topic-string fallback
+    too."""
+    from research_hub.clusters import ClusterRegistry
+    raw = tmp_path / "raw" / "test-cluster"
+    raw.mkdir(parents=True)
+    hub_dir = tmp_path / "hub" / "test-cluster"
+    hub_dir.mkdir(parents=True)
+    research_hub_dir = tmp_path / ".research_hub"
+    research_hub_dir.mkdir()
+    clusters_file = research_hub_dir / "clusters.yaml"
+    _write_paper_md(
+        raw / "paper-one.md",
+        "Paper One",
+        "Multi-agent coordination under flood response.",
+        year=2024,
+    )
+    ClusterRegistry(clusters_file).create(
+        query="LLM for flood forecasting, warning, and decision-making",
+        name="LLM Flood Cluster",
+        slug="test-cluster",
+    )
+    cfg = SimpleNamespace(
+        raw=tmp_path / "raw",
+        hub=tmp_path / "hub",
+        research_hub_dir=research_hub_dir,
+        clusters_file=clusters_file,
+    )
+    overview_path = hub_dir / "00_overview.md"
+    # Simulate post-populate_overview state: TL;DR = the topic string,
+    # no Chinese marker.
+    overview_path.write_text(
+        "---\ntype: topic-overview\ncluster: test-cluster\n---\n\n"
+        "# Test Cluster\n\n## TL;DR\n\n"
+        "> [!abstract]\n"
+        "> LLM for flood forecasting, warning, and decision-making\n"
+        "^tldr\n",
+        encoding="utf-8",
+    )
+
+    result = apply_overview(cfg, "test-cluster", _valid_payload(), force=False)
+
+    # populate_overview's topic-string fallback is scaffold, NOT user content.
+    assert result.written is True, (
+        "topic-string fallback (populate_overview's output) must be recognised "
+        "as scaffold; if this fails, _is_scaffold_tldr's cluster-query branch "
+        "is broken — the LLM auto-fill won't fire in real `auto` runs"
+    )
+    assert result.skipped is False
+
+
+def test_apply_overview_treats_english_no_summary_fallback_as_scaffold(cfg):
+    """Regression: the other populate_overview fallback is the literal
+    string "No cluster summary available yet." (rendered by
+    `_render_tldr` when `_overview_tldr` returns an empty string). Must
+    also be recognised as scaffold."""
+    overview_path = cfg.hub / "test-cluster" / "00_overview.md"
+    overview_path.write_text(
+        "---\ntype: topic-overview\ncluster: test-cluster\n---\n\n"
+        "# Test Cluster\n\n## TL;DR\n\n"
+        "> [!abstract]\n"
+        "> No cluster summary available yet.\n"
+        "^tldr\n",
+        encoding="utf-8",
+    )
+
+    result = apply_overview(cfg, "test-cluster", _valid_payload(), force=False)
+    assert result.written is True
+    assert result.skipped is False
+
+
 def test_apply_overview_refuses_to_overwrite_filled_overview_without_force(cfg):
     overview_path = cfg.hub / "test-cluster" / "00_overview.md"
     overview_path.write_text(

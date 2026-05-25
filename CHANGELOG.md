@@ -22,6 +22,18 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Changed
+- **`auto --with-summary` is now ON by default** (`cli.py`). After ingest, the
+  per-paper Key Findings / Methodology / Relevance sections are filled via the
+  detected LLM CLI (claude / codex / gemini) on every run; previously the
+  `--with-summary` flag had to be opted in explicitly. The flag uses
+  `argparse.BooleanOptionalAction`, so `--no-with-summary` is the new opt-out.
+  `--full-auto` no longer needs to re-set `--with-summary` and was simplified
+  accordingly, which incidentally lets `--full-auto --no-with-summary` respect
+  the opt-out (silently overridden before). Python API
+  `auto_pipeline(..., with_summary=False)` deliberately stays opt-in (mirrors
+  the `--with-pdfs` PR #90 split) so programmatic callers don't fire 20+ LLM
+  CLI invocations per run silently.
+
 - **`auto --with-pdfs` is now ON by default** (`cli.py`, `auto.py`). The `auto`
   subcommand attaches open-access PDFs from arXiv/OpenAlex/Unpaywall/Crossref
   to the ingested Zotero items as part of every run; previously `--with-pdfs`
@@ -39,6 +51,27 @@ graph rebuild (link out to the real tools instead)._
   overridden before). The `ingest` and `run` subcommands stay opt-in
   (`--with-pdfs` only) — they are lower-level entry points where an explicit
   flag still makes sense.
+
+### Fixed
+- **Cluster overview LLM auto-fill now fires after `populate_overview` runs
+  too** (`cluster_overview.py`). PR #91 fixed `_CHINESE_TEMPLATE_MARKER` to
+  match the Chinese scaffold (`一到兩句話...`) but in the real `auto` flow,
+  `populate_overview` (`vault/hub_overview.py`) runs BEFORE `apply_overview`
+  and overwrites the TL;DR with the cluster's topic-string fallback (`"LLM
+  for flood forecasting..."`). The Chinese marker then no longer matches and
+  `apply_overview` silently classified the topic string as "hand-curated",
+  skipping LLM enrichment. Net effect: every `auto`-fresh cluster still
+  ended with an empty TL;DR / Core Question / Scope. The scaffold check is
+  now `_is_scaffold_tldr(text, cluster_query, cluster_slug)` which also
+  recognises:
+    * the English fallback `"No cluster summary available yet."` (from
+      `_render_tldr`)
+    * exact match against the cluster's `first_query` (the topic-string
+      fallback `_overview_tldr` writes when there's no NLM brief yet)
+    * exact match (case-insensitive) against the slug humanised (the
+      last-resort fallback in `_overview_tldr`)
+  Two regression tests pin the new branches.
+
 
 ### Added
 - **`brief_to_docx.js` ships inside `skills/research-design-helper/scripts/`**
