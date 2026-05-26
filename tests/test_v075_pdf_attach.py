@@ -136,7 +136,8 @@ def test_run_pipeline_with_pdfs_invokes_attach_helpers(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "research_hub.zotero.pdf_attach.attach_pdfs",
-        lambda zot, plans, rate_limit_rps=2.0: {"Z0": "ok"},
+        # accept cfg=cfg passed by pipeline.run_pipeline (EZproxy plumbing)
+        lambda zot, plans, rate_limit_rps=2.0, cfg=None: {"Z0": "ok"},
     )
 
     try:

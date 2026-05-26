@@ -4,7 +4,8 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import requests
+import httpx
+import requests  # noqa: F401 — kept for the Zenodo-skip test's monkeypatch target
 
 from research_hub.clusters import ClusterRegistry
 from research_hub.zotero.pdf_attach import (
@@ -73,14 +74,17 @@ def test_zenodo_doi_is_skip_not_fail(monkeypatch) -> None:
 
 
 def test_403_404_and_network_errors_are_distinct(monkeypatch) -> None:
+    # pdf_attach.py uses httpx.get (since the EZproxy refactor moved off
+    # `requests`). httpx's "did the request succeed" attribute is
+    # `is_success`, not `ok`.
     def fake_get(url: str, **kwargs):
         if "403" in url:
-            return SimpleNamespace(ok=False, status_code=403, headers={}, content=b"")
+            return SimpleNamespace(is_success=False, status_code=403, headers={}, content=b"")
         if "404" in url:
-            return SimpleNamespace(ok=False, status_code=404, headers={}, content=b"")
-        raise requests.RequestException("offline")
+            return SimpleNamespace(is_success=False, status_code=404, headers={}, content=b"")
+        raise httpx.RequestError("offline")
 
-    monkeypatch.setattr("research_hub.zotero.pdf_attach.requests.get", fake_get)
+    monkeypatch.setattr("research_hub.zotero.pdf_attach.httpx.get", fake_get)
     plans = [
         PdfAttachPlan("P403", "Forbidden", "10.1000/403", "", "https://files.example.com/403.pdf", "unpaywall"),
         PdfAttachPlan("P404", "Missing", "10.1000/404", "", "https://files.example.com/404.pdf", "crossref-link"),
@@ -166,7 +170,8 @@ def test_pipeline_appends_pdf_attach_summary_to_output_json(tmp_path, monkeypatc
     )
     monkeypatch.setattr(
         "research_hub.zotero.pdf_attach.attach_pdfs",
-        lambda zot, plans, rate_limit_rps=2.0: PdfAttachResults(
+        # accept cfg=cfg passed by pipeline.run_pipeline (EZproxy plumbing)
+        lambda zot, plans, rate_limit_rps=2.0, cfg=None: PdfAttachResults(
             {"Z0": "ok"},
             PdfAttachSummary(
                 [

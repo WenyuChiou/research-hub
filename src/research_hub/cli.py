@@ -181,6 +181,8 @@ def _config_encrypt_secrets() -> int:
 
 
 _ALLOWED_CONFIG_KEYS = frozenset({
+    "ezproxy_cookies_path",
+    "ezproxy_url_template",
     "unpaywall_email",
     "zotero.unpaywall_email",
     "persona",
@@ -1571,6 +1573,7 @@ def _paper_attach_pdfs(
         rate_limit_rps=rate_limit,
         keep_url_fallback=keep_url_fallback,
         max_pdf_size_mb=max_pdf_size_mb,
+        cfg=cfg,
     )
     manifest = Manifest(cfg.research_hub_dir / "manifest.jsonl")
     batch_label = _manifest_batch_label("pdf-attach")
@@ -5218,6 +5221,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow setting a key not in the allowlist (use for new fields)",
     )
 
+    ezproxy_parser = subparsers.add_parser(
+        "ezproxy",
+        help="Institutional EZproxy support for paywalled PDF downloads",
+    )
+    ezproxy_sub = ezproxy_parser.add_subparsers(dest="ezproxy_command", required=True)
+    ezproxy_login = ezproxy_sub.add_parser(
+        "login",
+        help="Open a browser, complete institutional SSO, save cookies",
+    )
+    ezproxy_login.add_argument(
+        "--sentinel-url",
+        default="https://ieeexplore.ieee.org/",
+        help="Publisher URL to load (proxied) so you can verify access before closing the window",
+    )
+    ezproxy_sub.add_parser("status", help="Show configured template + cookie file state")
+
     examples_parser = subparsers.add_parser(
         "examples",
         help="Browse and copy bundled cluster examples",
@@ -7392,7 +7411,7 @@ def _main_dispatch(args, parser) -> int:
 
     _warn_cli_deprecated_alias_from_args(args)
 
-    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "package-dxt", "describe", "context"}
+    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()
@@ -7470,6 +7489,26 @@ def _main_dispatch(args, parser) -> int:
         if args.config_command == "set":
             return _config_set(args.key, args.value, force=getattr(args, "force", False))
         parser.error("config requires a subcommand")
+        return 2
+    if args.command == "ezproxy":
+        from research_hub.ezproxy import login as ezproxy_login
+        from research_hub.ezproxy import resolve_config
+
+        cfg = get_config()
+        ezcfg = resolve_config(cfg)
+        if args.ezproxy_command == "login":
+            return ezproxy_login(
+                ezcfg.cookies_path,
+                url_template=ezcfg.url_template,
+                sentinel_url=args.sentinel_url,
+            )
+        if args.ezproxy_command == "status":
+            print(f"ezproxy_url_template: {ezcfg.url_template or '(unset)'}")
+            print(f"cookies_path: {ezcfg.cookies_path}")
+            print(f"cookies file exists: {ezcfg.cookies_path.exists()}")
+            print(f"enabled: {ezcfg.enabled}")
+            return 0
+        parser.error("ezproxy requires a subcommand")
         return 2
     if args.command == "examples":
         from research_hub.examples import copy_example_as_cluster, list_examples, load_example
