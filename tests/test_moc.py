@@ -110,7 +110,13 @@ def test_sub_moc_fallback_when_all_tokens_are_stopwords():
 
 def test_sub_moc_explicit_moc_links_pass_through_untouched():
     """Existing `cluster.moc_links` (set by hand in clusters.yaml) flow
-    through unchanged — sub-MOC derivation only adds, never strips."""
+    through unchanged — sub-MOC derivation only adds, never strips.
+
+    Caveat: an explicit name that does NOT match a family prefix
+    (`LLM-Agents-*` / `Water-Resources-*`) is treated as an unrelated
+    extra MOC; the family's auto sub-MOC still gets added. See
+    `test_explicit_sub_moc_suppresses_auto_for_same_family` for the
+    suppression rule when the prefix DOES match."""
     out = derive_moc_links(
         "my-cluster",
         moc_links=["MyCustomMOC"],
@@ -119,3 +125,88 @@ def test_sub_moc_explicit_moc_links_pass_through_untouched():
     assert "MyCustomMOC" in out
     assert "LLM-Agents" in out
     assert "LLM-Agents-Cluster" in out  # sub from slug "my-cluster" (last non-stopword)
+
+
+def test_explicit_sub_moc_suppresses_auto_for_same_family():
+    """When `cluster.moc_links` contains a name with the parent's
+    prefix (`LLM-Agents-*`), the auto-derived slug-based sub-MOC for
+    that family is SUPPRESSED. The user-provided name wins.
+
+    Use case: slug like `generative-ai-large-language-models-coupled`
+    auto-derives `LLM-Agents-Coupled`, but the actual topic is
+    Human-Nature Systems. User sets
+    `moc_links: [LLM-Agents-HumanNature]` in clusters.yaml; result
+    should be the user's choice + parent, NOT both."""
+    out = derive_moc_links(
+        "generative-ai-large-language-models-coupled",
+        moc_links=["LLM-Agents-HumanNature"],
+    )
+    assert out == ["LLM-Agents-HumanNature", "LLM-Agents"]
+    # Slug-derived `LLM-Agents-Coupled` must NOT appear.
+    assert "LLM-Agents-Coupled" not in out
+
+
+def test_explicit_water_sub_moc_suppresses_auto_for_same_family():
+    """Same suppression rule for the Water-Resources family."""
+    out = derive_moc_links(
+        "ml-flood-forecasting",
+        moc_links=["Water-Resources-Floods"],
+    )
+    assert out == ["Water-Resources-Floods", "Water-Resources"]
+    assert "Water-Resources-MlForecasting" not in out
+
+
+def test_explicit_override_only_suppresses_matching_family():
+    """An explicit `LLM-Agents-*` override should NOT suppress the
+    auto water sub-MOC, and vice-versa. Each family is independent."""
+    # Slug triggers BOTH families; user overrides only LLM.
+    out = derive_moc_links(
+        "human-water-llm",
+        moc_links=["LLM-Agents-Custom"],
+    )
+    # LLM family: user override wins, no auto sub.
+    assert "LLM-Agents-Custom" in out
+    assert "LLM-Agents-Human" not in out
+    # Water family: auto sub-MOC still derived.
+    assert "Water-Resources" in out
+    assert "Water-Resources-Human" in out
+
+
+def test_explicit_override_propagates_to_paper_note_hub_section(tmp_path):
+    """Regression: the per-paper Obsidian-note `## Hub` block (written
+    by `pipeline._render_obsidian_note`) MUST also honour
+    `cluster.moc_links`. Before this test existed, the pipeline call
+    site at `pipeline.py:700` only passed `cluster_slug` +
+    `cluster_queries` — the override took effect on the cluster
+    `00_overview.md` and MOC pages but NOT on the paper notes, so the
+    overview said `LLM-Agents-HumanNature` while every paper wikilinked
+    to `LLM-Agents-Coupled`. This test pins the fix."""
+    from research_hub.pipeline import _render_obsidian_note
+
+    pp = {
+        "title": "Test paper on coupled human-nature systems",
+        "authors": ["Doe, J."],
+        "year": "2026",
+        "journal": "Nat. HumanNature",
+        "doi": "10.1234/test",
+        "abstract": "Coupled human-nature systems are studied with LLMs.",
+        "slug": "doe2026-test-paper",
+        "tags": [],
+        "summary": "",
+        "key_findings": [],
+        "methodology": "",
+        "relevance": "",
+    }
+    out = _render_obsidian_note(
+        pp,
+        collection_name="generative-ai-large-language-models-coupled",
+        cluster_slug="generative-ai-large-language-models-coupled",
+        query="LLM human-nature systems",
+        cluster_moc_links=["LLM-Agents-HumanNature"],
+    )
+    # The override should be wikilinked from the `## Hub` block.
+    assert "[[LLM-Agents-HumanNature]]" in out
+    # The slug-derived auto sub-MOC must NOT appear.
+    assert "[[LLM-Agents-Coupled]]" not in out
+    # Parent MOC still present.
+    assert "[[LLM-Agents]]" in out

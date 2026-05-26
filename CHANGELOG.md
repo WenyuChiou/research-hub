@@ -37,6 +37,30 @@ graph rebuild (link out to the real tools instead)._
   are passed AND that the UA looks like a real browser.
 
 ### Added
+- **Explicit sub-MOC override via `cluster.moc_links`**
+  (`vault/hub_overview.py`, `pipeline.py`,
+  `vault/hub_backlink_migrate.py`, `cli.py`). When a cluster's
+  `moc_links` field contains a name with a family prefix
+  (`LLM-Agents-*` or `Water-Resources-*`), the auto-derived slug-based
+  sub-MOC for THAT family is now suppressed — the user-provided name
+  wins instead of being appended alongside. Use case: slug
+  `generative-ai-large-language-models-coupled` auto-derives
+  `LLM-Agents-Coupled`, but the topic is really Human-Nature Systems;
+  setting `moc_links: [LLM-Agents-HumanNature]` in `clusters.yaml` now
+  yields `[LLM-Agents-HumanNature, LLM-Agents]` instead of also
+  tacking on `LLM-Agents-Coupled`. Each family is independent: an
+  `LLM-Agents-*` override does NOT suppress the Water-Resources auto
+  sub-MOC, and vice-versa. Names that do NOT match a family prefix
+  (e.g. `MyCustomMOC`) still pass through additively, as before.
+  The override propagates through ALL `derive_moc_links` call sites
+  — the cluster `00_overview.md`, MOC pages, `_HOME.md` rendering,
+  per-paper `## Hub` section at ingest time (P1 fix: previously
+  `pipeline._render_obsidian_note` did NOT pass `cluster.moc_links`,
+  so the overview/MOC honoured the override while every paper
+  wikilinked to the slug-derived sub-MOC), and `hub-backlink-migrate`
+  backfills. Regression test
+  `test_explicit_override_propagates_to_paper_note_hub_section`
+  pins the pipeline call-site fix.
 - **Two-level hub-and-spoke MOC graph (per-cluster sub-MOC)**
   (`vault/hub_overview.py`). Every LLM/water cluster now links to BOTH a
   parent MOC (e.g. `LLM-Agents`) AND a per-cluster sub-MOC derived from

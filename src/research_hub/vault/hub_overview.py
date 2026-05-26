@@ -198,7 +198,11 @@ def populate_home(cfg) -> Path:
         _name = (cluster.name or _slug).strip()
         _paper_count = _count_papers(vault_root, _slug)
         _cluster_queries = [str(getattr(cluster, "first_query", "") or "")]
-        _moc_links = derive_moc_links(_slug, cluster_queries=_cluster_queries)
+        _moc_links = derive_moc_links(
+            _slug,
+            cluster_queries=_cluster_queries,
+            moc_links=list(getattr(cluster, "moc_links", []) or []),
+        )
         _moc_tail = ""
         if _moc_links:
             _moc_wikilinks = " / ".join(f"[[{m}]]" for m in _moc_links)
@@ -559,11 +563,33 @@ def derive_moc_links(
     you the cross-cluster centre (LLM-Agents) AND a distinct visible
     sub-hub per topic, instead of every LLM cluster collapsing onto a
     single shared LLM-Agents node.
+
+    Explicit override: if ``moc_links`` contains a name starting with
+    ``LLM-Agents-`` (resp. ``Water-Resources-``), the auto-derived
+    sub-MOC for that family is suppressed. The user-provided name wins
+    and replaces the slug-derived one, so e.g. setting
+    ``moc_links: [LLM-Agents-HumanNature]`` for a slug like
+    ``generative-ai-large-language-models-coupled`` yields
+    ``[LLM-Agents-HumanNature, LLM-Agents]`` instead of also tacking
+    on the slug-default ``LLM-Agents-Coupled``.
     """
 
     links: list[str] = []
+    explicit_names: list[str] = []
     for name in moc_links or []:
-        _append_unique(links, str(name).strip())
+        clean = str(name).strip()
+        if clean:
+            explicit_names.append(clean)
+            _append_unique(links, clean)
+    # Suppress auto sub-MOC for any family the user has already
+    # explicitly overridden (matches the family's parent name + `-`).
+    has_explicit_llm_sub = any(
+        n.startswith("LLM-Agents-") for n in explicit_names
+    )
+    has_explicit_water_sub = any(
+        n.startswith("Water-Resources-") for n in explicit_names
+    )
+
     text_parts = [cluster_slug, *(cluster_queries or [])]
     # Normalise hyphens/underscores to spaces so multi-word triggers like
     # "large language model" match slug tokens "large-language-models" too.
@@ -574,7 +600,7 @@ def derive_moc_links(
     sub_tag = _sub_moc_token_from_slug(cluster_slug)
     if "llm" in haystack or "large language model" in haystack or "agent" in haystack:
         _append_unique(links, "LLM-Agents")
-        if sub_tag:
+        if sub_tag and not has_explicit_llm_sub:
             _append_unique(links, f"LLM-Agents-{sub_tag}")
     # v0.88.5: broaden water-resources heuristic so flood / hydrology /
     # drainage / river / drought / rainfall clusters also link to the
@@ -586,7 +612,7 @@ def derive_moc_links(
     )
     if any(kw in haystack for kw in water_keywords):
         _append_unique(links, "Water-Resources")
-        if sub_tag:
+        if sub_tag and not has_explicit_water_sub:
             _append_unique(links, f"Water-Resources-{sub_tag}")
     return links
 

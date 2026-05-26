@@ -3772,13 +3772,23 @@ def _vault_hub_backlink_migrate(
     """Backfill ## Hub backlink section into existing paper notes (v0.88 §5)."""
     from collections import Counter
 
+    from research_hub.clusters import ClusterRegistry
     from research_hub.vault.hub_backlink_migrate import migrate_all
 
     cfg = get_config()
+    # Pre-build cluster_slug -> moc_links map so backfill honours explicit
+    # `LLM-Agents-*` / `Water-Resources-*` overrides set in clusters.yaml.
+    registry = ClusterRegistry(cfg.clusters_file)
+    cluster_moc_links_map = {
+        (c.slug or "").strip(): list(getattr(c, "moc_links", []) or [])
+        for c in registry.list()
+        if (c.slug or "").strip()
+    }
     results = migrate_all(
         Path(cfg.root),
         cluster_slug_filter=cluster_slug,
         dry_run=dry_run,
+        cluster_moc_links_map=cluster_moc_links_map,
     )
     counts = Counter(r.action for r in results)
     if emit_json:

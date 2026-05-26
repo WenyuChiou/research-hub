@@ -661,6 +661,7 @@ def _render_obsidian_note(
     query: str | None,
     *,
     fit_warning: bool = False,
+    cluster_moc_links: list[str] | None = None,
 ) -> str:
     # Build authors_str from either authors_str field, list of strings,
     # or list of {creatorType, firstName, lastName} dicts (Zotero format).
@@ -695,11 +696,18 @@ def _render_obsidian_note(
     cluster_queries_for_note = [_query_for_paper(pp, query)] if cluster_slug else []
     # v0.88 #5: derive MOC backlinks at note-creation time so every paper
     # gets a `## Hub` section linking up to its cluster overview + MOCs.
+    # Pass cluster.moc_links so explicit `LLM-Agents-*` / `Water-Resources-*`
+    # overrides set in clusters.yaml take effect HERE too — without this,
+    # the paper note's `## Hub` would still emit the auto-derived sub-MOC
+    # while the cluster `00_overview.md` (which DOES pass moc_links via
+    # `_sync_hub_overview`) shows the override. End state: overview wikilink
+    # and paper-note wikilink disagree.
     moc_links_for_note: list[str] = []
     if cluster_slug:
         moc_links_for_note = derive_moc_links(
             cluster_slug,
             cluster_queries=cluster_queries_for_note,
+            moc_links=list(cluster_moc_links or []),
         )
     content = make_raw_md(
         item_data,
@@ -1321,6 +1329,11 @@ def run_pipeline(
                         cluster_slug,
                         query,
                         fit_warning=bool(pp.get("_fit_warning")),
+                        cluster_moc_links=(
+                            list(getattr(cluster_obj, "moc_links", []) or [])
+                            if cluster_obj
+                            else None
+                        ),
                     ),
                     encoding="utf-8",
                 )
