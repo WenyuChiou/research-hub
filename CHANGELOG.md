@@ -22,6 +22,23 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Changed
+- **LLM-judge fit-check uses a stricter rubric when the cluster topic is
+  LLM-narrowed** (`fit_check.py`). For a cluster topic that explicitly
+  mentions LLMs (any of `LLM` / `large language model` / `ChatGPT` /
+  `GPT-N` / `generative AI` / `LLM agent` / `AI agent` / `agentic AI`),
+  the LLM-judge prompt switches from the default 0-5 rubric ("squarely
+  about / on-topic adjacent angle / tangentially related…") to a stricter
+  one anchored on **how central the LLM is to the paper's contribution**.
+  Under the new rubric an ML/DL-without-LLM paper in the same parent
+  domain scores **2** (instead of 4 under the old rubric), so the
+  default `--fit-check-threshold 4` (PR #104) now actually filters those
+  out. This addresses the empirical finding that running
+  `auto "LLM × flood"` was still letting through ~12/15 pure ML-flood
+  papers — they were getting "on-topic adjacent angle (4)" from the
+  generic rubric. Detection scans BOTH the cluster definition and the
+  slug, so freshly-created clusters (where the definition is the
+  slugified topic fallback) trigger the strict rubric correctly. Five
+  new tests pin every LLM-narrowing token variant.
 - **NLM keepalive: real refresh via SDK public API + minute-cadence default**
   (`notebooklm/keepalive.py`, `cli.py`). The old `rotate_and_persist_session`
   used the SDK's *private* `_rotate_cookies` poke which returned success

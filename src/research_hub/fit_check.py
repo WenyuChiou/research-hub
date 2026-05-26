@@ -63,6 +63,76 @@ _SCORING_RUBRIC = """## Scoring rubric
 - **0**: Off-topic.
 """
 
+
+# A cluster topic / definition that contains any of these tokens is
+# "LLM-narrowed" — the user wants papers about large language models
+# specifically, not general AI/ML in the same parent domain. The default
+# rubric scores ML-flood paper as 4 ("on-topic adjacent angle") for an
+# LLM-flood query, which is technically correct but unhelpful: an ML-flood
+# paper IS adjacent to LLM-flood, but it doesn't address the user's
+# actual question. The LLM-narrow rubric below pivots: it scores by how
+# CENTRAL the LLM is to the paper's contribution, not how related the
+# parent field is.
+_LLM_NARROWING_TOKENS = (
+    "llm",
+    "llms",
+    "large language model",
+    "chatgpt",
+    "gpt-3",
+    "gpt-4",
+    "gpt-5",
+    "gpt-",
+    "generative ai",
+    "generative artificial intelligence",
+    "llm agent",
+    "llm-agent",
+    "agentic ai",
+    "ai agent",  # 2024+ usage almost always means LLM-driven agentic AI
+)
+
+
+def _detect_llm_narrowing(text: str | None) -> bool:
+    """Return True if *text* contains an LLM-specific narrowing token.
+
+    Case-insensitive substring match. Used by ``emit_prompt`` to choose
+    between the default scoring rubric and the LLM-narrow rubric.
+    """
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(token in lowered for token in _LLM_NARROWING_TOKENS)
+
+
+_LLM_NARROW_RUBRIC = """## Scoring rubric (LLM-narrowed topic)
+
+The cluster topic explicitly narrows to **large language models** (LLM /
+ChatGPT / GPT-N / generative AI / LLM agents / AI agents). Score papers
+by how *central* an LLM is to the paper's contribution, NOT by how
+related the parent field is. The same paper about ML-for-X scores
+differently for an "LLM-for-X" cluster vs an "AI-for-X" cluster — only
+the former needs strict LLM-centrality.
+
+- **5**: Paper's PRIMARY method or contribution IS an LLM (e.g., uses
+  GPT-4 for X; builds an LLM agent for Y; fine-tunes an LLM on Z).
+- **4**: Paper CENTRALLY discusses LLMs as the technical subject —
+  survey, review, critique, architecture, or benchmark of LLMs in this
+  domain.
+- **3**: Paper mentions LLMs as ONE of several techniques compared, or
+  uses an LLM for an auxiliary step (e.g., entity extraction) while the
+  main contribution is something else.
+- **2**: Paper uses AI / ML / deep learning in the same parent domain
+  but **does NOT actually involve an LLM**. (Example: a flood-forecasting
+  paper using ensemble ML or LSTM, no LLM component, for an LLM-flood
+  cluster.) These belong in a *different* cluster, not here.
+- **1**: Paper is only loosely adjacent — uses "AI" rhetorically without
+  any LLM content, or is in a distant field.
+- **0**: Off-topic.
+
+For an LLM-narrowed cluster, threshold 4 is the right gate — score-2
+ML/DL/traditional papers in the same parent field exist in adjacent
+literature but do not address the LLM-specific research question.
+"""
+
 _OUTPUT_JSON_EXAMPLE = {
     "scores": [
         {"index": 1, "doi": "10.xxx/yyy", "score": 5, "reason": "Squarely about X"},
@@ -90,6 +160,14 @@ def emit_prompt(
         definition = f"(no definition supplied for cluster {cluster_slug})"
 
     key_terms = _extract_key_terms(definition)
+    # LLM-narrowed clusters get a stricter rubric where ML/DL papers in
+    # the same parent domain score 2 (not 4), so threshold 4 filters them
+    # out cleanly. Detect by scanning BOTH the cluster definition (covers
+    # the topic-string fallback that populate_overview writes) AND the
+    # cluster slug (covers slugified topics like
+    # "generative-ai-chatgpt-llm-agents-flood").
+    llm_narrowed = _detect_llm_narrowing(definition) or _detect_llm_narrowing(cluster_slug)
+    rubric = _LLM_NARROW_RUBRIC if llm_narrowed else _SCORING_RUBRIC
     lines = [
         f'# Fit-check: cluster "{cluster_slug}"',
         "",
@@ -99,7 +177,7 @@ def emit_prompt(
         "",
         f"Key terms: {', '.join(key_terms)}." if key_terms else "Key terms: none.",
         "",
-        _SCORING_RUBRIC,
+        rubric,
         "",
         f"## Papers to score ({len(candidates)} total)",
         "",

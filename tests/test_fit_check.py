@@ -40,6 +40,80 @@ def test_emit_prompt_includes_cluster_definition():
     assert "Exact cluster definition." in prompt
 
 
+def test_emit_prompt_uses_default_rubric_for_general_topic():
+    """A non-LLM-narrowed cluster gets the default rubric where "on-topic
+    adjacent angle" papers score 4. No LLM-narrow language anywhere."""
+    from research_hub.fit_check import emit_prompt
+
+    prompt = emit_prompt(
+        "agent-based-modeling",
+        [_candidate("Paper", "10.1/a")],
+        definition="Multi-agent simulation of urban systems.",
+    )
+
+    assert "## Scoring rubric" in prompt
+    # The LLM-narrow-only language must NOT appear for a general topic.
+    assert "LLM-narrowed topic" not in prompt
+    assert "does NOT actually involve an LLM" not in prompt
+
+
+def test_emit_prompt_switches_to_llm_narrow_rubric_when_definition_mentions_llm():
+    """A cluster definition containing 'LLM' / 'large language model' /
+    'ChatGPT' / 'generative AI' / 'AI agent' triggers the stricter
+    rubric where ML-without-LLM papers score 2, so threshold 4 filters
+    them out cleanly. This is the topic-precision fix users were hitting
+    on LLM-flood clusters where ML-flood papers were silently scoring 4."""
+    from research_hub.fit_check import emit_prompt
+
+    prompt = emit_prompt(
+        "agents",
+        [_candidate("Paper", "10.1/a")],
+        definition="Large language models (LLMs) for flood forecasting.",
+    )
+
+    assert "LLM-narrowed topic" in prompt
+    assert "does NOT actually involve an LLM" in prompt
+    # And the default rubric's adjacent-angle phrasing must NOT be there.
+    assert "On-topic but from an adjacent angle." not in prompt
+
+
+def test_emit_prompt_switches_to_llm_narrow_rubric_from_slug_alone():
+    """The cluster slug itself often carries the LLM token (e.g. the
+    slugified topic `generative-ai-chatgpt-llm-agents-flood`). When the
+    definition is missing or non-LLM but the slug names LLM, the strict
+    rubric still applies — covers the fresh-cluster case where the
+    definition hasn't been populated yet."""
+    from research_hub.fit_check import emit_prompt
+
+    prompt = emit_prompt(
+        "generative-ai-chatgpt-llm-agents-flood",
+        [_candidate("Paper", "10.1/a")],
+        definition="(no definition supplied)",
+    )
+
+    assert "LLM-narrowed topic" in prompt
+
+
+def test_emit_prompt_llm_narrow_triggers_on_each_token_variant():
+    """Pin every LLM-narrowing token so a future refactor that drops one
+    is caught immediately."""
+    from research_hub.fit_check import emit_prompt
+
+    variants = [
+        "Survey of llms for X",
+        "ChatGPT applications in X",
+        "GPT-4 powered Y agents",
+        "generative AI for Z",
+        "AI agent design patterns",
+        "agentic AI in healthcare",
+    ]
+    for definition in variants:
+        prompt = emit_prompt("c", [_candidate("Paper", "10.1/a")], definition=definition)
+        assert "LLM-narrowed topic" in prompt, (
+            f"definition {definition!r} must trigger the LLM-narrow rubric"
+        )
+
+
 def test_emit_prompt_falls_back_to_overview_definition_section(tmp_path, monkeypatch):
     from research_hub.fit_check import emit_prompt
 
