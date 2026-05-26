@@ -45,6 +45,36 @@ def test_download_pdf_to_temp_accepts_pdf_magic_bytes(monkeypatch):
     path.unlink()
 
 
+def test_download_pdf_to_temp_sends_browser_useragent_header(monkeypatch):
+    """Regression: PR #108 ported `requests.get` → `httpx.get` for the PDF
+    body download. httpx's default `User-Agent: python-httpx/<ver>` is
+    blocked by MDPI, Frontiers, Springer-pdfdirect, IEEE, etc. — coverage
+    crashed to 0/30 on production E2E. The fix is to send a real Chrome
+    User-Agent. This test pins both that headers are passed AND that the
+    UA looks like Chrome on Windows."""
+    captured: dict = {}
+
+    def fake_get(url, *args, **kwargs):
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return _Resp(headers={"Content-Type": "application/pdf"}, content=b"%PDF-1.4\nfx\n")
+
+    monkeypatch.setattr("research_hub.zotero.pdf_attach.httpx.get", fake_get)
+
+    path = _download_pdf_to_temp("https://www.mdpi.com/2673-2688/7/1/14/pdf")
+    assert path is not None
+    path.unlink()
+
+    headers = captured["headers"]
+    assert "User-Agent" in headers, "PDF download must send a User-Agent header"
+    ua = headers["User-Agent"]
+    assert "Mozilla" in ua and "Chrome" in ua, (
+        f"User-Agent must masquerade as a real Chrome browser; got {ua!r}. "
+        "Default python-httpx/<ver> is blocked by MDPI/Frontiers/Springer/IEEE."
+    )
+    assert "Accept" in headers and "pdf" in headers["Accept"].lower()
+
+
 def test_download_pdf_to_temp_rejects_non_pdf_payload(monkeypatch):
     monkeypatch.setattr(
         "research_hub.zotero.pdf_attach.httpx.get",

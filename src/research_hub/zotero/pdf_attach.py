@@ -23,6 +23,24 @@ OPENALEX_BASE = "https://api.openalex.org/works/doi"
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
 CROSSREF_BASE = "https://api.crossref.org/works"
 
+# Browser-mimicking headers for publisher PDF downloads. Required because
+# `httpx`'s default UA (`python-httpx/<ver>`) is blocked by MDPI, Frontiers,
+# Springer-pdfdirect, IEEE, and others; the PR #108 requests→httpx port
+# regressed PDF coverage to 0% on master until this header set was added.
+# Chrome on Windows is the safest masquerade — it's the modal real-user UA
+# publishers' bot filters expect. Accept covers the PDF redirect-to-HTML
+# error pages too (so bot filters that bounce on "Accept: */*" let us
+# through).
+_PDF_DOWNLOAD_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/pdf,application/octet-stream,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 _HINT_SHOWN = False  # once-per-process flag for the unpaywall_email hint
 logger = logging.getLogger(__name__)
 
@@ -416,6 +434,14 @@ def _download_via_httpx_result(
             cookies=cookies or {},
             follow_redirects=True,
             timeout=timeout,
+            # Browser-mimicking headers. The PR #108 requests→httpx port
+            # accidentally regressed PDF coverage to 0% on master because
+            # httpx's default UA ("python-httpx/0.28.1") gets blocked by
+            # MDPI, Frontiers, Springer-pdfdirect, IEEE, and other
+            # publishers that previously let requests' UA through (or
+            # that newly tightened in 2026). A real Chrome UA + Accept
+            # header pair restores the pre-#108 success rate.
+            headers=_PDF_DOWNLOAD_HEADERS,
         )
     except Exception:
         return _PdfBytesResult(None, reason="network_error")

@@ -21,6 +21,21 @@ UI scope is capped here by decision: the dashboard stays a thin
 status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
+### Fixed
+- **PDF attach 0% regression from PR #108's requests → httpx port**
+  (`zotero/pdf_attach.py`). The `requests` → `httpx` migration in PR #108
+  used `httpx.get()` without overriding the default User-Agent
+  (`python-httpx/<ver>`). MDPI, Frontiers, Springer-pdfdirect, IEEE, and
+  other publishers' bot filters block that UA and return 403. Production
+  E2E coverage crashed: a flood cluster got 0/15 OA PDFs attached, the
+  Human-Nature cluster got 0/30. New `_PDF_DOWNLOAD_HEADERS` constant
+  sends a real Chrome-on-Windows UA + `Accept: application/pdf,...` so
+  the publishers' filters let the download through. Live verification:
+  `_download_via_httpx_result(<Springer pdfdirect URL>)` now returns
+  status 200 + a 1.6 MB PDF (was 403 / 406 bytes of HTML). Regression
+  test in `tests/test_v080_pdf_imported_file.py` pins both that headers
+  are passed AND that the UA looks like a real browser.
+
 ### Added
 - **EZproxy support for paywalled PDF downloads** (`ezproxy.py`, `cli.py`,
   `zotero/pdf_attach.py`, `pyproject.toml`). Opt-in via
