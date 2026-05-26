@@ -5391,18 +5391,23 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Also generate crystals via detected LLM CLI")
     auto_parser.add_argument(
         "--with-summary",
-        action="store_true",
-        help="Run `summarize --apply` after ingest to fill per-paper Key Findings / Methodology / Relevance",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Run `summarize --apply` after ingest to fill per-paper "
+            "Key Findings / Methodology / Relevance (default: on). Use "
+            "--no-with-summary to skip per-paper summarization."
+        ),
     )
     auto_parser.add_argument(
         "--full-auto",
         action="store_true",
         help=(
-            "Enable --with-summary --with-crystals (--with-pdfs is already "
-            "on by default; use --no-with-pdfs to disable PDFs). "
-            "NotebookLM upload also stays ON by default — pair with "
-            "--no-nlm if you want fully local automation without the "
-            "browser step (NLM upload uses patchright + Google login)."
+            "Enable --with-crystals (--with-pdfs and --with-summary are "
+            "already on by default; use --no-with-pdfs / --no-with-summary "
+            "to disable them). NotebookLM upload also stays ON by default — "
+            "pair with --no-nlm if you want fully local automation without "
+            "the browser step (NLM upload uses patchright + Google login)."
         ),
     )
     auto_parser.add_argument(
@@ -7517,11 +7522,10 @@ def _main_dispatch(args, parser) -> int:
         return 0
     if args.command == "auto":
         if args.full_auto:
-            # --with-pdfs is on by default since the BooleanOptionalAction
-            # flip; we intentionally do NOT force args.with_pdfs = True here
-            # so an explicit --no-with-pdfs (args.with_pdfs == False) is
-            # respected even under --full-auto.
-            args.with_summary = True
+            # --with-pdfs and --with-summary are on by default since the
+            # BooleanOptionalAction flips; we intentionally do NOT force
+            # them to True here so an explicit --no-with-pdfs or
+            # --no-with-summary is respected even under --full-auto.
             args.with_crystals = True
         return _auto(
             topic=args.topic,
