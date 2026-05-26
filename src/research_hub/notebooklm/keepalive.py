@@ -1,33 +1,49 @@
 """Idle keepalive for NotebookLM sessions.
 
-Periodically rotates and persists the stored cookies so Google does not revoke
-an idle session (typically within 12–24 h without activity).
+Periodically refreshes the short-lived freshness cookies (``__Secure-1PSIDTS``
+/ ``__Secure-3PSIDTS``) so Google does not revoke an idle session. Google's
+PSIDTS cookies expire every ~3-4 hours; the long-lived ``SID``/``PSID``
+cookies last ~1 year. If a minute-cadence keepalive actually rotates PSIDTS
+ahead of expiry, the practical session lifetime is bounded by the
+long-lived cookies, not the short ones.
+
+Refresh contract
+----------------
+``refresh_and_persist_session`` (the primary API) calls the SDK's public
+``fetch_tokens_with_domains`` — which actually fetches CSRF + session_id
+tokens from the NotebookLM homepage as a side-effect of cookie rotation.
+This is observable proof: if tokens come back, the cookies are good. The
+older ``rotate_and_persist_session`` wrapper used the SDK's private
+``_rotate_cookies`` poke which returned success without verifying that the
+session was still alive — every "success" in the logs could have been a
+no-op against a revoked session.
 
 Honest scope note
 -----------------
-- ``rotate_and_persist_session`` makes one network call to accounts.google.com.
-  If the session cookies are already revoked server-side it will silently fail
-  (best-effort, never raises) and ``keepalive_once`` returns non-zero so a
-  scheduler can surface the failure.
+- ``refresh_and_persist_session`` makes one network call to Google. If the
+  session is already revoked server-side it returns a ``RefreshResult`` with
+  ``ok=False`` and an actionable reason; ``keepalive_once`` then returns
+  non-zero so a scheduler can surface the failure.
 - The Windows Scheduled Task registration (``--install-windows-task``) is
   gated behind an explicit ``--yes`` flag. Without ``--yes`` the exact
-  ``schtasks`` command is only printed — nothing is registered; no wrapper file
-  is created either.
+  ``schtasks`` command is only printed.
 - The task runs via a console-script (if pip-installed) or a generated wrapper
   ``.cmd`` file (if running from a source checkout) to guarantee PYTHONPATH is
   set correctly. No elevated privileges (no /RL HIGHEST) are required.
-- Google can still hard-expire long-lived SID/PSID cookies (~1 year) or revoke
-  on a security event; keepalive does not prevent that. Combine with
-  ``notebooklm login --from-browser`` for easy re-auth.
+- Google can still hard-expire long-lived SID/PSID cookies or revoke on a
+  security event; keepalive does not defeat revocation. Combine with
+  ``notebooklm login --auto-detect`` for re-auth when that happens.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import sys
 import time
 import warnings
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -38,58 +54,143 @@ if TYPE_CHECKING:
 
 _TASK_NAME = "ResearchHubNLMKeepalive"
 
+# Cookies whose expiry/value we track to PROVE keepalive rotation worked.
+# Names match the SDK's MINIMUM_REQUIRED_COOKIES expectations
+# (``__Secure-1PSIDTS`` / ``__Secure-3PSIDTS``) plus the rarer RTS variants
+# the older handoff named — we log them when present.
+_FRESHNESS_COOKIE_NAMES = (
+    "__Secure-1PSIDTS",
+    "__Secure-3PSIDTS",
+    "__Secure-1PSIDRTS",
+    "__Secure-3PSIDRTS",
+)
+
+
+@dataclass
+class RefreshResult:
+    """Outcome of one ``refresh_and_persist_session`` call.
+
+    ``ok`` is grounded in *observable* token extraction: if the SDK's public
+    ``fetch_tokens_with_domains`` returned a (csrf, session_id) tuple then the
+    session was still acceptable to NotebookLM at the moment of refresh. The
+    metadata fields let a scheduler / operator confirm that the freshness
+    cookies actually moved forward (otherwise "ok" would be silent no-op).
+    """
+
+    ok: bool
+    reason: str = ""
+    before_metadata: dict[str, str] = field(default_factory=dict)
+    after_metadata: dict[str, str] = field(default_factory=dict)
+    changed: list[str] = field(default_factory=list)
+
+
+def _read_short_cookie_metadata(state_file: Path) -> dict[str, str]:
+    """Return ``{cookie_name: "expiry=<unix-ts> | absent"}`` for the freshness
+    cookies. NEVER includes cookie values — those are secrets — only names
+    and expiry timestamps so before/after diff logs are safe to print.
+    """
+    if not state_file.exists():
+        return {name: "absent" for name in _FRESHNESS_COOKIE_NAMES}
+    try:
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {name: "unreadable" for name in _FRESHNESS_COOKIE_NAMES}
+    cookies = data.get("cookies", []) if isinstance(data, dict) else []
+    by_name: dict[str, dict] = {
+        str(c.get("name", "")): c for c in cookies if isinstance(c, dict)
+    }
+    out: dict[str, str] = {}
+    for name in _FRESHNESS_COOKIE_NAMES:
+        cookie = by_name.get(name)
+        if cookie is None:
+            out[name] = "absent"
+            continue
+        # storage_state format uses "expires" (Playwright) or "expiry"
+        expiry = cookie.get("expires", cookie.get("expiry", "?"))
+        out[name] = f"expiry={expiry}"
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Core: rotate + persist
 # ---------------------------------------------------------------------------
 
 
-def rotate_and_persist_session(state_file: Path) -> bool:
-    """Rotate the stored NotebookLM cookies and persist them back to *state_file*.
+def refresh_and_persist_session(state_file: Path) -> RefreshResult:
+    """Refresh the NLM session via the SDK's *public* token-fetch path.
 
-    Best-effort: any exception (missing API, network error, file I/O) is caught
-    and causes this function to return ``False``.  It NEVER raises.
+    This replaces the older ``rotate_and_persist_session`` (still available
+    as a thin back-compat wrapper, below) which used the SDK's *private*
+    ``_rotate_cookies`` poke. The private poke is a fire-and-forget rotation
+    nudge with no verification — it could return success against a revoked
+    session, masking the real failure until the next downstream call broke.
 
-    Steps:
-    1. ``build_httpx_cookies_from_storage`` — load the cookie jar from state.json.
-    2. Create an ``httpx.AsyncClient`` seeded with those cookies.
-    3. ``_rotate_cookies(client, storage_path=state_file)`` — POST to
-       accounts.google.com RotateCookies (best-effort; no-op if env-var disabled).
-    4. ``save_cookies_to_storage(client.cookies, state_file)`` — persist the
-       refreshed jar atomically (upstream uses a threading.Lock).
-    5. ``_tighten_state_file_perms`` — keep permissions strict (user-only).
+    The public ``fetch_tokens_with_domains`` actually GETs the NotebookLM
+    homepage, extracts (csrf_token, session_id), and persists the resulting
+    rotated cookies. If tokens come back, the cookies are observably good.
 
-    Returns ``True`` on success, ``False`` on any failure.
+    Best-effort vs. exceptions: this function NEVER raises. Any failure ends
+    up in ``RefreshResult(ok=False, reason=...)`` so a scheduler can decide
+    whether to surface or retry.
     """
+    before = _read_short_cookie_metadata(state_file)
     try:
-        import httpx
-        from notebooklm.auth import (
-            _rotate_cookies,  # noqa: PLC2701 — private but stable keepalive API
-            build_httpx_cookies_from_storage,
-            save_cookies_to_storage,
-        )
-
-        from research_hub.notebooklm.auth import _tighten_state_file_perms
-
-        jar = build_httpx_cookies_from_storage(state_file)
-
-        async def _do_rotate() -> httpx.Cookies:
-            async with httpx.AsyncClient(cookies=jar, follow_redirects=True) as client:
-                await _rotate_cookies(client, storage_path=state_file)
-                return client.cookies
-
-        rotated_jar = asyncio.run(_do_rotate())
-        save_cookies_to_storage(rotated_jar, state_file)
-        _tighten_state_file_perms(state_file)
-        return True
+        from notebooklm.auth import fetch_tokens_with_domains
     except Exception as exc:  # noqa: BLE001
-        # Best-effort: never raise; callers check the return value.
+        return RefreshResult(
+            ok=False,
+            reason=f"sdk-import-failed: {type(exc).__name__}: {exc}",
+            before_metadata=before,
+            after_metadata=before,
+        )
+    try:
+        # fetch_tokens_with_domains is async; run in a fresh loop. It
+        # internally builds the jar, GETs notebooklm.google.com to obtain
+        # tokens, and persists the refreshed cookies back to state_file.
+        asyncio.run(fetch_tokens_with_domains(path=state_file))
+    except Exception as exc:  # noqa: BLE001
+        after = _read_short_cookie_metadata(state_file)
+        return RefreshResult(
+            ok=False,
+            reason=f"{type(exc).__name__}: {exc}",
+            before_metadata=before,
+            after_metadata=after,
+            changed=[n for n in before if before.get(n) != after.get(n)],
+        )
+    # Optional cosmetic: keep file permissions tight (user-only). Failures
+    # here are not refresh failures.
+    try:
+        from research_hub.notebooklm.auth import _tighten_state_file_perms
+        _tighten_state_file_perms(state_file)
+    except Exception:  # noqa: BLE001
+        pass
+    after = _read_short_cookie_metadata(state_file)
+    changed = [name for name in before if before.get(name) != after.get(name)]
+    return RefreshResult(
+        ok=True,
+        reason="ok",
+        before_metadata=before,
+        after_metadata=after,
+        changed=changed,
+    )
+
+
+def rotate_and_persist_session(state_file: Path) -> bool:
+    """Back-compat shim around :func:`refresh_and_persist_session`.
+
+    Older callers (including some tests) expect a bool return. This wrapper
+    runs the new public-API refresh and collapses the structured result to
+    ``True``/``False``. New code should call ``refresh_and_persist_session``
+    directly to get the metadata diff and a structured reason string.
+    """
+    result = refresh_and_persist_session(state_file)
+    if not result.ok:
         print(
-            f"[nlm-keepalive] WARN rotate_and_persist_session failed "
-            f"({type(exc).__name__}: {exc}); session may be stale.",
+            f"[nlm-keepalive] WARN refresh_and_persist_session failed "
+            f"({result.reason}); session may be stale.",
             file=sys.stderr,
         )
-        return False
+    return result.ok
 
 
 # ---------------------------------------------------------------------------
@@ -98,12 +199,19 @@ def rotate_and_persist_session(state_file: Path) -> bool:
 
 
 def keepalive_once(cfg: Any) -> int:
-    """Run one keepalive cycle.
+    """Run one keepalive cycle: refresh the session and verify cookies moved.
+
+    Sequence (per Codex review of the old design):
 
     1. Resolve the state file from *cfg*.
-    2. ``check_session_health`` — if the session is revoked, print an actionable
-       WARN and return 1 (non-zero so schedulers surface the failure; never raise).
-    3. If healthy, call ``rotate_and_persist_session`` and re-probe before success.
+    2. Call :func:`refresh_and_persist_session` **first**. The SDK's public
+       token-fetch already verifies that NotebookLM accepted the cookies —
+       a pre-health gate would just block the only refresh attempt and
+       guarantee a stale session loops forever.
+    3. If refresh failed, log an actionable hint and return 1.
+    4. Log the before/after freshness-cookie metadata diff so an operator
+       can confirm rotation actually moved expiries forward (the old
+       implementation silently no-op'd here).
 
     Args:
         cfg: A ``HubConfig``-like object exposing ``research_hub_dir: Path``.
@@ -112,36 +220,26 @@ def keepalive_once(cfg: Any) -> int:
         0 on success, non-zero on failure.
     """
     try:
-        from research_hub.notebooklm.auth import (
-            check_session_health,
-            default_state_file,
-        )
+        from research_hub.notebooklm.auth import default_state_file
 
         inv = recommended_cli_invocation()
         state_file = default_state_file(cfg.research_hub_dir)
-        health = check_session_health(state_file)
-        if not health.get("ok"):
-            reason = health.get("reason", "unknown")
+        result = refresh_and_persist_session(state_file)
+        if not result.ok:
             print(
-                f"[nlm-keepalive] WARN NLM session revoked server-side "
-                f"(reason: {reason}) -- run: {inv} notebooklm login --auto-detect",
+                f"[nlm-keepalive] WARN refresh failed: {result.reason} -- "
+                f"run: {inv} notebooklm login --auto-detect",
                 file=sys.stderr,
             )
             return 1
-
-        ok = rotate_and_persist_session(state_file)
-        if not ok:
-            return 1
-
-        post_health = check_session_health(state_file)
-        if not post_health.get("ok"):
-            print(
-                "[nlm-keepalive] WARN keepalive: cookies rotated but session is "
-                "no longer valid (likely server-side re-auth required); "
-                f"run {inv} notebooklm login --auto-detect",
-                file=sys.stderr,
-            )
-            return 1
+        # Surface the metadata diff so the operator can SEE the rotation
+        # actually happened (the old code logged "success" against revoked
+        # sessions for months).
+        changed_str = ", ".join(result.changed) if result.changed else "(no expiry change)"
+        print(
+            f"[nlm-keepalive] OK refresh: changed={changed_str}",
+            file=sys.stderr,
+        )
         return 0
     except Exception as exc:  # noqa: BLE001
         print(
@@ -165,7 +263,7 @@ def _keepalive_loop(cfg: Any, interval_sec: int, sleep_fn=None) -> int:
 
     Args:
         cfg: HubConfig-like object.
-        interval_sec: Seconds between keepalive calls. Floor is 3600.
+        interval_sec: Seconds between keepalive calls. Floor is 600 (10 min).
         sleep_fn: Callable used for sleeping; defaults to ``time.sleep``.
                   Injectable for tests.
 
@@ -174,7 +272,12 @@ def _keepalive_loop(cfg: Any, interval_sec: int, sleep_fn=None) -> int:
     """
     if sleep_fn is None:
         sleep_fn = time.sleep
-    interval_sec = max(3600, interval_sec)
+    # PSIDTS expires ~every 3-4 hours. A 1-hour floor (the old default)
+    # rotated 3-4 times before expiry which gave little safety margin and
+    # routinely lost races on slow networks. Floor at 10 min (600 s) for
+    # accidental-abuse prevention while letting the schtasks default of
+    # 15 min give us ~14 chances per expiry window.
+    interval_sec = max(600, interval_sec)
     print(
         f"[nlm-keepalive] Starting loop (interval={interval_sec}s). "
         "Press Ctrl-C to stop.",
@@ -255,8 +358,12 @@ def _resolve_task_command(cfg: Any) -> tuple[str, Path | None]:
     return task_cmd, wrapper_path
 
 
-def _build_schtasks_argv(interval_hours: int, task_cmd: str) -> list[str]:
+def _build_schtasks_argv(interval_minutes: int, task_cmd: str) -> list[str]:
     """Build the ``schtasks /Create`` argv for the keepalive Scheduled Task.
+
+    Minute-cadence (/SC MINUTE) by design: PSIDTS expires every ~3-4 hours,
+    so hourly was barely enough — a 15-minute cadence gives ~14 retries per
+    expiry window and absorbs flaky-network failures gracefully.
 
     The ``/TR`` (task run) value must be a single string containing the full
     command so that schtasks registers it correctly.
@@ -265,7 +372,7 @@ def _build_schtasks_argv(interval_hours: int, task_cmd: str) -> list[str]:
     for a user-level scheduled task and would break on non-admin accounts.
 
     Args:
-        interval_hours: How often to run the task (hours).
+        interval_minutes: How often to run the task (minutes).
         task_cmd: The resolved task command string (from ``_resolve_task_command``).
 
     Returns:
@@ -277,8 +384,8 @@ def _build_schtasks_argv(interval_hours: int, task_cmd: str) -> list[str]:
         "/F",
         "/TN", _TASK_NAME,
         "/TR", task_cmd,
-        "/SC", "HOURLY",
-        "/MO", str(interval_hours),
+        "/SC", "MINUTE",
+        "/MO", str(interval_minutes),
     ]
 
 
@@ -293,7 +400,7 @@ def _build_schtasks_uninstall_argv() -> list[str]:
 
 
 def run_install_windows_task(
-    interval_hours: int,
+    interval_minutes: int,
     *,
     dry_run: bool,
     uninstall: bool = False,
@@ -306,7 +413,9 @@ def run_install_windows_task(
     or written to disk (the wrapper ``.cmd`` is NOT created in dry-run mode).
 
     Args:
-        interval_hours: Hours between task runs (only used for install).
+        interval_minutes: Minutes between task runs (only used for install).
+            The schtasks command uses ``/SC MINUTE`` so this is literally
+            the ``/MO`` value. Default in the CLI is 15.
         dry_run: If True, print only; never mutate system state (no schtasks
             call, no wrapper file written).
         uninstall: If True, remove instead of create.
@@ -374,10 +483,10 @@ def run_install_windows_task(
 
     # Install path.
     task_cmd, wrapper_path = _resolve_task_command(cfg)
-    argv = _build_schtasks_argv(interval_hours, task_cmd)
+    argv = _build_schtasks_argv(interval_minutes, task_cmd)
     action_desc = (
         f"Register Scheduled Task '{_TASK_NAME}' "
-        f"(every {interval_hours}h via schtasks)"
+        f"(every {interval_minutes}m via schtasks)"
     )
 
     if dry_run:

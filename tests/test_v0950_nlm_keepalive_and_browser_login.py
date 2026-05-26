@@ -70,236 +70,198 @@ def _write_state(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# A. rotate_and_persist_session
+# A. refresh_and_persist_session + rotate_and_persist_session (back-compat shim)
 # ---------------------------------------------------------------------------
 
 
-class TestRotateAndPersistSession:
-    """Tests for keepalive.rotate_and_persist_session."""
+class TestRefreshAndPersistSession:
+    """Tests for the new ``refresh_and_persist_session`` (and the bool
+    shim ``rotate_and_persist_session``). The old test class mocked the
+    SDK's private ``_rotate_cookies`` poke; the new contract uses the
+    SDK's PUBLIC ``fetch_tokens_with_domains`` which actually fetches
+    CSRF + session_id (observable proof the session is alive)."""
 
-    def _make_fake_jar(self) -> MagicMock:
-        jar = MagicMock()
-        jar.items = MagicMock(return_value=[])
-        return jar
-
-    def test_healthy_path_calls_rotate_save_perms(self, tmp_path: Path, monkeypatch):
-        """A1: healthy → _rotate_cookies + save_cookies_to_storage called once + perms."""
+    def test_healthy_returns_ok_with_metadata(self, tmp_path: Path, monkeypatch):
+        """Happy path: SDK token fetch succeeds → RefreshResult(ok=True)
+        with before/after metadata captured from the state file."""
         sf = _write_state(tmp_path)
-        fake_jar = self._make_fake_jar()
-        rotate_calls: list = []
-        save_calls: list = []
-        perm_calls: list = []
+        # Seed state.json with two freshness cookies so before-metadata is non-trivial.
+        import json
+        sf.write_text(json.dumps({"cookies": [
+            {"name": "__Secure-1PSIDTS", "expires": 1700000000.0},
+            {"name": "__Secure-3PSIDTS", "expires": 1700000000.0},
+        ]}), encoding="utf-8")
 
-        import httpx
+        called: list = []
 
-        async def fake_rotate(client, storage_path=None):
-            rotate_calls.append(storage_path)
-            # Simulate: no changes to client.cookies needed
-
-        def fake_build(path=None):
-            # Return a real httpx.Cookies (empty) so AsyncClient accepts it
-            return httpx.Cookies()
-
-        def fake_save(cookie_jar, path=None):
-            save_calls.append((cookie_jar, path))
-
-        def fake_perms(target):
-            perm_calls.append(target)
+        async def fake_fetch(path=None, profile=None):
+            called.append(("fetch", str(path)))
+            # Simulate cookie rotation: bump expiries on disk so the
+            # before/after diff has something to detect.
+            data = json.loads(sf.read_text(encoding="utf-8"))
+            for c in data["cookies"]:
+                c["expires"] = 1700009999.0
+            sf.write_text(json.dumps(data), encoding="utf-8")
+            return ("csrf-tok", "sess-id")
 
         import notebooklm.auth as upstream_auth
-        monkeypatch.setattr(upstream_auth, "_rotate_cookies", fake_rotate)
-        monkeypatch.setattr(upstream_auth, "build_httpx_cookies_from_storage", fake_build)
-        monkeypatch.setattr(upstream_auth, "save_cookies_to_storage", fake_save)
-
+        monkeypatch.setattr(upstream_auth, "fetch_tokens_with_domains", fake_fetch)
         import research_hub.notebooklm.auth as rh_auth
-        monkeypatch.setattr(rh_auth, "_tighten_state_file_perms", fake_perms)
+        monkeypatch.setattr(rh_auth, "_tighten_state_file_perms", lambda _p: None)
+
+        from research_hub.notebooklm.keepalive import refresh_and_persist_session
+        result = refresh_and_persist_session(sf)
+
+        assert result.ok is True, f"expected ok=True; got reason={result.reason!r}"
+        assert result.reason == "ok"
+        assert called == [("fetch", str(sf))], "fetch_tokens_with_domains must run exactly once"
+        # before vs after expiry strings must differ — proves the freshness
+        # cookies actually moved forward, the original silent-fail bug.
+        assert result.before_metadata["__Secure-1PSIDTS"] != result.after_metadata["__Secure-1PSIDTS"]
+        assert "__Secure-1PSIDTS" in result.changed
+
+    def test_sdk_failure_returns_not_ok_never_raises(self, tmp_path: Path, monkeypatch):
+        """SDK raises (network down, auth expired, etc.) → RefreshResult(ok=False)
+        with the exception type/message in `reason`. Must NEVER raise."""
+        sf = _write_state(tmp_path)
+        import notebooklm.auth as upstream_auth
+
+        async def boom(path=None, profile=None):
+            raise RuntimeError("auth expired (simulated)")
+
+        monkeypatch.setattr(upstream_auth, "fetch_tokens_with_domains", boom)
+
+        from research_hub.notebooklm.keepalive import refresh_and_persist_session
+        result = refresh_and_persist_session(sf)
+
+        assert result.ok is False
+        assert "RuntimeError" in result.reason
+        assert "auth expired" in result.reason
+
+    def test_back_compat_shim_returns_bool(self, tmp_path: Path, monkeypatch):
+        """`rotate_and_persist_session` is retained as a thin shim that
+        collapses RefreshResult down to bool for older callers."""
+        sf = _write_state(tmp_path)
+        import notebooklm.auth as upstream_auth
+
+        async def ok_fetch(path=None, profile=None):
+            return ("csrf", "sid")
+
+        monkeypatch.setattr(upstream_auth, "fetch_tokens_with_domains", ok_fetch)
+        import research_hub.notebooklm.auth as rh_auth
+        monkeypatch.setattr(rh_auth, "_tighten_state_file_perms", lambda _p: None)
 
         from research_hub.notebooklm.keepalive import rotate_and_persist_session
+        assert rotate_and_persist_session(sf) is True
 
-        result = rotate_and_persist_session(sf)
-
-        assert result is True
-        assert len(rotate_calls) == 1, "Expected exactly one _rotate_cookies call"
-        assert len(save_calls) == 1, "Expected exactly one save_cookies_to_storage call"
-        assert len(perm_calls) == 1, "Expected exactly one _tighten_state_file_perms call"
-        assert perm_calls[0] == sf
-
-    @pytest.mark.parametrize("failure_mode", [
-        "missing_attr",
-        "rotate_raises",
-        "save_raises",
-    ])
-    def test_never_raises_on_failure(
-        self, tmp_path: Path, monkeypatch, failure_mode: str
-    ):
-        """A2/A3/A4: any internal failure → returns False, never raises."""
+    def test_back_compat_shim_returns_false_on_failure(self, tmp_path: Path, monkeypatch):
+        """Bool shim: SDK failure path → returns False (no exception)."""
         sf = _write_state(tmp_path)
-        fake_jar = self._make_fake_jar()
-
         import notebooklm.auth as upstream_auth
 
-        if failure_mode == "missing_attr":
-            # Remove the attribute so AttributeError fires
-            monkeypatch.setattr(
-                upstream_auth,
-                "build_httpx_cookies_from_storage",
-                None,
-            )
-        elif failure_mode == "rotate_raises":
-            monkeypatch.setattr(
-                upstream_auth,
-                "build_httpx_cookies_from_storage",
-                lambda path=None: fake_jar,
-            )
+        async def boom(path=None, profile=None):
+            raise OSError("network unreachable")
 
-            async def _raising_rotate(client, storage_path=None):
-                raise RuntimeError("simulated rotate failure")
+        monkeypatch.setattr(upstream_auth, "fetch_tokens_with_domains", boom)
 
-            monkeypatch.setattr(upstream_auth, "_rotate_cookies", _raising_rotate)
-        elif failure_mode == "save_raises":
-            monkeypatch.setattr(
-                upstream_auth,
-                "build_httpx_cookies_from_storage",
-                lambda path=None: fake_jar,
-            )
-
-            async def _noop_rotate(client, storage_path=None):
-                pass
-
-            monkeypatch.setattr(upstream_auth, "_rotate_cookies", _noop_rotate)
-            monkeypatch.setattr(
-                upstream_auth,
-                "save_cookies_to_storage",
-                lambda jar, path=None: (_ for _ in ()).throw(IOError("disk full")),
-            )
-
-        from research_hub.notebooklm import keepalive as ka_mod
-        # Reload to pick up patched upstream
-        import importlib
-        importlib.reload(ka_mod)
-
-        # Must not raise
-        try:
-            result = ka_mod.rotate_and_persist_session(sf)
-        except Exception as exc:  # noqa: BLE001
-            pytest.fail(f"rotate_and_persist_session raised {type(exc).__name__}: {exc}")
-
-        assert result is False, f"Expected False for failure_mode={failure_mode}, got {result}"
+        from research_hub.notebooklm.keepalive import rotate_and_persist_session
+        assert rotate_and_persist_session(sf) is False
 
 
 # ---------------------------------------------------------------------------
-# B. keepalive_once
+# B. keepalive_once  (refresh-first contract — no pre-health gate)
 # ---------------------------------------------------------------------------
 
 
 class TestKeepaliveOnce:
-    """Tests for keepalive.keepalive_once."""
+    """Tests for ``keepalive_once``. Codex review of the old design flagged
+    the pre-health gate as a blocker: if the gate failed, the only refresh
+    attempt was skipped, so a transient health-check error guaranteed a
+    stale session forever. The new contract calls refresh FIRST."""
 
-    def test_healthy_session_rotates_returns_0(self, tmp_path: Path, monkeypatch):
-        """B1: session ok → rotate called, returns 0."""
+    def test_refresh_success_returns_zero(self, tmp_path: Path, monkeypatch):
+        """B1: successful refresh → rc 0, OK message includes changed cookies."""
         cfg = _make_cfg(tmp_path)
         sf = _write_state(tmp_path)
-        rotate_calls: list = []
 
+        from research_hub.notebooklm import keepalive as ka_mod
+        from research_hub.notebooklm.keepalive import RefreshResult
+
+        def fake_refresh(_path):
+            return RefreshResult(
+                ok=True,
+                reason="ok",
+                before_metadata={"__Secure-1PSIDTS": "expiry=100"},
+                after_metadata={"__Secure-1PSIDTS": "expiry=200"},
+                changed=["__Secure-1PSIDTS"],
+            )
+
+        monkeypatch.setattr(ka_mod, "refresh_and_persist_session", fake_refresh)
         import research_hub.notebooklm.auth as rh_auth
-        monkeypatch.setattr(
-            rh_auth,
-            "check_session_health",
-            lambda path: {"ok": True, "reason": "ok"},
-        )
-        monkeypatch.setattr(
-            rh_auth,
-            "default_state_file",
-            lambda research_hub_dir: sf,
-        )
-
-        import research_hub.notebooklm.keepalive as ka_mod
-        monkeypatch.setattr(
-            ka_mod,
-            "rotate_and_persist_session",
-            lambda state_file: (rotate_calls.append(state_file), True)[1],
-        )
+        monkeypatch.setattr(rh_auth, "default_state_file", lambda _root: sf)
 
         rc = ka_mod.keepalive_once(cfg)
-
         assert rc == 0
-        assert len(rotate_calls) == 1
 
-    def test_dead_session_warns_returns_nonzero_no_rotate(
+    def test_refresh_failure_returns_one_with_actionable_hint(
         self, tmp_path: Path, monkeypatch, capsys
     ):
-        """B2: session not-ok → WARN printed to stderr, returns non-zero, no rotate."""
+        """B2: refresh failure → rc 1, WARN message names login --auto-detect."""
         cfg = _make_cfg(tmp_path)
         sf = _write_state(tmp_path)
-        rotate_calls: list = []
 
+        from research_hub.notebooklm import keepalive as ka_mod
+        from research_hub.notebooklm.keepalive import RefreshResult
+
+        def fake_refresh(_path):
+            return RefreshResult(ok=False, reason="HTTPError: 401 Unauthorized")
+
+        monkeypatch.setattr(ka_mod, "refresh_and_persist_session", fake_refresh)
         import research_hub.notebooklm.auth as rh_auth
-        monkeypatch.setattr(
-            rh_auth,
-            "check_session_health",
-            lambda path: {"ok": False, "reason": "auth invalid"},
-        )
-        monkeypatch.setattr(
-            rh_auth,
-            "default_state_file",
-            lambda research_hub_dir: sf,
-        )
-
-        import research_hub.notebooklm.keepalive as ka_mod
-        monkeypatch.setattr(
-            ka_mod,
-            "rotate_and_persist_session",
-            lambda state_file: (rotate_calls.append(state_file), True)[1],
-        )
+        monkeypatch.setattr(rh_auth, "default_state_file", lambda _root: sf)
 
         rc = ka_mod.keepalive_once(cfg)
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "refresh failed" in err
+        assert "login --auto-detect" in err
 
-        assert rc != 0
-        assert len(rotate_calls) == 0, "rotate must NOT be called when session is dead"
-        captured = capsys.readouterr()
-        assert "revoked" in captured.err or "WARN" in captured.err, (
-            f"Expected WARN in stderr; got: {captured.err!r}"
-        )
-        assert "notebooklm login" in captured.err
-
-    def test_post_rotation_probe_failure_warns_returns_nonzero(
-        self, tmp_path: Path, monkeypatch, capsys
+    def test_refresh_is_called_before_any_health_gate(
+        self, tmp_path: Path, monkeypatch
     ):
-        """B3: rotation success but post-probe not-ok returns non-zero and warns."""
+        """B3: regression for Codex critique — old code ran
+        ``check_session_health`` FIRST and skipped refresh when it failed.
+        New code MUST call refresh first; a (now nonexistent) pre-health
+        gate must not be reintroduced."""
         cfg = _make_cfg(tmp_path)
         sf = _write_state(tmp_path)
-        health_results = [
-            {"ok": True, "reason": "ok"},
-            {"ok": False, "reason": "auth invalid"},
-        ]
-        rotate_calls: list = []
 
+        order: list = []
+        from research_hub.notebooklm import keepalive as ka_mod
+        from research_hub.notebooklm.keepalive import RefreshResult
+
+        def fake_refresh(_path):
+            order.append("refresh")
+            return RefreshResult(ok=True, reason="ok")
+
+        monkeypatch.setattr(ka_mod, "refresh_and_persist_session", fake_refresh)
         import research_hub.notebooklm.auth as rh_auth
-        monkeypatch.setattr(
-            rh_auth,
-            "check_session_health",
-            lambda path: health_results.pop(0),
-        )
-        monkeypatch.setattr(
-            rh_auth,
-            "default_state_file",
-            lambda research_hub_dir: sf,
-        )
 
-        import research_hub.notebooklm.keepalive as ka_mod
-        monkeypatch.setattr(
-            ka_mod,
-            "rotate_and_persist_session",
-            lambda state_file: (rotate_calls.append(state_file), True)[1],
-        )
+        # Poison check_session_health so any reintroduced pre-gate would
+        # short-circuit refresh.
+        def poisoned_check(*_a, **_k):
+            order.append("health-pregate")
+            return {"ok": False, "reason": "should not be called pre-refresh"}
+
+        monkeypatch.setattr(rh_auth, "check_session_health", poisoned_check, raising=False)
+        monkeypatch.setattr(rh_auth, "default_state_file", lambda _root: sf)
 
         rc = ka_mod.keepalive_once(cfg)
-
-        assert rc != 0
-        assert rotate_calls == [sf]
-        captured = capsys.readouterr()
-        assert "cookies rotated" in captured.err
-        assert "notebooklm login" in captured.err
+        assert rc == 0
+        assert order == ["refresh"], (
+            f"refresh must be the first (and only) call; got {order!r}. "
+            "A pre-health gate would short-circuit refresh on transient errors."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +340,44 @@ class TestCLIKeepalive:
 
         assert rc == 0
         assert len(sleep_calls) >= 3
-        assert all(s >= 3600 for s in sleep_calls), "Floor must be 3600"
+        assert all(s >= 600 for s in sleep_calls), "Floor must be 600 (10 min)"
+
+    def test_loop_floor_clamps_to_600_seconds(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """C2b: regression for the new 600 s floor. Passing
+        --interval 60 (the SDK's own floor) must be clamped to 600 by
+        _keepalive_loop's `max(600, interval_sec)`. The old code clamped
+        to 3600; the new code MUST clamp to 600. A regression that
+        accidentally restored the old floor would let this assertion
+        observe a 3600 sleep, failing the test."""
+        cfg = _make_cfg(tmp_path)
+        monkeypatch.setattr("research_hub.cli.get_config", lambda: cfg)
+
+        sleep_calls: list[float] = []
+        import research_hub.notebooklm.keepalive as ka_mod
+
+        def fake_sleep(sec: float):
+            sleep_calls.append(sec)
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(ka_mod, "keepalive_once", lambda c: 0)
+        original_loop = ka_mod._keepalive_loop
+        monkeypatch.setattr(
+            ka_mod,
+            "_keepalive_loop",
+            lambda c, interval_sec, sleep_fn=None: original_loop(
+                c, interval_sec, sleep_fn=fake_sleep
+            ),
+        )
+
+        from research_hub import cli
+        rc = cli.main(["notebooklm", "keepalive", "--loop", "--interval", "60"])
+
+        assert rc == 0
+        assert sleep_calls == [600], (
+            f"--interval 60 must be clamped to the 600 s floor; got {sleep_calls!r}"
+        )
 
     def test_install_windows_task_without_yes_is_dry_run(
         self, tmp_path: Path, monkeypatch, capsys
@@ -396,7 +395,7 @@ class TestCLIKeepalive:
         monkeypatch.setattr(ka_mod.shutil, "which", lambda name: None)
 
         with patch("subprocess.run") as mock_run:
-            rc = ka_mod.run_install_windows_task(6, dry_run=True, uninstall=False, cfg=cfg)
+            rc = ka_mod.run_install_windows_task(15, dry_run=True, uninstall=False, cfg=cfg)
 
         assert rc == 0
         mock_run.assert_not_called()
@@ -421,7 +420,7 @@ class TestCLIKeepalive:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            rc = ka_mod.run_install_windows_task(6, dry_run=False, uninstall=False, cfg=cfg)
+            rc = ka_mod.run_install_windows_task(15, dry_run=False, uninstall=False, cfg=cfg)
 
         assert rc == 0
         mock_run.assert_called_once()
@@ -429,6 +428,18 @@ class TestCLIKeepalive:
         assert "schtasks" in argv_passed[0]
         assert "/Create" in argv_passed
         assert "ResearchHubNLMKeepalive" in " ".join(argv_passed)
+        # Minute-cadence contract (regression guard — the old code used
+        # /SC HOURLY which gave only ~3 retries per PSIDTS expiry window).
+        assert "/SC" in argv_passed
+        sc_idx = argv_passed.index("/SC")
+        assert argv_passed[sc_idx + 1] == "MINUTE", (
+            f"/SC must be MINUTE, got {argv_passed[sc_idx + 1]!r}"
+        )
+        assert "/MO" in argv_passed
+        mo_idx = argv_passed.index("/MO")
+        assert argv_passed[mo_idx + 1] == "15", (
+            f"/MO must be the passed interval_minutes (15), got {argv_passed[mo_idx + 1]!r}"
+        )
         # /RL HIGHEST is removed (P2 fix — needless elevation, breaks non-admin).
         assert "/RL" not in argv_passed, "argv must NOT contain /RL (elevation removed)"
         assert "HIGHEST" not in argv_passed, "argv must NOT contain HIGHEST"
@@ -445,7 +456,7 @@ class TestCLIKeepalive:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             import research_hub.notebooklm.keepalive as ka_mod
-            rc = ka_mod.run_install_windows_task(6, dry_run=False, uninstall=True, cfg=cfg)
+            rc = ka_mod.run_install_windows_task(15, dry_run=False, uninstall=True, cfg=cfg)
 
         assert rc == 0
         mock_run.assert_called_once()
@@ -462,7 +473,7 @@ class TestCLIKeepalive:
 
         with patch("subprocess.run") as mock_run:
             import research_hub.notebooklm.keepalive as ka_mod
-            rc = ka_mod.run_install_windows_task(6, dry_run=False, uninstall=False, cfg=None)
+            rc = ka_mod.run_install_windows_task(15, dry_run=False, uninstall=False, cfg=None)
 
         assert rc == 1
         mock_run.assert_not_called()
@@ -514,7 +525,7 @@ class TestCLIKeepalive:
         monkeypatch.setattr(ka_mod.shutil, "which", lambda name: fake_script if name == "research-hub" else None)
 
         with patch("subprocess.run") as mock_run:
-            rc = ka_mod.run_install_windows_task(6, dry_run=True, uninstall=False, cfg=cfg)
+            rc = ka_mod.run_install_windows_task(15, dry_run=True, uninstall=False, cfg=cfg)
 
         assert rc == 0
         mock_run.assert_not_called()
@@ -553,7 +564,7 @@ class TestCLIKeepalive:
         monkeypatch.setattr(ka_mod.shutil, "which", lambda name: None)
 
         with patch("subprocess.run") as mock_run:
-            rc = ka_mod.run_install_windows_task(6, dry_run=True, uninstall=False, cfg=cfg)
+            rc = ka_mod.run_install_windows_task(15, dry_run=True, uninstall=False, cfg=cfg)
 
         assert rc == 0
         mock_run.assert_not_called()
@@ -603,7 +614,7 @@ class TestCLIKeepalive:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            rc = ka_mod.run_install_windows_task(6, dry_run=False, uninstall=False, cfg=cfg)
+            rc = ka_mod.run_install_windows_task(15, dry_run=False, uninstall=False, cfg=cfg)
 
         assert rc == 0
 
@@ -646,7 +657,7 @@ class TestCLIKeepalive:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            rc = ka_mod.run_install_windows_task(6, dry_run=False, uninstall=True, cfg=cfg)
+            rc = ka_mod.run_install_windows_task(15, dry_run=False, uninstall=True, cfg=cfg)
 
         assert rc == 0
         mock_run.assert_called_once()

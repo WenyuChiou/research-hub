@@ -22,6 +22,36 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Changed
+- **NLM keepalive: real refresh via SDK public API + minute-cadence default**
+  (`notebooklm/keepalive.py`, `cli.py`). The old `rotate_and_persist_session`
+  used the SDK's *private* `_rotate_cookies` poke which returned success
+  without verifying the session was still alive — every "ok" in the logs
+  could have been a silent no-op against a revoked session, which is why
+  the documented "持久一年" never actually held. New
+  `refresh_and_persist_session` calls the SDK's *public*
+  `fetch_tokens_with_domains` which GETs the NotebookLM homepage and
+  extracts (csrf_token, session_id) as a side-effect of cookie rotation:
+  if tokens come back, the cookies are observably good. The function
+  returns a structured `RefreshResult` with `before_metadata` /
+  `after_metadata` / `changed` (freshness-cookie expiry diff) so an
+  operator can see PSIDTS actually moved forward. The old function name
+  is retained as a thin bool shim for back-compat callers.
+  `keepalive_once` was restructured to call refresh *first* (no pre-health
+  gate — the Codex review of the old design flagged that as the source
+  of permanently-stale sessions: a transient health-check error skipped
+  the only refresh attempt). Default cadence flipped from hourly to
+  **15 minutes** (`--interval` 21600 → 900 s, floor 3600 → 600 s;
+  `--interval-minutes` 6 → 15 with /SC MINUTE schtasks) — PSIDTS expires
+  every ~3-4 hours, so hourly left only ~3 retries per expiry window
+  and routinely lost races on flaky networks. `--interval-hours` is
+  kept as a deprecated alias multiplied to minutes at dispatch.
+  Existing tests in `tests/test_v0950_nlm_keepalive_and_browser_login.py`
+  rewrote classes A (refresh) and B (keepalive_once) for the new
+  contract; classes C/D/E (CLI / from-browser) unchanged. Note: "持久一年"
+  is achievable *only* when (a) the scheduled task runs every 15 min without
+  interruption, (b) Google does not revoke the account on a security event,
+  and (c) the long-lived `SID`/`PSID` cookies (~1 year nominal) have not
+  naturally expired — keepalive does not defeat any of those.
 - **`auto --fit-check-threshold` default raised 3 → 4** (`cli.py`). The
   LLM-judge fit-check now defaults to "clearly related" instead of
   "tangentially related and above". Rationale: at threshold 3 a "Large

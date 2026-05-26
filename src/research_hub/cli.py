@@ -6812,11 +6812,14 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_keepalive.add_argument(
         "--interval",
         type=int,
-        default=21600,
+        default=900,
         metavar="SEC",
         help=(
             "Seconds between keepalive calls in --loop mode "
-            "(default: 21600 = 6 h; floor: 3600 = 1 h)"
+            "(default: 900 = 15 min; floor: 600 = 10 min). Google's "
+            "PSIDTS cookies expire every ~3-4 hours, so the cadence must "
+            "stay well below that — the old hour-defaults left tiny safety "
+            "margin and routinely lost races on flaky networks."
         ),
     )
     nlm_keepalive.add_argument(
@@ -6825,7 +6828,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help=(
             "Build and print the schtasks command that registers a Windows Scheduled Task "
-            "running 'python -m research_hub notebooklm keepalive' every --interval-hours h. "
+            "running 'python -m research_hub notebooklm keepalive' every --interval-minutes m. "
             "Without --yes this is a DRY-RUN only (prints command, registers nothing)."
         ),
     )
@@ -6839,11 +6842,31 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     nlm_keepalive.add_argument(
+        "--interval-minutes",
+        type=int,
+        default=15,
+        metavar="MINUTES",
+        help=(
+            "Minutes between task runs when registering the Scheduled Task "
+            "(default: 15). Uses /SC MINUTE under the hood — minute-cadence "
+            "is required because PSIDTS expires every ~3-4 hours, so an "
+            "hourly cadence (the old default) left ~3 retries per expiry "
+            "window and routinely lost races on flaky networks."
+        ),
+    )
+    # Back-compat alias: --interval-hours is deprecated in favour of
+    # --interval-minutes but kept as a wrapper so existing automation
+    # scripts don't break on upgrade. Multiplied to minutes at dispatch.
+    nlm_keepalive.add_argument(
         "--interval-hours",
         type=int,
-        default=6,
+        default=None,
         metavar="HOURS",
-        help="Hours between task runs when registering the Scheduled Task (default: 6)",
+        help=(
+            "Deprecated alias for --interval-minutes (multiplied by 60). "
+            "Prefer --interval-minutes; see its help text for why "
+            "minute-cadence is required."
+        ),
     )
     nlm_keepalive.add_argument(
         "--yes",
@@ -8293,8 +8316,16 @@ def _main_dispatch(args, parser) -> int:
             )
             cfg = get_config()
             if args.install_windows_task or args.uninstall_windows_task:
+                # Prefer the explicit --interval-minutes; if the deprecated
+                # --interval-hours was passed explicitly, multiply to
+                # minutes. Default falls through to args.interval_minutes
+                # (which itself defaults to 15).
+                if args.interval_hours is not None:
+                    interval_minutes = args.interval_hours * 60
+                else:
+                    interval_minutes = args.interval_minutes
                 return run_install_windows_task(
-                    args.interval_hours,
+                    interval_minutes,
                     dry_run=not args.yes,
                     uninstall=args.uninstall_windows_task,
                     cfg=cfg,
