@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import shutil
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 from urllib.parse import urlparse
 
+import httpx
 import requests
 
 from research_hub.utils.doi import normalize_doi as _normalize_doi
@@ -22,6 +24,7 @@ UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
 CROSSREF_BASE = "https://api.crossref.org/works"
 
 _HINT_SHOWN = False  # once-per-process flag for the unpaywall_email hint
+logger = logging.getLogger(__name__)
 
 
 def _reset_hint_state() -> None:
@@ -129,6 +132,13 @@ class _PdfDownloadResult:
     status: int | None = None
     reason: str | None = None
     bytes: int | None = None
+
+
+@dataclass(frozen=True)
+class _PdfBytesResult:
+    content: bytes | None
+    status: int | None = None
+    reason: str | None = None
 
 
 _LAST_DOWNLOAD_RESULTS: dict[str, _PdfDownloadResult] = {}
@@ -316,74 +326,124 @@ def _has_existing_pdf(zot, item_key: str) -> bool:
     return False
 
 
-def _download_pdf_to_temp(url: str, *, max_mb: int = 25) -> Path | None:
+def _download_pdf_to_temp(url: str, *, max_mb: int = 25, cfg=None) -> Path | None:
     """Download a PDF URL to a temp file and return the local path."""
 
-    result = _download_pdf_to_temp_result(url, max_mb=max_mb)
+    result = _download_pdf_to_temp_result(url, max_mb=max_mb, cfg=cfg)
     _LAST_DOWNLOAD_RESULTS[url] = result
     return result.path
 
 
-def _download_pdf_to_temp_result(url: str, *, max_mb: int = 25) -> _PdfDownloadResult:
+def _download_pdf_to_temp_result(url: str, *, max_mb: int = 25, cfg=None) -> _PdfDownloadResult:
     """Download a PDF URL and retain the reason when it cannot be saved."""
 
-    # v0.90.0 G1#5/#6 fix:
-    # - wrap requests.get(stream=True) in `with` so the connection is released
-    #   even when we early-return; pre-fix held connections until GC, which
-    #   starved the pool at N=1000 paper batches.
-    # - clean up partial temp files on write_bytes failure so a disk-full or
-    #   interrupted write doesn't leave 0-byte / partial .pdf cruft in
-    #   tempfile.gettempdir(). Happy-path cleanup is the caller's job
-    #   (see _upload_local_pdf call sites' try/finally local_path.unlink()).
+    result = _download_pdf_bytes_with_ezproxy_result(url, cfg=cfg, timeout=60, max_size_mb=max_mb)
+    if result.content is None:
+        return _PdfDownloadResult(None, status=result.status, reason=result.reason)
+    return _write_pdf_temp(url, result.content, status=result.status)
+
+
+# Dead `_download_pdf_with_ezproxy_fallback` removed (PR feedback): it was
+# a parallel-with-`_download_pdf_bytes_with_ezproxy_result` copy that the
+# production path never used. Tests are updated to exercise the live
+# `_download_pdf_bytes_with_ezproxy_result` directly.
+
+
+def _download_pdf_bytes_with_ezproxy_result(
+    url: str,
+    *,
+    cfg=None,
+    timeout: int = 60,
+    max_size_mb: int = 25,
+) -> _PdfBytesResult:
     parsed = urlparse(url)
     if parsed.netloc.endswith(".test") and parsed.path.lower().endswith(".pdf"):
         # Reserved .test URLs are used throughout the unit suite; keep them
         # offline while still exercising the imported_file upload path.
-        content = b"%PDF-1.4\n% research-hub test fixture\n"
-        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
-        target = Path(tempfile.gettempdir()) / f"rh_pdf_{digest}.pdf"
+        return _PdfBytesResult(b"%PDF-1.4\n% research-hub test fixture\n")
+    if cfg is not None:
         try:
-            target.write_bytes(content)
-        except Exception:
-            _cleanup_partial_temp_pdf(target)
-            return _PdfDownloadResult(None, reason="network_error")
-        return _PdfDownloadResult(target, bytes=len(content))
+            from research_hub.ezproxy import load_cookies, resolve_config, wrap_url
+
+            ezcfg = resolve_config(cfg)
+            if ezcfg.enabled:
+                wrapped = wrap_url(url, ezcfg.url_template)
+                if wrapped != url:
+                    proxy_result = _download_via_httpx_result(
+                        wrapped,
+                        cookies=load_cookies(ezcfg.cookies_path),
+                        timeout=timeout,
+                        max_size_mb=max_size_mb,
+                    )
+                    if proxy_result.content is not None:
+                        return proxy_result
+                    logger.info(
+                        "ezproxy fetch failed (%s); falling back to direct URL",
+                        proxy_result.reason or proxy_result.status or "unknown",
+                    )
+        except Exception as exc:  # noqa: BLE001 - fallback must never fail hard
+            logger.info("ezproxy fetch failed (%s); falling back to direct URL", exc)
+    return _download_via_httpx_result(url, cookies={}, timeout=timeout, max_size_mb=max_size_mb)
+
+
+def _download_via_httpx(
+    url: str,
+    *,
+    cookies: dict[str, str] | None = None,
+    timeout: int = 60,
+    max_size_mb: int = 25,
+) -> bytes | None:
+    """Download and validate a PDF payload with httpx."""
+
+    return _download_via_httpx_result(
+        url,
+        cookies=cookies,
+        timeout=timeout,
+        max_size_mb=max_size_mb,
+    ).content
+
+
+def _download_via_httpx_result(
+    url: str,
+    *,
+    cookies: dict[str, str] | None = None,
+    timeout: int = 60,
+    max_size_mb: int = 25,
+) -> _PdfBytesResult:
     try:
-        response = requests.get(url, timeout=60, stream=True)
+        response = httpx.get(
+            url,
+            cookies=cookies or {},
+            follow_redirects=True,
+            timeout=timeout,
+        )
     except Exception:
-        return _PdfDownloadResult(None, reason="network_error")
-    # Always close the streaming response to release the connection
-    # back to the pool, regardless of which early-return branch fires.
-    # `with requests.get(...)` would be cleaner but fails with test
-    # mocks that don't implement __enter__/__exit__ — using a manual
-    # try/finally + .close() works with both real Response objects and
-    # Mock fakes.
+        return _PdfBytesResult(None, reason="network_error")
+    status = _response_status(response)
+    is_success = getattr(response, "is_success", getattr(response, "ok", False))
+    if not is_success:
+        return _PdfBytesResult(None, status=status, reason=_http_failure_reason(status))
     try:
-        status = _response_status(response)
-        if not response.ok:
-            return _PdfDownloadResult(None, status=status, reason=_http_failure_reason(status))
-        try:
-            content = response.content
-        except Exception:
-            return _PdfDownloadResult(None, status=status, reason="network_error")
-        if len(content) > max_mb * 1024 * 1024:
-            return _PdfDownloadResult(None, status=status, reason="pdf_invalid")
-        content_type = str((response.headers or {}).get("Content-Type", "") or "").lower()
-        if "pdf" not in content_type and not content.startswith(b"%PDF"):
-            return _PdfDownloadResult(None, status=status, reason="pdf_invalid")
-        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
-        target = Path(tempfile.gettempdir()) / f"rh_pdf_{digest}.pdf"
-        try:
-            target.write_bytes(content)
-        except Exception:
-            _cleanup_partial_temp_pdf(target)
-            return _PdfDownloadResult(None, status=status, reason="network_error")
-        return _PdfDownloadResult(target, status=status, bytes=len(content))
-    finally:
-        try:
-            response.close()
-        except Exception:
-            pass
+        content = response.content
+    except Exception:
+        return _PdfBytesResult(None, status=status, reason="network_error")
+    if len(content) > max_size_mb * 1024 * 1024:
+        return _PdfBytesResult(None, status=status, reason="pdf_invalid")
+    content_type = str((response.headers or {}).get("Content-Type", "") or "").lower()
+    if not content_type.startswith("application/pdf") and not content.startswith(b"%PDF"):
+        return _PdfBytesResult(None, status=status, reason="pdf_invalid")
+    return _PdfBytesResult(content, status=status)
+
+
+def _write_pdf_temp(url: str, content: bytes, *, status: int | None = None) -> _PdfDownloadResult:
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    target = Path(tempfile.gettempdir()) / f"rh_pdf_{digest}.pdf"
+    try:
+        target.write_bytes(content)
+    except Exception:
+        _cleanup_partial_temp_pdf(target)
+        return _PdfDownloadResult(None, status=status, reason="network_error")
+    return _PdfDownloadResult(target, status=status, bytes=len(content))
 
 
 def _cleanup_partial_temp_pdf(target: Path) -> None:
@@ -614,6 +674,7 @@ def attach_pdfs(
     keep_url_fallback: bool = False,
     max_pdf_size_mb: int = 25,
     local_pdfs_dir: Path | None = None,
+    cfg=None,
 ) -> dict[str, str]:
     """Attach PDFs as imported_file items, with optional imported_url fallback.
 
@@ -636,7 +697,7 @@ def attach_pdfs(
                 results[plan.item_key] = "skip:already-has-pdf"
                 entries.append(_entry(plan, "SKIP", report_source, reason="already_has_pdf"))
                 continue
-            local_path = _download_pdf_to_temp(plan.pdf_url, max_mb=max_pdf_size_mb)
+            local_path = _download_pdf_to_temp(plan.pdf_url, max_mb=max_pdf_size_mb, cfg=cfg)
             download_result = _LAST_DOWNLOAD_RESULTS.pop(plan.pdf_url, None)
             if local_path is None:
                 reason = _download_failure_reason(download_result, report_source)

@@ -386,7 +386,7 @@ which workaround to reach for.
 
 | Limitation | What's actually happening | What to do |
 |---|---|---|
-| **IEEE Xplore PDFs / URLs are blocked** by anti-bot | IEEE returns an *"Unable to Load Page"* HTML stub to both our URL pre-check AND NotebookLM's server-side fetcher. The bundle ladder flags these as `likely_error_page` and warns. | Either (a) download the PDF through your institutional access and drop it on the Zotero item / upload it in the NotebookLM web UI manually, or (b) skip the IEEE source — the abstract is still in Zotero and the Obsidian note. |
+| **IEEE Xplore PDFs / URLs are blocked** by anti-bot | IEEE returns an *"Unable to Load Page"* HTML stub to direct fetches. `paper attach-pdfs` can now route configured publisher PDF URLs through your institution's EZproxy and fall back to the direct URL if the proxy fails. | Configure `ezproxy_url_template`, run `research-hub ezproxy login` once, then re-run `paper attach-pdfs`. See [EZproxy PDF access](docs/ezproxy.md). Without EZproxy, manually attach the PDF through institutional access or skip the source. |
 | **NotebookLM session expires ~every 3.5h** | Google's short-lived `__Secure-1PSIDTS` / `PSIDRTS` cookies are not refreshable by background polling. `notebooklm keepalive` exists but cannot rotate them server-side. | Re-run `research-hub notebooklm login --auto-detect` when a run reports an auth failure — < 1 minute, no terminal interaction. |
 | **`--no-llm-fit-check` can't filter "wrong sub-topic, right field"** | The no-LLM BM25 gate is designed to catch *blatant cross-field contamination* (e.g. pure hydrology with zero AI in an LLM cluster). It cannot tell "AI-agents-in-general" from "AI-agents-in-water-resources" — both score similarly on a lexical-only metric, so the gate is recall-biased and keeps both. | For topic-specific subset filtering, use the **default** LLM-judge path (drop `--no-llm-fit-check`). The LLM-judge layer is what's designed to make semantic relevance calls. |
 | **Cluster-overview LLM auto-fill writes English headings even when the scaffold is Chinese** | `topic.py` writes Chinese section headings (`## 核心問題`, `## 範圍定義`, …) for the empty scaffold, but `apply_overview` re-renders the file with English headings (`## Core Question`, `## Scope`, …) when the LLM fills it in. | Cosmetic — content is correct. If you prefer Chinese headings on the filled overview, hand-curate the section names after the first auto-fill (the markers ensure subsequent runs preserve your edits). |
@@ -397,7 +397,7 @@ which workaround to reach for.
 
 ## Docs + Status + Dev
 
-Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.md), [dashboard walkthrough](docs/dashboard-walkthrough.md), [MCP tools](docs/mcp-tools.md), [AI host support matrix](docs/ai-host-support.md), [live smoke checklist](docs/live-smoke.md), [personas](docs/personas.md), [NotebookLM setup](docs/notebooklm.md), [import folder](docs/import-folder.md), [CLI reference](docs/cli-reference.md), [CHANGELOG](CHANGELOG.md).
+Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.md), [dashboard walkthrough](docs/dashboard-walkthrough.md), [MCP tools](docs/mcp-tools.md), [AI host support matrix](docs/ai-host-support.md), [live smoke checklist](docs/live-smoke.md), [personas](docs/personas.md), [NotebookLM setup](docs/notebooklm.md), [EZproxy PDF access](docs/ezproxy.md), [import folder](docs/import-folder.md), [CLI reference](docs/cli-reference.md), [CHANGELOG](CHANGELOG.md).
 
 Status:
 

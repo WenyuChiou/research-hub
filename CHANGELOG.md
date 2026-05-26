@@ -22,6 +22,15 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Added
+- **EZproxy support for paywalled PDF downloads** (`ezproxy.py`, `cli.py`,
+  `zotero/pdf_attach.py`, `pyproject.toml`). Opt-in via
+  `cfg.ezproxy_url_template`. New
+  `research-hub ezproxy login` captures institutional SSO cookies via
+  Playwright; `paper attach-pdfs` then wraps publisher URLs through the
+  proxy and falls back to the direct URL on any proxy failure. Generic
+  per-institution template — any university with an EZproxy gateway can
+  configure it. Closes the IEEE/Wiley/Elsevier-via-paywall gap noted in
+  the README's Known limitations.
 - **`auto --year RANGE` flag** (`cli.py`, `auto.py`). The standalone
   `search --year` filter is now also exposed on the `auto` subcommand so
   users who want recent literature can write

@@ -14,15 +14,23 @@ from research_hub.zotero.pdf_attach import (
 
 
 class _Resp:
-    def __init__(self, *, ok: bool = True, headers: dict | None = None, content: bytes = b"") -> None:
-        self.ok = ok
+    def __init__(
+        self,
+        *,
+        ok: bool = True,
+        headers: dict | None = None,
+        content: bytes = b"",
+        status_code: int = 200,
+    ) -> None:
+        self.is_success = ok
         self.headers = headers or {}
         self.content = content
+        self.status_code = status_code
 
 
 def test_download_pdf_to_temp_accepts_pdf_magic_bytes(monkeypatch):
     monkeypatch.setattr(
-        "research_hub.zotero.pdf_attach.requests.get",
+        "research_hub.zotero.pdf_attach.httpx.get",
         lambda *args, **kwargs: _Resp(
             headers={"Content-Type": "application/octet-stream"},
             content=b"%PDF-1.4\nfixture\n",
@@ -39,7 +47,7 @@ def test_download_pdf_to_temp_accepts_pdf_magic_bytes(monkeypatch):
 
 def test_download_pdf_to_temp_rejects_non_pdf_payload(monkeypatch):
     monkeypatch.setattr(
-        "research_hub.zotero.pdf_attach.requests.get",
+        "research_hub.zotero.pdf_attach.httpx.get",
         lambda *args, **kwargs: _Resp(
             headers={"Content-Type": "text/html"},
             content=b"<html>not a pdf</html>",

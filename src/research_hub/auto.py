@@ -570,7 +570,7 @@ def _run_pdf_attach_step(
         if local_pdfs_dir is not None:
             local_pdfs_dir = local_pdfs_dir / "pdfs"
         results = attach_pdfs(web, actionable, rate_limit_rps=1.0,
-                               local_pdfs_dir=local_pdfs_dir)
+                               local_pdfs_dir=local_pdfs_dir, cfg=cfg)
         summary = results.summary
         ok, skip, fail = summary.ok, summary.skip, summary.fail
         _step_log(report, "pdf.attach", True, _elapsed(started, report),
