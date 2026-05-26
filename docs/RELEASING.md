@@ -20,9 +20,10 @@ Installs a `pre-push` hook that refuses to push a `v*` tag unless
 ## Release flow
 
 ```bash
-# 1. Land all changes. Bump version in BOTH:
+# 1. Land all changes. Bump version in ALL of:
 #      src/research_hub/__init__.py  (__version__)
 #      pyproject.toml                ([project] version)
+#      server.json                   (top-level `version` AND packages[0].version)
 #    Add the CHANGELOG entry. Commit it (release commit).
 
 # 2. Run the gate. It checks: clean tree, version sync, and the
@@ -38,6 +39,14 @@ git push origin master vX.Y.Z
 # 4. Verify REAL CI, not local:
 gh run watch <run-id> --exit-status     # ubuntu+macos+windows green
 #    Local green ≠ shipped green (the v0.91.0 lesson).
+
+# 5. (Optional, MCP Server Registry only) Republish server.json after
+#    the PyPI release lands. The registry pins to a specific PyPI
+#    version; the registry copy stays stale until you push the new
+#    manifest. Skip this step if you don't care about
+#    registry.modelcontextprotocol.io indexing.
+mcp-publisher publish   # uploads updated server.json (token from prior `mcp-publisher login github`)
+curl 'https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.WenyuChiou/research-hub'
 ```
 
 ## Why the steps are in this order
@@ -51,6 +60,17 @@ gh run watch <run-id> --exit-status     # ubuntu+macos+windows green
   an ad-hoc CLI flag. e2e is **always** included.
 - `gh run watch` is mandatory: the gate proves local green; CI
   proves it green on the platforms users actually run.
+- **`server.json` sync** is part of step 1 because the MCP Server
+  Registry pins to a PyPI `identifier` + `version` pair. If the
+  manifest's `packages[0].version` doesn't match the bumped PyPI
+  version, registry consumers either install the wrong version or
+  fail to install at all. The release-check gate does NOT currently
+  verify the three version fields are in sync — operator
+  responsibility per this runbook.
+- **MCP republish (step 5)** runs LAST because the registry should
+  not advertise a version PyPI hasn't published yet. If you republish
+  before PyPI finishes, the install command in the registry entry
+  points at a non-existent package version for a brief window.
 
 ## Emergency bypass
 
@@ -65,3 +85,4 @@ once" in this project's history shipped a broken release.
 - `scripts/install_release_gate.sh` — installs the pre-push hook
 - `.git/hooks/pre-push` — the installed gate (sha-bound, single-use marker)
 - `tests/test_release_gate.py` — meta-tests the gate's own logic
+- `server.json` — MCP Server Registry manifest (must be re-published via `mcp-publisher publish` after each PyPI version bump; not gated by the pre-push hook)
