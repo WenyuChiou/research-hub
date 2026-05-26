@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -65,11 +66,18 @@ def test_scan_zotero_for_gc_flags_old_empty_test_orphan_collection():
 
 
 def test_scan_zotero_for_gc_skips_recent_empty_collection():
-    zot = _ZotCollections([_collection("A1", "fresh-empty", date_added="2026-04-25T00:00:00Z")])
+    # Compute a "recent" date dynamically — the fixture was previously
+    # hard-coded to 2026-04-25 and started failing CI on 2026-05-26 when
+    # the date aged past the 30-day window and tripped the `empty>30d`
+    # reason the test asserts is ABSENT. Use today-5d so the test is
+    # date-agnostic and stays inside the 30-day "recent" window
+    # regardless of when CI runs.
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat(timespec="seconds")
+    zot = _ZotCollections([_collection("A1", "fresh-empty", date_added=recent)])
 
     candidates = scan_zotero_for_gc(zot, set(), age_days=30)
 
-    assert candidates == [GCCandidate(key="A1", name="fresh-empty", num_items=0, num_collections=0, date_added="2026-04-25T00:00:00Z", reasons=["orphan-from-vault"])]
+    assert candidates == [GCCandidate(key="A1", name="fresh-empty", num_items=0, num_collections=0, date_added=recent, reasons=["orphan-from-vault"])]
 
 
 def test_scan_zotero_for_gc_marks_non_empty_orphan_distinctly():
