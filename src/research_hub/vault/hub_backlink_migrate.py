@@ -59,8 +59,19 @@ def _build_hub_section(cluster_slug: str, moc_links: list[str]) -> str:
     return "\n## Hub\n\n" + "\n".join(lines) + "\n"
 
 
-def migrate_one_note(path: Path) -> HubMigrationResult:
-    """Inject `## Hub` section into one paper note. Idempotent."""
+def migrate_one_note(
+    path: Path,
+    *,
+    cluster_moc_links_map: dict[str, list[str]] | None = None,
+) -> HubMigrationResult:
+    """Inject `## Hub` section into one paper note. Idempotent.
+
+    ``cluster_moc_links_map`` lets the caller pre-load each cluster's
+    explicit `moc_links` (from `clusters.yaml`) so the auto-derived
+    sub-MOC suppression rule in `derive_moc_links` actually fires for
+    backfilled notes. Without this map, the generated `## Hub` block
+    would emit the slug-derived sub-MOC instead of the user override.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -77,7 +88,8 @@ def migrate_one_note(path: Path) -> HubMigrationResult:
     if _HUB_SECTION_RE.search(text):
         return HubMigrationResult(path=path, action="already_present")
 
-    moc_links = derive_moc_links(cluster_slug)
+    explicit_moc_links = list((cluster_moc_links_map or {}).get(cluster_slug, []))
+    moc_links = derive_moc_links(cluster_slug, moc_links=explicit_moc_links)
     hub_section = _build_hub_section(cluster_slug, moc_links)
 
     # Find injection point: before any of the user-facing sections, after
@@ -107,8 +119,15 @@ def migrate_all(
     *,
     cluster_slug_filter: str | None = None,
     dry_run: bool = False,
+    cluster_moc_links_map: dict[str, list[str]] | None = None,
 ) -> list[HubMigrationResult]:
-    """Walk raw/*/*.md and ensure each has a `## Hub` section."""
+    """Walk raw/*/*.md and ensure each has a `## Hub` section.
+
+    ``cluster_moc_links_map`` is forwarded to `migrate_one_note` so
+    explicit `LLM-Agents-*` / `Water-Resources-*` overrides set in
+    `clusters.yaml` are honoured during backfill. Callers (CLI) should
+    pre-build this map by walking ClusterRegistry once.
+    """
     raw_root = vault_root / "raw"
     if not raw_root.exists():
         return []
@@ -133,5 +152,10 @@ def migrate_all(
                 continue
             results.append(HubMigrationResult(path=note, action="added"))
         else:
-            results.append(migrate_one_note(note))
+            results.append(
+                migrate_one_note(
+                    note,
+                    cluster_moc_links_map=cluster_moc_links_map,
+                )
+            )
     return results
