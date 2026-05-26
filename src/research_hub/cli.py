@@ -4922,7 +4922,12 @@ def _auto(
     do_crystals,
     do_cluster_overview: bool = True,
     do_fit_check: bool = True,
-    fit_check_threshold: int = 3,
+    # CLI-handler default: mirrors the argparse default (strict 4). The
+    # public `auto_pipeline(...)` API keeps `fit_check_threshold=3` so
+    # existing programmatic callers / tests stay backward-compatible —
+    # the strict default is a CLI-UX choice for end-users, not an API
+    # contract change.
+    fit_check_threshold: int = 4,
     no_llm_fit_check: bool = False,
     zotero_batch_size: int = 50,
     llm_cli,
@@ -5416,8 +5421,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     auto_parser.add_argument("--no-fit-check", action="store_true",
                              help="Skip the fail-closed LLM-judge fit-check between search and ingest")
-    auto_parser.add_argument("--fit-check-threshold", type=int, default=3,
-                             help="Minimum 0-5 score for a paper to pass fit-check (default: 3 = tangentially related and above)")
+    auto_parser.add_argument("--fit-check-threshold", type=int, default=4,
+                             help=(
+                                 "Minimum 0-5 score for a paper to pass fit-check "
+                                 "(default: 4 = clearly related; pass --fit-check-threshold 3 "
+                                 "for the older lax default that accepts tangentially-related papers)"
+                             ))
     auto_parser.add_argument(
         "--zotero-batch-size",
         type=int,

@@ -22,6 +22,22 @@ status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
 ### Changed
+- **`auto --fit-check-threshold` default raised 3 → 4** (`cli.py`). The
+  LLM-judge fit-check now defaults to "clearly related" instead of
+  "tangentially related and above". Rationale: at threshold 3 a "Large
+  language models for X" cluster was consistently letting through pure
+  ML/DL papers about X (no LLM at all) — the judge correctly scored
+  them as 3 ("flood + AI, sort of related") and they passed. At
+  threshold 4 the same papers are filtered out (still scored 3, now
+  below the bar), cleaning the cluster to the actually-LLM-specific
+  subset. Empirically on an "LLM × flood forecasting" run: kept dropped
+  from 22/30 → 15/30, and the truly-LLM proportion rose from ~18% →
+  ~20% (the LLM-judge is still generous on ML-flood papers; a sharper
+  prompt is a follow-up). Use `--fit-check-threshold 3` to get the old
+  lax behaviour. Python API `auto_pipeline(..., fit_check_threshold=3)`
+  deliberately stays at 3 for back-compat with programmatic callers
+  and tests — the strict default is a CLI-UX choice, not an API
+  contract change.
 - **`auto --with-summary` is now ON by default** (`cli.py`). After ingest, the
   per-paper Key Findings / Methodology / Relevance sections are filled via the
   detected LLM CLI (claude / codex / gemini) on every run; previously the
