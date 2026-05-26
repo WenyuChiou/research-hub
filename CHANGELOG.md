@@ -37,6 +37,23 @@ graph rebuild (link out to the real tools instead)._
   are passed AND that the UA looks like a real browser.
 
 ### Added
+- **Two-level hub-and-spoke MOC graph (per-cluster sub-MOC)**
+  (`vault/hub_overview.py`). Every LLM/water cluster now links to BOTH a
+  parent MOC (e.g. `LLM-Agents`) AND a per-cluster sub-MOC derived from
+  the slug's distinctive tail (e.g. `LLM-Agents-Flood`,
+  `LLM-Agents-ConsumerBehavior`, `Water-Resources-DataPipeline`). Without
+  the sub-MOC, every LLM cluster collapsed onto a single `LLM-Agents`
+  node in Obsidian graph view; with it, each cluster has a distinct
+  sub-hub between the parent and the paper notes — the cross-cluster
+  centre stays, but each topic gets its own visible centre too. Two
+  parser fixes along the way: hyphenated slug tokens like
+  `large-language-models-consumer-behavior` now correctly match
+  `"large language model"` substring (haystack normalised
+  `-`/`_` → space), and generic possessive prefixes (`my`, `our`,
+  `new`, `old`) are stripped so `my-cluster` produces `Cluster` not
+  `MyCluster`. Existing clusters need
+  `research-hub vault rebuild-overviews` to backfill sub-MOC links into
+  legacy paper-note frontmatter; new ingests get them automatically.
 - **EZproxy support for paywalled PDF downloads** (`ezproxy.py`, `cli.py`,
   `zotero/pdf_attach.py`, `pyproject.toml`). Opt-in via
   `cfg.ezproxy_url_template`. New

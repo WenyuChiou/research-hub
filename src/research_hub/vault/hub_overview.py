@@ -485,20 +485,97 @@ def populate_all_mocs(cfg) -> list[tuple[str, Path]]:
     return written
 
 
+# Tokens dropped when deriving a per-cluster sub-MOC. These appear in
+# almost every LLM/water cluster slug and so are useless for
+# distinguishing one cluster from another. The remaining tokens identify
+# what makes THIS cluster different — that's the sub-MOC name.
+_SUB_MOC_STOPWORDS = frozenset({
+    # LLM-family tokens (kept as the parent MOC's identity)
+    "llm", "llms", "large", "language", "model", "models",
+    "agent", "agents", "ai", "generative", "chatgpt", "gpt",
+    # Water-family tokens
+    "water", "flood", "hydro", "hydrology", "hydrological", "rainfall",
+    "river", "drainage", "drought", "sociohydrology", "stormwater",
+    "reservoir",
+    # Connectors / qualifiers / generic possessives
+    "and", "or", "for", "in", "of", "the", "to", "a", "an", "on",
+    "with", "as", "by", "via", "based", "using", "study", "studies",
+    "system", "systems", "research", "review",
+    "my", "our", "new", "old",
+})
+
+
+def _sub_moc_token_from_slug(cluster_slug: str) -> str:
+    """Return a 1-2-word PascalCase tag identifying what this cluster is
+    ABOUT, after stripping LLM/water/connector stopwords.
+
+    Used to build a per-cluster sub-MOC name like `LLM-Agents-Flood` or
+    `LLM-Agents-ConsumerBehavior` that lives BETWEEN the parent MOC
+    (`LLM-Agents`) and the individual papers in the Obsidian graph. The
+    parent MOC is still there — clusters in the same parent family
+    cluster around it — but each cluster now also has its own visible
+    sub-hub.
+
+    Examples:
+      generative-ai-chatgpt-llm-agents-flood
+        → after stopwords: [] (all tokens are stopwords) — falls back
+          to the last meaningful slug token: ``Flood`` (kept because
+          it's in the water-family stopword list but ALSO the cluster's
+          distinguishing topic, so we prefer it over an empty result)
+      large-language-models-consumer-behavior
+        → after stopwords: [consumer, behavior] → ``ConsumerBehavior``
+      generative-ai-large-language-models-coupled-human-nature
+        → after stopwords: [coupled, human, nature] → ``HumanNature``
+        (last 2)
+    """
+    parts = [p for p in re.split(r"[-_]", str(cluster_slug or "").lower()) if p]
+    distinctive = [p for p in parts if p not in _SUB_MOC_STOPWORDS]
+    if not distinctive:
+        # All tokens are stopwords (very LLM/water-heavy slug). Fall back
+        # to the LAST original token so the sub-MOC isn't empty — it's
+        # better to risk a slightly-redundant "LLM-Agents-Flood" than to
+        # collapse every flood cluster onto the parent MOC alone.
+        distinctive = parts[-1:] if parts else []
+    if not distinctive:
+        return ""
+    # Take the LAST 1-2 distinctive tokens — usually the more specific
+    # ones (e.g. "consumer behavior", "human nature", "ecological
+    # coupling") rather than the first ones (which tend to be broader
+    # qualifiers).
+    pick = distinctive[-2:] if len(distinctive) >= 2 else distinctive[:1]
+    return "".join(t.capitalize() for t in pick)
+
+
 def derive_moc_links(
     cluster_slug: str,
     cluster_queries: list[str] | None = None,
     moc_links: list[str] | None = None,
 ) -> list[str]:
-    """Return v0.87 default MOC names for a cluster."""
+    """Return v0.87 default MOC names for a cluster.
+
+    Two-level hub-and-spoke: each LLM/water cluster gets BOTH a parent
+    MOC (e.g. ``LLM-Agents``) and a per-cluster sub-MOC (e.g.
+    ``LLM-Agents-ConsumerBehavior``). In Obsidian graph view this gives
+    you the cross-cluster centre (LLM-Agents) AND a distinct visible
+    sub-hub per topic, instead of every LLM cluster collapsing onto a
+    single shared LLM-Agents node.
+    """
 
     links: list[str] = []
     for name in moc_links or []:
         _append_unique(links, str(name).strip())
     text_parts = [cluster_slug, *(cluster_queries or [])]
+    # Normalise hyphens/underscores to spaces so multi-word triggers like
+    # "large language model" match slug tokens "large-language-models" too.
+    # Without this, `large-language-models-consumer-behavior` failed to link
+    # to the LLM-Agents MOC because the substring check never fired.
     haystack = " ".join(str(part) for part in text_parts if part).lower()
+    haystack = haystack.replace("-", " ").replace("_", " ")
+    sub_tag = _sub_moc_token_from_slug(cluster_slug)
     if "llm" in haystack or "large language model" in haystack or "agent" in haystack:
         _append_unique(links, "LLM-Agents")
+        if sub_tag:
+            _append_unique(links, f"LLM-Agents-{sub_tag}")
     # v0.88.5: broaden water-resources heuristic so flood / hydrology /
     # drainage / river / drought / rainfall clusters also link to the
     # Water-Resources MOC. Without this, a "ml-flood-forecasting" cluster
@@ -509,6 +586,8 @@ def derive_moc_links(
     )
     if any(kw in haystack for kw in water_keywords):
         _append_unique(links, "Water-Resources")
+        if sub_tag:
+            _append_unique(links, f"Water-Resources-{sub_tag}")
     return links
 
 
