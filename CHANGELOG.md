@@ -12,14 +12,20 @@
 
 ## [Unreleased]
 
-_Post-1.0. Phase B (UI 80/20 — ⌘K command palette + mobile
-breakpoints + `_HOME` wayfinding) and Phase D (Zotero metadata
-correctness — type-aware `itemType` mapping + `fit/<bucket>` tag +
-provenance child-note parity) are staged on
-`feature/v1.1-ui-80-20` for **v1.1**, to merge AFTER v1.0.0 ships.
-UI scope is capped here by decision: the dashboard stays a thin
-status-mirror + palette + onboarding demo; no 3-pane / citation-
-graph rebuild (link out to the real tools instead)._
+_Phase B (UI 80/20 — ⌘K command palette + mobile breakpoints +
+`_HOME` wayfinding) and Phase D (Zotero metadata correctness —
+type-aware `itemType` mapping + `fit/<bucket>` tag + provenance
+child-note parity) are staged on `feature/v1.1-ui-80-20` for **v1.1**.
+UI scope is capped: the dashboard stays a thin status-mirror +
+palette + onboarding demo; no 3-pane / citation-graph rebuild (link
+out to the real tools instead)._
+
+## [1.0.0] - 2026-05-26
+
+First stable release. 129 commits since v0.91.1 (95 features +
+fixes; bumped from 0.91.x trail through 0.95.0 rc cycle to 1.0.0).
+Authenticity gate (v0.95+), MCP Server Registry preparation, and
+PDF attach reliability hardening are the headline themes.
 
 ### Added
 - **`mcp-name: io.github.WenyuChiou/research-hub` line in README.md**
