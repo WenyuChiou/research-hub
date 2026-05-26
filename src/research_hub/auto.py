@@ -88,6 +88,10 @@ def auto_pipeline(
     with_summary: bool = False,
     peer_reviewed: bool = False,
     include_suspect_urls: bool = False,
+    # Year filter for the search step (parsed upstream from `--year RANGE`).
+    # None on either side = unbounded in that direction.
+    year_from: int | None = None,
+    year_to: int | None = None,
 ) -> AutoReport:
     """End-to-end ingest + optional NotebookLM publish.
 
@@ -188,6 +192,12 @@ def auto_pipeline(
                 f", exclude_types={','.join(exclude_types)}, "
                 f"min_confidence={min_confidence:g}"
             )
+        if year_from is not None or year_to is not None:
+            year_note = (
+                f"{year_from if year_from is not None else ''}-"
+                f"{year_to if year_to is not None else ''}"
+            )
+            filter_note += f", year={year_note}"
         plan_lines = [
             f"  search {topic!r} (max_papers={max_papers}, "
             f"backends={'+'.join(backends)}{filter_note})",
@@ -272,6 +282,10 @@ def auto_pipeline(
             search_kwargs["peer_reviewed"] = True
         if field is not None:
             search_kwargs["field"] = field
+        if year_from is not None:
+            search_kwargs["year_from"] = year_from
+        if year_to is not None:
+            search_kwargs["year_to"] = year_to
         papers = _run_search(topic, **search_kwargs)
         report.papers_ingested = len(papers)  # tentative
         _step_log(report, "search", True, _elapsed(started, report), f"{len(papers)} results", print_progress)
@@ -1286,9 +1300,11 @@ def _run_search(
     cluster_slug: str,
     field: Optional[str] = None,
     peer_reviewed: bool = False,
+    year_from: int | None = None,
+    year_to: int | None = None,
 ) -> list[dict]:
     """Run arxiv + semantic_scholar search, return papers_input dicts."""
-    from research_hub.search import search_papers       
+    from research_hub.search import search_papers
 
 
     # v0.49.4: search arxiv + semantic-scholar + openalex + crossref so the
@@ -1303,5 +1319,7 @@ def _run_search(
         exclude_types=exclude_types,
         min_confidence=min_confidence,
         limit=max_papers,
+        year_from=year_from,
+        year_to=year_to,
     )
     return _to_papers_input([asdict(r) for r in results], cluster_slug)

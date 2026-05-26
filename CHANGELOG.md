@@ -21,6 +21,17 @@ UI scope is capped here by decision: the dashboard stays a thin
 status-mirror + palette + onboarding demo; no 3-pane / citation-
 graph rebuild (link out to the real tools instead)._
 
+### Added
+- **`auto --year RANGE` flag** (`cli.py`, `auto.py`). The standalone
+  `search --year` filter is now also exposed on the `auto` subcommand so
+  users who want recent literature can write
+  `auto "LLM × X" --year 2024-` directly instead of running a separate
+  search step. Same syntax as `search --year`: `2024-2025` (closed range),
+  `2024-` (from 2024), `-2024` (up to 2024). Wired end-to-end through
+  `_auto()` → `auto_pipeline(..., year_from, year_to)` → `_run_search()` →
+  `search_papers(year_from, year_to)`. Unset = no year filter, behaviour
+  unchanged.
+
 ### Changed
 - **LLM-judge fit-check uses a stricter rubric when the cluster topic is
   LLM-narrowed** (`fit_check.py`). For a cluster topic that explicitly

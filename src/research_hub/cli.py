@@ -4943,6 +4943,9 @@ def _auto(
     with_summary: bool = False,
     peer_reviewed: bool = False,
     include_suspect_urls: bool = False,
+    # Year filter — parsed from `--year RANGE` upstream. None = no filter.
+    year_from: int | None = None,
+    year_to: int | None = None,
     emit_json: bool = False,
 ) -> int:
     from research_hub.auto import auto_pipeline
@@ -4999,6 +5002,10 @@ def _auto(
             auto_kwargs["with_pdfs"] = True
         if with_summary:
             auto_kwargs["with_summary"] = True
+        if year_from is not None:
+            auto_kwargs["year_from"] = year_from
+        if year_to is not None:
+            auto_kwargs["year_to"] = year_to
         report = auto_pipeline(**auto_kwargs)
     finally:
         if batch_label is not None:
@@ -5372,6 +5379,16 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--cluster-name", default=None,
                              help="Display name for new cluster (default: title-case of topic)")
     auto_parser.add_argument("--max-papers", type=int, default=8)
+    auto_parser.add_argument(
+        "--year",
+        default=None,
+        metavar="RANGE",
+        help=(
+            "Year range filter for the search step, e.g. '2024-2025', "
+            "'2024-' (2024 and later), or '-2024' (up to 2024). Same syntax "
+            "as the standalone `search --year` flag. Unset = no year filter."
+        ),
+    )
     auto_parser.add_argument("--field", default=None,
                              choices=["cs", "bio", "med", "physics", "math", "social", "econ", "chem", "astro", "edu", "general"],
                              help="Field preset for backend selection")
@@ -7559,6 +7576,11 @@ def _main_dispatch(args, parser) -> int:
             # them to True here so an explicit --no-with-pdfs or
             # --no-with-summary is respected even under --full-auto.
             args.with_crystals = True
+        # Parse --year RANGE → (year_from, year_to). None on either side
+        # = unbounded; both None = no year filter applied.
+        year_from, year_to = (
+            _parse_year_range(args.year) if getattr(args, "year", None) else (None, None)
+        )
         return _auto(
             topic=args.topic,
             cluster_slug=args.cluster,
@@ -7582,6 +7604,8 @@ def _main_dispatch(args, parser) -> int:
             batch_label=args.batch_label,
             with_pdfs=args.with_pdfs,
             with_summary=args.with_summary,
+            year_from=year_from,
+            year_to=year_to,
             emit_json=args.json,
         )
     if args.command == "ingest":
