@@ -20,6 +20,25 @@ UI scope is capped: the dashboard stays a thin status-mirror +
 palette + onboarding demo; no 3-pane / citation-graph rebuild (link
 out to the real tools instead)._
 
+### Changed
+
+- **`README.md` reordered into 6 importance layers**, with a new
+  `## Quick start` section and a 17-row `## Contents` TOC inserted
+  at the top. Previously install (`## Start Here`) lived at line 121
+  behind four selling sections (Real Screenshots / Why this exists /
+  What it does / Is this for me?). A first-time visitor arriving
+  from awesome-mcp-servers / SkillHub / MCP registry / promo
+  posts had to scroll past ~100 lines of pitch before reaching a
+  command they could run. New order: Quick start (line 26) → TOC →
+  Real Screenshots → Is this for me? → full install (`Start Here`,
+  `First-Run Checklist`, `Credential Reference`, `Connect your AI
+  host` — moved up from line 243 to sit alongside install) → design
+  rationale (`Why this exists`, `What it does`, `Operator Modes` —
+  moved down from lines 51-73 into the design layer) → reference
+  (Dashboard tour, Inside Zotero, Feature matrix) →
+  troubleshooting + meta. No content removed; pure reorder + 2 new
+  navigational sections (Quick start ~10 lines, Contents ~20 lines).
+
 ## [1.0.0] - 2026-05-26
 
 First stable release. 129 commits since v0.91.1 (95 features +
