@@ -22,6 +22,34 @@ out to the real tools instead)._
 
 ### Changed
 
+- **MCP deprecated aliases hidden from default surface (env-gated)**
+  (`mcp_server.py`, `tests/_mcp_helpers.py`). The 10 deprecated MCP tool
+  aliases that were already scheduled for v2.0.0 removal are now hidden
+  from the default `@mcp.tool()` registration. Glama's Tool Definition
+  Quality Score (TDQS) penalises high tool count + poor disambiguation;
+  this drops the LLM-facing surface from 86 → 76 tools without breaking
+  the v1.x SemVer promise (the functions remain importable as Python
+  module attributes; only the FastMCP registration is gated).
+  Hidden by default — set `RESEARCH_HUB_MCP_INCLUDE_DEPRECATED=1` to
+  re-expose them during your migration window.
+  Affected aliases (use the canonical replacement going forward):
+  ```
+  propose_cluster_rebind  → cluster_rebind(action='propose')
+  apply_cluster_rebind    → cluster_rebind(action='apply')
+  list_orphan_papers      → cluster_rebind(action='list_orphans')
+  summarize_rebind_status → cluster_rebind(action='status')
+  list_entities           → read_cluster_memory(kind='entities')
+  list_claims             → read_cluster_memory(kind='claims')
+  list_methods            → read_cluster_memory(kind='methods')
+  read_briefing           → ask_cluster(source='notebooklm', mode='briefing')
+  ask_cluster_notebooklm  → ask_cluster(source='notebooklm')
+  brief_cluster           → ask_cluster(source='notebooklm', mode='brief')
+  ```
+  Test helper `_get_mcp_tool` gains an optional `module=` kwarg for
+  callers that want to fall back to a Python attribute when an MCP
+  registration is gated (back-compat: default `None` preserves the
+  existing strict registry lookup).
+
 - **`README.zh-TW.md` full mirror of the new EN structure.**
   Previously the zh-TW README was 152 lines / 6 sections (Real
   Screenshots, Why this exists, Start Here, First-Run Checklist,
