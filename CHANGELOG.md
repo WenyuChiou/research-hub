@@ -22,6 +22,19 @@ out to the real tools instead)._
 
 ### Changed
 
+- **`README.zh-TW.md` full mirror of the new EN structure.**
+  Previously the zh-TW README was 152 lines / 6 sections (Real
+  Screenshots, Why this exists, Start Here, First-Run Checklist,
+  Connect your AI host, License only) — 10 sections behind the EN
+  master + in the pre-restructure order. Now 430 lines / 18 sections
+  matching the EN's 6-layer importance order: `## 快速開始` (Quick
+  start) + `## 目錄` (Contents TOC) + the 16 content sections in the
+  new order. 10 new sections translated from EN via `gemini-delegate`;
+  existing 6 sections kept where the prose was operator-approved
+  quality. All skill names, file paths, CLI commands, env var names,
+  brand names, version refs, MCP terms, and code blocks preserved in
+  English per locale convention.
+
 - **`README.md` reordered into 6 importance layers**, with a new
   `## Quick start` section and a 17-row `## Contents` TOC inserted
   at the top. Previously install (`## Start Here`) lived at line 121

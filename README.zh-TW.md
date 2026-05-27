@@ -3,7 +3,7 @@
 > **把你的研究工具變成 AI 可以操作的工作區。**
 > 你可以同時使用 Zotero、Obsidian、NotebookLM，也可以先從任意兩個工具開始。research-hub 提供 CLI、MCP server、REST API、Dashboard，讓 AI 助手能重複執行文獻搜尋、整理、摘要與維護流程。
 
-![research-hub dashboard demo](docs/images/dashboard-walkthrough.gif)
+![research-hub dashboard demo, real screen recording](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
@@ -15,6 +15,43 @@
 
 [English README](README.md) | [完整示範影片](docs/demo/dashboard-walkthrough.mp4)
 
+> 📚 屬於 [**agentic AI 學習路徑**](https://github.com/WenyuChiou/awesome-agentic-ai-zh) 的一部分 — 一個包含 7 個階段的 agentic AI 學習藍圖 (zh-TW · zh-Hans · English)。這個工作區在 §13 (研究工作流程 skill) 被參照。
+
+> 🧪 **真實使用訊號：** 由 1 位博士生 (Lehigh CEE) 每日用來追蹤 7+ 個橫跨 Zotero + Obsidian + NotebookLM 的研究主題。自 2026 年 4 月開始發布，文件已更新至 v0.95.0。
+
+---
+
+## 快速開始
+
+```bash
+pip install research-hub-pipeline
+research-hub dashboard --sample   # 用範例資料預覽，不需要任何帳號
+```
+
+要建立一個整合 Zotero / Obsidian / NotebookLM 的 research-hub vault，請到 [§ 先從哪裡開始](#先從哪裡開始) 根據你的工具組合挑選安裝路徑。
+
+---
+
+## 目錄
+
+1. [快速開始](#快速開始)
+2. [實際畫面](#實際畫面)
+3. [這個是給我用的嗎? 跟其他選擇比較](#這個是給我用的嗎-跟其他選擇比較)
+4. [先從哪裡開始](#先從哪裡開始)
+5. [首次設定檢查表](#首次設定檢查表)
+6. [憑證參考](#憑證參考)
+7. [連接 AI host](#連接-ai-host)
+8. [這個專案解決什麼問題](#這個專案解決什麼問題)
+9. [它做什麼](#它做什麼)
+10. [操作模式](#操作模式)
+11. [Dashboard 介紹](#dashboard-介紹)
+12. [Zotero 整合細節](#zotero-整合細節)
+13. [功能矩陣](#功能矩陣)
+14. [疑難排解](#疑難排解)
+15. [已知限制](#已知限制)
+16. [文件、狀態、開發](#文件狀態開發)
+17. [授權](#授權)
+
 ---
 
 ## 實際畫面
@@ -23,7 +60,7 @@
 
 **Obsidian paper note**：每篇文獻都是一般 Markdown note，含 title、authors、year、DOI、Zotero key、tags、cluster、status 與驗證 metadata。
 
-<img src="docs/images/obsidian-paper-note.png" alt="Obsidian paper note with metadata and summary blocks" width="640">
+<img src="docs/images/obsidian-paper-note.png" alt="Single paper note rendered with Properties view" width="640">
 
 **Obsidian Bases dashboard**：每個 cluster 可以產生 `.base` dashboard，用來排序 paper metadata 與閱讀狀態。
 
@@ -33,27 +70,28 @@
 
 <img src="docs/images/obsidian-graph.png" alt="Obsidian graph view with research-hub color groups" width="640">
 
+產生的 crystal 也都是 `hub/<cluster>/crystals/*.md` 下的一般 Markdown 筆記，所以可以被連結、搜尋，並以低 token 成本被 MCP tools 讀取。
+
 ---
 
-## 這個專案解決什麼問題
+## 這個是給我用的嗎? 跟其他選擇比較
 
-Zotero、Obsidian、NotebookLM 都很有用，但它們各自處理不同段落：
+research-hub 不會取代 Zotero、Obsidian 或 NotebookLM。它將這些工具連接起來，讓 AI agent 能操作整個工作流程。
 
-- Zotero 管引用、metadata、PDF。
-- Obsidian 管筆記、連結、知識整理。
-- NotebookLM 把來源變成 AI 可以閱讀與詢問的 brief。
+| 你可以做什麼 | 只用 Zotero | 只用 NotebookLM | 通用 RAG | Obsidian-Zotero 插件 | research-hub |
+|---|---:|---:|---:|---:|---:|
+| 一次搜尋 arXiv + Semantic Scholar | 否 | 否 | DIY | 否 | 是 |
+| 同時匯入 Zotero、Obsidian 和 NotebookLM | 否 | 否 | DIY | 部分 | 是 |
+| 從你的收藏產生 AI brief | 否 | 手動 | DIY | 否 | 是 |
+| 快取標準答案 (canonical answers) | 否 | 否 | 重新抓取 | 否 | 是 |
+| 結構化記憶層 | 否 | 否 | 通常是 chunks | 否 | 是 |
+| 透過 MCP 直接由 AI agent 控制 | 否 | 否 | DIY | 否 | 是 |
+| 帶有操作按鈕的即時 dashboard | 否 | 否 | 否 | 否 | 是 |
+| 每個 cluster 的 Obsidian Bases dashboard | 否 | 否 | 否 | 否 | 是 |
+| 不需要 OpenAI/Anthropic API 金鑰 | n/a | 是 | 通常不用 | n/a | 是 |
+| 你擁有的本地優先 vault | 部分 | 否 | 看情況 | 是 | 是 |
 
-真正麻煩的是中間的交接。research-hub 把交接流程自動化，讓 AI agent 可以搜尋、匯入、標籤、摘要、修復、產生 brief、檢查 dashboard，而不是每一步都手動搬資料。
-
-你不需要一開始就使用三個工具。
-
-| 你現在使用的組合 | research-hub 先提供什麼 |
-|---|---|
-| Zotero + Obsidian | 文獻搜尋、Zotero metadata、Markdown 筆記、標籤、Obsidian Bases dashboard |
-| Obsidian + NotebookLM | 本機 PDF/DOCX/MD/TXT 匯入、cluster dashboard、NotebookLM bundle/brief |
-| Zotero + NotebookLM | Zotero-backed paper selection、namespaced tags、NotebookLM upload/generate/download |
-| Zotero + Obsidian + NotebookLM | 完整流程：discover -> ingest -> organize -> brief -> answer -> maintain |
-| 還沒有帳號 | sample dashboard 與本機 smoke test |
+實用性分析：如果你已經在使用 Zotero、Obsidian 和 NotebookLM 中的至少兩種，並希望你的 AI 助理能幫你處理重複性的步驟，research-hub 對你來說最有用。
 
 ---
 
@@ -106,17 +144,28 @@ research-hub notebooklm download --cluster <slug>
 | LLM CLI 關聯性判斷 | 預設 `research-hub auto` 流程 | 安裝 `claude`、`codex`、`gemini`、`opencode`、`aichat`、`cursor`，設定自訂 adapter，或加 `--no-fit-check` |
 | AI host 整合 | Claude/Codex/Cursor/Gemini/OpenClaw 等 | Tool-calling host 用 MCP/REST；只有已驗證平台才用 `research-hub install --platform ...` |
 
+## 憑證參考
+
+這些變數只在 Zotero-backed 工作流程中需要。本地檔案匯入、範例 dashboard、MCP server 啟動和 REST API 檢視都可以在沒有這些變數的情況下運行。
+
+<!-- env-vars-table-start -->
+
+| 名稱 | 必要 | 用途 |
+|---|---|---|
+| `ZOTERO_API_KEY` | 是 | Zotero web API 認證，匯入文獻時需要 |
+| `ZOTERO_LIBRARY_ID` | 是 | Zotero library 識別碼 |
+| `SEMANTIC_SCHOLAR_API_KEY` | 否 | 使用 S2 API 金鑰，預設採用保守的約 1 request/sec 節流 |
+| `SEMANTIC_SCHOLAR_RPS` | 否 | 可選的 S2 request-rate 覆寫；除非你的金鑰有不同配額，否則不需設定 |
+| `TAVILY_API_KEY` | 否 | 網頁搜尋後端 (DDG 的替代方案) |
+| `BRAVE_API_KEY` | 否 | 網頁搜尋後端 (DDG 的替代方案) |
+
+<!-- env-vars-table-end -->
+
 Semantic Scholar 搜尋有內建節流。沒有 `SEMANTIC_SCHOLAR_API_KEY`
-時會用較慢的匿名速度，因為公共流量共享容量；有 API key 時預設約
+時會用較慢的匿名延遲，因為公共流量共享容量；有 API key 時預設約
 每秒一個 request，遇到 HTTP 429 會依 `Retry-After` 或 exponential
-backoff 自動重試。若你的 key 有不同額度，再設定
-`SEMANTIC_SCHOLAR_RPS`，一般使用者不需要調。
-
-> **第一次跑 `auto` 前請看**：`auto` 預設會做 **fail-closed** 的關聯性判斷。若沒有支援的 LLM CLI，也沒有加 `--no-fit-check`，`auto` 會在搜尋**前**停下並給出修正指引，而不是默默產生空的 vault。
->
-> **真實性閘門 (v0.95+)**：每篇文獻都必須能解析出真實識別碼（DOI / arXiv / PMID）並通過完整性與關聯性檢查，否則會被 **隔離（quarantine）並記錄原因**，不會寫進 vault。用 `research-hub quarantine list` 檢視被擋下的文獻。
-
----
+backoff 自動重試。若 Semantic Scholar 給了你的 key 不同額度，請設定
+`SEMANTIC_SCHOLAR_RPS`，而不是修改程式碼。
 
 ## 連接 AI host
 
@@ -124,17 +173,23 @@ research-hub 有兩層 AI 整合方式：
 
 | 層級 | 適合對象 | 目前狀態 |
 |---|---|---|
-| MCP / REST | Claude Desktop、Claude Code、Cursor、Continue.dev、Cline、Roo Code、VS Code Copilot、OpenClaw，以及其他能呼叫工具的 host | 通用；設定 MCP server 或呼叫 REST API |
-| 已知 skill installer | Claude Code、Codex、Cursor、Gemini | 可用 `research-hub install --platform ...` 安裝 |
-| 手動載入 `SKILL.md` | Hermes、OpenClaw、其他支援 skill/rules 目錄的 agent | 可手動複製 `skills/` 內的 skill；目前不是 release-verified installer target |
+| MCP / REST | Claude Desktop、Claude Code、Cursor、Continue.dev、Cline、Roo Code、VS Code Copilot、OpenClaw，以及其他能呼叫工具的 host | Host-agnostic；設定 MCP server 或呼叫 REST API |
+| 已安裝的 `SKILL.md` 檔案 | Claude Code、Codex、Cursor、Gemini | 透過 `research-hub install --platform ...` 安裝到內建目標 |
+| 手動載入 `SKILL.md` | Hermes、OpenClaw、其他支援 skill/rules 目錄的 agent | 手動複製或參照 bundled skill 目錄；不是 release-verified installer target |
 
-Claude Desktop、Cursor、Continue.dev、Cline、Roo Code、OpenClaw，或其他 MCP host 可以這樣連接：
+對於 Claude Desktop、Cursor、Continue.dev、Cline、VS Code Copilot、OpenClaw 或其他 MCP host，設定 MCP server：
 
 ```json
 { "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
 ```
 
-下列平台有明確的預設 skills 目錄，因此可以直接安裝各平台用的 skill files：
+重啟 host。然後自然地提問：
+
+> 幫我找 5 篇關於 agent-based modeling 的論文，然後放進一個 notebook。
+
+AI 可以呼叫 `auto_research_topic(topic="agent-based modeling", max_papers=5)` 來匯入論文、產生 NotebookLM brief，並更新 vault。
+
+為具有已知預設 skill 目錄的平台安裝特定於 host 的 skill 檔案：
 
 ```bash
 research-hub install --platform claude-code
@@ -143,9 +198,232 @@ research-hub install --platform codex
 research-hub install --platform gemini
 ```
 
-OpenClaw、Hermes 和其他 agent 仍可透過 MCP/REST 使用 research-hub。若該 host 支援 `SKILL.md` 或 rules 目錄，請手動複製 `skills/` 內的對應目錄，或把相關 `SKILL.md` inline 到該 host 的指令中；`research-hub install --platform` 目前不驗證這些 host。
+OpenClaw、Hermes 和其他 agent 仍可透過 MCP/REST 使用 research-hub。若該 host 支援 `SKILL.md` 類型的目錄或規則檔案，請從 `skills/` 複製 bundled directories，或將相關的 `SKILL.md` 內容內嵌到 host 的指令中。`research-hub install --platform` 目前不驗證這些 host。
 
-更多細節請看英文 README、[First 10 minutes](docs/first-10-minutes.md)、[MCP tools](docs/mcp-tools.md)、[AI integrations](docs/ai-integrations.md)。
+僅限瀏覽器或支援 HTTP 的 AI 可以使用 REST API，在用 `research-hub serve --dashboard` 啟動本地伺服器後：
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/v1/plan 
+     -H "Content-Type: application/json" 
+     -d "{"intent":"research harness engineering"}"
+```
+
+完整參考：[MCP tools](docs/mcp-tools.md)、[AI integrations](docs/ai-integrations.md)、[AI host support matrix](docs/ai-host-support.md) 和 [live smoke checklist](docs/live-smoke.md)。
+
+---
+
+## 這個專案解決什麼問題
+
+Zotero、Obsidian、NotebookLM 都很有用，但它們各自處理不同段落：
+
+- Zotero 管引用、metadata、PDF。
+- Obsidian 管筆記、連結、知識整理。
+- NotebookLM 把來源變成 AI 可以閱讀與詢問的 brief。
+
+真正麻煩的是中間的交接。research-hub 把交接流程自動化，讓 AI agent 可以搜尋、匯入、標籤、摘要、修復、產生 brief、檢查 dashboard，而不是每一步都手動搬資料。
+
+你不需要一開始就使用三個工具。
+
+| 你現在使用的組合 | research-hub 先提供什麼 |
+|---|---|
+| Zotero + Obsidian | 文獻搜尋、Zotero metadata、Markdown 筆記、標籤、Obsidian Bases dashboard |
+| Obsidian + NotebookLM | 本機 PDF/DOCX/MD/TXT 匯入、cluster dashboard、NotebookLM bundle/brief |
+| Zotero + NotebookLM | Zotero-backed paper selection、namespaced tags、NotebookLM upload/generate/download |
+| Zotero + Obsidian + NotebookLM | 完整流程：discover -> ingest -> organize -> brief -> answer -> maintain |
+| 還沒有帳號 | sample dashboard 與本機 smoke test |
+
+---
+
+## 它做什麼
+
+research-hub 是一個用於研究工作流程的本地優先協調層：
+
+- **CLI:** `research-hub auto`、`import-folder`、`ask`、`doctor`、`tidy`、`clusters`、`zotero`、`notebooklm`、`crystal` 等等。
+- **MCP server:** 讓 Claude Desktop、Claude Code、Cursor、Continue.dev、Cline、Roo Code、OpenClaw 和其他 MCP host 能夠操作相同的工作流程。
+- **REST API:** 為僅限瀏覽器或支援 HTTP 的助理提供 `/api/v1/*` 端點。
+- **可攜式 skill pack:** `SKILL.md` 工作流程指令可以直接安裝到 Claude Code、Codex、Cursor 和 Gemini，或手動複製到支援 skill/rules 目錄的 host 中。
+- **Dashboard:** 提供一個即時介面，供人類查看 clusters、論文、診斷、briefs、寫作支援和管理操作。
+- **Vault 格式:** 寫入標準的 Markdown、frontmatter、`.base` dashboard、快取檔案和你可以直接檢查的日誌。
+- **Authenticity gate (v0.95+):** 每篇發現的論文都必須解析為一個真實的識別碼 (DOI / arXiv / PMID)，通過完整性和相關性檢查，否則它會被 **隔離並記錄原因**，且永遠不會寫入 vault。沒有偽造的參考文獻 — 使用 `research-hub quarantine list` 檢查被拒絕的項目。
+
+核心流程：
+
+```text
+主題或來源資料夾
+  -> 發現或匯入來源
+  -> 驗證真實性 (解析 + 完整性 + 相關性) 或隔離
+  -> 豐富 metadata
+  -> 啟用時寫入 Zotero 標籤/筆記
+  -> 寫入 Obsidian Markdown 筆記和 cluster dashboard
+  -> 啟用時使用 NotebookLM 進行 bundle/upload/generate
+  -> 將答案快取為 crystal 和結構化記憶
+```
+
+---
+
+## 操作模式
+
+research-hub 支援以人為優先和以 agent 為優先的設定。
+
+對於人類研究員，`research-hub setup` 會執行入門精靈，在能偵測到 host 時安裝特定於 host 的 skill，可選地啟動 NotebookLM 登入，並提供一個小的範例運行。
+
+對於 autonomous agent 或 Cowork 風格的 host：
+
+```bash
+pip install research-hub-pipeline
+python -m research_hub describe > capabilities.json
+python -m research_hub setup --autonomous --vault ./vault --persona agent
+# 輸出 BootstrapReport JSON；準備就緒時 exit code 0，否則為 1
+```
+
+然後透過 CLI `--json` 模式或 bundled MCP server (`research-hub-mcp`) 來驅動操作。所有報告型指令都接受 `--json`；能力自省功能在 `research-hub describe` 中。
+
+**NotebookLM 邊界。** NotebookLM 上傳仍需要一次性的、由人類驅動的、基於瀏覽器的 Google OAuth。無頭 (headless) agent 可以準備 bundle 並讀取下載的 brief，但它們無法自己完成 Google 的首次登入或電話驗證。
+
+**Relevance judge 邊界。** `auto_research_topic` 和 `research-hub auto` 預設會執行 fail-closed 的相關性檢查。如果沒有支援的 LLM CLI 且沒有 `--no-fit-check`，`auto` 會在搜尋前停止並印出修正方法，而不是默默地產生一個空的 vault。
+
+| Persona | 最適合 | 安裝額外項目 |
+|---|---|---|
+| Researcher | STEM 論文、DOI/arXiv、Zotero-first 工作流程 | `[playwright,secrets]` |
+| Humanities | 書籍、引文、僅 URL 來源、Zotero + Obsidian | `[playwright,secrets]` |
+| Analyst | 產業研究、本地 PDF/報告、不需要 Zotero | `[import,secrets]` |
+| Internal KM | 實驗室/公司知識庫、混合檔案類型 | `[import,secrets]` |
+
+`discover new`、`search` 和相關規劃流程的領域預設集包括 `cs`、`bio`、`med`、`physics`、`math`、`social`、`econ`、`chem`、`astro`、`edu` 和 `general`。沒有 `hydrology` 預設集；請刻意使用 `general`。
+
+---
+
+## Dashboard 介紹
+
+`research-hub serve --dashboard` 會開啟 `http://127.0.0.1:8765/`。
+
+**Overview**: cluster 的 treemap、儲存空間地圖和健康摘要。
+
+![Overview](docs/images/hero/dashboard-overview.png)
+
+**Library**: 每個 cluster 的深入檢視，包含論文、子主題和每篇論文的操作。
+
+![Library](docs/images/hero/dashboard-library-subtopic.png)
+
+**Diagnostics**: 分組的 drift 警報和整備度檢查。
+
+![Diagnostics](docs/images/hero/dashboard-diagnostics.png)
+
+**Manage**: CLI 操作按鈕、行內結果抽屜、確認對話框和每篇論文的行操作。
+
+![Manage](docs/images/hero/dashboard-manage-live.png)
+
+Briefings 和 Writing 標籤頁也可用。請參閱 [dashboard walkthrough](docs/dashboard-walkthrough.md) 和 [persona variants](docs/personas.md)。
+
+---
+
+## Zotero 整合細節
+
+每篇匯入的論文都會得到一組命名空間標籤，這樣你就可以按 research-hub 的上下文來篩選你的 library：
+
+| 標籤 | 意義 |
+|---|---|
+| `research-hub` | 透過此 pipeline 匯入 |
+| `cluster/<slug>` | 該論文所屬的研究 cluster |
+| `category/<arxiv-code>` | arXiv 分類，如 `cs.AI` 或 `econ.GN` |
+| `type/<publication-type>` | 來自 Semantic Scholar 的出版類型，如 `Review`、`JournalArticle` 等 |
+| `src/<backend>` | 發現它的搜尋後端：`arxiv`、`semantic_scholar`、`crossref`、`zotero` |
+
+每篇論文也可以得到一個包含 `Summary / Key Findings / Methodology / Relevance` 的子筆記，這些內容來自 Obsidian 的 frontmatter。在 research-hub 存在之前就在 Zotero 中的論文可以用以下指令來補全：
+
+```bash
+research-hub zotero backfill --tags --notes --apply
+```
+
+---
+
+## 功能矩陣
+
+| 功能 | 指令或 MCP tool | 備註 |
+|---|---|---|
+| 一次性設定 | `research-hub setup` | init + install + 可選的 NotebookLM 登入 + 引導式範例運行 |
+| 懶人研究流程 | `research-hub auto "topic"` / `auto_research_topic` | 搜尋、匯入、打包、上傳、產生、下載 |
+| 真實性隔離區審查 | `research-hub quarantine list` / `show <id>` / `restore <id>` | 檢查並可選擇性還原被真實性閘門拒絕的論文 (含失敗層級 + 原因) |
+| 執行前規劃 | `research-hub plan "intent"` / `plan_research_workflow` | 建議領域、cluster slug 和最大論文數 |
+| Zotero 清理 | `research-hub zotero backfill --tags --notes [--apply]` | 為舊項目補上缺少的標籤和筆記 |
+| Cluster 級聯刪除 | `research-hub clusters delete <slug> [--apply --force]` | 預覽對 Obsidian、Zotero、dedup、memory 和 crystal 的影響 |
+| 無 NotebookLM smoke test | `research-hub auto "topic" --no-nlm` | 在沒有瀏覽器自動化的情況下驗證搜尋和 vault 匯入 |
+| 本地檔案匯入 | `research-hub import-folder <folder> --cluster <slug>` | PDF、DOCX、MD、TXT、URL |
+| 臨時 cluster 問答 | `research-hub ask <cluster> "question"` / `ask_cluster_notebooklm` | 頂層 CLI 先接收 cluster，然後是問題 |
+| NotebookLM 操作 | `research-hub notebooklm upload --cluster <slug>` | 使用持久性 Chrome 進行瀏覽器自動化 |
+| 預先計算的 crystal | `research-hub crystal emit --cluster <slug>` | 將標準答案快取為 Markdown |
+| 結構化記憶 | `research-hub memory emit --cluster <slug>` | 實體、主張、方法 |
+| 即時 dashboard | `research-hub serve --dashboard` | 帶有操作按鈕的 HTTP dashboard |
+| 範例預覽 | `research-hub dashboard --sample` | 臨時的 bundled vault，無需帳號 |
+| 懶人維護 | `research-hub tidy` | Doctor、dedup、bases 刷新、清理預覽 |
+| 垃圾回收 | `research-hub cleanup --all --apply` | Bundles、除錯日誌、過時的 artifact |
+| Cluster 修復 | `research-hub clusters rebind --emit` then `--apply` | 重新綁定孤立的筆記 |
+| Obsidian Bases | `research-hub bases emit --cluster <slug>` | 產生的 `.base` dashboard |
+| 網頁搜尋 | `research-hub websearch "query"` / `web_search` | Tavily、Brave、Google CSE、DDG fallback |
+
+---
+
+## 疑難排解
+
+| 症狀 | 原因 | 解決方法 |
+|---|---|---|
+| `research-hub init` 報告 Chrome 警告 | Chrome 未安裝或 patchright 找不到它 | 安裝 Chrome，然後執行 `research-hub doctor` |
+| `research-hub notebooklm login` 打開瀏覽器但 Google 阻止登入 | 新設備或機器人驗證 | 完成可見瀏覽器中的登入和電話驗證 |
+| `research-hub auto` 找到 0 篇論文 / 空的 vault | 主題太窄 或 論文被真實性閘門隔離 (無法解析的 DOI、完整性失敗或未經相關性判斷) | 用 `--max-papers 20` 重新執行 / 換句話說；執行 `research-hub quarantine list` 查看被拒絕的論文和原因 |
+| `research-hub auto` 在搜尋前停止："no relevance judge on PATH" | Fail-closed 的相關性檢查，且找不到支援的 LLM CLI | 安裝一個 judge CLI，或用 `--no-fit-check` 重新執行以跳過相關性判斷 |
+| NotebookLM 上傳或產生失敗 | NotebookLM UI 更改或登入過期 | 執行 `research-hub notebooklm login --auto-detect`；然後用 `research-hub notebooklm bundle/upload/generate/download --cluster <slug>` 繼續 |
+| `notebooklm upload` 昨天還能用，今天在認證時失敗 | Google 的 `__Secure-1PSIDTS` / `PSIDRTS` cookie 大約每 3.5 小時過期；`notebooklm keepalive` 無法在伺服器端刷新它們 | 重新執行 `research-hub notebooklm login --auto-detect` — 瀏覽器會打開，登入時 cookie 會刷新，session 會自動儲存 (無需終端互動)。耗時 < 1 分鐘 |
+| `auto --with-crystals` 找不到 LLM CLI | PATH 中沒有支援的 LLM CLI | 安裝一個，設定自訂 adapter，或手動使用 `crystal emit` 和 `crystal apply` |
+| Claude Desktop 看不到 MCP server | MCP 設定在錯誤的檔案中或 host 未重啟 | 檢查 host 設定路徑並重啟 Claude Desktop |
+| `init` 報告 Zotero 警告但你不用 Zotero | Persona 預期使用 Zotero | 用 `research-hub setup --persona analyst` 或 `--persona internal` 重新執行 |
+| `research-hub clusters delete` 拒絕刪除 | Cluster 中有論文、筆記或 Zotero 項目 | 審查級聯預覽後，用 `--apply --force` 重新執行 |
+| `research-hub auto` 錯誤 "cluster already has N papers" | Cluster 非空，且你執行了 `auto --cluster <slug>` 但沒有加 flag | 加入 `--append` 以增加更多，或 `--force` 以覆寫 |
+| Zotero 項目缺少 `research-hub` 標籤或筆記 | 項目在 v0.61 之前建立或 pipeline 中途失敗 | `research-hub zotero backfill --tags --notes --apply` |
+
+若要進行更廣泛的檢查，請執行：
+
+```bash
+research-hub doctor --autofix
+```
+
+---
+
+## 已知限制
+
+這些是 **平台或設計上的邊界**，不是 bug — 請不要將它們作為 issue 提交。在此記錄是為了讓你知道會發生什麼以及該用什麼解決方法。
+
+| 限制 | 實際情況 | 該怎麼做 |
+|---|---|---|
+| **IEEE Xplore 的 PDF / URL 被反機器人機制阻擋** | IEEE 對直接抓取會回傳一個 *"Unable to Load Page"* 的 HTML 存根。`paper attach-pdfs` 現在可以將設定好的出版商 PDF URL 透過你機構的 EZproxy 路由，如果代理失敗則退回直接 URL。 | 設定 `ezproxy_url_template`，執行一次 `research-hub ezproxy login`，然後重新執行 `paper attach-pdfs`。請參閱 [EZproxy PDF access](docs/ezproxy.md)。若無 EZproxy，請透過機構存取手動附加 PDF 或跳過該來源。 |
+| **NotebookLM session 大約每 3.5 小時過期** | Google 的短期 `__Secure-1PSIDTS` / `PSIDRTS` cookie 無法透過背景輪詢刷新。`notebooklm keepalive` 存在但無法在伺服器端輪換它們。 | 當執行報告認證失敗時，重新執行 `research-hub notebooklm login --auto-detect` — 耗時 < 1 分鐘，無需終端互動。 |
+| **`--no-llm-fit-check` 無法過濾「子主題錯誤但領域正確」的論文** | 無 LLM 的 BM25 閘門旨在捕捉 *明顯的跨領域污染* (例如在 LLM cluster 中出現純水文學且無 AI 內容)。它無法區分「AI-agents-in-general」和「AI-agents-in-water-resources」 — 兩者在僅詞彙的指標上得分相似，因此該閘門偏向 recall 並保留兩者。 | 若要進行特定主題的子集過濾，請使用 **預設的** LLM-judge 路徑 (移除 `--no-llm-fit-check`)。LLM-judge 層才是設計用來做語意相關性判斷的。 |
+| **Cluster-overview LLM 自動填寫時會寫入英文標題，即使 scaffold 是中文** | `topic.py` 會為空的 scaffold 寫入中文區段標題 (`## 核心問題`, `## 範圍定義`, …)，但當 LLM 填寫時，`apply_overview` 會用英文標題 (`## Core Question`, `## Scope`, …) 重新渲染檔案。 | 僅為外觀問題 — 內容是正確的。如果你希望填寫後的概覽有中文標題，可以在第一次自動填寫後手動整理區段名稱 (marker 會確保後續執行保留你的編輯)。 |
+| **`auto_pipeline()` Python API 對 PDF 保持 opt-in** (CLI 為 opt-out) | 程式化呼叫者 — 測試、library 使用者 — 預設得到 `with_pdfs=False`，這樣 PDF 附加的網路來回就不會無聲地觸發。CLI 從 `BooleanOptionalAction` 傳入 `True`。 | 如果你直接呼叫 `auto_pipeline()` 且需要附加 PDF，請明確傳入 `with_pdfs=True`。CLI 使用者會自動獲得預設開啟的行為；使用 `--no-with-pdfs` 來選擇退出。 |
+| **慢速/被阻擋的出版商 URL 有時會污染 NotebookLM bundle** | 某些出版商 (Wiley 付費牆、Frontiers 奇怪路由的 PDF、IEEE) 會回傳一個薄弱的存根或 HTML 錯誤頁面，而 bundle ladder 會因為 URL 預檢通過而接受它。下游的 NotebookLM 會基於存根而不是論文進行 grounding。 | 執行 `auto` 並檢查 `[warn] N source(s) look like they did not ingest content` 區塊。將列出的 URL 換成上傳到 NotebookLM 網頁介面的那些論文的 PDF。 |
+
+---
+
+## 文件、狀態、開發
+
+文件: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.md), [dashboard walkthrough](docs/dashboard-walkthrough.md), [MCP tools](docs/mcp-tools.md), [AI host support matrix](docs/ai-host-support.md), [live smoke checklist](docs/live-smoke.md), [personas](docs/personas.md), [NotebookLM setup](docs/notebooklm.md), [EZproxy PDF access](docs/ezproxy.md), [import folder](docs/import-folder.md), [CLI reference](docs/cli-reference.md), [CHANGELOG](CHANGELOG.md).
+
+狀態:
+
+- 目前文件目標版本: v0.95.0; 請參閱 [CHANGELOG](CHANGELOG.md) 了解套件歷史，[docs/stable-api.md](docs/stable-api.md) 了解支援的 API 介面，以及 [docs/file-formats.md](docs/file-formats.md) 了解可解析的狀態檔案 schema。
+- MCP tools: 使用 `python -m research_hub describe --filter mcp_tools` 檢視即時列表。
+- REST endpoints: 12 個，位於 `/api/v1/*`。
+- Bundled skills: 使用 `python -m research_hub describe --filter skills` 檢視即時列表。
+
+開發者設定:
+
+```bash
+git clone https://github.com/WenyuChiou/research-hub.git
+cd research-hub
+pip install -e ".[dev,playwright]"
+python -m pytest -q
+```
+
+貢獻: [CONTRIBUTING.md](CONTRIBUTING.md). PyPI 上的套件: `research-hub-pipeline`. CLI 進入點: `research-hub`.
 
 ## 授權
 
