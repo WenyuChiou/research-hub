@@ -56,7 +56,7 @@ def _all_mcp_tools():
 
 
 def _call_tool(name: str, *args, **kwargs):
-    return _get_mcp_tool(mcp_server.mcp, name).fn(*args, **kwargs)
+    return _get_mcp_tool(mcp_server.mcp, name, module=mcp_server).fn(*args, **kwargs)
 
 
 def test_all_mcp_tool_functions_are_callable():

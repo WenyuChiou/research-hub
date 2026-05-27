@@ -17,7 +17,7 @@ def test_mcp_list_entities(tmp_path, monkeypatch):
     apply_memory(cfg, "persona-a-test", {
         "entities": [{"slug": "ai21", "name": "AI21 Labs", "type": "org", "papers": [paper_slug]}],
     })
-    result = _get_mcp_tool(mcp_server.mcp, "list_entities").fn(cluster="persona-a-test")
+    result = _get_mcp_tool(mcp_server.mcp, "list_entities", module=mcp_server).fn(cluster="persona-a-test")
     assert result["count"] == 1
     assert result["entities"][0]["slug"] == "ai21"
 
@@ -36,7 +36,7 @@ def test_mcp_list_claims_filters_by_min_confidence(tmp_path, monkeypatch):
             {"slug": "low-claim", "text": "l", "confidence": "low", "papers": [paper_slug]},
         ],
     })
-    list_claims = _get_mcp_tool(mcp_server.mcp, "list_claims").fn
+    list_claims = _get_mcp_tool(mcp_server.mcp, "list_claims", module=mcp_server).fn
     high = list_claims(cluster="persona-a-test", min_confidence="high")
     assert high["count"] == 1
     all_levels = list_claims(cluster="persona-a-test", min_confidence="low")
@@ -54,7 +54,7 @@ def test_mcp_list_methods(tmp_path, monkeypatch):
     apply_memory(cfg, "persona-a-test", {
         "methods": [{"slug": "ppo", "name": "PPO", "family": "rl", "papers": [paper_slug]}],
     })
-    result = _get_mcp_tool(mcp_server.mcp, "list_methods").fn(cluster="persona-a-test")
+    result = _get_mcp_tool(mcp_server.mcp, "list_methods", module=mcp_server).fn(cluster="persona-a-test")
     assert result["count"] == 1
     assert result["methods"][0]["family"] == "rl"
 

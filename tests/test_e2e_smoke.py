@@ -337,11 +337,12 @@ def test_e2e_mcp_download_artifacts_tool(tmp_path, monkeypatch):
     assert result["status"] == "ok"
     assert Path(result["path"]).exists()
 
-    briefing = _get_mcp_tool(mcp, "read_briefing").fn(cluster_slug="test-cluster")
+    from research_hub import mcp_server
+    briefing = _get_mcp_tool(mcp, "read_briefing", module=mcp_server).fn(cluster_slug="test-cluster")
     assert briefing["status"] == "ok"
     assert "End-to-end briefing body." in briefing["text"]
 
-    truncated = _get_mcp_tool(mcp, "read_briefing").fn(cluster_slug="test-cluster", max_chars=10)
+    truncated = _get_mcp_tool(mcp, "read_briefing", module=mcp_server).fn(cluster_slug="test-cluster", max_chars=10)
     assert truncated["status"] == "ok"
     assert truncated["truncated"] is True
     assert truncated["full_chars"] > 10
@@ -361,6 +362,7 @@ def test_e2e_read_briefing_missing_returns_remedy(tmp_path, monkeypatch):
     )
     _write_cluster(cfg, cluster)
 
-    result = _get_mcp_tool(mcp, "read_briefing").fn(cluster_slug="test-cluster")
+    from research_hub import mcp_server as _mcp_mod  # noqa: PLR0402
+    result = _get_mcp_tool(mcp, "read_briefing", module=_mcp_mod).fn(cluster_slug="test-cluster")
     assert result["status"] == "error"
     assert "download_artifacts" in result["remedy"]

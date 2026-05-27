@@ -29,8 +29,12 @@ def _assert_deprecated(call):
 
 
 def _call_tool(mcp_server, name: str, *args, **kwargs):
-    tool = _get_mcp_tool(mcp_server.mcp, name)
-    assert tool is not None, f"MCP tool not registered: {name}"
+    # Pass ``module=mcp_server`` so deprecated MCP aliases hidden behind
+    # ``RESEARCH_HUB_MCP_INCLUDE_DEPRECATED`` env gate still resolve via
+    # the module attribute fallback (the function definition is intact,
+    # only the @mcp.tool registration is conditional).
+    tool = _get_mcp_tool(mcp_server.mcp, name, module=mcp_server)
+    assert tool is not None, f"MCP tool not registered or unknown: {name}"
     fn = getattr(tool, "fn", tool)
     return fn(*args, **kwargs)
 
@@ -52,26 +56,51 @@ def test_cli_deprecated_alias_help_exits_zero_and_warns(argv):
     assert any("v2.0.0" in str(warning.message) for warning in caught)
 
 
-def test_mcp_consolidated_tools_and_deprecated_aliases_registered():
+def test_mcp_consolidated_tools_registered_and_deprecated_aliases_hidden():
+    """The canonical consolidated tools (cluster_rebind, ask_cluster,
+    read_cluster_memory) MUST be registered as MCP tools. The 10
+    deprecated aliases that those tools replaced MUST be hidden from
+    the default MCP surface (gated by RESEARCH_HUB_MCP_INCLUDE_DEPRECATED).
+
+    The deprecated aliases are still importable as Python functions —
+    only their FastMCP registration is gated — so legacy in-process
+    callers keep working. The renamed test (was
+    ``_and_deprecated_aliases_registered``) reflects the inverted
+    contract."""
     from research_hub import mcp_server
 
-    expected = {
-        "ask_cluster",
+    surface = _list_mcp_tool_names(mcp_server.mcp)
+
+    canonical = {"ask_cluster", "cluster_rebind", "read_cluster_memory"}
+    assert canonical <= surface, (
+        f"Consolidated tools missing from MCP surface: {canonical - surface}"
+    )
+
+    deprecated = {
         "ask_cluster_notebooklm",
         "read_briefing",
         "brief_cluster",
-        "cluster_rebind",
         "propose_cluster_rebind",
         "apply_cluster_rebind",
         "list_orphan_papers",
         "summarize_rebind_status",
-        "read_cluster_memory",
         "list_entities",
         "list_claims",
         "list_methods",
     }
-
-    assert expected <= _list_mcp_tool_names(mcp_server.mcp)
+    leaking = deprecated & surface
+    assert not leaking, (
+        f"Deprecated aliases should be hidden by default but still in MCP "
+        f"surface: {sorted(leaking)}. Check _deprecated_mcp_tool gating."
+    )
+    # The Python functions MUST still exist so legacy in-process callers
+    # (and the env-var-on path) keep working.
+    for alias in deprecated:
+        assert callable(getattr(mcp_server, alias, None)), (
+            f"Deprecated alias function {alias!r} should still be importable "
+            "from research_hub.mcp_server (only the @mcp.tool registration "
+            "is gated, not the function itself)."
+        )
 
 
 def test_mcp_ask_cluster_dispatch_and_aliases_warn(monkeypatch):

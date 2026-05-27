@@ -164,7 +164,7 @@ def test_mcp_summarize_rebind_status_handles_empty_vault(tmp_path, monkeypatch):
 
     cfg, _ = make_persona_vault(tmp_path, persona="A")
     monkeypatch.setattr("research_hub.mcp_server.get_config", lambda: cfg)
-    result = _get_mcp_tool(mcp_server.mcp, "summarize_rebind_status").fn()
+    result = _get_mcp_tool(mcp_server.mcp, "summarize_rebind_status", module=mcp_server).fn()
     assert "total_orphans" in result or result.get("ok") is False
 
 
@@ -176,5 +176,5 @@ def test_mcp_server_imports_for_all_4_personas(tmp_path, monkeypatch):
         persona_root = tmp_path / persona.lower()
         cfg, _ = make_persona_vault(persona_root, persona=persona)
         monkeypatch.setattr("research_hub.mcp_server.get_config", lambda cfg=cfg: cfg)
-        list_orphans = _get_mcp_tool(mcp_server.mcp, "list_orphan_papers").fn()
+        list_orphans = _get_mcp_tool(mcp_server.mcp, "list_orphan_papers", module=mcp_server).fn()
         assert "count" in list_orphans

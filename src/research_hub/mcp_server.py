@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
 import re
 from typing import Any, Callable
@@ -78,6 +79,51 @@ def _warn_mcp_deprecated_alias(tool_name: str, replacement: str) -> None:
         removed_in="v2.0.0",
         stacklevel=3,
     )
+
+
+# Whether deprecated MCP tool aliases should be registered on the FastMCP
+# instance. Default OFF — the aliases are still defined as Python functions
+# (so internal callers and `from research_hub.mcp_server import X` keep
+# working), but they are NOT advertised in the MCP tool list. This keeps
+# the LLM-facing tool surface lean for disambiguation, which Glama's Tool
+# Definition Quality Score (TDQS) rewards. The aliases are scheduled for
+# full removal in v2.0.0 anyway; this gates them between v1.0 and v2.0
+# without breaking SemVer.
+#
+# To restore legacy behavior (re-expose the 10 deprecated aliases to MCP
+# clients), set: RESEARCH_HUB_MCP_INCLUDE_DEPRECATED=1
+#
+# The 10 affected aliases and their canonical replacements:
+#   propose_cluster_rebind   → cluster_rebind(action='propose')
+#   apply_cluster_rebind     → cluster_rebind(action='apply')
+#   list_orphan_papers       → cluster_rebind(action='list_orphans')
+#   summarize_rebind_status  → cluster_rebind(action='status')
+#   list_entities            → read_cluster_memory(kind='entities')
+#   list_claims              → read_cluster_memory(kind='claims')
+#   list_methods             → read_cluster_memory(kind='methods')
+#   read_briefing            → ask_cluster(source='notebooklm', mode='briefing')
+#   ask_cluster_notebooklm   → ask_cluster(source='notebooklm')
+#   brief_cluster            → ask_cluster(source='notebooklm', mode='brief')
+_INCLUDE_DEPRECATED_MCP_TOOLS: bool = (
+    os.environ.get("RESEARCH_HUB_MCP_INCLUDE_DEPRECATED", "").strip().lower()
+    in ("1", "true", "yes", "on")
+)
+
+
+def _deprecated_mcp_tool() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Conditionally register a deprecated alias as an MCP tool.
+
+    Returns ``mcp.tool()`` when ``RESEARCH_HUB_MCP_INCLUDE_DEPRECATED=1`` is
+    set in the environment (legacy compatibility mode), otherwise returns a
+    no-op decorator that leaves the function defined but unregistered.
+    """
+    if _INCLUDE_DEPRECATED_MCP_TOOLS:
+        return mcp.tool()
+
+    def _noop(fn: Callable[..., Any]) -> Callable[..., Any]:
+        return fn
+
+    return _noop
 
 
 def _entrypoint_tool_error(exc: Exception, cluster_slug: str | None = None) -> dict[str, object]:
@@ -533,7 +579,7 @@ def cluster_rebind(
     )
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def propose_cluster_rebind(cluster_slug: str = "") -> dict:
     """Deprecated alias for cluster_rebind(action='propose')."""
     _warn_mcp_deprecated_alias(
@@ -543,7 +589,7 @@ def propose_cluster_rebind(cluster_slug: str = "") -> dict:
     return _cluster_rebind_dispatch(action="propose", cluster_slug=cluster_slug)
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def apply_cluster_rebind(report_path: str, dry_run: bool = True, auto_create_new: bool = False) -> dict:
     """Deprecated alias for cluster_rebind(action='apply')."""
     _warn_mcp_deprecated_alias(
@@ -558,7 +604,7 @@ def apply_cluster_rebind(report_path: str, dry_run: bool = True, auto_create_new
     )
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def list_orphan_papers(folder: str = "") -> dict:
     """Deprecated alias for cluster_rebind(action='list_orphans')."""
     _warn_mcp_deprecated_alias(
@@ -568,7 +614,7 @@ def list_orphan_papers(folder: str = "") -> dict:
     return _cluster_rebind_dispatch(action="list_orphans", folder=folder)
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def summarize_rebind_status() -> dict:
     """Deprecated alias for cluster_rebind(action='status')."""
     _warn_mcp_deprecated_alias(
@@ -1475,7 +1521,7 @@ def read_cluster_memory(cluster: str, kind: str = "all", min_confidence: str = "
     return _read_cluster_memory_dispatch(cluster, kind=kind, min_confidence=min_confidence)
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def list_entities(cluster: str) -> dict:
     """Deprecated alias for read_cluster_memory(kind='entities')."""
     _warn_mcp_deprecated_alias(
@@ -1485,7 +1531,7 @@ def list_entities(cluster: str) -> dict:
     return _read_cluster_memory_dispatch(cluster, kind="entities")
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def list_claims(cluster: str, min_confidence: str = "low") -> dict:
     """Deprecated alias for read_cluster_memory(kind='claims')."""
     _warn_mcp_deprecated_alias(
@@ -1499,7 +1545,7 @@ def list_claims(cluster: str, min_confidence: str = "low") -> dict:
     )
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def list_methods(cluster: str) -> dict:
     """Deprecated alias for read_cluster_memory(kind='methods')."""
     _warn_mcp_deprecated_alias(
@@ -1920,7 +1966,7 @@ def _read_briefing_impl(cluster_slug: str, max_chars: int = _BRIEFING_MAX_CHARS)
         return _tool_error(exc)
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def read_briefing(cluster_slug: str, max_chars: int = _BRIEFING_MAX_CHARS) -> dict:
     """Deprecated alias for ask_cluster(source='notebooklm', mode='briefing')."""
     _warn_mcp_deprecated_alias(
@@ -2277,7 +2323,7 @@ def _ask_cluster_notebooklm_impl(
         return _tool_error(exc)
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def ask_cluster_notebooklm(
     cluster: str,
     question: str,
@@ -2409,7 +2455,7 @@ def ask_cluster(
     )
 
 
-@mcp.tool()
+@_deprecated_mcp_tool()
 def brief_cluster(cluster_slug: str, force_regenerate: bool = False) -> dict:
     """Deprecated alias for ask_cluster(source='notebooklm', mode='brief')."""
     _warn_mcp_deprecated_alias(

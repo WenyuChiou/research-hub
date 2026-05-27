@@ -109,9 +109,33 @@ def test_every_mcp_tool_is_documented_in_expected_mappings():
         )
 
 
+# Deprecated MCP aliases whose @mcp.tool registration is gated by the
+# RESEARCH_HUB_MCP_INCLUDE_DEPRECATED env var (see
+# `mcp_server._deprecated_mcp_tool`). They stay in EXPECTED_MAPPINGS as
+# documentation (CLI users still see them and need to know the
+# replacement), but the orphan check below MUST skip them since the
+# default test environment doesn't register them on the MCP instance.
+_DEPRECATED_ENV_GATED = frozenset({
+    "propose_cluster_rebind",
+    "apply_cluster_rebind",
+    "list_orphan_papers",
+    "summarize_rebind_status",
+    "list_entities",
+    "list_claims",
+    "list_methods",
+    "read_briefing",
+    "ask_cluster_notebooklm",
+    "brief_cluster",
+})
+
+
 def test_no_orphaned_mappings():
     tool_names = _list_mcp_tool_names(mcp)
     for name in EXPECTED_MAPPINGS:
+        if name in _DEPRECATED_ENV_GATED:
+            # Hidden by default — registration gated by
+            # RESEARCH_HUB_MCP_INCLUDE_DEPRECATED. Doc stays in mapping.
+            continue
         assert name in tool_names, (
             f"EXPECTED_MAPPINGS has {name!r} but no such MCP tool exists. "
             f"Remove it from EXPECTED_MAPPINGS."

@@ -50,8 +50,30 @@ def _list_mcp_tool_names(mcp_instance) -> set[str]:
     return set()
 
 
-def _get_mcp_tool(mcp_instance, name: str):
-    """Return a tool wrapper with a ``.fn`` attribute across fastmcp versions."""
+class _ModuleFnTool:
+    """Lightweight stand-in for a FastMCP tool wrapper, returned by
+    ``_get_mcp_tool`` when the tool is no longer @mcp.tool-registered
+    (e.g., deprecated MCP aliases gated by env var per
+    ``mcp_server._deprecated_mcp_tool``) but the underlying Python
+    function still exists as a module attribute. Mirrors the
+    ``.fn``-attribute contract expected by existing tests."""
+
+    __slots__ = ("fn",)
+
+    def __init__(self, fn):
+        self.fn = fn
+
+
+def _get_mcp_tool(mcp_instance, name: str, module=None):
+    """Return a tool wrapper with a ``.fn`` attribute across fastmcp versions.
+
+    When ``module`` is provided and the name is not found in the MCP
+    registry, fall back to looking up the function as a module attribute
+    and return a ``_ModuleFnTool`` wrapper. This covers the case where a
+    function used to be @mcp.tool-decorated but now has that registration
+    gated (deprecated aliases, dev-mode flags, etc.) — the function is
+    still importable, callers just have to know it's unregistered.
+    """
     get_tool = getattr(mcp_instance, "get_tool", None)
     if callable(get_tool):
         try:
@@ -75,5 +97,10 @@ def _get_mcp_tool(mcp_instance, name: str):
         tools_attr = getattr(tm, "_tools", None)
         if isinstance(tools_attr, dict) and name in tools_attr:
             return tools_attr[name]
+
+    if module is not None:
+        fn = getattr(module, name, None)
+        if callable(fn):
+            return _ModuleFnTool(fn)
 
     return None

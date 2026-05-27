@@ -12,8 +12,39 @@ from research_hub.mcp_server import mcp
 from tests._mcp_helpers import _get_mcp_tool
 
 
+# Tools whose `@mcp.tool()` registration is gated by the
+# RESEARCH_HUB_MCP_INCLUDE_DEPRECATED env var (default off — see
+# `mcp_server._deprecated_mcp_tool`). These will be missing from the
+# default MCP surface and snapshot tests should skip rather than fail.
+# Removed for real in v2.0.0.
+_DEPRECATED_GATED_TOOLS: frozenset[str] = frozenset({
+    "propose_cluster_rebind",
+    "apply_cluster_rebind",
+    "list_orphan_papers",
+    "summarize_rebind_status",
+    "list_entities",
+    "list_claims",
+    "list_methods",
+    "read_briefing",
+    "ask_cluster_notebooklm",
+    "brief_cluster",
+})
+
+
 def _tool_fn(name: str):
     tool = _get_mcp_tool(mcp, name)
+    if tool is None and name in _DEPRECATED_GATED_TOOLS:
+        # Default behaviour: deprecated alias is hidden from MCP surface.
+        # The function still exists as a module attribute (Python callers
+        # can import it directly) — fall back to that so the test still
+        # exercises the function, just not via the MCP registry.
+        fn = getattr(mcp_server, name, None)
+        if fn is not None:
+            return fn
+        pytest.skip(
+            f"deprecated MCP tool {name!r} hidden from default surface "
+            "(set RESEARCH_HUB_MCP_INCLUDE_DEPRECATED=1 to expose it)"
+        )
     assert tool is not None, f"missing MCP tool: {name}"
     return getattr(tool, "fn", tool)
 
@@ -407,6 +438,36 @@ def test_mcp_tool_callable_snapshot(monkeypatch, tmp_path: Path, tool_name, _par
     # error/partial-failure shape. Don't assert; just record.
     _ = expected_keys & set(result)
     _ = {"error", "failed"} & set(result)
+
+
+def test_deprecated_aliases_hidden_from_default_mcp_surface():
+    """The 10 deprecated MCP tool aliases (scheduled for removal in
+    v2.0.0) must be HIDDEN from the default MCP tool surface so Glama
+    TDQS doesn't penalise the server for redundant entries and so LLM
+    clients don't see ambiguous aliases. The underlying Python
+    functions still exist in the module — only their FastMCP
+    registration is gated.
+
+    Setting RESEARCH_HUB_MCP_INCLUDE_DEPRECATED=1 in the env restores
+    legacy behaviour (covered by a separate test that exercises module
+    re-import semantics)."""
+    import asyncio
+
+    tools = asyncio.run(mcp.list_tools())
+    registered_names = {t.name for t in tools}
+
+    for alias in _DEPRECATED_GATED_TOOLS:
+        assert alias not in registered_names, (
+            f"deprecated alias {alias!r} is still registered as an MCP tool; "
+            "expected to be gated by RESEARCH_HUB_MCP_INCLUDE_DEPRECATED env var"
+        )
+        # The Python function MUST still exist (callers may import directly).
+        fn = getattr(mcp_server, alias, None)
+        assert callable(fn), (
+            f"deprecated alias {alias!r} should still be a callable module "
+            "attribute (only the @mcp.tool registration is gated, not the "
+            "function definition itself)"
+        )
 
 
 def test_requested_brief_tool_names_missing_from_current_mcp_surface():
