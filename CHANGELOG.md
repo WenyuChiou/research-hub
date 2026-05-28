@@ -22,6 +22,27 @@ out to the real tools instead)._
 
 ### Changed
 
+- **MCP tool docstrings rewritten for 12 worst-scoring tools (Glama
+  TDQS lift)** (`mcp_server.py`). Replaced terse one-line docstrings on
+  the 12 tools that Glama's Tool Definition Quality Score flagged as
+  weakest (`cluster_rebind`, `ask_cluster`, `discover_continue`,
+  `prune_cluster`, `discover_variants`, `examples_show`, `autofill_emit`,
+  `autofill_apply`, `fit_check_audit`, `fit_check_drift`,
+  `apply_fit_check_to_labels`, `propose_cluster_rebind`). New docstrings
+  hit all six TDQS dimensions — Behavior (verb-first opening),
+  Conciseness, Completeness (full Returns dict-key list),
+  Parameters (per-arg semantics + defaults + valid values),
+  Purpose (relationship to neighbouring tools, deprecated-alias
+  cross-refs), Usage Guidelines (When to use / When NOT to use
+  bullets). The four canonical tools that LLM clients hit most
+  (`cluster_rebind`, `ask_cluster`, `discover_continue`,
+  `prune_cluster`) get the full multi-line template; the other eight
+  get a compact 1-line-per-section variant. Zero behavioural change —
+  function bodies / signatures / decorators byte-identical, only
+  docstring text differs. Full pytest suite green (3101 passed).
+  Expected TDQS impact: individual tool scores 1.8-2.4/5 lift toward
+  3-4/5; overall quality grade C should move to B-ish after Glama
+  re-introspects on the next release.
 - **MCP deprecated aliases hidden from default surface (env-gated)**
   (`mcp_server.py`, `tests/_mcp_helpers.py`). The 10 deprecated MCP tool
   aliases that were already scheduled for v2.0.0 removal are now hidden

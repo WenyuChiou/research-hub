@@ -568,7 +568,80 @@ def cluster_rebind(
     auto_create_new: bool = False,
     folder: str = "",
 ) -> dict:
-    """Consolidated cluster rebind tool: propose, apply, list_orphans, or status."""
+    """Run the cluster-rebind workflow specified by ``action``.
+
+    Single entrypoint that consolidates four legacy rebind operations
+    (propose / apply / list_orphans / status) into one tool with an
+    ``action`` discriminator. Replaces the deprecated aliases
+    ``propose_cluster_rebind`` / ``apply_cluster_rebind`` /
+    ``list_orphan_papers`` / ``summarize_rebind_status``, which are
+    gated behind ``RESEARCH_HUB_MCP_INCLUDE_DEPRECATED=1`` and slated
+    for removal in v2.0.0.
+
+    When to use:
+    - After ingest leaves orphan paper notes that don't match any
+      active cluster, and you want to plan moves before touching files.
+    - After a manual cluster rename, when existing paper notes still
+      reference the old slug.
+    - Periodic vault hygiene: surface stuck or low-confidence orphans
+      via ``action='status'``.
+
+    When NOT to use:
+    - You want to delete clusters wholesale, not rebind their papers;
+      use ``research-hub clusters delete`` (CLI) instead.
+    - You want to archive papers carrying a label; use
+      ``prune_cluster`` instead.
+
+    Args:
+        action: Which rebind sub-step to run. One of:
+            ``'propose'`` (write a draft rebind report to disk),
+            ``'apply'`` (execute moves from a report — requires
+            ``report_path``), ``'list_orphans'`` (return orphan paper
+            paths, optionally filtered by ``folder``), or ``'status'``
+            (one-shot summary of orphans + open proposals). Defaults
+            to ``'propose'``.
+        cluster_slug: Limit ``propose`` / ``status`` to one cluster's
+            papers. Empty string (default) means all clusters.
+        report_path: Path to a rebind report emitted by a prior
+            ``action='propose'``. Required for ``action='apply'``;
+            ignored otherwise.
+        dry_run: When ``action='apply'``, report the moves without
+            touching the filesystem. Defaults to ``True`` — pass
+            ``False`` to actually move files.
+        auto_create_new: When ``action='apply'``, allow the apply step
+            to create previously-unknown cluster folders for
+            high-confidence new-cluster proposals. Defaults to
+            ``False``.
+        folder: When ``action='list_orphans'``, restrict the result to
+            papers under this ``raw/`` subdirectory. Empty string
+            (default) returns all orphans.
+
+    Returns:
+        dict shaped by ``action`` (no wrapping ``ok``/``action`` keys
+        — caller checks the action-specific keys directly, or
+        ``error`` on failure):
+            - ``propose``: ``cluster`` (str, echoes input or
+              ``"(all)"``), ``count`` (int), ``moves`` (list of
+              dicts; each carries at minimum a ``dst`` field plus the
+              keys emitted by the rebind report parser)
+            - ``apply``: ``moved`` (int, count of moved files),
+              ``skipped`` (int), ``errors`` (int, count of errors —
+              NOT the list itself), ``log_path`` (str), ``dry_run``
+              (bool)
+            - ``list_orphans``: ``folder`` (str, echoes input or
+              ``"(all)"``), ``count`` (int, total — may exceed
+              ``papers`` length), ``papers`` (list of str, capped at
+              200 entries)
+            - ``status``: ``total_orphans`` (int),
+              ``proposed_to_existing_clusters`` (int),
+              ``new_clusters_proposed`` (int), ``stuck`` (int)
+            - on error / invalid action: ``error`` (str)
+
+    Example:
+        >>> cluster_rebind(action="status")
+        {"total_orphans": 4, "proposed_to_existing_clusters": 2,
+         "new_clusters_proposed": 1, "stuck": 2}
+    """
     return _cluster_rebind_dispatch(
         action=action,
         cluster_slug=cluster_slug,
@@ -581,7 +654,16 @@ def cluster_rebind(
 
 @_deprecated_mcp_tool()
 def propose_cluster_rebind(cluster_slug: str = "") -> dict:
-    """Deprecated alias for cluster_rebind(action='propose')."""
+    """Propose rebind moves through the deprecated alias.
+    Alias for cluster_rebind(action='propose').
+    When to use: when legacy MCP clients still call this alias.
+    When NOT to use: for new calls; use ``cluster_rebind(action='propose')``.
+    Args: cluster_slug: optional cluster filter; empty means all proposed moves.
+    Returns: keys cluster, count, moves, error.
+    Example:
+        >>> propose_cluster_rebind("my-topic")
+        {"cluster": "my-topic", "count": 1, ...}
+    """
     _warn_mcp_deprecated_alias(
         "propose_cluster_rebind",
         "cluster_rebind(action='propose')",
@@ -1207,7 +1289,16 @@ def fit_check_apply(
 
 
 def fit_check_audit(cluster_slug: str) -> dict:
-    """Gate 3: parse latest NLM briefing for off-topic flags."""
+    """Parse the latest NotebookLM briefing for off-topic flags.
+    Audits briefing text before fit_check_drift.
+    When to use: after NotebookLM flags papers.
+    When NOT to use: to emit scoring prompts; use ``fit_check_emit`` instead.
+    Args: cluster_slug: cluster whose briefing is audited.
+    Returns: keys ok, cluster_slug, flagged, reason, error.
+    Example:
+        >>> fit_check_audit("my-topic")
+        {"ok": True, "flagged": [...]}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
@@ -1225,7 +1316,16 @@ def fit_check_audit(cluster_slug: str) -> dict:
 
 
 def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
-    """Gate 4: emit drift-check prompt against current overview."""
+    """Emit a drift-check prompt for the current cluster overview.
+    Re-scores papers after fit_check_audit.
+    When to use: when an overview changed and papers may not fit.
+    When NOT to use: to apply scores; use fit_check_apply instead.
+    Args: cluster_slug: cluster; threshold: accepted score cutoff, default 3.
+    Returns: keys cluster_slug, paper_count, threshold, prompt, error.
+    Example:
+        >>> fit_check_drift("my-topic", threshold=3)
+        {"cluster_slug": "my-topic", "prompt": "..."}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
@@ -1238,7 +1338,16 @@ def fit_check_drift(cluster_slug: str, threshold: int = 3) -> dict:
 
 
 def autofill_emit(cluster_slug: str) -> dict:
-    """Build the paper-note autofill prompt for an AI to consume."""
+    """Build an autofill prompt for paper notes with TODO bodies.
+    Emits the JSON prompt for autofill_apply.
+    When to use: after ingest creates notes with abstracts but TODO content.
+    When NOT to use: to write AI output; use autofill_apply instead.
+    Args: cluster_slug: cluster whose notes are scanned for TODO placeholders.
+    Returns: keys prompt, paper_count, error.
+    Example:
+        >>> autofill_emit("my-topic")
+        {"paper_count": 3}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.autofill import emit_autofill_prompt, find_todo_papers
@@ -1255,7 +1364,16 @@ def autofill_emit(cluster_slug: str) -> dict:
 
 
 def autofill_apply(cluster_slug: str, scored: list[dict] | dict) -> dict:
-    """Apply AI-supplied body content to paper notes."""
+    """Apply AI-authored autofill sections to paper notes.
+    Consumes autofill_emit JSON and updates notes.
+    When to use: after an AI returns summaries for an autofill prompt.
+    When NOT to use: to generate prompts; use ``autofill_emit`` instead.
+    Args: cluster_slug: cluster to update; scored: list or ``{"papers": [...]}``.
+    Returns: keys cluster_slug, candidate_count, filled, skipped, missing, error.
+    Example:
+        >>> autofill_apply("my-topic", {"papers": [{"slug": "paper-1"}]})
+        {"cluster_slug": "my-topic", "filled": []}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.autofill import apply_autofill
@@ -1626,7 +1744,66 @@ def prune_cluster(
     delete: bool = False,
     dry_run: bool = True,
 ) -> dict:
-    """Move or delete papers with the given label."""
+    """Archive or delete paper notes in a cluster whose frontmatter carries ``label``.
+
+    Cluster cleanup operation that acts on the label sidecars written
+    by ``apply_fit_check_to_labels`` (e.g. ``deprecated``,
+    ``off_topic``, ``low_relevance``). Moves matching paper notes to
+    the cluster's ``_archive/`` subfolder by default, or deletes them
+    outright if ``delete=True``. Pairs with ``apply_fit_check_to_labels``
+    as a two-step "decide → act" workflow: that tool labels papers
+    based on fit-check sidecars; this tool acts on the labels.
+
+    When to use:
+    - After running ``apply_fit_check_to_labels`` (or manually labelling
+      papers), you want to physically move the off-topic notes out of
+      the active cluster folder.
+    - You want to keep an audit trail (default ``archive=True``) so
+      the moves are reversible.
+
+    When NOT to use:
+    - You want to ADD labels, not act on them; use
+      ``apply_fit_check_to_labels`` instead.
+    - You want to delete the entire cluster (not just labelled
+      papers); use ``research-hub clusters delete`` (CLI) instead.
+    - You want to rebind orphans to a different cluster, not archive
+      them; use ``cluster_rebind`` instead.
+
+    Args:
+        cluster_slug: Cluster whose papers are scanned.
+        label: Frontmatter label string to match (e.g. ``"deprecated"``,
+            ``"off_topic"``). Papers without this label in their
+            frontmatter are skipped. Defaults to ``"deprecated"``.
+        archive: When ``True`` (default), move matched papers to
+            ``hub/<slug>/_archive/`` rather than deleting them. Set to
+            ``False`` only when paired with ``delete=True``.
+        delete: When ``True``, permanently delete matched papers
+            instead of archiving. Defaults to ``False`` (safer). Has
+            no effect when ``archive=True``.
+        dry_run: When ``True`` (default), report what WOULD be
+            affected without touching the filesystem. Pass ``False``
+            to execute the moves/deletes.
+
+    Returns:
+        dict with keys:
+            - ``mode`` (str): one of ``'dry_run'`` / ``'archive'`` /
+              ``'delete'``
+            - ``cluster_slug`` (str): echoed input
+            - ``label`` (str): echoed label
+            - ``would_affect`` (int): count of matching papers (always
+              present, including in archive and delete modes)
+            - ``moved`` (list): paths of papers moved to archive —
+              empty list in ``dry_run`` and ``delete`` modes
+            - ``deleted`` (list): paths of papers deleted — empty
+              list in ``dry_run`` and ``archive`` modes
+            - ``error`` (str, on failure)
+
+    Example:
+        >>> prune_cluster("my-topic", label="off_topic", dry_run=True)
+        {"mode": "dry_run", "cluster_slug": "my-topic",
+         "label": "off_topic", "would_affect": 3,
+         "moved": [], "deleted": []}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
@@ -1646,7 +1823,16 @@ def prune_cluster(
 
 
 def apply_fit_check_to_labels(cluster_slug: str) -> dict:
-    """Tag papers rejected by fit-check as deprecated."""
+    """Convert fit-check sidecar decisions into paper labels.
+    Persists fit_check_apply decisions before pruning.
+    When to use: after accepted and rejected sidecars are written.
+    When NOT to use: to score candidates; use ``fit_check_apply`` instead.
+    Args: cluster_slug: cluster whose sidecars and notes are used.
+    Returns: keys tagged, already, missing, error.
+    Example:
+        >>> apply_fit_check_to_labels("my-topic")
+        {"tagged": ["paper-1"]}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
@@ -1737,7 +1923,16 @@ def discover_variants(
     query: str,
     count: int = 4,
 ) -> dict:
-    """Emit a query-variation prompt for the given cluster."""
+    """Emit a query-variation prompt for discovery search.
+    Generates alternate discover_new queries.
+    When to use: before discovery when the seed query is narrow.
+    When NOT to use: to run search; use ``discover_new`` instead.
+    Args: cluster_slug: context; query: seed query; count: variant target.
+    Returns: keys prompt, target_count, error.
+    Example:
+        >>> discover_variants("my-topic", "LLM agents", count=4)
+        {"target_count": 4, "prompt": "..."}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
@@ -1756,7 +1951,71 @@ def discover_continue(
     threshold: int | None = None,
     auto_threshold: bool = False,
 ) -> dict:
-    """Apply AI scores and emit papers_input.json for later ingest."""
+    """Apply fit-check scores from an AI judge and produce a papers_input.json ready for ingest.
+
+    Second half of the interactive discovery flow. The user runs
+    ``discover_new`` first (which emits a search-results stash + a
+    scoring prompt), pastes the prompt into an AI of choice, then
+    feeds the AI's scored output back through this tool. The scored
+    candidates are filtered by ``threshold`` and written to
+    ``papers_input.json`` in the cluster's discover-stash directory,
+    ready for the standard ingest pipeline (``research-hub auto`` or
+    ``research-hub clusters ingest``).
+
+    When to use:
+    - You have a JSON list of fit-check scores from an AI judge and
+      want to admit only the high-confidence candidates into the
+      vault.
+    - You're running the two-phase discovery flow because the topic
+      boundaries are fuzzy and you want a human / AI in the loop on
+      which papers belong.
+
+    When NOT to use:
+    - You haven't run ``discover_new`` yet — there's no stash to apply
+      scores against. Run ``discover_new`` first.
+    - You already have a fully-resolved list of DOIs to ingest; skip
+      discovery and call ``add_paper`` per item, or
+      ``auto_research_topic`` for the one-shot path.
+    - You want to re-score an EXISTING ingested cluster's papers; use
+      ``fit_check_emit`` + ``fit_check_apply`` (the post-ingest
+      re-scoring path).
+
+    Args:
+        cluster_slug: Slug of the cluster whose discover stash will be
+            consumed. Must match the slug passed to ``discover_new``.
+        scored: Either a flat list of score dicts (each with at least
+            ``slug`` + ``score``), or a wrapping dict like
+            ``{"scores": [...]}`` — both shapes accepted. Score values
+            are 0-5 integers; entries missing a score are treated as
+            score 0.
+        threshold: Minimum score (inclusive) for admission. Defaults
+            to ``None`` — when ``auto_threshold=False`` this falls
+            back to the cluster's configured default (typically 4).
+        auto_threshold: When ``True``, ignore ``threshold`` and pick a
+            cutoff automatically from the score distribution (a
+            bimodal gap heuristic). Default ``False`` (use explicit
+            ``threshold``).
+
+    Returns:
+        dict with keys:
+            - ``ok`` (bool): success flag
+            - ``stage`` (str): always ``'scored'`` after this step
+            - ``accepted_count`` (int): admitted candidates
+            - ``rejected_count`` (int): below-threshold candidates
+            - ``threshold`` (int): effective threshold used
+            - ``papers_input_path`` (str): absolute path to written
+              ``papers_input.json``
+            - ``error`` (str, on failure)
+
+    Example:
+        >>> discover_continue("my-topic", scored=[
+        ...     {"slug": "smith2024-foo", "score": 5},
+        ...     {"slug": "jones2024-bar", "score": 2},
+        ... ], threshold=4)
+        {"ok": True, "stage": "scored", "accepted_count": 1,
+         "rejected_count": 1, "threshold": 4,
+         "papers_input_path": "/.../discover/my-topic/papers_input.json"}
+    """
     try:
         cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
         from research_hub.config import get_config
@@ -1835,7 +2094,16 @@ def examples_list() -> list[dict[str, Any]] | dict[str, str]:
 
 
 def examples_show(name: str) -> dict[str, Any]:
-    """Return the full definition for one bundled example."""
+    """Return one bundled example cluster definition.
+    Inspects sample JSON before examples_copy.
+    When to use: before copying an example such as ``cs_swe``.
+    When NOT to use: to list names; use ``examples_list`` instead.
+    Args: name: bundled example id, such as ``cs_swe`` or ``bio_protein``.
+    Returns: keys name, slug, field, query, definition, year_from, year_to, min_citations, sample_dois, description, error.
+    Example:
+        >>> examples_show("cs_swe")
+        {"slug": "llm-agents-software-engineering"}
+    """
     try:
         from research_hub.examples import load_example
 
@@ -2440,7 +2708,96 @@ def ask_cluster(
     mode: str = "ask",
     cluster_slug: str | None = None,
 ) -> dict:
-    """Ask a cluster using the local memory path or NotebookLM source."""
+    """Answer a question about one cluster, dispatching to the source named by ``source`` / ``mode``.
+
+    Single entrypoint for all cluster-question workflows. Replaces the
+    deprecated aliases ``ask_cluster_notebooklm`` / ``read_briefing`` /
+    ``brief_cluster`` (gated behind
+    ``RESEARCH_HUB_MCP_INCLUDE_DEPRECATED=1``, removed in v2.0.0).
+    Routes the question through three internal paths:
+    ``source='local'`` answers from cached crystals + memory only;
+    ``source='notebooklm', mode='ask'`` opens NotebookLM via Playwright
+    and asks live; ``source='notebooklm', mode='briefing'`` returns the
+    last downloaded NotebookLM briefing markdown; ``source='notebooklm',
+    mode='brief'`` runs the full bundle-upload-generate-download
+    round-trip to refresh the briefing artifact.
+
+    When to use:
+    - User asks a natural-language question about one cluster and you
+      want the cheapest, fastest answer first (``source='local'``).
+    - User asks an ad-hoc question that requires fresh paper content
+      retrieval (``source='notebooklm', mode='ask'``).
+    - User wants to read the existing brief text (``mode='briefing'``).
+    - User asks to regenerate the brief (``mode='brief'`` with
+      ``force_regenerate=True``).
+
+    When NOT to use:
+    - You want one specific crystal answer by slug; use
+      ``read_crystal`` instead — it skips dispatch overhead.
+    - You want to search across multiple clusters; use
+      ``web_search`` or ``search_papers`` instead.
+    - You want to inspect cluster memory directly (entities / claims /
+      methods); use ``read_cluster_memory``.
+
+    Args:
+        cluster: Cluster slug to ask. One of ``cluster`` or
+            ``cluster_slug`` must be set; ``cluster_slug`` is a
+            backwards-compat alias accepted for legacy clients.
+        question: Natural-language question. May be ``None`` only when
+            ``mode='briefing'`` or ``mode='brief'`` (where the action
+            is read/regenerate, not Q&A).
+        source: ``'local'`` (default) for cached crystals + memory, or
+            ``'notebooklm'`` for the Playwright-driven NotebookLM
+            backend. NotebookLM paths require a logged-in browser
+            session — run ``research-hub notebooklm login`` once.
+        detail: Response verbosity. One of ``'gist'`` (default, ~100
+            words) / ``'standard'`` / ``'detailed'``. Only honoured by
+            local + briefing modes.
+        headless: For ``source='notebooklm'``, whether to run the
+            browser headless. Default ``True``; set ``False`` if you
+            need to debug a Google auth challenge.
+        timeout_sec: Max seconds to wait for NotebookLM. Default 120.
+            Increase to 240+ for large clusters.
+        max_chars: For ``mode='briefing'``, truncate the briefing text
+            after this many chars. Default value comes from the
+            module-level ``_BRIEFING_MAX_CHARS``.
+        force_regenerate: For ``mode='brief'``, force the full round
+            trip even if a recent briefing exists. Default ``False``
+            (use cached briefing when available).
+        mode: NotebookLM sub-action. One of ``'ask'`` (default; live
+            Q&A), ``'briefing'`` (return existing brief markdown), or
+            ``'brief'`` (full bundle → upload → generate → download).
+            Ignored when ``source='local'``.
+        cluster_slug: Backwards-compat alias for ``cluster``. Prefer
+            ``cluster``; ``cluster_slug`` exists for parity with the
+            deprecated ``ask_cluster_notebooklm`` signature.
+
+    Returns:
+        dict shape varies by ``source`` / ``mode``:
+            - all paths: ``ok`` (bool), ``source`` (str),
+              ``cluster`` (str)
+            - local crystal-hit: ``crystal_slug`` (str),
+              ``question_matched`` (str), ``match_score`` (float),
+              ``answer`` (str), ``evidence`` (list of dicts),
+              ``confidence`` (str), ``stale`` (bool),
+              ``suggest_regenerate`` (bool), ``detail`` (str),
+              ``paper_count`` (int)
+            - NotebookLM ask: ``answer`` (str), ``latency_seconds``
+              (float), ``artifact_path`` (str, optional)
+            - NotebookLM briefing: ``text`` (str), ``truncated``
+              (bool), ``full_chars`` (int)
+            - NotebookLM brief regenerate: ``status`` (str),
+              ``steps_completed`` (list of str), ``warnings`` (list
+              of str), brief metadata keys
+            - on error: ``error`` (str), ``hint`` (str, optional),
+              ``remedy`` (str, optional)
+
+    Example:
+        >>> ask_cluster(cluster="my-topic",
+        ...             question="What is the main research gap?")
+        {"ok": True, "source": "crystal", "answer": "...",
+         "confidence": "high", "paper_count": 12}
+    """
     return _ask_cluster_dispatch(
         cluster=cluster,
         question=question,
