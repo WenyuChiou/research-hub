@@ -380,21 +380,28 @@ def _flush_batch(
             }
         )
 
+    def _retry_single(template: dict, paper: dict) -> None:
+        """Create one item on its own. Never borrow another paper's key (STAB-1)."""
+        try:
+            r = zot.create_items([template])
+            single = (r or {}).get("successful") or {}
+            key = ""
+            if single:
+                meta = list(single.values())[0]
+                key = meta.get("key") or meta.get("data", {}).get("key") or ""
+            if key:
+                _handle_success(paper, key, batched=False)
+            else:
+                p(f"  RESP: {r}")
+                zr.append({"title": paper["title"], "status": "FAILED", "key": ""})
+        except Exception as exc:
+            _handle_failure(paper, exc)
+
     try:
         resp = zot.create_items(batch_templates)
     except Exception:
         for template, paper in zip(batch_templates, batch_papers):
-            try:
-                resp = zot.create_items([template])
-                successful = (resp or {}).get("successful") or {}
-                if successful:
-                    key = list(successful.values())[0]["key"]
-                    _handle_success(paper, key, batched=False)
-                else:
-                    p(f"  RESP: {resp}")
-                    zr.append({"title": paper["title"], "status": "FAILED", "key": ""})
-            except Exception as exc:
-                _handle_failure(paper, exc)
+            _retry_single(template, paper)
         return
 
     successful = (resp or {}).get("successful") or {}
@@ -408,22 +415,18 @@ def _flush_batch(
             _handle_success(paper, key, batched=True)
 
     failed = (resp or {}).get("failed") or {}
-    fallback_key = ""
-    if successful:
-        last_success = next(reversed(successful.values()))
-        fallback_key = last_success.get("key") or last_success.get("data", {}).get("key") or ""
-    for idx, (_template, paper) in enumerate(zip(batch_templates, batch_papers)):
+    for idx, (template, paper) in enumerate(zip(batch_templates, batch_papers)):
         if idx in successful_indexes:
             continue
         if str(idx) in failed:
             p(f"  RESP: {failed[str(idx)]}")
             zr.append({"title": paper["title"], "status": "FAILED", "key": ""})
             continue
-        if fallback_key:
-            _handle_success(paper, fallback_key, batched=True)
-            continue
-        p(f"  RESP: {resp}")
-        zr.append({"title": paper["title"], "status": "FAILED", "key": ""})
+        # Index absent from BOTH `successful` and `failed` (a sparse response
+        # under load, or pyzotero's `unchanged` bucket): retry this item on its
+        # own so it gets its OWN key. NEVER reuse another paper's key — doing so
+        # silently cross-links distinct papers onto one Zotero item (STAB-1).
+        _retry_single(template, paper)
 
 
 def _collection_field(collection: dict, field: str) -> str:
@@ -773,6 +776,7 @@ def run_pipeline(
     batch_label: str | None = None,
     with_pdfs: bool = False,
     allow_archived_cluster: bool = False,
+    papers_json: str | Path | None = None,
 ) -> int:
     del no_fit_check_auto_labels
     cfg = get_config()
@@ -809,7 +813,9 @@ def run_pipeline(
     log_path = _resolve_log_path(cfg.logs)
     out_path = cfg.logs / "pipeline_output.json"
     pdf_attach_summary_json: dict[str, object] | None = None
-    papers_json = cfg.root / "papers_input.json"
+    # WF-2: honor an explicit per-run input path (passed by auto_pipeline) so
+    # concurrent runs cannot clobber each other via the shared default file.
+    papers_json = Path(papers_json) if papers_json else cfg.root / "papers_input.json"
     collection_name = (
         cfg.zotero_collections.get(collection_key, {}).get("name", collection_key)
         if collection_key is not None

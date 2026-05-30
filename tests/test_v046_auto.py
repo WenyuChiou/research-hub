@@ -118,10 +118,17 @@ def test_auto_pipeline_full_run_new_cluster(mock_deps):
     # v0.73.0: zotero_batch_size=50 added to run_pipeline signature.
     # v0.88 #3: allow_archived_cluster=False added so archived clusters
     # are skipped by default unless explicitly requested.
-    mock_deps["run_pipeline"].assert_called_with(
-        dry_run=False, cluster_slug="new-topic", query="New Topic", verify=False,
-        zotero_batch_size=50, allow_archived_cluster=False,
-    )
+    # WF-2: papers_json is a PER-RUN path (cfg.root/.runs/<slug>-<pid>/...), so
+    # it can't be asserted by exact value here — assert the stable kwargs plus
+    # that the per-run input path is threaded into the pipeline call.
+    call_kwargs = mock_deps["run_pipeline"].call_args.kwargs
+    assert call_kwargs["dry_run"] is False
+    assert call_kwargs["cluster_slug"] == "new-topic"
+    assert call_kwargs["query"] == "New Topic"
+    assert call_kwargs["verify"] is False
+    assert call_kwargs["zotero_batch_size"] == 50
+    assert call_kwargs["allow_archived_cluster"] is False
+    assert "papers_json" in call_kwargs
     mock_deps["bundle_cluster"].assert_called()
     mock_deps["upload_cluster"].assert_called()
     mock_deps["generate_artifact"].assert_called()

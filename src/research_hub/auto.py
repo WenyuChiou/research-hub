@@ -6,6 +6,7 @@ v0.49: optional auto-crystal step via detected LLM CLI + Next Steps banner.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import time
@@ -312,8 +313,14 @@ def auto_pipeline(
         )
         report.papers_ingested = len(papers)
 
-    # Write papers_input.json to cfg.root (the default location pipeline reads from)
-    papers_input_path = cfg.root / "papers_input.json"
+    # WF-2: write the candidate list to a PER-RUN path (not the shared
+    # cfg.root/papers_input.json) so a concurrent auto run or dashboard ingest
+    # cannot clobber this run's input between this write and the pipeline read,
+    # silently ingesting another run's papers into this cluster. The path is
+    # threaded into run_pipeline below, coupling write and read by THIS run.
+    run_dir = cfg.root / ".runs" / f"{slug}-{os.getpid()}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    papers_input_path = run_dir / "papers_input.json"
     papers_input_path.write_text(
         json.dumps({"papers": papers}, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -329,6 +336,7 @@ def auto_pipeline(
             "verify": False,
             "zotero_batch_size": zotero_batch_size,
             "allow_archived_cluster": explicit_cluster_slug,
+            "papers_json": papers_input_path,  # WF-2: per-run input path
         }
         if with_pdfs:
             run_kwargs["with_pdfs"] = True
@@ -343,6 +351,14 @@ def auto_pipeline(
         attempted = report.papers_ingested  # tentative len(papers)
         written = len(list(raw_dir.glob("*.md"))) if raw_dir.exists() else 0
         report.papers_ingested = written
+        # WF-2: ingest has finished reading this run's input -> remove the
+        # per-run dir to keep the vault clean. Success-only: a non-zero rc
+        # raises above and any pipeline exception propagates, both skipping
+        # this line so the input is preserved for post-mortem. The isinstance
+        # guard keeps cleanup to real filesystem paths (a mocked cfg in unit
+        # tests yields a non-Path run_dir).
+        if isinstance(run_dir, Path):
+            shutil.rmtree(run_dir, ignore_errors=True)
         # PR-E: after a successful ingest, refresh the vault-level
         # navigation artifacts (`_HOME.md` + `hub/_moc/*.md` populated
         # bodies + every cluster's `00_overview.md`). Pre-fix these
@@ -1178,7 +1194,6 @@ def _ensure_zotero_collection(registry, cluster, slug: str, report: AutoReport, 
     v0.68.4: probes Zotero for an existing collection with this name before
     creating, to prevent accumulating duplicate empty collections.
     """
-    import os
     if os.environ.get("RESEARCH_HUB_NO_ZOTERO") == "1":
         return
     try:
