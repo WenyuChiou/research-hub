@@ -46,6 +46,7 @@ def _verify(args) -> int:
     completed = subprocess.run([sys.executable, str(script_path)], cwd=str(repo_root))
     return completed.returncode
 
+
 def _quarantine(args) -> int:
     from research_hub.authenticity import list_quarantine, restore_quarantine, show_quarantine
 
@@ -86,17 +87,21 @@ def _quarantine(args) -> int:
         return 0
     return 2
 
+
 def _remove(identifier: str, include_zotero: bool, dry_run: bool) -> int:
     print(json.dumps(remove_paper(identifier, include_zotero=include_zotero, dry_run=dry_run)))
     return 0
+
 
 def _mark(slug: str | None, status: str, cluster: str | None) -> int:
     print(json.dumps(mark_paper(slug, status, cluster=cluster)))
     return 0
 
+
 def _move(slug: str, to_cluster: str) -> int:
     print(json.dumps(move_paper(slug, to_cluster)))
     return 0
+
 
 def _add(identifier: str, cluster: str | None, no_zotero: bool, skip_verify: bool) -> int:
     result = add_paper(
@@ -112,6 +117,7 @@ def _add(identifier: str, cluster: str | None, no_zotero: bool, skip_verify: boo
         return 0
     print(f"Failed: {result.get('reason', 'unknown error')}")
     return 1
+
 
 def _find(
     query: str,
@@ -157,6 +163,7 @@ def _find(
         print(f"{item['slug']}\t{item['title']}\t{item['cluster']}\t{item['status']}")
     return 0
 
+
 def _label(args) -> int:
     from research_hub.paper import read_labels, set_labels
 
@@ -195,6 +202,7 @@ def _label(args) -> int:
     print(f"labels: {state.labels}")
     return 0
 
+
 def _label_bulk(json_path: str) -> int:
     from research_hub.paper import set_labels
 
@@ -207,6 +215,7 @@ def _label_bulk(json_path: str) -> int:
         updated += 1
     print(f"updated {updated} paper(s)")
     return 0
+
 
 def _fit_check_apply_labels(cluster_slug: str) -> int:
     from research_hub.fit_check import rejected_as_label_updates
@@ -222,6 +231,7 @@ def _fit_check_apply_labels(cluster_slug: str) -> int:
         print(f"missing from vault: {len(result['missing'])}")
     return 0
 
+
 def _autofill_emit(cluster_slug: str, out: str | None) -> int:
     from research_hub.autofill import emit_autofill_prompt, find_todo_papers
 
@@ -234,6 +244,7 @@ def _autofill_emit(cluster_slug: str, out: str | None) -> int:
         print(prompt)
     print(f"autofill candidates: {len(find_todo_papers(cfg, cluster_slug))}", file=sys.stderr)
     return 0
+
 
 def _autofill_apply(cluster_slug: str, scored_path: str) -> int:
     from research_hub.autofill import apply_autofill
@@ -248,6 +259,7 @@ def _autofill_apply(cluster_slug: str, scored_path: str) -> int:
         print(f"missing: {len(result.missing)}")
     return 0
 
+
 def _parse_bulk_slugs(slugs_arg: str | None, slugs_file: str | None) -> list[str]:
     values: list[str] = []
     if slugs_arg:
@@ -258,8 +270,10 @@ def _parse_bulk_slugs(slugs_arg: str | None, slugs_file: str | None) -> list[str
             values.extend(part.strip() for part in line.split(","))
     return [slug for slug in values if slug]
 
+
 def _manifest_batch_label(prefix: str) -> str:
     return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+
 
 def _paper_enrich_existing(
     cluster_slug: str,
@@ -342,6 +356,7 @@ def _paper_enrich_existing(
     print(f"Applied enrichment to {ok_count}/{len(plans)} item(s).")
     return 0
 
+
 def _paper_attach_pdfs(
     cluster_slug: str,
     *,
@@ -417,6 +432,7 @@ def _paper_attach_pdfs(
     print(f"Attached PDFs to {ok_count}/{len(plans)} item(s).")
     return 0
 
+
 def _summary_block_has_todo(md_path: Path) -> bool:
     try:
         text = md_path.read_text(encoding="utf-8", errors="ignore")
@@ -427,6 +443,7 @@ def _summary_block_has_todo(md_path: Path) -> bool:
         return False
     summary_block = match.group(1)
     return "[TODO]" in summary_block or "[TODO:" in summary_block
+
 
 def _paper_upgrade_pdfs(
     cluster_slug: str,
@@ -455,6 +472,7 @@ def _paper_upgrade_pdfs(
         limit=limit,
     )
     return 0
+
 
 def _paper_resummarize(
     cluster_slug: str,
@@ -524,6 +542,7 @@ def _paper_resummarize(
         print(f"  ERROR {err}", file=sys.stderr)
     return 0 if not apply_result.errors else 1
 
+
 def _read_paper_frontmatter(text: str) -> dict:
     """Read a markdown YAML frontmatter block into a dict."""
     match = _PAPER_FRONTMATTER_RE.match(text)
@@ -536,6 +555,7 @@ def _read_paper_frontmatter(text: str) -> dict:
     except Exception:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
 
 def _update_paper_frontmatter(text: str, updates: dict) -> str:
     """Update a markdown YAML frontmatter block while preserving body text."""
@@ -560,6 +580,7 @@ def _update_paper_frontmatter(text: str, updates: dict) -> str:
     ).rstrip()
     return f"{match.group(1)}{new_frontmatter}{match.group(3)}{match.group(4)}"
 
+
 def _frontmatter_field_text(value: object) -> str:
     if value is None:
         return ""
@@ -569,6 +590,7 @@ def _frontmatter_field_text(value: object) -> str:
         return " ".join(_frontmatter_field_text(item) for item in value)
     return str(value)
 
+
 def _topic_cluster_list(value: object) -> list[str]:
     if value is None:
         return []
@@ -576,6 +598,7 @@ def _topic_cluster_list(value: object) -> list[str]:
         return [str(item).strip() for item in value if str(item).strip()]
     text = str(value).strip()
     return [text] if text else []
+
 
 def _iter_raw_cluster_dirs(cfg, cluster_slug: str | None = None) -> list[tuple[str, Path]]:
     raw_root = Path(cfg.raw)
@@ -589,6 +612,7 @@ def _iter_raw_cluster_dirs(cfg, cluster_slug: str | None = None) -> list[tuple[s
         if path.is_dir() and not path.name.startswith(".") and not path.name.startswith("_")
     ]
 
+
 def _display_paper_path(cfg, path: Path) -> str:
     roots: list[Path] = []
     if getattr(cfg, "root", None) is not None:
@@ -601,6 +625,7 @@ def _display_paper_path(cfg, path: Path) -> str:
         except ValueError:
             continue
     return str(path).replace("\\", "/")
+
 
 def _find_paper_by_slug_or_doi(cfg, slug_or_doi: str) -> tuple[str, Path, dict, str] | None:
     """Find a paper by filename stem or DOI across all cluster dirs.
@@ -634,6 +659,7 @@ def _find_paper_by_slug_or_doi(cfg, slug_or_doi: str) -> tuple[str, Path, dict, 
             file=sys.stderr,
         )
     return all_matches[0]
+
 
 def _cmd_paper_find(cfg, args) -> None:
     """Handle `paper find` command. cfg: HubConfig, args: argparse namespace."""
@@ -670,6 +696,7 @@ def _cmd_paper_find(cfg, args) -> None:
         print(f"  DOI: {_frontmatter_field_text(frontmatter.get('doi'))}")
     print(f"Found {len(matches)} paper(s).")
 
+
 def _cmd_paper_add_to_cluster(cfg, args) -> None:
     """Handle `paper add-to-cluster` command."""
     target_cluster = str(args.target_cluster).strip()
@@ -698,6 +725,7 @@ def _cmd_paper_add_to_cluster(cfg, args) -> None:
 
     paper_path.write_text(updated_text, encoding="utf-8")
     print(f"Added topic_cluster: [{target_cluster}] to {display_path}")
+
 
 def _cmd_paper_gaps(cfg, args) -> None:
     """Handle `paper gaps` command — research gap analysis for a cluster."""
@@ -803,6 +831,7 @@ def _cmd_paper_gaps(cfg, args) -> None:
             print("[gaps] Updated 00_overview.md with gap summary.")
     else:
         print("[gaps] Failed to write output.", file=sys.stderr)
+
 
 def _paper_command(args) -> int:
     emit_json = bool(getattr(args, "json", False))
