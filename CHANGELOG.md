@@ -20,6 +20,24 @@ UI scope is capped: the dashboard stays a thin status-mirror +
 palette + onboarding demo; no 3-pane / citation-graph rebuild (link
 out to the real tools instead)._
 
+### Added
+
+- **`tests/test_skill_structure.py`** — structural + trust invariants for
+  the 11 `SKILL.md` files, closing the gap an ai-research-skills quality
+  audit (2026-05-28) flagged: frontmatter shape and the installer mirror
+  were already tested, but three guarantees were defended only by
+  convention. Now asserted on every PR: (1) the ≤500-line
+  progressive-disclosure ceiling (max today is research-hub at 244);
+  (2) anti-fabrication safety strings survive every reword/sync
+  (`research-hub` "Do not invent", `paper-memory-builder` `status: gap`,
+  `paper-summarize` "hallucinated", `notebooklm-brief-verifier` "do NOT
+  assume coverage"); (3) the sibling disambiguation arrows that keep
+  auto-trigger from mis-firing (the paper-summarize / paper-memory-builder
+  / literature-triage-matrix trio name each other; `zotero-library-curator`
+  names `zotero-skills`; `gap-to-topic` names `literature-triage-matrix`
+  + `research-design-helper`). Test-only — no skill content changed; all
+  21 parametrized cases pass against the current files.
+
 ### Changed
 
 - **MCP tool docstrings rewritten for 12 worst-scoring tools (Glama
