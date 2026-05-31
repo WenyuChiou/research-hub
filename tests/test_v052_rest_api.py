@@ -302,3 +302,28 @@ def test_unknown_path_returns_404(server):
     status, payload, _headers = _request(port, "GET", "/api/v1/nonexistent")
     assert status == 404
     assert payload["code"] == "not_found"
+
+
+def test_cluster_quarantine_endpoint_returns_rejected(server, fake_cfg, monkeypatch):
+    # FUNC-1 (REST half): GET /api/v1/clusters/<slug>/quarantine surfaces the
+    # fit-check quarantined candidates over HTTP.
+    from research_hub.authenticity import QUARANTINE_DIR
+
+    qdir = fake_cfg.research_hub_dir / QUARANTINE_DIR / "agents"
+    qdir.mkdir(parents=True)
+    (qdir / "p1.json").write_text(
+        json.dumps({
+            "cluster": "agents", "slug": "p1", "layer": "L2",
+            "reason": "uncorroborated", "date": "2026-05-31",
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("research_hub.config.get_config", lambda: fake_cfg)
+
+    port = server()
+    status, payload, _headers = _request(port, "GET", "/api/v1/clusters/agents/quarantine")
+
+    assert status == 200
+    assert payload["count"] == 1
+    assert payload["quarantined"][0]["slug"] == "p1"
+    assert payload["quarantined"][0]["reason"] == "uncorroborated"

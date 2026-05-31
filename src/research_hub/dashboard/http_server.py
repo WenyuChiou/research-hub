@@ -287,6 +287,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if len(tail) == 3 and tail[0] == "clusters" and tail[2] == "crystals":
                 request["path_params"] = {"slug": tail[1]}
                 return api_v1.get_cluster_crystals(request), 200, None
+            if len(tail) == 3 and tail[0] == "clusters" and tail[2] == "quarantine":
+                request["path_params"] = {"slug": tail[1]}
+                return api_v1.get_cluster_quarantine(request), 200, None
             if len(tail) == 4 and tail[0] == "clusters" and tail[2] == "crystals":
                 request["path_params"] = {"slug": tail[1], "crystal_slug": tail[3]}
                 return api_v1.get_cluster_crystal(request), 200, None

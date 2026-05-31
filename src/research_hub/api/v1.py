@@ -28,6 +28,7 @@ list_clusters = _unwrap(_m.list_clusters)
 list_crystals = _unwrap(_m.list_crystals)
 list_entities = _unwrap(_m.list_entities)
 list_methods = _unwrap(_m.list_methods)
+list_quarantine = _unwrap(_m.list_quarantine)
 plan_research_workflow = _unwrap(_m.plan_research_workflow)
 read_crystal = _unwrap(_m.read_crystal)
 search_papers = _unwrap(_m.search_papers)
@@ -182,6 +183,29 @@ def get_cluster_crystals(request: dict) -> dict:
             }
             for item in crystals
         ]
+    }
+
+
+def get_cluster_quarantine(request: dict) -> dict:
+    # FUNC-1: surface fit-check quarantined candidates over REST (the MCP tools
+    # exist; this closes the REST half so dashboards/agents on HTTP can see
+    # rejected papers too).
+    slug = request["path_params"]["slug"]
+    result = list_quarantine(cluster_slug=slug)
+    _raise_for_tool_error(result, not_found_prefix="Cluster not found:")
+    rows = result.get("quarantined", []) if isinstance(result, dict) else []
+    return {
+        "count": len(rows),
+        "quarantined": [
+            {
+                "slug": item.get("slug", ""),
+                "cluster": item.get("cluster", ""),
+                "layer": item.get("layer", ""),
+                "reason": item.get("reason", ""),
+                "date": item.get("date", ""),
+            }
+            for item in rows
+        ],
     }
 
 
