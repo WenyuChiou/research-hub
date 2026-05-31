@@ -7,6 +7,7 @@ from contextlib import nullcontext, redirect_stdout
 from dataclasses import asdict, is_dataclass
 import json
 from pathlib import Path
+import re
 import sys
 
 from research_hub._deprecation import warn_deprecated
@@ -120,3 +121,42 @@ def _read_zotero_key_from_frontmatter(md_path: Path) -> str | None:
     import re as _re
     match = _re.search(r"^zotero-key:\s*([A-Z0-9]+)", frontmatter, _re.MULTILINE)
     return match.group(1) if match else None
+
+
+def _parse_year_range(spec: str | None) -> tuple[int | None, int | None]:
+    if spec is None:
+        return (None, None)
+    text = spec.strip()
+    if not text:
+        raise SystemExit(f"invalid --year spec: {spec}")
+    if re.fullmatch(r"\d{4}", text):
+        year = int(text)
+        return (year, year)
+    if re.fullmatch(r"\d{4}-", text):
+        return (int(text[:4]), None)
+    if re.fullmatch(r"-\d{4}", text):
+        return (None, int(text[1:]))
+    if re.fullmatch(r"\d{4}-\d{4}", text):
+        start, end = text.split("-", 1)
+        return (int(start), int(end))
+    raise SystemExit(f"invalid --year spec: {spec}")
+
+
+def _parse_csv_terms(spec: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in spec.split(",") if item.strip())
+
+
+def _parse_negative_terms(spec: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in re.split(r"[\s,]+", spec) if item.strip())
+
+
+def _parse_seed_dois(seed_dois: str, seed_dois_file: str | None) -> tuple[str, ...]:
+    values: list[str] = []
+    if seed_dois:
+        values.extend(item.strip() for item in seed_dois.split(",") if item.strip())
+    if seed_dois_file:
+        for line in Path(seed_dois_file).read_text(encoding="utf-8").splitlines():
+            doi = line.strip()
+            if doi and not doi.startswith("#"):
+                values.append(doi)
+    return tuple(values)
