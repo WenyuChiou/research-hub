@@ -8,7 +8,7 @@ import sys
 
 from research_hub.clusters import ClusterRegistry
 from research_hub.config import get_config, require_config
-from research_hub.cli_common import _emit_cli_json
+from research_hub.cli_common import _emit_cli_json, _load_zotero_if_configured
 
 
 def _read_doi_from_frontmatter(md_path: Path) -> str | None:
@@ -27,34 +27,6 @@ def _read_doi_from_frontmatter(md_path: Path) -> str | None:
 
     match = _re.search(r'^doi:\s*[\'"]?([^\'"\n]+)', frontmatter, _re.MULTILINE)
     return match.group(1).strip() if match else None
-
-
-def _load_zotero_if_configured():
-    """Lazy-load Zotero client. Returns None if not configured.
-
-    v0.90.0 G1#1 fix: distinguish "not configured" (silent None) from
-    "configured but broken" (warn to stderr, still return None). Pre-fix,
-    the bare ``except Exception`` made auth failures, network outages, and
-    missing imports all look identical to "no Zotero set up", so users
-    saw zero ingestion and assumed they hadn't configured Zotero when in
-    reality the client was broken.
-    """
-    try:
-        from research_hub.errors import MissingCredential
-        from research_hub.zotero.client import get_client
-
-        return get_client()
-    except MissingCredential:
-        # Truly unconfigured -- silent None preserves lazy-mode UX
-        return None
-    except Exception as exc:
-        # Configured but broken -- surface root cause so user can act
-        print(
-            f"  [zotero] WARN credentials present but client init failed: "
-            f"{type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        return None
 
 
 def _clusters_list() -> int:

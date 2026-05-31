@@ -123,6 +123,34 @@ def _read_zotero_key_from_frontmatter(md_path: Path) -> str | None:
     return match.group(1) if match else None
 
 
+def _load_zotero_if_configured():
+    """Lazy-load Zotero client. Returns None if not configured.
+
+    v0.90.0 G1#1 fix: distinguish "not configured" (silent None) from
+    "configured but broken" (warn to stderr, still return None). Pre-fix,
+    the bare ``except Exception`` made auth failures, network outages, and
+    missing imports all look identical to "no Zotero set up", so users
+    saw zero ingestion and assumed they hadn't configured Zotero when in
+    reality the client was broken.
+    """
+    try:
+        from research_hub.errors import MissingCredential
+        from research_hub.zotero.client import get_client
+
+        return get_client()
+    except MissingCredential:
+        # Truly unconfigured -- silent None preserves lazy-mode UX
+        return None
+    except Exception as exc:
+        # Configured but broken -- surface root cause so user can act
+        print(
+            f"  [zotero] WARN credentials present but client init failed: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return None
+
+
 def _parse_year_range(spec: str | None) -> tuple[int | None, int | None]:
     if spec is None:
         return (None, None)
