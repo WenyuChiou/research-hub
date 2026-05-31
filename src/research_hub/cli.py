@@ -48,7 +48,10 @@ from research_hub.writing import (
     save_quote,
 )
 from research_hub import cli_citations as _cli_citations
+from research_hub import cli_notebooklm as _cli_notebooklm
 from research_hub import cli_search as _cli_search
+from research_hub import cli_summarize as _cli_summarize
+from research_hub import cli_zotero as _cli_zotero
 from research_hub.cli_common import (
     _cli_deprecated_alias,
     _emit_cli_json,
@@ -61,6 +64,31 @@ from research_hub.cli_common import (
     _stdout_to_stderr,
     _warn_cli_deprecated_alias_from_args,
     _warn_cli_deprecated_alias_from_argv,
+)
+from research_hub.cli_notebooklm import (
+    _display_entry,
+    _nlm_ask,
+    _nlm_download,
+    _nlm_generate,
+    _nlm_read_briefing,
+    _nlm_shard,
+    _nlm_upload,
+    _notebooklm_bundle,
+    _preflight_nlm_session,
+)
+from research_hub.cli_summarize import (
+    _cmd_crystal,
+    _cmd_memory,
+    _cmd_summarize,
+    _paper_summarize_pending,
+    _vault_summarize_status_migrate,
+)
+from research_hub.cli_zotero import (
+    _load_zotero_if_configured,
+    _zotero_backfill,
+    _zotero_gc,
+    _zotero_mark_kept,
+    _zotero_reparent_clusters,
 )
 from research_hub.cli_citations import (
     _cite,
@@ -86,7 +114,22 @@ from research_hub.cli_search import (
 )
 
 
+_cli_notebooklm.get_config = lambda: get_config()
+_cli_notebooklm.ClusterRegistry = lambda *args, **kwargs: ClusterRegistry(
+    *args,
+    **kwargs,
+)
+_cli_notebooklm._preflight_nlm_session = lambda *args, **kwargs: _preflight_nlm_session(
+    *args,
+    **kwargs,
+)
 _cli_search.get_config = lambda: get_config()
+_cli_summarize.get_config = lambda: get_config()
+_cli_zotero.get_config = lambda: get_config()
+_cli_zotero.ClusterRegistry = lambda *args, **kwargs: ClusterRegistry(
+    *args,
+    **kwargs,
+)
 _cli_search._emit_papers_input_json = lambda results, cluster_slug: _emit_papers_input_json(
     results,
     cluster_slug,
@@ -101,7 +144,22 @@ def _sync_cli_dependencies() -> None:
     would not see the patch. Called ONCE at the top of ``_main_dispatch``. As
     more modules are extracted (M1b/M2), add one line per module here."""
     _cli_citations.get_config = get_config
+    _cli_notebooklm.get_config = lambda: get_config()
+    _cli_notebooklm.ClusterRegistry = lambda *args, **kwargs: ClusterRegistry(
+        *args,
+        **kwargs,
+    )
+    _cli_notebooklm._preflight_nlm_session = lambda *args, **kwargs: _preflight_nlm_session(
+        *args,
+        **kwargs,
+    )
     _cli_search.get_config = lambda: get_config()
+    _cli_summarize.get_config = lambda: get_config()
+    _cli_zotero.get_config = lambda: get_config()
+    _cli_zotero.ClusterRegistry = lambda *args, **kwargs: ClusterRegistry(
+        *args,
+        **kwargs,
+    )
     _cli_search._emit_papers_input_json = lambda results, cluster_slug: _emit_papers_input_json(
         results,
         cluster_slug,
@@ -1119,219 +1177,12 @@ def _autofill_apply(cluster_slug: str, scored_path: str) -> int:
     return 0
 
 
-def _cmd_crystal(args, cfg, *, emit_json: bool = False) -> int:
-    from research_hub import crystal
-
-    if args.crystal_command == "emit":
-        question_slugs = [item.strip() for item in args.questions.split(",") if item.strip()] if args.questions else None
-        prompt = crystal.emit_crystal_prompt(cfg, args.cluster, question_slugs=question_slugs)
-        if args.out:
-            Path(args.out).write_text(prompt, encoding="utf-8")
-            if emit_json:
-                _emit_cli_json(
-                    "crystal emit",
-                    0,
-                    {
-                        "cluster_slug": args.cluster,
-                        "question_slugs": question_slugs or [],
-                        "out_path": args.out,
-                        "prompt_chars": len(prompt),
-                    },
-                )
-                return 0
-            print(f"wrote {args.out}")
-        else:
-            if emit_json:
-                _emit_cli_json(
-                    "crystal emit",
-                    0,
-                    {
-                        "cluster_slug": args.cluster,
-                        "question_slugs": question_slugs or [],
-                        "out_path": None,
-                        "prompt": prompt,
-                        "prompt_chars": len(prompt),
-                    },
-                )
-                return 0
-            print(prompt)
-        return 0
-    if args.crystal_command == "apply":
-        scored = json.loads(Path(args.scored).read_text(encoding="utf-8"))
-        result = crystal.apply_crystals(cfg, args.cluster, scored)
-        rc = 0 if not result.errors else 1
-        if emit_json:
-            _emit_cli_json("crystal apply", rc, result)
-            return rc
-        print(f"written: {len(result.written)}, replaced: {len(result.replaced)}, skipped: {len(result.skipped)}")
-        if result.errors:
-            for error in result.errors:
-                print(f"  ERROR: {error}", file=sys.stderr)
-            return 1
-        return 0
-    if args.crystal_command == "list":
-        crystals = crystal.list_crystals(cfg, args.cluster)
-        if not crystals:
-            print("(no crystals yet; generate via `research-hub crystal emit`)")
-            return 0
-        for item in crystals:
-            print(f"{item.question_slug:25s}  {item.tldr[:80]}")
-        return 0
-    if args.crystal_command == "read":
-        item = crystal.read_crystal(cfg, args.cluster, args.slug)
-        if item is None:
-            print(f"crystal not found: {args.slug}", file=sys.stderr)
-            return 1
-        print(item.tldr if args.level == "tldr" else item.full if args.level == "full" else item.gist)
-        return 0
-    if args.crystal_command == "check":
-        staleness = crystal.check_staleness(cfg, args.cluster)
-        if not staleness:
-            print("(no crystals to check)")
-            return 0
-        for slug, item in staleness.items():
-            marker = "STALE" if item.stale else "fresh"
-            print(f"{slug:25s}  {marker}  delta={item.delta_ratio:.0%}  +{len(item.added_papers)}/-{len(item.removed_papers)}")
-        return 0
-    raise ValueError(f"unknown crystal command: {args.crystal_command}")
 
 
-def _cmd_summarize(args, cfg, *, emit_json: bool = False) -> int:
-    from research_hub import summarize as summarize_mod
-
-    report = summarize_mod.summarize_cluster(
-        cfg,
-        args.cluster,
-        llm_cli=args.llm_cli,
-        apply=args.apply,
-        write_zotero=not args.no_zotero,
-        write_obsidian=not args.no_obsidian,
-    )
-    if not report.ok:
-        if emit_json:
-            _emit_cli_json("summarize", 1, report)
-            return 1
-        print(f"summarize failed: {report.error}", file=sys.stderr)
-        return 1
-    if report.prompt_path:
-        if emit_json:
-            _emit_cli_json("summarize", 0, report)
-            return 0
-        print(f"no LLM CLI on PATH; prompt saved to {report.prompt_path}")
-        print("pipe it through your LLM CLI and re-run with --apply")
-        return 0
-    if not args.apply:
-        if emit_json:
-            _emit_cli_json("summarize", 0, report)
-            return 0
-        print(f"cli used: {report.cli_used}")
-        print("(dry-run; pass --apply to write to Obsidian + Zotero)")
-        return 0
-    apply_result = report.apply_result
-    if apply_result is None:
-        if emit_json:
-            _emit_cli_json("summarize", 1, report)
-            return 1
-        print("no apply result returned")
-        return 1
-    rc = 0 if not apply_result.errors else 1
-    if emit_json:
-        _emit_cli_json("summarize", rc, report)
-        return rc
-    print(f"cli used: {report.cli_used}")
-    print(
-        f"applied: {len(apply_result.applied)}  "
-        f"skipped: {len(apply_result.skipped)}  "
-        f"errors: {len(apply_result.errors)}"
-    )
-    print(f"obsidian writes: {apply_result.obsidian_writes}, zotero writes: {apply_result.zotero_writes}")
-    for skip in apply_result.skipped:
-        print(f"  SKIP {skip}")
-    for err in apply_result.errors:
-        print(f"  ERROR {err}", file=sys.stderr)
-    return rc
 
 
-def _vault_summarize_status_migrate(
-    cluster_slug: str | None,
-    dry_run: bool,
-    *,
-    emit_json: bool = False,
-) -> int:
-    from collections import Counter
-
-    from research_hub.vault.summarize_migrate import migrate_existing_to_pending_status
-
-    cfg = get_config()
-    results = migrate_existing_to_pending_status(
-        cfg.root,
-        cluster_slug_filter=cluster_slug,
-        dry_run=dry_run,
-    )
-    counts = Counter(action for _path, action in results)
-    if emit_json:
-        _emit_cli_json(
-            "vault summarize-status-migrate",
-            0,
-            {
-                "cluster_filter": cluster_slug,
-                "dry_run": dry_run,
-                "counts": dict(counts),
-                "results": [{"path": path, "action": action} for path, action in results],
-            },
-        )
-        return 0
-    mode = "would flip" if dry_run else "flipped"
-    print(f"{counts.get('pending', 0):4d} notes {mode} pending")
-    print(f"{counts.get('done', 0):4d} notes {mode} done")
-    print(f"{counts.get('failed_no_abstract', 0):4d} notes {mode} failed_no_abstract")
-    print(f"{counts.get('already_set', 0):4d} already_set")
-    skipped = sum(count for action, count in counts.items() if action.startswith("skipped_"))
-    if skipped:
-        print(f"{skipped:4d} skipped")
-    if dry_run:
-        print("")
-        print("Preview only. Re-run with --apply to write summarize_status.")
-    return 0
 
 
-def _paper_summarize_pending(args) -> int:
-    from collections import Counter
-
-    from research_hub.paper_summarize import summarize_pending
-
-    if not args.pending:
-        print("Specify --pending to run the summarize queue.", file=sys.stderr)
-        return 2
-    cfg = get_config()
-    try:
-        results = summarize_pending(
-            cfg,
-            cluster_slug_filter=args.cluster,
-            backend=args.cli,
-            max_papers=args.max_papers,
-            dry_run=args.dry_run,
-        )
-    except Exception as exc:
-        print(f"paper summarize failed: {exc}", file=sys.stderr)
-        return 1
-
-    counts = Counter(result.action for result in results)
-    print(
-        f"processed: {len(results)}  "
-        f"done: {counts.get('done', 0)}  "
-        f"failed_no_abstract: {counts.get('failed_no_abstract', 0)}  "
-        f"errors: {counts.get('error', 0)}"
-    )
-    if args.dry_run:
-        print(
-            f"dry-run: would_summarize={counts.get('would_summarize', 0)}  "
-            f"would_fail_no_abstract={counts.get('would_fail_no_abstract', 0)}"
-        )
-    for result in results:
-        if result.error:
-            print(f"  ERROR {result.path}: {result.error}", file=sys.stderr)
-    return 0 if not counts.get("error", 0) else 1
 
 
 def _parse_bulk_slugs(slugs_arg: str | None, slugs_file: str | None) -> list[str]:
@@ -1345,63 +1196,6 @@ def _parse_bulk_slugs(slugs_arg: str | None, slugs_file: str | None) -> list[str
     return [slug for slug in values if slug]
 
 
-def _cmd_memory(args, cfg) -> int:
-    from research_hub.memory import (
-        apply_memory,
-        emit_memory_prompt,
-        list_claims,
-        list_entities,
-        list_methods,
-        read_memory,
-    )
-
-    if args.memory_command == "emit":
-        print(emit_memory_prompt(cfg, args.cluster))
-        return 0
-    if args.memory_command == "apply":
-        scored = json.loads(Path(args.scored).read_text(encoding="utf-8"))
-        result = apply_memory(cfg, args.cluster, scored)
-        print(f"entities={result.entity_count} claims={result.claim_count} methods={result.method_count}")
-        print(f"written: {result.written_path}")
-        for error in result.errors:
-            print(f"  ! {error}", file=sys.stderr)
-        return 0
-    if args.memory_command == "list":
-        entities = list_entities(cfg, args.cluster)
-        claims = list_claims(cfg, args.cluster)
-        methods = list_methods(cfg, args.cluster)
-        if args.kind == "entities":
-            for item in entities:
-                print(f"{item.slug}\t{item.type}\t{item.name}")
-            return 0
-        if args.kind == "claims":
-            for item in claims:
-                print(f"[{item.confidence}] {item.slug}: {item.text[:80]}")
-            return 0
-        if args.kind == "methods":
-            for item in methods:
-                print(f"{item.slug}\t{item.family}\t{item.name}")
-            return 0
-        print("[entities]")
-        for item in entities:
-            print(f"{item.slug}\t{item.type}\t{item.name}")
-        print()
-        print("[claims]")
-        for item in claims:
-            print(f"[{item.confidence}] {item.slug}: {item.text[:80]}")
-        print()
-        print("[methods]")
-        for item in methods:
-            print(f"{item.slug}\t{item.family}\t{item.name}")
-        return 0
-    if args.memory_command == "read":
-        memory = read_memory(cfg, args.cluster)
-        if memory is None:
-            print(f"No memory found for cluster: {args.cluster}", file=sys.stderr)
-            return 1
-        print(json.dumps(memory.to_dict(), indent=2, ensure_ascii=False))
-        return 0
-    raise ValueError(f"unknown memory command: {args.memory_command}")
 
 
 def _manifest_batch_label(prefix: str) -> str:
@@ -1676,369 +1470,10 @@ def _paper_resummarize(
     return 0 if not apply_result.errors else 1
 
 
-def _zotero_mark_kept(
-    *,
-    all_orphans: bool,
-    add_keys: list[str] | None,
-    remove_keys: list[str] | None,
-    show_list: bool,
-    note: str | None,
-    show_counts: bool = False,
-    by_pattern: str | None = None,
-) -> int:
-    """Manage the per-vault kept-collection list used by `zotero gc --respect-kept`."""
-    import re
-
-    cfg = get_config()
-    from research_hub.zotero.gc import (
-        is_orphan_candidate,
-        kept_file_path,
-        load_kept_keys,
-        lookup_collection_names_and_counts,
-        save_kept_keys,
-        scan_zotero_for_gc,
-    )
-
-    current = load_kept_keys(cfg.research_hub_dir)
-    if show_list:
-        if not current:
-            print("(no kept Zotero collections recorded)")
-            return 0
-
-        # v0.88 #10: --show-counts enriches the opaque 8-char keys with
-        # Zotero collection name + item count. --by-pattern filters by
-        # the human-readable name (regex, case-insensitive).
-        details: dict[str, dict] = {}
-        pattern_re = None
-        if by_pattern:
-            try:
-                pattern_re = re.compile(by_pattern, re.IGNORECASE)
-            except re.error as exc:
-                print(f"  [ERR] invalid --by-pattern regex: {exc}", file=sys.stderr)
-                return 2
-
-        if show_counts or pattern_re is not None:
-            from research_hub.zotero.client import get_client
-            zot = get_client()
-            details = lookup_collection_names_and_counts(zot, current)
-            print("key       items  name")
-            print("--------  -----  ----")
-            shown = 0
-            for key in sorted(current):
-                d = details.get(key, {})
-                name = d.get("name", "(unknown)")
-                if pattern_re is not None and not pattern_re.search(name):
-                    continue
-                items_count = d.get("num_items", 0)
-                print(f"{key:8}  {items_count:5d}  {name}")
-                shown += 1
-            print(f"\nfile: {kept_file_path(cfg.research_hub_dir)}")
-            print(f"shown: {shown} / total kept: {len(current)}")
-            return 0
-
-        for key in sorted(current):
-            print(key)
-        print(f"\nfile: {kept_file_path(cfg.research_hub_dir)}")
-        return 0
-
-    if all_orphans:
-        from research_hub.clusters import slugify
-        from research_hub.zotero.client import get_client
-
-        registry = ClusterRegistry(cfg.clusters_file)
-        clusters = registry.list()
-        vault_keys = {
-            (cluster.zotero_collection_key or "").strip()
-            for cluster in clusters
-            if (cluster.zotero_collection_key or "").strip()
-        }
-        vault_name_slugs = {
-            slugify(cluster.name)
-            for cluster in clusters
-            if (cluster.name or "").strip()
-        } | {
-            (cluster.slug or "").strip()
-            for cluster in clusters
-            if (cluster.slug or "").strip()
-        }
-        zot = get_client()
-        # respect_kept=False here so we re-detect the full orphan set
-        # age_days only affects the "empty>Nd" reason, not orphan-from-vault,
-        # so the default 30 is fine for orphan bulk-marking.
-        candidates = scan_zotero_for_gc(
-            zot,
-            vault_keys,
-            include_test_pattern=False,
-            age_days=30,
-            kept_keys=set(),
-            vault_name_slugs=vault_name_slugs,
-        )
-        # PR-A: include BOTH orphan reasons. A non-empty orphan
-        # (`orphan-with-items(N)`) is exactly the real-data collection a
-        # user most wants `--all-orphans` to protect from future gc noise;
-        # keying on the bare "orphan-from-vault" string would silently drop
-        # it now that the reason is split.
-        new_keys = {c.key for c in candidates if is_orphan_candidate(c)}
-        merged = current | new_keys
-        save_kept_keys(cfg.research_hub_dir, merged, note=note)
-        added = len(merged) - len(current)
-        print(f"marked {added} additional collection(s) as kept (total: {len(merged)})")
-        return 0
-
-    if add_keys:
-        merged = current | {k.strip() for k in add_keys if k.strip()}
-        save_kept_keys(cfg.research_hub_dir, merged, note=note)
-        added = len(merged) - len(current)
-        print(f"marked {added} collection(s) as kept (total: {len(merged)})")
-        return 0
-
-    if remove_keys:
-        to_remove = {k.strip() for k in remove_keys if k.strip()}
-        merged = current - to_remove
-        save_kept_keys(cfg.research_hub_dir, merged, note=note)
-        removed = len(current) - len(merged)
-        print(f"removed {removed} collection(s) from kept list (total: {len(merged)})")
-        return 0
-
-    print("Usage: research-hub zotero mark-kept --all-orphans | --collection KEY | --remove KEY | --list", file=sys.stderr)
-    return 2
 
 
-def _zotero_reparent_clusters(*, parent: str, apply: bool) -> int:
-    """Nest existing cluster Zotero collections under a parent ("mother") collection.
-
-    DRY-RUN (default, ``--apply`` not passed): lists each cluster with its
-    current parentCollection and what action would be taken.  The parent
-    collection is NOT created in dry-run mode.
-
-    ``--apply``: ensures the parent exists (creates if missing), then calls
-    ``update_collection`` for any cluster collection not yet nested under it.
-    Already-nested collections are skipped (idempotent).  Never deletes
-    anything.
-    """
-    cfg = get_config()
-    from research_hub.zotero.client import ZoteroDualClient, ensure_parent_collection
-
-    registry = ClusterRegistry(cfg.clusters_file)
-    clusters = [c for c in registry.list() if (c.zotero_collection_key or "").strip()]
-
-    if not clusters:
-        print("No clusters with Zotero collection keys found.")
-        return 0
-
-    if not parent:
-        print("ERROR: --parent is empty; pass a non-empty collection name.", file=sys.stderr)
-        return 2
-
-    if not apply:
-        # Dry-run: resolve parent key only if possible via listing, do NOT create
-        print(f"DRY-RUN: would reparent {len(clusters)} cluster collection(s) under '{parent}'")
-        print(f"{'cluster':<40} {'key':<12} {'current_parent':<20} {'action'}")
-        print("-" * 90)
-        # Best-effort: try to read current parent data without writes
-        try:
-            dual = ZoteroDualClient()
-            web = dual.web
-            # Build map of collection key -> data
-            coll_map: dict[str, dict] = {}
-            start = 0
-            while True:
-                chunk = web.collections(limit=100, start=start)
-                if not chunk:
-                    break
-                for c in chunk:
-                    d = c.get("data", {})
-                    coll_map[d.get("key", "")] = d
-                if len(chunk) < 100:
-                    break
-                start += 100
-            # Find parent key in existing collections
-            parent_key_dr: str | None = next(
-                (
-                    d["key"]
-                    for d in coll_map.values()
-                    if d.get("parentCollection") is False and d.get("name") == parent
-                ),
-                None,
-            )
-            for cluster in clusters:
-                key = (cluster.zotero_collection_key or "").strip()
-                d = coll_map.get(key, {})
-                current_parent = d.get("parentCollection", "?")
-                if parent_key_dr and current_parent == parent_key_dr:
-                    action = "already nested (skip)"
-                elif parent_key_dr is None:
-                    action = f"would create '{parent}' then nest"
-                else:
-                    action = f"would move under {parent_key_dr}"
-                print(f"{cluster.slug:<40} {key:<12} {str(current_parent):<20} {action}")
-        except Exception as exc:
-            print(f"(could not fetch Zotero collections for preview: {exc})")
-            for cluster in clusters:
-                key = (cluster.zotero_collection_key or "").strip()
-                print(f"{cluster.slug:<40} {key:<12} {'?':<20} would reparent")
-        print()
-        print("Re-run with --apply to execute.")
-        return 0
-
-    # --- Apply mode ---
-    dual = ZoteroDualClient()
-    parent_key = ensure_parent_collection(dual, parent)
-    if not parent_key:
-        print(f"ERROR: Could not find or create parent collection '{parent}'.", file=sys.stderr)
-        return 1
-
-    web = dual.web
-    # Build current collection data map
-    coll_map_apply: dict[str, dict] = {}
-    start = 0
-    while True:
-        chunk = web.collections(limit=100, start=start)
-        if not chunk:
-            break
-        for c in chunk:
-            d = c.get("data", {})
-            coll_map_apply[d.get("key", "")] = d
-        if len(chunk) < 100:
-            break
-        start += 100
-
-    moved = 0
-    skipped = 0
-    errors = 0
-    for cluster in clusters:
-        key = (cluster.zotero_collection_key or "").strip()
-        d = coll_map_apply.get(key, {})
-        current_parent = d.get("parentCollection")
-        if current_parent == parent_key:
-            print(f"  [skip] {cluster.slug} ({key}) already nested under {parent_key}")
-            skipped += 1
-            continue
-        try:
-            dual.update_collection(key, parent_key=parent_key)
-            print(f"  [ok]   {cluster.slug} ({key}) reparented under {parent_key}")
-            moved += 1
-        except Exception as exc:
-            print(f"  [err]  {cluster.slug} ({key}): {exc}", file=sys.stderr)
-            errors += 1
-
-    print(f"\nDone: {moved} moved, {skipped} already nested, {errors} error(s).")
-    return 0 if errors == 0 else 1
 
 
-def _zotero_gc(
-    *,
-    apply: bool,
-    yes: bool,
-    no_test_pattern: bool,
-    age_days: int,
-    respect_kept: bool = True,
-) -> int:
-    cfg = get_config()
-    from research_hub.clusters import slugify
-    from research_hub.zotero.client import get_client
-    from research_hub.zotero.gc import (
-        delete_candidates,
-        load_kept_keys,
-        scan_zotero_for_gc,
-    )
-
-    registry = ClusterRegistry(cfg.clusters_file)
-    clusters = registry.list()
-    vault_keys = {
-        (cluster.zotero_collection_key or "").strip()
-        for cluster in clusters
-        if (cluster.zotero_collection_key or "").strip()
-    }
-    vault_name_slugs = {
-        slugify(cluster.name)
-        for cluster in clusters
-        if (cluster.name or "").strip()
-    } | {
-        (cluster.slug or "").strip()
-        for cluster in clusters
-        if (cluster.slug or "").strip()
-    }
-    kept_keys = load_kept_keys(cfg.research_hub_dir) if respect_kept else set()
-    zot = get_client()
-    candidates = scan_zotero_for_gc(
-        zot,
-        vault_keys,
-        include_test_pattern=not no_test_pattern,
-        age_days=age_days,
-        kept_keys=kept_keys,
-        vault_name_slugs=vault_name_slugs,
-    )
-    if not candidates:
-        print("No Zotero GC candidates found.")
-        return 0
-
-    def _is_non_empty(c) -> bool:
-        return c.num_items > 0 or c.num_collections > 0
-
-    junk = [c for c in candidates if not _is_non_empty(c)]
-    non_empty = [c for c in candidates if _is_non_empty(c)]
-
-    def _print_rows(rows) -> None:
-        for candidate in rows:
-            print(
-                f"{candidate.key}\t{candidate.name}\t{candidate.num_items}\t"
-                f"{candidate.num_collections}\t{', '.join(candidate.reasons)}"
-            )
-
-    print("key\tname\titems\tsubcollections\treasons")
-    _print_rows(junk)
-    if non_empty:
-        print("")
-        print(
-            f"-- NON-EMPTY ORPHANS ({len(non_empty)}) -- review only; gc "
-            f"CANNOT delete these (hard-skipped at the delete layer). If "
-            f"they are stale duplicates, reconcile via cluster rebind/merge --"
-        )
-        _print_rows(non_empty)
-    if not apply:
-        print("")
-        print("Preview only. Re-run with --apply to delete candidates.")
-        return 0
-
-    # `delete_candidates` already hard-skips any non-empty collection
-    # (gc.py). PR-A makes that pre-existing guarantee *honest* at the
-    # selection layer too: non-empty orphans are never even offered for
-    # deletion (no misleading "type name to delete" prompt that the
-    # delete layer would then refuse) — they are listed for review only.
-    # Reuse the partition computed above for the grouped display.
-    non_empty_skipped = len(non_empty)
-    deletable = junk
-
-    if not yes:
-        kept: list = []
-        for candidate in deletable:
-            answer = input(
-                f"Delete {candidate.name} ({candidate.key})? [y/N] "
-            ).strip().lower()
-            if answer in {"y", "yes"}:
-                kept.append(candidate)
-        selected = kept
-    else:
-        # --yes auto-selects only safe junk: empty + test-pattern +
-        # orphan-from-vault, all three (on the already non-empty-filtered set).
-        selected = [
-            candidate
-            for candidate in deletable
-            if any(reason.startswith("empty>") for reason in candidate.reasons)
-            and any(reason.startswith("test-pattern(") for reason in candidate.reasons)
-            and "orphan-from-vault" in candidate.reasons
-        ]
-    if non_empty_skipped:
-        print(
-            f"Skipped {non_empty_skipped} non-empty orphan(s) -- gc cannot "
-            f"delete these (hard-skipped at the delete layer). Reconcile via "
-            f"cluster rebind/merge if they are stale duplicates."
-        )
-    results = delete_candidates(zot, selected)
-    ok_count = sum(1 for status in results.values() if status == "ok")
-    print(f"Deleted {ok_count}/{len(selected)} collection(s).")
-    return 0
 
 
 _PAPER_FRONTMATTER_RE = re.compile(r"\A(---\r?\n)(.*?)(\r?\n---)(.*)\Z", re.DOTALL)
@@ -3486,32 +2921,6 @@ def _bases_emit(*, cluster_slug: str, stdout: bool, force: bool, emit_json: bool
     return 0
 
 
-def _load_zotero_if_configured():
-    """Lazy-load Zotero client. Returns None if not configured.
-
-    v0.90.0 G1#1 fix: distinguish "not configured" (silent None) from
-    "configured but broken" (warn to stderr, still return None). Pre-fix,
-    the bare ``except Exception`` made auth failures, network outages, and
-    missing imports all look identical to "no Zotero set up", so users
-    saw zero ingestion and assumed they hadn't configured Zotero when in
-    reality the client was broken.
-    """
-    try:
-        from research_hub.errors import MissingCredential
-        from research_hub.zotero.client import get_client
-
-        return get_client()
-    except MissingCredential:
-        # Truly unconfigured -- silent None preserves lazy-mode UX
-        return None
-    except Exception as exc:
-        # Configured but broken -- surface root cause so user can act
-        print(
-            f"  [zotero] WARN credentials present but client init failed: "
-            f"{type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        return None
 
 
 def _sync_status(cluster_slug: str | None = None) -> int:
@@ -3589,332 +2998,24 @@ def _pipeline_repair(cluster_slug: str, execute: bool) -> int:
     return 0
 
 
-def _zotero_backfill(args) -> int:
-    from research_hub.zotero_hygiene import run_backfill
-
-    cfg = get_config()
-    cluster_slugs = [args.cluster] if args.cluster else None
-    report = run_backfill(
-        cfg,
-        cluster_slugs=cluster_slugs,
-        do_tags=args.tags,
-        do_notes=args.notes,
-        apply=args.apply,
-        progress=print,
-    )
-    print(report.summary())
-    if args.apply and report.report_path:
-        print(f"Markdown report saved: {report.report_path}")
-    return 0
 
 
-def _preflight_nlm_session(cfg, *, op_name: str) -> int | None:
-    """v0.70.1: surface "session expired / not logged in" BEFORE the
-    browser launches a 30-second deep-stack failure. Returns None when
-    OK to proceed, or an exit code (1) with a one-line actionable hint
-    printed to stderr when not."""
-    from research_hub._invocation import recommended_cli_invocation
-    from research_hub.notebooklm.auth import default_state_file, require_session_health
-
-    inv = recommended_cli_invocation()
-    state_file = default_state_file(cfg.research_hub_dir)
-    try:
-        require_session_health(state_file)
-    except ResearchHubError as exc:
-        reason = str(exc).split(": ", 1)[1] if ": " in str(exc) else str(exc)
-        print(
-            f"[notebooklm {op_name}] session check failed: {reason}. "
-            f"Run `{inv} notebooklm login --auto-detect` to sign in.",
-            file=sys.stderr,
-        )
-        return 1
-    else:
-        return None
 
 
-def _notebooklm_bundle(cluster_slug: str, download_pdfs: bool = False) -> int:
-    from research_hub.notebooklm.bundle import bundle_cluster
-
-    cfg = get_config()
-    registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.get(cluster_slug)
-    if cluster is None:
-        raise ValueError(f"Cluster not found: {cluster_slug}")
-
-    report = bundle_cluster(cluster, cfg, download_pdfs=download_pdfs)
-    print(f"Bundle written to {report.bundle_dir}")
-    print(
-        f"Papers: {len(report.entries)} total "
-        f"({report.pdf_count} PDFs, {report.url_count} URLs, "
-        f"{report.text_count} abstracts, {report.skip_count} skipped)"
-    )
-    return 0
 
 
-def _nlm_upload(
-    cluster_slug: str,
-    dry_run: bool,
-    headless: bool,
-    create_if_missing: bool,
-    over_cap_strategy: str = "fail",
-    shard_size: int = 50,
-    include_suspect_urls: bool = False,
-) -> int:
-    from research_hub.notebooklm.upload import (
-        NotebookLMCapacityError,
-        check_cluster_capacity,
-        upload_cluster,
-    )
-
-    cfg = get_config()
-    registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.get(cluster_slug)
-    if cluster is None:
-        raise ValueError(f"Cluster not found: {cluster_slug}")
-
-    try:
-        if over_cap_strategy == "fail":
-            check_cluster_capacity(cluster, cfg)
-        if not dry_run:
-            rc = _preflight_nlm_session(cfg, op_name="upload")
-            if rc is not None:
-                return rc
-        report = upload_cluster(
-            cluster,
-            cfg,
-            dry_run=dry_run,
-            headless=headless,
-            create_if_missing=create_if_missing,
-            over_cap_strategy=over_cap_strategy,
-            shard_size=shard_size,
-            include_suspect_urls=include_suspect_urls,
-        )
-    except NotebookLMCapacityError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    print(f"Notebook: {report.notebook_name or '(planned)'}")
-    if report.notebook_url:
-        print(f"Notebook URL: {report.notebook_url}")
-    print(
-        f"Uploads: {report.success_count} succeeded, "
-        f"{report.fail_count} failed, "
-        f"{report.skipped_already_uploaded} skipped from cache"
-    )
-    if report.over_cap_skipped:
-        print(f"Over-cap pruned ({report.over_cap_strategy}): {len(report.over_cap_skipped)} source(s)")
-        for entry in report.over_cap_skipped:
-            print(f"  [SKIP] {_display_entry(entry)}")
-    for result in report.uploaded:
-        status = "OK" if result.success else "FAIL"
-        print(f"  [{status}] {result.source_kind}: {result.path_or_url}")
-        if result.error:
-            print(f"       {result.error}")
-    # F8: a non-dry-run upload that transferred, cached, and pruned
-    # *nothing* is not a success. Most common real cause (diagnosed
-    # 2026-05-19): every URL source was skipped by the URL-quality
-    # pre-check (`failed_no_abstract` on publisher/anti-bot pages) — see
-    # `upload_skip_error_page` events. Less common: empty bundle, or an
-    # actual upstream `notebooklm-py` API drift. List causes honestly.
-    if (
-        not report.dry_run
-        and report.fail_count == 0
-        and report.success_count == 0
-        and report.skipped_already_uploaded == 0
-        and not report.over_cap_skipped
-    ):
-        print(
-            "ERROR: 0 sources uploaded, cached, or pruned. Likely causes "
-            "(check the upload log above): (1) all URL sources skipped by "
-            "the URL-quality pre-check -- re-run with --include-suspect-urls; "
-            "(2) the cluster bundle was empty; (3) an upstream notebooklm-py "
-            "API drift ('Sources data ... is not a list'). The notebook may "
-            "exist but holds no sources -- not a clean upload.",
-            file=sys.stderr,
-        )
-        return 1
-    return 0 if report.fail_count == 0 else 1
 
 
-def _display_entry(entry: dict) -> str:
-    doi = str(entry.get("doi", "") or "").strip() or "(no DOI)"
-    title = str(entry.get("title", "") or "").strip() or "(untitled)"
-    return f"{doi}  {title}"
 
 
-def _nlm_shard(
-    cluster_slug: str,
-    strategy: str,
-    shard_size: int,
-    dry_run: bool,
-    headless: bool,
-) -> int:
-    from research_hub.notebooklm.upload import upload_cluster
-
-    cfg = get_config()
-    if not dry_run:
-        rc = _preflight_nlm_session(cfg, op_name="shard")
-        if rc is not None:
-            return rc
-    registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.get(cluster_slug)
-    if cluster is None:
-        raise ValueError(f"Cluster not found: {cluster_slug}")
-
-    report = upload_cluster(
-        cluster,
-        cfg,
-        dry_run=dry_run,
-        headless=headless,
-        over_cap_strategy="shard",
-        shard_size=shard_size,
-        shard_strategy=strategy,
-    )
-    refreshed = ClusterRegistry(cfg.clusters_file).get(cluster_slug)
-    shards = list(getattr(refreshed, "notebooklm_shards", []) or []) if refreshed is not None else []
-    print(f"Shards: {len(shards)} notebook(s)")
-    for shard in shards:
-        print(f"  - {shard.notebook_name}: {shard.source_count} sources {shard.notebook_url}")
-    if dry_run:
-        print(f"Planned uploads: {report.success_count}")
-    return 0 if report.fail_count == 0 else 1
 
 
-def _nlm_download(
-    cluster_slug: str,
-    artifact_type: str,
-    headless: bool,
-    slide_format: str = "pdf",
-    emit_json: bool = False,
-) -> int:
-    cfg = get_config()
-    rc = _preflight_nlm_session(cfg, op_name="download")
-    if rc is not None:
-        if emit_json:
-            _emit_cli_json(
-                "notebooklm download",
-                rc,
-                {
-                    "cluster_slug": cluster_slug,
-                    "artifact_type": artifact_type,
-                    "slide_format": slide_format,
-                    "error": "session check failed",
-                },
-            )
-            return rc
-        return rc
-    registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.get(cluster_slug)
-    if cluster is None:
-        raise ValueError(f"Cluster not found: {cluster_slug}")
-
-    if artifact_type == "slide-deck":
-        from research_hub.notebooklm.upload import download_slide_deck_for_cluster
-
-        report = download_slide_deck_for_cluster(
-            cluster, cfg, headless=headless, output_format=slide_format,
-        )
-        if emit_json:
-            payload = _json_safe(report)
-            payload["artifact_type"] = artifact_type
-            payload["slide_format"] = slide_format
-            _emit_cli_json("notebooklm download", 0, payload)
-            return 0
-        print(f"Saved: {report.artifact_path}")
-        print(f"  format: {slide_format}")
-        print(f"  size: {report.char_count} bytes")
-        return 0
-
-    # default: brief
-    from research_hub.notebooklm.upload import download_briefing_for_cluster
-
-    report = download_briefing_for_cluster(cluster, cfg, headless=headless)
-    if emit_json:
-        payload = _json_safe(report)
-        payload["artifact_type"] = artifact_type
-        _emit_cli_json("notebooklm download", 0, payload)
-        return 0
-    print(f"Saved: {report.artifact_path}")
-    print(f"  notebook: {report.notebook_name}")
-    print(f"  characters: {report.char_count}")
-    if report.titles:
-        print(f"  saved briefings: {len(report.titles)}")
-        for title in report.titles[:5]:
-            print(f"    - {title}")
-    return 0
 
 
-def _nlm_read_briefing(cluster_slug: str) -> int:
-    from research_hub.notebooklm.upload import read_latest_briefing
-
-    cfg = get_config()
-    registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.get(cluster_slug)
-    if cluster is None:
-        raise ValueError(f"Cluster not found: {cluster_slug}")
-    try:
-        text = read_latest_briefing(cluster, cfg)
-    except FileNotFoundError as exc:
-        print(str(exc))
-        return 1
-    print(text)
-    return 0
 
 
-def _nlm_generate(cluster_slug: str, artifact_type: str, headless: bool) -> int:
-    from research_hub.notebooklm.upload import generate_artifact
-
-    cfg = get_config()
-    rc = _preflight_nlm_session(cfg, op_name="generate")
-    if rc is not None:
-        return rc
-    registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.get(cluster_slug)
-    if cluster is None:
-        raise ValueError(f"Cluster not found: {cluster_slug}")
-
-    if artifact_type == "all":
-        kinds = ["brief", "audio", "mind_map", "video", "slide_deck"]
-    elif artifact_type == "mind-map":
-        kinds = ["mind_map"]
-    elif artifact_type == "slide-deck":
-        kinds = ["slide_deck"]
-    else:
-        kinds = [artifact_type]
-
-    for kind in kinds:
-        url = generate_artifact(cluster, cfg, kind=kind, headless=headless)
-        print(f"{kind}: {url}")
-    return 0
 
 
-def _nlm_ask(cluster_slug: str, *, question: str, headless: bool, timeout_sec: int) -> int:
-    from research_hub.notebooklm.ask import ask_cluster_notebook
-
-    cfg_for_check = get_config()
-    rc = _preflight_nlm_session(cfg_for_check, op_name="ask")
-    if rc is not None:
-        return rc
-
-    cfg = get_config()
-    registry = ClusterRegistry(cfg.clusters_file)
-    cluster = registry.get(cluster_slug)
-    if cluster is None:
-        print(f"  [ERR] Cluster not found: {cluster_slug}")
-        return 1
-    result = ask_cluster_notebook(
-        cluster,
-        cfg,
-        question=question,
-        headless=headless,
-        timeout_sec=timeout_sec,
-    )
-    if not result.ok:
-        print(f"  [ERR] {result.error}")
-        return 1
-    print(result.answer)
-    print()
-    print(f"  Saved: {result.artifact_path}  ({result.latency_seconds:.1f}s)")
-    return 0
 
 
 def _fit_check_emit(
