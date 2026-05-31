@@ -183,43 +183,6 @@ def _vault_summarize_status_migrate(
         print("Preview only. Re-run with --apply to write summarize_status.")
     return 0
 
-def _paper_summarize_pending(args) -> int:
-    from collections import Counter
-
-    from research_hub.paper_summarize import summarize_pending
-
-    if not args.pending:
-        print("Specify --pending to run the summarize queue.", file=sys.stderr)
-        return 2
-    cfg = get_config()
-    try:
-        results = summarize_pending(
-            cfg,
-            cluster_slug_filter=args.cluster,
-            backend=args.cli,
-            max_papers=args.max_papers,
-            dry_run=args.dry_run,
-        )
-    except Exception as exc:
-        print(f"paper summarize failed: {exc}", file=sys.stderr)
-        return 1
-
-    counts = Counter(result.action for result in results)
-    print(
-        f"processed: {len(results)}  "
-        f"done: {counts.get('done', 0)}  "
-        f"failed_no_abstract: {counts.get('failed_no_abstract', 0)}  "
-        f"errors: {counts.get('error', 0)}"
-    )
-    if args.dry_run:
-        print(
-            f"dry-run: would_summarize={counts.get('would_summarize', 0)}  "
-            f"would_fail_no_abstract={counts.get('would_fail_no_abstract', 0)}"
-        )
-    for result in results:
-        if result.error:
-            print(f"  ERROR {result.path}: {result.error}", file=sys.stderr)
-    return 0 if not counts.get("error", 0) else 1
 
 def _cmd_memory(args, cfg) -> int:
     from research_hub.memory import (
