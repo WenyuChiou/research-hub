@@ -740,13 +740,13 @@ def check_nlm_chrome_orphans() -> CheckResult:
             # as "could not check" rather than FAIL.
             proc = subprocess.run(
                 ["wmic", "process", "where", "name='chrome.exe'", "get", "ProcessId,CommandLine", "/format:csv"],
-                capture_output=True, text=True, timeout=8, check=False,
+                capture_output=True, text=True, errors="replace", timeout=8, check=False,
             )
             cmdline_lookups = proc.stdout.splitlines() if proc.returncode == 0 else []
         else:
             proc = subprocess.run(
                 ["ps", "-eo", "pid,command"],
-                capture_output=True, text=True, timeout=8, check=False,
+                capture_output=True, text=True, errors="replace", timeout=8, check=False,
             )
             cmdline_lookups = proc.stdout.splitlines() if proc.returncode == 0 else []
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):

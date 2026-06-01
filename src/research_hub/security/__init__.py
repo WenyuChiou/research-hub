@@ -196,6 +196,7 @@ def _restrict_windows_acl(path: Path, *, mode: int = 0o600) -> None:
                 _acl_reset_argv(path, is_dir=is_dir),
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=30,
             )
         except Exception:  # noqa: BLE001 - best-effort rollback
@@ -215,12 +216,14 @@ def _restrict_windows_acl(path: Path, *, mode: int = 0o600) -> None:
             _acl_grant_argv(path, principal, is_dir=is_dir),
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=10,
         )
         verify = subprocess.run(
             ["icacls", str(path)],
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=10,
         )
         if result.returncode != 0 or not _acl_grant_present(

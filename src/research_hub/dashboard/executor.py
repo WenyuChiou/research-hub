@@ -332,6 +332,7 @@ def execute_action(
                     args,
                     capture_output=True,
                     text=True,
+                    errors="replace",
                     timeout=timeout,
                     shell=False,
                 )
@@ -362,6 +363,7 @@ def execute_action(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                errors="replace",
                 shell=False,
             )
             stdout, stderr = proc.communicate(timeout=timeout)

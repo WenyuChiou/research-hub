@@ -119,6 +119,30 @@ out to the real tools instead)._
   troubleshooting + meta. No content removed; pure reorder + 2 new
   navigational sections (Quick start ~10 lines, Contents ~20 lines).
 
+### Fixed
+
+- **Subprocess reads now degrade gracefully on a stray byte instead of
+  crashing the reader thread.** Six diagnostic/system-tool subprocess
+  calls used `text=True` with no `errors=` handler: `doctor.py` (the
+  `wmic` / `ps` chrome-process lookup), `security/__init__.py` (the
+  `icacls` ACL reset / grant / verify calls), `dashboard/executor.py`
+  (the command runner's `subprocess.run` + `Popen` paths), and
+  `defuddle_extract.py` (had `encoding="utf-8"` but no `errors=`). Under
+  Python's UTF-8 mode (`PYTHONUTF8=1`), reading a Windows tool that emits
+  cp950/Big5 raised `UnicodeDecodeError: ... byte 0xa4` and killed the
+  `subprocess` reader thread (10 tracebacks polluted `doctor` output;
+  the affected lookup silently returned nothing). Added
+  `errors="replace"` to all six — the codec is **unchanged** (these
+  tools legitimately emit locale-encoded output, so forcing utf-8 would
+  mangle them), only a bad byte now becomes a replacement char rather
+  than a crash. The user-facing LLM-output reads (`llm_cli.py`,
+  `paper_summarize.py`) were already protected with
+  `encoding="utf-8", errors="replace"`. Verified: `doctor` under
+  `PYTHONUTF8=1` goes from 10 `UnicodeDecodeError`s to 0; the
+  executor / doctor / security / defuddle suites stay green (141
+  passed). Surfaced during a live literature-search dogfood of the
+  ai-research-skills audit follow-up.
+
 ## [1.0.0] - 2026-05-26
 
 First stable release. 129 commits since v0.91.1 (95 features +
