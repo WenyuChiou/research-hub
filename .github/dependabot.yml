@@ -14,6 +14,16 @@ updates:
         update-types: ["patch"]
     labels:
       - "dependencies"
+    ignore:
+      # notebooklm-py is capped <0.5.0 ON PURPOSE (see pyproject.toml): a 0.x
+      # minor-version kwarg drift shipped v0.88.10 "100% NLM upload broken".
+      # Don't auto-widen the cap (PR #119 -> 0.6.0 failed the full CI matrix) —
+      # raise it manually after validating a specific version + call sites.
+      # Patch updates within 0.4.x still flow.
+      - dependency-name: "notebooklm-py"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"
