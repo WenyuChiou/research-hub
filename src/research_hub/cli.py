@@ -288,54 +288,6 @@ _PEER_REVIEWED_HELP = (
 )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-def _read_doi_from_frontmatter(md_path: Path) -> str | None:
-    """Pull the `doi:` line out of an Obsidian raw note frontmatter."""
-    try:
-        text = md_path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return None
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    if end < 0:
-        return None
-    frontmatter = text[3:end]
-    import re as _re
-
-    match = _re.search(r'^doi:\s*[\'"]?([^\'"\n]+)', frontmatter, _re.MULTILINE)
-    return match.group(1).strip() if match else None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def build_parser() -> argparse.ArgumentParser:
     from importlib.metadata import PackageNotFoundError, version as _pkg_version
     try:
