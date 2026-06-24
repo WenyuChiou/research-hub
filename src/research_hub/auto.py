@@ -338,7 +338,12 @@ def auto_pipeline(
             search_kwargs["year_from"] = year_from
         if year_to is not None:
             search_kwargs["year_to"] = year_to
-        papers = _run_search(topic, **search_kwargs)
+        papers = _run_search(
+            topic,
+            cfg=cfg,
+            skip_dedup=bool(force and not append),
+            **search_kwargs,
+        )
         report.papers_ingested = len(papers)  # tentative
         _step_log(report, "search", True, _elapsed(started, report), f"{len(papers)} results", print_progress)
     except Exception as exc:
@@ -1406,8 +1411,19 @@ def _run_search(
     peer_reviewed: bool = False,
     year_from: int | None = None,
     year_to: int | None = None,
+    cfg=None,
+    skip_dedup: bool = False,
 ) -> list[dict]:
-    """Run arxiv + semantic_scholar search, return papers_input dicts."""
+    """Run arxiv + semantic_scholar search, return papers_input dicts.
+
+    v1.2.0: when ``cfg`` is provided, drop results whose DOI is already in the
+    persistent ``DedupIndex`` (mirrors the ``search`` command's filter), so
+    refreshing a standing cluster only surfaces NEW papers instead of
+    re-ingesting + re-judging the whole set every run. ``skip_dedup`` is set by
+    the caller for ``force=overwrite`` runs (the cluster's notes were just
+    cleared with the intent to re-ingest, but the DedupIndex still holds those
+    DOIs — deduping there would silently filter the re-ingest down to zero).
+    """
     from research_hub.search import search_papers
 
 
@@ -1426,4 +1442,31 @@ def _run_search(
         year_from=year_from,
         year_to=year_to,
     )
+    if cfg is not None and not skip_dedup:
+        import logging
+        try:
+            from research_hub.dedup import DedupIndex, normalize_doi
+            index = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
+            ingested = {normalize_doi(d) for d in index.doi_to_hits.keys() if d}
+            if ingested:
+                before = len(results)
+                results = [
+                    r for r in results
+                    if normalize_doi(getattr(r, "doi", None)) not in ingested
+                ]
+                dropped = before - len(results)
+                if dropped:
+                    # P2-B: surface the drop so "N results" is not a silent
+                    # count mismatch ("why only 2?" — because M were already in).
+                    logging.getLogger(__name__).info(
+                        "auto dedup: dropped %d already-ingested paper(s); %d new",
+                        dropped, len(results),
+                    )
+        except Exception as exc:
+            # Dedup is a best-effort optimisation; a missing/corrupt index must
+            # never block a search (fail open = re-ingest, not silent zero). But
+            # P1: WARN so a corrupt index is not a silent perpetual re-ingest.
+            logging.getLogger(__name__).warning(
+                "auto DOI dedup skipped (fail-open; index unhealthy): %s", exc
+            )
     return _to_papers_input([asdict(r) for r in results], cluster_slug)

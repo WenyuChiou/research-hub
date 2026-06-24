@@ -114,7 +114,14 @@ def test_auto_pipeline_full_run_new_cluster(mock_deps):
     mock_deps["registry_instance"].create.assert_called_with(
         query="New Topic", slug="new-topic", name="New Topic"
     )
-    mock_deps["run_search"].assert_called_with("New Topic", max_papers=5, cluster_slug="new-topic")
+    # v1.2.0: _run_search now also receives cfg + skip_dedup (DOI dedup vs the
+    # DedupIndex). Assert the meaningful args without pinning the cfg mock id.
+    _rs_call = mock_deps["run_search"].call_args
+    assert _rs_call.args == ("New Topic",)
+    assert _rs_call.kwargs["max_papers"] == 5
+    assert _rs_call.kwargs["cluster_slug"] == "new-topic"
+    assert _rs_call.kwargs["skip_dedup"] is False  # normal run dedups
+    assert "cfg" in _rs_call.kwargs
     # v0.73.0: zotero_batch_size=50 added to run_pipeline signature.
     # v0.88 #3: allow_archived_cluster=False added so archived clusters
     # are skipped by default unless explicitly requested.
@@ -149,6 +156,20 @@ def test_auto_pipeline_no_nlm(mock_deps):
     mock_deps["run_pipeline"].assert_called()
     mock_deps["bundle_cluster"].assert_not_called()
     mock_deps["upload_cluster"].assert_not_called()
+
+
+def test_auto_pipeline_force_sets_skip_dedup(mock_deps):
+    # M1: force=overwrite must pass skip_dedup=True, so the just-cleared cluster
+    # re-ingests instead of being silently filtered to zero by the DedupIndex.
+    mock_deps["registry_instance"].get.return_value = MagicMock()  # existing cluster
+    # cfg.raw is a MagicMock; make the existing-paper guard + force-overwrite
+    # note-clear (both use cfg.raw / slug) no-ops so the run reaches _run_search.
+    mock_deps["cfg"].raw.__truediv__.return_value.exists.return_value = False
+
+    auto_pipeline(topic="Force Topic", force=True, do_nlm=False, print_progress=False)
+
+    _rs_call = mock_deps["run_search"].call_args
+    assert _rs_call.kwargs["skip_dedup"] is True  # force=overwrite bypasses dedup
 
 
 def test_auto_pipeline_search_fails(mock_deps):
