@@ -39,11 +39,12 @@ jobs:
       - name: Run OpenWiki
         run: openwiki code --update --print
         env:
-          OPENWIKI_PROVIDER: openrouter
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Sonnet via OpenRouter for output quality; swap to a cheaper model
-          # (e.g. z-ai/glm-5.2) if weekly cost turns out to matter more.
-          OPENWIKI_MODEL_ID: anthropic/claude-sonnet-5
+          OPENWIKI_PROVIDER: nvidia
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          # NVIDIA NIM (integrate.api.nvidia.com) with an existing key — no
+          # new billing account. Preset from openwiki's provider list; move
+          # up to nvidia/nemotron-3-ultra-550b-a55b if quality disappoints.
+          OPENWIKI_MODEL_ID: nvidia/nemotron-3-super-120b-a12b
           # LangSmith tracing intentionally NOT enabled. The upstream template
           # ships LANGCHAIN_TRACING_V2=true, which uploads repo/wiki content to
           # LangSmith cloud — leave it off.
