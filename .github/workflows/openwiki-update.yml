@@ -17,8 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     # Bound worst-case runtime: openwiki has no internal token/iteration cap
     # (openwiki#51), so a hung or runaway run must not ride to GitHub's
-    # 360-minute default.
-    timeout-minutes: 30
+    # 360-minute default. 75 min, not 30: run 29591173434 showed a full
+    # first generation on NIM's shared llama endpoint needs >30 min of
+    # tool-call latency on a repo this size.
+    timeout-minutes: 75
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -51,6 +53,17 @@ jobs:
           # LangSmith tracing intentionally NOT enabled. The upstream template
           # ships LANGCHAIN_TRACING_V2=true, which uploads repo/wiki content to
           # LangSmith cloud — leave it off.
+
+      - name: Fail if the run produced no wiki pages
+        # A model that narrates instead of calling tools "succeeds" with zero
+        # writes (run 29590747941, nemotron). Fail loudly instead of shipping
+        # an empty wiki: after any successful run, openwiki/quickstart.md must
+        # exist (first generation creates it; later runs keep it in place).
+        run: |
+          if [ ! -f openwiki/quickstart.md ]; then
+            echo "::error::OpenWiki run wrote no wiki pages (openwiki/quickstart.md missing) — silent no-op, refusing to ship an empty wiki"
+            exit 1
+          fi
 
       - name: Restore this workflow file (openwiki clobbers it)
         # openwiki's ensureCodeModeRepoSetup unconditionally rewrites this file
