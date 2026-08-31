@@ -43,5 +43,5 @@ def test_image2_cover_is_shared_by_bilingual_readmes_and_hash_locked():
     asset = root / relative
     assert asset.stat().st_size > 1_000_000
     assert hashlib.sha256(asset.read_bytes()).hexdigest() == (
-        "90457970b7329e6e7da0ea3b197ed2e6fc2208441c3551ddfce6c77ffe048873"
+        "ffaf93aedd5384e86f65334289f2a4bd3bc5ab08e73304c477abcf0153183590"
     )
