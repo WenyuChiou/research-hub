@@ -17,43 +17,74 @@ def confidence_from_backends(found_in: list[str]) -> float:
     return min(1.0, 0.5 + 0.25 * (count - 1))
 
 
+def _identity_keys(result: SearchResult) -> list[str]:
+    """Return every strong cross-backend identity carried by a result."""
+    keys = [result.dedup_key] if result.dedup_key else []
+    if result.arxiv_id:
+        arxiv_key = f"arxiv:{result.arxiv_id.strip().lower()}"
+        if arxiv_key not in keys:
+            keys.append(arxiv_key)
+    return keys
+
+
+def _merge_record(base: SearchResult, incoming: SearchResult) -> SearchResult:
+    found_in = list(base.found_in)
+    for backend_name in incoming.found_in:
+        if backend_name not in found_in:
+            found_in.append(backend_name)
+    fill: dict[str, object] = {"found_in": found_in}
+    if not base.abstract and incoming.abstract:
+        fill["abstract"] = incoming.abstract
+    if not base.doi and incoming.doi:
+        fill["doi"] = incoming.doi
+    if not base.arxiv_id and incoming.arxiv_id:
+        fill["arxiv_id"] = incoming.arxiv_id
+    if not base.pdf_url and incoming.pdf_url:
+        fill["pdf_url"] = incoming.pdf_url
+    if base.citation_count == 0 and incoming.citation_count > 0:
+        fill["citation_count"] = incoming.citation_count
+    if not base.venue and incoming.venue:
+        fill["venue"] = incoming.venue
+    if not base.doc_type and incoming.doc_type:
+        fill["doc_type"] = incoming.doc_type
+    return replace(base, **fill)
+
+
 def merge_results(per_backend: dict[str, list[SearchResult]]) -> list[SearchResult]:
-    """Merge per-backend results by dedup_key."""
+    """Merge results by every shared strong identity, not only one preferred key."""
     merged: dict[str, SearchResult] = {}
+    alias_owner: dict[str, str] = {}
+    owner_order: dict[str, int] = {}
+    next_owner_order = 0
     for backend_name, results in per_backend.items():
         for result in results:
-            key = result.dedup_key
-            if not key:
+            keys = _identity_keys(result)
+            if not keys:
                 continue
-            if key not in merged:
-                merged[key] = replace(
-                    result,
-                    source=result.source or backend_name,
-                    found_in=[backend_name],
-                    confidence=0.5,
-                )
-                continue
-
-            base = merged[key]
-            found_in = list(base.found_in)
-            if backend_name not in found_in:
-                found_in.append(backend_name)
-            fill: dict[str, object] = {"found_in": found_in}
-            if not base.abstract and result.abstract:
-                fill["abstract"] = result.abstract
-            if not base.doi and result.doi:
-                fill["doi"] = result.doi
-            if not base.arxiv_id and result.arxiv_id:
-                fill["arxiv_id"] = result.arxiv_id
-            if not base.pdf_url and result.pdf_url:
-                fill["pdf_url"] = result.pdf_url
-            if base.citation_count == 0 and result.citation_count > 0:
-                fill["citation_count"] = result.citation_count
-            if not base.venue and result.venue:
-                fill["venue"] = result.venue
-            if not base.doc_type and result.doc_type:
-                fill["doc_type"] = result.doc_type
-            merged[key] = replace(base, **fill)
+            incoming = replace(
+                result,
+                source=result.source or backend_name,
+                found_in=[backend_name],
+                confidence=0.5,
+            )
+            owners = list(dict.fromkeys(alias_owner[key] for key in keys if key in alias_owner))
+            if not owners:
+                owner = keys[0]
+                merged[owner] = incoming
+                owner_order[owner] = next_owner_order
+                next_owner_order += 1
+            else:
+                owners.sort(key=owner_order.__getitem__)
+                owner = owners[0]
+                for redundant_owner in owners[1:]:
+                    merged[owner] = _merge_record(merged[owner], merged.pop(redundant_owner))
+                    owner_order.pop(redundant_owner)
+                    for alias, current_owner in list(alias_owner.items()):
+                        if current_owner == redundant_owner:
+                            alias_owner[alias] = owner
+                merged[owner] = _merge_record(merged[owner], incoming)
+            for key in keys:
+                alias_owner[key] = owner
 
     for key, result in list(merged.items()):
         merged[key] = replace(result, confidence=confidence_from_backends(result.found_in))
