@@ -112,9 +112,10 @@ def test_multi_ai_skill_is_discoverable():
     path = skill_installer.get_bundled_skill_path("research-hub-multi-ai")
     text = path.read_text(encoding="utf-8")
     assert "research-hub-multi-ai" in text
-    # Spot-check that the skill mentions the three executors
-    for name in ("Claude", "Codex", "Gemini"):
+    # Spot-check the supported bounded execution leaves.
+    for name in ("Codex", "Antigravity"):
         assert name in text
+    assert "archived Gemini delegate is not a supported leaf" in text
 
 
 def test_bundled_skills_use_current_public_positioning():

@@ -1,0 +1,99 @@
+name: OpenWiki Update
+
+on:
+  # Manual-dispatch only for now. The weekly schedule (Mon 08:00 UTC) is
+  # PAUSED: run 29736573640 (2026-07-20) proved NIM's free tier cannot
+  # complete even an update pass — 75-minute timeout, cancelled. Re-add
+  #   schedule:
+  #     - cron: "0 8 * * 1"
+  # once a capable provider (Codex-quota local runs or a metered key) is
+  # wired. Cost guard rationale unchanged: openwiki#51, no spend cap.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    # Bound worst-case runtime: openwiki has no internal token/iteration cap
+    # (openwiki#51), so a hung or runaway run must not ride to GitHub's
+    # 360-minute default. 75 min, not 30: run 29591173434 showed a full
+    # first generation on NIM's shared llama endpoint needs >30 min of
+    # tool-call latency on a repo this size.
+    timeout-minutes: 75
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install OpenWiki (pinned)
+        # Pinned deliberately: the upstream template installs unpinned latest,
+        # but openwiki shipped 6 releases in its first 8 days — doc-generation
+        # behavior must not drift silently between scheduled runs.
+        run: npm install --global openwiki@0.1.2
+
+      - name: Run OpenWiki
+        run: openwiki code --update --print
+        env:
+          OPENWIKI_PROVIDER: nvidia
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          # NVIDIA NIM (integrate.api.nvidia.com) with an existing key — no
+          # new billing account. Custom model id (openwiki supports these):
+          # llama-3.3-70b has reliable tool calling on NIM, which the
+          # nemotron-3 reasoning presets do not — run 29590747941 completed
+          # "successfully" with nemotron narrating its plan as prose and
+          # writing zero files.
+          OPENWIKI_MODEL_ID: meta/llama-3.3-70b-instruct
+          # LangSmith tracing intentionally NOT enabled. The upstream template
+          # ships LANGCHAIN_TRACING_V2=true, which uploads repo/wiki content to
+          # LangSmith cloud — leave it off.
+
+      - name: Fail if the run produced no wiki pages
+        # A model that narrates instead of calling tools "succeeds" with zero
+        # writes (run 29590747941, nemotron). Fail loudly instead of shipping
+        # an empty wiki: after any successful run, openwiki/quickstart.md must
+        # exist (first generation creates it; later runs keep it in place).
+        run: |
+          if [ ! -f openwiki/quickstart.md ]; then
+            echo "::error::OpenWiki run wrote no wiki pages (openwiki/quickstart.md missing) — silent no-op, refusing to ship an empty wiki"
+            exit 1
+          fi
+
+      - name: Restore this workflow file (openwiki clobbers it)
+        # openwiki's ensureCodeModeRepoSetup unconditionally rewrites this file
+        # back to the stock template (openrouter / z-ai/glm-5.2, unpinned
+        # install) on every code-mode run; upstream closed this as not-planned
+        # (openwiki#316). Restoring here keeps the PR from reverting the pin
+        # and provider choices above.
+        run: git restore .github/workflows/openwiki-update.yml
+
+      - name: Create OpenWiki update pull request
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          # NOTE: unlike the upstream template, this list deliberately excludes
+          # .github/workflows/openwiki-update.yml (see restore step above).
+          add-paths: |
+            openwiki
+            AGENTS.md
+            CLAUDE.md
+          branch: openwiki/update
+          commit-message: "docs: update OpenWiki wiki (may create/update AGENTS.md + CLAUDE.md managed blocks)"
+          title: "docs: update OpenWiki wiki"
+          body: |
+            Automated OpenWiki documentation update (weekly pilot).
+
+            May create or update openwiki/ pages plus the OPENWIKI:START/END
+            managed blocks in AGENTS.md and CLAUDE.md. Governance files are
+            under the review gate — review before merge, never auto-merge.
+
+            Note: CI does not run on this PR (GITHUB_TOKEN-authored pushes do
+            not trigger workflows) — review the content manually; do not wait
+            for status checks.

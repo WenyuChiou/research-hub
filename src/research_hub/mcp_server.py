@@ -3196,6 +3196,140 @@ def plan_research_workflow(user_intent: str) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+def _mcp_workflow_root() -> Path:
+    """Return the server-controlled root for all MCP workflow file access."""
+
+    configured = os.environ.get("RESEARCH_HUB_WORKFLOW_ROOT")
+    return Path(configured).expanduser().resolve() if configured else Path.cwd().resolve()
+
+
+def _mcp_workflow_project_root(project_root: str) -> Path:
+    candidate = Path(project_root).expanduser().resolve()
+    if not candidate.is_relative_to(_mcp_workflow_root()):
+        raise ValidationError("MCP workflow project_root must remain inside RESEARCH_HUB_WORKFLOW_ROOT")
+    return candidate
+
+
+def _mcp_workflow_aux_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    candidate = Path(path).expanduser().resolve()
+    if not candidate.is_relative_to(_mcp_workflow_root()):
+        raise ValidationError("MCP workflow policy and checkpoint paths must remain inside RESEARCH_HUB_WORKFLOW_ROOT")
+    return str(candidate)
+
+
+def _mcp_workflow_state_path(state_path: str, *, project_root: str | None = None) -> str:
+    """Restrict MCP workflow access to a server-controlled project root."""
+    candidate = Path(state_path).expanduser().resolve()
+    if candidate.name not in {"workflow_state.yml", "workflow_state.yaml"} or candidate.parent.name != ".research":
+        raise ValidationError("MCP workflow state must be named workflow_state.yml directly under a .research directory")
+    trusted_root = _mcp_workflow_root()
+    if not candidate.is_relative_to(trusted_root):
+        raise ValidationError("MCP workflow state must remain inside RESEARCH_HUB_WORKFLOW_ROOT")
+    if project_root is not None:
+        allowed_root = _mcp_workflow_project_root(project_root) / ".research"
+        if not candidate.is_relative_to(allowed_root):
+            raise ValidationError("MCP workflow state must remain inside project_root/.research")
+    return str(candidate)
+
+
+@mcp.tool()
+def workflow_initialize(
+    project_root: str,
+    workflow_id: str | None = None,
+    state_path: str | None = None,
+    policy_path: str | None = None,
+    checkpoint_ref: str | None = None,
+) -> dict[str, Any]:
+    """Initialize deterministic workflow state 1.1; performs no external writes."""
+    try:
+        from research_hub.workflow_runtime import initialize_workflow
+
+        safe_project_root = _mcp_workflow_project_root(project_root)
+        safe_state_path = (
+            _mcp_workflow_state_path(state_path, project_root=str(safe_project_root))
+            if state_path is not None
+            else None
+        )
+        return initialize_workflow(
+            safe_project_root,
+            workflow_id=workflow_id,
+            state_path=safe_state_path,
+            policy_path=_mcp_workflow_aux_path(policy_path),
+            checkpoint_ref=_mcp_workflow_aux_path(checkpoint_ref),
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def workflow_status(state_path: str) -> dict[str, Any]:
+    """Return validated workflow status and recovery state."""
+    try:
+        from research_hub.workflow_runtime import workflow_status as _status
+
+        return _status(_mcp_workflow_state_path(state_path))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def workflow_validate(state_path: str) -> dict[str, Any]:
+    """Validate v1.0 or v1.1 state without mutating it."""
+    try:
+        from research_hub.workflow_runtime import validate_workflow
+
+        return validate_workflow(_mcp_workflow_state_path(state_path))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def workflow_decide(
+    state_path: str,
+    outcome: str,
+    actor: str,
+    rationale: str,
+    action_hash: str,
+) -> dict[str, Any]:
+    """Record an exact human accept, decline, revise, or cancel decision."""
+    try:
+        from research_hub.workflow_runtime import decide_workflow
+
+        return decide_workflow(
+            _mcp_workflow_state_path(state_path),
+            outcome=outcome,
+            actor=actor,
+            rationale=rationale,
+            action_hash=action_hash,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def workflow_resume(state_path: str) -> dict[str, Any]:
+    """Resume only when policy, retry, terminal, and external-action guards allow it."""
+    try:
+        from research_hub.workflow_runtime import resume_workflow
+
+        return resume_workflow(_mcp_workflow_state_path(state_path))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def workflow_migrate(state_path: str, apply: bool = False) -> dict[str, Any]:
+    """Dry-run a v1.0-to-v1.1 migration, or atomically apply it with backup."""
+    try:
+        from research_hub.workflow_runtime import migrate_workflow
+
+        return migrate_workflow(_mcp_workflow_state_path(state_path), apply=apply)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @mcp.tool()
 def cleanup_garbage(
     bundles: bool = False,

@@ -15,6 +15,17 @@ backup checklist + a historical appendix for very old releases.
 
 > **Backup first.** Before any upgrade that crosses a major version: copy your `~/.research_hub/` config dir AND your vault's `.research_hub/` dir somewhere safe. The vault `.md` files don't need backup (they're never destructively modified by upgrades).
 
+## v1.1 -> v1.2
+
+- Existing research data needs no migration.
+- Workflow state schema 1.0 is still readable. Run
+  `research-hub workflow migrate --state .research/workflow_state.yml --json`
+  to preview, then repeat with `--apply` to create a backup and write schema
+  1.1. Recording decisions and resuming require schema 1.1.
+- The public agent harness is optional. Configure `RESEARCH_HUB_AGENT_POLICY`
+  only after installing `agent-collab-harness` v0.4.x; a configured but
+  unavailable harness fails closed by design.
+
 ## v0.89 → v0.95
 
 - **v0.89.1**: `research-hub vault rebuild-overviews --force` once to

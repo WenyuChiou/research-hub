@@ -1,95 +1,107 @@
-# `.coord/multi_ai_plan.md` Template
+# `.coord/multi_ai_plan.md` template
 
-Drop this template at `.coord/multi_ai_plan.md` (or `.coord/multi_ai_plan_<slug>.md` if a plan already lives at the default name) and fill in the fields. Do not invent fields — the schema is enforced by reconcilers.
+Create `.coord/multi_ai_plan.md`, or a plan-id suffixed sibling if another plan
+is active. Do not invent additional contract fields without updating consumers.
 
 ```yaml
 ---
-plan_id: <short-slug-2026-05-09>
-created_utc: 2026-05-09T00:00:00Z
-goal: |
-  One paragraph. What does this multi-AI round accomplish that a single delegate cannot?
-  Why split now rather than sequence later?
-
+plan_id: <short-slug-date>
+created_utc: <RFC3339 UTC>
+goal: <one paragraph>
 success_criteria:
-  - <observable check that the whole round succeeded — e.g. "tests pass and zh-TW companion exists">
-  - <second check if relevant>
+  - <observable round-level check>
 
 tasks:
   - id: t1
     agent: codex
     brief_path: .ai/codex_task_t1.md
+    result_artifact: .ai/codex_task_t1.txt.result.json
+    result_contract: codex_result_json_v1
+    in_scope: [tests/example/]
     depends_on: []
+    stop_condition: <observable completion or blocker>
     success_criteria:
-      - <e.g. "pytest -q passes in tests/test_module.py">
-      - <e.g. "result.json status == success">
+      - <test or assertion>
 
   - id: t2
-    agent: gemini
-    brief_path: .ai/gemini_task_t2.md
-    depends_on: [t1]
+    agent: antigravity
+    brief_path: .ai/agy_task_t2.md
+    result_artifact: .ai/agy_result_t2.md
+    result_contract: agy_markdown_v1
+    in_scope: [fixtures/example/]
+    depends_on: []
+    stop_condition: <observable completion or escalation>
     success_criteria:
-      - <e.g. "docs/feature.zh-TW.md exists with same heading count as docs/feature.md">
+      - <file + sentinel verification>
 
   - id: t3
-    agent: claude
-    brief_path: inline       # for Claude tasks, brief lives in this file
+    agent: primary
+    brief_path: inline
+    result_artifact: inline
+    result_contract: inline
+    in_scope: []
     depends_on: [t1, t2]
+    stop_condition: <accept, request fix, or report blocker>
     success_criteria:
-      - <e.g. "PR description references both t1 and t2 outputs">
+      - <review and reconciliation check>
 
 risks:
-  - <known risk that Claude must watch for during reconciliation>
+  - <known risk>
 
 reconciliation:
-  agent: claude
+  agent: primary
   steps:
-    - Read each leaf's result.json and compare with success_criteria.
-    - On mismatch, append a fix-up task with a fresh id; do not mutate existing tasks.
-    - Once all tasks pass success_criteria, mark plan as done with a `done_utc` field.
+    - Read every declared result_artifact and inspect actual diffs.
+    - Run the acceptance checks independently.
+    - Append a new fix-up task on mismatch; never rewrite completed history.
 ---
 
-# Brief: t3 (claude, inline)
-
-(Free-form per-task brief for tasks where `brief_path: inline`. For tasks with a real brief path, leave this section out — the leaf reads the brief from its own file.)
+# Brief: t3 (primary, inline)
 
 ## Context
-- ...
+- <required context>
 
 ## Goal
-- ...
+- <reconciliation outcome>
 
 ## Constraints
-- Stay within the success_criteria above.
 - Do not silently widen scope.
+- Never accept a leaf's completion claim without checking its evidence.
 
 ## Acceptance
-- ...
+- <commands and observable assertions>
 ```
 
 ## Field reference
 
 | Field | Required | Notes |
 |---|---|---|
-| `plan_id` | yes | Short slug, append date if multiple plans land same week |
-| `created_utc` | yes | ISO 8601 UTC |
-| `goal` | yes | One paragraph; this drives accept/reject judgment downstream |
-| `success_criteria` | yes | Round-level. Per-task criteria live under each task |
-| `tasks[].id` | yes | Unique within the plan; referenced in `depends_on` |
-| `tasks[].agent` | yes | One of `codex`, `gemini`, `claude` |
-| `tasks[].brief_path` | yes | Path to the task brief file. Use `inline` for Claude tasks whose brief lives below the YAML in this same file |
-| `tasks[].depends_on` | yes | List of task ids; can be empty |
-| `tasks[].success_criteria` | yes | Verifiable assertions or commands |
-| `risks` | optional | Free-form notes for reconciler |
-| `reconciliation` | optional | Defaults to `agent: claude` if absent |
+| `plan_id` | yes | Unique for an active round |
+| `created_utc` | yes | RFC3339 UTC |
+| `goal` | yes | Round outcome |
+| `success_criteria` | yes | Round-level evidence |
+| `tasks[].id` | yes | Unique within plan |
+| `tasks[].agent` | yes | `codex`, `antigravity`, or `primary` |
+| `tasks[].brief_path` | yes | Real path; `inline` only for primary |
+| `tasks[].result_artifact` | yes | Codex `result.json`, Antigravity `agy_result_*.md`, or primary `inline` |
+| `tasks[].result_contract` | yes | `codex_result_json_v1`, `agy_markdown_v1`, or `inline` |
+| `tasks[].in_scope` | yes | Non-overlapping write ownership |
+| `tasks[].depends_on` | yes | Task ids; may be empty |
+| `tasks[].stop_condition` | yes | Completion/escalation boundary |
+| `tasks[].success_criteria` | yes | Verifiable task checks |
 
 ## Conventions
 
-- One plan per round of work. If the round expands, append `_v2` to the plan_id and create a sibling file rather than editing in place.
-- Briefs at `brief_path` follow the per-leaf-skill conventions (see `codex-delegate` and `gemini-delegate` for their respective brief shapes).
-- Every leaf must emit a machine-readable `result.json` so the reconciler can check `success_criteria` programmatically.
+- Codex briefs follow `codex-delegate`; Antigravity briefs follow
+  `antigravity-delegate`, including its <=250-word result and verify flags.
+- Long-context/CJK/judgment work is `primary`, not Antigravity.
+- Every leaf is preflighted before launch.
+- The primary model owns reconciliation, review, commit, and push.
 
 ## Anti-patterns
 
-- A plan with one task: use the leaf skill directly, skip the router.
-- A plan whose tasks all have the same agent and no dependencies: use the leaf's parallel-execution pattern, skip the router.
-- Mutating an existing task's `success_criteria` after a leaf finished: append a fix-up task instead.
+- One-task plan: use the leaf directly.
+- Parallel tasks with overlapping write paths.
+- Assuming every leaf emits `result.json`.
+- Mutating success criteria after a task finished.
+- Using an archived or unavailable delegate because an old brief names it.

@@ -29,6 +29,8 @@ V066_SKILLS = (
     "zotero-library-curator",
     # v0.68: Stage 3a/4 design helper from the catalog feedback
     "research-design-helper",
+    # v0.4 plugin: resumable end-to-end human-in-the-loop workflow controller
+    "research-workflow-orchestrator",
 )
 # v0.68: source dir renamed knowledge-base/ -> research-hub/
 LEGACY_SKILLS = ("research-hub", "research-hub-multi-ai")
