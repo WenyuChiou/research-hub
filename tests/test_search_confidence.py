@@ -45,6 +45,72 @@ def test_merge_results_by_arxiv_id_when_no_doi():
     assert merged[0].found_in == ["openalex", "arxiv"]
 
 
+def test_merge_results_by_arxiv_id_when_other_backend_also_has_doi():
+    arxiv = SearchResult(
+        title="Orchestrating LLM Agents for Scientific Research",
+        arxiv_id="2602.18891",
+        source="arxiv",
+    )
+    semantic_scholar = SearchResult(
+        title="Orchestrating LLM Agents for Scientific Research",
+        doi="10.48550/arXiv.2602.18891",
+        arxiv_id="2602.18891",
+        source="semantic-scholar",
+    )
+
+    for per_backend in (
+        {"arxiv": [arxiv], "semantic-scholar": [semantic_scholar]},
+        {"semantic-scholar": [semantic_scholar], "arxiv": [arxiv]},
+        {
+            "crossref": [SearchResult(
+                title="Orchestrating LLM Agents for Scientific Research",
+                doi="10.48550/arXiv.2602.18891",
+                source="crossref",
+            )],
+            "arxiv": [arxiv],
+            "semantic-scholar": [semantic_scholar],
+        },
+    ):
+        merged = merge_results(per_backend)
+
+        assert len(merged) == 1
+        assert merged[0].doi == "10.48550/arXiv.2602.18891"
+        assert set(merged[0].found_in) == set(per_backend)
+
+
+def test_bridge_merge_preserves_first_seen_backend_and_field_precedence():
+    merged = merge_results(
+        {
+            "arxiv": [SearchResult(
+                title="First title",
+                arxiv_id="2602.18891",
+                abstract="First abstract",
+                source="arxiv",
+            )],
+            "crossref": [SearchResult(
+                title="Second title",
+                doi="10.48550/arXiv.2602.18891",
+                abstract="Second abstract",
+                source="crossref",
+            )],
+            "semantic-scholar": [SearchResult(
+                title="Bridge title",
+                doi="10.48550/arXiv.2602.18891",
+                arxiv_id="2602.18891",
+                abstract="Bridge abstract",
+                source="semantic-scholar",
+            )],
+        }
+    )
+
+    assert len(merged) == 1
+    assert merged[0].title == "First title"
+    assert merged[0].abstract == "First abstract"
+    assert merged[0].source == "arxiv"
+    assert merged[0].doi == "10.48550/arXiv.2602.18891"
+    assert merged[0].found_in == ["arxiv", "crossref", "semantic-scholar"]
+
+
 def test_merge_results_first_backend_wins_non_empty_fields():
     merged = merge_results(
         {
