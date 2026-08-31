@@ -3,6 +3,8 @@
 > **把你的研究工具變成 AI 可以操作的工作區。**
 > 你可以同時使用 Zotero、Obsidian、NotebookLM，也可以先從任意兩個工具開始。research-hub 提供 CLI、MCP server、REST API、Dashboard，讓 AI 助手能重複執行文獻搜尋、整理、摘要與維護流程。
 
+[![research-hub 封面：論文經過 evidence verification hub、可保存研究資料、人類核准 gate，最後成為研究成果](docs/images/research-hub-cover.png)](#快速開始)
+
 ![research-hub dashboard demo, real screen recording](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)

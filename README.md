@@ -5,6 +5,8 @@
 > **Turn your research stack into an AI-operable workspace.**
 > Use Zotero, Obsidian, and NotebookLM together, or start with any two. research-hub gives your AI assistant a real CLI, MCP server, REST API, and dashboard for repeatable literature workflows.
 
+[![research-hub cover showing papers flowing through an evidence-verification hub, durable research stores, a human approval gate, and a finished research artifact](docs/images/research-hub-cover.png)](#quick-start)
+
 ![research-hub dashboard demo, real screen recording](docs/images/dashboard-walkthrough.gif)
 
 [![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
