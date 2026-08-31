@@ -43,6 +43,7 @@ EXPECTED_SKILL_DIR_NAMES = frozenset({
     "research-design-helper",
     "paper-summarize",  # v0.69.0
     "gap-to-topic",  # added in plugin v0.3.0
+    "research-workflow-orchestrator",  # plugin v0.4.0 HITL controller
 })
 
 

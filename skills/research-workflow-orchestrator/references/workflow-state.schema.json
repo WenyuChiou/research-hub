@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WenyuChiou/research-hub/schemas/research-workflow-state-1.0.json",
+  "title": "Research workflow state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workflow_id", "current_stage", "status", "actions", "decisions", "artifacts", "pending_action", "updated_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "workflow_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "current_stage": {"$ref": "#/$defs/stage"},
+    "status": {"enum": ["running", "waiting_for_human", "completed", "blocked", "cancelled"]},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "actions": {"type": "array", "items": {"$ref": "#/$defs/action"}},
+    "decisions": {"type": "array", "items": {"$ref": "#/$defs/decision"}},
+    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
+    "pending_action": {"oneOf": [{"$ref": "#/$defs/pendingAction"}, {"type": "null"}]},
+    "blocker": {"type": ["string", "null"], "maxLength": 2000}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "waiting_for_human"}}},
+      "then": {"properties": {"pending_action": {"allOf": [{"$ref": "#/$defs/pendingAction"}, {"properties": {"gate": {"$ref": "#/$defs/gate"}}}]}}}
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["completed", "cancelled"]}}},
+      "then": {"properties": {"pending_action": {"type": "null"}, "blocker": {"type": ["null"]}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "completed"}}},
+      "then": {
+        "properties": {
+          "current_stage": {"const": "release"},
+          "decisions": {
+            "contains": {
+              "type": "object",
+              "properties": {"gate": {"const": "release_authorization"}, "outcome": {"const": "accept"}},
+              "required": ["gate", "outcome"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "blocked"}}},
+      "then": {"required": ["blocker"], "properties": {"blocker": {"type": "string", "minLength": 1}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "cancelled"}}},
+      "then": {"properties": {"decisions": {"contains": {"type": "object", "properties": {"outcome": {"const": "cancel"}}, "required": ["outcome"]}}}}
+    }
+  ],
+  "$defs": {
+    "stage": {"enum": ["orient", "scope", "discover", "synthesize", "design", "execute", "write", "release"]},
+    "gate": {"enum": ["scope_commitment", "external_write", "experiment_authorization", "semantic_revision", "release_authorization"]},
+    "mode": {"enum": ["read_only", "preview", "write"]},
+    "hash": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "started_at", "finished_at", "status", "outputs", "validation_result"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "started_at": {"type": "string", "format": "date-time"},
+        "finished_at": {"type": ["string", "null"], "format": "date-time"},
+        "status": {"enum": ["success", "failed", "blocked", "cancelled"]},
+        "outputs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "validation_result": {"type": "string", "minLength": 1, "maxLength": 4000}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "stage", "tool", "mode", "scope", "input_hashes", "max_attempts", "validation_contract", "attempts"],
+      "properties": {
+        "action_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "tool": {"type": "string", "minLength": 1, "maxLength": 200},
+        "mode": {"$ref": "#/$defs/mode"},
+        "scope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+        "input_hashes": {"type": "array", "items": {"$ref": "#/$defs/hash"}},
+        "max_attempts": {"type": "integer", "minimum": 1, "maximum": 10},
+        "validation_contract": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "attempts": {"type": "array", "items": {"$ref": "#/$defs/attempt"}}
+      }
+    },
+    "pendingAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "gate", "tool", "mode", "scope", "input_hashes", "parameters_hash", "retry_count", "max_retries", "validation_contract"],
+      "properties": {
+        "action_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"},
+        "gate": {"oneOf": [{"$ref": "#/$defs/gate"}, {"type": "null"}]},
+        "tool": {"type": "string", "minLength": 1, "maxLength": 200},
+        "mode": {"$ref": "#/$defs/mode"},
+        "scope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+        "input_hashes": {"type": "array", "items": {"$ref": "#/$defs/hash"}},
+        "parameters_hash": {"$ref": "#/$defs/hash"},
+        "retry_count": {"type": "integer", "minimum": 0},
+        "max_retries": {"type": "integer", "minimum": 0, "maximum": 9},
+        "validation_contract": {"type": "string", "minLength": 1, "maxLength": 2000}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "gate", "outcome", "scope", "parameters_hash", "resource_bounds", "decided_at", "decided_by", "summary"],
+      "properties": {
+        "action_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"},
+        "gate": {"$ref": "#/$defs/gate"},
+        "outcome": {"enum": ["accept", "decline", "cancel"]},
+        "scope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+        "parameters_hash": {"$ref": "#/$defs/hash"},
+        "preview_hash": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+        "resource_bounds": {"type": "object", "additionalProperties": {"type": ["string", "number", "integer", "boolean", "null"]}},
+        "expires_at": {"type": ["string", "null"], "format": "date-time"},
+        "supersedes": {"type": ["string", "null"], "maxLength": 128},
+        "decided_at": {"type": "string", "format": "date-time"},
+        "decided_by": {"type": "string", "minLength": 1, "maxLength": 200},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 2000}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "stage", "sha256", "created_at"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "stage": {"$ref": "#/$defs/stage"},
+        "sha256": {"$ref": "#/$defs/hash"},
+        "created_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

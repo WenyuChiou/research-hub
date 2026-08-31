@@ -12,6 +12,22 @@
 
 ## [Unreleased]
 
+### Added
+- **Plugin v0.4.0 human-in-the-loop research workflow:** new
+  `research-workflow-orchestrator` skill coordinates eight resumable stages
+  (`orient` through `release`), automates read-only/reversible work, and pauses
+  at explicit scope, external-write, experiment, semantic-revision, and release
+  gates. It ships a JSON Schema state contract, MCP/tool adapter map, evals, and
+  a byte-identical installer mirror.
+
+### Changed
+- The `research-hub-multi-ai` router no longer depends on the archived
+  `gemini-delegate`. Supported leaves are now `codex-delegate` and the bounded
+  mechanical `antigravity-delegate`; long-context, CJK, research judgment, and
+  final review remain with the primary model. Plans now declare heterogeneous
+  result artifacts instead of assuming every leaf emits `result.json`.
+- Claude plugin metadata is now `0.4.0` and advertises all 12 bundled skills.
+
 _The UI 80/20 track (Phase B: ⌘K command palette + mobile breakpoints +
 `_HOME` wayfinding; Phase D: Zotero metadata correctness) is a SEPARATE
 future release — it was never folded into v1.1.0, which is the P2
