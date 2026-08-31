@@ -40,8 +40,19 @@ def test_image2_cover_is_shared_by_bilingual_readmes_and_hash_locked():
         assert "dashboard-walkthrough.gif" in text[:3000]
         assert text.index(relative) < text.index("dashboard-walkthrough.gif")
 
+    english = (root / "README.md").read_text(encoding="utf-8")
+    traditional_chinese = (root / "README.zh-TW.md").read_text(encoding="utf-8")
+    assert "How research-hub MCP works" in english[:2500]
+    assert "ordinary research tools can read or mutate truth stores directly" in english[:2500]
+    assert "workflow-managed path" in english[:2500]
+    assert "reconcile-required blocker" in english[:2500]
+    assert "research-hub MCP 運作邏輯" in traditional_chinese[:2500]
+    assert "一般 research tools 可直接讀取或修改 truth stores" in traditional_chinese[:2500]
+    assert "workflow-managed path" in traditional_chinese[:2500]
+    assert "reconcile-required 阻擋狀態" in traditional_chinese[:2500]
+
     asset = root / relative
     assert asset.stat().st_size > 1_000_000
     assert hashlib.sha256(asset.read_bytes()).hexdigest() == (
-        "ffaf93aedd5384e86f65334289f2a4bd3bc5ab08e73304c477abcf0153183590"
+        "f77e8c9b933007132747f8a85c58d8fc7feeeddce30a9453541a3f92326abe91"
     )
