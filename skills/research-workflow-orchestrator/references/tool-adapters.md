@@ -20,7 +20,7 @@ An adapter being installed does not authorize its write operations.
 1. Perform capability negotiation before selecting a server feature.
 2. If the client/server supports structured `elicitation` (or a negotiated
    successor such as MRTR), use a form for gate outcome and bounded fields.
-3. Always accept `accept`, `decline`, and `cancel`; do not coerce a decline into
+3. Always accept `accept`, `decline`, `revise`, and `cancel`; do not coerce a decline into
    an error or automatic retry.
 4. If structured input is unavailable, use the chat/CLI fallback with the same
    decision packet and record the decision in state.

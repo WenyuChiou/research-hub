@@ -1,10 +1,16 @@
-schema_version: "1.0"
+schema_version: "1.1"
 workflow_id: wf-20260830-example
 current_stage: discover
 status: running
 updated_at: "2026-08-30T14:00:00Z"
+trace_id: trace-20260830-example
+correlation_id: correlation-20260830-example
+policy_checkpoint_ref: null
+policy_hash: null
+evidence_packet_refs: []
 actions:
   - action_id: discover-approved-sources
+    action_hash: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     stage: discover
     tool: research-hub-search
     mode: read_only
@@ -16,15 +22,16 @@ actions:
 decisions:
   - gate: scope_commitment
     action_id: freeze-research-scope
+    action_hash: "9999999999999999999999999999999999999999999999999999999999999999"
     outcome: accept
     scope: [.research/project_manifest.yml]
     parameters_hash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-    preview_hash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
     resource_bounds:
       max_papers: 25
     decided_at: "2026-08-30T13:45:00Z"
     decided_by: human:researcher
-    summary: Use the approved research question and inclusion criteria.
+    rationale: Use the approved research question and inclusion criteria.
+    authorization_source: legacy_migration
 artifacts:
   - path: .research/project_manifest.yml
     stage: orient
@@ -32,12 +39,20 @@ artifacts:
     created_at: "2026-08-30T13:40:00Z"
 pending_action:
   action_id: discover-approved-sources
+  action_hash: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
   gate: null
   tool: research-hub-search
   mode: read_only
   scope: [queries/approved-scope]
   input_hashes: [bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]
   parameters_hash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  resource_bounds: {}
   retry_count: 0
   max_retries: 1
   validation_contract: Candidate records have verified scholarly identifiers.
+attempt_history: []
+pending_external_action: null
+external_write_ledger: []
+recovery_status: clean
+migration_history: []
+blocker: null

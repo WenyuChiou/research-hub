@@ -372,6 +372,7 @@ research-hub zotero backfill --tags --notes --apply
 | Lazy research pipeline | `research-hub auto "topic"` / `auto_research_topic` | Search, ingest, bundle, upload, generate, download |
 | Authenticity quarantine review | `research-hub quarantine list` / `show <id>` / `restore <id>` | Inspect and optionally restore papers the authenticity gate rejected (with the failing layer + reason) |
 | Plan before running | `research-hub plan "intent"` / `plan_research_workflow` | Suggests field, cluster slug, and max papers |
+| Resumable HITL workflow | `research-hub workflow init|status|validate|decide|resume|migrate` / `workflow_*` MCP tools | Durable schema 1.1 state, scoped decisions, recovery, and optional public policy checkpoints |
 | Zotero hygiene | `research-hub zotero backfill --tags --notes [--apply]` | Fills missing tags and notes on legacy items |
 | Cluster cascade delete | `research-hub clusters delete <slug> [--apply --force]` | Preview impact on Obsidian, Zotero, dedup, memory, and crystals |
 | No-NotebookLM smoke test | `research-hub auto "topic" --no-nlm` | Validates search and vault ingest without browser automation |
@@ -434,7 +435,7 @@ which workaround to reach for.
 
 ## Docs + Status + Dev
 
-Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.md), [dashboard walkthrough](docs/dashboard-walkthrough.md), [MCP tools](docs/mcp-tools.md), [AI host support matrix](docs/ai-host-support.md), [live smoke checklist](docs/live-smoke.md), [personas](docs/personas.md), [NotebookLM setup](docs/notebooklm.md), [EZproxy PDF access](docs/ezproxy.md), [import folder](docs/import-folder.md), [CLI reference](docs/cli-reference.md), [CHANGELOG](CHANGELOG.md).
+Docs: [First 10 minutes](docs/first-10-minutes.md), [workflow runtime](docs/workflow-runtime.md), [evidence packet](docs/research-evidence-packet.md), [lazy mode](docs/lazy-mode.md), [dashboard walkthrough](docs/dashboard-walkthrough.md), [MCP tools](docs/mcp-tools.md), [AI host support matrix](docs/ai-host-support.md), [live smoke checklist](docs/live-smoke.md), [personas](docs/personas.md), [NotebookLM setup](docs/notebooklm.md), [EZproxy PDF access](docs/ezproxy.md), [import folder](docs/import-folder.md), [CLI reference](docs/cli-reference.md), [CHANGELOG](CHANGELOG.md).
 
 Status:
 

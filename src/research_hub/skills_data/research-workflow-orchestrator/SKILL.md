@@ -91,13 +91,19 @@ Why now: <evidence and uncertainty>
 Proposed action: <tool + exact mutation/cost/scope>
 Preview: <diff, plan, candidates, or artifact link>
 Reversible: <yes/no and rollback>
-Options: accept / decline / cancel
+Options: accept / decline / revise / cancel
 ```
 
 - `accept`: record approval for the exact action and scope, then continue.
 - `decline`: record the decision, choose a safe alternative if one exists, and
   do not repeatedly ask for the same rejected action.
+- `revise`: block execution until a replacement action with a new hash is
+  presented and accepted.
 - `cancel`: record cancellation and stop the workflow cleanly.
+
+An `accept` is valid only through a signed policy checkpoint or exact local-TTY
+hash confirmation. A bare actor label from an agent or MCP caller is not human
+authorization.
 
 Approval is scoped to the described action. A later public, destructive, more
 expensive, or semantically different action needs a new decision.
@@ -157,3 +163,22 @@ Return:
 
 The workflow is complete only when the `release` exit criteria pass or the user
 explicitly ends the project. A draft alone is not completion.
+
+## Executable runtime
+
+Use the domain service through either interface; both paths make the same state
+transition:
+
+- CLI: `research-hub workflow init|status|validate|decide|resume|migrate`
+- MCP: `workflow_initialize`, `workflow_status`, `workflow_validate`,
+  `workflow_decide`, `workflow_resume`, and `workflow_migrate`
+
+All CLI operations accept `--json`. Migration is a dry run unless `--apply`
+is given; apply creates a backup and atomically replaces the state. Schema 1.0
+remains readable, while decisions and resume require migration to schema 1.1.
+
+The optional `agent-collab-harness` v0.4 policy/checkpoint layer is discovered
+at runtime. If no policy is configured, research-hub keeps its standalone
+behavior. If a policy is configured but the package, policy, or checkpoint is
+unavailable, resume fails closed. `research-hub doctor --json` reports the
+integration as available, unavailable, or misconfigured.

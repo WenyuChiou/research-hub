@@ -12,7 +12,19 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-31
+
 ### Added
+- **Deterministic research workflow runtime:** schema 1.1 state manager with
+  shared CLI/MCP services, dry-run-first atomic migration, scoped human
+  decisions, crash reconciliation, bounded retry blockers, and duplicate
+  external-write prevention.
+- **Optional public agent harness integration:** runtime detection and
+  fail-closed policy/checkpoint evaluation for `agent-collab-harness` v0.4.x;
+  standalone research-hub installs remain unchanged.
+- **ResearchEvidencePacket boundary:** provider-neutral research, verification,
+  falsification, reproducibility, and no-tool synthesis profiles backed by a
+  deterministic JSON Schema validator.
 - **Plugin v0.4.0 human-in-the-loop research workflow:** new
   `research-workflow-orchestrator` skill coordinates eight resumable stages
   (`orient` through `release`), automates read-only/reversible work, and pauses
@@ -26,7 +38,13 @@
   mechanical `antigravity-delegate`; long-context, CJK, research judgment, and
   final review remain with the primary model. Plans now declare heterogeneous
   result artifacts instead of assuming every leaf emits `result.json`.
-- Claude plugin metadata is now `0.4.0` and advertises all 12 bundled skills.
+- Claude plugin metadata is now `0.5.0` and advertises all 12 bundled skills.
+
+### Migration
+- Workflow schema 1.0 remains readable. Preview with
+  `research-hub workflow migrate --state <path> --json`; add `--apply` to
+  create a backup and atomically write schema 1.1. Decisions and resume require
+  schema 1.1.
 
 _The UI 80/20 track (Phase B: ⌘K command palette + mobile breakpoints +
 `_HOME` wayfinding; Phase D: Zotero metadata correctness) is a SEPARATE

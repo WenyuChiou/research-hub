@@ -92,7 +92,7 @@ primary model. **Reads**: tool health and task scope. **Writes**:
 Trigger phrases: "coordinate multiple delegates", "this is a parallel task",
 "who should write this section?".
 
-### `research-workflow-orchestrator` (plugin v0.4.0)
+### `research-workflow-orchestrator` (plugin v0.5.0)
 Resumable controller for `orient`, `scope`, `discover`, `synthesize`, `design`,
 `execute`, `write`, and `release`. It records artifact hashes and scoped human
 decisions in `.research/workflow_state.yml`; read-only and reversible work can

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WenyuChiou/research-hub/schemas/research-evidence-packet-1.0.json",
+  "title": "ResearchEvidencePacket",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "query", "sources", "claims", "contradictions", "gaps", "confidence", "provenance", "warnings", "human_decisions"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "query": {"type": "string", "minLength": 1},
+    "sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
+    "claims": {"type": "array", "items": {"$ref": "#/$defs/claim"}},
+    "contradictions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "confidence": {"enum": ["low", "medium", "high"]},
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["researcher_outputs", "synthesizer", "validated_at"],
+      "properties": {
+        "researcher_outputs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "synthesizer": {"const": "no-tool"},
+        "validated_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "human_decisions": {"type": "array", "items": {"type": "object"}}
+  },
+  "$defs": {
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "locator", "identifier", "title", "authors", "year", "retrieved_at", "identity_status"],
+      "properties": {
+        "source_id": {"type": "string", "minLength": 1},
+        "locator": {"type": "string", "minLength": 1},
+        "identifier": {"type": ["string", "null"]},
+        "title": {"type": "string", "minLength": 1},
+        "authors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "year": {"type": ["integer", "null"], "minimum": 0},
+        "retrieved_at": {"type": "string", "format": "date-time"},
+        "identity_status": {"enum": ["verified", "conflict", "unverified", "unavailable"]}
+      }
+    },
+    "claim": {
+      "type": "object", "additionalProperties": false,
+      "required": ["claim_id", "claim_text", "supporting_source_ids", "opposing_source_ids", "verification_status", "uncertainty", "verification_records"],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "claim_text": {"type": "string", "minLength": 1},
+        "supporting_source_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "opposing_source_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "verification_status": {"enum": ["supported", "contradicted", "mixed", "unsupported", "unverified"]},
+        "uncertainty": {"type": "string", "minLength": 1},
+        "verification_records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_id", "status", "verifier_output_ref"],
+            "properties": {
+              "source_id": {"type": "string", "minLength": 1},
+              "status": {"enum": ["supports", "does_not_support", "unclear"]},
+              "verifier_output_ref": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}
