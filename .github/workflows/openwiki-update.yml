@@ -1,12 +1,14 @@
 name: OpenWiki Update
 
 on:
+  # Manual-dispatch only for now. The weekly schedule (Mon 08:00 UTC) is
+  # PAUSED: run 29736573640 (2026-07-20) proved NIM's free tier cannot
+  # complete even an update pass — 75-minute timeout, cancelled. Re-add
+  #   schedule:
+  #     - cron: "0 8 * * 1"
+  # once a capable provider (Codex-quota local runs or a metered key) is
+  # wired. Cost guard rationale unchanged: openwiki#51, no spend cap.
   workflow_dispatch:
-  schedule:
-    # Weekly (Mon 08:00 UTC) during the pilot — upstream default is daily, but
-    # openwiki#51 documents ~12x cost variance per run with no spend cap.
-    # Tighten to daily only if the pilot proves out.
-    - cron: "0 8 * * 1"
 
 permissions:
   contents: write

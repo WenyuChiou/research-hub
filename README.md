@@ -255,7 +255,7 @@ research-hub is a local-first orchestration layer for research workflows:
 - **CLI:** `research-hub auto`, `import-folder`, `ask`, `doctor`, `tidy`, `clusters`, `zotero`, `notebooklm`, `crystal`, and more.
 - **MCP server:** lets Claude Desktop, Claude Code, Cursor, Continue.dev, Cline, Roo Code, OpenClaw, and other MCP hosts operate the same workflow.
 - **REST API:** exposes `/api/v1/*` for browser-only or HTTP-capable assistants.
-- **Portable skill pack:** `SKILL.md` workflow instructions can be installed directly for Claude Code, Codex, Cursor, and Gemini, or copied manually into hosts that support skill/rules directories.
+- **12-skill portable pack:** `SKILL.md` workflows install directly for Claude Code, Codex, Cursor, and Gemini. The new resumable orchestrator automates low-risk stages and pauses at explicit human gates before external writes, costly experiments, semantic revisions, and release.
 - **Dashboard:** gives humans a live view of clusters, papers, diagnostics, briefs, writing support, and management actions.
 - **Vault format:** writes normal Markdown, frontmatter, `.base` dashboards, cache files, and logs that you can inspect directly.
 - **Authenticity gate (v0.95+):** every discovered paper must resolve to a real identifier (DOI / arXiv / PMID), pass integrity and relevance checks, or it is **quarantined with a recorded reason** and never written to the vault. No fabricated references — inspect rejects with `research-hub quarantine list`.
@@ -372,6 +372,7 @@ research-hub zotero backfill --tags --notes --apply
 | Lazy research pipeline | `research-hub auto "topic"` / `auto_research_topic` | Search, ingest, bundle, upload, generate, download |
 | Authenticity quarantine review | `research-hub quarantine list` / `show <id>` / `restore <id>` | Inspect and optionally restore papers the authenticity gate rejected (with the failing layer + reason) |
 | Plan before running | `research-hub plan "intent"` / `plan_research_workflow` | Suggests field, cluster slug, and max papers |
+| Resumable HITL workflow | `research-hub workflow init|status|validate|decide|resume|migrate` / `workflow_*` MCP tools | Durable schema 1.1 state, scoped decisions, recovery, and optional public policy checkpoints |
 | Zotero hygiene | `research-hub zotero backfill --tags --notes [--apply]` | Fills missing tags and notes on legacy items |
 | Cluster cascade delete | `research-hub clusters delete <slug> [--apply --force]` | Preview impact on Obsidian, Zotero, dedup, memory, and crystals |
 | No-NotebookLM smoke test | `research-hub auto "topic" --no-nlm` | Validates search and vault ingest without browser automation |
@@ -434,7 +435,7 @@ which workaround to reach for.
 
 ## Docs + Status + Dev
 
-Docs: [First 10 minutes](docs/first-10-minutes.md), [lazy mode](docs/lazy-mode.md), [dashboard walkthrough](docs/dashboard-walkthrough.md), [MCP tools](docs/mcp-tools.md), [AI host support matrix](docs/ai-host-support.md), [live smoke checklist](docs/live-smoke.md), [personas](docs/personas.md), [NotebookLM setup](docs/notebooklm.md), [EZproxy PDF access](docs/ezproxy.md), [import folder](docs/import-folder.md), [CLI reference](docs/cli-reference.md), [CHANGELOG](CHANGELOG.md).
+Docs: [First 10 minutes](docs/first-10-minutes.md), [workflow runtime](docs/workflow-runtime.md), [evidence packet](docs/research-evidence-packet.md), [lazy mode](docs/lazy-mode.md), [dashboard walkthrough](docs/dashboard-walkthrough.md), [MCP tools](docs/mcp-tools.md), [AI host support matrix](docs/ai-host-support.md), [live smoke checklist](docs/live-smoke.md), [personas](docs/personas.md), [NotebookLM setup](docs/notebooklm.md), [EZproxy PDF access](docs/ezproxy.md), [import folder](docs/import-folder.md), [CLI reference](docs/cli-reference.md), [CHANGELOG](CHANGELOG.md).
 
 Status:
 

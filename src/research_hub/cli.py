@@ -430,6 +430,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Emit machine-readable JSON report on stdout (v0.89)",
     )
 
+    workflow_parser = subparsers.add_parser(
+        "workflow", help="Manage a resumable human-in-the-loop research workflow"
+    )
+    workflow_sub = workflow_parser.add_subparsers(dest="workflow_command", required=True)
+
+    workflow_init = workflow_sub.add_parser("init", help="Initialize workflow schema 1.1 state")
+    workflow_init.add_argument("--project-root", default=".")
+    workflow_init.add_argument("--state", default=None)
+    workflow_init.add_argument("--workflow-id", default=None)
+    workflow_init.add_argument("--policy", default=None)
+    workflow_init.add_argument("--checkpoint", default=None)
+    workflow_init.add_argument("--json", action="store_true")
+
+    for workflow_command in ("status", "validate", "resume"):
+        workflow_child = workflow_sub.add_parser(workflow_command)
+        workflow_child.add_argument("--state", default=".research/workflow_state.yml")
+        workflow_child.add_argument("--json", action="store_true")
+
+    workflow_decide = workflow_sub.add_parser("decide", help="Record an exact human decision")
+    workflow_decide.add_argument("--state", default=".research/workflow_state.yml")
+    workflow_decide.add_argument("--outcome", required=True, choices=["accept", "decline", "revise", "cancel"])
+    workflow_decide.add_argument("--actor", required=True)
+    workflow_decide.add_argument("--rationale", required=True)
+    workflow_decide.add_argument("--action-hash", required=True)
+    workflow_decide.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Allow a local TTY to confirm an accept decision by typing the exact action hash",
+    )
+    workflow_decide.add_argument("--json", action="store_true")
+
+    workflow_migrate = workflow_sub.add_parser("migrate", help="Preview or apply state migration")
+    workflow_migrate.add_argument("--state", default=".research/workflow_state.yml")
+    workflow_migrate.add_argument("--apply", action="store_true", help="Apply atomically after creating a backup")
+    workflow_migrate.add_argument("--json", action="store_true")
+
     config_parser = subparsers.add_parser("config", help="Config maintenance commands")
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
     config_sub.add_parser(
@@ -2697,7 +2733,7 @@ def _main_dispatch(args, parser) -> int:
 
     _warn_cli_deprecated_alias_from_args(args)
 
-    exempt_commands = {"init", "setup", "doctor", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context"}
+    exempt_commands = {"init", "setup", "doctor", "workflow", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()
@@ -2769,6 +2805,10 @@ def _main_dispatch(args, parser) -> int:
 
     if args.command == "doctor":
         return _cmd_doctor(args, emit_json=getattr(args, "json", False))
+    if args.command == "workflow":
+        from research_hub.cli_workflow import dispatch_workflow
+
+        return dispatch_workflow(args)
     if args.command == "config":
         if args.config_command == "encrypt-secrets":
             return _config_encrypt_secrets()

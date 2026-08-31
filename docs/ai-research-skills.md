@@ -9,6 +9,7 @@ cover.
 
 | Stage | What it is | Owner | Skill(s) |
 |---|---|---|---|
+| **0. Coordinate + resume** | Persist stage, provenance, gates, and next action | shared | `research-workflow-orchestrator` |
 | 1. Discover sources | Find papers / data | research-hub | `research-hub`, `literature-triage-matrix` |
 | 2. Ingest + tag | Pull into Zotero / Obsidian | research-hub | `research-hub`, `zotero-library-curator` |
 | **2.5. Decide the topic** | 3-gate go/no-go on a candidate topic; produces a decision dossier | shared | `gap-to-topic` (emits `.gaps.yml` for the chosen candidate — read by Stage 3a in plugin v0.3.12+) |
@@ -29,25 +30,28 @@ cover.
 
 ## Cross-cutting tools (used at every stage)
 
-These three skills are NOT stage-bound. They route work by **task character**
+These four skills are NOT stage-bound. They route work by **task character**
 (token-heavy / long-context / CJK / mechanical bulk), not by pipeline
 position:
 
+- `research-workflow-orchestrator` — resumes the eight-stage workflow,
+  automates read-only/reversible work, and pauses at consequential human gates.
 - `research-hub-multi-ai` — when to keep work in the primary AI vs hand
-  it to Codex (heavy code, batch edits) or Gemini (long CJK prose,
-  cross-file synthesis).
+  bounded mechanical work to Codex or Antigravity.
 - `codex-delegate` (external skill) — Codex CLI handoff when Claude
   would otherwise spend many turns on mechanical scaffolding.
-- `gemini-delegate` (external skill) — Gemini CLI handoff for >50k-token
-  context reads or zh-TW content.
+- `antigravity-delegate` (external skill) — verified cheap lane for narrowly
+  scoped mechanical work only; never long-context/CJK semantics or review.
 
 Examples per stage where delegation matters:
 
-- **Stage 1**: Gemini summarizes a 200-page systematic review you found.
+- **Stage 1**: the primary model reviews a long systematic review; a delegate
+  may only perform bounded preprocessing.
 - **Stage 2**: Codex batch-rewrites frontmatter on 100 cluster notes.
 - **Stage 3a**: keep in primary AI (creative thinking, low token cost).
-- **Stage 6**: Gemini drafts a long zh-TW NotebookLM brief preface.
-- **Stage 8**: Gemini writes the zh-TW cover letter; Codex builds the
+- **Stage 6**: primary model drafts semantic synthesis; a leaf may format an
+  already-approved table.
+- **Stage 8**: primary model writes the cover letter; Codex can scaffold the
   reviewer-response table.
 
 The `research-hub-multi-ai` SKILL.md lists the routing rules.
@@ -56,6 +60,7 @@ The `research-hub-multi-ai` SKILL.md lists the routing rules.
 
 | Situation | Skill | Effort |
 |---|---|---|
+| Run or resume the full workflow with explicit human gates | `research-workflow-orchestrator` | continuous |
 | New repo, AI asked to "understand this project" | `research-context-compressor` then `research-project-orienter` | one-time setup |
 | Project already has `.research/` manifests, just need orientation | `research-project-orienter` | seconds |
 | Comparing 5–30 papers for a literature review | `literature-triage-matrix` | minutes |
@@ -65,7 +70,7 @@ The `research-hub-multi-ai` SKILL.md lists the routing rules.
 | Deciding whether a research gap is worth pursuing (open / a contribution / feasible) | `gap-to-topic` | one session |
 | Starting a new study, want to sharpen the RQ + design before coding | `research-design-helper` | one session |
 | General research workflow (search → ingest → organize) | `research-hub` (the original CLI-operating skill) | continuous |
-| Multi-AI handoff (Claude ↔ Codex ↔ Gemini) | `research-hub-multi-ai` | as needed |
+| Multi-agent handoff for bounded research artifacts | `research-hub-multi-ai` | as needed |
 
 ## All packaged skills
 
@@ -79,12 +84,27 @@ Trigger phrases: "find papers about X", "ingest this folder", "build a
 notebook for cluster X", "show me the dashboard".
 
 ### `research-hub-multi-ai`
-Multi-AI delegation playbook. Tells Claude when to hand a task to Codex
-(token-heavy code, batch edits) or Gemini (long CJK prose, summaries) and
-how. **Reads**: nothing from disk. **Writes**: nothing.
+Multi-agent delegation playbook. Routes bounded mechanical tasks to Codex or
+Antigravity while keeping long-context, CJK, judgment, and review work with the
+primary model. **Reads**: tool health and task scope. **Writes**:
+`.coord/multi_ai_plan.md` plus bounded briefs.
 
-Trigger phrases: "delegate this to Codex/Gemini", "this is a heavy task",
+Trigger phrases: "coordinate multiple delegates", "this is a parallel task",
 "who should write this section?".
+
+### `research-workflow-orchestrator` (plugin v0.5.0)
+Resumable controller for `orient`, `scope`, `discover`, `synthesize`, `design`,
+`execute`, `write`, and `release`. It records artifact hashes and scoped human
+decisions in `.research/workflow_state.yml`; read-only and reversible work can
+continue automatically, while external writes, costly experiments, semantic
+changes, and release require explicit approval.
+
+**Reads**: `.research/` manifests, current workflow state, tool capabilities,
+and stage evidence. **Writes**: workflow state and only the artifacts already
+authorized for the current stage.
+
+Trigger phrases: "run the whole research workflow", "resume this research
+project", "automate it but keep me in the loop".
 
 ### `research-context-compressor` (v0.66)
 Inspects the repository and produces `.research/project_manifest.yml`,
