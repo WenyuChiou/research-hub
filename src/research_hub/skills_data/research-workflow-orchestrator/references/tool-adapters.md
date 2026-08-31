@@ -6,7 +6,7 @@ An adapter being installed does not authorize its write operations.
 
 | Stage | Preferred skill/tool adapters | Automatic boundary | Human gate |
 |---|---|---|---|
-| `orient` | research-project-orienter; research-context-compressor; local filesystem/knowledge graph | read manifests and source-linked metadata | local manifest creation if not already approved |
+| `orient` | research-project-orienter; research-context-compressor; local filesystem/knowledge graph | read manifests and source-linked metadata; create a previewed, reversible project-local manifest | none until the research question or scope is frozen |
 | `scope` | gap-to-topic; research-design-helper; decision dossier | generate options and compare trade-offs | `scope_commitment` |
 | `discover` | research-hub MCP/CLI search; arXiv; Semantic Scholar; Crossref/OpenAlex; Zotero | search, normalize, deduplicate, preview triage | `external_write` before library mutation |
 | `synthesize` | literature-triage-matrix; paper-summarize; paper-memory-builder; NotebookLM verifier | extract and compare source-grounded evidence | `external_write` before upload/generation in a remote notebook |
