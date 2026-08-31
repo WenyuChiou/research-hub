@@ -24,6 +24,33 @@ class CheckResult:
     details: str = ""
 
 
+def check_agent_collab_harness() -> CheckResult:
+    """Report optional harness availability without making it mandatory."""
+
+    from research_hub.workflow_runtime import harness_status
+
+    status = harness_status()
+    if status["status"] == "available":
+        return CheckResult(
+            "agent_collab_harness",
+            "OK",
+            f"available ({status['version']}); configured={status['configured']}",
+        )
+    if status["status"] == "misconfigured":
+        return CheckResult(
+            "agent_collab_harness",
+            "FAIL",
+            status["message"],
+            remedy="Install agent-collab-harness v0.4.x and validate RESEARCH_HUB_AGENT_POLICY",
+        )
+    return CheckResult(
+        "agent_collab_harness",
+        "INFO",
+        status["message"],
+        remedy="Optional: install the v0.4.x wheel from the agent-collab-skills GitHub release",
+    )
+
+
 def check_frontmatter_completeness(cfg, *, strict: bool = False) -> CheckResult:
     """Validate paper-note frontmatter and required body sections across the vault.
 
@@ -1399,6 +1426,11 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
                 results.append(check(cfg))
             except Exception as exc:
                 results.append(CheckResult(check.__name__, "WARN", f"check failed: {exc}"))
+
+    try:
+        results.append(check_agent_collab_harness())
+    except Exception as exc:
+        results.append(CheckResult("agent_collab_harness", "FAIL", f"check failed closed: {exc}"))
 
     return results
 

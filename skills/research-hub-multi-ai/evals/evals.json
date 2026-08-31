@@ -2,24 +2,24 @@
   "skill": "research-hub-multi-ai",
   "evals": [
     {
-      "prompt": "I need Codex to write the test scaffolding for src/util.py and Gemini to draft the zh-TW companion for docs/util.md, both this round.",
-      "expected_behavior": "Recognize this is a multi-delegate round (>=2 delegates): write `.coord/multi_ai_plan.md` with a task for codex (test scaffolding) and a task for gemini (zh-TW translation), each pointing to its own brief file. Do NOT execute either task in this skill — the leaves do that."
+      "prompt": "Have Codex scaffold tests and Antigravity apply an approved metadata transform to a disjoint fixture directory in the same round.",
+      "expected_behavior": "Write a multi-task plan with disjoint ownership, Codex and Antigravity briefs, dependencies, exact result artifacts, and primary-model reconciliation. Do not execute leaves in the router."
     },
     {
       "prompt": "Delegate this 200-line refactor to Codex.",
-      "expected_behavior": "Recognize this is a single-delegate task: do NOT invoke this skill. Route to `codex-delegate` directly — write a `.ai/codex_task_*.md` brief and launch the wrapper. Producing a router plan for one task is misuse."
+      "expected_behavior": "Do not invoke the router for one delegate. Route directly to codex-delegate with a bounded brief and wrapper contract."
     },
     {
       "prompt": "Generate a Traditional Chinese summary of this 8000-word paper.",
-      "expected_behavior": "Recognize this is a single-delegate CJK task: do NOT invoke this skill. Route to `gemini-delegate` directly. The router only applies when this same round will also need a second delegate."
+      "expected_behavior": "Keep this single CJK/semantic task with the primary model. Do not route it to the bounded mechanical Antigravity leaf and do not invoke the multi-AI router."
     },
     {
-      "prompt": "Run `research-hub auto \"agent-based modeling\" --with-crystals --llm-cli codex`.",
-      "expected_behavior": "Recognize this is a single-LLM research-hub CLI run: the `--llm-cli` flag is a research-hub feature, not a router decision. Do NOT produce a multi-AI plan. Just run the command (after verifying the CLI is installed)."
+      "prompt": "The old Gemini delegate is installed, so use it with Codex for this round.",
+      "expected_behavior": "Refuse the archived leaf, verify supported executor health, and either re-plan with Codex/Antigravity within their scopes or report a blocker."
     },
     {
-      "prompt": "Should you write this 30-line bug fix yourself or delegate?",
-      "expected_behavior": "Decide locally: <50 LOC + needs project context = Claude direct, no delegation. Do not invoke this skill. Reply with one sentence on why."
+      "prompt": "Run research-hub auto for agent-based modeling with the detected LLM CLI.",
+      "expected_behavior": "Treat this as one research-hub runtime operation, not a multi-AI plan; verify the CLI and use only a currently detected compatible backend."
     }
   ]
 }
