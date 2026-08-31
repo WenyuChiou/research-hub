@@ -255,7 +255,7 @@ research-hub is a local-first orchestration layer for research workflows:
 - **CLI:** `research-hub auto`, `import-folder`, `ask`, `doctor`, `tidy`, `clusters`, `zotero`, `notebooklm`, `crystal`, and more.
 - **MCP server:** lets Claude Desktop, Claude Code, Cursor, Continue.dev, Cline, Roo Code, OpenClaw, and other MCP hosts operate the same workflow.
 - **REST API:** exposes `/api/v1/*` for browser-only or HTTP-capable assistants.
-- **Portable skill pack:** `SKILL.md` workflow instructions can be installed directly for Claude Code, Codex, Cursor, and Gemini, or copied manually into hosts that support skill/rules directories.
+- **12-skill portable pack:** `SKILL.md` workflows install directly for Claude Code, Codex, Cursor, and Gemini. The new resumable orchestrator automates low-risk stages and pauses at explicit human gates before external writes, costly experiments, semantic revisions, and release.
 - **Dashboard:** gives humans a live view of clusters, papers, diagnostics, briefs, writing support, and management actions.
 - **Vault format:** writes normal Markdown, frontmatter, `.base` dashboards, cache files, and logs that you can inspect directly.
 - **Authenticity gate (v0.95+):** every discovered paper must resolve to a real identifier (DOI / arXiv / PMID), pass integrity and relevance checks, or it is **quarantined with a recorded reason** and never written to the vault. No fabricated references — inspect rejects with `research-hub quarantine list`.

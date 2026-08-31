@@ -242,7 +242,7 @@ research-hub 是一個用於研究工作流程的本地優先協調層：
 - **CLI:** `research-hub auto`、`import-folder`、`ask`、`doctor`、`tidy`、`clusters`、`zotero`、`notebooklm`、`crystal` 等等。
 - **MCP server:** 讓 Claude Desktop、Claude Code、Cursor、Continue.dev、Cline、Roo Code、OpenClaw 和其他 MCP host 能夠操作相同的工作流程。
 - **REST API:** 為僅限瀏覽器或支援 HTTP 的助理提供 `/api/v1/*` 端點。
-- **可攜式 skill pack:** `SKILL.md` 工作流程指令可以直接安裝到 Claude Code、Codex、Cursor 和 Gemini，或手動複製到支援 skill/rules 目錄的 host 中。
+- **12-skill 可攜式套件:** `SKILL.md` 工作流程可以直接安裝到 Claude Code、Codex、Cursor 和 Gemini。新的 resumable orchestrator 會自動處理低風險階段，並在遠端寫入、高成本實驗、語意修改及 release 前停下來取得明確的人類決策。
 - **Dashboard:** 提供一個即時介面，供人類查看 clusters、論文、診斷、briefs、寫作支援和管理操作。
 - **Vault 格式:** 寫入標準的 Markdown、frontmatter、`.base` dashboard、快取檔案和你可以直接檢查的日誌。
 - **Authenticity gate (v0.95+):** 每篇發現的論文都必須解析為一個真實的識別碼 (DOI / arXiv / PMID)，通過完整性和相關性檢查，否則它會被 **隔離並記錄原因**，且永遠不會寫入 vault。沒有偽造的參考文獻 — 使用 `research-hub quarantine list` 檢查被拒絕的項目。
