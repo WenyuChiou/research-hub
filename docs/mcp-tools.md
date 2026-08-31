@@ -54,6 +54,31 @@ The full ingest pipeline: resolves identifier → creates Zotero entry in cluste
 
 ---
 
+## Resumable workflow state
+
+### `workflow_initialize(project_root: str, workflow_id: str | None = None, ...)`
+Create schema 1.1 state. This is a local reversible write and performs no research-tool or external mutation.
+
+### `workflow_status(state_path: str)`
+Return stage, status, migration requirement, pending action, and recovery state.
+
+### `workflow_validate(state_path: str)`
+Validate a schema 1.0 or 1.1 state without modifying it.
+
+### `workflow_decide(state_path: str, outcome: str, actor: str, rationale: str, action_hash: str)`
+Record an exact human accept, decline, revise, or cancel decision. Hash mismatch fails closed.
+MCP `accept` additionally requires a signed public-harness checkpoint; a naked
+`actor` string is never sufficient authorization. All workflow paths are
+contained by the server-side `RESEARCH_HUB_WORKFLOW_ROOT`.
+
+### `workflow_resume(state_path: str)`
+Resume only when terminal-state, retry, external-action recovery, and optional policy checks allow it.
+
+### `workflow_migrate(state_path: str, apply: bool = False)`
+Preview migration by default. Applying creates a backup and atomically writes validated schema 1.1 state.
+
+---
+
 ## Cluster management
 
 ### `list_clusters()`
@@ -272,6 +297,6 @@ If a tool errors with `ValidationError`, your slug is malformed — clean it (lo
 
 ---
 
-## Total tool count: 60
+## Total tool count: 86
 
 See `src/research_hub/mcp_server.py` for the source of truth.

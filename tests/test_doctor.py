@@ -136,8 +136,11 @@ def test_doctor_missing_vault(tmp_path, monkeypatch):
 def test_doctor_no_zotero_key(tmp_path, monkeypatch):
     from research_hub.doctor import run_doctor
 
+    for name in ("ZOTERO_API_KEY", "ZOTERO_LIBRARY_ID", "ZOTERO_LIBRARY_TYPE"):
+        monkeypatch.delenv(name, raising=False)
     _write_config(tmp_path, monkeypatch, zotero_key=None)
-    # Isolate from the user's real legacy zotero-skills config
+    # Isolate every supported user-level fallback, including ~/.claude/.env.
+    monkeypatch.setattr("research_hub.zotero.client._read_env_file", lambda: {})
     monkeypatch.setattr(
         "research_hub.zotero.client._load_legacy_zotero_skill_config",
         lambda: {},

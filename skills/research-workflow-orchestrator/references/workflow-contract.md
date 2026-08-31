@@ -30,11 +30,13 @@ were already satisfied. Never infer that evidence from a previous session alone.
 | `semantic_revision` | changing scientific meaning in manuscript, rebuttal, claims, or conclusions | before/after meaning, supporting evidence, unresolved uncertainty |
 | `release_authorization` | submission, publication, PR merge, tag/release, or destructive cleanup | final diff/artifacts, checks, destination, rollback/irreversibility |
 
-The accepted decision outcomes are `accept`, `decline`, and `cancel`.
+The decision outcomes are `accept`, `decline`, `revise`, and `cancel`.
 
 - `accept` authorizes only the described action, target, and bounds.
 - `decline` forbids that action; a materially different alternative needs a new
   packet rather than a relabeled retry.
+- `revise` blocks resume until a replacement action with a new action hash is
+  recorded.
 - `cancel` ends the workflow without interpreting cancellation as failure.
 
 ## Automatic actions
@@ -71,3 +73,20 @@ If structured MCP elicitation is unavailable, ask the same decision in chat or
 CLI and record the outcome. If a source/tool is unavailable, use a predeclared
 adapter fallback only when it preserves the research scope and validation; else
 set `blocked` with the missing capability and recovery condition.
+
+## Executable state-manager invariants
+
+Schema 1.1 adds trace and correlation IDs, an optional policy/checkpoint
+reference and policy hash, evidence-packet references, action hashes, an
+attempt-history ledger, a write-ahead `pending_external_action`, recovery
+status, external-write completion ledger, and migration history.
+
+- Persist an external action before invoking its adapter. A completed action
+  hash is never prepared twice.
+- A crash with `pending_external_action` does not trigger an automatic retry;
+  resume reports `reconcile_required`.
+- `declined`, `cancelled`, and `completed` are terminal. Only `completed`
+  is success, and it still requires accepted `release_authorization`.
+- Retry exhaustion produces a blocker. It never widens the retry bound.
+- Policy evaluation happens before resume when a policy is configured. Missing
+  or invalid policy machinery fails closed.

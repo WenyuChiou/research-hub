@@ -64,6 +64,7 @@ def test_skill_ships_complete_progressive_disclosure_bundle():
         Path("SKILL.md"),
         Path("evals/evals.json"),
         Path("references/tool-adapters.md"),
+        Path("references/evidence-agent-harness.md"),
         Path("references/workflow-contract.md"),
         Path("references/workflow-state.schema.json"),
     }
@@ -104,12 +105,12 @@ def test_state_schema_has_resumable_decisions_and_artifact_provenance():
     stage_enum = schema["$defs"]["stage"]["enum"]
     assert stage_enum == EXPECTED_STAGES
     decision_enum = schema["$defs"]["decision"]["properties"]["outcome"]["enum"]
-    assert decision_enum == ["accept", "decline", "cancel"]
+    assert decision_enum == ["accept", "decline", "revise", "cancel"]
     assert "cancelled" in schema["properties"]["status"]["enum"]
     decision_required = set(schema["$defs"]["decision"]["required"])
-    assert {"action_id", "scope", "parameters_hash", "resource_bounds"} <= decision_required
+    assert {"action_id", "action_hash", "scope", "parameters_hash", "resource_bounds", "authorization_source"} <= decision_required
     action_required = set(schema["$defs"]["action"]["required"])
-    assert {"action_id", "attempts", "validation_contract", "input_hashes"} <= action_required
+    assert {"action_id", "action_hash", "attempts", "validation_contract", "input_hashes"} <= action_required
     artifact_required = set(schema["$defs"]["artifact"]["required"])
     assert {"path", "stage", "sha256", "created_at"} <= artifact_required
 
@@ -149,7 +150,7 @@ def test_cancelled_is_clean_terminal_state_with_scoped_cancel_decision():
     state["pending_action"] = None
     state["blocker"] = None
     cancel = copy.deepcopy(state["decisions"][0])
-    cancel.update({"action_id": "cancel-workflow", "outcome": "cancel", "summary": "Researcher ended the workflow."})
+    cancel.update({"action_id": "cancel-workflow", "outcome": "cancel", "rationale": "Researcher ended the workflow."})
     state["decisions"].append(cancel)
     assert not list(_validator().iter_errors(state))
 
