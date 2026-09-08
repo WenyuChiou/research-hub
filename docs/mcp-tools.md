@@ -17,6 +17,66 @@ For the architectural rationale of each tool category (and especially why crysta
 
 ---
 
+<!-- Workspace operations below are additive; legacy tools retain their existing contracts. -->
+
+## Researcher workspace (source preview)
+
+These operations share domain services with the `project`, `manuscript`, `task`,
+and `action` CLI commands and the loopback `serve --workspace` REST interface.
+All require an explicit local `root`. They do not require a legacy vault config.
+Errors return `{ok: false, error, code}`. Source content cannot grant approval.
+
+### `workspace_project(root: str, operation: str, data: dict | None = None)`
+
+Operations: `create`, `demo`, `list`, `show`, `register`, `record`, `search`.
+`demo` requires a new or empty explicit root; it creates offline, unaccepted examples.
+Creation takes `{id, title, archetype, goal}`; other project-specific operations
+take `project_id`. Register takes `{project_id, path, role}` and records a file's
+hash without moving or rewriting it. Record takes `{project_id, kind, data}`.
+Search takes `{project_id, query, limit}` and saves the query and any provider
+degradation; metadata retrieval is not claim-support verification.
+
+### `workspace_manuscript(root: str, operation: str, data: dict | None = None)`
+
+Operations: `bind`, `state`, `audit`, `impact`, with `project_id`.
+Bind requires an explicitly configured trusted public bundle via
+`RESEARCH_HUB_WRITING_ADAPTER`; it initializes `manuscript_state.json` only when
+absent. Audit accepts `operation: state|consistency|prose|candidate|docx|regression`
+inside `data`, plus `candidate` for a candidate check. It invokes the existing
+public scripts and returns their report, exit code and adapter hash. Audit
+findings are not scientific acceptance. Impact conservatively lists changed
+inputs and stale task acceptances; it does not silently synchronize documents.
+
+### `workspace_task(root: str, operation: str, data: dict | None = None)`
+
+Operations: `create`, `list`, `show`, `run`, `handoff`, `import`, `decide`, `cancel`,
+`recover`. Create takes `{project_id, operation, mode, instructions}`; list takes
+`project_id`; remaining operations take `task_id`. Modes are `handoff` and
+`connected`. Connected execution uses a capability-checked, read-only, no-tool
+Codex prose worker. `run` dispatches work; inspect `show` for its actual state.
+Handoff exports a packet without claiming completion. Import requires
+`{task_id, input_hash, prose, status, artifacts}` where artifacts are explicit
+candidate `{path, sha256}` pairs. Received work waits for human review.
+
+`decide` uses the same outcome/actor/rationale/action-hash contract but MCP
+cannot supply trusted local human confirmation: it returns `human_required`.
+Use the interactive CLI or an operator-enabled local UI. Decline/cancel are
+non-success states. Recovery marks unknown execution blocked for inspection;
+it does not blindly restart it. Changed inputs or candidates invalidate review.
+
+### `workspace_action(root: str, operation: str, data: dict | None = None)`
+
+Operations: `prepare`, `show`, `decide`, `execute`, `reconcile`. Prepare takes
+`{project_id, task_ids}` referring to human-accepted candidate tasks. Remaining
+operations take `action_id`. A separate local human approval is required before
+creating one new delivery ZIP; MCP cannot self-approve. The action records a
+pending state before writing and verifies a hash-bound receipt afterwards.
+Unknown outcomes require reconciliation, not duplicate writes.
+
+This is an **accepted-proposal handoff**, not publication authorization, cloud
+upload, or certification that every manuscript release check passed. Legacy
+Zotero/Obsidian/NotebookLM direct-write tools are outside this workspace gate.
+
 ## Discovery + ingest
 
 ### `propose_research_setup(topic: str)`
@@ -297,6 +357,6 @@ If a tool errors with `ValidationError`, your slug is malformed — clean it (lo
 
 ---
 
-## Total tool count: 86
+## Current tool inventory
 
-See `src/research_hub/mcp_server.py` for the source of truth.
+Use `research-hub describe --filter mcp_tools` and `src/research_hub/mcp_server.py` for the current inventory.

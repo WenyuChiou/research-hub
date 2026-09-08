@@ -63,6 +63,8 @@ def _write_config(tmp_path, monkeypatch, *, root_exists=True, zotero_key="secret
 
 
 def test_doctor_all_green(tmp_path, monkeypatch, capsys):
+    from research_hub import __version__
+    monkeypatch.setattr("research_hub.doctor.metadata.version", lambda name: __version__)
     from research_hub.doctor import print_doctor_report, run_doctor
     from research_hub.security.secret_box import encrypt
 

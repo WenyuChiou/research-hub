@@ -1,0 +1,14 @@
+:root {
+  --navy: #172c3d;
+  --paper: #f5f5ee;
+  --white: #fffef9;
+  --ink: #253c39;
+  --muted: #6b766c;
+  --line: #dedfd3;
+  --teal: #17695a;
+  --focus: #d19735;
+  --wash: #f3f4ec;
+  --body-font: "Trebuchet MS", "Microsoft JhengHei", "PingFang TC", sans-serif;
+  --display-font:
+    "Palatino Linotype", "Book Antiqua", "Noto Serif TC", Georgia, serif;
+}

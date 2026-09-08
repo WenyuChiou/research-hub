@@ -12,6 +12,36 @@
 
 ## [Unreleased]
 
+### Added
+- Opt-in researcher workspace (`serve --workspace`): six bilingual React pages,
+  bundled wheel assets, account-free empirical/review examples, shared
+  project/manuscript/task/action services across CLI, MCP and REST.
+- Public writing-bundle adapter preview, hash-bound proposal tasks, persistent
+  SQLite receipts, interactive human decisions, and separately approved local
+  proposal ZIPs. Originals stay in Word, LaTeX or Markdown editors.
+- Capability-checked no-tool Codex proposals and portable handoffs, retained
+  output, cancellation, explicit recovery, revision receipts and replay tests.
+- Researcher-first bilingual README, Image 2 concept diagrams, actual browser
+  captures, accessibility regressions and installed-wheel CI.
+
+### Fixed
+- Doctor no longer silently encrypts configuration during diagnosis; it reports
+  explicit remediation and installed/source version drift.
+- Failed/null research results are filtered without discarding completed prose.
+
+### Security
+- Loopback-only workspace server, origin/CSRF checks, bounded file inputs,
+  fail-closed configured policy, exact candidate acceptance and duplicate-write
+  prevention. Child lifetime is guarded without sandbox breakaway.
+- Existing direct-write tools remain outside workspace approval coverage. Local
+  operator assertions are not shared-host identity or publication authorization.
+
+### Migration
+- Preview is additive and not included in PyPI 1.2.0. No automatic migration of
+  existing vaults or workflow state. See [UPGRADE.md](UPGRADE.md) before adoption.
+- The writing adapter is an explicitly verified producer preview, not an
+  unpublished commit installed as a permanent runtime dependency.
+
 ## [1.2.0] - 2026-08-31
 
 ### Added

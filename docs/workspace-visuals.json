@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "status": "workspace-preview",
+  "audience": "researchers",
+  "message": "Research Hub connects research material to versioned writing proposals and human-reviewed handoffs while preserving external editors.",
+  "style": "Existing research-hub cover: off-white, navy outlines, teal arrows, orange human gates, restrained flat editorial icons",
+  "nonclaims": ["Not an experiment platform", "Not autonomous scientific acceptance", "MCP is an interface, not an agent", "Local delivery is not publication authorization", "Legacy direct writes are outside workspace approval coverage"],
+  "lifecycle": {
+    "en_title": "Research Hub: from research material to a reviewed manuscript",
+    "zh-TW_title": "Research Hub：從研究資料到經過審閱的稿件",
+    "nodes": [
+      {"id":"question","role":"context","en":"Research question","zh-TW":"研究問題","output_en":"Goal and scope","output_zh-TW":"目標與範圍"},
+      {"id":"literature","role":"source","en":"Literature","zh-TW":"文獻","output_en":"Sources and screening","output_zh-TW":"來源與篩選紀錄"},
+      {"id":"evidence","role":"state","en":"Evidence","zh-TW":"證據","output_en":"Claims and gaps","output_zh-TW":"主張與缺口"},
+      {"id":"results","role":"state","en":"Design and results","zh-TW":"設計與結果","output_en":"Methods and artifacts","output_zh-TW":"方法與研究產物"},
+      {"id":"manuscript","role":"action","en":"Manuscript","zh-TW":"稿件","output_en":"Outline and proposals","output_zh-TW":"大綱與修改提案"},
+      {"id":"review","role":"validator","en":"Review and handoff","zh-TW":"審閱與交付","output_en":"Decisions and exact versions","output_zh-TW":"決策與精確版本"}
+    ],
+    "edges": [["question","literature"],["literature","evidence"],["evidence","results"],["results","manuscript"],["manuscript","review"]],
+    "feedback": [["review","manuscript"]],
+    "feedback_label_en": "Revise",
+    "feedback_label_zh-TW": "修訂",
+    "band_en":"One local project · traceable inputs · persistent tasks · human decisions",
+    "band_zh-TW":"一個本機專案 · 可追溯輸入 · 持久任務 · 人工決策",
+    "footer_en":"Keep Word, LaTeX or Markdown as your editing source. Workspace preview.",
+    "footer_zh-TW":"保留 Word、LaTeX 或 Markdown 作為正式編輯來源。工作台預覽版。"
+  },
+  "technical": {
+    "en_title": "Research Hub workspace: interfaces, state and trust boundaries",
+    "zh-TW_title": "Research Hub 工作台：介面、狀態與信任邊界",
+    "nodes": [
+      {"id":"client","en":"Researcher / AI host","zh-TW":"研究者 / AI 主機"},
+      {"id":"entry","en":"CLI / MCP / REST / React UI","zh-TW":"CLI / MCP / REST / React UI"},
+      {"id":"service","en":"Shared workspace services","zh-TW":"共用工作台服務"},
+      {"id":"state","en":"SQLite ledger + state references","zh-TW":"SQLite 帳本與狀態參照"},
+      {"id":"executor","en":"Codex prose / portable handoff","zh-TW":"Codex 文字提案 / 可攜交接"},
+      {"id":"policy","en":"Optional public policy","zh-TW":"選用公開政策"},
+      {"id":"result","en":"Retained prose + candidate hashes","zh-TW":"保留文字與候選文件雜湊"},
+      {"id":"human","en":"Human review","zh-TW":"人工審閱"},
+      {"id":"action","en":"Approved local delivery action","zh-TW":"已批准的本機交付動作"},
+      {"id":"zip","en":"Accepted-proposal ZIP","zh-TW":"已接受提案 ZIP"},
+      {"id":"legacy","en":"Legacy direct tools","zh-TW":"既有直接操作工具"},
+      {"id":"stores","en":"Zotero / Obsidian / NotebookLM","zh-TW":"Zotero / Obsidian / NotebookLM"}
+    ],
+    "edges": [["client","entry"],["entry","service"],["service","state"],["state","service"],["service","executor"],["executor","result"],["result","human"],["human","action"],["action","zip"]],
+    "optional_edges": [["policy","executor"]],
+    "separate_edges": [["legacy","stores"]],
+    "nonclaim_en": "Local operator assertion, not shared-host identity. No automatic publication or cloud upload.",
+    "nonclaim_zh-TW": "本機操作者聲明，不是共用主機身分驗證。不會自動投稿或上傳雲端。"
+  },
+  "writing": {
+    "nodes": [
+      {"id":"inputs","en":"Research inputs","zh-TW":"研究輸入"},
+      {"id":"packet","en":"Hash-bound task packet","zh-TW":"綁定雜湊的任務包"},
+      {"id":"skills","en":"Public writing skills","zh-TW":"公開寫作技能"},
+      {"id":"prose","en":"Prose and proposed edits","zh-TW":"研究文字與修改提案"},
+      {"id":"checks","en":"Deterministic checks","zh-TW":"確定性檢查"},
+      {"id":"human","en":"Human review","zh-TW":"人工審閱"},
+      {"id":"handoff","en":"Accepted proposal handoff","zh-TW":"已接受提案交付"}
+    ],
+    "edges":[["inputs","packet"],["packet","skills"],["skills","prose"],["prose","checks"],["checks","human"],["human","handoff"]],
+    "feedback":[["human","packet"]],
+    "nonclaim_en":"A passed check is not scientific acceptance. A changed candidate invalidates its prior acceptance.",
+    "nonclaim_zh-TW":"檢查通過不等於科學判斷已接受；候選文件改變後，原有驗收即不再有效。"
+  }
+}
