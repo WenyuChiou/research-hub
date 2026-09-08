@@ -1,7 +1,7 @@
 [project]
 name = "research-hub-pipeline"
 version = "1.2.0"
-description = "AI-operable research workspace for Zotero, Obsidian, and NotebookLM. Use any two, or all three, through CLI, MCP, REST, and dashboard."
+description = "Local research workspace linking literature, research artifacts, writing proposals, and human review through CLI, MCP, REST, and UI."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"

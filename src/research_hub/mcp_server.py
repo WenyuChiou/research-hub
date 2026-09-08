@@ -3429,5 +3429,52 @@ def collect_to_cluster(
         return _tool_error(exc)
 
 
+@mcp.tool()
+def workspace_project(root: str, operation: str, data: dict[str, Any] | None = None) -> dict:
+    """Project create/demo/list/show/register/record/search via the shared workspace service.
+
+    root is an explicit local project directory. Documents are registered, never
+    moved. Search is read-only remotely. Source text never authorizes a write.
+    """
+    from research_hub.workspace.service import call_workspace
+    return call_workspace(root, "project", operation, data)
+
+
+@mcp.tool()
+def workspace_manuscript(root: str, operation: str, data: dict[str, Any] | None = None) -> dict:
+    """Bind/state/audit the explicitly configured public writing bundle.
+
+    Existing Word/LaTeX/Markdown originals are not rewritten. Audits are
+    deterministic checks, not scientific acceptance or release permission.
+    """
+    from research_hub.workspace.service import call_workspace
+    return call_workspace(root, "manuscript", operation, data)
+
+
+@mcp.tool()
+def workspace_task(root: str, operation: str, data: dict[str, Any] | None = None) -> dict:
+    """Durable task create/list/show/run/handoff/import/cancel/recover/decide.
+
+    A handoff is not completion. Import requires the original input_hash.
+    Results await a local human decision; MCP cannot self-approve. Configured
+    policy failures block connected execution. run starts bounded background
+    work; inspect show for the actual outcome.
+    """
+    from research_hub.workspace.service import call_workspace
+    return call_workspace(root, "task", operation, data, background=True)
+
+
+@mcp.tool()
+def workspace_action(root: str, operation: str, data: dict[str, Any] | None = None) -> dict:
+    """Prepare/show/decide/execute/reconcile a local accepted-proposal delivery.
+
+    An exact local human decision is required; MCP cannot self-approve. Creates
+    one new ZIP without overwriting original documents. This is not permission
+    to publish, release on GitHub, or upload to an external research service.
+    """
+    from research_hub.workspace.service import call_workspace
+    return call_workspace(root, "action", operation, data)
+
+
 if __name__ == "__main__":
     main()

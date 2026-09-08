@@ -9,6 +9,48 @@ on:
       - master
 
 jobs:
+  workspace:
+    name: workspace UI, browser and installed wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Check and build workspace
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Require reproducible bundled assets
+        run: |
+          test -z "$(git status --porcelain -- src/research_hub/workspace_static)"
+      - name: Install test tooling and build wheel
+        run: |
+          pip install build playwright==1.58.0
+          python -m build --wheel --outdir dist/workspace
+          python -m venv .wheel-venv
+          .wheel-venv/bin/pip install dist/workspace/*.whl 'fastmcp>=2.0'
+      - name: Verify clean wheel without Node runtime
+        run: .wheel-venv/bin/python scripts/workspace_install_smoke.py --output artifacts/wheel-report.json
+      - name: Real Chromium workspace smoke
+        run: |
+          pip install -e '.[mcp]'
+          python -m playwright install --with-deps chromium
+          python scripts/workspace_browser_smoke.py --output artifacts/browser
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: workspace-verification
+          path: artifacts/
+
   test:
     # Windows / macOS runners have 14 GB RAM — run the full suite without
     # sharding. Ubuntu (7 GB) is handled separately in test-ubuntu (see #61).

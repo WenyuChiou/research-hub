@@ -45,6 +45,7 @@ def filter_agent_results(results: list[Any]) -> list[dict[str, Any]]:
         result
         for result in results
         if isinstance(result, dict) and result and result.get("ok", True) is not False
+        and result.get("status") not in ("failed", "error", "cancelled", "canceled", "declined", "timeout", "blocked")
     ]
 
 

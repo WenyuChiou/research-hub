@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from importlib import metadata
 import json
 import os
 import re
@@ -22,6 +23,30 @@ class CheckResult:
     message: str
     remedy: str = ""
     details: str = ""
+
+
+def check_installation_version() -> CheckResult:
+    """Distinguish source checkout health from the installed distribution."""
+    from research_hub import __version__
+
+    try:
+        installed = metadata.version("research-hub-pipeline")
+    except metadata.PackageNotFoundError:
+        return CheckResult("installation/version", "WARN", f"Source {__version__}; distribution not installed",
+                           remedy="Install the release wheel into the Python environment used to run research-hub")
+    status = "OK" if installed == __version__ else "WARN"
+    return CheckResult("installation/version", status, f"Source {__version__}; installed metadata {installed}",
+                       remedy="Reinstall the intended release in this Python environment" if status == "WARN" else "")
+
+
+def check_config_secrets(config_data: dict) -> CheckResult:
+    """Report plaintext credentials without changing configuration or keys."""
+    zotero = config_data.get("zotero", {})
+    key = zotero.get("api_key") if isinstance(zotero, dict) else None
+    if isinstance(key, str) and key and not is_encrypted(key):
+        return CheckResult("config/encrypt_secrets", "WARN", "Plaintext credential found; configuration was not changed",
+                           remedy="Explicit repair: research-hub config encrypt-secrets")
+    return CheckResult("config/encrypt_secrets", "OK", "No plaintext Zotero credential in configuration")
 
 
 def check_agent_collab_harness() -> CheckResult:
@@ -921,8 +946,8 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
 
     results: list[CheckResult] = []
     config_path = _resolve_config_path()
-    migrated_plaintext = _encrypt_plaintext_secrets(config_path)
     config_data = _load_config_json(config_path)
+    results.append(check_installation_version())
 
     print("=" * 60)
     print("research-hub health check")
@@ -941,15 +966,7 @@ def run_doctor(*, strict: bool = False) -> list[CheckResult]:
 
     if config_path and config_path.exists():
         results.append(CheckResult("config", "OK", f"Found at {config_path}"))
-        if migrated_plaintext:
-            results.append(
-                CheckResult(
-                    "config/encrypt_secrets",
-                    "WARN",
-                    "Detected plaintext Zotero key and encrypted it in place",
-                    remedy="Future writes use encrypted storage automatically",
-                )
-            )
+        results.append(check_config_secrets(config_data))
     else:
         results.append(
             CheckResult(

@@ -17,6 +17,26 @@ backup checklist + a historical appendix for very old releases.
 
 ## v1.1 -> v1.2
 
+### Opt-in workspace preview after v1.2 (unreleased)
+
+- Install the feature branch as described in [the workspace guide](docs/workspace-guide.md).
+  Existing dashboard, vault, citation and workflow interfaces remain available.
+- Choose a workspace root containing files you intend to register. Registration
+  never relocates or overwrites them. Back up the entire root, including
+  `.research/`, before adopting another preview revision.
+- SQLite stores task receipts; workflow YAML and public manuscript JSON remain
+  separate authorities. No existing state is silently migrated.
+- New manuscript binding registers manuscripts, supplements and reviewer-response
+  documents for writing checks. Analysis code, data, figures and tables stay
+  authority sources and frozen task inputs. Older preview bindings that included
+  these in the manuscript artifact list require an explicit alignment review;
+  existing manuscript state is not rewritten automatically.
+- Roll back by using the published dashboard command and keeping the workspace
+  root intact. PyPI 1.2.0 cannot operate the new workspace ledger; preserve it for
+  the preview, rather than deleting it or trying to downgrade its state.
+
+### Published v1.2 workflow migration
+
 - Existing research data needs no migration.
 - Workflow state schema 1.0 is still readable. Run
   `research-hub workflow migrate --state .research/workflow_state.yml --json`
