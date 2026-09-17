@@ -267,6 +267,10 @@ def audit_command(directory, argv):
                             pending.outcome = "cancelled"
                             pending.error = "command_ended_before_attempt"
                             pending.finish()
+                if store.failed:
+                    command.exit_code = 1
+                    command.outcome = "error"
+                    command.error = "audit_write_failed"
                 if command.exit_code not in (None, 0) and command.outcome is None:
                     command.outcome = "error"
                     command.error = "nonzero_exit"

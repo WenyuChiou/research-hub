@@ -189,3 +189,30 @@ def test_late_worker_cannot_rewrite_closed_audit(tmp_path):
     assert endings[0]["operation"] == "backend-search"
     assert endings[0]["outcome"] == "cancelled"
     assert endings[-1]["outcome"] == "cancelled"
+
+
+def test_swallowed_artifact_write_failure_is_fatal_and_manifest_exit_agrees(
+    tmp_path, monkeypatch
+):
+    directory = tmp_path / "audit"
+    original_open = Path.open
+
+    def disk_full(path, mode="r", *args, **kwargs):
+        if mode == "xb" and path.parent.name == "artifacts":
+            raise OSError("Synthetic disk full")
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", disk_full)
+    with pytest.raises(OSError, match="could not be completely persisted"):
+        with audit_command(directory, ["search"]) as command:
+            # A legacy backend may catch an artifact persistence error.
+            try:
+                audit_call("backend-search", lambda: ["synthetic"])
+            except OSError:
+                pass
+            command.exit_code = 0
+    manifest = json.loads((directory / "audit_manifest.json").read_text())
+    assert manifest["complete"] is False
+    assert manifest["exit_code"] == 1
+    assert manifest["outcome"] == "error"
+    assert records(directory)[-1]["error_code"] == "audit_write_failed"
