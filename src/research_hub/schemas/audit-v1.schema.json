@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WenyuChiou/research-hub/master/src/research_hub/schemas/audit-v1.schema.json",
+  "title": "Research Hub audit files v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/event"
+    },
+    {
+      "$ref": "#/$defs/manifest"
+    }
+  ],
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(artifacts/[a-f0-9]{32}\\.(json|bin)|events\\.jsonl)$",
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "type",
+        "sequence",
+        "event",
+        "attempt_id",
+        "parent_id",
+        "operation",
+        "backend",
+        "timestamp",
+        "parameters",
+        "outcome",
+        "error_code",
+        "http_status",
+        "record_count",
+        "artifacts"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "type": {
+          "const": "audit_event"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "event": {
+          "enum": [
+            "started",
+            "finished"
+          ]
+        },
+        "attempt_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$",
+          "minLength": 32,
+          "maxLength": 32
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$",
+              "minLength": 32,
+              "maxLength": 32
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "backend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "outcome": {
+          "enum": [
+            null,
+            "success",
+            "success_empty",
+            "partial",
+            "not_found",
+            "rate_limited",
+            "http_error",
+            "network_error",
+            "timeout",
+            "parse_error",
+            "unknown",
+            "cancelled",
+            "error"
+          ]
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "http_status": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "record_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "event": {
+                "const": "started"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "outcome": {
+                "type": "null"
+              },
+              "artifacts": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "success",
+                  "success_empty",
+                  "partial",
+                  "not_found",
+                  "rate_limited",
+                  "http_error",
+                  "network_error",
+                  "timeout",
+                  "parse_error",
+                  "unknown",
+                  "cancelled",
+                  "error"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "success_empty"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "record_count": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "type",
+        "created_at",
+        "command_id",
+        "complete",
+        "outcome",
+        "exit_code",
+        "event_count",
+        "events"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "type": {
+          "const": "audit_manifest"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "command_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$",
+          "minLength": 32,
+          "maxLength": 32
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "success_empty",
+            "partial",
+            "not_found",
+            "rate_limited",
+            "http_error",
+            "network_error",
+            "timeout",
+            "parse_error",
+            "unknown",
+            "cancelled",
+            "error"
+          ]
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "event_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "events": {
+          "$ref": "#/$defs/artifact"
+        }
+      }
+    }
+  }
+}
