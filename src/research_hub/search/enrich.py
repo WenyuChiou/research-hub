@@ -11,6 +11,7 @@ from research_hub.search.arxiv_backend import ArxivBackend
 from research_hub.search.base import SearchResult
 from research_hub.search.openalex import OpenAlexBackend
 from research_hub.search.semantic_scholar import SemanticScholarClient
+from research_hub.audit import audit_call, audited
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ def classify_candidate(candidate: str) -> str:
     return "title"
 
 
+@audited("enrich-candidates")
 def enrich_candidates(
     candidates: Sequence[str],
     *,
@@ -66,7 +68,7 @@ def enrich_candidates(
                     identifier = cand
                     if kind == "arxiv" and name == "semantic-scholar":
                         identifier = f"arxiv:{cand}"
-                    result = backend.get_paper(identifier)
+                    result = audit_call("backend-lookup", backend.get_paper, identifier, backend=name, evidence="parsed")
                 except Exception as exc:
                     logger.debug("enrich %s via %s failed: %s", cand, name, exc)
                     continue
@@ -78,7 +80,7 @@ def enrich_candidates(
         else:
             for name, backend in instances.items():
                 try:
-                    hits = backend.search(cand, limit=5)
+                    hits = audit_call("backend-search", backend.search, cand, limit=5, backend=name, evidence="parsed")
                 except Exception as exc:
                     logger.debug("enrich title %r via %s failed: %s", cand, name, exc)
                     continue
@@ -97,7 +99,7 @@ def enrich_candidates(
                 # identifier and has no access to a local PDF directory — PDF fallback
                 # is out of scope here and would require threading cfg through the
                 # entire enrich_candidates call chain. pdf_path defaults to None.
-                recovered = recover_abstract(resolved.doi)
+                recovered = audit_call("abstract-recovery", recover_abstract, resolved.doi, evidence="parsed")
             except Exception as exc:
                 logger.debug("abstract recovery failed for %s: %s", resolved.doi, exc)
             else:

@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub._useragent import user_agent
 
@@ -30,13 +31,13 @@ def _recover_from_crossref(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     try:
         from research_hub.search.crossref import _extract_crossref_abstract
 
-        response = requests.get(
+        response = http_request("get",
             f"https://api.crossref.org/works/{quote(doi.strip(), safe='')}",
             timeout=timeout,
             headers={"User-Agent": _USER_AGENT},
         )
         if response.status_code == 200:
-            work = (response.json().get("message") or {})
+            work = (read_json(response).get("message") or {})
             abstract = _extract_crossref_abstract(work)
             if abstract:
                 logger.info("abstract recovery: doi=%s source=crossref", doi)
@@ -48,14 +49,14 @@ def _recover_from_crossref(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
 
 def _recover_from_unpaywall(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     try:
-        response = requests.get(
+        response = http_request("get",
             f"https://api.unpaywall.org/v2/{quote(doi.strip(), safe='')}",
             params={"email": _UNPAYWALL_EMAIL},
             timeout=timeout,
             headers={"User-Agent": _USER_AGENT},
         )
         if response.status_code == 200:
-            data = response.json() or {}
+            data = read_json(response) or {}
             best_oa = (data.get("best_oa_location") or {})
             oa_url = best_oa.get("url", "") or ""
             if oa_url:
@@ -68,7 +69,7 @@ def _recover_from_unpaywall(doi: str, *, timeout: int = 10) -> RecoveredAbstract
 
 def _recover_from_semantic_scholar(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     try:
-        response = requests.get(
+        response = http_request("get",
             f"https://api.semanticscholar.org/graph/v1/paper/DOI:{quote(doi.strip(), safe='')}",
             params={"fields": "abstract,tldr"},
             timeout=timeout,
@@ -76,7 +77,7 @@ def _recover_from_semantic_scholar(doi: str, *, timeout: int = 10) -> RecoveredA
         )
         if response.status_code != 200:
             return RecoveredAbstract(text="", source="")
-        data = response.json() or {}
+        data = read_json(response) or {}
         abstract = str(data.get("abstract", "") or "").strip()
         if abstract:
             logger.info("abstract recovery: doi=%s source=s2", doi)
@@ -132,14 +133,14 @@ def _recover_from_openalex(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     not rate-limited like S2).
     """
     try:
-        response = requests.get(
+        response = http_request("get",
             f"https://api.openalex.org/works/doi:{quote(doi.strip(), safe='')}",
             timeout=timeout,
             headers={"User-Agent": _USER_AGENT},
         )
         if response.status_code != 200:
             return RecoveredAbstract(text="", source="")
-        data = response.json() or {}
+        data = read_json(response) or {}
         inverted = data.get("abstract_inverted_index")
         if not isinstance(inverted, dict) or not inverted:
             return RecoveredAbstract(text="", source="")

@@ -2713,6 +2713,11 @@ def build_parser() -> argparse.ArgumentParser:
     variants_p.add_argument("--count", type=int, default=4)
     variants_p.add_argument("--out", help="Write to file instead of stdout")
 
+    for audited_parser in (search_parser, enrich_parser, verify_parser, references_parser, citations_parser):
+        audited_parser.add_argument(
+            "--audit-output", metavar="DIRECTORY",
+            help="Write versioned attempt events and raw evidence to a NEW directory",
+        )
     return parser
 
 
@@ -3759,7 +3764,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        return _main_dispatch(args, parser)
+        from research_hub.audit import audit_command
+
+        with audit_command(getattr(args, "audit_output", None), raw_argv) as audit:
+            result = _main_dispatch(args, parser)
+            audit.exit_code = result
+            return result
     except ResearchHubError as exc:
         if getattr(args, "json", False):
             print(

@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -41,7 +42,7 @@ class PubMedBackend:
     def _request(self, endpoint: str, *, params: dict[str, Any]) -> dict[str, Any] | None:
         self._throttle()
         try:
-            response = requests.get(
+            response = http_request("get",
                 f"{PUBMED_BASE}/{endpoint}",
                 params=params,
                 headers={"User-Agent": _USER_AGENT},
@@ -53,7 +54,7 @@ class PubMedBackend:
         if response.status_code != 200:
             return None
         try:
-            payload = response.json()
+            payload = read_json(response, collection=("esearchresult", "idlist") if endpoint == "esearch.fcgi" else ("result", "uids"))
         except ValueError:
             return None
         return payload if isinstance(payload, dict) else None

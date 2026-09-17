@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from research_hub.audit import audit_call
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ def expand_query(
     if cli:
         try:
             prompt = _EXPANSION_PROMPT.format(n=max_variants, query=query)
-            raw = invoke(cli, prompt, timeout_sec=60.0)
+            raw = audit_call("llm-query-expansion", invoke, cli, prompt, timeout_sec=60.0, backend=cli)
             for line in raw.splitlines():
                 cleaned = _LIST_MARKER.sub("", line).strip().strip('"').strip()
                 if not cleaned or cleaned.lower() == query.lower():

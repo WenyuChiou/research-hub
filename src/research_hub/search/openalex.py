@@ -8,6 +8,7 @@ import time
 from urllib.parse import quote
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -80,7 +81,7 @@ class OpenAlexBackend:
     def _request(self, url: str, *, params: dict[str, str | int]) -> requests.Response | None:
         self._throttle()
         try:
-            response = requests.get(
+            response = http_request("get",
                 url,
                 params=params,
                 timeout=self.timeout,
@@ -181,7 +182,7 @@ class OpenAlexBackend:
             return []
         try:
             response.raise_for_status()
-            payload = response.json()
+            payload = read_json(response, collection=("results",))
         except (ValueError, requests.exceptions.RequestException) as exc:
             logger.debug("OpenAlex search failed: %s", exc)
             return []
@@ -201,7 +202,7 @@ class OpenAlexBackend:
                 return None
             try:
                 response.raise_for_status()
-                return self._parse_work(response.json())
+                return self._parse_work(read_json(response))
             except (ValueError, requests.exceptions.RequestException) as exc:
                 logger.debug("OpenAlex DOI lookup failed: %s", exc)
                 return None
@@ -224,7 +225,7 @@ class OpenAlexBackend:
                 return None
             try:
                 response.raise_for_status()
-                payload = response.json()
+                payload = read_json(response, collection=("results",))
             except (ValueError, requests.exceptions.RequestException) as exc:
                 logger.debug("OpenAlex arXiv lookup failed: %s", exc)
                 return None
