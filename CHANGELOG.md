@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+### Added
+- Optional `--audit-output` on search, enrich, verify, references and cited-by:
+  versioned append-only attempt events, raw response/result references, exact
+  query variants and explicit backend failures. HTTP 404/429 and parse failures
+  remain distinct from successful empty results. See `docs/audit-output.md`.
+
+### Fixed
+- Fence abstract recovery explicitly in the enrichment resolver unit test;
+  swallowed network-fence warnings no longer stand in for a complete mock.
+- Reset audit context after an initial event-write failure and emit a
+  schema-valid, nonzero failure manifest instead of blocking later commands.
+
 ## [1.2.0] - 2026-08-31
 
 ### Added

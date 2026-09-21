@@ -63,6 +63,12 @@ links. Works offline.
 
 ## Search & verification
 
+`search`, `enrich`, `verify`, `references`, and `cited-by` accept
+`--audit-output NEW_DIRECTORY` to preserve versioned attempt events, raw
+responses, result references and explicit failures. The directory cannot be
+reused. See [the audit file contract](audit-output.md); a successful empty
+response is different from HTTP 404, HTTP 429, timeout or parse failure.
+
 ### `search`
 Query Semantic Scholar.
 

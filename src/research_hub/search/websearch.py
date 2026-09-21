@@ -17,6 +17,7 @@ import re
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -140,44 +141,44 @@ def _fetch(cfg: _ProviderConfig, query: str, limit: int) -> list[SearchResult]:
 
 
 def _fetch_tavily(cfg: _ProviderConfig, query: str, limit: int) -> list[SearchResult]:
-    response = requests.post(
+    response = http_request("post",
         "https://api.tavily.com/search",
         json={"api_key": cfg.api_key, "query": query, "max_results": limit},
         timeout=_TIMEOUT,
         headers={"User-Agent": _USER_AGENT},
     )
     response.raise_for_status()
-    payload = response.json()
+    payload = read_json(response, collection=("results",))
     return [_result_from_item(item, snippet_key="content", score_key="score") for item in payload.get("results", [])[:limit]]
 
 
 def _fetch_brave(cfg: _ProviderConfig, query: str, limit: int) -> list[SearchResult]:
-    response = requests.get(
+    response = http_request("get",
         "https://api.search.brave.com/res/v1/web/search",
         params={"q": query, "count": limit},
         timeout=_TIMEOUT,
         headers={"User-Agent": _USER_AGENT, "X-Subscription-Token": cfg.api_key or ""},
     )
     response.raise_for_status()
-    payload = response.json()
+    payload = read_json(response, collection=("web", "results"))
     return [_result_from_item(item, snippet_key="description") for item in payload.get("web", {}).get("results", [])[:limit]]
 
 
 def _fetch_google_cse(cfg: _ProviderConfig, query: str, limit: int) -> list[SearchResult]:
-    response = requests.get(
+    response = http_request("get",
         "https://www.googleapis.com/customsearch/v1",
         params={"key": cfg.api_key, "cx": cfg.extra.get("cx", ""), "q": query, "num": limit},
         timeout=_TIMEOUT,
         headers={"User-Agent": _USER_AGENT},
     )
     response.raise_for_status()
-    payload = response.json()
+    payload = read_json(response, collection=("items",), empty_count=("searchInformation", "totalResults"))
     return [_result_from_item(item, url_key="link", snippet_key="snippet") for item in payload.get("items", [])[:limit]]
 
 
 def _fetch_ddg(cfg: _ProviderConfig, query: str, limit: int) -> list[SearchResult]:
     del cfg
-    response = requests.get(
+    response = http_request("get",
         f"https://html.duckduckgo.com/html/?q={quote_plus(query)}",
         timeout=_TIMEOUT,
         headers={"User-Agent": _USER_AGENT},
