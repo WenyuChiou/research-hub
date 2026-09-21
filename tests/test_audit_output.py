@@ -216,3 +216,45 @@ def test_swallowed_artifact_write_failure_is_fatal_and_manifest_exit_agrees(
     assert manifest["exit_code"] == 1
     assert manifest["outcome"] == "error"
     assert records(directory)[-1]["error_code"] == "audit_write_failed"
+
+
+def test_first_event_write_failure_resets_context_and_writes_valid_manifest(
+    tmp_path, monkeypatch
+):
+    directory = tmp_path / "failed-audit"
+    original_open = Path.open
+    failed = False
+
+    def fail_first_event(path, mode="r", *args, **kwargs):
+        nonlocal failed
+        if path.name == "events.jsonl" and mode == "a" and not failed:
+            failed = True
+            raise OSError("Synthetic first-event write failure")
+        return original_open(path, mode, *args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Path, "open", fail_first_event)
+        with pytest.raises(OSError, match="could not be completely persisted"):
+            with audit_command(directory, ["search", "synthetic"]):
+                pass
+
+    manifest = json.loads((directory / "audit_manifest.json").read_text())
+    schema = json.loads(
+        (
+            Path(__file__).parents[1] / "src/research_hub/schemas/audit-v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(manifest)
+    assert manifest["complete"] is False
+    assert manifest["outcome"] == "error"
+    assert manifest["exit_code"] == 1
+    assert manifest["event_count"] == 0
+
+    # A failed __enter__ must not poison the process-wide ContextVar. A fresh
+    # command in the same process must be able to start and finish normally.
+    recovery = tmp_path / "recovery-audit"
+    with audit_command(recovery, ["search", "recovery"]):
+        pass
+    recovered = json.loads((recovery / "audit_manifest.json").read_text())
+    assert recovered["complete"] is True
+    assert recovered["outcome"] == "success"

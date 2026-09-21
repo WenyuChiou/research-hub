@@ -273,12 +273,30 @@
         },
         "event_count": {
           "type": "integer",
-          "minimum": 2
+          "minimum": 0
         },
         "events": {
           "$ref": "#/$defs/artifact"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "complete": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "event_count": {
+                "minimum": 2
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

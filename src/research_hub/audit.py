@@ -96,11 +96,11 @@ class _Store:
         with self.lock:
             if self.closed:
                 return
-            self.sequence += 1
+            sequence = self.sequence + 1
             event = {
                 "schema_version": VERSION,
                 "type": "audit_event",
-                "sequence": self.sequence,
+                "sequence": sequence,
                 **event,
             }
             try:
@@ -112,6 +112,7 @@ class _Store:
             except (OSError, ValueError):
                 self.failed = True
                 raise
+            self.sequence = sequence
 
     def artifact(self, data, suffix="json"):
         with self.lock:
@@ -155,11 +156,18 @@ class Attempt:
 
     def __enter__(self):
         self.token = _CURRENT.set(self if self.store else None)
-        if self.store:
-            with self.store.lock:
-                if not self.store.closed:
-                    self.store.open[self.id] = self
-                    self._emit("started")
+        try:
+            if self.store:
+                with self.store.lock:
+                    if not self.store.closed:
+                        self.store.open[self.id] = self
+                        self._emit("started")
+        except BaseException:
+            if self.store:
+                with self.store.lock:
+                    self.store.open.pop(self.id, None)
+            _CURRENT.reset(self.token)
+            raise
         return self
 
     def _emit(self, event):
@@ -276,6 +284,10 @@ def audit_command(directory, argv):
                     command.error = "nonzero_exit"
     finally:
         with store.lock:
+            if store.failed:
+                command.exit_code = 1
+                command.outcome = "error"
+                command.error = "audit_write_failed"
             store.closed = True
             events = store.events.read_bytes()
             manifest = {

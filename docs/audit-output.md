@@ -96,7 +96,10 @@ keys or install optional search dependencies.
 - Keyboard interruption writes a cancelled terminal record when cleanup can
   run. A forced process kill can leave only the started events; missing terminal
   evidence remains visibly incomplete. Audit-write failures are fatal, not
-  silently ignored by a backend's existing exception handling.
+  silently ignored by a backend's existing exception handling. If the first
+  event cannot be persisted, the failure manifest has `event_count: 0`,
+  `complete: false`, an error outcome and a nonzero exit code; the failed
+  context is discarded so a later command in the same process can still run.
 - HTTP timestamps bracket the library call, not packet-level timing. Recorded
   redirects show URLs/statuses from the response history. Response bodies are
   decoded by requests, not raw compressed network frames.
