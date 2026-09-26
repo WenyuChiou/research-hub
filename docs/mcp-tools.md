@@ -31,6 +31,20 @@ Enrich raw search results with abstracts and metadata. Use after `search_papers`
 ### `verify_paper(identifier: str)`
 Resolve a DOI / arXiv ID against multiple sources to confirm it exists and get canonical metadata. Use before adding to catch typos or invalid IDs.
 
+### `source_fetch(output_dir: str, doi: str = "", url: str = "", title: str = "", timeout: float = 30.0)`
+Acquire public source evidence into a new isolated directory. Supply a DOI or
+URL; an expected title helps check identity. Saves raw responses, source version,
+extracted text, locations and explicit access failures. Returns `ok: true` with
+`result` only when source status is `available`; otherwise returns `ok: false`
+with error details and the result when available. Metadata is not full-text proof.
+
+### `source_validate(result_path: str, output_dir: str | None = None)`
+Replay a saved source result offline from its raw response bytes. Returns
+`ok: true` with `report` when the receipt is valid, including valid inaccessible
+results. Check `report.status` separately for availability. Invalid evidence or
+exceptions return `ok: false` with the report or error details. Validation does
+not download sources, use credentials, or alter the original evidence.
+
 ### `discover_new(cluster_slug: str, query: str | None = None)`
 Pull discovery candidates from OpenAlex / arXiv / Semantic Scholar relevant to a cluster's existing literature. Returns candidates to be scored.
 

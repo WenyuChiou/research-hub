@@ -57,6 +57,7 @@ from research_hub import cli_pipeline as _cli_pipeline
 from research_hub import cli_vault as _cli_vault
 from research_hub import cli_paper as _cli_paper
 from research_hub import cli_maintenance as _cli_maintenance
+from research_hub.cli_source import _source_fetch, _source_validate
 from research_hub.cli_common import (
     _cli_deprecated_alias,
     _emit_cli_json,
@@ -577,6 +578,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Indent JSON output for human inspection",
     )
+
+    source_parser = subparsers.add_parser(
+        "source",
+        help="Acquire public source evidence without credentials",
+    )
+    source_sub = source_parser.add_subparsers(dest="source_command", required=True)
+    source_fetch_parser = source_sub.add_parser(
+        "fetch",
+        help="Fetch a public abstract, HTML article, or open-access PDF",
+    )
+    source_fetch_parser.add_argument("--doi", help="Expected DOI")
+    source_fetch_parser.add_argument("--url", help="Public http(s) source URL")
+    source_fetch_parser.add_argument("--title", default="", help="Expected source title")
+    source_fetch_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="New directory for immutable response and extraction evidence",
+    )
+    source_fetch_parser.add_argument("--json", action="store_true", help="Emit SourceFetchResult JSON")
+    source_validate_parser = source_sub.add_parser(
+        "validate",
+        help="Replay and validate a saved source-fetch evidence bundle",
+    )
+    source_validate_parser.add_argument("result", type=Path, help="source-fetch-result.json path")
+    source_validate_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        help="Expected evidence root (default: result file parent)",
+    )
+    source_validate_parser.add_argument("--json", action="store_true", help="Emit validation JSON")
 
     ask_parser = subparsers.add_parser(
         "ask",
@@ -2738,7 +2770,7 @@ def _main_dispatch(args, parser) -> int:
 
     _warn_cli_deprecated_alias_from_args(args)
 
-    exempt_commands = {"init", "setup", "doctor", "workflow", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context"}
+    exempt_commands = {"init", "setup", "doctor", "workflow", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context", "source"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()
@@ -2896,6 +2928,15 @@ def _main_dispatch(args, parser) -> int:
 
         print(describe_manifest(filter=args.filter, pretty=args.pretty, parser=parser))
         return 0
+    if args.command == "source":
+        if args.source_command == "fetch":
+            if not args.doi and not args.url:
+                parser.error("source fetch requires at least one of --doi or --url")
+            return _source_fetch(args)
+        if args.source_command == "validate":
+            return _source_validate(args)
+        parser.error("source requires a subcommand")
+        return 2
     if args.command == "ask":
         cfg = require_config()
         from research_hub.workflows import ask_cluster as _ask

@@ -18,6 +18,8 @@ EXPECTED_MAPPINGS = {
     "web_search": "websearch",
     "enrich_candidates": "enrich",
     "verify_paper": "verify",
+    "source_fetch": "source fetch",
+    "source_validate": "source validate",
     "suggest_integration": "suggest",
     "list_clusters": "clusters list",
     "show_cluster": "clusters show",

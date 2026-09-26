@@ -63,6 +63,44 @@ links. Works offline.
 
 ## Search & verification
 
+### `source fetch`
+
+Fetch credential-free public source evidence into a new output directory. At
+least one of `--doi` or `--url` is required; both may be supplied to check the
+retrieved identity against the expected DOI and title.
+
+```bash
+research-hub source fetch --doi 10.1234/example --title "Expected title" \
+  --output-dir runs/example-source --json
+research-hub source fetch --url https://example.org/public-article \
+  --output-dir runs/example-html --json
+research-hub source validate runs/example-html/source-fetch-result.json --json
+```
+
+The command preserves every HTTP response, extracted text, SHA-256 hashes,
+page or section locators, and a versioned `source-fetch-result.json`. Its
+receipt hash binds the normalized request to every response-body hash and the
+extracted-text hash. `source validate` checks containment and all hashes, then
+re-extracts the saved selected response without network access and verifies
+every locator's exact `[start, end)` range. Metadata evidence identifies a work but is not full-text
+claim evidence. The command uses
+only public HTTP endpoints: no Zotero write, login, institutional proxy, or
+authenticated session is attempted. Fetch sessions ignore netrc credentials,
+environment proxies, and cookies; redirect targets and resolved IP addresses
+must remain public. Responses are streamed only through the recorded size cap.
+Existing output directories are rejected.
+
+Full-text classification is conservative: HTML needs multiple substantive
+sections and enough extracted content; short or abstract-marked PDFs remain
+metadata/abstract evidence unless their structure supports a full-text label.
+
+MCP clients can call `source_fetch` with the same DOI, URL, title, output
+directory, and timeout fields. `source_validate` replays a saved result and
+optionally accepts its output directory. Acquisition failures and invalid
+receipts return `ok: false` with structured errors. Validation's `ok: true`
+means the receipt is intact, including a valid record of inaccessible evidence;
+use `report.status` to determine source availability.
+
 `search`, `enrich`, `verify`, `references`, and `cited-by` accept
 `--audit-output NEW_DIRECTORY` to preserve versioned attempt events, raw
 responses, result references and explicit failures. The directory cannot be
