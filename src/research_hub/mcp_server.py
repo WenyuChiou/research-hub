@@ -364,6 +364,68 @@ def verify_paper(
         return _tool_error(exc)
 
 
+def source_fetch(
+    output_dir: str,
+    doi: str = "",
+    url: str = "",
+    title: str = "",
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Fetch credential-free public source evidence into a new directory."""
+    try:
+        from research_hub.source_fetch import fetch_public_source
+
+        result = fetch_public_source(
+            output_dir=Path(output_dir),
+            doi=doi,
+            url=url,
+            title=title,
+            timeout=timeout,
+        ).to_dict()
+        if result["status"] != "available":
+            return {
+                "ok": False,
+                "error": "source fetch did not produce an available result",
+                "status": result["status"],
+                "result": result,
+            }
+        return {"ok": True, "result": result}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }
+
+
+def source_validate(
+    result_path: str,
+    output_dir: str | None = None,
+) -> dict[str, Any]:
+    """Replay a saved public-source result from its exact raw response bytes."""
+    try:
+        from research_hub.source_fetch import validate_source_fetch
+
+        report = validate_source_fetch(
+            Path(result_path),
+            output_dir=Path(output_dir) if output_dir else None,
+        )
+        if report.get("valid") is not True:
+            return {
+                "ok": False,
+                "error": "source validation failed",
+                "errors": report.get("errors", []),
+                "report": report,
+            }
+        return {"ok": True, "report": report}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }
+
+
 def suggest_integration(
     identifier: str,
     top_clusters: int = 3,
@@ -2512,6 +2574,8 @@ def main() -> None:
 mcp.tool()(search_papers)
 mcp.tool()(enrich_candidates)
 mcp.tool()(verify_paper)
+mcp.tool()(source_fetch)
+mcp.tool()(source_validate)
 mcp.tool()(suggest_integration)
 mcp.tool()(list_clusters)
 mcp.tool()(show_cluster)

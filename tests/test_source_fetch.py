@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from research_hub import cli
+from research_hub import mcp_server
 from research_hub import source_fetch as sf
 
 
@@ -636,6 +637,92 @@ def test_source_validate_cli_emits_replay_report(tmp_path, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out) == expected
 
 
+def test_source_fetch_mcp_delegates_and_reports_unavailable(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_fetch(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            to_dict=lambda: {
+                "status": "rate-limited",
+                "errors": ["HTTP 429"],
+            }
+        )
+
+    monkeypatch.setattr("research_hub.source_fetch.fetch_public_source", fake_fetch)
+
+    response = mcp_server.source_fetch(
+        str(tmp_path / "source"),
+        doi="10.1234/example",
+        url="https://example.org/article",
+        title="Expected title",
+        timeout=12.5,
+    )
+
+    assert calls == [{
+        "output_dir": tmp_path / "source",
+        "doi": "10.1234/example",
+        "url": "https://example.org/article",
+        "title": "Expected title",
+        "timeout": 12.5,
+    }]
+    assert response["ok"] is False
+    assert response["status"] == "rate-limited"
+    assert response["result"]["errors"] == ["HTTP 429"]
+
+
+def test_source_fetch_mcp_returns_structured_exception(monkeypatch, tmp_path):
+    def fail(**_kwargs):
+        raise FileExistsError("immutable output exists")
+
+    monkeypatch.setattr("research_hub.source_fetch.fetch_public_source", fail)
+
+    response = mcp_server.source_fetch(str(tmp_path), url="https://example.org")
+
+    assert response == {
+        "ok": False,
+        "error": "immutable output exists",
+        "error_type": "FileExistsError",
+    }
+
+
+def test_source_validate_mcp_delegates_and_reports_invalid(tmp_path, monkeypatch):
+    result_path = tmp_path / "source-fetch-result.json"
+    output_dir = tmp_path / "source"
+    calls = []
+
+    def fake_validate(path, *, output_dir=None):
+        calls.append((path, output_dir))
+        return {"valid": False, "errors": ["raw SHA-256 mismatch"]}
+
+    monkeypatch.setattr("research_hub.source_fetch.validate_source_fetch", fake_validate)
+
+    response = mcp_server.source_validate(str(result_path), str(output_dir))
+
+    assert calls == [(result_path, output_dir)]
+    assert response == {
+        "ok": False,
+        "error": "source validation failed",
+        "errors": ["raw SHA-256 mismatch"],
+        "report": {"valid": False, "errors": ["raw SHA-256 mismatch"]},
+    }
+
+
+def test_source_validate_mcp_returns_structured_exception(monkeypatch, tmp_path):
+    def fail(*_args, **_kwargs):
+        raise ValueError("result path is invalid")
+
+    monkeypatch.setattr("research_hub.source_fetch.validate_source_fetch", fail)
+
+    response = mcp_server.source_validate(str(tmp_path / "missing.json"))
+
+    assert response == {
+        "ok": False,
+        "error": "result path is invalid",
+        "error_type": "ValueError",
+    }
+
+
 # Independent-review regressions: each test below falsified the reviewed
 # fingerprint before its corresponding fix.
 def test_userinfo_and_shared_address_space_are_not_public():
@@ -715,7 +802,7 @@ def test_validator_rejects_rehashed_result_url_provenance_tamper(tmp_path, monke
 
 
 def test_pdf_parser_exception_becomes_persisted_parse_error(tmp_path, monkeypatch):
-    from pdfminer.pdfparser import PDFSyntaxError
+    PDFSyntaxError = pytest.importorskip("pdfminer.pdfparser").PDFSyntaxError
 
     response = FakeResponse(b"%PDF-broken", content_type="application/pdf")
     _one_response(monkeypatch, response)

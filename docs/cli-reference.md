@@ -94,6 +94,13 @@ Full-text classification is conservative: HTML needs multiple substantive
 sections and enough extracted content; short or abstract-marked PDFs remain
 metadata/abstract evidence unless their structure supports a full-text label.
 
+MCP clients can call `source_fetch` with the same DOI, URL, title, output
+directory, and timeout fields. `source_validate` replays a saved result and
+optionally accepts its output directory. Acquisition failures and invalid
+receipts return `ok: false` with structured errors. Validation's `ok: true`
+means the receipt is intact, including a valid record of inaccessible evidence;
+use `report.status` to determine source availability.
+
 `search`, `enrich`, `verify`, `references`, and `cited-by` accept
 `--audit-output NEW_DIRECTORY` to preserve versioned attempt events, raw
 responses, result references and explicit failures. The directory cannot be
