@@ -166,6 +166,368 @@ def test_pdf_full_text_records_page_locators(tmp_path, monkeypatch):
     assert result.raw_sha256 == sha256(pdf).hexdigest()
 
 
+def _selection_pdf(text, doi="", title=""):
+    return sf._Extracted(
+        text,
+        "full-text",
+        doi,
+        title,
+        [{"type": "pdf-page", "value": 1, "start": 0, "end": len(text)}],
+    )
+
+
+def test_visible_abstract_is_retained_without_page_chrome(tmp_path, monkeypatch):
+    html = b"""<html><head><meta name="citation_doi" content="10.1000/example">
+    <meta name="citation_title" content="Expected study"></head><body>
+    <form><div class="abstract">Not the published abstract in this form.</div></form>
+    <div class="card acl-abstract"><h5>Abstract</h5><span>
+    Published household consumption findings from the study.<br>Second sentence.
+    <script>not evidence</script><img src="icon.png"></span></div>
+    <div>Unrelated page footer and references.</div></body></html>"""
+    _one_response(monkeypatch, FakeResponse(html))
+    output = tmp_path / "visible-abstract"
+    result = sf.fetch_public_source(
+        url="https://example.org/study", title="Expected study", output_dir=output
+    )
+    assert result.evidence_level == "abstract"
+    extracted = Path(result.extracted_text_path).read_text(encoding="utf-8")
+    assert (
+        extracted
+        == "Published household consumption findings from the study. Second sentence."
+    )
+    assert result.locators == [
+        {"type": "html-section", "value": "Abstract", "start": 0, "end": len(extracted)}
+    ]
+    assert sf.validate_source_fetch(output / "source-fetch-result.json")["valid"]
+
+
+@pytest.mark.parametrize(
+    "marker", ['class="abstract"', 'id="abstract-content"', 'itemprop="abstract"']
+)
+def test_explicit_abstract_marker_supported(marker):
+    html = f"<title>Expected study</title><section {marker}>Published abstract with enough content to identify the section.</section>"
+    extracted = sf._extract_html(html.encode(), "https://example.org/study")
+    assert extracted.evidence_level == "abstract"
+
+
+def test_abstract_word_in_unrelated_identifier_is_not_evidence():
+    html = b'<title>Expected study</title><div id="abstractTitleHelp">Instructions for correcting the abstract, not research findings.</div>'
+    assert (
+        sf._extract_html(html, "https://example.org/study").evidence_level == "metadata"
+    )
+
+
+def test_explicit_visible_abstract_precedes_generic_page_description():
+    html = b"""<title>Expected study</title>
+    <meta name="description" content="Browse this publisher article page.">
+    <div class="abstract">Published household consumption findings from the study.</div>"""
+    extracted = sf._extract_html(html, "https://example.org/study")
+    assert extracted.evidence_level == "abstract"
+    assert extracted.text == "Published household consumption findings from the study."
+
+
+def _landing_pdf_responder(pdf_extracted):
+    landing = b"""<html><head>
+    <meta name="citation_doi" content="10.1000/example">
+    <meta name="citation_title" content="Expected study">
+    <meta name="citation_abstract" content="Verified landing abstract.">
+    </head><body><article>Landing page.</article></body></html>"""
+    pdf = b"%PDF-1.4 synthetic candidate"
+
+    def respond(url, **_kwargs):
+        if "api.unpaywall.org" in url:
+            return FakeResponse(
+                json.dumps(
+                    {
+                        "best_oa_location": {
+                            "url_for_pdf": "https://example.org/candidate.pdf"
+                        }
+                    }
+                ).encode(),
+                content_type="application/json",
+                url=url,
+            )
+        if url == "https://example.org/landing":
+            return FakeResponse(landing, url=url)
+        if url == "https://example.org/candidate.pdf":
+            return FakeResponse(pdf, content_type="application/pdf", url=url)
+        if "api.crossref.org" in url:
+            return FakeResponse(b"denied", status=403, url=url)
+        raise AssertionError(f"unexpected URL: {url}")
+
+    return respond, landing, pdf, pdf_extracted
+
+
+def test_verified_html_abstract_beats_anonymous_full_text_pdf(tmp_path, monkeypatch):
+    responder, landing, pdf, extracted = _landing_pdf_responder(
+        _selection_pdf("anonymous full text")
+    )
+    _response_callback(monkeypatch, responder)
+    monkeypatch.setattr(sf, "_extract_pdf", lambda data: extracted)
+
+    result = sf.fetch_public_source(
+        doi="10.1000/example",
+        url="https://example.org/landing",
+        title="Expected study",
+        output_dir=tmp_path / "verified-landing",
+    )
+
+    assert result.identity_status == "verified"
+    assert result.evidence_level == "abstract"
+    assert Path(result.raw_path).read_bytes() == landing
+    assert any(
+        Path(a.raw_path).read_bytes() == pdf for a in result.attempts if a.raw_path
+    )
+
+
+def test_replay_rejects_rehashed_selection_of_anonymous_candidate(
+    tmp_path, monkeypatch
+):
+    from research_hub import source_fetch_validation as replay_module
+
+    responder, _landing, _pdf, extracted = _landing_pdf_responder(
+        _selection_pdf("anonymous full text")
+    )
+    _response_callback(monkeypatch, responder)
+    monkeypatch.setattr(sf, "_extract_pdf", lambda data: extracted)
+    monkeypatch.setattr(replay_module, "_extract_pdf", lambda data: extracted)
+    output = tmp_path / "selection-tamper"
+    result = sf.fetch_public_source(
+        doi="10.1000/example",
+        url="https://example.org/landing",
+        title="Expected study",
+        output_dir=output,
+    )
+    anonymous = next(a for a in result.attempts if a.purpose == "unpaywall-oa")
+    result_path = output / "source-fetch-result.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    payload.update(
+        source_url=anonymous.url,
+        final_url=anonymous.final_url,
+        raw_path=anonymous.raw_path,
+        raw_sha256=anonymous.raw_sha256,
+        source_version="sha256:" + anonymous.raw_sha256,
+    )
+    attempts = [sf.FetchAttempt(**item) for item in payload["attempts"]]
+    payload["receipt_sha256"] = sf._receipt_hash(
+        payload["request"],
+        attempts,
+        payload["extracted_text_sha256"],
+        sf._receipt_result_fields(payload),
+    )
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = sf.validate_source_fetch(result_path)
+
+    assert report["valid"] is False
+    assert "recomputed identity status differs from result" in report["errors"]
+    assert not any(error.startswith("re-extraction:") for error in report["errors"])
+
+
+@pytest.mark.parametrize("crossref_path", [False, True])
+def test_title_consistent_pdf_does_not_skip_later_doi_verified_pdf(
+    tmp_path, monkeypatch, crossref_path
+):
+    first = b"%PDF-1.4 title-only"
+    second = b"%PDF-1.4 verified"
+
+    def respond(url, **_kwargs):
+        if "api.unpaywall.org" in url:
+            payload = (
+                {}
+                if crossref_path
+                else {
+                    "best_oa_location": {
+                        "url_for_pdf": "https://example.org/verified.pdf"
+                    }
+                }
+            )
+            return FakeResponse(
+                json.dumps(payload).encode(), content_type="application/json", url=url
+            )
+        if "api.crossref.org" in url:
+            payload = {
+                "message": {
+                    "DOI": "10.1000/example",
+                    "title": ["Expected study"],
+                    "abstract": "Verified abstract retained until a better candidate.",
+                    "link": [
+                        {
+                            "URL": "https://example.org/" + name + ".pdf",
+                            "content-type": "application/pdf",
+                        }
+                        for name in ("title", "verified")
+                    ],
+                }
+            }
+            return FakeResponse(
+                json.dumps(payload).encode(), content_type="application/json", url=url
+            )
+        if url.endswith("title.pdf"):
+            return FakeResponse(first, content_type="application/pdf", url=url)
+        if url.endswith("verified.pdf"):
+            return FakeResponse(second, content_type="application/pdf", url=url)
+        raise AssertionError(url)
+
+    _response_callback(monkeypatch, respond)
+    monkeypatch.setattr(
+        sf,
+        "_extract_pdf",
+        lambda data: _selection_pdf(
+            "Full text " + data.decode(),
+            doi="10.1000/example" if data == second else "",
+            title="Expected study",
+        ),
+    )
+    result = sf.fetch_public_source(
+        doi="10.1000/example",
+        title="Expected study",
+        url="" if crossref_path else "https://example.org/title.pdf",
+        output_dir=tmp_path / "selection",
+    )
+    assert result.identity_status == "verified"
+    assert result.evidence_level == "full-text"
+    assert Path(result.raw_path).read_bytes() == second
+    assert any(a.url.endswith("title.pdf") for a in result.attempts)
+
+
+def test_identified_full_text_pdf_upgrades_verified_abstract(tmp_path, monkeypatch):
+    responder, _landing, pdf, extracted = _landing_pdf_responder(
+        _selection_pdf(
+            "identified full text", doi="10.1000/example", title="Expected study"
+        )
+    )
+    _response_callback(monkeypatch, responder)
+    monkeypatch.setattr(sf, "_extract_pdf", lambda data: extracted)
+
+    result = sf.fetch_public_source(
+        doi="10.1000/example",
+        url="https://example.org/landing",
+        title="Expected study",
+        output_dir=tmp_path / "identified-pdf",
+    )
+
+    assert result.identity_status == "verified"
+    assert result.evidence_level == "full-text"
+    assert Path(result.raw_path).read_bytes() == pdf
+
+
+def test_wrong_paper_pdf_cannot_inherit_landing_identity(tmp_path, monkeypatch):
+    responder, landing, _pdf, extracted = _landing_pdf_responder(
+        _selection_pdf(
+            "wrong paper full text", doi="10.9999/wrong", title="Different study"
+        )
+    )
+    _response_callback(monkeypatch, responder)
+    monkeypatch.setattr(sf, "_extract_pdf", lambda data: extracted)
+
+    result = sf.fetch_public_source(
+        doi="10.1000/example",
+        url="https://example.org/landing",
+        title="Expected study",
+        output_dir=tmp_path / "wrong-pdf",
+    )
+
+    assert result.identity_status == "verified"
+    assert result.evidence_level == "abstract"
+    assert Path(result.raw_path).read_bytes() == landing
+
+
+def test_crossref_anonymous_pdf_cannot_replace_verified_metadata(tmp_path, monkeypatch):
+    landing = b"""<html><head>
+    <meta name="citation_doi" content="10.1000/example">
+    <meta name="citation_title" content="Expected study">
+    <meta name="citation_abstract" content="Verified landing abstract.">
+    </head><body><article>Landing page.</article></body></html>"""
+    crossref = json.dumps(
+        {
+            "message": {
+                "DOI": "10.1000/example",
+                "title": ["Expected study"],
+                "abstract": "Crossref abstract.",
+                "link": [
+                    {
+                        "URL": "https://example.org/crossref.pdf",
+                        "content-type": "application/pdf",
+                    }
+                ],
+            }
+        }
+    ).encode()
+
+    def respond(url, **_kwargs):
+        if "api.unpaywall.org" in url:
+            return FakeResponse(
+                b'{"is_oa": false}', content_type="application/json", url=url
+            )
+        if url == "https://example.org/landing":
+            return FakeResponse(landing, url=url)
+        if "api.crossref.org" in url:
+            return FakeResponse(crossref, content_type="application/json", url=url)
+        if url == "https://example.org/crossref.pdf":
+            return FakeResponse(
+                b"%PDF-1.4 anonymous", content_type="application/pdf", url=url
+            )
+        raise AssertionError(f"unexpected URL: {url}")
+
+    _response_callback(monkeypatch, respond)
+    monkeypatch.setattr(
+        sf, "_extract_pdf", lambda data: _selection_pdf("anonymous Crossref PDF")
+    )
+
+    result = sf.fetch_public_source(
+        doi="10.1000/example",
+        url="https://example.org/landing",
+        title="Expected study",
+        output_dir=tmp_path / "crossref-anonymous-pdf",
+    )
+
+    assert result.identity_status == "verified"
+    assert result.evidence_level == "abstract"
+    assert Path(result.raw_path).read_bytes() == landing
+    assert any(a.purpose == "crossref-public-pdf" for a in result.attempts)
+
+
+@pytest.mark.parametrize(
+    ("observed_doi", "observed_title", "expected_status", "expected_identity"),
+    [
+        ("", "", "available", "unverified"),
+        (
+            "10.9999/wrong",
+            "Unrelated experimental report",
+            "identity-mismatch",
+            "mismatch",
+        ),
+    ],
+)
+def test_anonymous_and_mismatched_pdf_identity_remain_explicit(
+    tmp_path,
+    monkeypatch,
+    observed_doi,
+    observed_title,
+    expected_status,
+    expected_identity,
+):
+    _one_response(
+        monkeypatch,
+        FakeResponse(b"%PDF-1.4 identity", content_type="application/pdf"),
+    )
+    monkeypatch.setattr(
+        sf,
+        "_extract_pdf",
+        lambda data: _selection_pdf("PDF text", observed_doi, observed_title),
+    )
+
+    result = sf.fetch_public_source(
+        url="https://example.org/paper.pdf",
+        title="Expected study",
+        output_dir=tmp_path / expected_identity,
+    )
+
+    assert result.status == expected_status
+    assert result.identity_status == expected_identity
+
+
 def test_arxiv_doi_fetches_public_arxiv_pdf(tmp_path, monkeypatch):
     requested: list[str] = []
 
@@ -659,13 +1021,15 @@ def test_source_fetch_mcp_delegates_and_reports_unavailable(tmp_path, monkeypatc
         timeout=12.5,
     )
 
-    assert calls == [{
-        "output_dir": tmp_path / "source",
-        "doi": "10.1234/example",
-        "url": "https://example.org/article",
-        "title": "Expected title",
-        "timeout": 12.5,
-    }]
+    assert calls == [
+        {
+            "output_dir": tmp_path / "source",
+            "doi": "10.1234/example",
+            "url": "https://example.org/article",
+            "title": "Expected title",
+            "timeout": 12.5,
+        }
+    ]
     assert response["ok"] is False
     assert response["status"] == "rate-limited"
     assert response["result"]["errors"] == ["HTTP 429"]
@@ -695,7 +1059,9 @@ def test_source_validate_mcp_delegates_and_reports_invalid(tmp_path, monkeypatch
         calls.append((path, output_dir))
         return {"valid": False, "errors": ["raw SHA-256 mismatch"]}
 
-    monkeypatch.setattr("research_hub.source_fetch.validate_source_fetch", fake_validate)
+    monkeypatch.setattr(
+        "research_hub.source_fetch.validate_source_fetch", fake_validate
+    )
 
     response = mcp_server.source_validate(str(result_path), str(output_dir))
 
