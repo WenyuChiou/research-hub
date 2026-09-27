@@ -38,6 +38,81 @@ class _Extracted:
     locators: list[dict[str, Any]] = field(default_factory=list)
 
 
+class _HtmlAbstractParser(HTMLParser):
+    """Read an explicitly marked abstract container, excluding page chrome."""
+
+    _VOID = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[str] = []
+        self.root_depth: int | None = None
+        self.parts: list[str] = []
+        self.abstracts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag in self._VOID:
+            return
+        values = dict(attrs)
+        markers = " ".join(
+            str(values.get(k) or "") for k in ("id", "class", "itemprop")
+        )
+        restricted = {"script", "style", "noscript", "template", "form", "nav"}
+        if (
+            self.root_depth is None
+            and tag in {"div", "section", "p", "span"}
+            and not restricted.intersection(self.stack)
+            and re.search(r"(?:^|[\s_-])abstract(?:$|[\s_-])", markers, re.I)
+        ):
+            self.root_depth = len(self.stack)
+            self.parts = []
+        self.stack.append(tag)
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in self._VOID:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag not in self.stack:
+            return
+        index = len(self.stack) - 1 - self.stack[::-1].index(tag)
+        del self.stack[index:]
+        if self.root_depth is not None and len(self.stack) <= self.root_depth:
+            text = " ".join(self.parts).strip()
+            text = re.sub(r"^abstract\s*[:.\-]?\s+", "", text, flags=re.I)
+            if len(text) >= 30:
+                self.abstracts.append(text)
+            self.root_depth = None
+
+    def handle_data(self, data: str) -> None:
+        if self.root_depth is not None and not {
+            "script",
+            "style",
+            "noscript",
+            "template",
+            "form",
+            "nav",
+        }.intersection(self.stack):
+            if data.strip():
+                self.parts.append(data.strip())
+
+
 class _HtmlMetadataParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -126,10 +201,13 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
         raise PermissionError("response is a login, paywall, or challenge page")
     parser = _HtmlMetadataParser()
     parser.feed(text)
+    abstract_parser = _HtmlAbstractParser()
+    abstract_parser.feed(text)
     clean = " ".join(parser.article_parts).strip()
     abstract = (
         parser.meta.get("citation_abstract")
         or parser.meta.get("dc.description")
+        or next(iter(abstract_parser.abstracts), "")
         or parser.meta.get("description")
         or ""
     ).strip()

@@ -390,6 +390,68 @@ def _receipt_result_fields(
     return {key: payload.get(key) for key in keys}
 
 
+_SelectedSource = tuple[_Extracted, FetchAttempt, str]
+_IDENTITY_PRIORITY: dict[IdentityStatus, int] = {
+    "mismatch": 0,
+    "unverified": 1,
+    "consistent": 2,
+    "verified": 3,
+}
+_EVIDENCE_PRIORITY: dict[EvidenceLevel, int] = {
+    "metadata": 0,
+    "abstract": 1,
+    "full-text": 2,
+}
+
+
+def _selection_key(
+    selected: _SelectedSource,
+    expected_doi: str,
+    expected_title: str,
+) -> tuple[int, int]:
+    """Rank source identity before evidence richness; ties keep the first source."""
+    extracted = selected[0]
+    identity_status = _identity(
+        expected_doi,
+        expected_title,
+        extracted.observed_doi,
+        extracted.observed_title,
+    )
+    return (
+        _IDENTITY_PRIORITY[identity_status],
+        _EVIDENCE_PRIORITY[extracted.evidence_level],
+    )
+
+
+def _select_source(
+    current: _SelectedSource | None,
+    candidate: _SelectedSource,
+    expected_doi: str,
+    expected_title: str,
+) -> _SelectedSource:
+    """Select deterministically without lending one response another's identity."""
+    if current is None or _selection_key(
+        candidate, expected_doi, expected_title
+    ) > _selection_key(current, expected_doi, expected_title):
+        return candidate
+    return current
+
+
+def _has_identified_full_text(
+    selected: _SelectedSource | None,
+    expected_doi: str,
+    expected_title: str,
+) -> bool:
+    if selected is None or selected[0].evidence_level != "full-text":
+        return False
+    # With an expected DOI, a title-only match is useful but can still improve.
+    maximum_identity = "verified" if expected_doi else "consistent"
+    return (
+        _selection_key(selected, expected_doi, expected_title)[0]
+        >= (_IDENTITY_PRIORITY[maximum_identity])
+    )
+
+
 def fetch_public_source(
     *,
     output_dir: Path,
@@ -445,7 +507,7 @@ def fetch_public_source(
                 errors.append(attempt.error)
 
     seen: set[str] = set()
-    best: tuple[_Extracted, FetchAttempt, str] | None = None
+    best: _SelectedSource | None = None
     for purpose, candidate in candidates:
         if candidate in seen:
             continue
@@ -472,8 +534,9 @@ def fetch_public_source(
                     f"unsupported content type: {attempt.content_type or '(missing)'}"
                 )
             attempt.outcome = "parsed"
-            best = (extracted, attempt, candidate)
-            if extracted.evidence_level == "full-text":
+            parsed = (extracted, attempt, candidate)
+            best = _select_source(best, parsed, normalized_doi, title)
+            if _has_identified_full_text(best, normalized_doi, title):
                 break
         except PermissionError as exc:
             attempt.outcome = "inaccessible"
@@ -485,8 +548,8 @@ def fetch_public_source(
             errors.append(f"{purpose}: {exc}")
 
     # Crossref is a public metadata/abstract fallback and can also advertise an
-    # openly reachable PDF. It is skipped when full text is already available.
-    if normalized_doi and (best is None or best[0].evidence_level != "full-text"):
+    # openly reachable PDF. It is skipped only for independently identified full text.
+    if normalized_doi and not _has_identified_full_text(best, normalized_doi, title):
         crossref_url = (
             f"https://api.crossref.org/works/{quote(normalized_doi, safe='')}"
         )
@@ -503,11 +566,12 @@ def fetch_public_source(
                     json.loads(data.decode("utf-8"))
                 )
                 attempt.outcome = "parsed"
-                if best is None or (
-                    best[0].evidence_level == "metadata"
-                    and extracted.evidence_level == "abstract"
-                ):
-                    best = (extracted, attempt, crossref_url)
+                best = _select_source(
+                    best,
+                    (extracted, attempt, crossref_url),
+                    normalized_doi,
+                    title,
+                )
                 for pdf_url in pdf_links:
                     if pdf_url in seen:
                         continue
@@ -524,8 +588,10 @@ def fetch_public_source(
                     try:
                         pdf_extracted = _extract_pdf(pdf_data)
                         pdf_attempt.outcome = "parsed"
-                        best = (pdf_extracted, pdf_attempt, pdf_url)
-                        break
+                        parsed = (pdf_extracted, pdf_attempt, pdf_url)
+                        best = _select_source(best, parsed, normalized_doi, title)
+                        if _has_identified_full_text(best, normalized_doi, title):
+                            break
                     except (
                         Exception
                     ) as exc:  # parser/library failures are recorded evidence
@@ -544,7 +610,12 @@ def fetch_public_source(
 
     # A DOI resolver is the final public HTML fallback. It may yield an abstract
     # or full article, but challenge/login pages remain inaccessible.
-    if normalized_doi and (best is None or best[0].evidence_level == "metadata"):
+    if normalized_doi and (
+        best is None
+        or best[0].evidence_level == "metadata"
+        or _selection_key(best, normalized_doi, title)[0]
+        < _IDENTITY_PRIORITY["consistent"]
+    ):
         resolver = f"https://doi.org/{quote(normalized_doi, safe='/')}"
         data, attempt = _request(
             resolver,
@@ -557,8 +628,12 @@ def fetch_public_source(
             try:
                 extracted = _extract_html(data, attempt.final_url)
                 attempt.outcome = "parsed"
-                if best is None or extracted.evidence_level != "metadata":
-                    best = (extracted, attempt, resolver)
+                best = _select_source(
+                    best,
+                    (extracted, attempt, resolver),
+                    normalized_doi,
+                    title,
+                )
             except PermissionError as exc:
                 attempt.outcome = "inaccessible"
                 attempt.error = str(exc)

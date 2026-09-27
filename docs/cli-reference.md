@@ -93,6 +93,17 @@ Existing output directories are rejected.
 Full-text classification is conservative: HTML needs multiple substantive
 sections and enough extracted content; short or abstract-marked PDFs remain
 metadata/abstract evidence unless their structure supports a full-text label.
+When several public responses parse successfully, selection ranks each response's
+own identity evidence before content richness: verified DOI, consistent title,
+unverified identity, then explicit mismatch. Within the same identity class,
+full text ranks above abstract and metadata. Identity from a landing page is
+never transferred to a separately downloaded PDF.
+When a DOI is requested, title-only full text does not stop acquisition before
+remaining candidates that could supply independently DOI-verified full text.
+Explicit HTML abstract containers (for example `class="abstract"` or
+`itemprop="abstract"`) are retained as abstract evidence, with section locators;
+form, navigation, and script content is excluded. This does not establish
+full-text access.
 
 MCP clients can call `source_fetch` with the same DOI, URL, title, output
 directory, and timeout fields. `source_validate` replays a saved result and
