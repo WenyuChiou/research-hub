@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import sys
 import time
 import traceback
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +24,12 @@ from research_hub.dedup import (
     normalize_title,
 )
 from research_hub.manifest import Manifest, new_entry
+from research_hub.ingest_provenance import (
+    merge_note_evidence,
+    merge_paper_evidence,
+    replace_yaml_field,
+    validate_evidence_metadata,
+)
 from research_hub.utils.doi import extract_arxiv_id, normalize_doi
 from research_hub.verify import VerificationResult, VerifyCache, verify_arxiv, verify_doi, verify_paper
 from research_hub.ingest_diff import compute_ingest_gap, write_gap_sidecar
@@ -167,6 +175,13 @@ def _build_note_html(pp: dict) -> str:
             parts.append("DOI checked " + checked_at)
         if parts:
             note += "<h2>Provenance</h2><p>" + "; ".join(parts) + "</p>"
+    if prov or pp.get("source_records"):
+        from html import escape
+
+        evidence = {"provenance": prov or {}, "source_records": pp.get("source_records") or []}
+        note += "<h2>Source evidence</h2><pre>" + escape(
+            json.dumps(evidence, ensure_ascii=False, indent=2)
+        ) + "</pre>"
     return note
 
 
@@ -545,7 +560,10 @@ def write_papers_to_zotero(
         item_type = pp.get("item_type", "") or _zotero_item_type(pp)
         template = zot.item_template(item_type)
         template["title"] = pp["title"]
-        template["creators"] = pp["authors"]
+        template["creators"] = [
+            {"creatorType": "author", "name": author} if isinstance(author, str) else author
+            for author in pp["authors"]
+        ]
         template["date"] = pp["year"]
         template["DOI"] = pp["doi"]
         template["url"] = pp.get("url", "")
@@ -602,31 +620,26 @@ def append_cluster_query_to_existing(
     if end < 0:
         return False
     frontmatter = text[3:end]
-    pattern = re.compile(r"^cluster_queries:\s*\[(.*?)\]$", re.MULTILINE)
-    match = pattern.search(frontmatter)
-    if match:
-        current = [
-            value.strip().strip('"').strip("'")
-            for value in match.group(1).split(",")
-            if value.strip()
-        ]
-        if query in current:
-            return False
-        updated = current + [query]
-        replacement = "cluster_queries: [" + ", ".join(f'"{value}"' for value in updated) + "]"
-        updated_frontmatter = pattern.sub(replacement, frontmatter, count=1)
-    else:
-        # Legacy note (pre-v0.3.0): append the new v0.3.0 fields.
-        new_fields_lines = [""]
-        if not re.search(r"^topic_cluster:", frontmatter, re.MULTILINE):
-            new_fields_lines.append(f'topic_cluster: "{topic_cluster}"')
-        new_fields_lines.append(f'cluster_queries: ["{query}"]')
-        if not re.search(r"^verified:", frontmatter, re.MULTILINE):
-            new_fields_lines.append("verified: false")
-        if not re.search(r"^status:", frontmatter, re.MULTILINE):
-            new_fields_lines.append("status: unread")
-        updated_frontmatter = frontmatter.rstrip() + "\n".join(new_fields_lines)
-    note_path.write_text(text[:3] + updated_frontmatter + text[end:], encoding="utf-8")
+    import yaml
+    from research_hub.security import atomic_write_text
+
+    metadata = yaml.safe_load(frontmatter)
+    if not isinstance(metadata, dict):
+        return False
+    current = metadata.get("cluster_queries") or []
+    if not isinstance(current, list):
+        raise ValueError("Paper note 'cluster_queries' must be a list")
+    if query in current:
+        return False
+    updates = {"cluster_queries": [*current, query]}
+    for field, value in (("topic_cluster", topic_cluster), ("verified", False), ("status", "unread")):
+        if field not in metadata:
+            updates[field] = value
+    updated_frontmatter = frontmatter
+    for field, value in updates.items():
+        updated_frontmatter = replace_yaml_field(updated_frontmatter, field, value)
+    yaml.safe_load(updated_frontmatter)
+    atomic_write_text(note_path, text[:3] + updated_frontmatter.rstrip("\n") + text[end:])
     return True
 
 
@@ -639,9 +652,26 @@ def _extract_arxiv_id_from_url_or_doi(url: str, doi: str) -> str:
 
 
 def _folder_for_paper(cfg, paper: dict, cluster_slug: str | None) -> Path:
-    if cluster_slug:
-        return cfg.raw / cluster_slug
-    return cfg.root / "raw" / paper["sub_category"]
+    from research_hub.security import safe_join
+
+    return safe_join(cfg.raw, cluster_slug or paper["sub_category"])
+
+
+def _validate_paper_paths(cfg, paper: dict, cluster_slug: str | None, index: int) -> list[str]:
+    """Reject unsafe handoff paths before any external or vault write."""
+    from research_hub.security import safe_join
+
+    try:
+        folder = safe_join(cfg.raw, cluster_slug or paper.get("sub_category") or "uncategorized")
+        if "slug" in paper and paper["slug"] not in (None, ""):
+            if not isinstance(paper["slug"], str):
+                raise ValueError("slug must be a string")
+            safe_join(folder, paper["slug"] + ".md")
+        if paper.get("sub_category") not in (None, ""):
+            safe_join(cfg.raw, paper["sub_category"])
+    except (ValueError, OSError) as exc:
+        return [f"Paper {index}: unsafe output path: {exc}"]
+    return []
 
 
 def _load_or_build_dedup(cfg, zot=None, *, dry_run: bool) -> DedupIndex:
@@ -695,6 +725,7 @@ def _render_obsidian_note(
         "abstract": pp["abstract"],
         "tags": pp.get("tags", []),
         "provenance": pp.get("provenance"),
+        "source_records": pp.get("source_records"),
     }
     cluster_queries_for_note = [_query_for_paper(pp, query)] if cluster_slug else []
     # v0.88 #5: derive MOC backlinks at note-creation time so every paper
@@ -811,12 +842,21 @@ def run_pipeline(
             "(data analyst mode: Obsidian + NotebookLM only)."
         )
 
-    log_path = _resolve_log_path(cfg.logs)
+    explicit_input = papers_json is not None
+    papers_json = Path(papers_json) if explicit_input else cfg.root / "papers_input.json"
+    if explicit_input and not papers_json.is_file():
+        from research_hub.errors import ResearchHubError
+
+        raise ResearchHubError(
+            f"Research handoff input file not found: {papers_json}",
+            context={"input_path": str(papers_json)},
+            next_steps=["Pass --input with an existing JSON file."],
+        )
+    log_path = None if dry_run else _resolve_log_path(cfg.logs)
     out_path = cfg.logs / "pipeline_output.json"
     pdf_attach_summary_json: dict[str, object] | None = None
     # WF-2: honor an explicit per-run input path (passed by auto_pipeline) so
     # concurrent runs cannot clobber each other via the shared default file.
-    papers_json = Path(papers_json) if papers_json else cfg.root / "papers_input.json"
     collection_name = (
         cfg.zotero_collections.get(collection_key, {}).get("name", collection_key)
         if collection_key is not None
@@ -844,10 +884,13 @@ def run_pipeline(
 
         fit_key_terms = _extract_key_terms(_read_definition_from_overview(cfg, cluster_slug) or "")
 
-    with log_path.open("w", encoding="utf-8") as log:
+    log_context = nullcontext(io.StringIO()) if dry_run else log_path.open("w", encoding="utf-8")
+    with log_context as log:
         def p(message: str) -> None:
             log.write(message + "\n")
             log.flush()
+            if dry_run:
+                print(message)
 
         p("=== PIPELINE START ===")
         if dry_run:
@@ -858,7 +901,7 @@ def run_pipeline(
                 p("DRY RUN: Config and imports OK. Ready to run. Exiting.")
                 return 0
 
-        with papers_json.open("r", encoding="utf-8") as file_obj:
+        with papers_json.open("r", encoding="utf-8-sig") as file_obj:
             papers = json.load(file_obj)
         if isinstance(papers, dict) and "papers" in papers:
             papers = papers["papers"]
@@ -869,15 +912,30 @@ def run_pipeline(
             )
         p(f"Loaded {len(papers)} papers")
 
+        evidence_errors = []
+        for idx, paper in enumerate(papers):
+            if not isinstance(paper, dict):
+                evidence_errors.append(f"Paper {idx}: must be an object")
+            else:
+                evidence_errors.extend(validate_evidence_metadata(paper, idx))
+                try:
+                    _auto_generate_missing_fields(paper, cluster_slug)
+                    _unescape_html_in_paper(paper)
+                    _normalize_paper_metadata(paper)
+                    evidence_errors.extend(_validate_paper_paths(cfg, paper, cluster_slug, idx))
+                except (TypeError, ValueError, AttributeError) as exc:
+                    evidence_errors.append(f"Paper {idx}: invalid bibliographic metadata: {exc}")
+        if evidence_errors:
+            for error in evidence_errors:
+                p(error)
+            return 1
+
         if not no_zotero:
             all_errors: list[str] = []
             nonfatal_errors: list[str] = []
             valid_papers: list[dict] = []
             skipped_invalid: list[tuple[int, dict, list[str]]] = []
             for idx, paper in enumerate(papers):
-                _auto_generate_missing_fields(paper, cluster_slug)
-                _unescape_html_in_paper(paper)
-                _normalize_paper_metadata(paper)
                 paper_errors = _validate_paper_input(paper, idx)
                 # PR-C: a paper missing one or more required core fields
                 # (e.g. CrossRef returning an entry with empty `authors`) is
@@ -929,18 +987,6 @@ def run_pipeline(
         dedup = _load_or_build_dedup(cfg, dry_run=dry_run)
 
         if dry_run:
-            if cluster_slug:
-                for paper in papers:
-                    manifest.append(
-                        new_entry(
-                            cluster=cluster_slug,
-                            query=_query_for_paper(paper, query),
-                            action="new",
-                            doi=paper.get("doi", ""),
-                            title=paper.get("title", ""),
-                            batch_label=resolved_batch_label,
-                        )
-                    )
             p(f"DRY RUN: would process {len(papers)} papers. Config OK. Exiting.")
             return 0
 
@@ -1042,8 +1088,8 @@ def run_pipeline(
         # loop, so in-batch siblings stay invisible during Zotero creation.
         # Collapse them here, keeping the first occurrence.
         deduped_papers: list[dict] = []
-        seen_dois: set[str] = set()
-        seen_titles: set[str] = set()
+        seen_dois: dict[str, dict] = {}
+        seen_titles: dict[str, dict] = {}
         for pp in papers:
             ndoi = normalize_doi(pp.get("doi", ""))
             # A real DOI is "10.<registrant>/<suffix>". Sentinel placeholders
@@ -1055,9 +1101,13 @@ def run_pipeline(
             # Mirror DedupIndex.add(): only title-match on titles long enough
             # to be distinctive (>15 normalized chars) to avoid false merges.
             title_key = ntitle if len(ntitle) > 15 else ""
-            if (doi_key and doi_key in seen_dois) or (
-                title_key and title_key in seen_titles
-            ):
+            existing = seen_dois.get(doi_key) or seen_titles.get(title_key)
+            if existing is not None:
+                merge_paper_evidence(existing, pp)
+                if doi_key:
+                    seen_dois[doi_key] = existing
+                if title_key:
+                    seen_titles[title_key] = existing
                 p(
                     f"  [in-batch dup] {pp.get('title', '')[:55]}... "
                     "collapsed (matches an earlier candidate)"
@@ -1075,9 +1125,9 @@ def run_pipeline(
                 continue
             deduped_papers.append(pp)
             if doi_key:
-                seen_dois.add(doi_key)
+                seen_dois[doi_key] = pp
             if title_key:
-                seen_titles.add(title_key)
+                seen_titles[title_key] = pp
         in_batch_collapsed = len(papers) - len(deduped_papers)
         if in_batch_collapsed:
             p(
@@ -1103,6 +1153,7 @@ def run_pipeline(
                     if pp["_fit_warning"]:
                         fit_warnings += 1
                         p("  WARN fit-check term overlap is zero")
+            existing_note_path = None
             try:
                 is_duplicate, dedup_hits = dedup.check({"doi": pp["doi"], "title": pp["title"]})
                 if is_duplicate:
@@ -1117,9 +1168,11 @@ def run_pipeline(
                         and obsidian_hit.obsidian_path
                         and Path(obsidian_hit.obsidian_path).exists()
                     ):
-                        append_cluster_query_to_existing(
-                            Path(obsidian_hit.obsidian_path),
-                            query_text,
+                        existing_note_path = Path(obsidian_hit.obsidian_path)
+                        merge_note_evidence(
+                            existing_note_path,
+                            pp,
+                            query=query_text,
                             topic_cluster=cluster_slug or "",
                         )
                         if cluster_slug:
@@ -1229,7 +1282,15 @@ def run_pipeline(
                         collection_key=cluster_coll,
                         allow_library_duplicates=allow_library_duplicates,
                     )
-            except Exception:
+            except Exception as exc:
+                if existing_note_path is not None:
+                    from research_hub.errors import ResearchHubError
+
+                    raise ResearchHubError(
+                        "Existing paper note could not be updated safely; it was not replaced.",
+                        context={"obsidian_path": str(existing_note_path), "reason": str(exc)},
+                        next_steps=["Repair the note's YAML metadata and retry the same input."],
+                    ) from exc
                 dup = False
             if dup:
                 p("  SKIPPED dup")
@@ -1271,8 +1332,10 @@ def run_pipeline(
             doi = pp["doi"]
             url = pp.get("url", "")
             authors = [
-                f"{author.get('firstName', '')} {author.get('lastName', '')}".strip()
-                or author.get("name", "")
+                author if isinstance(author, str) else (
+                    f"{author.get('firstName', '')} {author.get('lastName', '')}".strip()
+                    or author.get("name", "")
+                )
                 for author in pp.get("authors", [])
             ]
             year_value = pp.get("year")
@@ -1326,7 +1389,9 @@ def run_pipeline(
         for pp in papers_for_notes:
             folder = _folder_for_paper(cfg, pp, cluster_slug)
             folder.mkdir(parents=True, exist_ok=True)
-            file_path = folder / f"{pp['slug']}.md"
+            from research_hub.security import safe_join
+
+            file_path = safe_join(folder, f"{pp['slug']}.md")
             zotero_key = pp.get("zotero_key", "")
             try:
                 file_path.write_text(

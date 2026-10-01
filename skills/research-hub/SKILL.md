@@ -9,10 +9,12 @@ research-hub turns Zotero, Obsidian, and NotebookLM into an AI-operable research
 
 ## Runtime contract (do this first)
 
-This is a runtime-backed skill. The `SKILL.md` instructions teach the
-AI workflow, but the actual search, Zotero writes, Obsidian vault
-updates, NotebookLM bundle/upload/download, dashboard, and MCP tools
-come from the `research-hub` Python CLI.
+This skill pairs host capabilities with the `research-hub` runtime. A
+capable host can do multi-round search, browsing, citation chaining, and
+evidence reasoning with its native tools, then hand bibliographic records
+to the CLI. The CLI provides deterministic ingest/storage, vault and
+library maintenance, NotebookLM workflows, dashboard, and MCP/REST tools;
+scholarly search adapters are optional.
 
 Before running any workflow command from this skill, check the runtime:
 
@@ -69,13 +71,37 @@ a narrower command:
    research-hub doctor
    ```
 
-2. First safe literature run, without NotebookLM:
+2. If the host has native research tools and the user wants multi-round
+   discovery, use those tools for search, browsing, citation chaining,
+   and evidence reasoning. Prepare bibliographic records in the JSON
+   `papers` shape documented in `docs/papers_input_schema.md`, with
+   optional `provenance` and `source_records`. Do not pass a
+   `ResearchEvidencePacket` directly as papers input; it is a separate
+   evidence-validation contract. This path needs neither a second agent
+   nor a dedicated deep-search API.
+
+3. Before any real ingest, inspect `research-hub doctor` and
+   `research-hub describe --json` for the configured vault and Zotero
+   destination/collection. A preview can validate a local handoff without
+   external calls or persistent changes:
+
+   ```bash
+   research-hub ingest --input ./handoff.json --cluster project-topic --dry-run
+   ```
+
+   `research-hub run --input PATH --dry-run` is also supported. A preview
+   leaves canonical notes, manifest, dedup index, labels, and pipeline
+   log/output unchanged. Run a real `ingest` or `run` only when the user
+   has authorized those writes; host research alone does not authorize
+   Zotero/library or vault changes.
+
+4. Use CLI-managed literature discovery only when it fits the request:
 
    ```bash
    research-hub auto "TOPIC" --max-papers 3 --no-nlm
    ```
 
-3. If the run stops before search because no relevance judge is on
+5. If the CLI-managed run stops before search because no relevance judge is on
    PATH, choose one of these explicit paths:
 
    ```bash
@@ -84,7 +110,7 @@ a narrower command:
    research-hub auto "TOPIC" --max-papers 3 --no-nlm --llm-cli gemini
    ```
 
-4. Add NotebookLM only after the local Zotero/Obsidian path works:
+6. Add NotebookLM only after the local Zotero/Obsidian path works:
 
    ```bash
    research-hub notebooklm login --auto-detect
@@ -94,11 +120,12 @@ a narrower command:
    research-hub notebooklm download --cluster <slug>
    ```
 
-5. For machine-readable automation, prefer commands with `--json` when
+7. For machine-readable automation, prefer commands with `--json` when
    available, or use the MCP/REST surfaces exposed by `research-hub serve`.
 
-This protocol is intentionally staged: verify runtime first, ingest a
-small cluster second, then add browser-dependent NotebookLM work last.
+This protocol separates host-native discovery from the deterministic
+ingest step. When using CLI-managed discovery, stage a small cluster first
+and add browser-dependent NotebookLM work last.
 
 ## Pick The Right Entry Point
 

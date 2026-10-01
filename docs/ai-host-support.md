@@ -13,6 +13,22 @@ README claims, installer targets, and release testing aligned.
 | Manual | Requires copying `SKILL.md` or configuring host-specific rules by hand. |
 | Not a target | Do not advertise as installed or verified. |
 
+## Native research and ingest handoff
+
+Codex and other capable hosts can use their own search, browsing, and
+citation tools for multi-round discovery, source checking, and evidence
+reasoning, then hand bibliographic records to `research-hub` as a JSON
+`papers` payload. This does not require a second research agent or a
+dedicated deep-search API. The CLI remains the deterministic ingest and
+storage layer; scholarly search adapters are optional. A
+`ResearchEvidencePacket` is a separate contract and is not a papers input.
+
+Before a real `ingest` or `run` handoff, inspect the configured vault and
+Zotero destination/collection, and proceed only when the user authorized
+those writes. Host-native research does not itself authorize publication
+or library writes. See [papers input schema](papers_input_schema.md) for
+the explicit `--input PATH` handoff and preview behavior.
+
 ## Matrix
 
 | Host / surface | CLI | MCP | REST | `SKILL.md` installer | Manual `SKILL.md` | Current position |

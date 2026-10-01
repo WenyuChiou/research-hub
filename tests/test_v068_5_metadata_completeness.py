@@ -17,6 +17,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 from research_hub.discover import _to_papers_input
+from research_hub.search.abstract_recovery import RecoveredAbstract
 from research_hub.search.base import SearchResult
 from research_hub.search.crossref import CrossrefBackend
 from research_hub.search.openalex import OpenAlexBackend
@@ -216,10 +217,15 @@ def test_to_papers_input_propagates_volume_issue_pages():
     assert entry["pages"] == "123-145"
 
 
-def test_to_papers_input_defaults_locators_to_empty_string_when_absent():
+def test_to_papers_input_defaults_locators_to_empty_string_when_absent(monkeypatch):
     """Backward-compat: candidates from older code paths that don't include
     these keys must still produce well-formed entries (empty strings, not
     KeyError)."""
+    # The missing abstract must not send this locator-mapping test online.
+    monkeypatch.setattr(
+        "research_hub.search.abstract_recovery.recover_abstract",
+        lambda doi, timeout=10: RecoveredAbstract(text="", source=""),
+    )
     candidate = {
         "title": "Old-style", "doi": "10.1/y", "authors": [], "year": 2024,
         "abstract": "", "venue": "", "source": "arxiv",
