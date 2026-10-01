@@ -934,6 +934,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     for parser_with_verify in (run_parser, ingest_parser):
         parser_with_verify.add_argument(
+            "--input", dest="papers_json", default=None,
+            help="Read a research handoff JSON file (default: <vault>/papers_input.json)",
+        )
+        parser_with_verify.add_argument(
             "--no-verify",
             dest="verify",
             action="store_false",
@@ -2790,8 +2794,10 @@ def _main_dispatch(args, parser) -> int:
         }
         if getattr(args, "with_pdfs", False):
             run_kwargs["with_pdfs"] = True
+        if getattr(args, "papers_json", None) is not None:
+            run_kwargs["papers_json"] = args.papers_json
         rc = run_pipeline(**run_kwargs)
-        if rc == 0 and getattr(args, "fit_check", False) and not getattr(args, "no_fit_check_auto_labels", False):
+        if rc == 0 and not getattr(args, "dry_run", False) and getattr(args, "fit_check", False) and not getattr(args, "no_fit_check_auto_labels", False):
             from research_hub.paper import apply_fit_check_to_labels
 
             cfg = get_config()

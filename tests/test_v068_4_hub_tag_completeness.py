@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from research_hub.pipeline import _compose_hub_tags
 from research_hub.discover import _to_papers_input
+from research_hub.search.abstract_recovery import RecoveredAbstract
 
 
 def test_compose_hub_tags_defaults_type_to_journal_article():
@@ -90,9 +91,13 @@ def test_to_papers_input_seeds_summary_with_real_abstract():
     assert entry["summary"].startswith("We study how households relocate")
 
 
-def test_to_papers_input_keeps_todo_when_no_abstract():
-    """When backend genuinely has no abstract, fall back to TODO marker
+def test_to_papers_input_keeps_todo_when_no_abstract(monkeypatch):
+    """When neither backend nor recovery has an abstract, fall back to TODO marker
     so the user sees an explicit prompt to fill it in."""
+    monkeypatch.setattr(
+        "research_hub.search.abstract_recovery.recover_abstract",
+        lambda doi, timeout=10: RecoveredAbstract(text="", source=""),
+    )
     candidate = {
         "title": "No-abstract paper",
         "doi": "10.1/w",
@@ -106,9 +111,13 @@ def test_to_papers_input_keeps_todo_when_no_abstract():
     assert entry["abstract"] == "(no abstract)"
 
 
-def test_to_papers_input_treats_no_abstract_string_as_missing():
+def test_to_papers_input_treats_no_abstract_string_as_missing(monkeypatch):
     """Some backends literally return the string '(no abstract)' rather
     than empty — treat that as missing too."""
+    monkeypatch.setattr(
+        "research_hub.search.abstract_recovery.recover_abstract",
+        lambda doi, timeout=10: RecoveredAbstract(text="", source=""),
+    )
     candidate = {
         "title": "Sentinel-string paper",
         "doi": "10.1/v",

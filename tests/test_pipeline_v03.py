@@ -49,7 +49,7 @@ def test_run_pipeline_no_cluster_behaves_like_v02(tmp_path, monkeypatch):
     assert 'topic_cluster: ""' in note.read_text(encoding="utf-8")
 
 
-def test_run_pipeline_with_cluster_writes_manifest(tmp_path, monkeypatch):
+def test_run_pipeline_cluster_preview_does_not_write_manifest(tmp_path, monkeypatch):
     from research_hub import pipeline
 
     cfg = _configure(monkeypatch, tmp_path, default_collection="ABCD1234")
@@ -63,8 +63,7 @@ def test_run_pipeline_with_cluster_writes_manifest(tmp_path, monkeypatch):
 
     manifest_path = cfg.research_hub_dir / "manifest.jsonl"
     assert result == 0
-    assert manifest_path.exists()
-    assert '"cluster": "cluster-a"' in manifest_path.read_text(encoding="utf-8")
+    assert not manifest_path.exists()
 
 
 def test_run_pipeline_dedup_hit_updates_cluster_queries(tmp_path, monkeypatch):

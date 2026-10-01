@@ -1,6 +1,9 @@
 # papers_input.json schema
 
-`research-hub run` and `research-hub ingest` read `<vault>/papers_input.json`.
+`research-hub run` and `research-hub ingest` read `<vault>/papers_input.json`
+by default. Pass `--input PATH` to ingest a separate host-produced handoff
+without copying it over the shared default. An explicit missing file is an
+error and never falls back to the default.
 If you have a DOI, `research-hub add <doi>` is usually easier, but manual batch
 files should follow this schema.
 
@@ -12,7 +15,10 @@ The vault root is whatever `research-hub doctor` reports for `vault:`.
 
 ## Shape
 
-The file must be a JSON array of paper objects.
+The file may be a JSON array of paper objects or an object with a `papers`
+array, such as `{"papers": [...]}`. UTF-8 files with a leading BOM are accepted.
+`ResearchEvidencePacket` is a separate claim/evidence contract; map its
+bibliographic records into this schema rather than passing the packet itself.
 
 ## Field reference
 
@@ -37,6 +43,8 @@ The file must be a JSON array of paper objects.
 | `pages` | Optional | string | `"836-898"` | Citation metadata | No |
 | `pdf_url` | Optional | string | `"https://arxiv.org/pdf/2502.10978.pdf"` | Upstream tooling | No |
 | `query` / `search_query` | Optional | string | `"llm diplomacy escalation"` | Cluster query tracking | No |
+| `provenance` | Optional | object | `{"producer":"host-native","research":{"queries":["round one"]}}` | Retained research/process metadata | No |
+| `source_records` | Optional | array of objects | `[{"source_id":"S1","url":"https://example.test/article","locator":"p. 4"}]` | Retained source observations | No |
 
 ## Authors
 
@@ -107,6 +115,62 @@ fields are still missing.
   }
 ]
 ```
+
+## Native research handoff and replay
+
+Capable hosts can do multi-round native search, browse sources, follow citation
+chains, verify evidence, and reason before producing this bibliographic input.
+Research Hub remains the deterministic ingestion/storage seam. Its scholarly
+search commands are optional adapters; no second research agent or dedicated
+deep-search API is required.
+
+Add optional metadata to each paper when it has been gathered:
+
+```json
+"provenance": {
+  "producer": "host-native",
+  "research": {"queries": ["round one", "citation follow-up"]},
+  "doi_recheck_pending": true
+},
+"source_records": [
+  {"source_id": "S1", "url": "https://example.test/article", "locator": "p. 4"},
+  {"source_id": "S2", "url": "https://example.test/correction", "locator": "abstract"}
+]
+```
+
+`provenance` must be an object; `source_records` must be a list of objects.
+In-batch and existing-note duplicates retain nested mappings and distinct list
+observations while preserving original scalar provenance. Store different
+retrieval observations in lists instead of expecting an existing scalar to be
+overwritten. User-authored note body, reading status, and annotations remain;
+system-generated cluster queries or related-link metadata can be added or
+refreshed. Exact replay leaves note bytes unchanged. Existing-note metadata
+that cannot be edited safely fails closed; anchored/aliased target fields need
+manual repair rather than silent rewriting. Metadata is included in newly
+created Zotero child notes; existing child notes are not updated.
+
+Metadata retention is not independent verification. Preserve source locators,
+evidence level, gaps, and pending checks honestly. Existing authenticity,
+integrity, and human semantic gates still apply. Host research alone does not
+authorize library/vault writes or publication.
+
+## Preview and writes
+
+```bash
+research-hub ingest --input ./handoff.json --cluster example-review --dry-run
+```
+
+`run --input PATH --dry-run` works too. Preview validates local input without
+invoking Zotero, search, or paid models. It preserves canonical notes, manifest,
+dedup index, labels, pipeline log, and pipeline output, and prints its current
+diagnostics. `ingest --json` does not expose stale prior output after a preview,
+failure, or no-op. A successful preview is not an ingest; check the configured
+vault and Zotero collection before an authorized real run. Supplied and
+generated output paths are checked for traversal and symlink escapes before
+client access.
+
+See [the same-case acceptance comparison](native-research-handoff-verification.md)
+for storage-only fixtures and intentional limits.
 
 ## Common errors
 
