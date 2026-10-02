@@ -128,6 +128,9 @@ read_topic_overview(cluster_slug="my-topic")
 ## Codex CLI / Aider / 一般 shell
 
 Shell 原生的 AI 直接執行 `research-hub`。不需要 MCP server。
+Codex 也支援 MCP，但這份 walkthrough 使用已通過 release 驗證的 CLI 路徑。
+傳輸方式與 research-hub 整合的個別驗證狀態，請看
+[Codex MCP capability and validation](../ai-host-support.md#codex-mcp-capability-and-validation)。
 
 ```bash
 # 1. 透過 CLI 進行 Discover (傳送 JSON)

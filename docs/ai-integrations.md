@@ -133,6 +133,9 @@ three miss, the user can paste DOIs and use `enrich_candidates`.
 ## Codex CLI / Aider / plain shell
 
 Shell-native AIs run `research-hub` directly. No MCP server needed.
+Codex also supports MCP, but this walkthrough uses the release-verified
+CLI route. See [Codex MCP capability and validation](ai-host-support.md#codex-mcp-capability-and-validation)
+for transport support and the separate research-hub integration status.
 
 ```bash
 # 1. Discover via CLI (pipes JSON)

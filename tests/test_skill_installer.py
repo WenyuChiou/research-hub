@@ -146,3 +146,23 @@ def test_ai_integration_docs_use_current_notebooklm_generate_flag():
         text = path.read_text(encoding="utf-8")
         assert "--preset" not in text
         assert "notebooklm generate --cluster my-topic --type brief" in text
+
+
+def test_codex_mcp_docs_separate_capability_from_release_validation():
+    text = Path("docs/ai-host-support.md").read_text(encoding="utf-8")
+    header = next(line for line in text.splitlines() if line.startswith("| Host / surface |"))
+    row = next(line for line in text.splitlines() if line.startswith("| Codex CLI |"))
+    columns = [cell.strip() for cell in header.strip("|").split("|")]
+    values = [cell.strip() for cell in row.strip("|").split("|")]
+    codex = dict(zip(columns, values))
+
+    assert codex["MCP"].startswith("Yes")
+    assert "STDIO" in codex["MCP"]
+    assert "Streamable HTTP" in codex["MCP"]
+    assert "not release-verified" in codex["Current position"]
+    assert "https://learn.chatgpt.com/docs/extend/mcp?surface=cli" in text
+
+    # Both shell walkthroughs point readers to the capability/validation boundary.
+    anchor = "ai-host-support.md#codex-mcp-capability-and-validation"
+    for path in (Path("docs/ai-integrations.md"), Path("docs/zh/ai-integrations.md")):
+        assert anchor in path.read_text(encoding="utf-8")

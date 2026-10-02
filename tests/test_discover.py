@@ -4,7 +4,18 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from research_hub.search import SearchResult
+
+
+@pytest.fixture(autouse=True)
+def _offline_semantic_recommendations(monkeypatch):
+    """State/routing tests keep S2 offline; recall tests cover the real adapter."""
+    monkeypatch.setattr(
+        "research_hub.search.semantic_scholar.SemanticScholarClient.get_recommendations",
+        lambda *_args, **_kwargs: [],
+    )
 
 
 def _cfg(tmp_path: Path) -> SimpleNamespace:
@@ -557,3 +568,20 @@ def test_discover_new_region_flag_forwards_to_search(tmp_path, monkeypatch):
     ) == 0
 
     assert captured["region"] == "cjk"
+
+
+def test_state_tests_do_not_call_semantic_scholar_http(tmp_path, monkeypatch):
+    from research_hub.discover import discover_new
+
+    monkeypatch.setattr("research_hub.search.search_papers", lambda *args, **kwargs: _results())
+    monkeypatch.setattr("research_hub.fit_check.emit_prompt", lambda *args, **kwargs: "prompt")
+
+    def refuse_http(*args, **kwargs):
+        pytest.fail("State-only discovery tests must not request Semantic Scholar")
+
+    monkeypatch.setattr(
+        "research_hub.search.semantic_scholar.SemanticScholarClient._get", refuse_http,
+    )
+    state, _ = discover_new(_cfg(tmp_path), "agents", "offline state test")
+
+    assert state.candidate_count == len(_results())
