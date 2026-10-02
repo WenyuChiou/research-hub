@@ -10,8 +10,8 @@ because a tool makes an action easy.
 |---|---|---|---|
 | `orient` | project root is known | manifests identify question/status, data, entrypoints, evidence, and unknowns | `scope` |
 | `scope` | orientation evidence exists | researcher accepts the question, boundaries, inclusion/exclusion criteria, and constraints | `discover` |
-| `discover` | scope decision is accepted | queries and sources are logged; candidates are deduplicated and triaged | `synthesize` |
-| `synthesize` | an auditable corpus exists | claims link to sources; contradictions, confidence, and gaps are explicit | `design` |
+| `discover` | scope decision is accepted | material needs map to executed search paths and observed outcomes; candidates are deduplicated/triaged; coverage limits are explicit | `synthesize` |
+| `synthesize` | an auditable corpus exists | claims link to same-version source passages at their actual evidence level; assessed/total counts, contradictions, confidence, and unchecked gaps are explicit | `design` |
 | `design` | evidence gaps and question are known | method, variables, assumptions, validation, and stopping rules are approved | `execute` |
 | `execute` | design and resource authorization exist | reproducible runs and validated outputs exist; failures are retained | `write` |
 | `write` | evidence artifacts are stable enough to cite | draft claims are source-linked and semantic review findings are resolved | `release` |
@@ -19,6 +19,13 @@ because a tool makes an action easy.
 
 Skipping a stage requires a recorded reason and evidence that its exit criteria
 were already satisfied. Never infer that evidence from a previous session alone.
+
+Discovery/synthesis exits are bounded adequacy judgments for the accepted scope,
+not proofs of comprehensive search or novelty. Failures/unknown tool payloads
+cannot stand in for zero results; unresolved load-bearing needs require partial
+status or continuation. Use `../../research-hub/references/research-protocol.md`
+and `../../research-hub/references/source-claim-audit.md`. These instructions
+strengthen existing stage evidence without changing the state-machine schema.
 
 ## Gate registry
 

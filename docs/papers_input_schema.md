@@ -154,6 +154,27 @@ evidence level, gaps, and pending checks honestly. Existing authenticity,
 integrity, and human semantic gates still apply. Host research alone does not
 authorize library/vault writes or publication.
 
+## Version-aware observation convention
+
+For substantive reviews, put work/version and decision observations in the
+existing `source_records` list rather than adding fields to strict evidence
+packet v1. Useful keys are `source_id`, `work_id`, `version_id` (null when
+unknown), `acquisition_ref`, `search_ref`, `evidence_level`, `status`,
+`compared_metadata`, `decision_ref`, `previous_decision_ref`, and
+`affected_claim_ids`. They are retained observations, not an ingestion gate or
+new canonical version database. Keep arXiv versions, corrections/retractions
+and include-to-exclude reversals distinguishable with reasons/history; re-check
+stale dependent claims. Same DOI with conflicting title/year remains unresolved.
+Sources without DOI can still have verified archival/catalog provenance.
+
+A `research-source-audit/1.0` sidecar can additionally bind packet claims to
+saved sources using `validate_evidence_packet(packet, source_audit=profile,
+artifact_root=...)`; never pass the packet or sidecar itself as papers input.
+Native tool choice, optional provenance and existing dry-run/idempotence
+contracts remain unchanged. See the shared
+[research protocol](../skills/research-hub/references/research-protocol.md) and
+[source audit contract](../skills/research-hub/references/source-claim-audit.md).
+
 ## Preview and writes
 
 ```bash

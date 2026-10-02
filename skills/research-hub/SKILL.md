@@ -26,19 +26,17 @@ research-hub doctor
 If `research-hub` is **not found**, the host has loaded the skill
 instructions but the executable runtime is missing. This can happen
 after a marketplace/manual skill install without the Python package.
-Stop and tell them:
+Block Hub commands/writes, but continue available host-native search, reading,
+citation chaining and evidence reasoning within the user's scope. Explain that
+Hub storage, vault/library actions and NotebookLM automation need the CLI:
 
-> This skill needs the `research-hub` CLI. Please run:
->
-> ```bash
-> pip install research-hub-pipeline
-> research-hub setup --persona researcher   # or analyst | humanities | internal
-> ```
->
-> Then re-run your request. If you only need to compare papers, sharpen
-> a research question, or build a project / paper memory file (no
-> automated search, no NotebookLM upload), a lightweight prompt-only
-> skill may be enough; this workflow needs the CLI for tool execution.
+```bash
+pip install research-hub-pipeline
+research-hub setup --persona researcher   # or analyst | humanities | internal
+```
+
+Do not invent CLI output or report an ingest. A missing runtime does not block
+native-only research, comparison, topic vetting, or project/paper memory work.
 
 If `doctor` runs but reports missing Zotero credentials, missing
 NotebookLM auth, or no supported LLM CLI, adapt instead of pretending
@@ -58,6 +56,16 @@ missing.
 
 Default language policy: answer the user in their language. Generate durable research notes, metadata, and citations in English unless the user explicitly asks for another language.
 
+## Shared research contract
+
+Read `references/research-protocol.md` before substantive discovery and
+`references/source-claim-audit.md` before source-supported synthesis. Preserve
+the user's exact scope; map material needs to actual search paths; distinguish
+core/closest/classic/contrary roles; and report unresolved evidence and bounded
+completion. Neither a successful search nor a valid ingest certifies coverage,
+novelty or scientific sufficiency. Use optional source-audit sidecars only when
+local binding checks help; strict ResearchEvidencePacket v1 stays unchanged.
+
 ## Agent preflight protocol
 
 For AI hosts such as Claude Code, Codex, Gemini CLI, Cursor, OpenClaw,
@@ -73,7 +81,9 @@ a narrower command:
 
 2. If the host has native research tools and the user wants multi-round
    discovery, use those tools for search, browsing, citation chaining,
-   and evidence reasoning. Prepare bibliographic records in the JSON
+   and evidence reasoning. Follow the shared needs-to-query map and record
+   visible tool outcomes; planned queries and unavailable payloads do not
+   count as executed searches or zero results. Prepare bibliographic records in the JSON
    `papers` shape documented in `docs/papers_input_schema.md`, with
    optional `provenance` and `source_records`. Do not pass a
    `ResearchEvidencePacket` directly as papers input; it is a separate

@@ -30,6 +30,16 @@ Do not use for one isolated operation. Route a single literature table to
 `research-design-helper`, one paper summary to `paper-summarize`, or project
 orientation alone to `research-project-orienter`.
 
+## Shared research contract
+
+Read `../research-hub/references/research-protocol.md` for the scope-to-query
+map, literature roles, version/decision observations and bounded completion;
+read `../research-hub/references/source-claim-audit.md` for source support.
+Native research remains available when Hub runtime/actions are unavailable.
+Do not infer substantive coverage from a candidate count or command exit.
+If shared files are unavailable, preserve user constraints, actual source level,
+load-bearing evidence gaps and planned/executed distinctions explicitly.
+
 ## Required inputs
 
 1. Project root.
@@ -114,8 +124,8 @@ expensive, or semantically different action needs a new decision.
 |---|---|---|
 | `orient` | `research-project-orienter`, `research-context-compressor` | project manifest and open questions |
 | `scope` | `gap-to-topic`, `research-design-helper` | accepted question, criteria, constraints |
-| `discover` | `literature-triage-matrix`, research-hub search, Zotero | query log, deduplicated candidate set |
-| `synthesize` | `paper-summarize`, `paper-memory-builder`, NotebookLM verifier | claim-evidence map with gaps |
+| `discover` | `literature-triage-matrix`, research-hub search, Zotero | need-to-query coverage and actual outcomes, deduplicated candidate set, unresolved scope/access limits |
+| `synthesize` | `paper-summarize`, `paper-memory-builder`, NotebookLM verifier | version/source-level claim-evidence map, assessed/total claims, contradictions and unassessed gaps |
 | `design` | `research-design-helper` | design dossier and explicit assumptions |
 | `execute` | project-specific code/experiment tools | reproducible command, outputs, validation |
 | `write` | academic writing skill chain | source-linked draft and review findings |

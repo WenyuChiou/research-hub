@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WenyuChiou/research-hub/schemas/research-source-audit-1.0.json",
+  "title": "Optional Research Source Audit Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "packet_sha256",
+    "observations",
+    "assessments",
+    "unassessed_claim_ids"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "research-source-audit/1.0"
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observation_id",
+          "source_id",
+          "work_id",
+          "version_id",
+          "version_review_ref",
+          "acquisition_ref",
+          "status",
+          "evidence_level",
+          "source_fetch_result",
+          "raw_path",
+          "raw_sha256",
+          "text_path",
+          "text_sha256",
+          "source_version"
+        ],
+        "properties": {
+          "observation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "work_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "version_review_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "acquisition_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ]
+          },
+          "evidence_level": {
+            "enum": [
+              "metadata",
+              "abstract",
+              "full-text",
+              "generated-summary",
+              "unavailable"
+            ]
+          },
+          "source_fetch_result": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "raw_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "raw_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "text_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "text_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "source_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "observation_id",
+          "version_id",
+          "required_level",
+          "judgment",
+          "quote",
+          "start",
+          "end",
+          "locator",
+          "verifier_output_ref"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "observation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "required_level": {
+            "enum": [
+              "metadata",
+              "abstract",
+              "full-text"
+            ]
+          },
+          "judgment": {
+            "enum": [
+              "supported",
+              "partial",
+              "contradicted",
+              "unverifiable"
+            ]
+          },
+          "quote": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "start": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "end": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "locator": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "verifier_output_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "unassessed_claim_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
