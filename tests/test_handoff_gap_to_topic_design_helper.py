@@ -211,9 +211,9 @@ def test_design_helper_skill_md_section_0_covers_three_branches() -> None:
     experience regresses."""
     text = DESIGN_HELPER_SKILL.read_text(encoding="utf-8")
     section_0 = _extract_section(text, "### §0 — Detect Stage 2 handoff")
-    # Exactly-one-candidate branch — auto-pre-fill
+    # Exactly-one-candidate branch — only pre-fill after actual selection
     assert "auto-pre-fill" in section_0.lower() or "auto pre-fill" in section_0.lower(), (
-        "§0 missing the auto-pre-fill (exactly-one-candidate) branch"
+        "§0 missing the post-selection auto-pre-fill branch"
     )
     # 2+ branch — ask the user
     assert "Which candidate" in section_0, (
@@ -327,7 +327,7 @@ def test_multi_eligible_fixture_parses_and_has_2plus_go_eligible() -> None:
     [
         (
             "topic_dossier_sample.gaps.yml",
-            "single-eligible-auto-prefill",
+            "single-eligible-ask-without-prior-choice",
         ),
         (
             "topic_dossier_multi_eligible_sample.gaps.yml",
@@ -339,8 +339,9 @@ def test_fixture_parses_and_drives_correct_section_0_branch(
     fixture_path: str, expected_branch: str
 ) -> None:
     """v0.3.15 (codex C2): both fixtures parse cleanly AND drive
-    distinct §0 branches based on the count of go-eligible candidates
-    (conditional-go or go). Parametrized so a future third fixture
+    the documented eligible-option branches without inferring user choice
+    from a verdict (conditional-go or go). These are fixture/prose checks,
+    not execution of a live skill agent. Parametrized so a future third fixture
     (e.g. all-no-go zero-eligible) can be added with one tuple
     instead of a new test function.
     """
@@ -351,10 +352,10 @@ def test_fixture_parses_and_drives_correct_section_0_branch(
         g for g in data["gaps"] if g["verdict"] in {"conditional-go", "go"}
     ]
     n = len(go_eligible)
-    if expected_branch == "single-eligible-auto-prefill":
+    if expected_branch == "single-eligible-ask-without-prior-choice":
         assert n == 1, (
-            f"{fixture_path} should drive the auto-prefill branch "
-            f"(exactly 1 go-eligible) but has {n}"
+            f"{fixture_path} should exercise the sole-eligible clarification branch "
+            f"(1 eligible option is not a user choice) but has {n}"
         )
     elif expected_branch == "multi-eligible-ask-user":
         assert n >= 2, (
@@ -609,3 +610,52 @@ def _extract_section(markdown_text: str, heading: str) -> str:
     if not m:
         raise AssertionError(f"section {heading!r} not found")
     return m.group(0)
+
+
+# Guidance-contract tests only: these fixtures do not execute a host model or
+# implement a new runtime approval/selection gate.
+@pytest.mark.parametrize("fixture_path", [FIXTURE, FIXTURE_MULTI_ELIGIBLE])
+def test_eligible_fixture_requires_actual_user_choice_in_guidance(fixture_path):
+    data = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+    eligible = [g for g in data["gaps"] if g["verdict"] in {"go", "conditional-go"}]
+    assert eligible
+    # The existing handoff schema contains assessments, not an owner decision.
+    assert "selected_id" not in data and "human_selection" not in data
+    section = _extract_section(DESIGN_HELPER_SKILL.read_text(), "### §0 — Detect Stage 2 handoff")
+    assert "not automatically chosen" in section
+    assert "Only after the user selects it, auto-pre-fill" in section
+    assert "an actual prior user selection if clear" in section
+    assert "otherwise ask" in section
+    assert "the user's decision to reject" not in section
+    assert "the user already decided" not in section
+    assert "that's the chosen candidate" not in section
+
+
+def test_no_go_assessment_and_prior_explicit_choice_are_not_rewritten_by_guidance():
+    text = DESIGN_HELPER_SKILL.read_text()
+    inputs = _extract_section(text, "## Inputs")
+    section = _extract_section(text, "### §0 — Detect Stage 2 handoff")
+    assert "Use a clear prior user choice without asking again" in inputs
+    assert "A `no-go` is an assessment" in section
+    assert "preserve that actual choice" in section
+    assert "Never silently substitute another candidate" in section
+    assert "Do not auto-start a design brief" in section
+
+
+def test_dossier_next_steps_do_not_force_an_artificial_candidate_pair():
+    text = GAP_TO_TOPIC_TEMPLATE.read_text()
+    section = _extract_section(text, "## 7. Recommended Next Steps")
+    assert "Zero or" in section and "multiple justified directions are valid" in section
+    assert "do not force a rejected broad topic" in section
+    assert "First, the" not in section and "Paragraph 1" not in section
+    assert "actual prior choice if clear" in section
+    assert "sole eligible `go`/`conditional-go`" in section
+
+
+def test_gap_skill_active_summary_matches_open_portfolio_and_human_choice():
+    skill = (REPO_ROOT / "skills/gap-to-topic/SKILL.md").read_text()
+    assert "for ONE candidate" not in skill
+    assert "the do-not-pursue topic and the conditional topic" not in skill
+    assert "decides *which* topic" not in skill
+    assert "zero or multiple justified options" in skill
+    assert "assembles options for the researcher to choose" in skill

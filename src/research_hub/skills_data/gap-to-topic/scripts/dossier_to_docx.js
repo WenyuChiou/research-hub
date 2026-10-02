@@ -149,6 +149,10 @@ const colWidths = (n) => {
 function cellFill(r, cell) {
   if (r === 0) return "1F3B5B"; // header dark blue
   const lc = cell.toLowerCase();
+  // Evidence-first screening phrases do not encode an automatic worth verdict.
+  if (/not supported as stated/.test(lc)) return "F4DEDE";
+  if (/conditional candidate/.test(lc)) return "FFF4D6";
+  if (/human decision pending/.test(lc)) return "EEEEEE";
   // English verdict keywords
   if (/do not pursue/.test(lc)) return "F4DEDE";          // light red
   if (/worth pursuing/.test(lc) && /only if/.test(lc)) return "FFF4D6"; // light yellow
