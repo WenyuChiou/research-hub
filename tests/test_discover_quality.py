@@ -9,6 +9,15 @@ import pytest
 from research_hub.search import SearchResult
 
 
+@pytest.fixture(autouse=True)
+def _offline_semantic_recommendations(monkeypatch):
+    """State/routing tests keep S2 offline; recall tests cover the real adapter."""
+    monkeypatch.setattr(
+        "research_hub.search.semantic_scholar.SemanticScholarClient.get_recommendations",
+        lambda *_args, **_kwargs: [],
+    )
+
+
 def _cfg(tmp_path: Path) -> SimpleNamespace:
     root = tmp_path / "vault"
     raw = root / "raw"

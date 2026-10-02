@@ -31,10 +31,14 @@ the explicit `--input PATH` handoff and preview behavior.
 
 ## Matrix
 
+Connection columns describe available host paths; **Current position**
+records research-hub integration validation. Host transport support alone
+does not establish an end-to-end research-hub smoke.
+
 | Host / surface | CLI | MCP | REST | `SKILL.md` installer | Manual `SKILL.md` | Current position |
 |---|---:|---:|---:|---:|---:|---|
 | Claude Code | Yes | Yes | Yes | Yes: `claude-code` | Yes | Verified core target. |
-| Codex CLI | Yes | No | Yes | Yes: `codex` | Yes | Verified CLI + skill target. |
+| Codex CLI | Yes | Yes (STDIO / Streamable HTTP) | Yes | Yes: `codex` | Yes | Verified CLI + skill target; MCP integration not release-verified. |
 | Cursor | Partial | Yes | Yes | Yes: `cursor` | Yes | Installer writes skill files; MCP is the stronger tool path. |
 | Gemini CLI | Yes | No | Yes | Yes: `gemini` | Yes | Verified CLI + skill target. |
 | Claude Desktop | No | Yes | Yes | No | Manual via Claude ecosystem paths | Use MCP. Do not list as `install --platform`. |
@@ -45,6 +49,21 @@ the explicit `--input PATH` handoff and preview behavior.
 | Hermes | Depends on host shell | Unknown/host-dependent | Yes | No | Yes | Manual `SKILL.md` path only until a stable installer directory and live smoke exist. |
 | Generic API client | No | No | Yes | No | Inline prompt only | Use REST endpoints. |
 | R / RStudio | Shell-adjacent | No | Yes | No | Project instructions only | R is a research project context, not an AI host. |
+
+### Codex MCP capability and validation
+
+[OpenAI's MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+confirms that Codex CLI supports STDIO and Streamable HTTP servers.
+research-hub's MCP entry point (`research-hub serve` or `research-hub-mcp`)
+uses STDIO; Codex's HTTP capability does not imply that research-hub
+provides an HTTP MCP endpoint.
+
+CLI + skill remains the release-verified Codex route. Configure the server
+in Codex using the linked OpenAI instructions, then follow the verification
+steps in the [MCP host smoke checklist](live-smoke.md#4-mcp-host-smoke).
+The checklist's JSON configuration example is for Claude-style hosts, not
+Codex. Record the Codex host version and results before marking its
+research-hub MCP integration verified.
 
 ## Built-In Skill Installer Targets
 
