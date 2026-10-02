@@ -48,7 +48,11 @@ def filter_agent_results(results: list[Any]) -> list[dict[str, Any]]:
     ]
 
 
-def validate_evidence_packet(packet: dict[str, Any]) -> list[dict[str, str]]:
+def validate_evidence_packet(
+    packet: dict[str, Any], *, source_audit: dict[str, Any] | None = None,
+    artifact_root: Path | None = None,
+) -> list[dict[str, str]]:
+    """Validate v1; optionally bind a separate audit to saved source artifacts."""
     schema_path = Path(__file__).with_name("schemas") / "research-evidence-packet-1.0.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
@@ -114,6 +118,9 @@ def validate_evidence_packet(packet: dict[str, Any]) -> list[dict[str, str]]:
                             "message": f"evidence verifier did not confirm claim support: {source_id}",
                         }
                     )
+    if source_audit is not None and not findings:
+        from research_hub.source_audit import validate_source_audit
+        findings.extend(validate_source_audit(packet, source_audit, artifact_root=artifact_root))
     return findings
 
 

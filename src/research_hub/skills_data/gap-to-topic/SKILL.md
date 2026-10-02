@@ -92,6 +92,17 @@ topic-selection time it usually does not, so the
 identifiers only against an already-ingested Zotero library, and at
 topic-selection time the candidate papers are not ingested (see §1 step 3).
 
+## Shared research contract
+
+Use `../research-hub/references/research-protocol.md` for the user's original
+constraints, information-needs/query map, closest prior work and contrary/dead-end
+searches, and bounded completion. Use `../research-hub/references/source-claim-audit.md`
+for actual evidence levels and version-bound source passages. Missing Hub runtime
+blocks its commands/writes, not available native discovery. Preserve explicit
+population/geography/date boundaries; suggested filters are not user decisions.
+If these shared files are absent in a standalone install, retain these rules
+and disclose any unassessed load-bearing evidence rather than implying novelty.
+
 ## Workflow
 
 Run §0–§4 in order. Each section has a fixed contract; do not skip a gate.
@@ -119,7 +130,9 @@ gate runs per gap.
 Incomplete recall is the dominant failure mode: a missed paper makes a gap
 look open when it is not. So this gate is **adversarial**:
 
-1. Run `research-hub search --adversarial --screen --json` on the gap. It
+1. Map every material information need to a distinct search family and record
+   planned vs executed status. Use available native tools or, when appropriate,
+   run `research-hub search --adversarial --screen --json` on the gap. It
    searches several query phrasings, reports a recall-confidence verdict,
    and applies the fit-check BM25 relevance gate. With `--screen --json` the
    output is an object `{screening_summary, results}`: `results` is the
@@ -130,31 +143,40 @@ look open when it is not. So this gate is **adversarial**:
    a paper — it tags relevance, so recall stays auditable. If `--adversarial`
    or `--screen` is unavailable (older CLI), run several query phrasings by
    hand and record the reduced recall confidence in the dossier.
-2. From `results`, take the **on-topic** papers — those the relevance gate
-   tagged `kept: true` — and feed them to `literature-triage-matrix` (as
+2. Screen candidates against the preserved scope. In CLI mode, inspect
+   `results` and the relevance gate's `kept`/`reason`; in native mode, record
+   actual inclusion/exclusion decisions and reasons without inventing CLI
+   fields. Feed the **on-topic** works to `literature-triage-matrix` (as
    its input #0, a Markdown list of titles + DOIs / arXiv IDs) to produce
    `.research/literature_matrix.md`: the structured prior-art comparison
    (per paper — method, main claim, evidence, limitation, relevance).
-   Papers tagged `kept: false` are off-topic noise — keep them out of the
-   matrix, the `.bib` and the openness reasoning. This matrix is a **real
+   Relevance scores are screening aids, not scientific verdicts. Retain
+   screened-out candidates and reasons in the log; check decision-relevant
+   closest/contrary/boundary evidence before excluding it. This matrix is a **real
    workflow output** — it is what the openness judgement in step 4 and the
    §2 gates read, not an assumed pre-existing input. If a
    `literature_matrix.md` from an earlier run exists, `literature-triage-matrix`
    appends to it; if either skill is unavailable, reason directly over the
-   `results` and record the reduced structure in the dossier.
-3. Build the **complete reference list** (real DOIs / arXiv IDs) as the
-   `.bib` companion **from the on-topic `results` metadata** (the same
-   `kept: true` set as step 2) — this is the trust artifact; the researcher
+   observed candidates and record the reduced structure in the dossier.
+3. Build the **reference list for the assessed scope** as the `.bib`
+   companion from verified on-topic candidate metadata (CLI `results` or
+   actual native observations) — this is the trust artifact; the researcher
    must be able to verify "open" themselves. Do **not** use
    `cite --format bibtex` here: `cite` resolves identifiers only against an
    already-ingested Zotero library, and at topic-selection time the
-   candidate papers are not ingested. Every entry must carry a resolvable
-   DOI or arXiv ID; drop any paper whose identifier did not resolve (an
-   unverifiable reference is not a trust artifact).
-4. Record the recall-confidence verdict as a **headline**, not a footnote,
-   and report the `screening_summary` counts (retrieved vs on-topic) so the
-   reader sees how much of the corpus was off-topic noise. Reason the
-   per-gap openness over the step-2 matrix.
+   candidate papers are not ingested. Verify supplied DOI/arXiv IDs when
+   available. A missing identifier does
+   not make a work nonexistent: qualitative, historical or archival sources
+   can use verified title/author/date, stable collection/catalog locator and
+   acquisition provenance. Unresolved identity remains explicitly unresolved;
+   never drop inconvenient prior work merely because it has no DOI.
+4. Record recall limits as a **headline**, not a footnote. In CLI mode,
+   report available `screening_summary` counts; in native mode, report
+   observed counts and tool references, leaving inaccessible payloads or
+   backend totals unknown. Do not infer recall confidence from counts alone. Reason the
+   per-gap openness over the step-2 matrix, comparing the closest works by
+   question, population/system, method and outcome. Search failures, truncation
+   or unknown native payloads are not zero-result proof of openness.
 
 A gap is never declared "open" on the basis of "absent from my corpus" —
 absence in a corpus is not absence in the literature.
@@ -170,12 +192,21 @@ Two parts — see the references for the full method:
   the candidate as *problem-solving* or *incremental*. This is a descriptive
   lens, not a quality verdict — `incremental` is not "not worth doing."
 
+Both parts must also explain significance and decision relevance: who benefits,
+what changes if the contribution succeeds, and why the closest alternative does
+not already resolve the problem. Compare plausible alternatives, boundary
+conditions, and upgrade/kill tests. A newly combined method alone is not proof
+of a meaningful contribution; retained dead-end evidence may overturn optimism.
+
 ### §3 — Gate ③ — Feasible?
 
 Front-loaded by design: the researcher must know feasibility *before*
 building the research framework, before spending money and running
 experiments. Socratically establish data / resource accessibility — is the
 data public? what does it cost? how long to obtain? — and record a verdict.
+Include data access/quality, skills/compute, time and cost, ethics/consent and
+applicable approvals, execution/analysis validation, and a feasible fallback.
+Do not treat unconfirmed access or permissions as available.
 
 ### §4 — Handed back to the human
 
@@ -210,7 +241,8 @@ with `--no-toc`).
   exist in the cited source; an unverified quote is dropped, not downgraded.
 - **Absence is not proof:** every "open" verdict carries the recall caveat.
 - **Screening-grade, not systematic:** the dossier says so in §4.
-- **No fabricated identifiers:** every DOI / arXiv ID must resolve.
+- **No fabricated identifiers:** verify supplied DOI/arXiv IDs; identifier-free
+  sources need explicitly verified bibliographic/acquisition provenance.
 
 ## References
 

@@ -13,10 +13,25 @@
 ## [Unreleased]
 
 ### Added
+- Optional `research-source-audit/1.0` sidecar at the existing evidence-packet
+  validator boundary: current packet/claim/source/verifier binding, explicit
+  publication version and source level, saved byte hashes and located quotes,
+  production source-fetch replay, and unassessed claim accounting. Strict
+  ResearchEvidencePacket v1 and packet-only callers remain unchanged. Local
+  binding passes do not certify semantic support or scientific adequacy.
+
 - Optional `--audit-output` on search, enrich, verify, references and cited-by:
   versioned append-only attempt events, raw response/result references, exact
   query variants and explicit backend failures. HTTP 404/429 and parse failures
   remain distinct from successful empty results. See `docs/audit-output.md`.
+
+### Changed
+- Plugin `0.5.2` strengthens shared native research instructions across Hub,
+  triage, NotebookLM verification, gap-to-topic and workflow orchestration:
+  preserved user scope, needs-to-query mapping, literature roles, version-aware
+  provenance and honest bounded completion. Missing Hub runtime blocks Hub
+  actions while available native-only research can continue. Package version
+  remains `1.2.0`; no release or architecture topology change is implied.
 
 ### Fixed
 - Fence abstract recovery explicitly in the enrichment resolver unit test;

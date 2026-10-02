@@ -33,6 +33,15 @@ Not for:
 - Comparing papers to each other — `literature-triage-matrix`.
 - Manuscript-level claim audit — `academic-writing-skills`.
 
+## Evidence contract
+
+Use `../research-hub/references/source-claim-audit.md` and
+`../research-hub/references/research-protocol.md`. Citation mentions and
+nearby apparently contradictory sentences are screening signals. Final
+support/contradiction judgments require actual same-version source passages
+at the claim's needed evidence level. If the shared files are unavailable,
+retain these minimum rules and explicitly report remaining evidence gaps.
+
 ## Inputs
 
 In priority order:
@@ -43,9 +52,10 @@ In priority order:
    - **Bundle manifest**: `.research_hub/bundles/<cluster>/manifest.json`
      — list of which source files were uploaded.
    - **Cluster Obsidian notes** under `raw/<cluster>/*.md` — for
-     spot-checking specific claims.
-   - **Source PDFs** under `pdfs/<cluster>/` — last-resort spot-check
-     only; cap at 3 per session.
+     screening specific claims; generated notes are not source proof.
+   - **Actual source text / PDFs** under `pdfs/<cluster>/` — read relevant
+     sections for load-bearing claims within the declared resource bound.
+     A three-source spot-check does not verify a fourth source.
 
 2. **Manual fallback mode** (new in v0.68.x). When the user generated
    the brief themselves on notebooklm.google.com — direct upload, web
@@ -75,34 +85,46 @@ If the user names a brief file directly, prefer that path over guessing.
    title, citation key, DOI). Call this set `S_bundle`.
 2. **Source coverage scan**: for each `S_bundle` item, search the brief
    text for the citation key, DOI, or first-author name. Call any
-   bundle item with zero hits a "missed source".
+   bundle item with zero hits "not mentioned". A missing mention is not
+   proof of substantive omission, and a mention is not proof of coverage.
 3. **Claim attribution scan**: for each declarative claim in the brief
    (sentences ending with a period, containing factual statements),
    identify which source the brief attributes it to. If a claim has no
-   attribution, flag as "unsupported".
+   attribution, flag as "unattributed; support not yet assessed". Attribution
+   alone does not demonstrate source support.
 4. **Cross-source contradiction scan**: when two sources are both
-   referenced near contradictory claims, flag.
+   referenced near apparently contradictory claims, flag for passage review.
+   Preserve population, conditions and uncertainty before judging conflict.
 5. **Generalization scan**: any sentence with phrases like "studies
    show", "all", "always", "consistently" without a specific source
    should be flagged as potential overgeneralization.
-6. **Spot-check**: pick the 1-3 most surprising / load-bearing claims
-   and read the underlying source paper's abstract + relevant section
-   to confirm support.
+6. **Source checks**: prioritize load-bearing / surprising claims and read
+   the actual abstract or relevant source sections, with version, quote,
+   locator and hashes when available. Mark supported, partial, contradicted
+   or unverifiable at the actual evidence level. Inventory all claims in
+   the denominator; list those beyond the approved read bound as unassessed.
+   An empty claim denominator is unavailable, not a perfect pass.
 
 ## Output
 
-In-conversation report (no file written by default). The report has 7 sections: source coverage, unsupported claims, cross-source contradictions, potential overgeneralizations, spot-checked claims, recommended follow-up NotebookLM prompts, and verdict (reliable for / use with caution for / do not cite without spot-check).
+Report assessed/total claims, source sections actually read, unchecked
+load-bearing claims, access/version limits, and partial/bounded completion.
+A well-attributed brief is not automatically verified.
+
+
+In-conversation report (no file written by default). The report has 7 sections: source mentions/coverage, unattributed or source-unsupported claims, source-checked contradictions, potential overgeneralizations, source-checked claims, recommended follow-up NotebookLM prompts, and verdict (reliable for / use with caution for / do not cite without spot-check).
 
 Full template + worked example: `references/report-template.md`.
 
-If the brief is well-attributed and bundle coverage is complete, the report is short — that's a feature, not a bug.
+If reviewed source passages support the brief within the declared scope, the report is short — that's a feature, not a bug.
 
 ## Token-saving behavior
 
 - Read the brief once at the start; quote line numbers in the report
   rather than re-reading.
 - Compare against the bundle manifest first; only open source files for
-  spot-checks (cap 3 per run).
+  checks prioritized by decision relevance within the declared resource bound.
+  Keep unchecked claims explicit; a read cap cannot certify the whole brief.
 - Cache the report in `.research_hub/artifacts/<cluster>/brief-verify-<ts>.md`
   optionally if the user says "save this report".
 
