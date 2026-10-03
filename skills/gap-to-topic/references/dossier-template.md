@@ -280,6 +280,7 @@ choose. A sole eligible `go`/`conditional-go` is not an automatic user choice.>
 | `topic_dossier.bib` | The reference list, as BibTeX | Verified identity/version or stable collection locator, with unresolved identity disclosed |
 | `literature_matrix.md` | The paper-by-paper comparison table | How each retrieved paper compares — method, claim, evidence type, limitation |
 | `topic_dossier.gaps.yml` | Machine-readable export | Structured data for a downstream tool or a later pass; not needed for reading |
+| `topic_dossier.direction-review.json` (optional) | Version-bound prerequisite assessments and combined resource estimates | Inputs for the offline checker; no scientific approval or user selection |
 
 ```
 en/
@@ -327,6 +328,7 @@ pipeline:                       # 4-step provenance chain
   - gap-to-topic gates §1-§4
 gaps:
   - id: G1
+    candidate_version: 1       # optional positive integer; required only for direction-check binding
     name: "<readable candidate name>"
     statement: "<candidate>"
     type: A | B                 # A = method-limitation | B = unoccupied-application
@@ -353,6 +355,62 @@ open_questions:
 the frozen handoff fixture at `tests/fixtures/topic_dossier_sample.gaps.yml`
 must be updated in the same PR so the cross-skill integration test
 stays meaningful.
+
+For this optional extension, retain legacy fixtures without `candidate_version`
+and add a versioned fixture separately. Existing verdict and feasibility enums,
+ResearchEvidencePacket v1 and ordinary legacy dossier reading remain unchanged.
+The new checker reports `missing-candidate-version` rather than inferring 1.
+
+### Optional companion — `topic_dossier.direction-review.json`
+
+Keep natural-language ideation and the reader-facing dossier as above. Use the
+optional `research-hub paper direction-check` only when a caller supplies the
+versioned review and explicit local evidence root. The single executable-format
+reference is `docs/direction-review-contract.md` in the research-hub repository;
+use it for exact JSON field names, a minimal complete example, output and errors.
+This companion is separate from ResearchEvidencePacket v1 and the writer's
+existing `*-context.json` preservation snapshot.
+
+- The review format is `research-direction-review/1.0`. Its top-level fields are
+  `format`, `candidate_refs`, `evidence`, `checks` and `resources`.
+- Each candidate reference has `candidate_id`, positive-integer
+  `candidate_version` and `candidate_sha256`, calculated from the complete
+  current candidate. The checker separately receipts raw dossier/review bytes.
+  Editing another candidate alone does not stale an unchanged reviewed one;
+  changing this candidate's text or version does. Preserve prior records and
+  explicitly reassess applicability instead of carrying an old pass forward.
+- `checks` must cover `data`, `tool`, `model`, `license`, `cost`, `premise` and
+  `validation-path` for each reviewed candidate, with multiple items per kind
+  allowed. Every item has a unique `check_id`, `candidate_ref`, `kind`,
+  `statement`, `status`, `evidence_refs`, `reason` and `next_check`.
+  `supported`/`contradicted` require evidence references with current byte
+  bindings and concrete locators; `unknown` needs a bounded `next_check`;
+  `not-applicable` needs an applicability reason. Theory can legitimately mark
+  data/model conditions not-applicable without inventing empirical requirements.
+- `evidence` records local relative `path`, raw-byte `sha256`, concrete `locator`,
+  actual `evidence_level` and `publication_version`, plus a unique `id`. Preserve
+  the original context's note locator/hash and source observations when reusing
+  notes; do not relabel them full text. The string `unknown` records an unresolved
+  publication version; matching bytes do not verify publication metadata.
+- `resources` contains `requirements`, `components` and `capacities` for the
+  explicit reviewed set. Declare each candidate's required units or null if the
+  scope is unknown. Components bind the applicable candidate references and have
+  `component_id`, `unit`, `amount`, `estimate_basis`, `evidence_refs` and
+  `sharing_basis`. Capacities have `unit`, `amount` and `decision_ref`. A shared
+  component is counted once only with explicit shared scope and basis; missing
+  basis, demand, requirement scope or capacity stays unknown. Separate units are
+  never automatically converted. Unknown quantities are null, not invented zero.
+
+For example, 7 plus 8 person-weeks against 10 yields 15, `exceeds-estimate`.
+Explicit shared 3 plus separate 4 and 5 yields 12, still over the estimate.
+Missing the second candidate's demand makes the dimension `unknown`.
+
+The CLI reads no Hub configuration and makes no model/network calls or file
+writes. Read named output fields, not exit status alone: exit 0 also covers
+current records containing unknown/contradicted prerequisites or over-budget
+estimates. It never verifies scientific support, actual runtime costs or human
+choice, and never authorizes execution. Carry limitations into the discussion;
+any narrower question, dropped baseline or raised budget needs a user decision.
 
 The `.bib` companion is the Gate 1 reference list as BibTeX — built from
 the on-topic `search --adversarial --screen --json` results (NOT from

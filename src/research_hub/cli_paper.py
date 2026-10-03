@@ -849,8 +849,46 @@ def _cmd_paper_gaps(cfg, args) -> None:
         print("[gaps] Failed to write output.", file=sys.stderr)
 
 
+def _cmd_paper_direction_check(args) -> int:
+    """Offline, config-free checking; exit zero never means scientific approval."""
+    from research_hub.direction_review import DirectionReviewError, check_direction_review, dumps_direction_json
+
+    try:
+        result = check_direction_review(args.dossier, args.review, args.source_root)
+        code = 0 if result["binding_status"] == "current" else 2
+        encoded = dumps_direction_json(result)
+    except DirectionReviewError as exc:
+        result = {"format": "research-direction-check/1.0", "record_status": "invalid",
+                  "error": exc.code, "semantic_assessment": "not-performed",
+                  "human_selection": "outside-checker", "execution_authorized": False}
+        code = 2
+        encoded = dumps_direction_json(result)
+    if getattr(args, "json", False):
+        print(encoded)
+    elif code and result["record_status"] == "invalid":
+        print(f"Direction record invalid: {result['error']}")
+    else:
+        print(f"Record: {result['record_status']}; bindings: {result['binding_status']}")
+        print(f"Planned resource estimates: {result['resource_estimates']['status']}")
+        for row in result["candidate_bindings"]:
+            if row["status"] != "current":
+                print(f"Candidate {row['candidate_id']!r}: {row['status']}")
+        for row in result["evidence_bindings"]:
+            if row["status"] != "current":
+                print(f"Evidence {row['evidence_id']!r}: {row['status']}")
+        unknown = sum(row["status"] == "unknown" for row in result["prerequisites"])
+        contradicted = sum(row["status"] == "contradicted" for row in result["prerequisites"])
+        print(f"Supplied prerequisite assessments: {unknown} unknown; {contradicted} contradicted")
+    if not getattr(args, "json", False):
+        print("Scientific assessment and runtime spending not verified; human selection remains outside this checker.")
+        print("A completed check does not authorize execution or approve a direction.")
+    return code
+
+
 def _paper_command(args) -> int:
     emit_json = bool(getattr(args, "json", False))
+    if args.paper_command == "direction-check":
+        return _cmd_paper_direction_check(args)
     if args.paper_command == "find":
         cfg = require_config()
         _cmd_paper_find(cfg, args)

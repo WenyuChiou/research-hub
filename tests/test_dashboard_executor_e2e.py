@@ -3,8 +3,12 @@ from __future__ import annotations
 import http.client
 import json
 import queue
+import socket
+import subprocess
+import sys
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,7 +19,7 @@ from research_hub.dashboard import events, executor, http_server
 from research_hub.dashboard.types import ClusterCard, DashboardData
 from research_hub.paper import read_labels
 
-from tests._e2e_sandbox import sandbox_cfg
+from tests._e2e_sandbox import _install_subprocess_network_guard, sandbox_cfg
 
 
 @dataclass
@@ -27,6 +31,51 @@ class _FakeCompletedProcess:
 
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def test_subprocess_guard_records_even_caught_attempts(tmp_path, monkeypatch):
+    attempts = _install_subprocess_network_guard(tmp_path, monkeypatch)
+    # Emit audit events directly: exercise the child guard without invoking
+    # DNS, opening a connection, sending a packet, or launching another helper.
+    blocked_events = [
+        "socket.getaddrinfo", "socket.connect", "socket.sendto", "subprocess.Popen",
+    ]
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            "assert sys._research_hub_e2e_offline\n"
+            "from research_hub.doctor import check_nlm_chrome_orphans\n"
+            "probe = check_nlm_chrome_orphans()\n"
+            "assert probe.status == 'INFO'\n"
+            "assert 'not checked' in probe.message\n"
+            "try:\n"
+            "    from patchright.sync_api import sync_playwright\n"
+            "except ImportError:\n"
+            "    pass\n"
+            "else:\n"
+            "    try:\n"
+            "        sync_playwright()\n"
+            "    except RuntimeError as exc:\n"
+            "        assert 'not checked' in str(exc)\n"
+            "    else:\n"
+            "        raise AssertionError('browser probe was not stubbed')\n"
+            f"for event in {blocked_events!r}:\n"
+            "    try:\n"
+            "        sys.audit(event)\n"
+            "    except RuntimeError:\n"
+            "        pass\n"
+            "    else:\n"
+            "        raise AssertionError(event + ' was not blocked')\n",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert child.returncode == 0, child.stderr
+    assert attempts.read_text(encoding="utf-8").splitlines() == blocked_events
 
 
 def _post_json(port: int, path: str, payload: dict) -> tuple[int, dict]:
@@ -58,40 +107,105 @@ def _make_dashboard_data() -> DashboardData:
     )
 
 
-@pytest.fixture
-def live_server(sandbox_cfg, monkeypatch):
+class _ClosingBroadcaster(events.EventBroadcaster):
+    """Only teardown interrupts reads; normal events use the real broadcaster."""
+    _stop = object()
+
+    def subscribe(self):
+        subscription = super().subscribe()
+        original_get = subscription.get
+
+        def get(*args, **kwargs):
+            event = original_get(*args, **kwargs)
+            if event is self._stop:
+                raise ConnectionResetError("offline test stream teardown")
+            return event
+
+        subscription.get = get
+        return subscription
+
+    def stop_subscribers(self):
+        with self._lock:
+            subscriptions = list(self._clients)
+        for subscription in subscriptions:
+            subscription.put_nowait(self._stop)
+
+
+class _OwnedHTTPServer(http_server.ThreadingHTTPServer):
+    """Track only this fixture's accepted sockets and worker threads."""
+    def __init__(self, *args, **kwargs):
+        self.owned_threads = []
+        self.owned_sockets = []
+        self.stopping = threading.Event()
+        super().__init__(*args, **kwargs)
+
+    @property
+    def port(self):
+        return self.server_address[1]
+
+    def process_request(self, request, client_address):
+        self.owned_sockets.append(request)
+        thread = threading.Thread(target=self.process_request_thread,
+                                  args=(request, client_address), daemon=True)
+        self.owned_threads.append(thread)
+        thread.start()
+
+
+@contextmanager
+def _live_server_context(sandbox_cfg, monkeypatch):
     monkeypatch.setattr(http_server, "collect_dashboard_data", lambda cfg: _make_dashboard_data())
     monkeypatch.setattr(http_server, "render_dashboard_from_config", lambda cfg, csrf_token="": "<html></html>")
-    broadcaster = events.EventBroadcaster()
-    http_server.DashboardHandler.cfg = sandbox_cfg
-    http_server.DashboardHandler.broadcaster = broadcaster
-    http_server.DashboardHandler.csrf_token = ""
-    server = http_server.ThreadingHTTPServer(("127.0.0.1", 0), http_server.DashboardHandler)
+    broadcaster = _ClosingBroadcaster()
+    monkeypatch.setattr(http_server.DashboardHandler, "cfg", sandbox_cfg)
+    monkeypatch.setattr(http_server.DashboardHandler, "broadcaster", broadcaster, raising=False)
+    monkeypatch.setattr(http_server.DashboardHandler, "csrf_token", "")
+    server = _OwnedHTTPServer(("127.0.0.1", 0), http_server.DashboardHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server.owned_threads.append(thread)
     thread.start()
     try:
-        yield server.server_address[1]
+        yield server
     finally:
+        server.stopping.set()
         server.shutdown()
+        # Wake queue.get(30) and close keep-alive sockets. Neither the stop
+        # sentinel nor socket shutdown is part of the action/event assertion.
+        broadcaster.stop_subscribers()
+        for connection in server.owned_sockets:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass  # A completed request may already have closed its socket.
+            connection.close()
         server.server_close()
-        thread.join(timeout=2)
+        deadline = time.monotonic() + 3
+        for owned_thread in server.owned_threads:
+            owned_thread.join(timeout=max(0, deadline - time.monotonic()))
+        assert not [t.name for t in server.owned_threads if t.is_alive()], "Fixture threads leaked"
+        with broadcaster._lock:
+            assert not broadcaster._clients, "Fixture SSE subscriptions leaked"
 
 
-def _listen_for_sse(port: int) -> tuple[queue.Queue, threading.Thread]:
+@pytest.fixture
+def live_server(sandbox_cfg, monkeypatch):
+    with _live_server_context(sandbox_cfg, monkeypatch) as server:
+        yield server
+
+
+def _listen_for_sse(server) -> tuple[queue.Queue, threading.Thread]:
     out: queue.Queue = queue.Queue()
+    ready = threading.Event()
 
     def worker() -> None:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-        conn.request("GET", "/api/events")
-        response = conn.getresponse()
+        conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
+        response = None
         event_name = "message"
         data_lines: list[str] = []
         try:
+            conn.request("GET", "/api/events")
+            response = conn.getresponse()
             while True:
-                try:
-                    line = response.fp.readline()
-                except TimeoutError:
-                    break
+                line = response.fp.readline()
                 if not line:
                     break
                 text = line.decode("utf-8").rstrip("\r\n")
@@ -105,14 +219,37 @@ def _listen_for_sse(port: int) -> tuple[queue.Queue, threading.Thread]:
                     if data_lines:
                         payload = json.loads("\n".join(data_lines))
                         out.put((event_name, payload))
+                        if event_name == "hello":
+                            ready.set()
+                        if event_name == "state-change":
+                            break
                     event_name = "message"
                     data_lines = []
+        except OSError as exc:
+            if not server.stopping.is_set():
+                out.put(("reader-error", {"message": str(exc)}))
         finally:
+            if response is not None:
+                response.close()
             conn.close()
 
     thread = threading.Thread(target=worker, daemon=True)
+    server.owned_threads.append(thread)
     thread.start()
+    assert ready.wait(timeout=5), "SSE did not complete the real hello handshake"
     return out, thread
+
+
+def test_sse_fixture_teardown_joins_threads_without_state_change(sandbox_cfg, monkeypatch):
+    # Exercise assertion-failure cleanup while both the real reader and real
+    # handler are waiting. No synthetic event can satisfy the action test.
+    with pytest.raises(AssertionError, match="simulated action assertion"):
+        with _live_server_context(sandbox_cfg, monkeypatch) as server:
+            stream, reader = _listen_for_sse(server)
+            assert stream.get(timeout=1)[0] == "hello"
+            assert reader.is_alive()
+            raise AssertionError("simulated action assertion")
+    assert not any(thread.is_alive() for thread in server.owned_threads)
 
 
 _CATEGORY_A_CASES = [
@@ -252,7 +389,7 @@ def test_e2e_compose_draft_writes_markdown(sandbox_cfg):
 def test_e2e_sse_event_after_action(live_server):
     stream, thread = _listen_for_sse(live_server)
     status, payload = _post_json(
-        live_server,
+        live_server.port,
         "/api/exec",
         {"action": "rename", "slug": "alpha", "fields": {"new_name": "Alpha Live"}},
     )
@@ -273,7 +410,8 @@ def test_e2e_sse_event_after_action(live_server):
     else:
         raise AssertionError(f"missing state-change SSE event; saw {seen!r}")
 
-    thread.join(timeout=1)
+    thread.join(timeout=2)
+    assert not thread.is_alive(), "SSE reader did not stop after state-change"
 
 
 def test_e2e_error_rendering(live_server, monkeypatch):
@@ -288,7 +426,7 @@ def test_e2e_error_rendering(live_server, monkeypatch):
     )
     monkeypatch.setattr(http_server, "execute_action", lambda action, slug, fields, timeout=300: failed)
     status, payload = _post_json(
-        live_server,
+        live_server.port,
         "/api/exec",
         {"action": "rename", "slug": "alpha", "fields": {"new_name": "bad"}},
     )
@@ -314,7 +452,7 @@ def test_e2e_timeout_handling(live_server, monkeypatch):
     monkeypatch.setattr(executor.subprocess, "run", fake_run)
     started = time.monotonic()
     status, payload = _post_json(
-        live_server,
+        live_server.port,
         "/api/exec",
         {"action": "dashboard", "fields": {}, "timeout": 1},
     )

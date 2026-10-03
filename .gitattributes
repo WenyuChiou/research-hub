@@ -17,3 +17,6 @@ src/research_hub/skills_data/**/evals/evals.json  text eol=lf
 # pyproject + workflow YAML — LF (used by GitHub Actions on Linux runners)
 pyproject.toml text eol=lf
 .github/workflows/*.yml text eol=lf
+
+# Direction-review fixture evidence has frozen raw-byte SHA-256 values.
+tests/fixtures/direction_review/** text eol=lf
