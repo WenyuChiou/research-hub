@@ -1,6 +1,6 @@
 ---
 name: gap-to-topic
-description: Turn a research area into a go/no-go decision dossier for ONE candidate thesis/proposal topic — a 3-gate verdict (is the gap open? is it a contribution? is it feasible?) with the evidence laid out so the researcher can verify it. Use when the user asks "is this gap worth pursuing", "help me pick a thesis topic", "is this idea already taken", "find me a defensible research gap", "vet this research idea before I commit", or "should I do this". NOT a literature review (use `literature-triage-matrix` for a comparison matrix) and NOT a study design (use `research-design-helper` once a topic is chosen). Produces a `.research/topic_dossier.md`, a `.research/topic_dossier.docx` (Word, colour-coded), a `.bib`, and a `.gaps.yml`.
+description: Turn a research area into a go/no-go decision dossier for candidate thesis/proposal topics (zero or multiple justified options) — a 3-gate verdict (is the gap open? is it a contribution? is it feasible?) with the evidence laid out so the researcher can verify it. Use when the user asks "is this gap worth pursuing", "help me pick a thesis topic", "is this idea already taken", "find me a defensible research gap", "vet this research idea before I commit", or "should I do this". NOT a literature review (use `literature-triage-matrix` for a comparison matrix) and NOT a study design (use `research-design-helper` once a topic is chosen). Produces a `.research/topic_dossier.md`, a `.research/topic_dossier.docx` (Word, colour-coded), a `.bib`, and a `.gaps.yml`.
 compatibility: Pure agentskills.io-spec skill. Domain-agnostic; works alongside Zotero/Obsidian/NotebookLM workflows but requires none of them.
 ---
 
@@ -31,7 +31,7 @@ Not for:
 
 - A comparison matrix over a known paper set — that's `literature-triage-matrix`.
 - Designing the study once a topic is chosen — that's `research-design-helper`
-  (gap-to-topic decides *which* topic; research-design-helper designs *how*).
+  (gap-to-topic assembles options for the researcher to choose; research-design-helper designs *how* after that choice).
 - A narrative literature review — that's a writing task.
 - Building manuscript claim memory — that's `paper-memory-builder`.
 
@@ -49,12 +49,12 @@ log tables in the appendices. Verdict cells are colour-coded in the .docx
 | Section | What it covers |
 |---|---|
 | 1. Executive Decision Summary | metadata box; one framing sentence; **per-candidate verdict cards** (small 2-column tables, generator colour-codes the verdict cell); a one-line key uncertainty |
-| 2. Candidate Definitions | per candidate, name + one-sentence statement + a plain "why it could be a gap" tag ("No one has tried this" / "Current methods fall short") |
+| 2. Candidate Definitions | per candidate, name + one-sentence statement + a plain "why it could be a gap" tag ("Application coverage unresolved" / "Specific method limitation") |
 | 3. Decision Scorecards | per candidate, a small 3-column table (Gate / Score / Rationale) with the three gates rated 1–5 (Likert) plus a Verdict row; cells colour-coded by the generator |
 | 4. Evidence Base | the search funnel, the prior-art classification, and the closest prior work per candidate with inline evidence-type tags |
 | 5. Gate-by-Gate Assessment | each gate uses a fixed five-field skeleton: Score / Evidence / Interpretation / Risk / Action needed |
 | 6. Risks and Upgrade / Kill Tests | named risks (construct validity, dataset, novelty, reproducibility); operational upgrade / kill test per conditional candidate; salvage path per failed candidate |
-| 7. Recommended Next Steps | formal research-memo prose — the do-not-pursue topic and the conditional topic, with named actions |
+| 7. Recommended Next Steps | actual options and tradeoffs, reason-specific bounded next checks, and pending or explicit user choice |
 | Appendix A. Search and Screening Protocol | a reproducibility log — search date, databases, query families, retrieved, dedup, inclusion / exclusion, screening, known limitations, recall confidence |
 | Appendix B. Deliverable File List | the file index and the file tree |
 
@@ -66,8 +66,9 @@ Plus two machine-readable companions: `<dossier>.bib` (the Gate 1 reference
 list as BibTeX) and `<dossier>.gaps.yml` (structured candidates + verdicts +
 open questions — keeps the machine ids and enum tokens).
 
-The go/no-go test is a **3-gate AND** — a candidate that fails ANY gate is a
-no-go. The dossier is a thinking tool, not a polished report.
+The three gates organize the assessment; a supported hard failure cannot be
+compensated by another score. Unassessed prerequisites remain unresolved, not a
+scientific failure or automatic go. The dossier supports the human decision.
 
 ## Inputs
 
@@ -109,8 +110,14 @@ Run §0–§4 in order. Each section has a fixed contract; do not skip a gate.
 
 ### §0 — Candidate breakthrough point(s)
 
-Socratic, like `research-design-helper`. Help the user articulate 1–N
-candidates. Do **not** invent the topic. For each candidate:
+Socratic, like `research-design-helper`. Help the user articulate candidates
+within the stated objective; zero or multiple justified options are valid. Keep
+improving an existing method/design and proposing a new concept/mechanism as
+equally valid routes, without a quota. A paper need not explicitly name a gap.
+Separate sourced premises, inferences and proposed benefits; an unmeasured effect
+is a research question, not automatic infeasibility. Retain useful replication,
+validation, exploratory or simple-method options. Do **not** invent the user's
+objective or constraints. For each candidate:
 
 - **Give it a short, readable name** — it becomes the candidate's heading
   in the dossier ("The candidates" section). The `G1` / `G2` id is only a
@@ -119,8 +126,9 @@ candidates. Do **not** invent the topic. For each candidate:
 - **Classify the opening type**, and write it in plain words in the dossier:
   - **Type A — method-limitation opening:** an existing method *cannot* do X
     ("traditional ABM cannot give agent profiles via text").
-  - **Type B — unoccupied-application opening:** no one has applied a
-    capability to a domain ("no one has used LLMs for X").
+  - **Type B — unoccupied-application opening:** no equivalent application has been located within the declared search scope
+    ("application coverage unresolved for X"). This is an openness hypothesis,
+    not a literature-wide absence claim; compare closest work before narrowing it.
 
 A multi-gap candidate is decomposed into its constituent gaps; every later
 gate runs per gap.
@@ -206,13 +214,31 @@ experiments. Socratically establish data / resource accessibility — is the
 data public? what does it cost? how long to obtain? — and record a verdict.
 Include data access/quality, skills/compute, time and cost, ethics/consent and
 applicable approvals, execution/analysis validation, and a feasible fallback.
-Do not treat unconfirmed access or permissions as available.
+Do not treat unconfirmed access or permissions as available. Check actual
+materials/variables, temporal or spatial granularity, applicability and quality;
+a successful download is not sufficient. Specify the minimum study and a
+simpler/closest baseline with an informative validation path within confirmed
+resources. A missing enabling prerequisite is unknown, not a zero score or
+supported failure; record a bounded next check. Hard blockers cannot be averaged
+away or compensated by value. Revise substantive mismatches, park critical
+unknowns, and reject only with supported negative evidence. Preserve a useful
+alternative when another candidate fails, and do not silently change scope.
+Use applicable reason-specific checks: missing closest/contrary evidence needs
+a bounded targeted lookup; an already-realized increment needs repositioning;
+a material/granularity mismatch needs suitable alternatives or a user scope
+decision; a resource overrun needs a value-preserving minimum version or parking;
+unconfirmed critical access needs a bounded access/permission check.
 
 ### §4 — Handed back to the human
 
 The dossier ends by stating explicitly: it has assembled the three
 gate-verdicts; whether the gap is *worth doing* is the researcher's and
-advisor's call. The skill never makes that call.
+advisor's call. The skill never makes that call. Explain actual options,
+tradeoffs and reason-specific next checks without forcing a rejected/conditional
+pair. An eligible `go` or `conditional-go` is an assessment, not a user choice,
+even for a sole candidate. Use an actual prior selection if clear; otherwise ask
+which direction to design before handing it to `research-design-helper`.
+Do not invent approval or start design/experiments from a next-step suggestion.
 
 ### §4.5 — Generate .docx
 
