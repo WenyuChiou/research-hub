@@ -57,9 +57,9 @@ def test_supplied_preliminary_cases_are_preserved_without_validation_or_selectio
     record = {"source_id": "S1", "locator": "Synthetic material dictionary §2", "observation": observation}
     note = {"title": name, "abstract": "A supplied premise; no explicit gap is named.",
             "source_records": [record], "provenance": {"research": {"geography": "unrestricted"}}}
-    (folder / "paper.md").write_text("---\n" + yaml.safe_dump(note, sort_keys=False) + "---\n")
+    (folder / "paper.md").write_text("---\n" + yaml.safe_dump(note, sort_keys=False) + "---\n", encoding="utf-8")
     overview = cfg.hub / "topic" / "00_overview.md"; overview.parent.mkdir(parents=True)
-    overview.write_text("# Topic\n\nHuman notes.\n")
+    overview.write_text("# Topic\n\nHuman notes.\n", encoding="utf-8")
     digest = build_cluster_digest(cfg, "topic")
     prompt = emit_gap_prompt(digest)
     assert name in prompt and json.dumps(observation, ensure_ascii=False) in prompt
@@ -76,14 +76,14 @@ def test_supplied_preliminary_cases_are_preserved_without_validation_or_selectio
         _cmd_paper_gaps(cfg, SimpleNamespace(cluster="topic", compare_cluster=None, no_llm=False, llm_cli=None))
     report = cfg.hub / "topic" / "research-gaps.md"
     assert report.with_name("research-gaps-model-output.txt").read_bytes() == raw.encode()
-    snapshot = json.loads(report.with_name("research-gaps-context.json").read_text())
+    snapshot = json.loads(report.with_name("research-gaps-context.json").read_text(encoding="utf-8"))
     assert snapshot["assessment"] == "unassessed" and snapshot["scientific_validation"] == "not-performed"
     assert snapshot["digests"][0]["papers"][0]["source_records"] == [record]
-    text = report.read_text()
+    text = report.read_text(encoding="utf-8")
     boundary = text.split("## Unverified model draft", 1)[0]
     assert "requirements have not been validated" in boundary
     assert "a sole eligible candidate, is not a recorded user choice" in boundary
-    assert response in text and response not in overview.read_text()
+    assert response in text and response not in overview.read_text(encoding="utf-8")
 
 
 def test_cross_prompt_applies_same_preliminary_checks_without_importing_a_score_engine():
@@ -102,7 +102,7 @@ def test_prompt_and_dossier_name_bounded_reason_specific_next_checks():
                   "material/granularity mismatch", "resource overrun", "critical access unknown"):
         assert route in prompt
     assert "user question/scope decision" in prompt and "value-preserving minimum version" in prompt
-    dossier = (Path(__file__).resolve().parents[1] / "skills/gap-to-topic/references/dossier-template.md").read_text()
+    dossier = (Path(__file__).resolve().parents[1] / "skills/gap-to-topic/references/dossier-template.md").read_text(encoding="utf-8")
     steps = dossier.split("## 7. Recommended Next Steps", 1)[1].split("\n---", 1)[0]
     for route in ("Missing closest/contrary evidence", "already realized", "Material/variable/granularity mismatch",
                   "Resource overrun", "Critical access/permission unknown"):

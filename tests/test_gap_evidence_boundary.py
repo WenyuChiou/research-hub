@@ -46,7 +46,7 @@ def overview(cfg, slug="topic"):
 
 
 def context(path):
-    return json.loads(path.with_name(path.stem + "-context.json").read_text())
+    return json.loads(path.with_name(path.stem + "-context.json").read_text(encoding="utf-8"))
 
 
 def test_truncated_abstract_is_unknown_coverage_even_when_model_overclaims(cfg):
@@ -71,9 +71,9 @@ def test_truncated_abstract_is_unknown_coverage_even_when_model_overclaims(cfg):
     assert evidence["assessment"] == "unassessed"
     assert evidence["search_scope"].endswith("coverage unknown")
     assert evidence["digests"][0]["papers"][0]["text_limits"]["summary"]["truncated"]
-    report = result.research_gaps_path.read_text()
+    report = result.research_gaps_path.read_text(encoding="utf-8")
     assert report.index("scientific assessment unassessed") < report.index("Nobody has done")
-    assert "Nobody has done" not in target_overview.read_text()
+    assert "Nobody has done" not in target_overview.read_text(encoding="utf-8")
     assert note.read_bytes() == before
 
 
@@ -138,12 +138,12 @@ def test_narrow_candidate_preserves_locators_counterconditions_and_kill_test(cfg
                  "Kill test: reject if the held-out sparse-case error exceeds the closest baseline.\n")
     target_overview = overview(cfg)
     result = apply_gap_results(cfg, "topic", candidate, digest=digest)
-    assert result.research_gaps_path.with_name("research-gaps-model-output.txt").read_text() == candidate
+    assert result.research_gaps_path.with_name("research-gaps-model-output.txt").read_text(encoding="utf-8") == candidate
     evidence = context(result.research_gaps_path)
     assert evidence["digests"][0]["papers"][0]["source_records"] == records
     assert evidence["assessment"] == "unassessed"  # preservation does not validate source support
-    assert "Kill test:" in result.research_gaps_path.read_text()
-    assert "sparse-case" not in target_overview.read_text()  # no model claim promoted by teaser
+    assert "Kill test:" in result.research_gaps_path.read_text(encoding="utf-8")
+    assert "sparse-case" not in target_overview.read_text(encoding="utf-8")  # no model claim promoted by teaser
 
 
 def test_cli_uses_same_consumed_snapshot_and_keeps_zero_directions(cfg):
@@ -156,7 +156,7 @@ def test_cli_uses_same_consumed_snapshot_and_keeps_zero_directions(cfg):
 
     def fake_model(cli_name, prompt, **kwargs):
         prompts.append(prompt)
-        note.write_text(note.read_text().replace("Observed mechanism only.", "Changed after prompt."))
+        note.write_text(note.read_text(encoding="utf-8").replace("Observed mechanism only.", "Changed after prompt."), encoding="utf-8")
         return response
 
     with patch("research_hub.llm_cli.detect_llm_cli", return_value="fixture"), \
@@ -165,9 +165,9 @@ def test_cli_uses_same_consumed_snapshot_and_keeps_zero_directions(cfg):
     report = cfg.hub / "topic" / "research-gaps.md"
     stored = context(report)
     assert stored["digests"][0]["papers"][0]["note_sha256"] == hashlib.sha256(consumed).hexdigest()
-    assert report.with_name("research-gaps-model-output.txt").read_text() == response
-    assert "Zero justified directions" in report.read_text()
-    assert "zero justified directions is valid" in target_overview.read_text()
+    assert report.with_name("research-gaps-model-output.txt").read_text(encoding="utf-8") == response
+    assert "Zero justified directions" in report.read_text(encoding="utf-8")
+    assert "zero justified directions is valid" in target_overview.read_text(encoding="utf-8")
     assert "Changed after prompt" not in prompts[0]
 
 
@@ -184,9 +184,9 @@ def test_cross_cli_qualifies_both_overviews_and_preserves_failure_records(cfg):
     assert context(path)["assessment"] == "unassessed"
     assert len(context(path)["digests"]) == 2
     for target in (a, b):
-        assert "scientific assessment unassessed" in target.read_text()
-        assert "definitely worth" not in target.read_text()
-    assert path.with_name("a-x-b-gaps-model-output.txt").read_text() == raw
+        assert "scientific assessment unassessed" in target.read_text(encoding="utf-8")
+        assert "definitely worth" not in target.read_text(encoding="utf-8")
+    assert path.with_name("a-x-b-gaps-model-output.txt").read_text(encoding="utf-8") == raw
 
 
 def test_cross_prompt_does_not_force_bridges_or_imply_literature_absence(cfg):
@@ -212,15 +212,15 @@ def test_owned_legacy_sections_are_qualified_idempotently_without_editing_conten
         generated = "## Research Gaps\n\n*Full analysis: [[research-gaps]]*\n\nOld generated teaser: Nobody has studied this.\n"
         apply = lambda: apply_gap_results(cfg, "topic", "New model text")
     original = "# Topic\n\nHuman introduction.  \n\n" + generated + human_suffix
-    target.write_text(original)
+    target.write_bytes(original.encode("utf-8"))
     apply()
-    changed = target.read_text()
+    changed = target.read_text(encoding="utf-8")
     assert "scientific assessment unassessed" in changed
     assert generated.split("\n", 1)[1] in changed
     assert changed.startswith("# Topic\n\nHuman introduction.  \n\n")
     assert changed.endswith(human_suffix)
     apply()
-    assert target.read_text() == changed
+    assert target.read_text(encoding="utf-8") == changed
 
 
 @pytest.mark.parametrize("cross", [False, True])
@@ -229,7 +229,7 @@ def test_ambiguous_user_overview_sections_are_untouched(cfg, cross):
     target = overview(cfg)
     heading = "## Cross-Cluster Analysis" if cross else "## Research Gaps"
     original = "# Topic\n\n" + heading + "\n\nMy own research argument.  \n\n## Next\nPrivate reminder.\n"
-    target.write_text(original)
+    target.write_bytes(original.encode("utf-8"))
     if cross:
         cross_cluster_gap(cfg, "topic", "other", "New model text")
     else:
@@ -252,6 +252,7 @@ def test_lf_crlf_notes_have_parsing_parity_and_distinct_raw_hashes(cfg):
     provenance = {"research": {"geography": "unrestricted", "original_constraints": {"period": "2000-2026"}}}
     lf = write_note(cfg, name="lf", abstract="Complete abstract.", source_records=records,
                     provenance=provenance, publication_version="publisher-2026", doi="10.1000/example")
+    lf.write_bytes(lf.read_bytes().replace(b"\r\n", b"\n"))  # explicit LF fixture on every OS
     crlf = lf.with_name("crlf.md")
     crlf.write_bytes(lf.read_bytes().replace(b"\n", b"\r\n"))
     digest = build_cluster_digest(cfg, "topic")
@@ -323,3 +324,16 @@ def test_unreadable_note_stays_unknown_and_cli_does_not_invoke_model(cfg, monkey
     with patch("research_hub.llm_cli.invoke_llm_cli", side_effect=AssertionError("must not invoke")):
         _cmd_paper_gaps(cfg, SimpleNamespace(cluster="topic", compare_cluster=None, no_llm=False, llm_cli=None))
     assert "Evidence unavailable" in capsys.readouterr().err
+
+
+def test_new_fixture_text_io_is_explicitly_utf8():
+    """Guard the fixture encoding contract; live Windows CI exercises it too."""
+    import ast
+    root = Path(__file__).resolve().parent
+    for name in ("test_gap_evidence_boundary.py", "test_gap_preliminary_directions.py",
+                 "test_handoff_gap_to_topic_design_helper.py"):
+        tree = ast.parse((root / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {"read_text", "write_text"}:
+                encoding = next((kw.value for kw in node.keywords if kw.arg == "encoding"), None)
+                assert isinstance(encoding, ast.Constant) and encoding.value == "utf-8", (name, node.lineno)

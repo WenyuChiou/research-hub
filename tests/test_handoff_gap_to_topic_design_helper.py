@@ -621,7 +621,7 @@ def test_eligible_fixture_requires_actual_user_choice_in_guidance(fixture_path):
     assert eligible
     # The existing handoff schema contains assessments, not an owner decision.
     assert "selected_id" not in data and "human_selection" not in data
-    section = _extract_section(DESIGN_HELPER_SKILL.read_text(), "### §0 — Detect Stage 2 handoff")
+    section = _extract_section(DESIGN_HELPER_SKILL.read_text(encoding="utf-8"), "### §0 — Detect Stage 2 handoff")
     assert "not automatically chosen" in section
     assert "Only after the user selects it, auto-pre-fill" in section
     assert "an actual prior user selection if clear" in section
@@ -632,7 +632,7 @@ def test_eligible_fixture_requires_actual_user_choice_in_guidance(fixture_path):
 
 
 def test_no_go_assessment_and_prior_explicit_choice_are_not_rewritten_by_guidance():
-    text = DESIGN_HELPER_SKILL.read_text()
+    text = DESIGN_HELPER_SKILL.read_text(encoding="utf-8")
     inputs = _extract_section(text, "## Inputs")
     section = _extract_section(text, "### §0 — Detect Stage 2 handoff")
     assert "Use a clear prior user choice without asking again" in inputs
@@ -643,7 +643,7 @@ def test_no_go_assessment_and_prior_explicit_choice_are_not_rewritten_by_guidanc
 
 
 def test_dossier_next_steps_do_not_force_an_artificial_candidate_pair():
-    text = GAP_TO_TOPIC_TEMPLATE.read_text()
+    text = GAP_TO_TOPIC_TEMPLATE.read_text(encoding="utf-8")
     section = _extract_section(text, "## 7. Recommended Next Steps")
     assert "Zero or" in section and "multiple justified directions are valid" in section
     assert "do not force a rejected broad topic" in section
@@ -653,7 +653,7 @@ def test_dossier_next_steps_do_not_force_an_artificial_candidate_pair():
 
 
 def test_gap_skill_active_summary_matches_open_portfolio_and_human_choice():
-    skill = (REPO_ROOT / "skills/gap-to-topic/SKILL.md").read_text()
+    skill = (REPO_ROOT / "skills/gap-to-topic/SKILL.md").read_text(encoding="utf-8")
     assert "for ONE candidate" not in skill
     assert "the do-not-pursue topic and the conditional topic" not in skill
     assert "decides *which* topic" not in skill
