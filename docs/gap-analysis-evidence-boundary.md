@@ -83,3 +83,46 @@ The executable CLI tests establish preservation and writer qualification only.
 Selection changes in `research-design-helper` are conversational skill guidance;
 their documentation/fixture tests do not establish that a live model always asks
 or follows that guidance. A clear prior user choice is reused without asking again.
+
+## Optional offline direction record check
+
+`paper direction-check --dossier <path> --review <path> --source-root <root>
+--json` is a separate, config-free local reader. It checks an opt-in candidate
+version/content binding, evidence bytes/record shape and arithmetic over supplied
+planned resource components. It does not call models or the network, write or
+repair files, or change how `paper gaps` generates and preserves provisional
+prose. See the [direction-review contract](direction-review-contract.md) for the
+complete input/output shapes and failure reasons.
+
+The optional `gaps[].candidate_version` and independent review JSON leave the
+existing writer, context snapshot, ResearchEvidencePacket v1 and handoff enums
+unchanged. Legacy dossiers remain readable in the ordinary flow; the new checker
+reports `missing-candidate-version` rather than treating one as version 1. The
+complete reviewed candidate is hashed separately from the raw dossier receipt,
+so another candidate's edit alone does not stale an unchanged candidate.
+
+All seven prerequisite kinds can contain multiple checks. Their supplied
+`supported`, `contradicted`, `unknown` or `not-applicable` statuses remain supplied
+assessments, not validator conclusions. A concrete locator and matching source
+bytes do not prove passage meaning, authenticity or publication version. An
+explicit unknown publication version stays metadata even when bytes are current.
+Existing context note locators/hashes and source observations must be preserved;
+the checker does not upgrade a note to the original paper. Changed or unavailable
+evidence makes the binding noncurrent without rewriting an assessment.
+
+Resource totals combine only the explicitly reviewed set and declared units.
+Shared work requires explicit scope and sharing basis; missing basis, required
+demand, estimate or capacity leaves unknown rather than an invented zero or
+discount. `within-estimate` compares supplied quantities only. Runtime usage,
+omitted work and real affordability are not verified. No currency/unit conversion,
+automatic scope reduction, budget approval or runtime enforcement is introduced.
+
+Exit 0 means a structurally valid/current report completed, even with unknown or
+contradicted checks or an `exceeds-estimate` result. Consumers must inspect the
+named fields, including `record_status`, `binding_status`, `prerequisites` and
+`resource_estimates`; they cannot use exit success as research approval. Reports
+retain `semantic_assessment: not-performed`, `human_selection: outside-checker`,
+`execution_authorized: false` and `runtime_budget_verification: not-performed`.
+Offline checker tests establish parsing, binding and supplied arithmetic only;
+they do not establish scientific adequacy, actual human choice or live model
+compliance with either skill's conversational guidance.

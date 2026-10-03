@@ -1,0 +1,7 @@
+SYNTHETIC PLANNING RECORD; no actual runtime usage.
+Version: fixture-estimate-1
+G1 requires 7 person-weeks; G2 requires 8 person-weeks.
+Available planning capacity is 10 person-weeks.
+When shared cleaning is justified: shared 3, G1-only 4, G2-only 5 person-weeks.
+The same cleaned annual table may serve both questions without repeat cleaning.
+Separate dimensions: 20 USD and 4 GPU-hours; capacity 25 USD and 3 GPU-hours.

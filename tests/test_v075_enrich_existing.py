@@ -66,10 +66,25 @@ def test_plan_enrichment_uses_openalex_as_fallback(monkeypatch):
         ),
     )
 
+    # Missing abstracts enter the secondary recovery boundary even when
+    # OpenAlex supplied other metadata. Keep that outcome explicitly absent.
+    from research_hub.search.abstract_recovery import RecoveredAbstract
+
+    recovery_calls = []
+
+    def unavailable_abstract(doi):
+        recovery_calls.append(doi)
+        return RecoveredAbstract(text="", source="")
+
+    monkeypatch.setattr("research_hub.search.abstract_recovery.recover_abstract", unavailable_abstract)
+
     plans = plan_enrichment([_item()])
 
+    assert recovery_calls == ["10.1000/one"]
     assert plans[0].fields_to_fill["url"] == "https://openalex.org/example"
     assert plans[0].fields_to_fill["pages"] == "1-2"
+    assert "abstractNote" not in plans[0].fields_to_fill
+    assert plans[0].abstract_source == ""
 
 
 def test_plan_enrichment_skips_items_without_doi(monkeypatch):

@@ -67,6 +67,27 @@ def _ok_head(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("research_hub.authenticity.requests.head", lambda *a, **k: _Response(200))
 
 
+@pytest.fixture(autouse=True)
+def _unavailable_crossref_requests(monkeypatch):
+    """Keep L2 decisions driven by explicit fixture metadata, with no new evidence.
+
+    Override only this module's authenticity backend reference, matching the
+    existing test_authenticity fixture. Dedicated Crossref tests stay real
+    up to their own canned HTTP responses.
+    """
+    from research_hub.search.crossref import CrossrefBackend
+
+    calls = []
+
+    class UnavailableCrossref(CrossrefBackend):
+        def _request(self, url, **kwargs):
+            calls.append(url)
+            return None
+
+    monkeypatch.setattr("research_hub.authenticity.CrossrefBackend", UnavailableCrossref)
+    return calls
+
+
 # (a) IJSREM predatory prefix → quarantined L2 predatory_venue, NOT in accepted
 def test_predatory_doi_prefix_quarantined(tmp_path, monkeypatch):
     """DOI 10.55041/ijsrem60201 (Edtech Publishers OPC, IJSREM) must be quarantined at L2
@@ -127,7 +148,7 @@ def test_cfg_extension_predatory_prefixes(tmp_path, monkeypatch):
 
 
 # (b) generic resolvable DOI, single-source, 0 citations, no arxiv/pmid → quarantined L2 uncorroborated
-def test_single_source_zero_citations_quarantined(tmp_path, monkeypatch):
+def test_single_source_zero_citations_quarantined(tmp_path, monkeypatch, _unavailable_crossref_requests):
     """Single-source DOI with 0 citations and no arXiv/PMID must be quarantined at L2
     with reason uncorroborated (fail-closed)."""
     from research_hub.authenticity import verify_authenticity
@@ -146,6 +167,7 @@ def test_single_source_zero_citations_quarantined(tmp_path, monkeypatch):
     assert q["reason"] == "uncorroborated", f"expected uncorroborated, got {q['reason']}"
     assert q["details"]["citation_count"] == 0
     assert q["details"]["corroboration"] == "single-source"
+    assert _unavailable_crossref_requests == ["https://api.crossref.org/works/10.9999%2Funknown"]
 
 
 # (b2) missing citation_count field treated as 0

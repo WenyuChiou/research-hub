@@ -2485,6 +2485,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     paper_parser = subparsers.add_parser("paper", help="Paper curation operations")
     paper_sub = paper_parser.add_subparsers(dest="paper_command")
+    direction_check_p = paper_sub.add_parser(
+        "direction-check", help="Check local candidate/source bindings and planned resource totals (offline)",
+    )
+    direction_check_p.add_argument("--dossier", required=True, help="Path to topic_dossier.gaps.yml")
+    direction_check_p.add_argument("--review", required=True, help="Path to direction-review JSON")
+    direction_check_p.add_argument("--source-root", required=True, help="Explicit local root for evidence files")
+    direction_check_p.add_argument("--json", action="store_true", help="Emit a machine-readable report")
     lookup_doi_p = paper_sub.add_parser("lookup-doi", help="Look up and write DOI metadata from Crossref")
     lookup_doi_p.add_argument("slug", nargs="?", help="Paper slug (omit with --batch)")
     lookup_doi_p.add_argument("--cluster", help="Cluster slug for --batch mode")
@@ -2773,6 +2780,10 @@ def _main_dispatch(args, parser) -> int:
     _sync_cli_dependencies()
 
     _warn_cli_deprecated_alias_from_args(args)
+
+    # This explicit-input checker must not discover a vault or account config.
+    if args.command == "paper" and getattr(args, "paper_command", None) == "direction-check":
+        return _paper_command(args)
 
     exempt_commands = {"init", "setup", "doctor", "workflow", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context", "source"}
 

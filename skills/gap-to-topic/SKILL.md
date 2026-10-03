@@ -66,6 +66,11 @@ Plus two machine-readable companions: `<dossier>.bib` (the Gate 1 reference
 list as BibTeX) and `<dossier>.gaps.yml` (structured candidates + verdicts +
 open questions — keeps the machine ids and enum tokens).
 
+When a version-bound materials/resource record is useful, optionally add
+`candidate_version` to the relevant candidates and a separate
+`<dossier>.direction-review.json`. This is an opt-in offline check, not a new
+requirement for natural-language ideation or the ordinary dossier workflow.
+
 The three gates organize the assessment; a supported hard failure cannot be
 compensated by another score. Unassessed prerequisites remain unresolved, not a
 scientific failure or automatic go. The dossier supports the human decision.
@@ -228,6 +233,45 @@ a bounded targeted lookup; an already-realized increment needs repositioning;
 a material/granularity mismatch needs suitable alternatives or a user scope
 decision; a resource overrun needs a value-preserving minimum version or parking;
 unconfirmed critical access needs a bounded access/permission check.
+
+#### Optional version-bound offline check
+
+Use `research-hub paper direction-check --dossier <dossier>.gaps.yml --review
+<dossier>.direction-review.json --source-root <local-root> --json` when the caller
+wants to check supplied candidate/source bindings and combined planned estimates.
+It reads only the explicit local inputs, without reading Hub configuration,
+calling a model/network, writing files or starting the next stage. The exact
+contract is in `docs/direction-review-contract.md` in the research-hub repository;
+`references/dossier-template.md` summarizes the optional companion.
+
+- Bind each reviewed candidate with its ID, positive-integer `candidate_version`
+  and canonical hash of the complete candidate. Preserve old review records when
+  revising; a version or content change requires a fresh review. Never assume
+  a missing legacy version is 1. Old dossiers still work in the ordinary flow.
+- Record all seven kinds: `data`, `tool`, `model`, `license`, `cost`, `premise`
+  and `validation-path`. Each may have multiple named checks. Distinguish
+  `supported`, `contradicted`, `unknown` and `not-applicable`; supply evidence
+  references for the first two, a bounded next check for unknowns and an
+  applicability reason for not-applicable. Theory need not invent data/models.
+- Bind evidence to actual local bytes, a concrete locator, actual material level
+  and recorded publication version. Preserve existing context provenance;
+  a local note is not the original full paper. An explicit `unknown` publication
+  version remains unresolved metadata even if its byte hash is current.
+- Declare the combined candidate scope, required resource units, components,
+  estimate evidence and capacities/decision references. Add separate demands;
+  count a shared component once only with explicit scope and `sharing_basis`.
+  Missing sharing basis, demand or capacity leaves the relevant result unknown.
+  Units stay separate; unknown is not zero. The checker cannot find omitted work.
+- Read `record_status`, `binding_status`, `prerequisites` and
+  `resource_estimates` together. Exit 0 means a structurally valid/current report
+  completed, including reports with unknown/contradicted assessments or estimates
+  over budget. It does not establish semantic support, actual runtime budget,
+  scientific feasibility, human selection or execution permission.
+
+Carry unresolved and stale items into the human discussion. If supplied totals
+exceed capacity, compare a minimum version that still answers the question or
+park it; do not silently change the goal, remove necessary baselines or increase
+the budget. An optional check never replaces the three gates or user choice.
 
 ### §4 — Handed back to the human
 

@@ -1,0 +1,350 @@
+{
+  "format": "research-direction-review/1.0",
+  "candidate_refs": [
+    {
+      "candidate_id": "G1",
+      "candidate_version": 1,
+      "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+    },
+    {
+      "candidate_id": "G2",
+      "candidate_version": 1,
+      "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "data",
+      "path": "sources/data-dictionary.txt",
+      "sha256": "aed3885b1f968ed97b8f9e19a4803c4daf2ac9764f676b3d76157e4bbfd1febb",
+      "locator": "lines 3-5",
+      "evidence_level": "synthetic-data-dictionary",
+      "publication_version": "fixture-1"
+    },
+    {
+      "id": "method",
+      "path": "sources/method-note.txt",
+      "sha256": "3c6016dad0fa59d9762779c1ad0c4a9cb7fd7bc395eda10572008fd465100d49",
+      "locator": "lines 3-5",
+      "evidence_level": "synthetic-note-summary",
+      "publication_version": "fixture-note-1"
+    },
+    {
+      "id": "permission",
+      "path": "sources/permissions.txt",
+      "sha256": "cd446b47e3bac56caef41778ac95ef73d64c4a31cece8b632fe69da8923f77ca",
+      "locator": "lines 3-4",
+      "evidence_level": "synthetic-permission-record",
+      "publication_version": "fixture-permission-1"
+    },
+    {
+      "id": "estimate",
+      "path": "sources/estimates.txt",
+      "sha256": "9b1453213233049759e57e626bc09aa8c642ff681cd92b9ca9fbb02110fcdb03",
+      "locator": "lines 3-7",
+      "evidence_level": "synthetic-planning-record",
+      "publication_version": "fixture-estimate-1"
+    }
+  ],
+  "checks": [
+    {
+      "check_id": "G1-data",
+      "candidate_ref": {
+        "candidate_id": "G1",
+        "candidate_version": 1,
+        "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+      },
+      "kind": "data",
+      "statement": "Annual totals exist.",
+      "status": "supported",
+      "evidence_refs": [
+        "data"
+      ],
+      "reason": "The supplied dictionary lists annual totals.",
+      "next_check": null
+    },
+    {
+      "check_id": "G1-tool",
+      "candidate_ref": {
+        "candidate_id": "G1",
+        "candidate_version": 1,
+        "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+      },
+      "kind": "tool",
+      "statement": "A local tabulation tool is available.",
+      "status": "supported",
+      "evidence_refs": [
+        "method"
+      ],
+      "reason": "The supplied note records the tool.",
+      "next_check": null
+    },
+    {
+      "check_id": "G1-model",
+      "candidate_ref": {
+        "candidate_id": "G1",
+        "candidate_version": 1,
+        "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+      },
+      "kind": "model",
+      "statement": "No learned model is required.",
+      "status": "not-applicable",
+      "evidence_refs": [],
+      "reason": "This comparison uses tabulation, not a learned model.",
+      "next_check": null
+    },
+    {
+      "check_id": "G1-license",
+      "candidate_ref": {
+        "candidate_id": "G1",
+        "candidate_version": 1,
+        "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+      },
+      "kind": "license",
+      "statement": "Redistribution permission is not yet known.",
+      "status": "unknown",
+      "evidence_refs": [
+        "permission"
+      ],
+      "reason": "The synthetic owner has not supplied a grant.",
+      "next_check": "Ask the synthetic owner whether redistribution of annual totals is allowed."
+    },
+    {
+      "check_id": "G1-cost",
+      "candidate_ref": {
+        "candidate_id": "G1",
+        "candidate_version": 1,
+        "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+      },
+      "kind": "cost",
+      "statement": "Planned person-weeks have a supplied estimate.",
+      "status": "supported",
+      "evidence_refs": [
+        "estimate"
+      ],
+      "reason": "The planning record gives this estimate.",
+      "next_check": null
+    },
+    {
+      "check_id": "G1-premise",
+      "candidate_ref": {
+        "candidate_id": "G1",
+        "candidate_version": 1,
+        "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+      },
+      "kind": "premise",
+      "statement": "The proposed method improves on a baseline.",
+      "status": "unknown",
+      "evidence_refs": [],
+      "reason": "The effect has not been measured.",
+      "next_check": "Compare annual differences against the fixed matched-information baseline on held-out years."
+    },
+    {
+      "check_id": "G1-validation-path",
+      "candidate_ref": {
+        "candidate_id": "G1",
+        "candidate_version": 1,
+        "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+      },
+      "kind": "validation-path",
+      "statement": "A held-out comparison is specified.",
+      "status": "supported",
+      "evidence_refs": [
+        "method"
+      ],
+      "reason": "The supplied note gives the annual comparison path.",
+      "next_check": null
+    },
+    {
+      "check_id": "G2-data",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "data",
+      "statement": "Annual totals exist.",
+      "status": "supported",
+      "evidence_refs": [
+        "data"
+      ],
+      "reason": "The supplied dictionary lists annual totals.",
+      "next_check": null
+    },
+    {
+      "check_id": "G2-tool",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "tool",
+      "statement": "A local tabulation tool is available.",
+      "status": "supported",
+      "evidence_refs": [
+        "method"
+      ],
+      "reason": "The supplied note records the tool.",
+      "next_check": null
+    },
+    {
+      "check_id": "G2-model",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "model",
+      "statement": "No learned model is required.",
+      "status": "not-applicable",
+      "evidence_refs": [],
+      "reason": "This comparison uses tabulation, not a learned model.",
+      "next_check": null
+    },
+    {
+      "check_id": "G2-license",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "license",
+      "statement": "Redistribution permission is not yet known.",
+      "status": "unknown",
+      "evidence_refs": [
+        "permission"
+      ],
+      "reason": "The synthetic owner has not supplied a grant.",
+      "next_check": "Ask the synthetic owner whether redistribution of annual totals is allowed."
+    },
+    {
+      "check_id": "G2-cost",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "cost",
+      "statement": "Planned person-weeks have a supplied estimate.",
+      "status": "supported",
+      "evidence_refs": [
+        "estimate"
+      ],
+      "reason": "The planning record gives this estimate.",
+      "next_check": null
+    },
+    {
+      "check_id": "G2-premise",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "premise",
+      "statement": "The proposed method improves on a baseline.",
+      "status": "unknown",
+      "evidence_refs": [],
+      "reason": "The effect has not been measured.",
+      "next_check": "Compare annual differences against the fixed matched-information baseline on held-out years."
+    },
+    {
+      "check_id": "G2-validation-path",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "validation-path",
+      "statement": "A held-out comparison is specified.",
+      "status": "supported",
+      "evidence_refs": [
+        "method"
+      ],
+      "reason": "The supplied note gives the annual comparison path.",
+      "next_check": null
+    },
+    {
+      "check_id": "G2-data-monthly",
+      "candidate_ref": {
+        "candidate_id": "G2",
+        "candidate_version": 1,
+        "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+      },
+      "kind": "data",
+      "statement": "Monthly observations are available.",
+      "status": "contradicted",
+      "evidence_refs": [
+        "data"
+      ],
+      "reason": "The supplied dictionary states monthly observations are not recorded.",
+      "next_check": "Locate a monthly source or ask the researcher to choose the annual question."
+    }
+  ],
+  "resources": {
+    "requirements": [
+      {
+        "candidate_ref": {
+          "candidate_id": "G1",
+          "candidate_version": 1,
+          "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+        },
+        "units": [
+          "person-weeks"
+        ]
+      },
+      {
+        "candidate_ref": {
+          "candidate_id": "G2",
+          "candidate_version": 1,
+          "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+        },
+        "units": [
+          "person-weeks"
+        ]
+      }
+    ],
+    "components": [
+      {
+        "component_id": "G1-work",
+        "candidate_refs": [
+          {
+            "candidate_id": "G1",
+            "candidate_version": 1,
+            "candidate_sha256": "b130289ad4a9d989bc1fb190c122f1f54127dfc5393cbde4f8e93c5b2e895ff3"
+          }
+        ],
+        "unit": "person-weeks",
+        "amount": 7,
+        "estimate_basis": "Synthetic estimates.txt line 3; planned, not measured.",
+        "evidence_refs": [
+          "estimate"
+        ],
+        "sharing_basis": null
+      },
+      {
+        "component_id": "G2-work",
+        "candidate_refs": [
+          {
+            "candidate_id": "G2",
+            "candidate_version": 1,
+            "candidate_sha256": "8083cd921661c0d87aa9d2938a65f49e3e0852dfdb9c7353c2d5ff8e6bd6d901"
+          }
+        ],
+        "unit": "person-weeks",
+        "amount": 8,
+        "estimate_basis": "Synthetic estimates.txt line 3; planned, not measured.",
+        "evidence_refs": [
+          "estimate"
+        ],
+        "sharing_basis": null
+      }
+    ],
+    "capacities": [
+      {
+        "unit": "person-weeks",
+        "amount": 10,
+        "decision_ref": "Synthetic planning capacity: sources/estimates.txt line 4; not execution approval."
+      }
+    ]
+  }
+}

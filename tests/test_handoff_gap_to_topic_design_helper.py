@@ -49,6 +49,13 @@ DESIGN_HELPER_TEMPLATE = (
     / "references"
     / "design_brief_template.md"
 )
+DESIGN_HELPER_SEGMENTS = (
+    REPO_ROOT
+    / "skills"
+    / "research-design-helper"
+    / "references"
+    / "socratic-segments.md"
+)
 CONTEXT_COMPRESSOR_SKILL = (
     REPO_ROOT / "skills" / "research-context-compressor" / "SKILL.md"
 )
@@ -659,3 +666,141 @@ def test_gap_skill_active_summary_matches_open_portfolio_and_human_choice():
     assert "decides *which* topic" not in skill
     assert "zero or multiple justified options" in skill
     assert "assembles options for the researcher to choose" in skill
+
+
+# These are document/template-contract checks, not evidence that a host model
+# follows the prompts or that a study using them has better scientific outcomes.
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "SKILL.md",
+        "references/socratic-segments.md",
+        "references/design_brief_template.md",
+    ],
+)
+def test_design_guidance_matches_packaged_mirror(relative_path: str) -> None:
+    canonical = REPO_ROOT / "skills/research-design-helper" / relative_path
+    packaged = (
+        REPO_ROOT / "src/research_hub/skills_data/research-design-helper"
+        / relative_path
+    )
+    assert canonical.read_bytes() == packaged.read_bytes()
+
+
+def test_design_guidance_preserves_field_appropriate_and_human_answer_paths() -> None:
+    skill = DESIGN_HELPER_SKILL.read_text(encoding="utf-8")
+    segments = DESIGN_HELPER_SEGMENTS.read_text(encoding="utf-8")
+    template = DESIGN_HELPER_TEMPLATE.read_text(encoding="utf-8")
+    assert "Do not require an empirical study, hypothesis" in skill
+    assert "a justified `not-applicable`" in skill
+    assert "An unresolved answer is `_TODO_`, not `not-applicable`" in skill
+    assert "only fill blanks unless the user explicitly says" in skill
+    assert "researcher's answers verbatim" in template
+    assert "Empirical data, hypotheses, causal mechanisms" in segments
+    assert "LLMs are not required" in segments
+    # The existing frontmatter remains parseable; optional review information
+    # belongs in Notes, not a new required field for legacy brief consumers.
+    frontmatter = re.match(r"\A---\n(.*?)\n---\n", template, re.S)
+    assert frontmatter is not None
+    metadata = yaml.safe_load(frontmatter.group(1))
+    assert metadata["source"] == ""
+    assert metadata["gap_verdict"] == ""
+    assert metadata["placeholder_segments"] == []
+    assert "candidate_version" not in metadata
+    assert "direction_review" not in metadata
+    for heading in (
+        "## 1. Research question",
+        "## 2. Expected mechanism",
+        "## 3. Identifiability check",
+        "## 4. Validation plan",
+        "## 5. Risk register",
+    ):
+        assert heading in template
+
+
+def test_smallest_answerable_design_uses_resources_nonclaims_and_user_choice() -> None:
+    for path in (DESIGN_HELPER_SKILL, DESIGN_HELPER_SEGMENTS, DESIGN_HELPER_TEMPLATE):
+        text = path.read_text(encoding="utf-8")
+        assert "1-week" not in text
+        assert "one-week" not in text
+    segments = DESIGN_HELPER_SEGMENTS.read_text(encoding="utf-8")
+    question = _extract_section(segments, "## 1. Research question sharpening")
+    assert "confirmed available resources and a justified timeline" in question
+    assert "necessary materials and essential comparisons" in question
+    assert "explicitly NOT establish" in question
+    assert "Ask the user to choose any reduction" in question
+    assert "bounded next check rather than calling the version executable" in question
+    template = DESIGN_HELPER_TEMPLATE.read_text(encoding="utf-8")
+    question_template = _extract_section(template, "## 1. Research question")
+    for field in (
+        "**Smallest answerable version**",
+        "**Explicit nonclaims**",
+        "**Necessary materials and essential comparisons**",
+    ):
+        assert field in question_template
+
+
+def test_time_and_design_limits_are_explicit_in_prompts_and_template() -> None:
+    segments = DESIGN_HELPER_SEGMENTS.read_text(encoding="utf-8")
+    question = _extract_section(segments, "## 1. Research question sharpening")
+    assert "future observation" in question
+    assert "contemporaneous difference" in question
+    assert "available at the decision time" in question
+    assert "only becomes available later" in question
+    assert "observation horizon" in question
+    identification = _extract_section(segments, "## 3. Identifiability check")
+    assert "Do not infer a full trajectory from two occasions alone" in identification
+    assert "A vignette alone does not establish those claims" in identification
+    assert "user-chosen revision" in identification
+    template = DESIGN_HELPER_TEMPLATE.read_text(encoding="utf-8")
+    assert "**Claim and time boundary**" in template
+    assert "**Prospective information boundary**" in template
+    assert "**Design-specific inference limits**" in template
+    assert "bounded change rather than a full trajectory" in template
+    assert "do not alone establish observed behavior" in template
+
+
+def test_validation_requires_comparable_information_and_a_worthwhile_gain() -> None:
+    segments = DESIGN_HELPER_SEGMENTS.read_text(encoding="utf-8")
+    validation = _extract_section(segments, "## 4. Validation plan")
+    for condition in (
+        "available variables", "information time", "data splits", "planned resources"
+    ):
+        assert condition in validation
+    assert "Disclose and correct information asymmetry" in validation
+    assert "research question explicitly concerns the value of extra information" in validation
+    assert "not silently adding a stronger baseline" in validation
+    assert "minimum worthwhile gain or reduction in uncertainty" in validation
+    assert "justified quantitative threshold or qualitative criterion" in validation
+    assert "leave `_TODO_`" in validation
+    assert "do not invent a fixed percentage or a statistical-significance requirement" in validation
+    assert "unmeasured benefit is not itself a reason to reject" in validation
+    template = DESIGN_HELPER_TEMPLATE.read_text(encoding="utf-8")
+    validation_template = _extract_section(template, "## 4. Validation plan")
+    for field in (
+        "**Matched-information comparison conditions**",
+        "**Minimum worthwhile gain**",
+        "**Added cost and value**",
+    ):
+        assert field in validation_template
+
+
+def test_optional_review_handoff_does_not_promote_binding_to_scientific_approval() -> None:
+    skill = DESIGN_HELPER_SKILL.read_text(encoding="utf-8")
+    handoff = _extract_section(skill, "### §0 — Detect Stage 2 handoff")
+    assert "candidate_version" in handoff
+    assert "Missing versions stay unknown; do not assume version 1" in handoff
+    assert "A missing review leaves the standalone/legacy dialogue available" in handoff
+    assert "stale candidate version/content binding or changed source bytes" in handoff
+    assert "do not silently carry `supported` forward" in handoff
+    assert "`unknown`/`contradicted`" in handoff
+    assert "their reasons and bounded next checks" in handoff
+    assert "does not establish semantic support" in handoff
+    assert "authorize execution or prove scientific feasibility" in handoff
+    assert "`within-estimate` is not verified runtime spending" in handoff
+    notes = _extract_section(
+        DESIGN_HELPER_TEMPLATE.read_text(encoding="utf-8"), "## Notes"
+    )
+    assert "binding status or not checked" in notes
+    assert "reviewed candidate-content hash and review path" in notes
+    assert "not scientific approval" in notes
