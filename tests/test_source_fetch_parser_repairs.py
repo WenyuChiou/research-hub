@@ -33,8 +33,11 @@ def _synthetic_pdf(pages: list[tuple[bool, str]]) -> bytes:
         escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
         stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode() if text else b""
         objects.append(
-            b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n"
-            + stream + b"\nendstream"
+            b"<< /Length "
+            + str(len(stream)).encode()
+            + b" >>\nstream\n"
+            + stream
+            + b"\nendstream"
         )
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     result = bytearray(b"%PDF-1.4\n")
@@ -72,7 +75,12 @@ def test_missing_media_box_recovers_with_explicit_geometry_and_blank_inventory()
         ),
     }
     assert extracted.locators[-1]["type"] == "pdf-geometry-recovery"
-    assert extracted.locators[-1]["geometry_default_media_box"] == [0.0, 0.0, 612.0, 792.0]
+    assert extracted.locators[-1]["geometry_default_media_box"] == [
+        0.0,
+        0.0,
+        612.0,
+        792.0,
+    ]
 
 
 def test_normal_pdf_keeps_page_text_and_locator_shape():
@@ -100,7 +108,9 @@ def test_corrupt_and_encrypted_pdf_remain_errors():
 
 
 def _work_table(*, doi: str = "10.1234/example", duplicate_title: bool = False) -> str:
-    duplicate = "<tr><th>Article Title</th><td>Duplicate</td></tr>" if duplicate_title else ""
+    duplicate = (
+        "<tr><th>Article Title</th><td>Duplicate</td></tr>" if duplicate_title else ""
+    )
     return f"""<table><tr><th>Title (Primary)</th><td>Étude <em>nested</em></td></tr>
     {duplicate}<tr><th>DOI</th><td><a>{doi}</a></td></tr>
     <tr><th>Authors</th><td>Zoë Example; 李 明</td></tr>
@@ -130,8 +140,13 @@ def test_labeled_table_extracts_abstract_and_binds_utf8_source_fields():
 @pytest.mark.parametrize(
     "html",
     [
-        lambda: "<title>Portal</title>" + _work_table() + _work_table(doi="10.1234/two"),
-        lambda: '<meta name="citation_doi" content="10.9999/conflict"><title>Portal</title>' + _work_table(),
+        lambda: (
+            "<title>Portal</title>" + _work_table() + _work_table(doi="10.1234/two")
+        ),
+        lambda: (
+            '<meta name="citation_doi" content="10.9999/conflict"><title>Portal</title>'
+            + _work_table()
+        ),
         lambda: "<title>Portal</title>" + _work_table(duplicate_title=True),
     ],
 )
@@ -204,9 +219,7 @@ def test_invalid_utf8_disables_raw_byte_bound_table_provenance():
 @pytest.mark.parametrize("void_tag", ["br", "img", "input", "meta"])
 def test_self_closing_void_tag_does_not_escape_suppressed_ancestry(void_tag):
     html = (
-        f"<title>Portal</title><template><{void_tag}/>"
-        + _work_table()
-        + "</template>"
+        f"<title>Portal</title><template><{void_tag}/>" + _work_table() + "</template>"
     )
     extracted = _extract_html(html.encode(), "https://example.org/record")
 
@@ -214,3 +227,79 @@ def test_self_closing_void_tag_does_not_escape_suppressed_ancestry(void_tag):
     assert extracted.text == "Portal"
     assert extracted.observed_doi == ""
     assert extracted.bibliographic_metadata == {}
+
+
+@pytest.mark.parametrize(
+    "marker",
+    ["abstractportal", "rendering_abstractportal", "rendering_output_abstractportal"],
+)
+def test_compound_abstract_container_exposes_body_without_full_text_upgrade(marker):
+    body = (
+        "The saved abstract describes a bounded method and its unresolved limitations."
+    )
+    html = f'<title>Neutral study</title><h2>Abstract</h2><div class="{marker}"><div><p>{body}</p></div></div>'
+    extracted = _extract_html(html.encode(), "https://example.org/record")
+    assert extracted.text == body
+    assert extracted.evidence_level == "abstract"
+    assert extracted.locators == [
+        {"type": "html-section", "value": "Abstract", "start": 0, "end": len(body)}
+    ]
+
+
+@pytest.mark.parametrize(
+    "tag", ["script", "style", "noscript", "template", "form", "nav"]
+)
+def test_compound_abstract_marker_inside_suppressed_container_is_not_evidence(tag):
+    body = (
+        "This apparent abstract occurs in a suppressed container and is not evidence."
+    )
+    html = f'<title>Neutral study</title><{tag}><div class="abstractportal"><p>{body}</p></div></{tag}>'
+    extracted = _extract_html(html.encode(), "https://example.org/record")
+    assert extracted.text == "Neutral study"
+    assert extracted.evidence_level == "metadata"
+
+
+@pytest.mark.parametrize("marker", ["notabstractportal", "abstractportalnavigation"])
+def test_similar_compound_container_names_are_not_abstract_markers(marker):
+    html = f'<title>Neutral study</title><div class="{marker}">An unrelated block contains enough text but is not an abstract.</div>'
+    extracted = _extract_html(html.encode(), "https://example.org/record")
+    assert extracted.text == "Neutral study"
+    assert extracted.evidence_level == "metadata"
+
+
+@pytest.mark.parametrize(
+    "attribute",
+    [
+        "hidden",
+        'aria-hidden="true"',
+        'style="display: none"',
+        'style="visibility: hidden!important"',
+    ],
+)
+@pytest.mark.parametrize("location", ["container", "ancestor", "descendant"])
+def test_hidden_abstract_body_is_not_evidence_and_does_not_hide_later_visible_body(
+    attribute, location
+):
+    hidden_text = (
+        "This hidden text is long enough to be mistaken for a research abstract."
+    )
+    marked = (
+        f'<div class="abstractportal" {attribute if location == "container" else ""}>'
+    )
+    marked += (
+        f"<p {attribute if location == 'descendant' else ''}>{hidden_text}</p></div>"
+    )
+    if location == "ancestor":
+        marked = f"<section {attribute}>{marked}</section>"
+    visible = "This later visible abstract has enough text to establish readable abstract evidence."
+    rejected = _extract_html(
+        ("<title>Neutral study</title>" + marked).encode(), "https://example.org/record"
+    )
+    assert rejected.text == "Neutral study"
+    assert rejected.evidence_level == "metadata"
+    accepted = _extract_html(
+        (marked + f'<div class="abstractportal">{visible}</div>').encode(),
+        "https://example.org/record",
+    )
+    assert accepted.text == visible
+    assert accepted.evidence_level == "abstract"

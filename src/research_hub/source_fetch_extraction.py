@@ -285,6 +285,7 @@ class _HtmlAbstractParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.stack: list[str] = []
+        self.hidden: list[bool] = []
         self.root_depth: int | None = None
         self.parts: list[str] = []
         self.abstracts: list[str] = []
@@ -293,6 +294,18 @@ class _HtmlAbstractParser(HTMLParser):
         if tag in self._VOID:
             return
         values = dict(attrs)
+        style = str(values.get("style") or "")
+        hidden = (
+            "hidden" in values
+            or str(values.get("aria-hidden") or "").casefold() == "true"
+            or bool(
+                re.search(
+                    r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))\s*(?:!important\s*)?(?:;|$)",
+                    style,
+                    re.I,
+                )
+            )
+        )
         markers = " ".join(
             str(values.get(k) or "") for k in ("id", "class", "itemprop")
         )
@@ -301,11 +314,14 @@ class _HtmlAbstractParser(HTMLParser):
             self.root_depth is None
             and tag in {"div", "section", "p", "span"}
             and not restricted.intersection(self.stack)
-            and re.search(r"(?:^|[\s_-])abstract(?:$|[\s_-])", markers, re.I)
+            and not hidden
+            and not any(self.hidden)
+            and re.search(r"(?:^|[\s_-])abstract(?:portal)?(?:$|[\s_-])", markers, re.I)
         ):
             self.root_depth = len(self.stack)
             self.parts = []
         self.stack.append(tag)
+        self.hidden.append(hidden)
 
     def handle_startendtag(self, tag: str, attrs) -> None:
         self.handle_starttag(tag, attrs)
@@ -317,6 +333,7 @@ class _HtmlAbstractParser(HTMLParser):
             return
         index = len(self.stack) - 1 - self.stack[::-1].index(tag)
         del self.stack[index:]
+        del self.hidden[index:]
         if self.root_depth is not None and len(self.stack) <= self.root_depth:
             text = " ".join(self.parts).strip()
             text = re.sub(r"^abstract\s*[:.\-]?\s+", "", text, flags=re.I)
@@ -325,14 +342,18 @@ class _HtmlAbstractParser(HTMLParser):
             self.root_depth = None
 
     def handle_data(self, data: str) -> None:
-        if self.root_depth is not None and not {
-            "script",
-            "style",
-            "noscript",
-            "template",
-            "form",
-            "nav",
-        }.intersection(self.stack):
+        if (
+            self.root_depth is not None
+            and not any(self.hidden)
+            and not {
+                "script",
+                "style",
+                "noscript",
+                "template",
+                "form",
+                "nav",
+            }.intersection(self.stack)
+        ):
             if data.strip():
                 self.parts.append(data.strip())
 
