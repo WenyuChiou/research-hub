@@ -43,7 +43,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: pip install -e '.[mcp,dev,playwright]'
+        run: pip install -e '.[mcp,dev,playwright,import]'
 
       - name: Install defuddle CLI
         run: npm install -g defuddle-cli
@@ -101,7 +101,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: pip install -e '.[mcp,dev,playwright]'
+        run: pip install -e '.[mcp,dev,playwright,import]'
 
       - name: Install defuddle CLI
         run: npm install -g defuddle-cli
@@ -131,7 +131,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: pip install -e '.[mcp,dev,playwright]'
+        run: pip install -e '.[mcp,dev,playwright,import]'
 
       - name: Install defuddle CLI
         run: npm install -g defuddle-cli
