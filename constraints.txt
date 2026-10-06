@@ -6,7 +6,7 @@
 # project tests against, so a contributor can reproduce the CI
 # environment with:
 #
-#     pip install -e ".[mcp,dev,playwright]" -c constraints.txt
+#     pip install -e ".[mcp,dev,playwright,import]" -c constraints.txt
 #
 # Keep in sync with pyproject.toml [project.dependencies]. The CI
 # matrix (3.10–3.14 × 3 OS) is the source of truth for "tested
