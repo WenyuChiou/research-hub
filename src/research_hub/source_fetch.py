@@ -26,7 +26,9 @@ from research_hub.source_fetch_extraction import (
     _crossref_metadata,
     _extract_html,
     _extract_pdf,
+    _extract_text,
     _identity,
+    _is_text_content_type,
 )
 from research_hub.utils.doi import extract_arxiv_id, normalize_doi
 
@@ -529,6 +531,8 @@ def fetch_public_source(
                 extracted = _extract_pdf(data)
             elif "html" in content_type or b"<html" in data[:1024].lower():
                 extracted = _extract_html(data, attempt.final_url)
+            elif _is_text_content_type(content_type):
+                extracted = _extract_text(data, attempt.final_url)
             else:
                 raise ValueError(
                     f"unsupported content type: {attempt.content_type or '(missing)'}"
