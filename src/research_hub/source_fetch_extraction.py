@@ -475,9 +475,16 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
     )
     # Body text can contain many bibliography DOIs. Only explicit metadata is
     # strong enough to identify the fetched work.
-    observed_doi = normalize_doi(
-        parser.meta.get("citation_doi") or parser.meta.get("dc.identifier")
-    )
+    # dc.identifier may contain a page URL, ISBN or repository ID. Prefix
+    # normalization alone does not establish DOI syntax. Keep all raw metadata
+    # in the saved response; expose only an unambiguous DOI from these fields.
+    metadata_dois = {
+        normalized
+        for name in ("citation_doi", "dc.identifier")
+        for value in parser.meta_values.get(name, [])
+        if re.fullmatch(r"10\.\d{4,9}/\S+", normalized := normalize_doi(value), re.IGNORECASE)
+    }
+    observed_doi = next(iter(metadata_dois)) if len(metadata_dois) == 1 else ""
     table_fields: dict[str, str] = {}
     field_provenance: list[dict[str, Any]] = []
     if table_candidate is not None:

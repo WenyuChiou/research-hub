@@ -93,6 +93,64 @@ def test_normal_pdf_keeps_page_text_and_locator_shape():
     assert "geometry_default_pages" not in extracted.diagnostics
 
 
+@pytest.mark.parametrize(
+    "identifier", ["https://example.org/article", "urn:isbn:123", "repository-123"]
+)
+def test_html_page_identifiers_are_not_dois(identifier):
+    html = f'<title>Neutral study</title><meta name="dc.identifier" content="{identifier}"><meta name="citation_abstract" content="Readable abstract remains available.">'
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == ""
+    assert extracted.evidence_level == "abstract"
+    assert extracted.text == "Readable abstract remains available."
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    ["10.1234/Example", "doi:10.1234/Example", "https://doi.org/10.1234/Example"],
+)
+def test_html_valid_metadata_doi_is_normalized(identifier):
+    html = f'<title>Neutral study</title><meta name="dc.identifier" content="{identifier}">'
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == "10.1234/example"
+    assert extracted.evidence_level == "metadata"
+
+
+def test_html_invalid_citation_doi_does_not_mask_valid_dc_doi():
+    html = '<title>Neutral study</title><meta name="citation_doi" content="https://example.org/article"><meta name="dc.identifier" content="10.1234/valid">'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi
+        == "10.1234/valid"
+    )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        '<meta name="citation_doi" content="10.1234/one"><meta name="dc.identifier" content="10.1234/two">',
+        '<meta name="citation_doi" content="10.1234/one"><meta name="citation_doi" content="10.1234/two">',
+    ],
+)
+def test_html_conflicting_metadata_dois_are_omitted(metadata):
+    extracted = _extract_html(
+        ("<title>Neutral study</title>" + metadata).encode(),
+        "https://example.org/article",
+    )
+    assert extracted.observed_doi == ""
+
+
+def test_html_duplicate_prefixed_metadata_doi_is_one_identifier():
+    html = '<title>Neutral study</title><meta name="citation_doi" content="doi:10.1234/Same"><meta name="dc.identifier" content="https://doi.org/10.1234/Same">'
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == "10.1234/same"
+
+
+def test_html_bibliography_doi_is_not_the_work_identifier():
+    html = '<title>Neutral study</title><meta name="dc.identifier" content="https://example.org/article"><p>References: DOI:10.9999/another-work</p>'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi == ""
+    )
+
+
 def test_corrupt_and_encrypted_pdf_remain_errors():
     with pytest.raises(ValueError, match="PDF parse failed"):
         _extract_pdf(b"%PDF-broken")
