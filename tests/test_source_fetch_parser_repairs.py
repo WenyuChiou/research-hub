@@ -361,3 +361,296 @@ def test_hidden_abstract_body_is_not_evidence_and_does_not_hide_later_visible_bo
     )
     assert accepted.text == visible
     assert accepted.evidence_level == "abstract"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        '<span class="artdoi">DOI: 10.1234/Example</span>',
+        '<span class="detail artdoi"> doi : https://doi.org/10.1234/Example </span>',
+        '<span class="artdoi">DOI: <a href="https://doi.org/10.1234/Example">10.1234/Example</a></span>',
+    ],
+)
+def test_document_doi_field_preserves_abstract_text_and_locators(field):
+    prefix = '<title>Neutral study</title><meta name="dc.identifier" content="https://example.org/article"><meta name="citation_abstract" content="Readable abstract remains available.">'
+    baseline = _extract_html(prefix.encode(), "https://example.org/article")
+    data = (prefix + field).encode()
+    extracted = _extract_html(data, "https://example.org/article")
+
+    assert extracted.observed_doi == "10.1234/example"
+    assert extracted.text == baseline.text
+    assert extracted.evidence_level == baseline.evidence_level == "abstract"
+    assert extracted.locators == baseline.locators
+    assert extracted.diagnostics == baseline.diagnostics
+    assert extracted.bibliographic_metadata == baseline.bibliographic_metadata
+
+
+def test_document_doi_consistent_duplicates_and_metadata_are_one_identity():
+    html = '<title>Neutral study</title><meta name="citation_doi" content="doi:10.1234/Same"><span class="artdoi">DOI: 10.1234/Same</span><span class="artdoi">DOI: https://doi.org/10.1234/Same</span>'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi
+        == "10.1234/same"
+    )
+
+
+@pytest.mark.parametrize(
+    "conflict",
+    [
+        '<meta name="citation_doi" content="10.1234/other">',
+        '<span class="artdoi">DOI: 10.1234/other</span>',
+        '<meta name="citation_doi" content="10.1234/example"><meta name="dc.identifier" content="10.1234/other">',
+        _work_table(doi="10.1234/other"),
+        "<table><tr><th>DOI</th><td>10.1234/other</td></tr></table>",
+        "<table><tr><th>Title</th><td>Different work</td></tr><tr><th>DOI</th><td>10.1234/other</td></tr></table>",
+        _work_table()
+        + "<table><tr><th>Title</th><td>Different work</td></tr><tr><th>DOI</th><td>10.1234/other</td></tr></table>",
+    ],
+)
+def test_document_doi_conflicts_with_any_identity_field_are_omitted(conflict):
+    html = (
+        '<title>Neutral study</title><span class="artdoi">DOI: 10.1234/example</span>'
+        + conflict
+    )
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == ""
+    assert extracted.bibliographic_metadata == {}
+
+
+def test_document_doi_consistent_publication_table_keeps_table_evidence():
+    html = (
+        '<title>Portal</title><span class="artdoi">DOI: 10.1234/example</span>'
+        + _work_table()
+    )
+    baseline = _extract_html(
+        ("<title>Portal</title>" + _work_table()).encode(),
+        "https://example.org/article",
+    )
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == baseline.observed_doi == "10.1234/example"
+    assert extracted.text == baseline.text
+    assert extracted.evidence_level == baseline.evidence_level == "abstract"
+    assert extracted.bibliographic_metadata == baseline.bibliographic_metadata
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        '<span class="artdoi">10.1234/example</span>',
+        '<span class="artdoi">DOI: https://example.org/article</span>',
+        '<span class="artdoi">DOI: 10.12/example</span>',
+        '<span class="artdoi">DOI: 10.1234/one 10.1234/two</span>',
+        '<span class="artdoi">DOI: 10.1234/one,10.1234/two</span>',
+        '<span class="notartdoi">DOI: 10.1234/example</span>',
+        '<div class="artdoi">DOI: 10.1234/example</div>',
+        "<p>DOI: 10.1234/example</p>",
+        '<span class="artdoi">DOI: 10.1234/example',
+        '<div><span class="artdoi">DOI: 10.1234/example</div>',
+        '<span class="artdoi">DOI: <a>10.1234/example</span>',
+        '<span class="artdoi">DOI: 10.1234/example</div></span>',
+        '<span class="artdoi">DOI: 10.1234/one<span class="artdoi">DOI: 10.1234/two</span></span>',
+        '<span class="artdoi" class="artdoi">DOI: 10.1234/example</span>',
+    ],
+)
+def test_document_doi_untyped_invalid_or_malformed_fields_are_omitted(field):
+    html = "<title>Neutral study</title>" + field
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == ""
+    assert extracted.text == "Neutral study"
+    assert extracted.evidence_level == "metadata"
+
+
+@pytest.mark.parametrize(
+    "container",
+    [
+        "script",
+        "style",
+        "noscript",
+        "template",
+        "form",
+        "nav",
+        "cite",
+        "blockquote",
+        'section id="references"',
+        'div class="bibliography"',
+        'li class="citation"',
+        'section role="doc-bibliography"',
+        'a role="doc-biblioref"',
+        "section hidden",
+        'section aria-hidden="true"',
+        'section style="display: none"',
+    ],
+)
+def test_document_doi_reference_hidden_or_suppressed_ancestry_is_omitted(container):
+    tag = container.split()[0]
+    html = f'<title>Neutral study</title><{container}><span class="artdoi">DOI: 10.1234/example</span></{tag}>'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi == ""
+    )
+
+
+@pytest.mark.parametrize("heading", ["References", "Bibliography", "Citations"])
+def test_document_doi_reference_heading_suppresses_fields_until_next_section(heading):
+    html = f'<title>Neutral study</title><section><h2>{heading}</h2><p><span class="artdoi">DOI: 10.1234/cited</span></p></section><section><span class="artdoi">DOI: 10.1234/example</span></section>'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi
+        == "10.1234/example"
+    )
+    flat = f'<title>Neutral study</title><h2>{heading}</h2><span class="artdoi">DOI: 10.1234/cited</span><h2>Article details</h2><span class="artdoi">DOI: 10.1234/example</span>'
+    assert (
+        _extract_html(flat.encode(), "https://example.org/article").observed_doi
+        == "10.1234/example"
+    )
+
+
+def test_document_doi_void_tags_do_not_escape_suppressed_ancestry():
+    html = '<title>Neutral study</title><template><br/><span class="artdoi">DOI: 10.1234/cited</span></template><span class="artdoi">DOI: 10.1234/example</span>'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi
+        == "10.1234/example"
+    )
+
+
+@pytest.mark.parametrize(
+    "heading",
+    [
+        "<h2 hidden>Invisible</h2>",
+        '<h2 aria-hidden="true">Invisible</h2>',
+        '<h2 style="display:none">Invisible</h2>',
+        '<h2 style="visibility:hidden">Invisible</h2>',
+        "<section hidden><h2>Invisible</h2></section>",
+        "<template><h2>Invisible</h2></template>",
+    ],
+)
+def test_document_doi_review_hidden_headings_preserve_reference_scope(heading):
+    html = f'<title>Neutral study</title><h2>References</h2>{heading}<span class="artdoi">DOI: 10.1234/cited</span>'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi == ""
+    )
+
+
+@pytest.mark.parametrize(
+    "fragment",
+    [
+        "<span hidden>poison</span>",
+        '<span aria-hidden="true">poison</span>',
+        '<span style="display:none">poison</span>',
+        "<template>poison</template>",
+        "<script>poison</script>",
+        "<span hidden><h2>poison</h2></span>",
+    ],
+)
+def test_document_doi_review_hidden_heading_fragments_do_not_change_reference_label(
+    fragment,
+):
+    html = f'<title>Neutral study</title><h2>References{fragment}</h2><span class="artdoi">DOI: 10.1234/cited</span>'
+    assert (
+        _extract_html(html.encode(), "https://example.org/article").observed_doi == ""
+    )
+
+
+@pytest.mark.parametrize(
+    "container",
+    [
+        'section id="references"',
+        'section class="bibliography"',
+        'section role="doc-bibliography"',
+        "section hidden",
+        'section aria-hidden="true"',
+        'section style="display:none"',
+    ],
+)
+@pytest.mark.parametrize("complete_table", [False, True])
+def test_document_doi_review_excluded_tables_preserve_valid_identity_and_evidence(
+    container, complete_table
+):
+    prefix = '<title>Portal</title><meta name="citation_doi" content="10.1234/example">'
+    if complete_table:
+        prefix += _work_table()
+    baseline = _extract_html(prefix.encode(), "https://example.org/article")
+    tag = container.split()[0]
+    conflicting = "<table><tr><th>Title</th><td>Cited work</td></tr><tr><th>DOI</th><td>10.1234/cited</td></tr></table>"
+    html = f"{prefix}<{container}>{conflicting}</{tag}>"
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+
+    assert extracted.observed_doi == baseline.observed_doi == "10.1234/example"
+    assert extracted.text == baseline.text
+    assert extracted.evidence_level == baseline.evidence_level
+    assert extracted.bibliographic_metadata == baseline.bibliographic_metadata
+    if complete_table:
+        assert extracted.locators[0]["fields"] == baseline.locators[0]["fields"]
+    else:
+        assert extracted.locators == baseline.locators
+
+
+@pytest.mark.parametrize("void_tag", ["br", "img", "input", "meta"])
+def test_document_doi_review_hidden_void_element_does_not_hide_later_table(void_tag):
+    html = f"<title>Portal</title><{void_tag} hidden>" + _work_table()
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == "10.1234/example"
+    assert extracted.evidence_level == "abstract"
+    assert extracted.bibliographic_metadata["doi"] == "10.1234/example"
+
+
+@pytest.mark.parametrize("heading", ["References", "Bibliography", "Citations"])
+@pytest.mark.parametrize("complete_table", [False, True])
+def test_table_heading_scope_reference_rows_preserve_valid_identity_and_evidence(
+    heading, complete_table
+):
+    prefix = '<title>Portal</title><meta name="citation_doi" content="10.1234/example">'
+    if complete_table:
+        prefix += _work_table()
+    baseline = _extract_html(prefix.encode(), "https://example.org/article")
+    html = f"{prefix}<h2>{heading}</h2><table><tr><th>DOI</th><td>10.1234/cited</td></tr></table>"
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+
+    assert extracted.observed_doi == baseline.observed_doi == "10.1234/example"
+    assert extracted.text == baseline.text
+    assert extracted.evidence_level == baseline.evidence_level
+    assert extracted.bibliographic_metadata == baseline.bibliographic_metadata
+    if complete_table:
+        assert extracted.locators[0]["fields"] == baseline.locators[0]["fields"]
+    else:
+        assert extracted.locators == baseline.locators
+
+
+@pytest.mark.parametrize("doi", ["10.1234/example", "10.1234/other"])
+def test_table_heading_scope_visible_next_heading_restores_table_identity_checks(doi):
+    prefix = '<title>Portal</title><meta name="citation_doi" content="10.1234/example">'
+    html = (
+        prefix
+        + "<h2>References</h2><table><tr><th>DOI</th><td>10.1234/cited</td></tr></table><h2>Article details</h2>"
+        + _work_table(doi=doi)
+    )
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    if doi == "10.1234/example":
+        assert extracted.observed_doi == doi
+        assert extracted.evidence_level == "abstract"
+        assert extracted.bibliographic_metadata["doi"] == doi
+    else:
+        assert extracted.observed_doi == ""
+        assert extracted.bibliographic_metadata == {}
+
+
+@pytest.mark.parametrize(
+    "heading",
+    [
+        "<h2 hidden>Article details</h2>",
+        "<template><h2>Article details</h2></template>",
+        "<h2>References<span hidden>poison</span></h2>",
+        "<h3>Reference group</h3>",
+    ],
+)
+@pytest.mark.parametrize("complete_table", [False, True])
+def test_table_heading_scope_nonterminating_headings_keep_reference_tables_excluded(
+    heading, complete_table
+):
+    prefix = '<title>Portal</title><meta name="citation_doi" content="10.1234/example">'
+    if complete_table:
+        prefix += _work_table()
+    baseline = _extract_html(prefix.encode(), "https://example.org/article")
+    html = f"{prefix}<h2>References</h2>{heading}<table><tr><th>DOI</th><td>10.1234/cited</td></tr></table>"
+    extracted = _extract_html(html.encode(), "https://example.org/article")
+    assert extracted.observed_doi == baseline.observed_doi == "10.1234/example"
+    assert extracted.text == baseline.text
+    assert extracted.evidence_level == baseline.evidence_level
+    assert extracted.bibliographic_metadata == baseline.bibliographic_metadata
