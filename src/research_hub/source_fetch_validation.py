@@ -10,7 +10,9 @@ from research_hub.source_fetch_extraction import (
     _crossref_metadata,
     _extract_html,
     _extract_pdf,
+    _extract_text,
     _identity,
+    _is_text_content_type,
 )
 from research_hub.utils.doi import normalize_doi
 
@@ -187,12 +189,14 @@ def validate_source_fetch(
             ):
                 errors.append("result URL provenance differs from saved attempts")
             content_type = selected_attempt.content_type.lower()
-            if "pdf" in content_type or raw_bytes.startswith(b"%PDF-"):
+            if selected_attempt.purpose == "crossref-metadata":
+                replay, _ = _crossref_metadata(json.loads(raw_bytes.decode("utf-8")))
+            elif "pdf" in content_type or raw_bytes.startswith(b"%PDF-"):
                 replay = _extract_pdf(raw_bytes)
             elif "html" in content_type or b"<html" in raw_bytes[:1024].lower():
                 replay = _extract_html(raw_bytes, selected_attempt.final_url)
-            elif selected_attempt.purpose == "crossref-metadata":
-                replay, _ = _crossref_metadata(json.loads(raw_bytes.decode("utf-8")))
+            elif _is_text_content_type(content_type):
+                replay = _extract_text(raw_bytes, selected_attempt.final_url)
             else:
                 raise ValueError("selected raw response has no deterministic extractor")
             if replay.text != extracted_text:

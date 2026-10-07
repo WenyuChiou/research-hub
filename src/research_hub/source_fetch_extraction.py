@@ -28,6 +28,7 @@ _LOGIN_MARKERS = (
     "purchase this article",
     "subscribe to read",
 )
+_TEXT_CONTENT_TYPES = {"text/markdown", "text/plain", "text/x-markdown"}
 
 
 @dataclass
@@ -46,6 +47,62 @@ class _TableCell:
     text_parts: list[str]
     char_start: int
     char_end: int = 0
+
+
+class _HtmlRestrictionParser(HTMLParser):
+    """Collect visible restriction text without treating script config as content."""
+
+    _SUPPRESSED = {"script", "style", "template"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+        self.suppressed_depth = 0
+        self.form_depth = 0
+        self.restricted_form = False
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        values = {str(key).lower(): str(value or "") for key, value in attrs}
+        if self.suppressed_depth:
+            if tag not in _HtmlAbstractParser._VOID:
+                self.suppressed_depth += 1
+            return
+        if tag in self._SUPPRESSED:
+            self.suppressed_depth = 1
+            return
+        if tag == "form":
+            self.form_depth += 1
+            action = values.get("action", "").lower()
+            if any(
+                marker in action
+                for marker in ("/login", "/signin", "/challenge", "/captcha")
+            ):
+                self.restricted_form = True
+        elif (
+            tag == "input"
+            and self.form_depth
+            and values.get("type", "").lower() == "password"
+        ):
+            self.restricted_form = True
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag.lower() not in _HtmlAbstractParser._VOID:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if self.suppressed_depth:
+            if tag in self._SUPPRESSED or self.suppressed_depth > 1:
+                self.suppressed_depth -= 1
+            return
+        if tag == "form" and self.form_depth:
+            self.form_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self.suppressed_depth and data.strip():
+            self.parts.append(data.strip())
 
 
 class _PublicationTableParser(HTMLParser):
@@ -599,11 +656,76 @@ class _HtmlDocumentDoiParser(HTMLParser):
             self.heading_parts.append(data)
 
 
-def _looks_restricted(text: str, final_url: str) -> bool:
-    lowered = text.lower()
+def _looks_restricted(text: str, final_url: str, *, html: bool = False) -> bool:
     path = urlsplit(final_url).path.lower()
-    return any(marker in lowered for marker in _LOGIN_MARKERS) or any(
+    if any(
         marker in path for marker in ("/login", "/signin", "/challenge", "/captcha")
+    ):
+        return True
+    restricted_form = False
+    if html:
+        parser = _HtmlRestrictionParser()
+        parser.feed(text)
+        text = " ".join(parser.parts)
+        restricted_form = parser.restricted_form
+    lowered = text.lower()
+    return restricted_form or any(marker in lowered for marker in _LOGIN_MARKERS)
+
+
+def _is_text_content_type(content_type: str) -> bool:
+    media_type = content_type.partition(";")[0].strip().lower()
+    return media_type in _TEXT_CONTENT_TYPES
+
+
+def _extract_text(data: bytes, final_url: str) -> _Extracted:
+    """Extract a complete, inert UTF-8 plain-text or Markdown response."""
+
+    if b"\x00" in data:
+        raise ValueError("plain-text response contains NUL bytes")
+    try:
+        text = data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ValueError("plain-text response is not valid UTF-8") from exc
+    if _looks_restricted(text, final_url, html=True):
+        raise PermissionError("response is a login, paywall, or challenge page")
+    if re.match(r"(?is)^\s*(?:<!doctype\s+html\b|<html\b)", text):
+        raise ValueError("plain-text response contains an HTML document")
+    if not text.strip():
+        raise ValueError("plain-text response is empty")
+    if any(ord(char) < 32 and char not in "\t\r\n" for char in text):
+        raise ValueError("plain-text response contains binary control bytes")
+    headings = list(re.finditer(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", text))
+    observed_title = ""
+    for heading in headings:
+        if len(heading.group(1)) == 1:
+            observed_title = heading.group(2).strip()
+            break
+    locators = [
+        {
+            "type": "text-section",
+            "value": heading.group(2).strip(),
+            "start": heading.start(),
+            "end": headings[index + 1].start()
+            if index + 1 < len(headings)
+            else len(text),
+        }
+        for index, heading in enumerate(headings)
+    ]
+    if not locators:
+        locators = [
+            {
+                "type": "text-document",
+                "value": "Document",
+                "start": 0,
+                "end": len(text),
+            }
+        ]
+    return _Extracted(
+        text,
+        "full-text",
+        observed_title=observed_title,
+        locators=locators,
+        diagnostics={"content_format": "markdown" if headings else "plain-text"},
     )
 
 
@@ -613,7 +735,7 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
         lossless_text: str | None = data.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
         lossless_text = None
-    if _looks_restricted(text, final_url):
+    if _looks_restricted(text, final_url, html=True):
         raise PermissionError("response is a login, paywall, or challenge page")
     parser = _HtmlMetadataParser()
     parser.feed(text)
@@ -1003,5 +1125,7 @@ __all__ = [
     "_crossref_metadata",
     "_extract_html",
     "_extract_pdf",
+    "_extract_text",
     "_identity",
+    "_is_text_content_type",
 ]
