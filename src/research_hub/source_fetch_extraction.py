@@ -65,6 +65,9 @@ class _PublicationTableParser(HTMLParser):
         self._cell: _TableCell | None = None
         self._invalid_table = False
         self._suppressed_depth = 0
+        # Reuse the document parser's visible reference-heading scope before
+        # collecting table rows, rather than implementing a second heading rule.
+        self._identity_context = _HtmlDocumentDoiParser()
 
     def _offset(self) -> int:
         line, column = self.getpos()
@@ -72,12 +75,17 @@ class _PublicationTableParser(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
+        self._identity_context.handle_starttag(tag, attrs)
         if self._suppressed_depth:
             if tag not in _HtmlAbstractParser._VOID:
                 self._suppressed_depth += 1
             return
-        if tag in {"script", "style", "noscript", "template", "form", "nav"}:
-            self._suppressed_depth = 1
+        if (
+            self._identity_context.reference_scope is not None
+            or _HtmlDocumentDoiParser._suppresses_identity(tag, attrs)
+        ):
+            if tag not in _HtmlAbstractParser._VOID:
+                self._suppressed_depth = 1
             return
         if tag == "table":
             self._table_depth += 1
@@ -96,14 +104,12 @@ class _PublicationTableParser(HTMLParser):
 
     def handle_startendtag(self, tag: str, attrs) -> None:
         tag = tag.lower()
-        if self._suppressed_depth or tag in {
-            "script",
-            "style",
-            "noscript",
-            "template",
-            "form",
-            "nav",
-        }:
+        if (
+            self._suppressed_depth
+            or self._identity_context.reference_scope is not None
+            or _HtmlDocumentDoiParser._suppresses_identity(tag, attrs)
+        ):
+            self._identity_context.handle_startendtag(tag, attrs)
             return
         self.handle_starttag(tag, attrs)
         if tag not in _HtmlAbstractParser._VOID:
@@ -111,6 +117,9 @@ class _PublicationTableParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
+        self._identity_context.handle_endtag(tag)
+        if tag in _HtmlAbstractParser._VOID:
+            return
         if self._suppressed_depth:
             self._suppressed_depth -= 1
             return
@@ -138,6 +147,7 @@ class _PublicationTableParser(HTMLParser):
             self._row = None
 
     def handle_data(self, data: str) -> None:
+        self._identity_context.handle_data(data)
         if not self._suppressed_depth and self._cell is not None and data.strip():
             self._cell.text_parts.append(data.strip())
 
@@ -146,6 +156,7 @@ def _publication_table_candidate(
     text: str,
     data: bytes,
     metadata_parser: "_HtmlMetadataParser",
+    doi_candidates: set[str] | None = None,
 ) -> tuple[dict[str, str], list[dict[str, Any]]] | None:
     parser = _PublicationTableParser(text, data)
     parser.feed(text)
@@ -160,6 +171,24 @@ def _publication_table_candidate(
     candidates: list[tuple[dict[str, str], list[tuple[str, str, _TableCell]], int]] = []
     identities: list[tuple[str, str, int]] = []
     for table_index, rows in enumerate(parser.tables, start=1):
+        # Partial publication tables can still contradict another identity field.
+        labeled_values = [
+            (
+                re.sub(r"\s+", " ", " ".join(row[0].text_parts))
+                .strip(" :\t\r\n")
+                .casefold(),
+                " ".join(row[1].text_parts).strip(),
+            )
+            for row in rows
+            if len(row) == 2
+        ]
+        if doi_candidates is not None:
+            doi_candidates.update(
+                doi
+                for label, value in labeled_values
+                if label == "doi"
+                and re.fullmatch(r"10\.\d{4,9}/\S+", doi := normalize_doi(value), re.I)
+            )
         fields: dict[str, str] = {}
         raw_fields: list[tuple[str, str, _TableCell]] = []
         invalid = False
@@ -434,6 +463,142 @@ class _HtmlMetadataParser(HTMLParser):
                 self._current_section.append(clean)
 
 
+class _HtmlDocumentDoiParser(HTMLParser):
+    """Read only closed, explicitly labeled article DOI spans outside citations."""
+
+    _SUPPRESSED = {
+        "script",
+        "style",
+        "noscript",
+        "template",
+        "form",
+        "nav",
+        "cite",
+        "blockquote",
+    }
+    _REFERENCE_MARKER = re.compile(
+        r"(?:^|[\s_-])(?:references?|bibliography|bibliographies|citations?|biblioentry|biblioref)(?:$|[\s_-])",
+        re.I,
+    )
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, bool]] = []
+        self.root_depth: int | None = None
+        self.parts: list[str] = []
+        self.valid = False
+        self.dois: set[str] = set()
+        self.heading: tuple[int, int] | None = None
+        self.heading_parts: list[str] = []
+        self.reference_scope: tuple[int, int] | None = None
+
+    @classmethod
+    def _suppresses_identity(cls, tag: str, attrs) -> bool:
+        values = dict(attrs)
+        markers = " ".join(
+            str(values.get(key) or "")
+            for key in ("id", "class", "role", "itemprop", "rel", "aria-label")
+        )
+        return (
+            tag in cls._SUPPRESSED
+            or bool(cls._REFERENCE_MARKER.search(markers))
+            or "hidden" in values
+            or str(values.get("aria-hidden") or "").casefold() == "true"
+            or bool(
+                re.search(
+                    r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))\s*(?:!important\s*)?(?:;|$)",
+                    str(values.get("style") or ""),
+                    re.I,
+                )
+            )
+        )
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        suppressed = (
+            bool(self.stack) and self.stack[-1][1]
+        ) or self._suppresses_identity(tag, attrs)
+        # Visibility is independent of reference scope: a visible next heading
+        # can end that scope, while a hidden/template heading cannot.
+        if re.fullmatch(r"h[1-6]", tag) and not suppressed:
+            level = int(tag[1])
+            if self.reference_scope is not None and level <= self.reference_scope[1]:
+                self.reference_scope = None
+            self.heading = (len(self.stack), level)
+            self.heading_parts = []
+        values = dict(attrs)
+        field_suppressed = suppressed or self.reference_scope is not None
+        marked = (
+            tag == "span"
+            and "artdoi" in str(values.get("class") or "").casefold().split()
+        )
+        if self.root_depth is not None:
+            # Inline markup may wrap the value, but nested fields and hidden
+            # fragments make the outer field ambiguous rather than truncating it.
+            if marked or field_suppressed or tag not in {"a", "b", "em", "i", "strong"}:
+                self.valid = False
+        elif marked and not field_suppressed:
+            self.root_depth = len(self.stack)
+            self.parts = []
+            self.valid = len({key for key, _ in attrs}) == len(attrs)
+        if tag not in _HtmlAbstractParser._VOID:
+            self.stack.append((tag, suppressed))
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in _HtmlAbstractParser._VOID:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _HtmlAbstractParser._VOID:
+            return
+        if not self.stack or self.stack[-1][0] != tag:
+            if self.root_depth is not None:
+                self.valid = False
+            matching = [
+                index
+                for index, (open_tag, _) in enumerate(self.stack)
+                if open_tag == tag
+            ]
+            if not matching:
+                return
+            index = matching[-1]
+        else:
+            index = len(self.stack) - 1
+        if self.heading is not None and index <= self.heading[0]:
+            if (
+                index == self.heading[0]
+                and tag == f"h{self.heading[1]}"
+                and not self.stack[index][1]
+                and re.fullmatch(
+                    r"references?|bibliography|bibliographies|citations?",
+                    "".join(self.heading_parts).strip(" :\t\r\n"),
+                    re.I,
+                )
+            ):
+                self.reference_scope = self.heading
+            self.heading = None
+        if self.reference_scope is not None and index < self.reference_scope[0]:
+            self.reference_scope = None
+        if self.root_depth is not None and index <= self.root_depth:
+            if index == self.root_depth and tag == "span" and self.valid:
+                value = "".join(self.parts).strip()
+                match = re.fullmatch(r"doi\s*:\s*(\S+)", value, re.I)
+                doi = normalize_doi(match.group(1)) if match else ""
+                if (
+                    re.fullmatch(r"10\.\d{4,9}/[^\s<>]+", doi, re.I)
+                    and len(re.findall(r"10\.\d{4,9}/", doi, re.I)) == 1
+                ):
+                    self.dois.add(doi)
+            self.root_depth = None
+        del self.stack[index:]
+
+    def handle_data(self, data: str) -> None:
+        if self.root_depth is not None:
+            self.parts.append(data)
+        if self.heading is not None and not (self.stack and self.stack[-1][1]):
+            self.heading_parts.append(data)
+
+
 def _looks_restricted(text: str, final_url: str) -> bool:
     lowered = text.lower()
     path = urlsplit(final_url).path.lower()
@@ -454,8 +619,11 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
     parser.feed(text)
     abstract_parser = _HtmlAbstractParser()
     abstract_parser.feed(text)
+    document_doi_parser = _HtmlDocumentDoiParser()
+    document_doi_parser.feed(text)
+    table_dois: set[str] = set()
     table_candidate = (
-        _publication_table_candidate(lossless_text, data, parser)
+        _publication_table_candidate(lossless_text, data, parser, table_dois)
         if lossless_text is not None
         else None
     )
@@ -473,8 +641,8 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
         or parser.meta.get("og:title")
         or " ".join(parser.title_parts).strip()
     )
-    # Body text can contain many bibliography DOIs. Only explicit metadata is
-    # strong enough to identify the fetched work.
+    # Bibliography and arbitrary body DOIs do not identify the fetched work.
+    # Accept only typed metadata or an explicit document DOI field.
     # dc.identifier may contain a page URL, ISBN or repository ID. Prefix
     # normalization alone does not establish DOI syntax. Keep all raw metadata
     # in the saved response; expose only an unambiguous DOI from these fields.
@@ -482,12 +650,21 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
         normalized
         for name in ("citation_doi", "dc.identifier")
         for value in parser.meta_values.get(name, [])
-        if re.fullmatch(r"10\.\d{4,9}/\S+", normalized := normalize_doi(value), re.IGNORECASE)
+        if re.fullmatch(
+            r"10\.\d{4,9}/\S+", normalized := normalize_doi(value), re.IGNORECASE
+        )
     }
-    observed_doi = next(iter(metadata_dois)) if len(metadata_dois) == 1 else ""
+    identity_dois = metadata_dois | document_doi_parser.dois
+    if table_candidate is not None:
+        identity_dois.add(table_candidate[0]["doi"])
+    observed_doi = (
+        next(iter(identity_dois))
+        if len(identity_dois) == 1 and not (table_dois - identity_dois)
+        else ""
+    )
     table_fields: dict[str, str] = {}
     field_provenance: list[dict[str, Any]] = []
-    if table_candidate is not None:
+    if table_candidate is not None and observed_doi == table_candidate[0]["doi"]:
         table_fields, field_provenance = table_candidate
         observed_doi = table_fields["doi"]
         observed_title = table_fields["title"]
