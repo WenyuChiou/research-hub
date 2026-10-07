@@ -1,4 +1,43 @@
-# Workspace preview verification — 2026-09-08
+# Merged producer integration — 2026-10-07
+
+The producer [PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17)
+is merged. The consumer source pin and integrity values are recorded in
+[workspace-writing-source.json](workspace-writing-source.json). The Hub workspace
+remains an unreleased preview; producer merge does not install or release Hub.
+
+- Producer commit: `bc15e29e976cd6ade3484aeaa4f1230444697f8a`
+- Manifest SHA256: `0bce611e91bd0bf01ad6aa59eccc46ae52321b645c04f6a71225f01e90f7a3ec`
+- Reproducible ZIP SHA256: `0b084edb82233fc43bf3465a8a8cc11551f5d6a15e4b98c6ea7cdfcb95a94ef7`
+- Explicit-source integration rebuilds/checks the producer bundle, extracts it,
+  verifies consumer instruction closure, and runs all four writing audits for
+  both empirical and reading-review demos. Both remain offline handoffs in
+  `awaiting_agent`, with no scientific acceptance or publication authorization.
+- CI checks out this immutable producer commit and runs the integration test;
+  the ordinary suite skips the producer-dependent case without an explicit
+  `RESEARCH_HUB_TEST_WRITING_ADAPTER` checkout. No network fetch occurs inside
+  the test and no live model is invoked.
+
+Reproduce against a reviewed checkout of that exact producer commit:
+
+```sh
+RESEARCH_HUB_TEST_WRITING_ADAPTER=/absolute/path/to/academic-writing-adapter \
+  python -m pytest -q tests/test_workspace_producer_integration.py
+```
+
+The earlier Hub integration snapshot
+[`dda3cee30f43e7eca658bfeb9b20aac35ec19ce8`](https://github.com/WenyuChiou/research-hub/commit/dda3cee30f43e7eca658bfeb9b20aac35ec19ce8)
+has the same workspace runtime as this documentation/source-pin update. Its
+[PR CI](https://github.com/WenyuChiou/research-hub/actions/runs/37630994839) passed,
+including 19 real Chromium checks, clean installed-wheel checks and frontend
+asset reproducibility. Its offline suite passed 3,999 tests; 18 skipped,
+17 deselected and 2 expected failures. The separate stress suite passed 15 tests.
+These historical counts do not substitute for this update's exact-head CI.
+
+The September implementation and live-proposal evidence below is historical.
+It was not rerun with the merged producer and is not a claim of current live
+provider access, scientific acceptance, release approval or local installation.
+
+## Historical workspace preview verification — 2026-09-08
 
 This is implementation evidence, not scientific acceptance or release approval.
 Baseline: `bb00775822bf856333cba8388631f16be3831ea4`; candidate is the
@@ -57,8 +96,9 @@ it may use paid host capacity and is never part of default CI.
 
 ## Remaining human and external checks
 
-The public writing producer is [PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17),
-not a released dependency. Exact manuscript acceptance and local delivery approval
+The public writing producer [PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17)
+was merged on 2026-10-07. The explicitly configured source is now immutable main
+commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`; it is not a permanent runtime dependency. Exact manuscript acceptance and local delivery approval
 remain human actions. NotebookLM's last recorded authentication failure has not
 been reverified. Screen-reader testing and broader browser coverage remain open.
 These cases are bounded pilots, not evidence of publishable research quality or a

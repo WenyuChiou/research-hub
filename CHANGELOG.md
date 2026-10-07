@@ -63,8 +63,10 @@
 ### Migration
 - Preview is additive and not included in PyPI 1.2.0. No automatic migration of
   existing vaults or workflow state. See [UPGRADE.md](UPGRADE.md) before adoption.
-- The writing adapter is an explicitly verified producer preview, not an
-  unpublished commit installed as a permanent runtime dependency.
+- The optional writing adapter is pinned to merged public producer commit
+  `bc15e29e976cd6ade3484aeaa4f1230444697f8a`, with reproducible bundle and
+  manifest verification. It is explicitly configured, not a permanent runtime
+  dependency. Hub preview installation uses an immutable tested snapshot.
 
 ## [1.2.0] - 2026-08-31
 

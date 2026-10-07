@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import hashlib
+import json
 
 
 def _readme_text() -> str:
@@ -40,7 +41,8 @@ def test_researcher_first_visuals_and_preview_install_are_bilingual():
         writing = f"docs/images/workspace-writing.{locale}.png"
         assert lifecycle in text[:2500]
         assert text.index(lifecycle) < text.index(screenshot) < text.index(writing)
-        assert "git clone -b codex/researcher-workspace" in text
+        pin = json.loads((root / "docs/workspace-writing-source.json").read_text(encoding="utf-8"))
+        assert f"git checkout --detach {pin['hub_preview_commit']}" in text
         assert "research-hub project demo --root ./workspace-demo --json" in text
         assert "docs/workspace-architecture.md" in text
         for relative in (lifecycle, screenshot, writing):

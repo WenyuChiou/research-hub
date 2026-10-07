@@ -10,7 +10,7 @@ A local workspace connecting literature, research artifacts, and manuscripts thr
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MIT license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Workspace preview — unreleased.** The six-page workspace below is on `codex/researcher-workspace`. PyPI `1.2.0` does not include it. Use the branch installation below, or try the published literature dashboard.
+> **Workspace preview — unmerged and unreleased.** The six-page workspace below is proposed in [research-hub PR #135](https://github.com/WenyuChiou/research-hub/pull/135). PyPI `1.2.0` does not include it. Use the pinned preview installation below, or try the published literature dashboard.
 
 ## Why this exists
 
@@ -39,11 +39,13 @@ Files stay in your selected workspace. Registration records paths and hashes; yo
 
 ### Workspace preview
 
-Use Python 3.10+ and Git. Choose a **new or empty** `workspace-demo` directory.
+Use Python 3.10+ and Git. Choose a **new or empty** `workspace-demo` directory. These commands install the tested, immutable preview snapshot `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` without depending on a feature-branch name.
 
 ```sh
-git clone -b codex/researcher-workspace https://github.com/WenyuChiou/research-hub.git
+git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
+git fetch origin dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
+git checkout --detach dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
 python -m pip install -e '.[mcp]'
 research-hub project demo --root ./workspace-demo --json
 research-hub serve --workspace --root ./workspace-demo
@@ -51,7 +53,7 @@ research-hub serve --workspace --root ./workspace-demo
 
 Open [the local workspace](http://127.0.0.1:8765/app/). The demo needs no account and contains a small numerical summation example and a literature-review fixture. These are teaching inputs, not model-generated research findings.
 
-Follow the [workspace guide](docs/workspace-guide.md) for your own files, writing setup, task handoffs, and review. See [dated verification and remaining checks](docs/workspace-guide.md#verification) before relying on the preview.
+The snapshot retains its original documentation; use the current [workspace guide](docs/workspace-guide.md) for the merged producer pin, your own files, writing setup, task handoffs, and review. See [dated verification and remaining checks](docs/workspace-guide.md#verification) before relying on the preview.
 
 ### Published literature dashboard
 
@@ -71,7 +73,7 @@ This account-free sample opens the existing dashboard. For real integrations, us
 | Portable handoff | Export a task for your AI host; import its prose and candidate hashes. Export leaves the task waiting for the agent. |
 | Connected Codex | An authenticated, compatible Codex CLI uses an explicitly trusted public writing bundle to produce prose without tools. Results wait for human review. |
 
-The [public writing adapter preview](https://github.com/WenyuChiou/academic-writing-skills/pull/17) is a separate, unmerged contribution. [Verify and configure it explicitly](docs/workspace-guide.md#writing-adapter-preview); it is not a released dependency. Connected Codex receives bounded text excerpts, not binary document contents. Use your editor for Word formatting, LaTeX compilation, and final document changes.
+The public writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). This integration pins its immutable `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. [Verify and configure it explicitly](docs/workspace-guide.md#writing-adapter-preview); it is optional and is not installed as a permanent research-hub dependency. The Hub workspace remains an unmerged, unreleased preview. Connected Codex receives bounded text excerpts, not binary document contents. Use your editor for Word formatting, LaTeX compilation, and final document changes.
 
 ## What you can trust
 

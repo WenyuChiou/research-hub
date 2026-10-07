@@ -17,10 +17,22 @@ backup checklist + a historical appendix for very old releases.
 
 ## v1.1 -> v1.2
 
-### Opt-in workspace preview after v1.2 (unreleased)
+### Opt-in workspace preview after v1.2 (unmerged and unreleased)
 
-- Install the feature branch as described in [the workspace guide](docs/workspace-guide.md).
-  Existing dashboard, vault, citation and workflow interfaces remain available.
+- Install the immutable Hub preview snapshot
+  `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` as described in
+  [the workspace guide](docs/workspace-guide.md), without relying on a
+  feature-branch name. The Hub workspace in
+  [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) remains unmerged
+  and unreleased. Existing dashboard, vault, citation and workflow interfaces
+  remain available.
+- The optional public writing adapter was merged through
+  [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17).
+  Use the current guide to clone with `core.autocrlf=false`, detach at producer
+  `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`, and verify the manifest
+  before setting `RESEARCH_HUB_WRITING_ADAPTER`. The Hub snapshot retains its
+  original documentation; its older producer pin is historical. This is an
+  explicit source installation, not a new PyPI release or permanent dependency.
 - Choose a workspace root containing files you intend to register. Registration
   never relocates or overwrites them. Back up the entire root, including
   `.research/`, before adopting another preview revision.

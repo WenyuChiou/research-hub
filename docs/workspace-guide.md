@@ -6,17 +6,19 @@ The workspace connects a research question to literature, evidence, files, and m
 
 ## Preview status
 
-This guide describes the **unreleased `codex/researcher-workspace` branch**. The published PyPI `1.2.0` package does not contain these workspace commands. Source version text alone does not identify an installation: existing installed metadata may still report `1.1.1`. Use the editable branch checkout below and confirm its command help.
+This guide describes the **unmerged, unreleased workspace preview in [research-hub PR #135](https://github.com/WenyuChiou/research-hub/pull/135)**. The published PyPI `1.2.0` package does not contain these workspace commands. Source version text alone does not identify an installation: existing installed metadata may still report `1.1.1`. The commands below install the tested, immutable Hub snapshot `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` with the same workspace runtime, without relying on a feature-branch name. That snapshot retains its original documentation; this guide supplies the current merged producer pin. Confirm the installed command help.
 
-The optional writing adapter is also a preview: [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17), commit `1b2ca75c0bd68d10a939edb4039525322fe2a837`, is unmerged and unreleased. It is configured explicitly, not installed as a permanent research-hub dependency.
+The optional writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). Use the immutable producer `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. It is configured explicitly, not installed as a permanent research-hub dependency; the producer merge does not merge or release the Hub workspace.
 
 ## Start with the account-free demo
 
 Use Python 3.10+ and Git. Run these commands from the parent directory where you want the checkout:
 
 ```sh
-git clone -b codex/researcher-workspace https://github.com/WenyuChiou/research-hub.git
+git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
+git fetch origin dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
+git checkout --detach dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
 python -m pip install -e '.[mcp]'
 research-hub project demo --help
 research-hub project demo --root ./workspace-demo --json
@@ -83,14 +85,16 @@ A failed provider request is reported as degraded. Search results are metadata l
 
 The adapter supplies the existing public `academic-writing-skills` instructions and the review-only `paper-review` instructions. It includes no private project rules or scientific domain defaults. Review its source before trusting it: hashes establish bundle integrity, not publisher authenticity.
 
-From the `research-hub` checkout, obtain the pinned preview in a new sibling directory. Disabling checkout line-ending conversion preserves the bytes covered by the manifest:
+From the `research-hub` checkout, obtain the pinned, merged producer in a new sibling directory. Clone the repository and detach at the exact commit; no producer feature branch is required. Disabling checkout line-ending conversion preserves the bytes covered by the manifest:
 
 ```sh
-git clone -c core.autocrlf=false -b codex/writing-workspace-adapter https://github.com/WenyuChiou/academic-writing-skills.git ../academic-writing-adapter
-git -C ../academic-writing-adapter checkout --detach 1b2ca75c0bd68d10a939edb4039525322fe2a837
+git clone -c core.autocrlf=false https://github.com/WenyuChiou/academic-writing-skills.git ../academic-writing-adapter
+git -C ../academic-writing-adapter checkout --detach bc15e29e976cd6ade3484aeaa4f1230444697f8a
 python ../academic-writing-adapter/scripts/build_adapter_bundle.py --help
 python ../academic-writing-adapter/scripts/build_adapter_bundle.py --root ../academic-writing-adapter --check
 ```
+
+The expected manifest SHA256 for this producer pin is `0bce611e91bd0bf01ad6aa59eccc46ae52321b645c04f6a71225f01e90f7a3ec`; its reproducible bundle ZIP SHA256 is `0b084edb82233fc43bf3465a8a8cc11551f5d6a15e4b98c6ea7cdfcb95a94ef7`. These integrity values identify the pinned source and bundle, not a new live-model or scientific acceptance result.
 
 Continue only after exit code `0` and `"status": "PASS"`. The command verifies the public file closure, paths, contracts, and hashes without running audits. For an optional portable ZIP, use `--output ./academic-writing-adapter.zip` instead of `--check`; its destination must not already exist. Point the consumer at the checked directory or an independently verified extracted bundle, not a ZIP file.
 
@@ -227,8 +231,10 @@ Workspace approval covers workspace proposal tasks and the local delivery action
 
 ## Verification and remaining checks
 
-**2026-09-08 — preview evidence; scientific acceptance pending.** The public adapter manifest check passed for commit `1b2ca75c0bd68d10a939edb4039525322fe2a837`. Its manifest SHA256 was `9341d6a87a3f01a5f9d3c705e8f6f4bcd5fa88b4fa6d67ade70d81801b9726f6`. Offline contracts, real browser flows and two live proposal tasks have been exercised. The [verification report](workspace-verification.md) separates passes, failures, targeted corrections and remaining clean-installation checks.
+**2026-10-07 — source pin update.** Installation now uses the merged producer commit and integrity values above. See the [verification report](workspace-verification.md) for current integration checks. The historical live runs below were not rerun against the new producer by this documentation update.
 
-Two live Codex tasks returned proposals awaiting human review; this is not a claim that a complete scientific workflow or NotebookLM operation succeeded. The last recorded NotebookLM authentication attempt failed and was not reverified. Demo fixtures and screenshots establish only the illustrated local behavior.
+**2026-09-08 — historical preview evidence; scientific acceptance pending.** The public adapter manifest check passed for commit `1b2ca75c0bd68d10a939edb4039525322fe2a837`. Its manifest SHA256 was `9341d6a87a3f01a5f9d3c705e8f6f4bcd5fa88b4fa6d67ade70d81801b9726f6`. Offline contracts, real browser flows and two live proposal tasks have been exercised. The [verification report](workspace-verification.md) separates passes, failures, targeted corrections and remaining clean-installation checks.
+
+Those two historical live Codex tasks returned proposals awaiting human review; this is not a claim that a complete scientific workflow or NotebookLM operation succeeded. The last recorded NotebookLM authentication attempt failed and was not reverified. Demo fixtures and screenshots establish only the illustrated local behavior.
 
 For your installation, inspect `research-hub project demo --help`, run the demo in an empty directory, and verify the chosen adapter with `--check`. Inspect actual provider readiness before a connected task. Developers should record the checkout revision, exact commands, outcomes, and remaining limits using the [architecture guide](workspace-architecture.md) and [live smoke checklist](live-smoke.md).

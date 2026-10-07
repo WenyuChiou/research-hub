@@ -6,17 +6,19 @@
 
 ## 預覽版狀態
 
-本指南適用於**尚未發布的 `codex/researcher-workspace` 分支**。PyPI 上的 `1.2.0` 套件不含這些工作區指令。原始碼的版本文字無法單獨識別安裝狀態：既有安裝中繼資料仍可能顯示 `1.1.1`。請使用下方分支的可編輯安裝方式，並確認指令說明。
+本指南適用於 **[research-hub PR #135](https://github.com/WenyuChiou/research-hub/pull/135) 中尚未合併或發布的工作區預覽版**。PyPI 上的 `1.2.0` 套件不含這些工作區指令。原始碼的版本文字無法單獨識別安裝狀態：既有安裝中繼資料仍可能顯示 `1.1.1`。下方指令安裝已測試、固定不變的 Hub 快照 `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8`，其工作區執行程式相同，且不依賴功能分支名稱。該快照保留當時的文件；本指南提供目前已合併的介接器固定版本。請確認安裝後的指令說明。
 
-選用的寫作介接器也是預覽版：[academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17)，commit `1b2ca75c0bd68d10a939edb4039525322fe2a837`，尚未合併或發布。它需要明確設定，不會成為 research-hub 的永久安裝相依項目。
+選用的寫作介接器已透過 [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17) 合併。請使用介接器 `main` 上固定不變的 commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`。它需要明確設定，不會成為 research-hub 的永久安裝相依項目；介接器合併不代表 Hub 工作區已合併或發布。
 
 ## 先從免帳號示範開始
 
 需要 Python 3.10+ 與 Git。請在預定放置程式碼的上層目錄執行：
 
 ```sh
-git clone -b codex/researcher-workspace https://github.com/WenyuChiou/research-hub.git
+git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
+git fetch origin dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
+git checkout --detach dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
 python -m pip install -e '.[mcp]'
 research-hub project demo --help
 research-hub project demo --root ./workspace-demo --json
@@ -83,14 +85,16 @@ research-hub project search --root ./my-study --project study --query "research 
 
 介接器提供既有公開的 `academic-writing-skills` 指令，以及僅供審查的 `paper-review` 指令，不含私人專案規則或預設科學領域。信任之前請先檢視原始碼：雜湊值證明套件完整性，不能證明發布者身分。
 
-在 `research-hub` 程式碼目錄中，將固定版本的預覽版取得至新的同層目錄。停用 checkout 的換行轉換，才能保留清單涵蓋的原始位元組：
+在 `research-hub` 程式碼目錄中，將已合併的介接器固定版本取得至新的同層目錄。複製儲存庫後，以 detached checkout 指定確切 commit，不需要介接器的功能分支。停用 checkout 的換行轉換，才能保留清單涵蓋的原始位元組：
 
 ```sh
-git clone -c core.autocrlf=false -b codex/writing-workspace-adapter https://github.com/WenyuChiou/academic-writing-skills.git ../academic-writing-adapter
-git -C ../academic-writing-adapter checkout --detach 1b2ca75c0bd68d10a939edb4039525322fe2a837
+git clone -c core.autocrlf=false https://github.com/WenyuChiou/academic-writing-skills.git ../academic-writing-adapter
+git -C ../academic-writing-adapter checkout --detach bc15e29e976cd6ade3484aeaa4f1230444697f8a
 python ../academic-writing-adapter/scripts/build_adapter_bundle.py --help
 python ../academic-writing-adapter/scripts/build_adapter_bundle.py --root ../academic-writing-adapter --check
 ```
+
+此介接器固定版本的預期清單 SHA256 為 `0bce611e91bd0bf01ad6aa59eccc46ae52321b645c04f6a71225f01e90f7a3ec`；可重現套件 ZIP 的 SHA256 為 `0b084edb82233fc43bf3465a8a8cc11551f5d6a15e4b98c6ea7cdfcb95a94ef7`。這些完整性數值識別固定的原始碼與套件，不代表新的即時模型測試或科學判斷驗收結果。
 
 僅在結束碼為 `0` 且輸出 `"status": "PASS"` 後繼續。此指令檢查公開檔案集合、路徑、介面契約與雜湊值，不執行稽核程式。若需可攜式 ZIP，以 `--output ./academic-writing-adapter.zip` 取代 `--check`；目的檔案不得已存在。使用端應指向已檢查的目錄，或另行驗證過的解壓目錄，而不是 ZIP 檔。
 
@@ -227,8 +231,10 @@ SQLite 帳本參照既有工作流程 YAML 與公開稿件 JSON，不會自動�
 
 ## 驗證與待完成檢查
 
-**2026-09-08：預覽版證據；科學判斷驗收待完成。** 公開介接器 commit `1b2ca75c0bd68d10a939edb4039525322fe2a837` 的清單檢查通過。清單 SHA256 為 `9341d6a87a3f01a5f9d3c705e8f6f4bcd5fa88b4fa6d67ade70d81801b9726f6`。已執行離線契約、真實瀏覽器流程及兩項即時提案任務。[驗證報告](workspace-verification.md)分開列出通過、失敗、針對性修正與尚待確認的乾淨安裝。
+**2026-10-07：更新原始碼固定版本。** 安裝方式改用上方已合併的介接器 commit 與完整性數值。目前整合檢查請參閱[驗證報告](workspace-verification.md)。本次文件更新未使用新介接器重跑下列歷史即時測試。
 
-兩項即時 Codex 任務已回傳待人工審閱的提案；這不表示完整科學工作流程或 NotebookLM 操作已成功。最近記錄的 NotebookLM 認證嘗試失敗，尚未重新驗證。示範資料與截圖僅呈現所展示的本機行為。
+**2026-09-08：歷史預覽版證據；科學判斷驗收待完成。** 公開介接器 commit `1b2ca75c0bd68d10a939edb4039525322fe2a837` 的清單檢查通過。清單 SHA256 為 `9341d6a87a3f01a5f9d3c705e8f6f4bcd5fa88b4fa6d67ade70d81801b9726f6`。已執行離線契約、真實瀏覽器流程及兩項即時提案任務。[驗證報告](workspace-verification.md)分開列出通過、失敗、針對性修正與尚待確認的乾淨安裝。
+
+上述兩項歷史即時 Codex 任務已回傳待人工審閱的提案；這不表示完整科學工作流程或 NotebookLM 操作已成功。最近記錄的 NotebookLM 認證嘗試失敗，尚未重新驗證。示範資料與截圖僅呈現所展示的本機行為。
 
 請在自己的安裝環境檢查 `research-hub project demo --help`，於空目錄執行示範，並以 `--check` 驗證選定介接器。連接任務前，先確認實際服務可用狀態。開發者應依[架構指南](workspace-architecture.md)及[實際操作檢查表](live-smoke.md)，記錄程式碼版本、確切指令、結果與剩餘限制。
