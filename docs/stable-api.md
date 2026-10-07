@@ -121,6 +121,10 @@ Rules:
 
 ## See also
 
+- [`audit-output.md`](audit-output.md) — optional stable `--audit-output` CLI
+  surface and version 1.0.0 attempt/event/artifact schema for search, enrich,
+  verify, references and cited-by; default command outputs stay compatible.
+
 - [`file-formats.md`](file-formats.md) — hidden file format schema versions
 - [`authenticity.md`](authenticity.md) — the v1.0 no-fabricated-references guarantee + L0–L5 + quarantine triage
 - [`RELEASING.md`](RELEASING.md) — the mechanical release-gate runbook (version-sync + full-suite gate before every tag)

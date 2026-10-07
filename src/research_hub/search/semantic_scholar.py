@@ -7,6 +7,7 @@ import os
 import time
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.errors import UpstreamRateLimited
 from research_hub.search.base import SearchResult
@@ -142,7 +143,7 @@ class SemanticScholarClient:
         for attempt in range(self.max_retries + 1):
             self._throttle()
             try:
-                response = requests.get(
+                response = http_request("get",
                     url,
                     timeout=self.timeout,
                     headers=self._headers(),
@@ -218,7 +219,7 @@ class SemanticScholarClient:
             response.raise_for_status()
         except requests.exceptions.RequestException:
             return []
-        return [SearchResult.from_s2_json(item) for item in response.json().get("data", [])]
+        return [SearchResult.from_s2_json(item) for item in read_json(response, collection=("data",)).get("data", [])]
 
     def get_paper(self, identifier: str) -> SearchResult | None:
         """Fetch a single paper by DOI, arXiv ID, or Semantic Scholar ID."""
@@ -236,7 +237,7 @@ class SemanticScholarClient:
         if response.status_code != 200:
             return None
         try:
-            return SearchResult.from_s2_json(response.json())
+            return SearchResult.from_s2_json(read_json(response))
         except ValueError:
             return None
 
@@ -284,7 +285,7 @@ class SemanticScholarClient:
             )
             return []
         try:
-            data = response.json()
+            data = read_json(response)
         except ValueError as exc:
             logger.warning("S2 recommendations invalid JSON for %s: %s", paper_id, exc)
             return []

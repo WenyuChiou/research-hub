@@ -8,6 +8,7 @@ import time
 import xml.etree.ElementTree as ET
 
 import requests
+from research_hub.audit import http_request, read_xml
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -80,7 +81,7 @@ class RepecBackend:
     def _search_handles(self, query: str, limit: int) -> list[str]:
         self._throttle()
         try:
-            response = requests.get(
+            response = http_request("get",
                 REPEC_SEARCH_URL,
                 params={"q": query, "ul": "p"},
                 headers={"User-Agent": _USER_AGENT},
@@ -100,7 +101,7 @@ class RepecBackend:
 
     def _fetch_oai_record(self, handle: str) -> SearchResult | None:
         try:
-            response = requests.get(
+            response = http_request("get",
                 REPEC_OAI_BASE,
                 params={
                     "verb": "GetRecord",
@@ -116,7 +117,7 @@ class RepecBackend:
         if response.status_code != 200:
             return None
         try:
-            root = ET.fromstring(response.text)
+            root = read_xml(response.text, root_tag="{http://www.openarchives.org/OAI/2.0/}OAI-PMH")
         except ET.ParseError as exc:
             logger.debug("RePEc XML parse failed for %s: %s", handle, exc)
             return None

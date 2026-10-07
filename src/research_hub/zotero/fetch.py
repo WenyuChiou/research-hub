@@ -225,9 +225,9 @@ def make_raw_md(
             tags = list(tags) + [topic_tag]
     tags_yaml = '[' + ', '.join(f'"{t}"' for t in tags) + ']' if tags else '[]'
     collections_yaml = '[' + ', '.join(f'"{c}"' for c in collections_list) + ']'
-    cluster_queries_yaml = '[' + ', '.join(
-        f'"{query}"' for query in (cluster_queries or [])
-    ) + ']'
+    import json
+
+    cluster_queries_yaml = json.dumps(cluster_queries or [], ensure_ascii=False)
     ingested_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     pdf_path_line = ""
     if item_data.get("pdf_path"):
@@ -318,6 +318,26 @@ def make_raw_md(
             f"  fit_score: {fit_score_yaml}\n"
             f"{rel_unverified_line}"
         )
+        # Keep native research locators, evidence levels and pending checks,
+        # alongside the existing stable fields consumed by older readers.
+        known_fields = {
+            "resolved_via", "corroboration", "backends", "doi_checked_at",
+            "fit_score", "relevance_unverified",
+        }
+        import json
+
+        for field, value in provenance.items():
+            if field not in known_fields:
+                provenance_block += (
+                    f"  {json.dumps(field)}: {json.dumps(value, ensure_ascii=False)}\n"
+                )
+    source_records_block = ""
+    if item_data.get("source_records"):
+        import json
+
+        source_records_block = (
+            "source_records: " + json.dumps(item_data["source_records"], ensure_ascii=False) + "\n"
+        )
 
     citation_line = journal
     if volume: citation_line += f", {volume}"
@@ -345,7 +365,7 @@ cluster_queries: {cluster_queries_yaml}
 summarize_status: {summarize_status}
 {pdf_path_line}verified: {"null" if verified is None else ("true" if verified else "false")}
 verified_at: "{verified_at}"
-{provenance_block}\
+{provenance_block}{source_records_block}\
 status: unread
 ---
 

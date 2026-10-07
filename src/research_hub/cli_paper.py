@@ -764,10 +764,10 @@ def _cmd_paper_gaps(cfg, args) -> None:
         digest_a = build_cluster_digest(cfg, slug)
         digest_b = build_cluster_digest(cfg, compare_slug)
         # Require both clusters to have at least some papers for a meaningful cross-analysis
-        if digest_a.paper_count == 0 or digest_b.paper_count == 0:
-            empty = slug if digest_a.paper_count == 0 else compare_slug
+        if not digest_a.papers or not digest_b.papers:
+            empty = slug if not digest_a.papers else compare_slug
             print(
-                f"[gaps] Cluster '{empty}' has no papers. "
+                f"[gaps] Cluster '{empty}' has no papers available to read. "
                 "Cannot run cross-cluster analysis.",
                 file=sys.stderr,
             )
@@ -792,15 +792,15 @@ def _cmd_paper_gaps(cfg, args) -> None:
             print("[gaps] LLM returned empty response.", file=sys.stderr)
             print(f"[gaps] Prompt saved: {cross_prompt_path}", file=sys.stderr)
             return
-        result = cross_cluster_gap(cfg, slug, compare_slug, gap_text)
+        result = cross_cluster_gap(cfg, slug, compare_slug, gap_text, digests=(digest_a, digest_b))
         if result.written:
             print(f"[gaps] Cross-cluster gap file: {result.gap_path}")
         return
 
     print(f"[gaps] Building digest for cluster '{slug}'...")
     digest = build_cluster_digest(cfg, slug)
-    if digest.paper_count == 0:
-        print(f"No papers found in cluster '{slug}'. Nothing to analyze.", file=sys.stderr)
+    if not digest.papers:
+        print(f"No papers found available to read in cluster '{slug}'. Evidence unavailable.", file=sys.stderr)
         return
 
     print(f"[gaps] {digest.paper_count} papers found. Generating prompt...")
@@ -818,7 +818,8 @@ def _cmd_paper_gaps(cfg, args) -> None:
             f"[gaps] Prompt saved to: {prompt_path}\n"
             f"[gaps] To run manually:\n"
             f"  1. <llm-cli> < {prompt_path} > /tmp/gap-result.md\n"
-            f"  2. Copy /tmp/gap-result.md to your hub/{slug}/ directory as research-gaps.md"
+            f"  2. Use research_hub.gap_analysis.apply_gap_results(cfg, '{slug}', text) "
+            "to write a qualified analysis; do not copy raw model claims into the overview."
         )
         return
 
@@ -839,17 +840,55 @@ def _cmd_paper_gaps(cfg, args) -> None:
         return
 
     print("[gaps] Writing research-gaps.md...")
-    result = apply_gap_results(cfg, slug, gap_text)
+    result = apply_gap_results(cfg, slug, gap_text, digest=digest)
     if result.written:
         print(f"[gaps] Written: {result.research_gaps_path}")
         if result.overview_updated:
-            print("[gaps] Updated 00_overview.md with gap summary.")
+            print("[gaps] Updated 00_overview.md with provisional-analysis link.")
     else:
         print("[gaps] Failed to write output.", file=sys.stderr)
 
 
+def _cmd_paper_direction_check(args) -> int:
+    """Offline, config-free checking; exit zero never means scientific approval."""
+    from research_hub.direction_review import DirectionReviewError, check_direction_review, dumps_direction_json
+
+    try:
+        result = check_direction_review(args.dossier, args.review, args.source_root)
+        code = 0 if result["binding_status"] == "current" else 2
+        encoded = dumps_direction_json(result)
+    except DirectionReviewError as exc:
+        result = {"format": "research-direction-check/1.0", "record_status": "invalid",
+                  "error": exc.code, "semantic_assessment": "not-performed",
+                  "human_selection": "outside-checker", "execution_authorized": False}
+        code = 2
+        encoded = dumps_direction_json(result)
+    if getattr(args, "json", False):
+        print(encoded)
+    elif code and result["record_status"] == "invalid":
+        print(f"Direction record invalid: {result['error']}")
+    else:
+        print(f"Record: {result['record_status']}; bindings: {result['binding_status']}")
+        print(f"Planned resource estimates: {result['resource_estimates']['status']}")
+        for row in result["candidate_bindings"]:
+            if row["status"] != "current":
+                print(f"Candidate {row['candidate_id']!r}: {row['status']}")
+        for row in result["evidence_bindings"]:
+            if row["status"] != "current":
+                print(f"Evidence {row['evidence_id']!r}: {row['status']}")
+        unknown = sum(row["status"] == "unknown" for row in result["prerequisites"])
+        contradicted = sum(row["status"] == "contradicted" for row in result["prerequisites"])
+        print(f"Supplied prerequisite assessments: {unknown} unknown; {contradicted} contradicted")
+    if not getattr(args, "json", False):
+        print("Scientific assessment and runtime spending not verified; human selection remains outside this checker.")
+        print("A completed check does not authorize execution or approve a direction.")
+    return code
+
+
 def _paper_command(args) -> int:
     emit_json = bool(getattr(args, "json", False))
+    if args.paper_command == "direction-check":
+        return _cmd_paper_direction_check(args)
     if args.paper_command == "find":
         cfg = require_config()
         _cmd_paper_find(cfg, args)

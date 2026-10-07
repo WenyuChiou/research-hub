@@ -6,6 +6,7 @@ import logging
 import time
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -53,7 +54,7 @@ class DblpBackend:
     def _request(self, params: dict[str, str | int]) -> requests.Response | None:
         self._throttle()
         try:
-            return requests.get(
+            return http_request("get",
                 DBLP_BASE,
                 params=params,
                 timeout=self.timeout,
@@ -76,7 +77,7 @@ class DblpBackend:
             return []
         try:
             response.raise_for_status()
-            payload = response.json()
+            payload = read_json(response, collection=("result", "hits", "hit"), allow_single=True, empty_count=("result", "hits", "@total"))
         except (ValueError, requests.exceptions.RequestException) as exc:
             logger.debug("DBLP search failed: %s", exc)
             return []

@@ -26,7 +26,12 @@ def test_enrich_candidates_uses_first_backend_that_resolves_doi(mock_openalex, m
     mock_arxiv.side_effect = RuntimeError("should not be used")
     mock_s2.side_effect = RuntimeError("should not be used")
 
-    result = enrich_candidates(["10.1234/foo"])
+    # Identifier resolution and abstract recovery are different operations.
+    # Fence the latter explicitly instead of relying on swallowed socket errors.
+    with patch("research_hub.search.enrich.recover_abstract") as recover:
+        recover.return_value.text = ""
+        result = enrich_candidates(["10.1234/foo"])
+        recover.assert_called_once_with("10.1234/foo")
 
     assert result[0] is not None
     assert result[0].source == "openalex"

@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -59,7 +60,7 @@ class ChemrxivBackend:
         if year_from is not None:
             body["published_since"] = f"{year_from}-01-01"
         try:
-            response = requests.post(
+            response = http_request("post",
                 FIGSHARE_SEARCH,
                 json=body,
                 headers={"User-Agent": _USER_AGENT, "Content-Type": "application/json"},
@@ -71,7 +72,7 @@ class ChemrxivBackend:
         if response.status_code != 200:
             return []
         try:
-            articles = response.json() or []
+            articles = read_json(response, collection=()) or []
         except ValueError:
             return []
 
@@ -93,7 +94,7 @@ class ChemrxivBackend:
 
         self._throttle()
         try:
-            response = requests.get(
+            response = http_request("get",
                 f"{FIGSHARE_DETAILS}/{cleaned}",
                 headers={"User-Agent": _USER_AGENT},
                 timeout=self.timeout,
@@ -103,7 +104,7 @@ class ChemrxivBackend:
         if response.status_code != 200:
             return None
         try:
-            return self._parse_article(response.json())
+            return self._parse_article(read_json(response))
         except ValueError:
             return None
 

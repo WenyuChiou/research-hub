@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
+from contextvars import copy_context
 from dataclasses import dataclass
 import logging
 from collections.abc import Iterable, Sequence
@@ -24,6 +25,7 @@ from research_hub.search.repec import RepecBackend
 from research_hub.search.semantic_scholar import SemanticScholarClient
 from research_hub.search.ssrn_backend import SsrnBackend
 from research_hub.search.websearch import WebSearchBackend
+from research_hub.audit import Attempt, audit_call, audited
 
 
 logger = logging.getLogger(__name__)
@@ -129,6 +131,7 @@ def resolve_backends_for_region(region: str) -> tuple[str, ...]:
     return REGION_PRESETS[region]
 
 
+@audited("search-query")
 def search_papers(
     query: str,
     *,
@@ -156,17 +159,25 @@ def search_papers(
         cls = _BACKEND_REGISTRY.get(name)
         if cls is None:
             logger.warning("unknown search backend: %s", name)
+            with Attempt("backend-search", name, {"query": query}) as attempt:
+                attempt.outcome = "unknown"
+                attempt.error = "unknown_backend"
             continue
         backend_to_class.append((name, cls))
 
     def _search_one_backend(name: str, cls: type[SearchBackend]) -> tuple[str, list[SearchResult]]:
-        backend = cls()
-        results = backend.search(
-            query,
-            limit=per_backend_limit,
-            year_from=year_from,
-            year_to=year_to,
-        )
+        with Attempt("backend-search", name, {
+            "query": query, "limit": per_backend_limit,
+            "year_from": year_from, "year_to": year_to,
+        }, evidence="parsed") as attempt:
+            backend = cls()
+            results = backend.search(
+                query,
+                limit=per_backend_limit,
+                year_from=year_from,
+                year_to=year_to,
+            )
+            attempt.result(results)  # Before citation filtering, merge and ranking.
         if name != "arxiv" and min_citations > 0:
             results = [result for result in results if result.citation_count >= min_citations]
         return name, results
@@ -175,7 +186,7 @@ def search_papers(
         completed_results: dict[str, list[SearchResult]] = {}
         executor = ThreadPoolExecutor(max_workers=min(len(backend_to_class), 8))
         futures = {
-            executor.submit(_search_one_backend, name, cls): name
+            executor.submit(copy_context().run, _search_one_backend, name, cls): name
             for name, cls in backend_to_class
         }
         try:
@@ -192,7 +203,10 @@ def search_papers(
         finally:
             for future, name in futures.items():
                 if name not in completed_results:
-                    future.cancel()
+                    cancelled = future.cancel()
+                    with Attempt("backend-pool-timeout", name, {"cancelled_before_start": cancelled}) as attempt:
+                        attempt.outcome = "timeout"
+                        attempt.error = "backend_pool_deadline"
                     completed_results[name] = []
             executor.shutdown(wait=False, cancel_futures=True)
         for name, _cls in backend_to_class:
@@ -261,6 +275,7 @@ def _recall_confidence(new_per_query: list[int]) -> tuple[str, bool]:
     return "low", False
 
 
+@audited("adversarial-search")
 def adversarial_search(
     query: str,
     *,
@@ -285,7 +300,7 @@ def adversarial_search(
     from research_hub.search._rank import rank
     from research_hub.search.query_expansion import expand_query
 
-    variants = expand_query(query, max_variants=max_variants, llm_cli=llm_cli)
+    variants = audit_call("query-expansion", expand_query, query, max_variants=max_variants, llm_cli=llm_cli)
     if not variants:
         return [], RecallReport(0, [], [], 0, False, "low")
     if per_query_limit is None:

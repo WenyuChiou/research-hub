@@ -288,7 +288,7 @@ def test_pure_valid_batch_unchanged(
 
 
 def test_dry_run_does_not_skip_missing_required(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture,
 ) -> None:
     """The PR-C escape is real-run only. In dry-run, every validation
     issue must surface so the operator sees the full picture."""
@@ -309,5 +309,6 @@ def test_dry_run_does_not_skip_missing_required(
     # Dry-run still surfaces the validation failure as a non-zero exit
     # (existing strict behaviour preserved).
     assert rc == 1
-    log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
+    log_text = capsys.readouterr().out
+    assert not (cfg.logs / "pipeline_log.txt").exists()
     assert "INPUT VALIDATION FAILED" in log_text or "missing required field" in log_text

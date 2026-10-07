@@ -14,6 +14,7 @@ import time
 from typing import Optional
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -58,7 +59,7 @@ class SsrnBackend:
     ) -> list[SearchResult]:
         self._throttle()
         try:
-            resp = requests.get(
+            resp = http_request("get",
                 _SSRN_SEARCH_URL,
                 params={"q": query, "per_page": min(limit, 50), "sort": "rel"},
                 headers={"User-Agent": _USER_AGENT},
@@ -73,7 +74,7 @@ class SsrnBackend:
             return []
 
         try:
-            data = resp.json()
+            data = read_json(resp, collections=(("papers",), ("results",), ()))
         except Exception as exc:
             logger.debug("SSRN JSON parse failed: %s", exc)
             return []

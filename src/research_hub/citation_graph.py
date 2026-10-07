@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 
 import requests
+from research_hub.audit import audit_call, http_request, read_json
 
 _S2_BASE = "https://api.semanticscholar.org/graph/v1"
 _DEFAULT_FIELDS = "title,year,authors,externalIds,venue,citationCount,url,openAccessPdf"
@@ -85,7 +86,7 @@ class CitationGraphClient:
     def _request(self, identifier: str, edge: str, limit: int) -> list[CitationNode]:
         self._throttle()
         url = f"{_S2_BASE}/paper/{self._normalize_id(identifier)}/{edge}"
-        response = requests.get(
+        response = http_request("get",
             url,
             params={"fields": _DEFAULT_FIELDS, "limit": min(limit, 1000)},
             timeout=self.timeout,
@@ -96,13 +97,13 @@ class CitationGraphClient:
         if response.status_code == 404:
             return []
         response.raise_for_status()
-        data = response.json().get("data", [])
+        data = read_json(response, collection=("data",)).get("data", [])
         return [CitationNode.from_s2_json(item) for item in data]
 
     def get_references(self, identifier: str, limit: int = 50) -> list[CitationNode]:
         """Return papers that the given paper cites."""
-        return self._request(identifier, "references", limit)
+        return audit_call("references", self._request, identifier, "references", limit, backend="semantic-scholar", evidence="parsed")
 
     def get_citations(self, identifier: str, limit: int = 50) -> list[CitationNode]:
         """Return papers that cite the given paper."""
-        return self._request(identifier, "citations", limit)
+        return audit_call("cited-by", self._request, identifier, "citations", limit, backend="semantic-scholar", evidence="parsed")

@@ -8,6 +8,7 @@ import time
 import xml.etree.ElementTree as ET
 
 import requests
+from research_hub.audit import http_request, read_xml
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -95,7 +96,7 @@ class ArxivBackend:
     def _request(self, params: dict[str, str | int]) -> requests.Response | None:
         self._throttle()
         try:
-            return requests.get(
+            return http_request("get",
                 ARXIV_BASE,
                 params=params,
                 timeout=self.timeout,
@@ -152,7 +153,7 @@ class ArxivBackend:
 
     def _parse_feed(self, xml_text: str) -> list[SearchResult]:
         try:
-            root = ET.fromstring(xml_text)
+            root = read_xml(xml_text, root_tag="{http://www.w3.org/2005/Atom}feed")
         except ET.ParseError as exc:
             logger.debug("arXiv XML parse failed: %s", exc)
             return []

@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -59,7 +60,7 @@ class EricBackend:
             "fields": "id,title,author,description,publicationdateyear,source,publisher,subject,doi,peerreviewed",
         }
         try:
-            response = requests.get(
+            response = http_request("get",
                 ERIC_BASE,
                 params=params,
                 headers={"User-Agent": _USER_AGENT},
@@ -71,7 +72,7 @@ class EricBackend:
         if response.status_code != 200:
             return []
         try:
-            payload = response.json()
+            payload = read_json(response, collection=("response", "docs"))
         except ValueError:
             return []
         docs = payload.get("response", {}).get("docs", []) or []

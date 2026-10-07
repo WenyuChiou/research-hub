@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from research_hub.clusters import ClusterRegistry, slugify
+from research_hub.search.abstract_recovery import RecoveredAbstract
 from research_hub.search.base import SearchResult
 
 from tests._pipeline_fixtures import (
@@ -193,9 +194,14 @@ def test_stage_3_cross_backend_rate_limit_and_empty(monkeypatch):
     assert search_papers("none", backends=["semantic-scholar", "openalex"], limit=5) == []
 
 
-def test_stage_4_to_papers_input_mapping():
+def test_stage_4_to_papers_input_mapping(monkeypatch):
     from research_hub.discover import _to_papers_input
 
+    # Keep identifier mapping independent of online abstract enrichment.
+    monkeypatch.setattr(
+        "research_hub.search.abstract_recovery.recover_abstract",
+        lambda doi, timeout=10: RecoveredAbstract(text="", source=""),
+    )
     mapped = _to_papers_input(
         [
             asdict(SearchResult(title="Arxiv Only", arxiv_id="2604.08224", authors=["Jane Doe"], year=2026)),

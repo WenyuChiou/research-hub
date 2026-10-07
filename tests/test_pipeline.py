@@ -106,7 +106,7 @@ def test_run_pipeline_dry_run_allows_missing_default_collection(tmp_path, monkey
     hub_config._config = None
 
 
-def test_run_pipeline_dry_run_no_papers_json(tmp_path, monkeypatch):
+def test_run_pipeline_dry_run_no_papers_json(tmp_path, monkeypatch, capsys):
     from research_hub import config as hub_config
     from research_hub.pipeline import run_pipeline
 
@@ -115,14 +115,15 @@ def test_run_pipeline_dry_run_no_papers_json(tmp_path, monkeypatch):
     result = run_pipeline(dry_run=True)
 
     assert result == 0
-    log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
+    log_text = capsys.readouterr().out
+    assert not (cfg.logs / "pipeline_log.txt").exists()
     assert "DRY RUN MODE" in log_text
     assert "DRY RUN: Config and imports OK. Ready to run. Exiting." in log_text
 
     hub_config._config = None
 
 
-def test_run_pipeline_dry_run_with_papers(tmp_path, monkeypatch):
+def test_run_pipeline_dry_run_with_papers(tmp_path, monkeypatch, capsys):
     from research_hub import config as hub_config
     from research_hub import pipeline
     from research_hub.zotero import client as zotero_client
@@ -148,7 +149,8 @@ def test_run_pipeline_dry_run_with_papers(tmp_path, monkeypatch):
     result = pipeline.run_pipeline(dry_run=True)
 
     assert result == 0
-    log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
+    log_text = capsys.readouterr().out
+    assert not (cfg.logs / "pipeline_log.txt").exists()
     assert "would process 2 papers" in log_text
 
     hub_config._config = None
@@ -245,7 +247,7 @@ def test_run_pipeline_fails_fast_on_invalid_paper_input(tmp_path, monkeypatch):
     hub_config._config = None
 
 
-def test_run_pipeline_dry_run_warns_for_minimal_input_and_autogenerates_fields(tmp_path, monkeypatch):
+def test_run_pipeline_dry_run_warns_for_minimal_input_and_autogenerates_fields(tmp_path, monkeypatch, capsys):
     from research_hub import config as hub_config
     from research_hub import pipeline
 
@@ -267,7 +269,8 @@ def test_run_pipeline_dry_run_warns_for_minimal_input_and_autogenerates_fields(t
     result = pipeline.run_pipeline(dry_run=True)
 
     assert result == 0
-    log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
+    log_text = capsys.readouterr().out
+    assert not (cfg.logs / "pipeline_log.txt").exists()
     assert "INPUT VALIDATION WARNINGS" in log_text
     assert "would process 1 papers" in log_text
 

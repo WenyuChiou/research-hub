@@ -1,9 +1,79 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
+
+
+def _install_subprocess_network_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Fence real CLI children, which do not inherit pytest's socket patches.
+
+    Audit events are rejected before DNS/socket I/O. Keep an on-disk record so
+    catching an exception in production cannot silently turn a leak green.
+    This only affects Python children launched with this fixture's environment.
+    """
+    guard_dir = tmp_path / "_offline_cli_guard"
+    guard_dir.mkdir()
+    attempts_path = guard_dir / "attempts.log"
+    attempts_path.write_text("", encoding="utf-8")
+    source = dedent(
+        f"""\
+        import os
+        import sys
+
+        def _deny_network(event, args):
+            socket_io = event.startswith("socket.") and event not in {{
+                "socket.__new__", "socket.bind", "socket.gethostname",
+                "socket.getservbyname", "socket.getservbyport",
+            }}
+            # No CLI in this fixture needs an external helper. Deny nested
+            # processes too, rather than allowing them to bypass Python hooks.
+            process_io = event in {{
+                "subprocess.Popen", "os.system", "os.exec", "os.posix_spawn",
+            }}
+            if socket_io or process_io:
+                try:
+                    with open({str(attempts_path)!r}, "a", encoding="utf-8") as stream:
+                        stream.write(event + "\\n")
+                except BaseException:
+                    os._exit(98)
+                raise RuntimeError("offline CLI fixture blocked " + event)
+
+        try:
+            sys.addaudithook(_deny_network)
+            sys._research_hub_e2e_offline = True
+
+            # Mirror the parent test's browser stub in the fresh interpreter.
+            # Dashboard health must report unverified capabilities as INFO,
+            # rather than launch a browser driver or inspect real processes.
+            try:
+                import patchright.sync_api as _patchright
+            except ImportError:
+                pass
+            else:
+                def _offline_browser_probe():
+                    raise RuntimeError("Chrome not checked in offline E2E fixture")
+                _patchright.sync_playwright = _offline_browser_probe
+
+            import research_hub.doctor as _doctor
+            _doctor.check_nlm_chrome_orphans = lambda: _doctor.CheckResult(
+                "nlm_chrome_orphans", "INFO",
+                "Processes not checked in offline E2E fixture",
+            )
+        except BaseException:
+            # sitecustomize normally prints and swallows startup errors.
+            # A broken guard must stop this child instead of failing open.
+            os._exit(98)
+        """
+    )
+    compile(source, "sitecustomize.py", "exec")
+    (guard_dir / "sitecustomize.py").write_text(source, encoding="utf-8")
+    src = Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(guard_dir), str(src))))
+    return attempts_path
 
 
 def _write_note(
@@ -89,6 +159,7 @@ def _set_sandbox_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture
 def sandbox_cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     cfg = _set_sandbox_root(tmp_path, monkeypatch)
+    network_attempts = _install_subprocess_network_guard(tmp_path, monkeypatch)
 
     from research_hub.clusters import ClusterRegistry
 
@@ -139,6 +210,17 @@ def sandbox_cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         doi="10.1000/beta2",
         cluster="beta",
     )
+
+    # clusters-analyze runs in a fresh CLI child. Seed explicit synthetic
+    # references so it tests the real graph/report path without contacting S2.
+    cache_dir = cfg.research_hub_dir / "citation_cache" / "alpha"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    for slug, refs in {
+        "alpha-paper-1": ["10.1000/synthetic-shared", "10.1000/synthetic-benchmark"],
+        "alpha-paper-2": ["10.1000/synthetic-shared", "10.1000/synthetic-planning"],
+        "alpha-paper-3": ["10.1000/synthetic-benchmark"],
+    }.items():
+        (cache_dir / f"{slug}.json").write_text(json.dumps(refs), encoding="utf-8")
 
     quotes_dir = cfg.research_hub_dir / "quotes"
     quotes_dir.mkdir(parents=True, exist_ok=True)
@@ -210,4 +292,8 @@ def sandbox_cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         encoding="utf-8",
     )
 
-    return cfg
+    yield cfg
+    assert network_attempts.read_text(encoding="utf-8") == "", (
+        "CLI child attempted network/helper I/O:\n"
+        + network_attempts.read_text(encoding="utf-8")
+    )

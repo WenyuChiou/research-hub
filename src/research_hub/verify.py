@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from research_hub.audit import audited, http_request, read_json
 from research_hub.utils.doi import normalize_doi as _normalize_doi
 from research_hub._useragent import user_agent
 try:
@@ -132,6 +133,7 @@ class VerifyCache:
         self._write()
 
 
+@audited("verify-doi", backend="doi.org", evidence="http")
 def verify_doi(
     doi: str,
     *,
@@ -152,6 +154,7 @@ def verify_doi(
     return result
 
 
+@audited("verify-arxiv", backend="arxiv.org", evidence="http")
 def verify_arxiv(
     arxiv_id: str,
     *,
@@ -172,6 +175,7 @@ def verify_arxiv(
     return result
 
 
+@audited("verify-paper", backend="semantic-scholar", evidence="parsed")
 def verify_paper(
     title: str,
     authors: list[str] | None = None,
@@ -191,8 +195,9 @@ def verify_paper(
 
     client = session or requests.Session()
     try:
-        response = client.get(
+        response = http_request("get",
             _S2_PAPER_SEARCH,
+            client=client,
             params={"query": title, "limit": 3, "fields": "title,year,authors,url"},
             timeout=_DEFAULT_TIMEOUT,
         )
@@ -210,7 +215,7 @@ def verify_paper(
     author_surnames = {_surname(name) for name in authors or [] if _surname(name)}
     best_result: VerificationResult | None = None
     best_reason = "no candidate matched"
-    for item in response.json().get("data", []):
+    for item in read_json(response, collection=("data",)).get("data", []):
         candidate_title = item.get("title") or ""
         score = float(fuzz.token_set_ratio(title, candidate_title))
         if score < _TITLE_MATCH_THRESHOLD:
@@ -258,8 +263,9 @@ def _head_exists(
     last_error: str | None = None
     for attempt in range(_DEFAULT_RETRIES + 1):
         try:
-            response = client.head(
+            response = http_request("head",
                 url,
+                client=client,
                 allow_redirects=True,
                 timeout=_DEFAULT_TIMEOUT,
                 headers={"User-Agent": user_agent(None)},

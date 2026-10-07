@@ -31,6 +31,16 @@ Not for:
 - Citation formatting — Zotero and the writing skill handle that.
 - Single-paper deep dive — use `paper-memory-builder`.
 
+## Evidence contract
+
+Read `../research-hub/references/research-protocol.md` and
+`../research-hub/references/source-claim-audit.md` for scope preservation,
+core/closest/classic roles, version-aware findings, and bounded completion.
+If a standalone install lacks these references, use the minimum rules below:
+metadata, abstracts, remembered results and generated summaries are screening
+leads; load-bearing claims need located source/version evidence; unchecked
+claims and failed searches remain explicit gaps.
+
 ## Inputs
 
 In priority order (cheapest to most expensive):
@@ -38,9 +48,10 @@ In priority order (cheapest to most expensive):
 0. **Manual paper list** — a Markdown bullet list of titles + DOIs (or
    arXiv IDs) the user pastes directly into the chat. **Lowest-friction
    entry; works without any other research-hub setup.** Treat each
-   line as one row in the matrix; fill cells from your own knowledge
-   + DOI lookup if the title is famous, otherwise mark `?` and ask
-   the user.
+   line as one row in the matrix. DOI lookup establishes metadata, not
+   findings. Remembered famous results are search leads only. Retrieve
+   actual source passages for claim/method/limitation cells; otherwise mark
+   `?` or clearly label the provisional screening source.
 
    Example minimal input:
    ```
@@ -55,14 +66,17 @@ In priority order (cheapest to most expensive):
 2. **Obsidian cluster notes** under `raw/<cluster>/*.md` — these have
    structured frontmatter (title, authors, year, doi) plus
    research-hub-generated `Summary / Key Findings / Methodology /
-   Relevance` sections. Read these first; they're cheaper than PDFs.
+   Relevance` sections. Read these first for screening; generated sections
+   are not independently verified source findings.
 3. **Zotero collection metadata** via local API (fast) — add child note
    contents only if Obsidian doesn't have the paper.
 4. **NotebookLM downloaded briefs** under `.research_hub/artifacts/` —
    if the user has already generated a brief on the cluster, mine it
-   for cross-paper comparisons.
-5. **Raw PDFs** — only as last resort, and only the abstract + first 2
-   pages + conclusion. PDFs are token-expensive.
+   for provisional comparison leads, with generated-summary labels.
+5. **Actual source text / PDFs** — read the abstract for screening, then
+   relevant methods/results/limitations, supplements or corrections for
+   load-bearing detail. Report actual sections read; a fixed first-pages
+   window does not constitute full-paper review.
 
 ## Output
 
@@ -73,7 +87,7 @@ default; rewrite the whole table only if the user explicitly says
 Markdown table columns (customize per request, but default is):
 
 ```markdown
-| Citation | Question | Method | Data / study area | Main claim | Evidence | Limitation | Relevance | Use as |
+| Citation | Question | Method | Data / study area | Main claim | Evidence / source level | Limitation | Relevance | Use as |
 |---|---|---|---|---|---|---|---|---|
 | Smith 2024 | How does adaptation affect flood risk? | mesa-based ABM, 10k agents | Houston synthetic | Adaptation cuts loss 18% | simulation | single basin, no validation | High — direct precedent | Lit review §2 |
 | Jones 2023 | Hydraulic coupling in flood ABMs | Coupled ABM-2D | Galveston | Coupling reduces RMSE 22% | empirical | calibration window narrow | Medium — methods | Methods §3 |
@@ -86,23 +100,34 @@ Column meanings:
 - **Question** — the paper's research question, one sentence.
 - **Method** — model class + key technical detail.
 - **Data / study area** — datasets used + geographic / temporal scope.
-- **Main claim** — single most-cited finding, one sentence.
-- **Evidence** — what kind: simulation / empirical / theoretical / review.
+- **Main claim** — decision-relevant finding at the strength the reviewed
+  source supports; `?` if unverified, never a remembered result alone.
+- **Evidence / source level** — study type plus actual material reviewed:
+  metadata / abstract / generated summary / located full-text excerpt /
+  unavailable. Include version, passage locator and audit reference for
+  load-bearing claims; do not confuse study type with evidence availability.
 - **Limitation** — most important caveat, one sentence.
 - **Relevance** — `High / Medium / Low` + one-phrase justification.
 - **Use as** — where in the user's manuscript or review this paper fits
-  (Lit review, Methods, Discussion, citation-only).
+  (Lit review, Methods, Discussion, citation-only). For review-selection
+  decisions, name core / closest / classic / method comparator / contrary
+  role, need IDs, omission effect, alternatives and applicability conditions
+  in a compact companion note rather than silently adding unwanted columns.
 
 ## Token-saving behavior
 
 - Read existing `.research/literature_matrix.md` first; only emit rows
   for papers not already covered or whose underlying note changed.
-- Prefer Obsidian frontmatter + the `Summary` section over re-reading
-  the PDF.
+- Prefer frontmatter and summaries for candidate screening. Reuse a prior
+  verified passage only if source bytes/version and dependent decisions are
+  unchanged; stale summaries cannot establish current support.
 - Use stable paper identifiers (DOI or arXiv ID) so future requests can
   reference rows by `Smith 2024 (10.1234/abcd)` instead of pasting
   paragraphs.
-- Cap PDF reads at 3 per session; tell the user if more are needed.
+- Declare a proportionate read/resource bound. If three reads are the
+  approved bound, a fourth load-bearing source remains explicitly unassessed
+  or is checked after an authorized continuation; the cap never certifies
+  complete verification. Count all assessed and unchecked claims.
 
 ## Output format for the user
 
@@ -113,7 +138,9 @@ After writing the matrix, print:
   Wrote/appended: .research/literature_matrix.md
   Papers in matrix: 12 (4 new this run)
   Skipped (already in matrix, unchanged): 8
-  Read full PDF for: 1 (Smith 2024 — no Obsidian note found)
+  Source sections read: 1 (Smith 2024 — Methods §3 / Results §4)
+  Claims checked / total: 3 / 4 (one load-bearing claim unassessed)
+  Completion: partial; fourth source remains unchecked
   Suggested next: review High-relevance rows in .research/literature_matrix.md
 ```
 
@@ -123,6 +150,7 @@ After writing the matrix, print:
 - Don't fabricate findings if a paper's note is sparse. Emit the row with
   `?` in unknown columns and a note: `(Obsidian note incomplete — run
   research-hub auto with --max-papers 1 to enrich, or fill manually)`.
-- Don't re-summarize already-summarized papers unless explicitly asked.
+- Don't re-summarize unchanged verified evidence unnecessarily. Re-check
+  claims when a publication version, correction or dependent decision changes.
 - Don't include columns the user didn't ask for. The default 9 columns
   are a starting point; trim if requested.

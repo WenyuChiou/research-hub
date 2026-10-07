@@ -100,11 +100,15 @@ def test_recover_chain_prefers_substantive_over_placeholder() -> None:
         "research_hub.search.abstract_recovery._recover_from_crossref",
         return_value=RecoveredAbstract(text="(no abstract)", source="crossref"),
     ), patch(
+        "research_hub.search.abstract_recovery._recover_from_unpaywall",
+        return_value=RecoveredAbstract(text="", source=""),
+    ) as unpaywall, patch(
         "research_hub.search.abstract_recovery._recover_from_openalex",
         return_value=RecoveredAbstract(text=substantive_text, source="openalex"),
     ):
         result = recover_abstract("10.test/abc")
 
+    unpaywall.assert_called_once_with("10.test/abc", timeout=10)
     assert result.source == "openalex"
     assert result.text == substantive_text
 

@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -69,7 +70,7 @@ class BiorxivBackend:
                 self._throttle()
                 url = f"{BIORXIV_BASE}/{server}/{date_from}/{date_to}/{cursor}"
                 try:
-                    response = requests.get(
+                    response = http_request("get",
                         url,
                         headers={"User-Agent": _USER_AGENT},
                         timeout=self.timeout,
@@ -80,7 +81,7 @@ class BiorxivBackend:
                 if response.status_code != 200:
                     break
                 try:
-                    payload = response.json()
+                    payload = read_json(response, collection=("collection",))
                 except ValueError:
                     break
                 collection = payload.get("collection") or []
@@ -107,7 +108,7 @@ class BiorxivBackend:
         for server in _SERVERS:
             self._throttle()
             try:
-                response = requests.get(
+                response = http_request("get",
                     f"{BIORXIV_BASE}/{server}/{cleaned}",
                     headers={"User-Agent": _USER_AGENT},
                     timeout=self.timeout,
@@ -117,7 +118,7 @@ class BiorxivBackend:
             if response.status_code != 200:
                 continue
             try:
-                payload = response.json()
+                payload = read_json(response, collection=("collection",))
             except ValueError:
                 continue
             collection = payload.get("collection") or []

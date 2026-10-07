@@ -8,6 +8,7 @@ import time
 from urllib.parse import quote
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -54,7 +55,7 @@ class CrossrefBackend:
     def _request(self, url: str, *, params: dict[str, str | int] | None = None) -> requests.Response | None:
         self._throttle()
         try:
-            return requests.get(
+            return http_request("get",
                 url,
                 params=params,
                 timeout=self.timeout,
@@ -94,7 +95,7 @@ class CrossrefBackend:
             return []
         try:
             response.raise_for_status()
-            payload = response.json()
+            payload = read_json(response, collection=("message", "items"))
         except (ValueError, requests.exceptions.RequestException) as exc:
             logger.debug("Crossref search failed: %s", exc)
             return []
@@ -107,7 +108,7 @@ class CrossrefBackend:
             return None
         try:
             response.raise_for_status()
-            payload = response.json()
+            payload = read_json(response)
         except (ValueError, requests.exceptions.RequestException) as exc:
             logger.debug("Crossref DOI lookup failed: %s", exc)
             return None

@@ -1,0 +1,5 @@
+SYNTHETIC EVIDENCE; not a real research dataset.
+Version: fixture-1
+Annual totals are available for 2001-2020.
+Monthly observations are not recorded.
+There are no individual-level or future outcome observations.

@@ -50,6 +50,13 @@ def _cmd_doctor(args, *, emit_json: bool = False) -> int:
     return print_doctor_report(results)
 
 def _cmd_ingest(args, *, emit_json: bool = False) -> int:
+    pipeline_output_path = None
+    output_before = None
+    if emit_json:
+        pipeline_output_path = Path(get_config().logs) / "pipeline_output.json"
+        if pipeline_output_path.exists():
+            stat = pipeline_output_path.stat()
+            output_before = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
     run_kwargs = {
         "dry_run": args.dry_run,
         "cluster_slug": args.cluster,
@@ -64,11 +71,13 @@ def _cmd_ingest(args, *, emit_json: bool = False) -> int:
     }
     if args.with_pdfs:
         run_kwargs["with_pdfs"] = True
+    if getattr(args, "papers_json", None) is not None:
+        run_kwargs["papers_json"] = args.papers_json
     with _stdout_to_stderr(emit_json):
         rc = run_pipeline(**run_kwargs)
 
     fit_check_labels = None
-    if rc == 0 and args.fit_check and not args.no_fit_check_auto_labels:
+    if rc == 0 and not args.dry_run and args.fit_check and not args.no_fit_check_auto_labels:
         from research_hub.paper import apply_fit_check_to_labels
 
         cfg = get_config()
@@ -76,12 +85,13 @@ def _cmd_ingest(args, *, emit_json: bool = False) -> int:
         if not emit_json:
             print(f"auto-labeled {len(fit_check_labels['tagged'])} paper(s) as deprecated from fit-check sidecar")
     if emit_json:
-        cfg = get_config()
-        pipeline_output_path = Path(cfg.logs) / "pipeline_output.json"
         pipeline_output = None
-        if pipeline_output_path.exists():
+        if rc == 0 and not args.dry_run and pipeline_output_path.exists():
             try:
-                pipeline_output = json.loads(pipeline_output_path.read_text(encoding="utf-8"))
+                stat = pipeline_output_path.stat()
+                output_after = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
+                if output_after != output_before:
+                    pipeline_output = json.loads(pipeline_output_path.read_text(encoding="utf-8"))
             except Exception:
                 pipeline_output = None
         _emit_cli_json(
@@ -89,6 +99,7 @@ def _cmd_ingest(args, *, emit_json: bool = False) -> int:
             rc,
             {
                 "cluster_slug": args.cluster,
+                "input_path": getattr(args, "papers_json", None),
                 "query": args.query,
                 "dry_run": args.dry_run,
                 "verify": args.verify,

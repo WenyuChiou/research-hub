@@ -24,10 +24,34 @@
 - Researcher-first bilingual README, Image 2 concept diagrams, actual browser
   captures, accessibility regressions and installed-wheel CI.
 
+- Optional `research-source-audit/1.0` sidecar at the existing evidence-packet
+  validator boundary: current packet/claim/source/verifier binding, explicit
+  publication version and source level, saved byte hashes and located quotes,
+  production source-fetch replay, and unassessed claim accounting. Strict
+  ResearchEvidencePacket v1 and packet-only callers remain unchanged. Local
+  binding passes do not certify semantic support or scientific adequacy.
+
+- Optional `--audit-output` on search, enrich, verify, references and cited-by:
+  versioned append-only attempt events, raw response/result references, exact
+  query variants and explicit backend failures. HTTP 404/429 and parse failures
+  remain distinct from successful empty results. See `docs/audit-output.md`.
+
+### Changed
+- Plugin `0.5.2` strengthens shared native research instructions across Hub,
+  triage, NotebookLM verification, gap-to-topic and workflow orchestration:
+  preserved user scope, needs-to-query mapping, literature roles, version-aware
+  provenance and honest bounded completion. Missing Hub runtime blocks Hub
+  actions while available native-only research can continue. Package version
+  remains `1.2.0`; no release or architecture topology change is implied.
+
 ### Fixed
 - Doctor no longer silently encrypts configuration during diagnosis; it reports
   explicit remediation and installed/source version drift.
 - Failed/null research results are filtered without discarding completed prose.
+- Fence abstract recovery explicitly in the enrichment resolver unit test;
+  swallowed network-fence warnings no longer stand in for a complete mock.
+- Reset audit context after an initial event-write failure and emit a
+  schema-valid, nonzero failure manifest instead of blocking later commands.
 
 ### Security
 - Loopback-only workspace server, origin/CSRF checks, bounded file inputs,

@@ -57,6 +57,7 @@ from research_hub import cli_pipeline as _cli_pipeline
 from research_hub import cli_vault as _cli_vault
 from research_hub import cli_paper as _cli_paper
 from research_hub import cli_maintenance as _cli_maintenance
+from research_hub.cli_source import _source_fetch, _source_validate
 from research_hub.cli_common import (
     _cli_deprecated_alias,
     _emit_cli_json,
@@ -578,6 +579,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Indent JSON output for human inspection",
     )
 
+    source_parser = subparsers.add_parser(
+        "source",
+        help="Acquire public source evidence without credentials",
+    )
+    source_sub = source_parser.add_subparsers(dest="source_command", required=True)
+    source_fetch_parser = source_sub.add_parser(
+        "fetch",
+        help="Fetch a public abstract, HTML article, or open-access PDF",
+    )
+    source_fetch_parser.add_argument("--doi", help="Expected DOI")
+    source_fetch_parser.add_argument("--url", help="Public http(s) source URL")
+    source_fetch_parser.add_argument("--title", default="", help="Expected source title")
+    source_fetch_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="New directory for immutable response and extraction evidence",
+    )
+    source_fetch_parser.add_argument("--json", action="store_true", help="Emit SourceFetchResult JSON")
+    source_validate_parser = source_sub.add_parser(
+        "validate",
+        help="Replay and validate a saved source-fetch evidence bundle",
+    )
+    source_validate_parser.add_argument("result", type=Path, help="source-fetch-result.json path")
+    source_validate_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        help="Expected evidence root (default: result file parent)",
+    )
+    source_validate_parser.add_argument("--json", action="store_true", help="Emit validation JSON")
+
     ask_parser = subparsers.add_parser(
         "ask",
         help="Ask a natural-language question about a cluster (task-level, v0.33+)",
@@ -904,6 +936,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     for parser_with_verify in (run_parser, ingest_parser):
+        parser_with_verify.add_argument(
+            "--input", dest="papers_json", default=None,
+            help="Read a research handoff JSON file (default: <vault>/papers_input.json)",
+        )
         parser_with_verify.add_argument(
             "--no-verify",
             dest="verify",
@@ -2452,6 +2488,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     paper_parser = subparsers.add_parser("paper", help="Paper curation operations")
     paper_sub = paper_parser.add_subparsers(dest="paper_command")
+    direction_check_p = paper_sub.add_parser(
+        "direction-check", help="Check local candidate/source bindings and planned resource totals (offline)",
+    )
+    direction_check_p.add_argument("--dossier", required=True, help="Path to topic_dossier.gaps.yml")
+    direction_check_p.add_argument("--review", required=True, help="Path to direction-review JSON")
+    direction_check_p.add_argument("--source-root", required=True, help="Explicit local root for evidence files")
+    direction_check_p.add_argument("--json", action="store_true", help="Emit a machine-readable report")
     lookup_doi_p = paper_sub.add_parser("lookup-doi", help="Look up and write DOI metadata from Crossref")
     lookup_doi_p.add_argument("slug", nargs="?", help="Paper slug (omit with --batch)")
     lookup_doi_p.add_argument("--cluster", help="Cluster slug for --batch mode")
@@ -2718,6 +2761,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     from research_hub.workspace.cli import add_workspace_parsers
     add_workspace_parsers(subparsers)
+    for audited_parser in (search_parser, enrich_parser, verify_parser, references_parser, citations_parser):
+        audited_parser.add_argument(
+            "--audit-output", metavar="DIRECTORY",
+            help="Write versioned attempt events and raw evidence to a NEW directory",
+        )
     return parser
 
 
@@ -2757,7 +2805,11 @@ def _main_dispatch(args, parser) -> int:
         serve_workspace(args.root, port=args.port, open_browser=not args.no_browser, human=human)
         return 0
 
-    exempt_commands = {"init", "setup", "doctor", "workflow", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context"}
+    # This explicit-input checker must not discover a vault or account config.
+    if args.command == "paper" and getattr(args, "paper_command", None) == "direction-check":
+        return _paper_command(args)
+
+    exempt_commands = {"init", "setup", "doctor", "workflow", "install", "examples", "where", "config", "ezproxy", "package-dxt", "describe", "context", "source"}
 
     if args.command not in exempt_commands and get_config is require_config.__globals__["get_config"]:
         require_config()
@@ -2777,8 +2829,10 @@ def _main_dispatch(args, parser) -> int:
         }
         if getattr(args, "with_pdfs", False):
             run_kwargs["with_pdfs"] = True
+        if getattr(args, "papers_json", None) is not None:
+            run_kwargs["papers_json"] = args.papers_json
         rc = run_pipeline(**run_kwargs)
-        if rc == 0 and getattr(args, "fit_check", False) and not getattr(args, "no_fit_check_auto_labels", False):
+        if rc == 0 and not getattr(args, "dry_run", False) and getattr(args, "fit_check", False) and not getattr(args, "no_fit_check_auto_labels", False):
             from research_hub.paper import apply_fit_check_to_labels
 
             cfg = get_config()
@@ -2915,6 +2969,15 @@ def _main_dispatch(args, parser) -> int:
 
         print(describe_manifest(filter=args.filter, pretty=args.pretty, parser=parser))
         return 0
+    if args.command == "source":
+        if args.source_command == "fetch":
+            if not args.doi and not args.url:
+                parser.error("source fetch requires at least one of --doi or --url")
+            return _source_fetch(args)
+        if args.source_command == "validate":
+            return _source_validate(args)
+        parser.error("source requires a subcommand")
+        return 2
     if args.command == "ask":
         cfg = require_config()
         from research_hub.workflows import ask_cluster as _ask
@@ -3783,7 +3846,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        return _main_dispatch(args, parser)
+        from research_hub.audit import audit_command
+
+        with audit_command(getattr(args, "audit_output", None), raw_argv) as audit:
+            result = _main_dispatch(args, parser)
+            audit.exit_code = result
+            return result
     except ResearchHubError as exc:
         if getattr(args, "json", False):
             print(

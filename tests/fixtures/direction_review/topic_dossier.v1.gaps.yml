@@ -1,0 +1,17 @@
+dossier: Synthetic annual and monthly comparison
+generated: '2026-10-03'
+gaps:
+- id: G1
+  candidate_version: 1
+  name: Annual comparison
+  statement: Compare annual differences in synthetic totals.
+  verdict: go
+  feasibility: feasible-with-effort
+  open_questions:
+  - Will the new method improve on a matched-information baseline?
+- id: G2
+  candidate_version: 1
+  name: Monthly comparison
+  statement: Compare monthly changes in synthetic totals.
+  verdict: conditional-go
+  feasibility: needs-scope-cut

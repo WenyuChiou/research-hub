@@ -1,0 +1,5 @@
+SYNTHETIC NOTE; not original full text or empirical findings.
+Version: fixture-note-1
+A local tabulation tool is available.
+Validation compares annual differences on held-out years using the same information.
+Method improvement over baseline has not been measured.

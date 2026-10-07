@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 import requests
+from research_hub.audit import http_request, read_json
 
 from research_hub.search.base import SearchResult
 from research_hub._useragent import user_agent
@@ -62,7 +63,7 @@ class KciBackend:
         if year_to is not None:
             params["endYear"] = year_to
         try:
-            response = requests.get(
+            response = http_request("get",
                 KCI_BASE,
                 params=params,
                 headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
@@ -74,7 +75,7 @@ class KciBackend:
         if response.status_code != 200:
             return []
         try:
-            payload = response.json()
+            payload = read_json(response, collections=(("articles",), ("items",)))
         except ValueError:
             return []
         articles = payload.get("articles") or payload.get("items") or []

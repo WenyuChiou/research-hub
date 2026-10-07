@@ -1,6 +1,6 @@
 # NotebookLM brief verification report template
 
-In-conversation report. The skill writes this to chat (no file by default). If the brief is well-attributed and bundle coverage is complete, the report is short — that's a feature, not a bug.
+In-conversation report. The skill writes this to chat (no file by default). If reviewed source passages support the brief within the declared scope, the report is short — that's a feature, not a bug.
 
 ```
 ## NotebookLM brief verification report
@@ -9,11 +9,13 @@ In-conversation report. The skill writes this to chat (no file by default). If t
 **Bundle**: <cluster_slug> (<N> sources)
 
 ### Source coverage
-- Cited in brief: <X> / <N>
-- Missed sources: <list of citation keys not mentioned>
+- Mentioned in brief: <X> / <N> (mentions are screening signals)
+- Not mentioned: <citation keys; assess whether omission matters>
 
-### Unsupported claims
-- "<claim text>" (line <N> of brief) — no clear source attribution
+### Attribution and support flags
+- "<claim text>" (line <N> of brief) — unattributed; source support unassessed
+- "<claim text>" — source passage checked; <unsupported / partial / unverifiable>
+  with version, actual source level, locator and reason
 - ...
 
 ### Cross-source contradictions
@@ -24,7 +26,10 @@ In-conversation report. The skill writes this to chat (no file by default). If t
 - "Studies show..." — actually one paper, Smith 2024
 - ...
 
-### Spot-checked claims
+### Source-checked claims
+- Assessed / total claims: <X> / <N>; empty denominator: unavailable
+- Unassessed load-bearing claims: <list>
+- Version/access/source-level limits: <list>
 - "<load-bearing claim>" — reviewed Smith 2024 §3, **supported**
 - "<surprising claim>" — reviewed Jones 2023 abstract, **partially supported** (specific to coastal basins, not generalizable)
 
@@ -33,6 +38,7 @@ In-conversation report. The skill writes this to chat (no file by default). If t
 - "Compare Smith 2024's claim about <Y> with Jones 2023's findings."
 
 ### Verdict
+- Completion: <partial / bounded-complete for the declared scope + rationale>
 - Reliable for: <broad takeaways, comparison framing>
 - Use with caution for: <specific numbers, generalizations>
 - Do not cite without spot-check: <list>

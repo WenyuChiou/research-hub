@@ -1,0 +1,4 @@
+SYNTHETIC PERMISSION RECORD; not a real license grant.
+Version: fixture-permission-1
+Permission for redistribution has not yet been established.
+Next check: ask the synthetic data owner about redistribution only.
