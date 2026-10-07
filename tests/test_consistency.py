@@ -14,6 +14,10 @@ from tests._mcp_helpers import _list_mcp_tool_names
 
 
 EXPECTED_MAPPINGS = {
+    "workspace_project": "project",
+    "workspace_manuscript": "manuscript",
+    "workspace_task": "task",
+    "workspace_action": "action",
     "search_papers": "search",
     "web_search": "websearch",
     "enrich_candidates": "enrich",

@@ -449,8 +449,9 @@ def test_cli_json_adapter_normalizes_expected_io_errors(monkeypatch, capsys):
 
 def test_evidence_agent_split_filters_failures_and_rejects_unsupported_claim():
     assert ROLE_PROFILES["no_tool_synthesizer"].tools == ()
-    results = filter_agent_results([None, {"ok": False}, {"ok": True, "evidence_ref": "research:1"}])
+    results = filter_agent_results([None, {"ok": False}, {"status": "failed", "prose": "partial"}, {"status": "cancelled"}, {"ok": True, "evidence_ref": "research:1"}])
     assert results == [{"ok": True, "evidence_ref": "research:1"}]
+    assert filter_agent_results([{"status": "completed", "prose": "complete research", "structured_output": None}]) == [{"status": "completed", "prose": "complete research", "structured_output": None}]
     synthesis = synthesize_evidence_packet(
         query="Does the intervention improve retention?",
         researcher_results=results,

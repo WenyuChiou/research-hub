@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "checked_on": "2026-09-08",
+  "semantic_source": "workspace-visuals.json",
+  "concept_generator": "Native Image 2 tool; no generated UI screenshots",
+  "visual_review": "Parent inspected conceptual labels, node order, forward/revision arrows, local human gate and disconnected legacy-tool boundary. UI worker inspected both real Overview captures.",
+  "reproduction": "Regenerate concepts from workspace-visuals.json and the accepted images as style references; check node/edge parity before replacing. Recreate UI with scripts/workspace_browser_smoke.py against actual bundled assets.",
+  "assets": {
+    "workspace-lifecycle.en.png": {"kind":"concept", "sha256":"a7d6448573364b76329789b754b68d691b6794f73590d5cf7a964056cc10ad03"},
+    "workspace-lifecycle.zh-TW.png": {"kind":"concept", "sha256":"cdd237987a22e28955c53f95cd853133baba5e43c67745de33d24490bf56d12a"},
+    "workspace-writing.en.png": {"kind":"concept", "sha256":"dd3c2bd9847b245cb48eed217e80e15d4d8cf5d35fa1471351cdd799c0330b8b"},
+    "workspace-writing.zh-TW.png": {"kind":"concept", "sha256":"7a291f235a2d3bc1e5e77fc1b5c486e84172900df9c666cdd794a627daf77f63"},
+    "workspace-technical.en.png": {"kind":"concept", "sha256":"2bf7de43fafd94dc91d235f1710771f6967d4731280e862bb11b4bb96b96c8f4"},
+    "workspace-technical.zh-TW.png": {"kind":"concept", "sha256":"faa753bbb374e1e6b64007610983d676ba3c37e98b6bba4d67dcefc7bac5547a"},
+    "workspace-ui.en.png": {"kind":"actual-chromium-capture", "sha256":"5cb3ab5112744c81302592b1f2ca711b366bcb0130cfc6a0772d90276adf359c"},
+    "workspace-ui.zh-TW.png": {"kind":"actual-chromium-capture", "sha256":"07af179b712517c8cbe0bb98ddbd21e4bc1ba1e0c11b283dd4c244ba846f752b"}
+  }
+}

@@ -13,6 +13,17 @@
 ## [Unreleased]
 
 ### Added
+- Opt-in researcher workspace (`serve --workspace`): six bilingual React pages,
+  bundled wheel assets, account-free empirical/review examples, shared
+  project/manuscript/task/action services across CLI, MCP and REST.
+- Public writing-bundle adapter preview, hash-bound proposal tasks, persistent
+  SQLite receipts, interactive human decisions, and separately approved local
+  proposal ZIPs. Originals stay in Word, LaTeX or Markdown editors.
+- Capability-checked no-tool Codex proposals and portable handoffs, retained
+  output, cancellation, explicit recovery, revision receipts and replay tests.
+- Researcher-first bilingual README, Image 2 concept diagrams, actual browser
+  captures, accessibility regressions and installed-wheel CI.
+
 - Optional `research-source-audit/1.0` sidecar at the existing evidence-packet
   validator boundary: current packet/claim/source/verifier binding, explicit
   publication version and source level, saved byte hashes and located quotes,
@@ -34,10 +45,28 @@
   remains `1.2.0`; no release or architecture topology change is implied.
 
 ### Fixed
+- Doctor no longer silently encrypts configuration during diagnosis; it reports
+  explicit remediation and installed/source version drift.
+- Failed/null research results are filtered without discarding completed prose.
 - Fence abstract recovery explicitly in the enrichment resolver unit test;
   swallowed network-fence warnings no longer stand in for a complete mock.
 - Reset audit context after an initial event-write failure and emit a
   schema-valid, nonzero failure manifest instead of blocking later commands.
+
+### Security
+- Loopback-only workspace server, origin/CSRF checks, bounded file inputs,
+  fail-closed configured policy, exact candidate acceptance and duplicate-write
+  prevention. Child lifetime is guarded without sandbox breakaway.
+- Existing direct-write tools remain outside workspace approval coverage. Local
+  operator assertions are not shared-host identity or publication authorization.
+
+### Migration
+- Preview is additive and not included in PyPI 1.2.0. No automatic migration of
+  existing vaults or workflow state. See [UPGRADE.md](UPGRADE.md) before adoption.
+- The optional writing adapter is pinned to merged public producer commit
+  `bc15e29e976cd6ade3484aeaa4f1230444697f8a`, with reproducible bundle and
+  manifest verification. It is explicitly configured, not a permanent runtime
+  dependency. Hub preview installation uses an immutable tested snapshot.
 
 ## [1.2.0] - 2026-08-31
 
