@@ -941,6 +941,88 @@ def _pdf_observed_title(
     return "", None
 
 
+_PDF_BODY_HEADING = re.compile(
+    r"(?:\d+(?:\.\d+)*\.?[ \t]+)?"
+    r"(introduction|methods?|results?|discussion|conclusions?)[ \t]*[:.]?",
+    re.I,
+)
+
+
+def _pdf_column_heading_starts(page: Any, text: str) -> list[int]:
+    """Locate isolated headings merged with a separate column's prose."""
+    if not _PDF_BODY_HEADING.search(text):
+        return []
+    rows: list[list[dict[str, Any]]] = []
+    for word in sorted(page.extract_words(), key=lambda w: (w["top"], w["x0"])):
+        if not rows or abs(word["top"] - rows[-1][0]["top"]) > 3:
+            rows.append([])
+        rows[-1].append(word)
+    lines_by_text: dict[str, list[re.Match[str]]] = {}
+    for line in re.finditer(r"[^\r\n]+", text):
+        lines_by_text.setdefault(" ".join(line.group().split()), []).append(line)
+    starts: list[int] = []
+    for row_index, row in enumerate(rows):
+        row.sort(key=lambda w: w["x0"])
+        parts: list[list[dict[str, Any]]] = [[]]
+        for word in row:
+            if parts[-1] and word["x0"] - parts[-1][-1]["x1"] >= 24:
+                parts.append([])
+            parts[-1].append(word)
+        if len(parts) != 2:
+            continue
+        heading_parts = [
+            (index, part)
+            for index, part in enumerate(parts)
+            if _PDF_BODY_HEADING.fullmatch(" ".join(w["text"] for w in part))
+        ]
+        if not heading_parts:
+            continue
+        row_text = " ".join(word["text"] for word in row)
+        matching_lines = lines_by_text.get(row_text, [])
+        if len(matching_lines) != 1:
+            continue
+        for part_index, part in heading_parts:
+            # Require an adjacent paragraph in this column. A distant footer,
+            # an isolated label, or prose after the next section is not proof.
+            low = part[0]["x0"] - 3 if part_index == 0 else parts[0][-1]["x1"] + 12
+            high = parts[1][0]["x0"] - 12 if part_index == 0 else page.width
+            has_body = False
+            previous_top = part[0]["top"]
+            max_line_gap = 2.5 * max(w["bottom"] - w["top"] for w in part)
+            paragraph_rows = 0
+            for later in rows[row_index + 1 :]:
+                if later[0]["top"] - previous_top > max_line_gap:
+                    break
+                column_words = sorted(
+                    (w for w in later if w["x0"] >= low and w["x1"] <= high),
+                    key=lambda w: w["x0"],
+                )
+                if not column_words or abs(column_words[0]["x0"] - part[0]["x0"]) > 30:
+                    continue
+                if any(w["bottom"] > page.height * 0.9 for w in column_words):
+                    break
+                body_line = " ".join(w["text"] for w in column_words)
+                if _PDF_BODY_HEADING.fullmatch(body_line) or re.match(
+                    r"\d+(?:\.\d+)*\.?[ \t]+[^\W\d_]", body_line
+                ):
+                    break
+                if not re.search(r"[^\W\d_]", body_line):
+                    break
+                previous_top = column_words[0]["top"]
+                paragraph_rows += 1
+                if paragraph_rows >= 2:
+                    has_body = True
+                    break
+            if has_body:
+                line = matching_lines[0]
+                fragment = re.search(
+                    r"[ \t]+".join(re.escape(w["text"]) for w in part), line.group()
+                )
+                if fragment is not None:
+                    starts.append(line.start() + fragment.start())
+    return starts
+
+
 def _pdf_abstract_body_unconfirmed(text: str, headings: list[re.Match[str]]) -> bool:
     """Page count and length do not establish a body outside an abstract."""
     abstract = re.search(r"(?im)^\s*abstract\b", text)
@@ -986,6 +1068,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
             "PDF extraction requires pdfplumber; install research-hub-pipeline[import]"
         ) from exc
     pages: list[str] = []
+    column_heading_starts: list[list[int]] = []
     metadata: dict[str, Any] = {}
     default_media_box_pages: list[int] = []
     try:
@@ -998,6 +1081,9 @@ def _extract_pdf(data: bytes) -> _Extracted:
             title = str(metadata.get("title", "") or "").strip()
             for page in pdf.pages:
                 pages.append((page.extract_text() or "").strip())
+                column_heading_starts.append(
+                    _pdf_column_heading_starts(page, pages[-1])
+                )
         finally:
             pdf_buffer.close()
     except TypeError as exc:
@@ -1008,6 +1094,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
             from pdfplumber.page import Page, resolve_all
 
             pages = []
+            column_heading_starts = []
             pdf_buffer = io.BytesIO(data)
             pdf = pdfplumber.open(pdf_buffer)
             recovered_pages = []
@@ -1027,6 +1114,9 @@ def _extract_pdf(data: bytes) -> _Extracted:
                     page = Page(pdf, page_obj, page_number, initial_doctop=doctop)
                     recovered_pages.append(page)
                     pages.append((page.extract_text() or "").strip())
+                    column_heading_starts.append(
+                        _pdf_column_heading_starts(page, pages[-1])
+                    )
                     doctop += page.height
             finally:
                 for recovered_page in recovered_pages:
@@ -1117,6 +1207,13 @@ def _extract_pdf(data: bytes) -> _Extracted:
             combined,
         )
     )
+    for locator in locators:
+        if locator["type"] != "pdf-page":
+            continue
+        for offset in column_heading_starts[locator["value"] - 1]:
+            match = _PDF_BODY_HEADING.match(combined, locator["start"] + offset)
+            if match is not None:
+                headings.append(match)
     section_kinds = {match.group(1).lower() for match in headings}
     if _pdf_abstract_body_unconfirmed(combined, headings):
         # Preserve all readable text and locators. This is a limit on confirmed
