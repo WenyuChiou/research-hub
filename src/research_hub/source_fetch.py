@@ -29,6 +29,7 @@ from research_hub.source_fetch_extraction import (
     _extract_text,
     _identity,
     _is_text_content_type,
+    _source_identity,
 )
 from research_hub.utils.doi import extract_arxiv_id, normalize_doi
 
@@ -413,12 +414,7 @@ def _selection_key(
 ) -> tuple[int, int]:
     """Rank source identity before evidence richness; ties keep the first source."""
     extracted = selected[0]
-    identity_status = _identity(
-        expected_doi,
-        expected_title,
-        extracted.observed_doi,
-        extracted.observed_title,
-    )
+    identity_status = _source_identity(expected_doi, expected_title, extracted)
     return (
         _IDENTITY_PRIORITY[identity_status],
         _EVIDENCE_PRIORITY[extracted.evidence_level],
@@ -650,12 +646,7 @@ def fetch_public_source(
     retrieved_at = _now()
     if best is not None:
         extracted, selected, source_url = best
-        identity_status = _identity(
-            normalized_doi,
-            title,
-            extracted.observed_doi,
-            extracted.observed_title,
-        )
+        identity_status = _source_identity(normalized_doi, title, extracted)
         text_bytes = extracted.text.encode("utf-8")
         text_path = _artifact_path(output_dir, "extracted", "source.txt")
         extracted_path, extracted_hash = _write_once(text_path, text_bytes)

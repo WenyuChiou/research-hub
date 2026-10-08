@@ -5,10 +5,17 @@ from io import BytesIO
 
 import pytest
 
-from research_hub.source_fetch_extraction import _extract_html, _extract_pdf
+from research_hub.source_fetch_extraction import (
+    _extract_html,
+    _extract_pdf,
+    _identity,
+    _pdf_observed_title,
+)
 
 
-def _synthetic_pdf(pages: list[tuple[bool, str]]) -> bytes:
+def _synthetic_pdf(
+    pages: list[tuple[bool, str]], *, metadata_title: str | None = None
+) -> bytes:
     """Build a small PDF without relying on private or generated fixtures."""
     font_id = 3 + len(pages) * 2
     objects: list[bytes] = [
@@ -40,6 +47,14 @@ def _synthetic_pdf(pages: list[tuple[bool, str]]) -> bytes:
             + b"\nendstream"
         )
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    info_id = len(objects) + 1
+    if metadata_title is not None:
+        escaped_title = (
+            metadata_title.replace("\\", "\\\\")
+            .replace("(", "\\(")
+            .replace(")", "\\)")
+        )
+        objects.append(f"<< /Title ({escaped_title}) >>".encode())
     result = bytearray(b"%PDF-1.4\n")
     offsets = [0]
     for object_id, body in enumerate(objects, start=1):
@@ -50,8 +65,10 @@ def _synthetic_pdf(pages: list[tuple[bool, str]]) -> bytes:
     result.extend(b"0000000000 65535 f \n")
     for offset in offsets[1:]:
         result.extend(f"{offset:010d} 00000 n \n".encode())
+    info = f" /Info {info_id} 0 R" if metadata_title is not None else ""
     result.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R{info} >>\n"
+        f"startxref\n{xref}\n%%EOF\n".encode()
     )
     return bytes(result)
 
@@ -91,6 +108,115 @@ def test_normal_pdf_keeps_page_text_and_locator_shape():
         {"type": "pdf-page", "value": 1, "start": 0, "end": 11}
     ]
     assert "geometry_default_pages" not in extracted.diagnostics
+
+
+@pytest.mark.parametrize("has_media_box", [True, False])
+def test_filename_metadata_uses_located_first_page_title_proposal(has_media_box):
+    title = "Observed longitudinal analysis from the 1999 version"
+    extracted = _extract_pdf(
+        _synthetic_pdf(
+            [(has_media_box, title), (True, "Methods and results are reported here.")],
+            metadata_title="lcbsema5c.dvi",
+        )
+    )
+
+    assert extracted.observed_title == title
+    locator = next(
+        item for item in extracted.locators if item["type"] == "pdf-observed-title"
+    )
+    assert locator == {
+        "type": "pdf-observed-title",
+        "value": title,
+        "quotation": title,
+        "page": 1,
+        "start": 0,
+        "end": len(title),
+        "provenance": "conservative-first-page-line",
+        "proposal": True,
+        "rejected_metadata_title": "lcbsema5c.dvi",
+        "rejected_metadata_title_status": "filename-like",
+    }
+
+
+def test_missing_metadata_uses_first_page_title_as_a_proposal():
+    title = "Observed cohort evidence from the distinct 1999 version"
+    extracted = _extract_pdf(_synthetic_pdf([(True, title)]))
+
+    assert extracted.observed_title == title
+    assert extracted.observed_title != "Expected cohort evidence from the 2002 version"
+    assert extracted.diagnostics["observed_title"]["proposal"] is True
+    assert extracted.diagnostics["observed_title"]["rejected_metadata_title_status"] == (
+        "missing"
+    )
+
+
+def test_meaningful_conflicting_metadata_title_is_retained_for_identity_checks():
+    metadata_title = "Meaningful metadata title for the 2002 publication"
+    extracted = _extract_pdf(
+        _synthetic_pdf(
+            [(True, "Different readable heading from the 1999 manuscript")],
+            metadata_title=metadata_title,
+        )
+    )
+
+    assert extracted.observed_title == metadata_title
+    assert not any(
+        item["type"] == "pdf-observed-title" for item in extracted.locators
+    )
+    assert (
+        _identity(
+            "",
+            "Completely different expected work from the 1999 archive",
+            "",
+            extracted.observed_title,
+        )
+        == "mismatch"
+    )
+
+
+def test_no_readable_first_page_title_keeps_observed_title_empty():
+    extracted = _extract_pdf(_synthetic_pdf([(True, "Abstract")]))
+
+    assert extracted.observed_title == ""
+    assert not any(
+        item["type"] == "pdf-observed-title" for item in extracted.locators
+    )
+
+
+def test_unusable_filename_without_readable_title_remains_unresolved():
+    extracted = _extract_pdf(
+        _synthetic_pdf([(True, "Abstract")], metadata_title="internal.dvi")
+    )
+    assert extracted.observed_title == ""
+    assert extracted.diagnostics["observed_title"] == {
+        "value": "",
+        "proposal": False,
+        "status": "unresolved-no-readable-title",
+        "rejected_metadata_title": "internal.dvi",
+        "rejected_metadata_title_status": "filename-like",
+    }
+    assert not any(
+        item["type"] == "pdf-observed-title" for item in extracted.locators
+    )
+
+
+def test_title_proposal_retains_verbatim_spacing_for_its_locator():
+    title = "Observed  cohort   evidence from the source version"
+    observed, locator = _pdf_observed_title("work.pdf", title)
+    assert locator is not None
+    assert locator["quotation"] == title
+    assert title[locator["start"] : locator["end"]] == title
+    assert observed == " ".join(title.split())
+
+
+def test_title_proposal_does_not_accept_a_line_cut_off_at_scan_boundary():
+    partial_line = "Observed title continues well beyond the extraction boundary"
+    first_page = (" " * 1549) + "\n" + partial_line
+
+    observed, locator = _pdf_observed_title("work.pdf", first_page)
+
+    assert observed == ""
+    assert locator is None
 
 
 @pytest.mark.parametrize(

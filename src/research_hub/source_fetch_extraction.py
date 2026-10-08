@@ -891,6 +891,56 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
     raise ValueError("HTML response did not contain extractable scholarly content")
 
 
+_DOCUMENT_FILENAME_TITLE = re.compile(
+    r"^[^\s<>:\"/\\|?*]+\.(?:pdf|dvi|ps|eps|tex|doc|docx|rtf|odt)$", re.I
+)
+_NON_TITLE_FIRST_PAGE_LINE = re.compile(
+    r"^(?:abstract|keywords?|introduction|doi\b|https?://|arxiv\b|preprint\b)", re.I
+)
+
+
+def _pdf_observed_title(
+    metadata_title: str, first_page_text: str
+) -> tuple[str, dict[str, Any] | None]:
+    """Return metadata title or a conservative, located first-page proposal."""
+
+    metadata_title = metadata_title.strip()
+    if metadata_title and not _DOCUMENT_FILENAME_TITLE.fullmatch(metadata_title):
+        return metadata_title, None
+
+    bounded_text = first_page_text[:1600]
+    for match in re.finditer(r"[^\r\n]+", bounded_text):
+        if (
+            match.end() == len(bounded_text)
+            and len(first_page_text) > len(bounded_text)
+            and first_page_text[len(bounded_text)] not in "\r\n"
+        ):
+            continue
+        candidate = " ".join(match.group().split())
+        words = re.findall(r"[^\W\d_]+(?:[-'][^\W\d_]+)*", candidate)
+        if (
+            15 <= len(candidate) <= 240
+            and 4 <= len(words) <= 30
+            and sum(char.isalpha() for char in candidate) >= 12
+            and not _NON_TITLE_FIRST_PAGE_LINE.match(candidate)
+            and "@" not in candidate
+        ):
+            status = "filename-like" if metadata_title else "missing"
+            return candidate, {
+                "type": "pdf-observed-title",
+                "value": candidate,
+                "quotation": match.group(),
+                "page": 1,
+                "start": match.start(),
+                "end": match.end(),
+                "provenance": "conservative-first-page-line",
+                "proposal": True,
+                "rejected_metadata_title": metadata_title,
+                "rejected_metadata_title_status": status,
+            }
+    return "", None
+
+
 def _extract_pdf(data: bytes) -> _Extracted:
     if not data.startswith(b"%PDF-"):
         raise ValueError("response labeled as PDF does not have a PDF signature")
@@ -969,6 +1019,10 @@ def _extract_pdf(data: bytes) -> _Extracted:
         end = start + len(page_text)
         locators.append({"type": "pdf-page", "value": page, "start": start, "end": end})
         cursor = end + 2
+    raw_metadata_title = title
+    title, title_locator = _pdf_observed_title(title, pages[0] if pages else "")
+    if title_locator is not None:
+        locators.append(title_locator)
     diagnostics = {
         "pages_total": len(pages),
         "readable_pages": [page for page, _text in nonempty],
@@ -997,6 +1051,25 @@ def _extract_pdf(data: bytes) -> _Extracted:
                 **diagnostics,
             }
         )
+    if title_locator is not None:
+        diagnostics["observed_title"] = {
+            "value": title,
+            "page": 1,
+            "provenance": title_locator["provenance"],
+            "proposal": True,
+            "rejected_metadata_title": title_locator["rejected_metadata_title"],
+            "rejected_metadata_title_status": title_locator[
+                "rejected_metadata_title_status"
+            ],
+        }
+    elif raw_metadata_title and _DOCUMENT_FILENAME_TITLE.fullmatch(raw_metadata_title):
+        diagnostics["observed_title"] = {
+            "value": "",
+            "proposal": False,
+            "status": "unresolved-no-readable-title",
+            "rejected_metadata_title": raw_metadata_title,
+            "rejected_metadata_title_status": "filename-like",
+        }
     metadata_doi = ""
     for key in ("doi", "dc:identifier", "identifier"):
         value = normalize_doi(str(metadata.get(key, "") or ""))
@@ -1118,6 +1191,26 @@ def _identity(
     return "unverified"
 
 
+def _source_identity(
+    expected_doi: str, expected_title: str, extracted: _Extracted
+) -> IdentityStatus:
+    """Evaluate authoritative identity without promoting a title proposal."""
+
+    title_diagnostics = extracted.diagnostics.get("observed_title")
+    observed_title = extracted.observed_title
+    if (
+        isinstance(title_diagnostics, dict)
+        and title_diagnostics.get("proposal") is True
+    ):
+        observed_title = ""
+    return _identity(
+        expected_doi,
+        expected_title,
+        extracted.observed_doi,
+        observed_title,
+    )
+
+
 __all__ = [
     "EvidenceLevel",
     "IdentityStatus",
@@ -1128,4 +1221,5 @@ __all__ = [
     "_extract_text",
     "_identity",
     "_is_text_content_type",
+    "_source_identity",
 ]
