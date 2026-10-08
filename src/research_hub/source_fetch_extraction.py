@@ -941,6 +941,40 @@ def _pdf_observed_title(
     return "", None
 
 
+def _pdf_abstract_body_unconfirmed(text: str, headings: list[re.Match[str]]) -> bool:
+    """Page count and length do not establish a body outside an abstract."""
+    abstract = re.search(r"(?im)^\s*abstract\b", text)
+    if abstract is None:
+        return False
+    after_abstract = [m for m in headings if m.start() >= abstract.end()]
+    heading_lines = {m.group(0).strip() for m in headings}
+
+    def has_body_text_after(heading: re.Match[str]) -> bool:
+        return any(
+            re.search(r"[^\W\d_]", line)
+            for line in text[heading.end() :].splitlines()
+            if line.strip() not in heading_lines
+        )
+
+    if any(
+        m.group(1).lower() == "introduction"
+        and re.match(r"\s*\d", m.group(0))
+        and has_body_text_after(m)
+        for m in after_abstract
+    ):
+        return False
+    # Unnumbered headings can be subheadings of a structured abstract.
+    # Keywords supply an observed end boundary before such a body section.
+    keywords = re.search(r"(?im)^\s*key\s*words?\s*:", text[abstract.end() :])
+    if keywords is not None:
+        boundary = abstract.end() + keywords.end()
+        if any(
+            m.start() >= boundary and has_body_text_after(m) for m in after_abstract
+        ):
+            return False
+    return True
+
+
 def _extract_pdf(data: bytes) -> _Extracted:
     if not data.startswith(b"%PDF-"):
         raise ValueError("response labeled as PDF does not have a PDF signature")
@@ -1076,19 +1110,19 @@ def _extract_pdf(data: bytes) -> _Extracted:
         if re.fullmatch(r"10\.\d{4,9}/\S+", value, flags=re.I):
             metadata_doi = value
             break
-    section_kinds = {
-        match.group(1).lower()
-        for match in re.finditer(
-            r"(?im)^\s*(introduction|methods?|results?|discussion|conclusions?)\b",
+    headings = list(
+        re.finditer(
+            r"(?im)^\s*(?:\d+(?:\.\d+)*\.?\s+)?"
+            r"(introduction|methods?|results?|discussion|conclusions?)\s*[:.]?\s*$",
             combined,
         )
-    }
-    abstract_only = (
-        len(nonempty) <= 2
-        and bool(re.search(r"(?im)^\s*abstract\b", combined))
-        and len(combined) < 5000
     )
-    if abstract_only:
+    section_kinds = {match.group(1).lower() for match in headings}
+    if _pdf_abstract_body_unconfirmed(combined, headings):
+        # Preserve all readable text and locators. This is a limit on confirmed
+        # evidence, not an assertion that the document contains no other text.
+        diagnostics["full_body_status"] = "unconfirmed"
+        diagnostics["full_body_reason"] = "abstract-without-observed-body-boundary"
         evidence_level: EvidenceLevel = "abstract"
     elif (
         len(nonempty) >= 3
@@ -1096,6 +1130,12 @@ def _extract_pdf(data: bytes) -> _Extracted:
         or len(combined) >= 5000
     ):
         evidence_level = "full-text"
+    elif re.search(r"(?im)^\s*abstract\b", combined):
+        diagnostics["full_body_status"] = "unconfirmed"
+        diagnostics["full_body_reason"] = (
+            "body-boundary-insufficient-full-text-evidence"
+        )
+        evidence_level = "abstract"
     else:
         evidence_level = "metadata"
     return _Extracted(

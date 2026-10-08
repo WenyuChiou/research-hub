@@ -14,7 +14,10 @@ from research_hub.source_fetch_extraction import (
 
 
 def _synthetic_pdf(
-    pages: list[tuple[bool, str]], *, metadata_title: str | None = None
+    pages: list[tuple[bool, str]],
+    *,
+    metadata_title: str | None = None,
+    multiline: bool = False,
 ) -> bytes:
     """Build a small PDF without relying on private or generated fixtures."""
     font_id = 3 + len(pages) * 2
@@ -39,6 +42,9 @@ def _synthetic_pdf(
         )
         escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
         stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode() if text else b""
+        if multiline and text:
+            lines = " T* ".join(f"({line}) Tj" for line in escaped.splitlines())
+            stream = f"BT /F1 12 Tf 16 TL 72 720 Td {lines} ET".encode()
         objects.append(
             b"<< /Length "
             + str(len(stream)).encode()
@@ -50,9 +56,7 @@ def _synthetic_pdf(
     info_id = len(objects) + 1
     if metadata_title is not None:
         escaped_title = (
-            metadata_title.replace("\\", "\\\\")
-            .replace("(", "\\(")
-            .replace(")", "\\)")
+            metadata_title.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
         )
         objects.append(f"<< /Title ({escaped_title}) >>".encode())
     result = bytearray(b"%PDF-1.4\n")
@@ -71,6 +75,87 @@ def _synthetic_pdf(
         f"startxref\n{xref}\n%%EOF\n".encode()
     )
     return bytes(result)
+
+
+@pytest.mark.parametrize(
+    "page_texts",
+    [
+        ["Abstract neutral summary", "Only the summary continues", "Summary ends"],
+        ["Abstract " + "Only this synthetic summary is available. " * 180],
+        [
+            "Abstract neutral summary",
+            "Methods in this abstract describe only an outline.",
+            "Results in this abstract remain an outline.",
+        ],
+        ["Abstract neutral summary", "Methods", "Results", "Conclusions"],
+        ["Abstract neutral summary", "Introduction", "Methods", "Results"],
+        ["Abstract neutral summary", "Introduction to the summary is prose.", "End"],
+        ["Abstract neutral summary", "Summary continues", "1. Introduction"],
+        ["Abstract neutral summary", "Keywords: fixture", "Methods"],
+    ],
+)
+def test_pdf_abstract_shape_cannot_promote_page_count_or_length(page_texts):
+    extracted = _extract_pdf(_synthetic_pdf([(True, text) for text in page_texts]))
+    assert extracted.evidence_level == "abstract"
+    assert extracted.diagnostics["full_body_status"] == "unconfirmed"
+    assert extracted.diagnostics["full_body_reason"] == (
+        "abstract-without-observed-body-boundary"
+    )
+    assert extracted.diagnostics["pages_total"] == len(page_texts)
+    assert extracted.diagnostics["omitted_pages"] == []
+    assert len([loc for loc in extracted.locators if loc["type"] == "pdf-page"]) == len(
+        page_texts
+    )
+    assert extracted.text
+
+
+@pytest.mark.parametrize(
+    "page_texts",
+    [
+        ["Abstract neutral summary", "1. Introduction", "Body text outside abstract"],
+        [
+            "Abstract neutral summary",
+            "Keywords: neutral, fixture",
+            "2 Methods",
+            "Body text outside abstract",
+        ],
+        [
+            "Abstract neutral summary",
+            "Keywords: neutral, fixture",
+            "Introduction",
+            "Body text outside abstract",
+        ],
+    ],
+)
+def test_pdf_observed_body_boundary_preserves_full_text(page_texts):
+    extracted = _extract_pdf(_synthetic_pdf([(True, text) for text in page_texts]))
+    assert extracted.evidence_level == "full-text"
+    assert "full_body_status" not in extracted.diagnostics
+    assert extracted.diagnostics["pages_total"] == len(page_texts)
+    assert extracted.diagnostics["omitted_pages"] == []
+
+
+@pytest.mark.parametrize(
+    "page_texts",
+    [
+        ["Abstract\nNeutral summary\n1. Introduction\nBrief body"],
+        ["Abstract neutral summary", "1. Introduction\nBrief body"],
+        ["Abstract\nSummary\nKeywords: fixture\nIntroduction\nBrief body"],
+        ["Abstract neutral summary", "Keywords: fixture\nIntroduction\nBrief body"],
+    ],
+)
+def test_pdf_short_body_boundary_keeps_observed_abstract_floor(page_texts):
+    extracted = _extract_pdf(
+        _synthetic_pdf([(True, text) for text in page_texts], multiline=True)
+    )
+    assert extracted.evidence_level == "abstract"
+    assert extracted.diagnostics["full_body_status"] == "unconfirmed"
+    assert extracted.diagnostics["full_body_reason"] == (
+        "body-boundary-insufficient-full-text-evidence"
+    )
+    assert extracted.diagnostics["pages_total"] == len(page_texts)
+    assert extracted.diagnostics["omitted_pages"] == []
+    assert extracted.text
 
 
 def test_missing_media_box_recovers_with_explicit_geometry_and_blank_inventory():
@@ -145,9 +230,9 @@ def test_missing_metadata_uses_first_page_title_as_a_proposal():
     assert extracted.observed_title == title
     assert extracted.observed_title != "Expected cohort evidence from the 2002 version"
     assert extracted.diagnostics["observed_title"]["proposal"] is True
-    assert extracted.diagnostics["observed_title"]["rejected_metadata_title_status"] == (
-        "missing"
-    )
+    assert extracted.diagnostics["observed_title"][
+        "rejected_metadata_title_status"
+    ] == ("missing")
 
 
 def test_meaningful_conflicting_metadata_title_is_retained_for_identity_checks():
@@ -160,9 +245,7 @@ def test_meaningful_conflicting_metadata_title_is_retained_for_identity_checks()
     )
 
     assert extracted.observed_title == metadata_title
-    assert not any(
-        item["type"] == "pdf-observed-title" for item in extracted.locators
-    )
+    assert not any(item["type"] == "pdf-observed-title" for item in extracted.locators)
     assert (
         _identity(
             "",
@@ -178,9 +261,7 @@ def test_no_readable_first_page_title_keeps_observed_title_empty():
     extracted = _extract_pdf(_synthetic_pdf([(True, "Abstract")]))
 
     assert extracted.observed_title == ""
-    assert not any(
-        item["type"] == "pdf-observed-title" for item in extracted.locators
-    )
+    assert not any(item["type"] == "pdf-observed-title" for item in extracted.locators)
 
 
 def test_unusable_filename_without_readable_title_remains_unresolved():
@@ -195,9 +276,7 @@ def test_unusable_filename_without_readable_title_remains_unresolved():
         "rejected_metadata_title": "internal.dvi",
         "rejected_metadata_title_status": "filename-like",
     }
-    assert not any(
-        item["type"] == "pdf-observed-title" for item in extracted.locators
-    )
+    assert not any(item["type"] == "pdf-observed-title" for item in extracted.locators)
 
 
 def test_title_proposal_retains_verbatim_spacing_for_its_locator():
