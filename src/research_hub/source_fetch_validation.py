@@ -11,8 +11,8 @@ from research_hub.source_fetch_extraction import (
     _extract_html,
     _extract_pdf,
     _extract_text,
-    _identity,
     _is_text_content_type,
+    _source_identity,
 )
 from research_hub.utils.doi import normalize_doi
 
@@ -210,11 +210,10 @@ def validate_source_fetch(
             if replay_identity != payload.get("observed_identity"):
                 errors.append("re-extracted identity differs from observed_identity")
             expected_identity = payload.get("expected_identity") or {}
-            identity_status = _identity(
+            identity_status = _source_identity(
                 normalize_doi(str(expected_identity.get("doi", ""))),
                 str(expected_identity.get("title", "")),
-                replay.observed_doi,
-                replay.observed_title,
+                replay,
             )
             if identity_status != payload.get("identity_status"):
                 errors.append("recomputed identity status differs from result")

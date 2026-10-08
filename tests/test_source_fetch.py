@@ -176,6 +176,105 @@ def _selection_pdf(text, doi="", title=""):
     )
 
 
+def _proposal_pdf(text, doi="", title="American Journal of Public Health"):
+    extracted = _selection_pdf(text, doi, title)
+    extracted.diagnostics = {
+        "observed_title": {
+            "value": title,
+            "page": 1,
+            "provenance": "conservative-first-page-line",
+            "proposal": True,
+            "rejected_metadata_title": "internal.dvi",
+            "rejected_metadata_title_status": "filename-like",
+        }
+    }
+    return extracted
+
+
+@pytest.mark.parametrize(
+    ("expected_doi", "expected_title", "observed_doi", "expected_status"),
+    [
+        ("", "American Journal of Public Health", "", "unverified"),
+        ("", "A distinct expected study", "", "unverified"),
+        (
+            "10.1000/example",
+            "A distinct expected study",
+            "10.1000/example",
+            "verified",
+        ),
+    ],
+)
+def test_source_identity_does_not_promote_first_page_title_proposal(
+    expected_doi, expected_title, observed_doi, expected_status
+):
+    extracted = _proposal_pdf("Substantive body text", observed_doi)
+
+    assert sf._source_identity(expected_doi, expected_title, extracted) == expected_status
+
+
+@pytest.mark.parametrize("with_matching_doi", [False, True])
+def test_fetch_retains_title_proposal_without_using_it_for_identity(
+    tmp_path, monkeypatch, with_matching_doi
+):
+    from research_hub import source_fetch_validation as replay_module
+
+    doi = "10.1000/example" if with_matching_doi else ""
+    responses = []
+    if doi:
+        responses.append(
+            FakeResponse(b'{"is_oa": false}', content_type="application/json")
+        )
+    responses.append(
+        FakeResponse(b"%PDF-1.4 proposal", content_type="application/pdf")
+    )
+    response_iter = iter(responses)
+    monkeypatch.setattr(sf, "_new_public_session", lambda: FakeSession(response_iter))
+    extracted = _proposal_pdf("Substantive body text", doi)
+    monkeypatch.setattr(sf, "_extract_pdf", lambda data: extracted)
+    monkeypatch.setattr(replay_module, "_extract_pdf", lambda data: extracted)
+
+    result = sf.fetch_public_source(
+        url="https://example.org/paper.pdf",
+        doi=doi,
+        title="American Journal of Public Health",
+        output_dir=tmp_path / ("matching-doi" if doi else "no-doi"),
+    )
+
+    assert result.observed_identity["title"] == "American Journal of Public Health"
+    assert result.identity_status == ("verified" if doi else "unverified")
+    assert sf.validate_source_fetch(
+        Path(result.output_dir) / "source-fetch-result.json"
+    )["valid"]
+
+
+def test_receipt_validation_preserves_authoritative_title_mismatch(
+    tmp_path, monkeypatch
+):
+    from research_hub import source_fetch_validation as replay_module
+
+    extracted = _selection_pdf(
+        "Substantive body text", title="Authoritative unrelated publication"
+    )
+    _one_response(
+        monkeypatch,
+        FakeResponse(b"%PDF-1.4 mismatch", content_type="application/pdf"),
+    )
+    monkeypatch.setattr(sf, "_extract_pdf", lambda data: extracted)
+    monkeypatch.setattr(replay_module, "_extract_pdf", lambda data: extracted)
+
+    result = sf.fetch_public_source(
+        url="https://example.org/paper.pdf",
+        title="Expected longitudinal cohort study",
+        output_dir=tmp_path / "authoritative-mismatch",
+    )
+
+    assert result.identity_status == "mismatch"
+    assert result.status == "identity-mismatch"
+    assert sf.validate_source_fetch(
+        Path(result.output_dir) / "source-fetch-result.json"
+    )["valid"]
+
+
 def test_visible_abstract_is_retained_without_page_chrome(tmp_path, monkeypatch):
     html = b"""<html><head><meta name="citation_doi" content="10.1000/example">
     <meta name="citation_title" content="Expected study"></head><body>
