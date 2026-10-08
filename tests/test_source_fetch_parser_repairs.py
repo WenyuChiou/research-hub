@@ -18,6 +18,7 @@ def _synthetic_pdf(
     *,
     metadata_title: str | None = None,
     multiline: bool = False,
+    positioned_text: list[list[tuple[int, int, str]]] | None = None,
 ) -> bytes:
     """Build a small PDF without relying on private or generated fixtures."""
     font_id = 3 + len(pages) * 2
@@ -45,6 +46,16 @@ def _synthetic_pdf(
         if multiline and text:
             lines = " T* ".join(f"({line}) Tj" for line in escaped.splitlines())
             stream = f"BT /F1 12 Tf 16 TL 72 720 Td {lines} ET".encode()
+        if positioned_text is not None:
+            fragments = []
+            for x, y, fragment in positioned_text[index]:
+                fragment = (
+                    fragment.replace("\\", "\\\\")
+                    .replace("(", "\\(")
+                    .replace(")", "\\)")
+                )
+                fragments.append(f"BT /F1 12 Tf 1 0 0 1 {x} {y} Tm ({fragment}) Tj ET")
+            stream = "\n".join(fragments).encode()
         objects.append(
             b"<< /Length "
             + str(len(stream)).encode()
@@ -75,6 +86,152 @@ def _synthetic_pdf(
         f"startxref\n{xref}\n%%EOF\n".encode()
     )
     return bytes(result)
+
+
+def _column_pdf(
+    heading: str,
+    *,
+    body: bool = True,
+    keywords: bool = False,
+    opposing_text: str = "Separate column continuation.",
+    page_count: int = 3,
+) -> bytes:
+    fragments = [(72, 720, "Abstract"), (72, 704, "Neutral abstract summary.")]
+    if keywords:
+        fragments.append((72, 680, "Keywords: neutral fixture"))
+    fragments += [(72, 640, heading), (332, 640, opposing_text)]
+    for index in range(8):
+        y = 624 - index * 16
+        if body:
+            fragments.append((72, y, "Observed body prose and evidence."))
+        fragments.append((332, y, "Opposing column prose continues."))
+    return _synthetic_pdf(
+        [(True, "")] * page_count,
+        positioned_text=[fragments]
+        + [[(72, 720, "Further readable source text.")]] * (page_count - 1),
+    )
+
+
+@pytest.mark.parametrize("heading", ["1 Introduction", "1. Introduction"])
+@pytest.mark.parametrize(
+    "opposing_text",
+    [
+        "Separate column continuation.",
+        "Unbrokensyntheticcolumncontinuation",
+        "Separate continuation with a hyphen-",
+    ],
+)
+def test_pdf_column_numbered_introduction_with_body_is_observed_boundary(
+    heading, opposing_text
+):
+    import pdfplumber
+
+    data = _column_pdf(heading, opposing_text=opposing_text)
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        page_text = pdf.pages[0].extract_text()
+    assert f"{heading} {opposing_text}" in page_text
+    assert f"\n{heading}\n" not in page_text
+
+    extracted = _extract_pdf(data)
+    assert extracted.evidence_level == "full-text"
+    assert "full_body_status" not in extracted.diagnostics
+    assert page_text in extracted.text
+    assert extracted.diagnostics["pages_total"] == 3
+    assert extracted.diagnostics["omitted_pages"] == []
+
+
+@pytest.mark.parametrize(
+    "heading,body,keywords",
+    [
+        ("1 Introduction to the summary", True, False),
+        ("1 Introduction", False, False),
+        ("1 Introduction", False, True),
+        ("Introduction", True, False),
+        ("Methods", True, False),
+        ("1 Methods", True, False),
+    ],
+)
+def test_pdf_column_abstract_or_heading_only_stays_unconfirmed(heading, body, keywords):
+    import pdfplumber
+
+    data = _column_pdf(heading, body=body, keywords=keywords)
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        assert f"{heading} Separate column continuation." in pdf.pages[0].extract_text()
+    extracted = _extract_pdf(data)
+    assert extracted.evidence_level == "abstract"
+    assert (
+        extracted.diagnostics["full_body_reason"]
+        == "abstract-without-observed-body-boundary"
+    )
+
+
+def test_pdf_column_keywords_supply_boundary_for_unnumbered_heading():
+    extracted = _extract_pdf(_column_pdf("Introduction", keywords=True))
+    assert extracted.evidence_level == "full-text"
+    assert "full_body_status" not in extracted.diagnostics
+
+
+def test_pdf_column_boundary_still_requires_sufficient_full_text_evidence():
+    extracted = _extract_pdf(_column_pdf("1 Introduction", page_count=1))
+    assert extracted.evidence_level == "abstract"
+    assert extracted.diagnostics["full_body_reason"] == (
+        "body-boundary-insufficient-full-text-evidence"
+    )
+
+
+@pytest.mark.parametrize(
+    "heading_y,later_fragments",
+    [
+        (640, [(72, 72, "Conference abstract booklet")]),
+        (640, [(72, 72, "Page 1 of 3"), (72, 56, "Neutral publication footer")]),
+        (104, [(72, 88, "Neutral publication footer"), (72, 72, "Second footer line")]),
+        (640, [(72, 624, "An isolated abstract annotation."), (72, 72, "Footer")]),
+        (
+            640,
+            [
+                (72, 624, "2 Methods"),
+                (72, 608, "Prose belongs to the next section."),
+                (72, 592, "That section has another prose line."),
+            ],
+        ),
+        (
+            640,
+            [
+                (72, 624, "2 Background"),
+                (72, 608, "Prose belongs to the next section."),
+                (72, 592, "That section has another prose line."),
+            ],
+        ),
+    ],
+)
+def test_pdf_column_footer_margin_or_next_section_is_not_introduction_body(
+    heading_y, later_fragments
+):
+    import pdfplumber
+
+    fragments = [
+        (72, 720, "Abstract"),
+        (72, 704, "Neutral abstract summary."),
+        (72, heading_y, "1 Introduction"),
+        (332, heading_y, "Separate column summary."),
+        *later_fragments,
+    ]
+    data = _synthetic_pdf(
+        [(True, "")] * 3,
+        positioned_text=[fragments] + [[(72, 720, "Further summary-only text.")]] * 2,
+    )
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        page_text = pdf.pages[0].extract_text()
+    assert "1 Introduction Separate column summary." in page_text
+    assert all(fragment[2] in page_text for fragment in later_fragments)
+
+    extracted = _extract_pdf(data)
+    assert extracted.evidence_level == "abstract"
+    assert extracted.diagnostics["full_body_reason"] == (
+        "abstract-without-observed-body-boundary"
+    )
+    assert page_text in extracted.text
+    assert extracted.diagnostics["pages_total"] == 3
 
 
 @pytest.mark.parametrize(
