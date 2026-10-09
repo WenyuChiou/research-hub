@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from hashlib import sha256
 from html.parser import HTMLParser
@@ -941,11 +942,134 @@ def _pdf_observed_title(
     return "", None
 
 
+_PDF_SECTION_NUMBER = r"\d+(?:\.\d+)*(?:\.[ \t]*|[ \t]+)"
 _PDF_BODY_HEADING = re.compile(
-    r"(?:\d+(?:\.\d+)*\.?[ \t]+)?"
+    rf"(?:{_PDF_SECTION_NUMBER})?"
     r"(introduction|methods?|results?|discussion|conclusions?)[ \t]*[:.]?",
     re.I,
 )
+
+
+def _pdf_reading_order_text(
+    page: Any, original: str
+) -> tuple[str, dict[str, Any] | None]:
+    """Reorder only two sustained prose flows with an observed clear gutter."""
+    words = page.extract_words()
+    rows: list[list[dict[str, Any]]] = []
+    for word in sorted(words, key=lambda w: (w["top"], w["x0"])):
+        if not rows or abs(word["top"] - rows[-1][0]["top"]) > 3:
+            rows.append([])
+        rows[-1].append(word)
+    for row in rows:
+        row.sort(key=lambda w: w["x0"])
+    candidates = {
+        (left["x1"] + right["x0"]) / 2
+        for row in rows
+        for left, right in zip(row, row[1:])
+        if right["x0"] - left["x1"] >= 18
+        and page.width * 0.3 < (left["x1"] + right["x0"]) / 2 < page.width * 0.7
+    }
+    if not candidates:
+        return original, None
+
+    def pending(reason: str) -> tuple[str, dict[str, Any]]:
+        return original, {
+            "status": "pending",
+            "reason": reason,
+            "words": len(words),
+            "source_text_sha256": sha256(original.encode()).hexdigest(),
+            "output_text_sha256": sha256(original.encode()).hexdigest(),
+        }
+
+    def support(point: float) -> list[int]:
+        found = []
+        for index, row in enumerate(rows):
+            left = [w for w in row if w["x1"] <= point]
+            right = [w for w in row if w["x0"] >= point]
+            if left and right and len(left) + len(right) == len(row):
+                if min(w["x0"] for w in right) - max(w["x1"] for w in left) >= 18:
+                    found.append(index)
+        return found
+
+    votes = [(point, support(point)) for point in sorted(candidates)]
+    point, supported = max(
+        votes, key=lambda item: (len(item[1]), -abs(item[0] - page.width / 2))
+    )
+    if len(supported) < 6:
+        return pending("insufficient-sustained-column-geometry")
+    if any(
+        abs(other - point) > 40 and len(indices) >= len(supported) * 0.85
+        for other, indices in votes
+    ):
+        return pending("multiple-gutters-or-table-layout")
+    first, last = supported[0], supported[-1]
+    body = rows[first : last + 1]
+    if any(w["x0"] < point < w["x1"] for row in body for w in row):
+        return pending("full-width-content-inside-column-flow")
+    top, bottom = body[0][0]["top"], max(w["bottom"] for w in body[-1])
+    max_line_gap = 2.5 * max(w["bottom"] - w["top"] for row in body for w in row)
+    for adjacent, anchor in [
+        (rows[:first][-1:], top),
+        (rows[last + 1 : last + 2], bottom),
+    ]:
+        for row in adjacent:
+            distance = min(abs(w["top"] - anchor) for w in row)
+            if distance <= max_line_gap and (
+                all(w["x1"] <= point for w in row) or all(w["x0"] >= point for w in row)
+            ):
+                return pending("adjacent-single-column-head-or-tail-unresolved")
+    horizontal = [
+        edge
+        for edge in page.edges
+        if edge.get("orientation") == "h" and edge["x0"] < point < edge["x1"]
+    ]
+    if any(top <= edge["top"] <= bottom for edge in horizontal) or (
+        len(horizontal) >= 2
+        and min(edge["top"] for edge in horizontal) <= bottom
+        and max(edge["top"] for edge in horizontal) >= top
+    ):
+        return pending("spanning-horizontal-table-or-graphic-geometry")
+    columns = [
+        [[w for w in row if w["x1"] <= point] for row in body],
+        [[w for w in row if w["x0"] >= point] for row in body],
+    ]
+    for column in columns:
+        prose_rows = 0
+        column_words = [w for row in column for w in row]
+        if (
+            sum(bool(re.fullmatch(r"[\d.,%+−-]+", w["text"])) for w in column_words)
+            >= len(column_words) * 0.25
+        ):
+            return pending("numeric-table-or-equation-layout")
+        for row in column:
+            line = " ".join(w["text"] for w in row)
+            letters = len(re.findall(r"[^\W\d_]", line))
+            if (
+                "(cid:" not in line
+                and letters >= 20
+                and letters >= len("".join(line.split())) * 0.65
+            ):
+                prose_rows += 1
+        if prose_rows < 6:
+            return pending("insufficient-readable-prose-in-both-columns")
+    ordered_rows = rows[:first] + columns[0] + columns[1] + rows[last + 1 :]
+    reordered = "\n".join(
+        " ".join(w["text"] for w in row) for row in ordered_rows if row
+    ).strip()
+    before = Counter(char for char in original if not char.isspace())
+    after = Counter(char for char in reordered if not char.isspace())
+    if before != after or sum(len(row) for row in ordered_rows) != len(words):
+        return pending("extracted-word-or-character-preservation-unverified")
+    return reordered, {
+        "status": "reordered",
+        "reason": "sustained-two-column-prose",
+        "gutter_x": round(point, 3),
+        "words": len(words),
+        "word_preservation": "verified",
+        "fidelity_status": "pending",
+        "source_text_sha256": sha256(original.encode()).hexdigest(),
+        "output_text_sha256": sha256(reordered.encode()).hexdigest(),
+    }
 
 
 def _pdf_column_heading_starts(page: Any, text: str) -> list[int]:
@@ -1003,7 +1127,7 @@ def _pdf_column_heading_starts(page: Any, text: str) -> list[int]:
                     break
                 body_line = " ".join(w["text"] for w in column_words)
                 if _PDF_BODY_HEADING.fullmatch(body_line) or re.match(
-                    r"\d+(?:\.\d+)*\.?[ \t]+[^\W\d_]", body_line
+                    rf"{_PDF_SECTION_NUMBER}[^\W\d_]", body_line
                 ):
                     break
                 if not re.search(r"[^\W\d_]", body_line):
@@ -1023,19 +1147,121 @@ def _pdf_column_heading_starts(page: Any, text: str) -> list[int]:
     return starts
 
 
-def _pdf_abstract_body_unconfirmed(text: str, headings: list[re.Match[str]]) -> bool:
+def _pdf_unnumbered_body_boundary(
+    text: str, headings: list[re.Match[str]], locators: list[dict[str, Any]]
+) -> bool:
+    """Require readable article sections on distinct pages before references."""
+    references = list(
+        re.finditer(r"(?im)^[ \t]*(?:references|bibliography)[ \t]*[:.]?[ \t]*$", text)
+    )
+    abstracts = list(re.finditer(r"(?im)^[ \t]*abstract\b", text))
+    boundaries = sorted(
+        {m.start() for m in headings + references} | {m.start() for m in abstracts}
+    )
+    body_boundaries = sorted(
+        set(boundaries)
+        | {
+            m.start()
+            for m in re.finditer(rf"(?im)^[ \t]*{_PDF_SECTION_NUMBER}[^\W\d_]", text)
+        }
+    )
+
+    def page_at(offset: int) -> int:
+        return next(
+            (
+                item["value"]
+                for item in locators
+                if item["type"] == "pdf-page" and item["start"] <= offset < item["end"]
+            ),
+            0,
+        )
+
+    def has_local_prose(heading: re.Match[str]) -> bool:
+        end = next(
+            (start for start in body_boundaries if start > heading.start()), len(text)
+        )
+        lines = text[heading.end() : end].splitlines()
+        readable = [
+            line
+            for line in lines
+            if "(cid:" not in line
+            and len(re.findall(r"[^\W\d_]", line)) >= 40
+            and len(re.findall(r"[^\W\d_]", line)) >= len("".join(line.split())) * 0.65
+        ]
+        return len(readable) >= 3 and sum(len(line) for line in readable) >= 600
+
+    sections = sorted(
+        (m for m in headings if has_local_prose(m)), key=lambda m: m.start()
+    )
+    cited_references = []
+    for reference in references:
+        end = next(
+            (start for start in boundaries if start > reference.start()), len(text)
+        )
+        citation_lines = {
+            line
+            for line in text[reference.end() : end].splitlines()
+            if re.search(r"\b(?:18|19|20)\d{2}[a-z]?\b", line)
+            and len(re.findall(r"[^\W\d_]", line)) >= 20
+        }
+        if len(citation_lines) >= 2:
+            cited_references.append(reference)
+    for intro in sections:
+        if intro.group(1).lower() != "introduction" or re.match(
+            r"\s*\d", intro.group()
+        ):
+            continue
+        intro_page = page_at(intro.start())
+        if not intro_page:
+            continue
+        for results in sections:
+            if results.group(1).lower() not in {"result", "results", "discussion"}:
+                continue
+            if page_at(results.start()) <= intro_page or results.start() <= intro.end():
+                continue
+            for conclusion in sections:
+                if conclusion.group(1).lower() not in {"conclusion", "conclusions"}:
+                    continue
+                if page_at(conclusion.start()) <= page_at(results.start()):
+                    continue
+                if any(
+                    page_at(ref.start()) > page_at(conclusion.start())
+                    and not any(
+                        intro.start() < m.start() < ref.start() for m in abstracts
+                    )
+                    for ref in cited_references
+                ):
+                    return True
+    return False
+
+
+def _pdf_abstract_body_unconfirmed(
+    text: str, headings: list[re.Match[str]], locators: list[dict[str, Any]]
+) -> bool:
     """Page count and length do not establish a body outside an abstract."""
     abstract = re.search(r"(?im)^\s*abstract\b", text)
     if abstract is None:
         return False
     after_abstract = [m for m in headings if m.start() >= abstract.end()]
-    heading_lines = {m.group(0).strip() for m in headings}
+    boundaries = sorted(
+        {m.start() for m in headings}
+        | {
+            m.start()
+            for m in re.finditer(
+                rf"(?im)^[ \t]*(?:{_PDF_SECTION_NUMBER}[^\W\d_]|references\b|"
+                r"bibliography\b|abstract\b)",
+                text,
+            )
+        }
+    )
 
     def has_body_text_after(heading: re.Match[str]) -> bool:
+        end = next(
+            (start for start in boundaries if start > heading.start()), len(text)
+        )
         return any(
             re.search(r"[^\W\d_]", line)
-            for line in text[heading.end() :].splitlines()
-            if line.strip() not in heading_lines
+            for line in text[heading.end() : end].splitlines()
         )
 
     if any(
@@ -1054,7 +1280,7 @@ def _pdf_abstract_body_unconfirmed(text: str, headings: list[re.Match[str]]) -> 
             m.start() >= boundary and has_body_text_after(m) for m in after_abstract
         ):
             return False
-    return True
+    return not _pdf_unnumbered_body_boundary(text, after_abstract, locators)
 
 
 def _extract_pdf(data: bytes) -> _Extracted:
@@ -1069,6 +1295,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
         ) from exc
     pages: list[str] = []
     column_heading_starts: list[list[int]] = []
+    reading_order_pages: list[dict[str, Any]] = []
     metadata: dict[str, Any] = {}
     default_media_box_pages: list[int] = []
     try:
@@ -1080,7 +1307,12 @@ def _extract_pdf(data: bytes) -> _Extracted:
             }
             title = str(metadata.get("title", "") or "").strip()
             for page in pdf.pages:
-                pages.append((page.extract_text() or "").strip())
+                text, order = _pdf_reading_order_text(
+                    page, (page.extract_text() or "").strip()
+                )
+                pages.append(text)
+                if order is not None:
+                    reading_order_pages.append({"page": page.page_number, **order})
                 column_heading_starts.append(
                     _pdf_column_heading_starts(page, pages[-1])
                 )
@@ -1095,6 +1327,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
 
             pages = []
             column_heading_starts = []
+            reading_order_pages = []
             pdf_buffer = io.BytesIO(data)
             pdf = pdfplumber.open(pdf_buffer)
             recovered_pages = []
@@ -1113,7 +1346,12 @@ def _extract_pdf(data: bytes) -> _Extracted:
                         default_media_box_pages.append(page_number)
                     page = Page(pdf, page_obj, page_number, initial_doctop=doctop)
                     recovered_pages.append(page)
-                    pages.append((page.extract_text() or "").strip())
+                    text, order = _pdf_reading_order_text(
+                        page, (page.extract_text() or "").strip()
+                    )
+                    pages.append(text)
+                    if order is not None:
+                        reading_order_pages.append({"page": page_number, **order})
                     column_heading_starts.append(
                         _pdf_column_heading_starts(page, pages[-1])
                     )
@@ -1155,6 +1393,12 @@ def _extract_pdf(data: bytes) -> _Extracted:
         ],
         "omitted_pages": [],
     }
+    if reading_order_pages:
+        diagnostics["reading_order"] = {
+            "status": "pending",
+            "reason": "Geometry and extracted-word checks do not confirm complete content fidelity.",
+            "pages": reading_order_pages,
+        }
     if default_media_box_pages:
         diagnostics.update(
             {
@@ -1202,7 +1446,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
             break
     headings = list(
         re.finditer(
-            r"(?im)^\s*(?:\d+(?:\.\d+)*\.?\s+)?"
+            rf"(?im)^[ \t]*(?:{_PDF_SECTION_NUMBER})?"
             r"(introduction|methods?|results?|discussion|conclusions?)\s*[:.]?\s*$",
             combined,
         )
@@ -1215,7 +1459,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
             if match is not None:
                 headings.append(match)
     section_kinds = {match.group(1).lower() for match in headings}
-    if _pdf_abstract_body_unconfirmed(combined, headings):
+    if _pdf_abstract_body_unconfirmed(combined, headings, locators):
         # Preserve all readable text and locators. This is a limit on confirmed
         # evidence, not an assertion that the document contains no other text.
         diagnostics["full_body_status"] = "unconfirmed"

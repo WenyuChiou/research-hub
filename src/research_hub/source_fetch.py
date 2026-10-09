@@ -94,6 +94,7 @@ class SourceFetchResult:
     locators: list[dict[str, Any]]
     errors: list[str] = field(default_factory=list)
     output_dir: str = ""
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -390,7 +391,11 @@ def _receipt_result_fields(
         "extracted_text_sha256",
         "locators",
     )
-    return {key: payload.get(key) for key in keys}
+    claims = {key: payload.get(key) for key in keys}
+    # Absent or empty diagnostics retain the exact legacy v1 checksum fields.
+    if payload.get("diagnostics"):
+        claims["diagnostics"] = payload["diagnostics"]
+    return claims
 
 
 _SelectedSource = tuple[_Extracted, FetchAttempt, str]
@@ -677,6 +682,7 @@ def fetch_public_source(
             locators=extracted.locators,
             errors=errors,
             output_dir=str(output_dir),
+            diagnostics=extracted.diagnostics,
         )
     else:
         outcomes = {attempt.outcome for attempt in attempts}

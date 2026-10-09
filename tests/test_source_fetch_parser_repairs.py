@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from hashlib import sha256
 from io import BytesIO
 
@@ -10,6 +11,7 @@ from research_hub.source_fetch_extraction import (
     _extract_pdf,
     _identity,
     _pdf_observed_title,
+    _pdf_reading_order_text,
 )
 
 
@@ -19,6 +21,7 @@ def _synthetic_pdf(
     metadata_title: str | None = None,
     multiline: bool = False,
     positioned_text: list[list[tuple[int, int, str]]] | None = None,
+    positioned_lines: list[list[tuple[int, int, int, int]]] | None = None,
 ) -> bytes:
     """Build a small PDF without relying on private or generated fixtures."""
     font_id = 3 + len(pages) * 2
@@ -56,6 +59,11 @@ def _synthetic_pdf(
                 )
                 fragments.append(f"BT /F1 12 Tf 1 0 0 1 {x} {y} Tm ({fragment}) Tj ET")
             stream = "\n".join(fragments).encode()
+        if positioned_lines is not None:
+            stream += "\n".join(
+                f"\n{x0} {y0} m {x1} {y1} l S"
+                for x0, y0, x1, y1 in positioned_lines[index]
+            ).encode()
         objects.append(
             b"<< /Length "
             + str(len(stream)).encode()
@@ -112,7 +120,10 @@ def _column_pdf(
     )
 
 
-@pytest.mark.parametrize("heading", ["1 Introduction", "1. Introduction"])
+@pytest.mark.parametrize(
+    "heading",
+    ["1 Introduction", "1. Introduction", "1.Introduction", "1.2.Introduction"],
+)
 @pytest.mark.parametrize(
     "opposing_text",
     [
@@ -135,7 +146,11 @@ def test_pdf_column_numbered_introduction_with_body_is_observed_boundary(
     extracted = _extract_pdf(data)
     assert extracted.evidence_level == "full-text"
     assert "full_body_status" not in extracted.diagnostics
-    assert page_text in extracted.text
+    first_page = next(loc for loc in extracted.locators if loc["type"] == "pdf-page")
+    observed = extracted.text[first_page["start"] : first_page["end"]]
+    assert Counter(c for c in page_text if not c.isspace()) == Counter(
+        c for c in observed if not c.isspace()
+    )
     assert extracted.diagnostics["pages_total"] == 3
     assert extracted.diagnostics["omitted_pages"] == []
 
@@ -313,6 +328,300 @@ def test_pdf_short_body_boundary_keeps_observed_abstract_floor(page_texts):
     assert extracted.diagnostics["pages_total"] == len(page_texts)
     assert extracted.diagnostics["omitted_pages"] == []
     assert extracted.text
+
+
+def _article_body_section(heading: str) -> str:
+    sentences = [
+        "This analysis follows the decisions of participants in a controlled setting.",
+        "The observed responses are compared with predictions from the specified model.",
+        "Each participant receives identical instructions before making an independent choice.",
+        "The design measures changes in behavior across several experimental conditions.",
+        "The collected observations permit comparisons between the treatment and control groups.",
+        "We account for differences in the experimental conditions when interpreting the evidence.",
+        "The reported estimates describe the patterns observed in the participant responses.",
+        "Further analysis considers the implications and limitations of these comparisons.",
+        "These findings contribute to the interpretation of the empirical evidence presented here.",
+    ]
+    return heading + "\n" + "\n".join(sentences)
+
+
+def _unnumbered_article_pages() -> list[str]:
+    return [
+        "Abstract\nA neutral summary of the study.\n"
+        + _article_body_section("Introduction"),
+        _article_body_section("Results"),
+        _article_body_section("Conclusion"),
+        "References\nSmith, A. 2020. Experimental evidence and its interpretation.\n"
+        "Jones, B. 2021. Measurement of independent participant decisions.",
+    ]
+
+
+@pytest.mark.parametrize("results_heading", ["Results", "Discussion"])
+def test_unnumbered_pdf_article_sections_and_citations_establish_body(results_heading):
+    pages = _unnumbered_article_pages()
+    pages[1] = pages[1].replace("Results", results_heading, 1)
+    extracted = _extract_pdf(
+        _synthetic_pdf([(True, text) for text in pages], multiline=True)
+    )
+    assert extracted.evidence_level == "full-text"
+    assert extracted.diagnostics["omitted_pages"] == []
+    assert "full_body_status" not in extracted.diagnostics
+    assert all(
+        section in extracted.text
+        for section in ["Introduction", results_heading, "Conclusion"]
+    )
+    assert len([loc for loc in extracted.locators if loc["type"] == "pdf-page"]) == 4
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "same-page-abstract",
+        "continued-abstract",
+        "no-references",
+        "empty-references",
+        "headings-only",
+        "encoded-prose",
+    ],
+)
+def test_unnumbered_pdf_abstract_or_unreadable_sections_stay_unconfirmed(shape):
+    pages = _unnumbered_article_pages()
+    if shape == "same-page-abstract":
+        pages = ["\n".join(pages[:3]), pages[3]]
+    elif shape == "continued-abstract":
+        pages[1] = "Abstract (continued)\n" + pages[1]
+    elif shape == "no-references":
+        pages = pages[:3]
+    elif shape == "empty-references":
+        pages[3] = "References"
+    elif shape == "headings-only":
+        pages[:3] = ["Abstract\nIntroduction", "Results", "Conclusion"]
+    else:
+        pages[:3] = [page.replace("\n", " (cid:12)\n") for page in pages[:3]]
+    extracted = _extract_pdf(
+        _synthetic_pdf([(True, text) for text in pages], multiline=True)
+    )
+    assert extracted.evidence_level == "abstract"
+    assert (
+        extracted.diagnostics["full_body_reason"]
+        == "abstract-without-observed-body-boundary"
+    )
+
+
+def test_unnumbered_pdf_empty_introduction_cannot_borrow_numbered_section_prose():
+    pages = _unnumbered_article_pages()
+    pages[0] = "Abstract\nA neutral summary.\nIntroduction\n" + _article_body_section(
+        "2.Background"
+    )
+    extracted = _extract_pdf(
+        _synthetic_pdf([(True, text) for text in pages], multiline=True)
+    )
+    assert extracted.evidence_level == "abstract"
+    assert extracted.diagnostics["full_body_reason"] == (
+        "abstract-without-observed-body-boundary"
+    )
+
+
+@pytest.mark.parametrize(
+    "heading", ["1Introduction", "1.Introductional", "1.Introduction to the summary"]
+)
+def test_joined_number_or_heading_fragment_does_not_establish_pdf_body(heading):
+    pages = [
+        "Abstract\nNeutral summary",
+        _article_body_section(heading),
+        "Further summary text.",
+    ]
+    extracted = _extract_pdf(
+        _synthetic_pdf([(True, text) for text in pages], multiline=True)
+    )
+    assert extracted.evidence_level == "abstract"
+
+
+def test_joined_introduction_without_own_prose_cannot_borrow_next_section():
+    pages = [
+        "Abstract\nNeutral summary",
+        "1.Introduction\n2.Methods",
+        _article_body_section("Results"),
+    ]
+    extracted = _extract_pdf(
+        _synthetic_pdf([(True, text) for text in pages], multiline=True)
+    )
+    assert extracted.evidence_level == "abstract"
+
+
+def _reading_order_fragments(right_offset: int = 0) -> list[tuple[int, int, str]]:
+    return [
+        fragment
+        for index in range(12)
+        for fragment in [
+            (72, 720 - index * 16, f"LEFT{index:02} follows observed behavior."),
+            (
+                342,
+                720 - index * 16 + right_offset,
+                f"RIGHT{index:02} describes participant choices.",
+            ),
+        ]
+    ]
+
+
+@pytest.mark.parametrize("has_media_box", [True, False])
+@pytest.mark.parametrize("header", [False, True])
+@pytest.mark.parametrize("right_offset", [0, 2])
+def test_pdf_reading_order_preserves_columns_headers_words_and_page_locators(
+    has_media_box, header, right_offset
+):
+    import pdfplumber
+
+    fragments = _reading_order_fragments(right_offset)
+    if header:
+        fragments.insert(
+            0,
+            (
+                72,
+                752,
+                "A full width heading preceding the two independent prose columns",
+            ),
+        )
+    data = _synthetic_pdf([(has_media_box, "")], positioned_text=[fragments])
+    extracted = _extract_pdf(data)
+    with pdfplumber.open(
+        BytesIO(_synthetic_pdf([(True, "")], positioned_text=[fragments]))
+    ) as pdf:
+        original = pdf.pages[0].extract_text()
+        words = pdf.pages[0].extract_words()
+    assert extracted.text.index("LEFT11") < extracted.text.index("RIGHT00")
+    assert all(
+        extracted.text.index(f"LEFT{i:02}") < extracted.text.index(f"LEFT{i + 1:02}")
+        for i in range(11)
+    )
+    assert all(
+        extracted.text.index(f"RIGHT{i:02}") < extracted.text.index(f"RIGHT{i + 1:02}")
+        for i in range(11)
+    )
+    assert Counter(w["text"] for w in words) == Counter(extracted.text.split())
+    assert Counter(c for c in original if not c.isspace()) == Counter(
+        c for c in extracted.text if not c.isspace()
+    )
+    if header:
+        assert extracted.text.startswith("A full width heading")
+    order = extracted.diagnostics["reading_order"]
+    assert order["status"] == "pending"
+    assert order["pages"][0]["status"] == "reordered"
+    assert (
+        order["pages"][0]["source_text_sha256"]
+        != order["pages"][0]["output_text_sha256"]
+    )
+    assert (
+        order["pages"][0]["output_text_sha256"]
+        == sha256(extracted.text.encode()).hexdigest()
+    )
+    assert extracted.locators[0] == {
+        "type": "pdf-page",
+        "value": 1,
+        "start": 0,
+        "end": len(extracted.text),
+    }
+
+
+@pytest.mark.parametrize(
+    "layout", ["single-column", "full-width", "numeric-table", "mixed-full-width"]
+)
+def test_pdf_reading_order_preserves_ambiguous_tables_and_full_width_text(layout):
+    import pdfplumber
+
+    if layout in {"single-column", "full-width"}:
+        sentence = (
+            "A single readable prose flow."
+            if layout == "single-column"
+            else "A full width sentence describes observed behavior in an independent experimental setting."
+        )
+        fragments = [(72, 720 - index * 16, sentence) for index in range(12)]
+    elif layout == "numeric-table":
+        fragments = [
+            fragment
+            for index in range(12)
+            for fragment in [
+                (72, 720 - index * 16, f"ObservedCategory{index:02}"),
+                (250, 720 - index * 16, str(index)),
+                (342, 720 - index * 16, f"ComparisonCategory{index:02}"),
+                (550, 720 - index * 16, str(index + 1)),
+            ]
+        ]
+    else:
+        fragments = _reading_order_fragments()
+        fragments.append(
+            (
+                72,
+                632,
+                "A full width block interrupting both parallel prose flows on the page",
+            )
+        )
+    data = _synthetic_pdf([(True, "")], positioned_text=[fragments])
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        original = (pdf.pages[0].extract_text() or "").strip()
+        output, diagnosis = _pdf_reading_order_text(pdf.pages[0], original)
+    assert output == original
+    if layout in {"numeric-table", "mixed-full-width"}:
+        assert diagnosis["status"] == "pending"
+        assert diagnosis["reason"]
+
+
+@pytest.mark.parametrize("right_offset", [-32, 32])
+def test_pdf_reading_order_preserves_offset_column_heads_and_tails(right_offset):
+    import pdfplumber
+
+    data = _synthetic_pdf(
+        [(True, "")], positioned_text=[_reading_order_fragments(right_offset)]
+    )
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        original = (pdf.pages[0].extract_text() or "").strip()
+        output, diagnosis = _pdf_reading_order_text(pdf.pages[0], original)
+    assert output == original
+    assert diagnosis["status"] == "pending"
+    assert diagnosis["reason"] == "adjacent-single-column-head-or-tail-unresolved"
+
+
+@pytest.mark.parametrize("short_column", ["LEFT", "RIGHT"])
+def test_pdf_reading_order_preserves_unequal_column_lengths(short_column):
+    import pdfplumber
+
+    fragments = [
+        fragment
+        for fragment in _reading_order_fragments()
+        if not any(
+            fragment[2].startswith(f"{short_column}{index:02}")
+            for index in range(8, 12)
+        )
+    ]
+    data = _synthetic_pdf([(True, "")], positioned_text=[fragments])
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        original = (pdf.pages[0].extract_text() or "").strip()
+        output, diagnosis = _pdf_reading_order_text(pdf.pages[0], original)
+    assert output == original
+    assert diagnosis["status"] == "pending"
+    assert diagnosis["reason"] == "adjacent-single-column-head-or-tail-unresolved"
+
+
+@pytest.mark.parametrize("rule_positions", [[704, 560], [742, 532]])
+def test_pdf_reading_order_preserves_horizontal_only_tables_with_outside_borders(
+    rule_positions,
+):
+    import pdfplumber
+
+    data = _synthetic_pdf(
+        [(True, "")],
+        positioned_text=[_reading_order_fragments()],
+        positioned_lines=[[(72, y, 590, y) for y in rule_positions]],
+    )
+    with pdfplumber.open(BytesIO(data)) as pdf:
+        page = pdf.pages[0]
+        assert len(page.edges) == 2
+        assert all(edge["orientation"] == "h" for edge in page.edges)
+        original = (page.extract_text() or "").strip()
+        output, diagnosis = _pdf_reading_order_text(page, original)
+    assert output == original
+    assert diagnosis["status"] == "pending"
+    assert diagnosis["reason"] == "spanning-horizontal-table-or-graphic-geometry"
 
 
 def test_missing_media_box_recovers_with_explicit_geometry_and_blank_inventory():

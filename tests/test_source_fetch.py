@@ -166,6 +166,159 @@ def test_pdf_full_text_records_page_locators(tmp_path, monkeypatch):
     assert result.raw_sha256 == sha256(pdf).hexdigest()
 
 
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "remove",
+        "change",
+        "recomputed-change",
+        "none-type",
+        "false-type",
+        "zero-type",
+        "empty-string-type",
+        "empty-list-type",
+        "list-type",
+        "string-type",
+    ],
+)
+def test_pending_pdf_diagnostics_survive_public_result_and_legacy_receipt(
+    tmp_path, monkeypatch, tamper
+):
+    from research_hub import source_fetch_validation as sfv
+
+    raw = b"%PDF-1.4 synthetic diagnostics"
+    text = "Page one\n\nPage two"
+    diagnostics = {
+        "reading_order": {
+            "status": "pending",
+            "pages": [{"page": 1, "status": "pending", "reason": "ambiguous-layout"}],
+        }
+    }
+    extracted = sf._Extracted(
+        text,
+        "full-text",
+        observed_title="A public study",
+        locators=[{"type": "pdf-page", "value": 1, "start": 0, "end": len(text)}],
+        diagnostics=diagnostics,
+    )
+    _one_response(monkeypatch, FakeResponse(raw, content_type="application/pdf"))
+    monkeypatch.setattr(sf, "_extract_pdf", lambda data: extracted)
+    monkeypatch.setattr(sfv, "_extract_pdf", lambda data: extracted)
+    output = tmp_path / "diagnostic-run"
+    result = sf.fetch_public_source(
+        url="https://example.org/article", title="A public study", output_dir=output
+    )
+    result_path = output / "source-fetch-result.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result.diagnostics == result.to_dict()["diagnostics"] == diagnostics
+    assert payload["diagnostics"] == diagnostics
+    assert (result.status, result.evidence_level, result.identity_status) == (
+        "available",
+        "full-text",
+        "consistent",
+    )
+    assert Path(result.raw_path).read_bytes() == raw
+    assert result.raw_sha256 == sha256(raw).hexdigest()
+    assert Path(result.extracted_text_path).read_bytes() == text.encode()
+    assert result.extracted_text_sha256 == sha256(text.encode()).hexdigest()
+    assert sf.validate_source_fetch(result_path)["valid"] is True
+
+    legacy = {key: value for key, value in payload.items() if key != "diagnostics"}
+    legacy["receipt_sha256"] = sf._receipt_hash(
+        legacy["request"],
+        result.attempts,
+        result.extracted_text_sha256,
+        sf._receipt_result_fields(legacy),
+    )
+    assert legacy["receipt_sha256"] != result.receipt_sha256
+    legacy_path = output / "legacy-result.json"
+    legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+    assert sf.validate_source_fetch(legacy_path)["valid"] is True
+    restored = sf.SourceFetchResult(
+        **{
+            **legacy,
+            "attempts": [sf.FetchAttempt(**item) for item in legacy["attempts"]],
+        }
+    )
+    assert restored.diagnostics == {}
+    assert sf._receipt_result_fields(restored) == sf._receipt_result_fields(legacy)
+    empty_diagnostics = {**legacy, "diagnostics": {}}
+    assert sf._receipt_result_fields(empty_diagnostics) == sf._receipt_result_fields(
+        legacy
+    )
+    empty_path = output / "empty-diagnostics-result.json"
+    empty_path.write_text(json.dumps(empty_diagnostics), encoding="utf-8")
+    assert sf.validate_source_fetch(empty_path)["valid"] is True
+
+    wrong_types = {
+        "none-type": None,
+        "false-type": False,
+        "zero-type": 0,
+        "empty-string-type": "",
+        "empty-list-type": [],
+        "list-type": ["invalid"],
+        "string-type": "invalid",
+    }
+    tampered = json.loads(json.dumps(payload))
+    if tamper == "remove":
+        del tampered["diagnostics"]
+    elif tamper in wrong_types:
+        tampered["diagnostics"] = wrong_types[tamper]
+    else:
+        tampered["diagnostics"]["reading_order"]["status"] = "confirmed"
+        tampered["diagnostics"]["reading_order"]["pages"][0]["reason"] = (
+            "different-layout"
+        )
+    if tamper == "recomputed-change" or tamper in wrong_types:
+        tampered["receipt_sha256"] = sf._receipt_hash(
+            tampered["request"],
+            result.attempts,
+            result.extracted_text_sha256,
+            sf._receipt_result_fields(tampered),
+        )
+    tampered_path = output / "tampered-result.json"
+    tampered_path.write_text(json.dumps(tampered), encoding="utf-8")
+    report = sf.validate_source_fetch(tampered_path)
+    assert report["valid"] is False
+    if tamper in wrong_types:
+        assert "diagnostics: expected an object" in report["errors"]
+        assert "receipt SHA-256 mismatch" not in report["errors"]
+    elif tamper == "recomputed-change":
+        assert "re-extracted diagnostics differ from result" in report["errors"]
+        assert "receipt SHA-256 mismatch" not in report["errors"]
+    else:
+        assert "receipt SHA-256 mismatch" in report["errors"]
+
+
+@pytest.mark.parametrize(
+    "failure", [PermissionError("restricted"), ValueError("invalid PDF")]
+)
+def test_failed_pdf_results_keep_empty_diagnostics_and_valid_receipts(
+    tmp_path, monkeypatch, failure
+):
+    def fail_extract(data):
+        raise failure
+
+    _one_response(
+        monkeypatch,
+        FakeResponse(b"%PDF-1.4 synthetic failure", content_type="application/pdf"),
+    )
+    monkeypatch.setattr(sf, "_extract_pdf", fail_extract)
+    output = tmp_path / "failure-diagnostic-run"
+    result = sf.fetch_public_source(
+        url="https://example.org/article", output_dir=output
+    )
+    assert result.status == (
+        "inaccessible" if isinstance(failure, PermissionError) else "parse-error"
+    )
+    assert result.evidence_level == "metadata"
+    assert result.identity_status == "unverified"
+    assert result.diagnostics == result.to_dict()["diagnostics"] == {}
+    result_path = output / "source-fetch-result.json"
+    assert json.loads(result_path.read_text(encoding="utf-8"))["diagnostics"] == {}
+    assert sf.validate_source_fetch(result_path)["valid"] is True
+
+
 def _selection_pdf(text, doi="", title=""):
     return sf._Extracted(
         text,
@@ -209,7 +362,9 @@ def test_source_identity_does_not_promote_first_page_title_proposal(
 ):
     extracted = _proposal_pdf("Substantive body text", observed_doi)
 
-    assert sf._source_identity(expected_doi, expected_title, extracted) == expected_status
+    assert (
+        sf._source_identity(expected_doi, expected_title, extracted) == expected_status
+    )
 
 
 @pytest.mark.parametrize("with_matching_doi", [False, True])
@@ -224,9 +379,7 @@ def test_fetch_retains_title_proposal_without_using_it_for_identity(
         responses.append(
             FakeResponse(b'{"is_oa": false}', content_type="application/json")
         )
-    responses.append(
-        FakeResponse(b"%PDF-1.4 proposal", content_type="application/pdf")
-    )
+    responses.append(FakeResponse(b"%PDF-1.4 proposal", content_type="application/pdf"))
     response_iter = iter(responses)
     monkeypatch.setattr(sf, "_new_public_session", lambda: FakeSession(response_iter))
     extracted = _proposal_pdf("Substantive body text", doi)
@@ -823,7 +976,8 @@ def test_pdf_abstract_only_is_not_promoted_to_full_text(monkeypatch):
         metadata = {"Title": "Abstract handout", "DOI": "10.1000/example"}
         pages = [
             SimpleNamespace(
-                extract_text=lambda: "Abstract\nA short conference abstract."
+                extract_text=lambda: "Abstract\nA short conference abstract.",
+                extract_words=lambda: [],
             )
         ]
 
@@ -841,6 +995,9 @@ def test_pdf_abstract_only_is_not_promoted_to_full_text(monkeypatch):
 
     assert extracted.evidence_level == "abstract"
     assert extracted.observed_doi == "10.1000/example"
+    assert extracted.text == "Abstract\nA short conference abstract."
+    assert extracted.diagnostics["pages_total"] == 1
+    assert extracted.diagnostics["omitted_pages"] == []
 
 
 def test_crossref_abstract_is_abstract_evidence(tmp_path, monkeypatch):

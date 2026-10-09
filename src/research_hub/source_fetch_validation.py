@@ -72,6 +72,10 @@ def validate_source_fetch(
         if recorded_root != root:
             errors.append("result: output_dir does not match the validated directory")
 
+    diagnostics = payload.get("diagnostics", {})
+    if "diagnostics" in payload and not isinstance(diagnostics, dict):
+        errors.append("diagnostics: expected an object")
+
     attempts_payload = payload.get("attempts", []) if payload else []
     attempts: list[FetchAttempt] = []
     if not isinstance(attempts_payload, list):
@@ -203,6 +207,12 @@ def validate_source_fetch(
                 errors.append("re-extracted text differs from saved extracted text")
             if replay.evidence_level != payload.get("evidence_level"):
                 errors.append("re-extracted evidence level differs from result")
+            if (
+                isinstance(diagnostics, dict)
+                and diagnostics
+                and replay.diagnostics != diagnostics
+            ):
+                errors.append("re-extracted diagnostics differ from result")
             replay_identity = {
                 "doi": normalize_doi(replay.observed_doi),
                 "title": replay.observed_title,
