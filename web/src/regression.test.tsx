@@ -48,6 +48,42 @@ const response = (value: unknown) =>
   });
 
 describe("final workspace regressions", () => {
+  it("keeps the selected project usable when the previous JSON body is cancelled", async () => {
+    const user = userEvent.setup();
+    const selectedDetail: ProjectDetail = {
+      ...detail,
+      project: { ...detail.project, id: "selected", title: "Selected study" },
+    };
+    let previousSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string, options: RequestInit) => {
+        if (url.endsWith("/workspace"))
+          return response({ ...workspace, projects: [detail.project, selectedDetail.project] });
+        if (url.endsWith("/projects/study")) {
+          previousSignal = options.signal as AbortSignal;
+          return new Response(new ReadableStream({
+            start(stream) {
+              previousSignal!.addEventListener(
+                "abort",
+                () => stream.error(previousSignal!.reason),
+                { once: true },
+              );
+            },
+          }));
+        }
+        return response(selectedDetail);
+      }),
+    );
+    render(<App />);
+    await waitFor(() => expect(previousSignal).toBeDefined());
+    await user.selectOptions(screen.getByRole("combobox", { name: "Choose a project" }), "selected");
+    await screen.findByText("Investigate evidence.");
+    expect(previousSignal!.aborted).toBe(true);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Review & delivery" }));
+    expect(await screen.findByRole("combobox", { name: "Operation" })).toBeInTheDocument();
+  });
   it.each<Locale>(["en", "zh-TW"])("shows persisted failure diagnostics in %s", (locale) => {
     const translate = translator(locale);
     render(<TaskCard task={{ ...task, status: "failed",
