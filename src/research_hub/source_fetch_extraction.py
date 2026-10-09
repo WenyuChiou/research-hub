@@ -14,7 +14,10 @@ from rapidfuzz.fuzz import ratio
 
 from research_hub.importer import _html_to_text
 from research_hub.security import is_safe_fetch_url
+from research_hub.source_fetch_pdf_baselines import align_pdf_baselines
+from research_hub.source_fetch_pdf_orientation import extract_oriented_pdf_text
 from research_hub.source_fetch_pdf_regions import reorder_prose_regions
+from research_hub.source_fetch_pdf_sidebars import separate_marginal_pdf_text
 from research_hub.utils.doi import normalize_doi
 
 EvidenceLevel = Literal["metadata", "abstract", "full-text"]
@@ -352,7 +355,9 @@ def _publication_table_candidate(
 
 def _has_abstract_marker(values: dict) -> bool:
     markers = " ".join(str(values.get(k) or "") for k in ("id", "class", "itemprop"))
-    return bool(re.search(r"(?:^|[\s_-])abstract(?:portal)?(?:$|[\s_-])", markers, re.I))
+    return bool(
+        re.search(r"(?:^|[\s_-])abstract(?:portal)?(?:$|[\s_-])", markers, re.I)
+    )
 
 
 class _HtmlAbstractParser(HTMLParser):
@@ -791,7 +796,11 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
             if re.search(rf"\b{kind}s?\b", heading, re.I)
             and len(" ".join(parts).strip()) >= 80
         }
-        if candidate.closed_body and kinds == {"introduction", "conclusion", "references"}:
+        if candidate.closed_body and kinds == {
+            "introduction",
+            "conclusion",
+            "references",
+        }:
             parser = candidate
             legacy_document = True
     abstract_parser = _HtmlAbstractParser()
@@ -892,9 +901,21 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
             locators,
             diagnostics={
                 **({"publication_table_count": 1} if table_fields else {}),
-                **({"legacy_scholarly_body": {"closed_body": True, "typed_article_metadata": True,
-                     "substantive_sections": ["introduction", "conclusion", "references"]}}
-                   if legacy_document else {}),
+                **(
+                    {
+                        "legacy_scholarly_body": {
+                            "closed_body": True,
+                            "typed_article_metadata": True,
+                            "substantive_sections": [
+                                "introduction",
+                                "conclusion",
+                                "references",
+                            ],
+                        }
+                    }
+                    if legacy_document
+                    else {}
+                ),
             },
             bibliographic_metadata=table_fields,
         )
@@ -1346,6 +1367,26 @@ def _pdf_abstract_body_unconfirmed(
     return not _pdf_unnumbered_body_boundary(text, after_abstract, locators)
 
 
+def _pdf_page_text(page: Any) -> tuple[str, dict[str, Any] | None]:
+    original = (page.extract_text() or "").strip()
+    text, orientation = extract_oriented_pdf_text(page, original)
+    if orientation is not None:
+        return text, orientation
+    aligned_page, text, baseline = align_pdf_baselines(page, original)
+    text, sidebar = separate_marginal_pdf_text(aligned_page, text)
+    if sidebar is not None:
+        if baseline is not None:
+            sidebar["baseline_alignment"] = baseline
+        return text, sidebar
+    text, order = _pdf_reading_order_text(aligned_page, text)
+    if baseline is not None:
+        if order is None:
+            order = baseline
+        else:
+            order["baseline_alignment"] = baseline
+    return text, order
+
+
 def _extract_pdf(data: bytes) -> _Extracted:
     if not data.startswith(b"%PDF-"):
         raise ValueError("response labeled as PDF does not have a PDF signature")
@@ -1370,9 +1411,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
             }
             title = str(metadata.get("title", "") or "").strip()
             for page in pdf.pages:
-                text, order = _pdf_reading_order_text(
-                    page, (page.extract_text() or "").strip()
-                )
+                text, order = _pdf_page_text(page)
                 pages.append(text)
                 if order is not None:
                     reading_order_pages.append({"page": page.page_number, **order})
@@ -1409,9 +1448,7 @@ def _extract_pdf(data: bytes) -> _Extracted:
                         default_media_box_pages.append(page_number)
                     page = Page(pdf, page_obj, page_number, initial_doctop=doctop)
                     recovered_pages.append(page)
-                    text, order = _pdf_reading_order_text(
-                        page, (page.extract_text() or "").strip()
-                    )
+                    text, order = _pdf_page_text(page)
                     pages.append(text)
                     if order is not None:
                         reading_order_pages.append({"page": page_number, **order})
