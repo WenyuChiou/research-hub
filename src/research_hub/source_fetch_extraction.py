@@ -349,6 +349,11 @@ def _publication_table_candidate(
     return fields, provenance
 
 
+def _has_abstract_marker(values: dict) -> bool:
+    markers = " ".join(str(values.get(k) or "") for k in ("id", "class", "itemprop"))
+    return bool(re.search(r"(?:^|[\s_-])abstract(?:portal)?(?:$|[\s_-])", markers, re.I))
+
+
 class _HtmlAbstractParser(HTMLParser):
     """Read an explicitly marked abstract container, excluding page chrome."""
 
@@ -393,9 +398,6 @@ class _HtmlAbstractParser(HTMLParser):
                 )
             )
         )
-        markers = " ".join(
-            str(values.get(k) or "") for k in ("id", "class", "itemprop")
-        )
         restricted = {"script", "style", "noscript", "template", "form", "nav"}
         if (
             self.root_depth is None
@@ -403,7 +405,7 @@ class _HtmlAbstractParser(HTMLParser):
             and not restricted.intersection(self.stack)
             and not hidden
             and not any(self.hidden)
-            and re.search(r"(?:^|[\s_-])abstract(?:portal)?(?:$|[\s_-])", markers, re.I)
+            and _has_abstract_marker(values)
         ):
             self.root_depth = len(self.stack)
             self.parts = []
@@ -446,7 +448,7 @@ class _HtmlAbstractParser(HTMLParser):
 
 
 class _HtmlMetadataParser(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, *, legacy_body: bool = False) -> None:
         super().__init__()
         self.title_parts: list[str] = []
         self.headings: list[str] = []
@@ -461,10 +463,26 @@ class _HtmlMetadataParser(HTMLParser):
         self.article_parts: list[str] = []
         self.section_parts: list[tuple[str, list[str]]] = []
         self._current_section: list[str] | None = None
+        self.legacy_body = legacy_body
+        self.closed_body = False
+        self._legacy_body_count = 0
+        self._legacy_ignore_tag: str | None = None
+        self._legacy_ignore_depth = 0
 
     def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
         values = {str(key).lower(): str(value or "") for key, value in attrs}
+        if self._legacy_ignore_tag:
+            if tag == self._legacy_ignore_tag:
+                self._legacy_ignore_depth += 1
+            return
+        if self.legacy_body and (
+            tag in {"nav", "footer", "aside", "header"}
+            or (tag in {"div", "section", "p", "span"} and _has_abstract_marker(values))
+        ):
+            self._legacy_ignore_tag = tag
+            self._legacy_ignore_depth = 1
+            return
         if tag in {"script", "style", "noscript", "template"}:
             self.suppressed_depth += 1
             return
@@ -478,6 +496,11 @@ class _HtmlMetadataParser(HTMLParser):
         if tag in {"article", "main"}:
             self.article_depth += 1
             self.saw_article = True
+        if tag == "body" and self.legacy_body:
+            self._legacy_body_count += 1
+            self.closed_body = False
+            self.article_depth += 1
+            self.saw_article = True
         if tag == "meta":
             name = (values.get("name") or values.get("property") or "").lower()
             content = values.get("content", "").strip()
@@ -487,6 +510,12 @@ class _HtmlMetadataParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
+        if self._legacy_ignore_tag:
+            if tag == self._legacy_ignore_tag:
+                self._legacy_ignore_depth -= 1
+                if not self._legacy_ignore_depth:
+                    self._legacy_ignore_tag = None
+            return
         if tag in {"script", "style", "noscript", "template"}:
             if self.suppressed_depth:
                 self.suppressed_depth -= 1
@@ -506,10 +535,13 @@ class _HtmlMetadataParser(HTMLParser):
             self.in_heading = False
         if tag in {"article", "main"} and self.article_depth:
             self.article_depth -= 1
+        if tag == "body" and self.legacy_body and self.article_depth:
+            self.article_depth -= 1
+            self.closed_body = self.article_depth == 0 and self._legacy_body_count == 1
 
     def handle_data(self, data: str) -> None:
         clean = data.strip()
-        if not clean or self.suppressed_depth:
+        if not clean or self.suppressed_depth or self._legacy_ignore_tag:
             return
         if self.in_title:
             self.title_parts.append(clean)
@@ -740,6 +772,27 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
         raise PermissionError("response is a login, paywall, or challenge page")
     parser = _HtmlMetadataParser()
     parser.feed(text)
+    # Legacy scholarly HTML can contain a complete article without article/main.
+    # Only typed article metadata plus a closed, substantive document permits
+    # this fallback; a long abstract or a keyword match alone does not.
+    legacy_document = False
+    if (
+        not parser.saw_article
+        and parser.meta.get("dc.type", "").casefold() == "text.article"
+        and all(parser.meta.get(key) for key in ("dc.title", "dc.creator", "dc.date"))
+    ):
+        candidate = _HtmlMetadataParser(legacy_body=True)
+        candidate.feed(text)
+        kinds = {
+            kind
+            for heading, parts in candidate.section_parts
+            for kind in ("introduction", "conclusion", "references")
+            if re.search(rf"\b{kind}s?\b", heading, re.I)
+            and len(" ".join(parts).strip()) >= 80
+        }
+        if candidate.closed_body and kinds == {"introduction", "conclusion", "references"}:
+            parser = candidate
+            legacy_document = True
     abstract_parser = _HtmlAbstractParser()
     abstract_parser.feed(text)
     document_doi_parser = _HtmlDocumentDoiParser()
@@ -836,7 +889,12 @@ def _extract_html(data: bytes, final_url: str) -> _Extracted:
             observed_doi,
             observed_title,
             locators,
-            diagnostics={"publication_table_count": 1} if table_fields else {},
+            diagnostics={
+                **({"publication_table_count": 1} if table_fields else {}),
+                **({"legacy_scholarly_body": {"closed_body": True, "typed_article_metadata": True,
+                     "substantive_sections": ["introduction", "conclusion", "references"]}}
+                   if legacy_document else {}),
+            },
             bibliographic_metadata=table_fields,
         )
     if table_fields:
