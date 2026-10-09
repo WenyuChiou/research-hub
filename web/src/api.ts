@@ -81,7 +81,9 @@ async function request<T>(
   };
   try {
     value = await response.json();
-  } catch {
+  } catch (failure) {
+    // Project changes can cancel the body after fetch has returned its headers.
+    if (signal?.aborted) throw failure;
     throw new ApiError(
       `The server returned an unreadable response (HTTP ${response.status}).`,
       "invalid_response",

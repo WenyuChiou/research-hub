@@ -70,6 +70,23 @@ describe("workspace API boundary", () => {
       status: 502,
     });
   });
+  it("preserves cancellation after headers arrive while the JSON body is pending", async () => {
+    const controller = new AbortController();
+    const body = new ReadableStream({
+      start(stream) {
+        controller.signal.addEventListener(
+          "abort",
+          () => stream.error(controller.signal.reason),
+          { once: true },
+        );
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+    const pending = api("/workspace", undefined, controller.signal);
+    await Promise.resolve();
+    controller.abort();
+    await expect(pending).rejects.toBe(controller.signal.reason);
+  });
   it("uses CSRF for every POST and sends human proof only to the decision endpoint", async () => {
     token("research-hub-csrf-token", "test-csrf");
     token("research-hub-human-token", "test-human");
