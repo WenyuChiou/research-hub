@@ -131,6 +131,14 @@ class _ClosingBroadcaster(events.EventBroadcaster):
             subscription.put_nowait(self._stop)
 
 
+class _OwnedDashboardHandler(http_server.DashboardHandler):
+    """Close the fixture's keep-alive connection once teardown has started."""
+    def handle_one_request(self):
+        super().handle_one_request()
+        if self.server.stopping.is_set():
+            self.close_connection = True
+
+
 class _OwnedHTTPServer(http_server.ThreadingHTTPServer):
     """Track only this fixture's accepted sockets and worker threads."""
     def __init__(self, *args, **kwargs):
@@ -151,6 +159,19 @@ class _OwnedHTTPServer(http_server.ThreadingHTTPServer):
         thread.start()
 
 
+def _join_owned_threads(threads, timeout):
+    deadline = time.monotonic() + timeout
+    pending = list(threads)
+    while pending:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        per_thread = min(0.05, remaining / len(pending))
+        for owned_thread in pending:
+            owned_thread.join(timeout=per_thread)
+        pending = [owned_thread for owned_thread in pending if owned_thread.is_alive()]
+
+
 @contextmanager
 def _live_server_context(sandbox_cfg, monkeypatch):
     monkeypatch.setattr(http_server, "collect_dashboard_data", lambda cfg: _make_dashboard_data())
@@ -159,7 +180,7 @@ def _live_server_context(sandbox_cfg, monkeypatch):
     monkeypatch.setattr(http_server.DashboardHandler, "cfg", sandbox_cfg)
     monkeypatch.setattr(http_server.DashboardHandler, "broadcaster", broadcaster, raising=False)
     monkeypatch.setattr(http_server.DashboardHandler, "csrf_token", "")
-    server = _OwnedHTTPServer(("127.0.0.1", 0), http_server.DashboardHandler)
+    server = _OwnedHTTPServer(("127.0.0.1", 0), _OwnedDashboardHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     server.owned_threads.append(thread)
     thread.start()
@@ -178,9 +199,7 @@ def _live_server_context(sandbox_cfg, monkeypatch):
                 pass  # A completed request may already have closed its socket.
             connection.close()
         server.server_close()
-        deadline = time.monotonic() + 3
-        for owned_thread in server.owned_threads:
-            owned_thread.join(timeout=max(0, deadline - time.monotonic()))
+        _join_owned_threads(server.owned_threads, timeout=3)
         assert not [t.name for t in server.owned_threads if t.is_alive()], "Fixture threads leaked"
         with broadcaster._lock:
             assert not broadcaster._clients, "Fixture SSE subscriptions leaked"
@@ -250,6 +269,29 @@ def test_sse_fixture_teardown_joins_threads_without_state_change(sandbox_cfg, mo
             assert reader.is_alive()
             raise AssertionError("simulated action assertion")
     assert not any(thread.is_alive() for thread in server.owned_threads)
+
+
+def test_fixture_join_gives_later_dependency_time_to_finish():
+    class _JoinProbe:
+        def __init__(self, *, completes_on_join=False):
+            self.alive = True
+            self.completes_on_join = completes_on_join
+
+        def join(self, timeout):
+            if self.completes_on_join and timeout > 0:
+                self.alive = False
+            else:
+                time.sleep(timeout)
+
+        def is_alive(self):
+            return self.alive
+
+    waiting_client = _JoinProbe()
+    request_handler = _JoinProbe(completes_on_join=True)
+
+    _join_owned_threads([waiting_client, request_handler], timeout=0.02)
+
+    assert not request_handler.is_alive(), "later fixture thread received no join time"
 
 
 _CATEGORY_A_CASES = [
