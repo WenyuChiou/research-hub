@@ -14,6 +14,7 @@ from rapidfuzz.fuzz import ratio
 
 from research_hub.importer import _html_to_text
 from research_hub.security import is_safe_fetch_url
+from research_hub.source_fetch_pdf_regions import reorder_prose_regions
 from research_hub.utils.doi import normalize_doi
 
 EvidenceLevel = Literal["metadata", "abstract", "full-text"]
@@ -1031,6 +1032,10 @@ def _pdf_reading_order_text(
         return original, None
 
     def pending(reason: str) -> tuple[str, dict[str, Any]]:
+        if reason == "full-width-content-inside-column-flow":
+            repair = reorder_prose_regions(page, rows, point, original)
+            if repair is not None:
+                return repair
         return original, {
             "status": "pending",
             "reason": reason,
