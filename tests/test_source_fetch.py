@@ -976,7 +976,8 @@ def test_pdf_abstract_only_is_not_promoted_to_full_text(monkeypatch):
         metadata = {"Title": "Abstract handout", "DOI": "10.1000/example"}
         pages = [
             SimpleNamespace(
-                extract_text=lambda: "Abstract\nA short conference abstract."
+                extract_text=lambda: "Abstract\nA short conference abstract.",
+                extract_words=lambda: [],
             )
         ]
 
@@ -994,6 +995,9 @@ def test_pdf_abstract_only_is_not_promoted_to_full_text(monkeypatch):
 
     assert extracted.evidence_level == "abstract"
     assert extracted.observed_doi == "10.1000/example"
+    assert extracted.text == "Abstract\nA short conference abstract."
+    assert extracted.diagnostics["pages_total"] == 1
+    assert extracted.diagnostics["omitted_pages"] == []
 
 
 def test_crossref_abstract_is_abstract_evidence(tmp_path, monkeypatch):
