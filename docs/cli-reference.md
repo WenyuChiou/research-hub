@@ -90,6 +90,34 @@ environment proxies, and cookies; redirect targets and resolved IP addresses
 must remain public. Responses are streamed only through the recorded size cap.
 Existing output directories are rejected.
 
+### `source import-saved`
+
+Import already saved public source bytes without making a network request:
+
+```bash
+research-hub source import-saved saved-public-source.json \
+  --manifest-sha256 SHA256_OF_EXACT_MANIFEST_BYTES \
+  --output-dir runs/imported-source --json
+research-hub source validate runs/imported-source/source-fetch-result.json --json
+```
+
+The input is a strict `saved-public-source-input/v1` JSON object. Its required
+fields are `schema_version`, public credential-free `url` and `final_url`,
+expected `doi` and `title` strings, contained relative `raw_path`, lowercase
+hexadecimal `raw_sha256`, and `content_type`. The sole optional field is
+`original_acquired_at`, a timezone-aware ISO-8601 string or `null`; omission is
+recorded as `null`. The command verifies the separately supplied manifest hash,
+the raw-source hash and 50 MiB limit, containment, and absence of symlinks or
+reparse points before creating the output directory.
+
+The bundle preserves the exact input manifest and raw bytes as separate owned
+attempt artifacts. Both attempts have a null HTTP status because they record
+local reads. Current import times are labeled separately from the optional,
+owner-declared original acquisition time. Import does not claim an HTTP 200,
+verified historical download, or license, and it performs no DOI lookup or
+fallback request. Extraction, evidence level, observed identity, and mismatch
+handling use the same deterministic parsers as `source fetch`.
+
 Full-text classification is conservative: HTML needs multiple substantive
 sections and enough extracted content; short or abstract-marked PDFs remain
 metadata/abstract evidence unless their structure supports a full-text label.

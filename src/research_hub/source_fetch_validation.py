@@ -33,6 +33,18 @@ def _contained_existing_file(value: object, output_dir: Path) -> Path:
     return path
 
 
+def _valid_aware_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        from datetime import datetime
+
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
 def validate_source_fetch(
     result_path: Path,
     *,
@@ -122,12 +134,31 @@ def validate_source_fetch(
             errors.append(f"extracted text: {type(exc).__name__}: {exc}")
 
     request_record = payload.get("request") if payload else None
+    operation = (
+        request_record.get("operation") if isinstance(request_record, dict) else None
+    )
     if not isinstance(request_record, dict):
         errors.append("request: expected an object")
         request_record = {}
     else:
-        if request_record.get("operation") != "source fetch":
-            errors.append("request: operation must be 'source fetch'")
+        if not isinstance(operation, str) or operation not in {
+            "source fetch",
+            "source import-saved",
+        }:
+            errors.append(
+                "request: operation must be 'source fetch' or 'source import-saved'"
+            )
+        if operation == "source import-saved" and set(request_record) != {
+            "operation",
+            "doi",
+            "url",
+            "title",
+            "output_dir",
+            "public_only",
+        }:
+            errors.append(
+                "request: fields do not match the SourceFetchResult request contract"
+            )
         if request_record.get("public_only") is not True:
             errors.append("request: public_only must be true")
         if (
@@ -150,6 +181,208 @@ def validate_source_fetch(
             errors.append(
                 "request: expected_identity does not match normalized request"
             )
+
+    if operation != "source import-saved" and any(
+        attempt.purpose in ("saved-input-provenance", "saved-public-source")
+        for attempt in attempts
+    ):
+        errors.append(
+            "request: saved import attempts require source import-saved operation"
+        )
+    if payload and payload.get("status") not in ("available", "identity-mismatch"):
+        if (
+            payload.get("evidence_level") != "metadata"
+            or payload.get("identity_status") != "unverified"
+            or payload.get("observed_identity") not in ({}, {"doi": "", "title": ""})
+            or payload.get("locators", []) != []
+            or any(
+                payload.get(field) is not None
+                for field in (
+                    "raw_path",
+                    "raw_sha256",
+                    "extracted_text_path",
+                    "extracted_text_sha256",
+                )
+            )
+        ):
+            errors.append(
+                "terminal result must retain metadata, unverified identity and no selected extraction"
+            )
+
+    parser_diagnostics = diagnostics
+    if operation == "source import-saved":
+        parser_diagnostics = dict(diagnostics) if isinstance(diagnostics, dict) else {}
+        saved_import = parser_diagnostics.pop("saved_import", None)
+        if not isinstance(saved_import, dict):
+            errors.append("saved import: diagnostics.saved_import must be an object")
+            saved_import = {}
+        expected_saved_keys = {
+            "manifest_sha256",
+            "manifest_schema_version",
+            "original_acquired_at",
+            "import_started_at",
+            "import_completed_at",
+            "imported_at",
+            "original_http_acquisition_verified",
+        }
+        if set(saved_import) != expected_saved_keys:
+            errors.append("saved import: diagnostic fields are invalid")
+        if saved_import.get("original_http_acquisition_verified") is not False:
+            errors.append(
+                "saved import: original HTTP acquisition must remain unverified"
+            )
+        if not _valid_aware_timestamp(
+            saved_import.get("import_started_at")
+        ) or not _valid_aware_timestamp(saved_import.get("import_completed_at")):
+            errors.append(
+                "saved import: import timestamps must be timezone-aware ISO-8601 values"
+            )
+        if payload.get("retrieved_at") != saved_import.get("import_completed_at"):
+            errors.append(
+                "saved import: retrieved_at must record import completion time"
+            )
+        if saved_import.get("imported_at") != saved_import.get("import_completed_at"):
+            errors.append(
+                "saved import: imported_at must record import completion time"
+            )
+        if len(attempts) != 2:
+            errors.append("saved import: exactly two owned attempts are required")
+        elif (
+            attempts[0].purpose != "saved-input-provenance"
+            or attempts[1].purpose != "saved-public-source"
+            or attempts[0].http_status is not None
+            or attempts[1].http_status is not None
+            or attempts[0].content_type != "application/json"
+            or attempts[0].outcome != "imported"
+            or attempts[1].outcome not in ("parsed", "parse-error", "inaccessible")
+        ):
+            errors.append(
+                "saved import: attempt purposes or non-HTTP outcomes are invalid"
+            )
+        for attempt in attempts:
+            if attempt.requested_at != saved_import.get(
+                "import_started_at"
+            ) or attempt.received_at != saved_import.get("import_completed_at"):
+                errors.append(
+                    "saved import: attempt timestamps differ from import diagnostics"
+                )
+                break
+        try:
+            if len(attempts) < 2:
+                raise ValueError("saved import attempts are missing")
+            provenance_bytes = _contained_existing_file(
+                attempts[0].raw_path, root
+            ).read_bytes()
+            provenance_hash = _hash(provenance_bytes)
+            if provenance_hash != saved_import.get("manifest_sha256"):
+                errors.append("saved import: provenance manifest SHA-256 mismatch")
+            from research_hub.source_fetch_saved import (
+                INPUT_SCHEMA_VERSION,
+                _extract,
+                _read_bounded,
+                validate_saved_input_manifest,
+            )
+
+            manifest = validate_saved_input_manifest(
+                json.loads(provenance_bytes.decode("utf-8"))
+            )
+            if saved_import.get("manifest_schema_version") != INPUT_SCHEMA_VERSION:
+                errors.append("saved import: manifest schema diagnostic mismatch")
+            selected_attempt = attempts[1]
+            if attempts[0].raw_path == selected_attempt.raw_path:
+                errors.append(
+                    "saved import: provenance and source must be distinct artifacts"
+                )
+            if manifest["raw_sha256"] != selected_attempt.raw_sha256:
+                errors.append(
+                    "saved import: manifest raw SHA-256 differs from saved source"
+                )
+            if manifest["content_type"] != selected_attempt.content_type:
+                errors.append(
+                    "saved import: manifest content type differs from saved source"
+                )
+            if (
+                manifest["url"] != selected_attempt.url
+                or manifest["final_url"] != selected_attempt.final_url
+            ):
+                errors.append(
+                    "saved import: declared URL provenance differs from saved source attempt"
+                )
+            if manifest["original_acquired_at"] != saved_import.get(
+                "original_acquired_at"
+            ):
+                errors.append(
+                    "saved import: original acquisition time differs from manifest"
+                )
+            if manifest["doi"] != request_record.get("doi") or manifest[
+                "title"
+            ] != request_record.get("title"):
+                errors.append("saved import: expected identity differs from manifest")
+            if manifest["url"] != request_record.get("url"):
+                errors.append("saved import: request URL differs from manifest")
+            if (
+                payload.get("source_url") != manifest["url"]
+                or payload.get("final_url") != manifest["final_url"]
+            ):
+                errors.append("saved import: result URLs differ from manifest")
+            # Terminal evidence is replayed too: a rehashed parse-error must
+            # never certify full text or verified identity without extraction.
+            source_bytes = _read_bounded(
+                _contained_existing_file(selected_attempt.raw_path, root),
+                50 * 1024 * 1024,
+                "saved source",
+            )
+            replay_error = None
+            replay_status = None
+            try:
+                _extract(source_bytes, manifest["content_type"], manifest["final_url"])
+            except PermissionError as exc:
+                replay_status = "inaccessible"
+                replay_error = f"saved-public-source: PermissionError: {exc}"
+            except Exception as exc:
+                replay_status = "parse-error"
+                replay_error = f"saved-public-source: {type(exc).__name__}: {exc}"
+            if replay_error is not None:
+                if (
+                    payload.get("status") != replay_status
+                    or selected_attempt.outcome != replay_status
+                    or selected_attempt.error != replay_error
+                    or payload.get("errors") != [replay_error]
+                    or payload.get("evidence_level") != "metadata"
+                    or payload.get("identity_status") != "unverified"
+                    or payload.get("observed_identity") != {"doi": "", "title": ""}
+                    or payload.get("locators") != []
+                    or parser_diagnostics != {}
+                    or any(
+                        payload.get(field) is not None
+                        for field in (
+                            "raw_path",
+                            "raw_sha256",
+                            "extracted_text_path",
+                            "extracted_text_sha256",
+                        )
+                    )
+                ):
+                    errors.append(
+                        "saved import: terminal evidence differs from parser replay"
+                    )
+            elif (
+                payload.get("status") not in ("available", "identity-mismatch")
+                or selected_attempt.outcome != "parsed"
+                or selected_attempt.error is not None
+                or payload.get("errors") != []
+                or payload.get("raw_path") != selected_attempt.raw_path
+                or payload.get("raw_sha256") != selected_attempt.raw_sha256
+                or not payload.get("extracted_text_path")
+                or not payload.get("extracted_text_sha256")
+            ):
+                errors.append(
+                    "saved import: successful parser replay requires selected extraction artifacts"
+                )
+            if payload.get("source_version") != f"sha256:{selected_attempt.raw_sha256}":
+                errors.append("saved import: source version differs from owned source")
+        except (ValueError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            errors.append(f"saved import: {type(exc).__name__}: {exc}")
     expected_receipt = _receipt_hash(
         request_record,
         attempts,
@@ -208,7 +441,12 @@ def validate_source_fetch(
             if replay.evidence_level != payload.get("evidence_level"):
                 errors.append("re-extracted evidence level differs from result")
             if (
-                isinstance(diagnostics, dict)
+                operation == "source import-saved"
+                and isinstance(parser_diagnostics, dict)
+                and replay.diagnostics != parser_diagnostics
+            ) or (
+                operation == "source fetch"
+                and isinstance(diagnostics, dict)
                 and diagnostics
                 and replay.diagnostics != diagnostics
             ):
@@ -238,7 +476,7 @@ def validate_source_fetch(
                 errors.append("source_version does not match selected raw response")
         except Exception as exc:
             errors.append(f"re-extraction: {type(exc).__name__}: {exc}")
-    elif payload and payload.get("status") in {"available", "identity-mismatch"}:
+    elif payload and payload.get("status") in ("available", "identity-mismatch"):
         errors.append(
             "successful result has no selected raw and extracted text artifacts"
         )

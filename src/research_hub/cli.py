@@ -57,7 +57,7 @@ from research_hub import cli_pipeline as _cli_pipeline
 from research_hub import cli_vault as _cli_vault
 from research_hub import cli_paper as _cli_paper
 from research_hub import cli_maintenance as _cli_maintenance
-from research_hub.cli_source import _source_fetch, _source_validate
+from research_hub.cli_source import _source_fetch, _source_import_saved, _source_validate
 from research_hub.cli_common import (
     _cli_deprecated_alias,
     _emit_cli_json,
@@ -598,6 +598,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="New directory for immutable response and extraction evidence",
     )
     source_fetch_parser.add_argument("--json", action="store_true", help="Emit SourceFetchResult JSON")
+    source_import_saved_parser = source_sub.add_parser(
+        "import-saved",
+        help="Import a manifest-declared saved public source without network access",
+    )
+    source_import_saved_parser.add_argument(
+        "input_manifest", type=Path, help="saved-public-source-input/v1 manifest path"
+    )
+    source_import_saved_parser.add_argument(
+        "--manifest-sha256", required=True, help="Expected SHA-256 of the exact manifest bytes"
+    )
+    source_import_saved_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="New directory for immutable import and extraction evidence",
+    )
+    source_import_saved_parser.add_argument(
+        "--json", action="store_true", help="Emit SourceFetchResult JSON"
+    )
     source_validate_parser = source_sub.add_parser(
         "validate",
         help="Replay and validate a saved source-fetch evidence bundle",
@@ -2974,6 +2993,8 @@ def _main_dispatch(args, parser) -> int:
             if not args.doi and not args.url:
                 parser.error("source fetch requires at least one of --doi or --url")
             return _source_fetch(args)
+        if args.source_command == "import-saved":
+            return _source_import_saved(args)
         if args.source_command == "validate":
             return _source_validate(args)
         parser.error("source requires a subcommand")
