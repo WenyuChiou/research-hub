@@ -3,6 +3,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -331,9 +332,15 @@ def test_checked_file_replaced_with_fifo_cannot_block_or_be_read(tmp_path, monke
         os.mkfifo(path)
         return real_open(target, flags)
 
-    monkeypatch.setattr(saved.os, "open", replace_before_open)
-    with pytest.raises(ValueError, match="not a regular file"):
-        saved._read_bounded(path, 1024, "saved source")
+    with monkeypatch.context() as scoped:
+        scoped.setattr(saved.os, "open", replace_before_open)
+        with pytest.raises(ValueError, match="not a regular file"):
+            saved._read_bounded(path, 1024, "saved source")
+
+    assert saved.os.open is real_open
+    assert path.is_fifo()
+    shutil.rmtree(tmp_path)
+    assert not tmp_path.exists()
 
 
 @pytest.mark.parametrize("change_purposes", [False, True])
