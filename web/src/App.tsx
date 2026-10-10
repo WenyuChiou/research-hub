@@ -46,6 +46,18 @@ export default function App() {
   const selectedRef = useRef(projectId);
   selectedRef.current = projectId;
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const headingFocusFrame = useRef<number | null>(null);
+  const cancelHeadingFocus = useCallback(() => {
+    if (headingFocusFrame.current !== null) {
+      cancelAnimationFrame(headingFocusFrame.current);
+      headingFocusFrame.current = null;
+    }
+  }, []);
+  const focusMain = useCallback(() => {
+    cancelHeadingFocus();
+    mainRef.current?.focus();
+  }, [cancelHeadingFocus]);
   const t = translator(locale);
 
   useEffect(() => {
@@ -54,12 +66,23 @@ export default function App() {
   }, [locale]);
   useEffect(() => {
     const onHashChange = () => {
+      cancelHeadingFocus();
+      if (window.location.hash === "#main-content") {
+        focusMain();
+        return;
+      }
       setPage(currentPage());
-      requestAnimationFrame(() => headingRef.current?.focus());
+      headingFocusFrame.current = requestAnimationFrame(() => {
+        headingFocusFrame.current = null;
+        headingRef.current?.focus();
+      });
     };
     window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+    return () => {
+      window.removeEventListener("hashchange", onHashChange);
+      cancelHeadingFocus();
+    };
+  }, [cancelHeadingFocus, focusMain]);
   const navigate = (next: Page) => {
     window.location.hash = next;
     setPage(next);
@@ -194,7 +217,7 @@ export default function App() {
   const showCreate = newProject || workspace?.projects.length === 0;
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">
+      <a className="skip-link" href="#main-content" onClick={focusMain}>
         {t("skip")}
       </a>
       <aside className="sidebar">
@@ -279,7 +302,12 @@ export default function App() {
           </div>
         </div>
       </aside>
-      <main id="main-content" className="main-shell" tabIndex={-1}>
+      <main
+        ref={mainRef}
+        id="main-content"
+        className="main-shell"
+        tabIndex={-1}
+      >
         <header className="topbar">
           <div className="breadcrumb">
             <span>{t("workspace")}</span>
