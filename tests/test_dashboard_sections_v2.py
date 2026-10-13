@@ -37,6 +37,8 @@ def _data(**overrides) -> DashboardData:
         total_papers=0,
         total_clusters=0,
         papers_this_week=0,
+        quarantine_status="empty",
+        quarantine_issue_count=0,
     )
     for key, value in overrides.items():
         setattr(base, key, value)
@@ -461,8 +463,8 @@ def test_diagnostics_empty_state_for_clean_vault():
 
 
 def test_diagnostics_renders_quarantine_records():
-    """FUNC-1 dashboard half: the Diagnostics tab mirrors fit-check
-    quarantined candidates (count + slug + reason), matching the MCP
+    """The Diagnostics tab mirrors authenticity/fit-check quarantine
+    candidates (count + slug + reason), matching the MCP
     `list_quarantine` / REST `get_cluster_quarantine` surfaces."""
     html = DiagnosticsSection().render(
         _data(
@@ -473,19 +475,71 @@ def test_diagnostics_renders_quarantine_records():
                     layer="l5_relevance",
                     reason="low_relevance: score 0.21 below threshold",
                     date="2026-05-30",
-                )
-            ]
+                ),
+                QuarantineRecord(
+                    slug="single-source-paper",
+                    cluster="agents",
+                    layer="L2",
+                    reason="uncorroborated",
+                    date="2026-05-31",
+                ),
+            ],
+            quarantine_status="complete",
+            quarantine_issue_count=0,
         )
     )
-    assert "Quarantined (1)" in html
+    assert "Quarantined (2)" in html
     assert "off-topic-paper" in html
     assert "low_relevance: score 0.21 below threshold" in html
+    assert "single-source-paper" in html
+    assert "uncorroborated" in html
+    assert "Candidates held by authenticity or fit-check gates." in html
+    assert "rejected as off-topic" not in html
 
 
 def test_diagnostics_quarantine_empty_state():
     html = DiagnosticsSection().render(_data())
     assert "Quarantined (0)" in html
-    assert "every candidate passed the fit-check" in html
+    assert "No quarantined candidates." in html
+
+
+def test_diagnostics_partial_quarantine_keeps_total_unknown():
+    html = DiagnosticsSection().render(
+        _data(
+            quarantined=[
+                QuarantineRecord(
+                    slug="readable-paper",
+                    cluster="agents",
+                    layer="L2",
+                    reason="uncorroborated",
+                )
+            ],
+            quarantine_status="partial",
+            quarantine_issue_count=2,
+        )
+    )
+    assert "Quarantined (partial; 1 readable)" in html
+    assert "Showing 1 readable quarantine record" in html
+    assert "2 malformed or unreadable quarantine records were skipped" in html
+    assert "Total count is unknown." in html
+    assert "Quarantined (0)" not in html
+    assert "uncorroborated" in html
+
+
+def test_diagnostics_unavailable_quarantine_never_shows_zero():
+    html = DiagnosticsSection().render(
+        _data(quarantine_status="unavailable", quarantine_issue_count=None)
+    )
+    assert "Quarantined (unavailable)" in html
+    assert "Quarantine status is unavailable; total count is unknown." in html
+    assert "Quarantined (0)" not in html
+
+
+def test_diagnostics_does_not_show_unbound_followup_state():
+    """No active candidate/evidence binding means no sidecar is presented as current."""
+    html = DiagnosticsSection().render(_data())
+    assert "Research follow-up" not in html
+    assert "repeat assessment" not in html.lower()
 
 
 # --- ManageSection ------------------------------------------------------
