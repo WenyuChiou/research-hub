@@ -59,6 +59,8 @@
   prevention. Child lifetime is guarded without sandbox breakaway.
 - Existing direct-write tools remain outside workspace approval coverage. Local
   operator assertions are not shared-host identity or publication authorization.
+- Strengthen cluster identifier validation and keep generated research and
+  Obsidian paths within their configured roots.
 
 ### Migration
 - Preview is additive and not included in PyPI 1.2.0. No automatic migration of
