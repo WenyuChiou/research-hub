@@ -43,6 +43,9 @@
   provenance and honest bounded completion. Missing Hub runtime blocks Hub
   actions while available native-only research can continue. Package version
   remains `1.2.0`; no release or architecture topology change is implied.
+- The `describe --filter` command now builds only the requested manifest
+  sections; repeated flags can select multiple sections while preserving the
+  existing full-manifest and single-filter output schemas.
 
 ### Fixed
 - Doctor no longer silently encrypts configuration during diagnosis; it reports
