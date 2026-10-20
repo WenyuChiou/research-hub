@@ -6,11 +6,13 @@ import html
 import json
 import logging
 import re
+from copy import copy
 from pathlib import Path
 
 from research_hub.config import get_config
 from research_hub.dedup import DedupHit, DedupIndex, normalize_doi
 from research_hub.fsops import robust_move
+from research_hub.security import ValidationError, safe_join
 from research_hub._useragent import user_agent
 
 logger = logging.getLogger(__name__)
@@ -249,7 +251,13 @@ def mark_paper(slug: str | None, status: str, cluster: str | None = None) -> dic
     return {"updated": updated, "status": status}
 
 
-def move_paper(slug: str, to_cluster: str, *, source_path: str | Path | None = None) -> dict:
+def move_paper(
+    slug: str,
+    to_cluster: str,
+    *,
+    source_path: str | Path | None = None,
+    raw_root: str | Path | None = None,
+) -> dict:
     """Move a note into a different raw/ cluster folder and sync vault indexes.
 
     When ``source_path`` is provided the caller already knows exactly which file
@@ -260,18 +268,31 @@ def move_paper(slug: str, to_cluster: str, *, source_path: str | Path | None = N
     file when the same slug exists in more than one cluster.
     """
     cfg = get_config()
+    raw_dir = (Path(raw_root) if raw_root is not None else Path(cfg.raw)).resolve()
+    if raw_root is not None:
+        # Keep file moves and their note/link helpers on the caller's raw root,
+        # without mutating the process-cached HubConfig object.
+        cfg = copy(cfg)
+        cfg.raw = raw_dir
     if source_path is not None:
         src = Path(source_path)
-        if not src.exists():
-            raise FileNotFoundError(f"Paper not found: {src}")
     else:
-        matches = sorted(cfg.raw.rglob(f"{slug}.md"))
+        matches = sorted(raw_dir.rglob(f"{slug}.md"))
         if not matches:
             raise FileNotFoundError(f"Paper not found: {slug}")
         src = matches[0]
+    try:
+        relative_source = src.absolute().relative_to(raw_dir)
+    except ValueError as exc:
+        raise ValidationError(f"source path {src} is outside raw root {raw_dir}") from exc
+    src = safe_join(raw_dir, *relative_source.parts, reject_symlinks=True)
+    if not src.exists():
+        raise FileNotFoundError(f"Paper not found: {src}")
     old_cluster = _frontmatter_value(src, "topic_cluster")
-    target_dir = cfg.raw / to_cluster
-    target_path = target_dir / f"{slug}.md"
+    target_path = safe_join(
+        raw_dir, to_cluster, f"{slug}.md", reject_symlinks=True
+    )
+    target_dir = target_path.parent
     if old_cluster == to_cluster and src == target_path:
         # No-op move: return the full dict shape so callers can always index
         # old_cluster / sync_warnings / dedup_* without a KeyError.

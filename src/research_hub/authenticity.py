@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import re
+import stat
 import time
 import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import requests
 
@@ -497,6 +498,10 @@ def quarantine_paper(
 
 
 def list_quarantine(cfg, cluster: str | None = None) -> list[dict]:
+    """Return the legacy row-only view.
+
+    Use ``list_quarantine_report`` when completeness status matters.
+    """
     base = Path(cfg.research_hub_dir) / QUARANTINE_DIR
     if not base.exists():
         return []
@@ -521,6 +526,120 @@ def list_quarantine(cfg, cluster: str | None = None) -> list[dict]:
                 }
             )
     return sorted(rows, key=lambda row: (row["cluster"], row["slug"]))
+
+
+@dataclass(frozen=True)
+class QuarantineListing:
+    """Status-aware quarantine listing for consumers that must report completeness.
+
+    ``issue_count`` is exact when only individual JSON records were skipped.
+    It is ``None`` when a directory could not be enumerated, so callers do not
+    imply that the number of skipped records is known.
+    """
+
+    rows: list[dict]
+    status: Literal["empty", "complete", "partial", "unavailable"]
+    issue_count: int | None = 0
+
+
+def list_quarantine_report(
+    cfg, cluster: str | None = None
+) -> QuarantineListing:
+    """Read quarantine rows with explicit completeness status.
+
+    The legacy ``list_quarantine`` keeps its list return shape for MCP/REST
+    callers. The Dashboard uses this report so an unreadable or partial scan
+    cannot be rendered as a known-empty quarantine.
+    """
+    base = Path(cfg.research_hub_dir) / QUARANTINE_DIR
+    try:
+        base_stat = base.stat()
+    except FileNotFoundError:
+        # A missing quarantine directory is known-empty only when its parent
+        # exists and can be inspected. A missing/unavailable workspace root is
+        # not evidence that the quarantine is empty.
+        try:
+            parent_stat = base.parent.stat()
+        except OSError:
+            return QuarantineListing([], "unavailable", None)
+        if stat.S_ISDIR(parent_stat.st_mode):
+            return QuarantineListing([], "empty", 0)
+        return QuarantineListing([], "unavailable", None)
+    except OSError:
+        return QuarantineListing([], "unavailable", None)
+
+    if not stat.S_ISDIR(base_stat.st_mode):
+        return QuarantineListing([], "unavailable", None)
+
+    roots: list[Path] = []
+    directory_issue = False
+    if cluster:
+        root = base / cluster
+        try:
+            root_stat = root.stat()
+        except FileNotFoundError:
+            return QuarantineListing([], "empty", 0)
+        except OSError:
+            return QuarantineListing([], "unavailable", None)
+        if not stat.S_ISDIR(root_stat.st_mode):
+            return QuarantineListing([], "unavailable", None)
+        roots = [root]
+    else:
+        try:
+            candidates = list(base.iterdir())
+        except OSError:
+            return QuarantineListing([], "unavailable", None)
+        for candidate in candidates:
+            try:
+                candidate_stat = candidate.stat()
+            except OSError:
+                directory_issue = True
+                continue
+            if stat.S_ISDIR(candidate_stat.st_mode):
+                roots.append(candidate)
+
+    rows: list[dict] = []
+    skipped_records = 0
+    for root in roots:
+        try:
+            paths = list(root.iterdir())
+        except OSError:
+            directory_issue = True
+            continue
+        for path in paths:
+            if path.suffix.lower() != ".json":
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                skipped_records += 1
+                continue
+            if not isinstance(payload, dict):
+                skipped_records += 1
+                continue
+            rows.append(
+                {
+                    "cluster": str(payload.get("cluster") or root.name),
+                    "slug": str(payload.get("slug") or path.stem),
+                    "layer": str(payload.get("layer", "")),
+                    "reason": str(payload.get("reason", "")),
+                    "date": str(payload.get("date", "")),
+                    "path": str(path),
+                }
+            )
+
+    rows.sort(key=lambda row: (row["cluster"], row["slug"]))
+    partial = directory_issue or skipped_records > 0
+    if partial:
+        status: Literal["empty", "complete", "partial", "unavailable"] = "partial"
+        issue_count = None if directory_issue else skipped_records
+    elif rows:
+        status = "complete"
+        issue_count = 0
+    else:
+        status = "empty"
+        issue_count = 0
+    return QuarantineListing(rows, status, issue_count)
 
 
 def show_quarantine(cfg, slug: str, cluster: str | None = None) -> dict:

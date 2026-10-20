@@ -7,6 +7,7 @@ import asyncio
 import inspect
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -263,38 +264,67 @@ def _bundled_skills() -> list[dict[str, str]]:
     return sorted(skills, key=lambda item: item["name"])
 
 
-def build_manifest(parser: argparse.ArgumentParser | None = None) -> dict[str, Any]:
-    if parser is None:
-        from research_hub.cli import build_parser
-
-        parser = build_parser()
-
+def _manifest_version() -> str:
     version = __version__
     if version == "0.88.15":
         version = MANIFEST_VERSION
+    return version
 
-    return {
-        "version": version,
-        "subcommands": _iter_subcommands(parser),
-        "mcp_tools": _mcp_tool_list(),
-        "env_vars": list(ENV_VARS),
-        "skills": _bundled_skills(),
-        "personae": list(PERSONAE),
-    }
+
+def _manifest_section(
+    name: str,
+    parser: argparse.ArgumentParser | None = None,
+) -> Any:
+    if name == "subcommands":
+        if parser is None:
+            from research_hub.cli import build_parser
+
+            parser = build_parser()
+        return _iter_subcommands(parser)
+    if name == "mcp_tools":
+        return _mcp_tool_list()
+    if name == "env_vars":
+        return list(ENV_VARS)
+    if name == "skills":
+        return _bundled_skills()
+    if name == "personae":
+        return list(PERSONAE)
+    raise ValueError(f"Unknown manifest filter: {name}")
+
+
+def build_manifest(parser: argparse.ArgumentParser | None = None) -> dict[str, Any]:
+    manifest: dict[str, Any] = {"version": _manifest_version()}
+    manifest.update(
+        {name: _manifest_section(name, parser=parser) for name in FILTER_KEYS}
+    )
+    return manifest
+
+
+def _normalize_manifest_filters(filter: str | Sequence[str]) -> list[str]:
+    requested = [filter] if isinstance(filter, str) else list(filter)
+    if not requested:
+        raise ValueError("At least one manifest filter is required")
+    for name in requested:
+        if name not in FILTER_KEYS:
+            raise ValueError(f"Unknown manifest filter: {name}")
+    return list(dict.fromkeys(requested))
 
 
 def describe_manifest(
     *,
-    filter: str | None = None,
+    filter: str | Sequence[str] | None = None,
     pretty: bool = False,
     parser: argparse.ArgumentParser | None = None,
 ) -> str:
-    manifest = build_manifest(parser=parser)
-    if filter is not None:
-        if filter not in FILTER_KEYS:
-            raise ValueError(f"Unknown manifest filter: {filter}")
-        payload: Any = manifest[filter]
+    if filter is None:
+        payload: Any = build_manifest(parser=parser)
     else:
-        payload = manifest
+        requested = _normalize_manifest_filters(filter)
+        if len(requested) == 1:
+            payload = _manifest_section(requested[0], parser=parser)
+        else:
+            payload = {
+                name: _manifest_section(name, parser=parser) for name in requested
+            }
 
     return json.dumps(payload, ensure_ascii=False, indent=2 if pretty else None)

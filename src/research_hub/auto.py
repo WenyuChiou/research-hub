@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from research_hub.clusters import ClusterRegistry, slugify
+from research_hub.clusters import ClusterRegistry, cluster_slugify, slugify
 from research_hub.config import get_config
 from research_hub.discover import _to_papers_input
 from research_hub.llm_cli import (
@@ -23,6 +23,7 @@ from research_hub.llm_cli import (
     invoke_llm_cli,
 )
 from research_hub.pipeline import run_pipeline
+from research_hub.security import ValidationError, safe_join, validate_slug
 
 
 # LLM CLI detection/invocation moved to llm_cli.py (Wave 1 refactor).
@@ -114,7 +115,54 @@ def auto_pipeline(
     Search and ingest failures stop the run. NotebookLM failures are deferred
     because papers have already landed in the vault.
     """
+    # Validate the resolved slug before loading configuration, probing an LLM
+    # CLI, opening the registry, or making filesystem/network changes. The MCP
+    # check is an entry-point guard; this also protects direct Python/REST use.
+    explicit_cluster_slug = cluster_slug is not None
+    generated_cluster_slug = cluster_slug is None or (
+        isinstance(cluster_slug, str) and cluster_slug == ""
+    )
+    slug = (
+        cluster_slugify(topic)
+        if generated_cluster_slug
+        else cluster_slug
+    )
+    report = AutoReport(cluster_slug="", cluster_created=False)
+    if not slug:
+        report.ok = False
+        report.error = "Could not derive cluster slug from topic"
+        return report
+    try:
+        slug = validate_slug(slug, field="cluster_slug")
+    except ValidationError as exc:
+        report.ok = False
+        report.error = str(exc)
+        return report
+    report.cluster_slug = slug
+
     cfg = get_config()
+    raw_dir = None
+    run_dir = None
+    papers_input_path = None
+    # A dry run only needs vault paths when it inspects an existing cluster's
+    # notes for the non-append guard. Otherwise it stops after planning and
+    # must not require output directories it will never use. Real runs still
+    # validate both roots before registry access or any side effects.
+    if not dry_run:
+        try:
+            raw_dir = safe_join(cfg.raw, slug, reject_symlinks=True)
+            run_dir = safe_join(
+                cfg.root, ".runs", f"{slug}-{os.getpid()}", reject_symlinks=True
+            )
+            # Validate the leaf too: a pre-existing papers_input.json symlink
+            # can escape a run directory that is itself safely confined.
+            papers_input_path = safe_join(
+                run_dir, "papers_input.json", reject_symlinks=True
+            )
+        except ValidationError as exc:
+            report.ok = False
+            report.error = str(exc)
+            return report
     user_adapters = getattr(cfg, "llm_cli_adapters", {}) or {}
     if not isinstance(user_adapters, dict):
         user_adapters = {}
@@ -134,25 +182,34 @@ def auto_pipeline(
 
 
     started = time.time()
-    report = AutoReport(cluster_slug="", cluster_created=False)
-
-    # 1. Slugify + 2. cluster create-or-get
-    explicit_cluster_slug = cluster_slug is not None
-    slug = cluster_slug or slugify(topic)
-    if not slug:
-        report.ok = False
-        report.error = "Could not derive cluster slug from topic"
-        return report
-    report.cluster_slug = slug
-
+    # 1. Use the validated slug + 2. cluster create-or-get
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.get(slug)
+    legacy_generated_slug = slugify(topic)
+    if (
+        cluster is None
+        and generated_cluster_slug
+        and legacy_generated_slug != slug
+        and registry.get(legacy_generated_slug) is not None
+    ):
+        report.ok = False
+        report.error = (
+            f"Existing legacy cluster key {legacy_generated_slug!r} exceeds the "
+            f"64-character slug contract; migrate that registry entry manually "
+            f"before creating the bounded slug {slug!r}"
+        )
+        return report
     if cluster is None:
         if dry_run:
             _step_log(report, "cluster", True, 0.0, f"would create: {slug}", print_progress)
         else:
             display = cluster_name or topic.title()
-            cluster = registry.create(query=topic, slug=slug, name=display)
+            try:
+                cluster = registry.create(query=topic, slug=slug, name=display)
+            except ValidationError as exc:
+                report.ok = False
+                report.error = str(exc)
+                return report
             report.cluster_created = True
             _step_log(report, "cluster", True, 0.0, f"created: {slug}", print_progress)
             try:
@@ -188,7 +245,13 @@ def auto_pipeline(
     # only the CLI wrapper -- so MCP and REST callers get the same protection
     # against silently contaminating a curated cluster. Fail-closed.
     if cluster is not None and not (append or force):
-        raw_dir = cfg.raw / slug
+        if raw_dir is None:
+            try:
+                raw_dir = safe_join(cfg.raw, slug, reject_symlinks=True)
+            except ValidationError as exc:
+                report.ok = False
+                report.error = str(exc)
+                return report
         existing_papers = len(list(raw_dir.glob("*.md"))) if raw_dir.exists() else 0
         if existing_papers > 0:
             report.ok = False
@@ -211,7 +274,6 @@ def auto_pipeline(
     # (destructive across external systems, and not what the guard counts).
     # append wins if both are set (additive intent is the safer interpretation).
     if force and not append and not dry_run and cluster is not None:
-        raw_dir = cfg.raw / slug
         if raw_dir.exists():
             removed = 0
             for note in raw_dir.glob("*.md"):
@@ -289,6 +351,9 @@ def auto_pipeline(
                 print(line)
         report.total_duration_sec = time.time() - started
         return report
+
+    # The paths were validated before registry access for every real run.
+    assert raw_dir is not None and run_dir is not None
 
     # Phase C: fail-closed first-run guard — surface a missing LLM judge
     # BEFORE the slow multi-backend search instead of after an empty
@@ -369,9 +434,8 @@ def auto_pipeline(
     # cannot clobber this run's input between this write and the pipeline read,
     # silently ingesting another run's papers into this cluster. The path is
     # threaded into run_pipeline below, coupling write and read by THIS run.
-    run_dir = cfg.root / ".runs" / f"{slug}-{os.getpid()}"
     run_dir.mkdir(parents=True, exist_ok=True)
-    papers_input_path = run_dir / "papers_input.json"
+    assert papers_input_path is not None
     papers_input_path.write_text(
         json.dumps({"papers": papers}, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -398,7 +462,6 @@ def auto_pipeline(
         # candidate was quarantined the raw dir was never created, the
         # `exists()` guard was skipped, and the tentative `len(papers)`
         # survived -> `[OK] ingest N papers` printed despite 0 written.
-        raw_dir = cfg.raw / slug
         attempted = report.papers_ingested  # tentative len(papers)
         written = len(list(raw_dir.glob("*.md"))) if raw_dir.exists() else 0
         report.papers_ingested = written
