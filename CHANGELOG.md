@@ -48,6 +48,9 @@
   existing full-manifest and single-filter output schemas.
 
 ### Fixed
+- Serialize workflow initialization, decisions, resume and applied migrations
+  with external-action journaling so concurrent state updates cannot erase
+  recovery records. Migration previews remain read-only.
 - Doctor no longer silently encrypts configuration during diagnosis; it reports
   explicit remediation and installed/source version drift.
 - Failed/null research results are filtered without discarding completed prose.
