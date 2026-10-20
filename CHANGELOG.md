@@ -48,6 +48,9 @@
   existing full-manifest and single-filter output schemas.
 
 ### Fixed
+- CLI skill installation now copies complete bundles, including references,
+  scripts and evals, without removing unrelated user files. `install --list`
+  detects missing support files; unsafe linked install paths fail before copying.
 - Serialize workflow initialization, decisions, resume and applied migrations
   with external-action journaling so concurrent state updates cannot erase
   recovery records. Migration previews remain read-only.
