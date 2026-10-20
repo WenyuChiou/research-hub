@@ -10,7 +10,7 @@ from research_hub.clusters import ClusterRegistry
 from research_hub.dedup import DedupHit, DedupIndex
 from research_hub.dashboard.briefing import load_briefing_preview
 from research_hub.dashboard.citation import build_bibtex_for_cluster, build_bibtex_for_paper
-from research_hub.dashboard.data import collect_dashboard_data
+from research_hub.dashboard.data import _collect_quarantine, collect_dashboard_data
 from research_hub.dashboard.drift import detect_drift
 from research_hub.dashboard.types import ClusterCard, PaperRow
 
@@ -29,6 +29,38 @@ def _make_config(tmp_path: Path) -> StubConfig:
     cfg.raw.mkdir(parents=True)
     cfg.research_hub_dir.mkdir(parents=True)
     return cfg
+
+
+def test_quarantine_collection_failure_is_explicitly_unavailable(tmp_path, monkeypatch):
+    cfg = StubConfig(tmp_path / "vault")
+
+    def fail_listing(_cfg):
+        raise PermissionError("fixture collection failure")
+
+    monkeypatch.setattr("research_hub.authenticity.list_quarantine_report", fail_listing)
+
+    records, status, issue_count = _collect_quarantine(cfg)
+
+    assert records == []
+    assert status == "unavailable"
+    assert issue_count is None
+
+
+def test_collect_dashboard_data_propagates_partial_quarantine_status(tmp_path, monkeypatch):
+    cfg = _make_config(tmp_path)
+    cfg.no_zotero = True
+    monkeypatch.setattr("research_hub.dashboard.data.run_doctor", lambda: [])
+    monkeypatch.setattr("research_hub.dashboard.data.detect_drift", lambda cfg, dedup: [])
+    monkeypatch.setattr(
+        "research_hub.dashboard.data._collect_quarantine",
+        lambda cfg: ([], "partial", 2),
+    )
+
+    data = collect_dashboard_data(cfg, zot=None)
+
+    assert data.quarantined == []
+    assert data.quarantine_status == "partial"
+    assert data.quarantine_issue_count == 2
 
 
 def _write_note(

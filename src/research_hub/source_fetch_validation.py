@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import stat
 from typing import Any
 
 from research_hub.source_fetch_extraction import (
@@ -17,20 +18,57 @@ from research_hub.source_fetch_extraction import (
 from research_hub.utils.doi import normalize_doi
 
 
+MAX_VALIDATION_ARTIFACT_BYTES = 64 * 1024 * 1024
+
+
+def _linked(path: Path) -> bool:
+    attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    return path.is_symlink() or bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)) or (
+        hasattr(path, "is_junction") and path.is_junction()
+    )
+
+
+def _read_bounded_file(path: Path, maximum: int = MAX_VALIDATION_ARTIFACT_BYTES) -> bytes:
+    chunks = []
+    size = 0
+    with path.open("rb") as stream:
+        while chunk := stream.read(65536):
+            size += len(chunk)
+            if size > maximum:
+                raise ValueError(f"artifact exceeds {maximum} bytes")
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _contained_existing_file(value: object, output_dir: Path) -> Path:
     if not isinstance(value, str) or not value:
         raise ValueError("artifact path is missing")
     path = Path(value)
     if not path.is_absolute():
         path = output_dir / path
-    path = path.resolve()
     try:
-        path.relative_to(output_dir)
+        relative = path.absolute().relative_to(output_dir)
     except ValueError as exc:
         raise ValueError(f"artifact path escapes output directory: {value}") from exc
-    if not path.is_file():
-        raise ValueError(f"artifact file is missing: {path}")
-    return path
+    if ".." in relative.parts or any(part in {".", ".."} for part in path.parts):
+        raise ValueError(f"artifact path escapes output directory: {value}")
+    current = output_dir
+    try:
+        for part in relative.parts:
+            current = current / part
+            if _linked(current):
+                raise ValueError(f"linked artifact path is not allowed: {value}")
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(output_dir)
+    except ValueError as exc:
+        if "escapes" in str(exc) or "linked" in str(exc):
+            raise
+        raise ValueError(f"artifact path escapes output directory: {value}") from exc
+    except FileNotFoundError as exc:
+        raise ValueError(f"artifact file is missing: {path}") from exc
+    if not resolved.is_file():
+        raise ValueError(f"artifact file is missing: {resolved}")
+    return resolved
 
 
 def _valid_aware_timestamp(value: object) -> bool:
@@ -49,8 +87,14 @@ def validate_source_fetch(
     result_path: Path,
     *,
     output_dir: Path | None = None,
+    receipt_bytes: bytes | None = None,
 ) -> dict[str, Any]:
-    """Replay and validate a SourceFetchResult without network access."""
+    """Replay a SourceFetchResult without network access.
+
+    When ``receipt_bytes`` is supplied, the caller is responsible for reading
+    those bytes from ``result_path`` within ``output_dir``. The bytes/path
+    pairing is not independently authenticated here.
+    """
     # Imported lazily by the public wrapper, after source_fetch is initialized.
     from research_hub.source_fetch import (
         SCHEMA_VERSION,
@@ -63,13 +107,17 @@ def validate_source_fetch(
         _receipt_result_fields,
     )
 
-    result_path = Path(result_path).expanduser().resolve()
-    root = Path(output_dir).expanduser().resolve() if output_dir else result_path.parent
+    result_path = Path(result_path).expanduser()
+    root = Path(output_dir).expanduser().resolve() if output_dir else result_path.parent.resolve()
     errors: list[str] = []
     payload: dict[str, Any] = {}
     try:
-        result_path.relative_to(root)
-        loaded = json.loads(result_path.read_text(encoding="utf-8"))
+        result_path = _contained_existing_file(str(result_path), root)
+        raw_receipt = (_read_bounded_file(result_path) if receipt_bytes is None
+                       else receipt_bytes)
+        if not isinstance(raw_receipt, bytes) or len(raw_receipt) > MAX_VALIDATION_ARTIFACT_BYTES:
+            raise ValueError("result receipt is invalid or too large")
+        loaded = json.loads(raw_receipt.decode("utf-8"))
         if not isinstance(loaded, dict):
             raise ValueError("result root must be a JSON object")
         payload = loaded
@@ -111,7 +159,7 @@ def validate_source_fetch(
                 errors.append(f"attempt {index}: truncation flag/outcome mismatch")
             if attempt.raw_path:
                 raw_path = _contained_existing_file(attempt.raw_path, root)
-                raw_bytes = raw_path.read_bytes()
+                raw_bytes = _read_bounded_file(raw_path)
                 if _hash(raw_bytes) != attempt.raw_sha256:
                     errors.append(f"attempt {index}: raw SHA-256 mismatch")
                 if attempt.response_bytes != len(raw_bytes):
@@ -125,7 +173,7 @@ def validate_source_fetch(
     if extracted_path_value:
         try:
             extracted_path = _contained_existing_file(extracted_path_value, root)
-            extracted_bytes = extracted_path.read_bytes()
+            extracted_bytes = _read_bounded_file(extracted_path)
             extracted_hash = _hash(extracted_bytes)
             if extracted_hash != payload.get("extracted_text_sha256"):
                 errors.append("extracted text SHA-256 mismatch")
@@ -270,9 +318,9 @@ def validate_source_fetch(
         try:
             if len(attempts) < 2:
                 raise ValueError("saved import attempts are missing")
-            provenance_bytes = _contained_existing_file(
+            provenance_bytes = _read_bounded_file(_contained_existing_file(
                 attempts[0].raw_path, root
-            ).read_bytes()
+            ))
             provenance_hash = _hash(provenance_bytes)
             if provenance_hash != saved_import.get("manifest_sha256"):
                 errors.append("saved import: provenance manifest SHA-256 mismatch")
@@ -396,7 +444,7 @@ def validate_source_fetch(
     if extracted_text and selected_raw:
         try:
             raw_path = _contained_existing_file(selected_raw, root)
-            raw_bytes = raw_path.read_bytes()
+            raw_bytes = _read_bounded_file(raw_path)
             if _hash(raw_bytes) != payload.get("raw_sha256"):
                 errors.append("selected raw SHA-256 mismatch")
             selected_attempt = next(

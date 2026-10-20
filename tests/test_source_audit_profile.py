@@ -65,6 +65,25 @@ def test_profile_replays_actual_receipt_and_detects_raw_tampering(tmp_path, monk
     assert any("raw SHA-256 mismatch" in message for message in messages)
 
 
+@pytest.mark.parametrize("blocker", ["linked", "oversized"])
+def test_source_audit_reader_fails_closed_for_linked_or_oversized_artifacts(
+    tmp_path, monkeypatch, blocker
+):
+    from research_hub import source_audit
+
+    packet, audit = build_fixture(tmp_path, "full-text", monkeypatch)
+    if blocker == "linked":
+        raw_path = tmp_path / audit["observations"][0]["raw_path"]
+        monkeypatch.setattr(source_audit, "_linked", lambda path: path == raw_path)
+        expected = "linked artifact paths are not allowed"
+    else:
+        monkeypatch.setattr(source_audit, "MAX_ARTIFACT_BYTES", 1)
+        expected = "artifact exceeds 1 bytes"
+    findings = audit_findings(packet, audit, tmp_path)
+    assert any("source artifact unavailable" in finding["message"]
+               and expected in finding["message"] for finding in findings), findings
+
+
 @pytest.mark.parametrize("native, level, status", [
     (False, "abstract", "available"),
     (True, "generated-summary", "available"),
@@ -208,7 +227,7 @@ def test_optional_profile_schema_and_missing_root_fail_closed(tmp_path, monkeypa
     assert validate_evidence_packet(packet)  # strict v1 still rejects extra fields
 
 
-def test_native_handoff_retains_versions_reversal_and_exact_replay(handoff_env, tmp_path, capsys):
+def test_native_handoff_retains_versions_reversal_and_exact_replay(handoff_env, tmp_path, capsys):  # noqa: F811
     from research_hub import cli
 
     cfg, created, notes = handoff_env

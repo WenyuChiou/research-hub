@@ -27,7 +27,7 @@ from research_hub.source_fetch_extraction import (
     _extract_html,
     _extract_pdf,
     _extract_text,
-    _identity,
+    _identity,  # noqa: F401 - retained as the source_fetch compatibility alias.
     _is_text_content_type,
     _source_identity,
 )
@@ -736,11 +736,18 @@ def validate_source_fetch(
     result_path: Path,
     *,
     output_dir: Path | None = None,
+    receipt_bytes: bytes | None = None,
 ) -> dict[str, Any]:
-    """Replay and validate a SourceFetchResult without network access."""
+    """Replay a SourceFetchResult without network access.
+
+    ``receipt_bytes`` is an internal fast path for bytes just read from
+    ``result_path`` inside ``output_dir``. This function does not verify that
+    the supplied bytes match the path; callers that cannot preserve that pairing
+    must omit the argument.
+    """
     from research_hub.source_fetch_validation import validate_source_fetch as _validate
 
-    return _validate(result_path, output_dir=output_dir)
+    return _validate(result_path, output_dir=output_dir, receipt_bytes=receipt_bytes)
 
 
 __all__ = [

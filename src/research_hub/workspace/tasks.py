@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import os
 import uuid
+from copy import deepcopy
 
 from .core import WorkspaceError, atomic_json, digest, encoded, file_hash, now, safe_path
 
@@ -24,16 +24,298 @@ class TaskService:
 
     def list(self, project_id: str) -> list[dict]:
         with self.workspace.db() as db:
-            return [json.loads(row[0]) for row in db.execute("SELECT body FROM tasks WHERE project=? ORDER BY rowid DESC", (project_id,))]
+            tasks = [json.loads(row[0]) for row in db.execute("SELECT body FROM tasks WHERE project=? ORDER BY rowid DESC", (project_id,))]
+        return [self._with_freshness(task) for task in tasks]
 
     def get(self, task_id: str, db=None) -> dict:
         if db is None:
             with self.workspace.db() as connection:
-                return self.get(task_id, connection)
+                task = self.get(task_id, connection)
+            return self._with_freshness(task)
         row = db.execute("SELECT body FROM tasks WHERE id=?", (task_id,)).fetchone()
         if row is None:
             raise WorkspaceError("Unknown task", "not_found")
         return json.loads(row[0])
+
+    def _with_freshness(self, task: dict) -> dict:
+        """Attach a live, read-only projection without changing the task record."""
+        return {**task, "freshness": self.assess_freshness(task)}
+
+    @staticmethod
+    def _reference(kind: str, ref: str, *, path: str | None = None,
+                   expected_sha256: str | None = None, observed_sha256: str | None = None,
+                   status: str) -> dict:
+        result = {"kind": kind, "ref": ref, "status": status}
+        if path is not None:
+            result["path"] = path
+        if expected_sha256 is not None:
+            result["expected_sha256"] = expected_sha256
+        if observed_sha256 is not None:
+            result["observed_sha256"] = observed_sha256
+        return result
+
+    def _file_reference(self, *, kind: str, ref: str, path_value: str,
+                        expected_sha256: str, missing_message: str,
+                        changed_message: str, changed_code: str) -> tuple[dict, list[dict]]:
+        try:
+            path = safe_path(self.workspace.root, path_value, exists=True)
+            observed = file_hash(path)
+        except (WorkspaceError, OSError, TypeError, ValueError) as exc:
+            message = missing_message
+            reference = self._reference(kind, ref, path=path_value,
+                                        expected_sha256=expected_sha256, status="unknown")
+            return reference, [{"code": "source-unavailable", "message": message,
+                                "ref": ref, "detail": type(exc).__name__}]
+        status = "current" if observed == expected_sha256 else "stale"
+        reference = self._reference(kind, ref, path=path_value,
+                                    expected_sha256=expected_sha256,
+                                    observed_sha256=observed, status=status)
+        if status == "stale":
+            return reference, [{"code": changed_code, "message": changed_message,
+                                "ref": ref}]
+        return reference, []
+
+    def _input_assessment(self, task: dict) -> tuple[list[dict], list[dict]]:
+        """Shared input checks for display and every execution/approval gate."""
+        references: list[dict] = []
+        reasons: list[dict] = []
+        project_id = task.get("project_id", "")
+        request = task.get("request") if isinstance(task.get("request"), dict) else {}
+        requested_artifacts = request.get("artifacts", [])
+
+        def identity(rows):
+            return sorted((a["id"], a["path"], a["role"], a["sha256"]) for a in rows)
+
+        try:
+            current_artifacts = self.workspace.artifacts(project_id)
+            expected_identity = identity(requested_artifacts)
+            observed_identity = identity(current_artifacts)
+            active_status = "current" if observed_identity == expected_identity else "stale"
+            active_ref = self._reference(
+                "active-project-artifacts", f"project:{project_id}:artifacts",
+                expected_sha256=digest(expected_identity),
+                observed_sha256=digest(observed_identity), status=active_status)
+            references.append(active_ref)
+            if active_status == "stale":
+                reasons.append({"code": "active-artifacts-changed",
+                                "message": "Active project artifacts changed; prepare a new task",
+                                "ref": active_ref["ref"]})
+        except (WorkspaceError, OSError, KeyError, TypeError, ValueError) as exc:
+            references.append(self._reference(
+                "active-project-artifacts", f"project:{project_id}:artifacts", status="unknown"))
+            reasons.append({"code": "source-unavailable",
+                            "message": "Active project artifacts could not be checked",
+                            "ref": f"project:{project_id}:artifacts",
+                            "detail": type(exc).__name__})
+
+        for item in requested_artifacts if isinstance(requested_artifacts, list) else []:
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                ref = f"task:{task.get('id', 'unknown')}:input:invalid"
+                references.append(self._reference("artifact", ref, status="unknown"))
+                reasons.append({"code": "source-unavailable",
+                                "message": "Task input reference is invalid", "ref": ref})
+                continue
+            ref = f"artifact:{item.get('id', item['path'])}"
+            reference, found = self._file_reference(
+                kind="artifact", ref=ref, path_value=item["path"],
+                expected_sha256=item.get("sha256", ""),
+                missing_message=f"Task input is unavailable: {item['path']}",
+                changed_message=f"Task input changed: {item['path']}",
+                changed_code="stale-input")
+            references.append(reference)
+            reasons.extend(found)
+
+        revision_context = request.get("revision_context", {})
+        revision_artifacts = revision_context.get("artifacts", []) if isinstance(revision_context, dict) else []
+        for item in revision_artifacts if isinstance(revision_artifacts, list) else []:
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                ref = f"task:{task.get('id', 'unknown')}:revision:invalid"
+                references.append(self._reference("reviewed-candidate", ref, status="unknown"))
+                reasons.append({"code": "source-unavailable",
+                                "message": "Reviewed candidate reference is invalid", "ref": ref})
+                continue
+            ref = f"candidate:{item['path']}"
+            reference, found = self._file_reference(
+                kind="reviewed-candidate", ref=ref, path_value=item["path"],
+                expected_sha256=item.get("sha256", ""),
+                missing_message=f"Reviewed candidate is unavailable: {item['path']}",
+                changed_message=f"Reviewed candidate changed: {item['path']}",
+                changed_code="stale-candidate")
+            references.append(reference)
+            reasons.extend(found)
+
+        try:
+            # Reviewer comments judge a proposal; they are not new scientific inputs.
+            def scientific(records):
+                return [r for r in records if r["kind"] != "review"]
+
+            expected_records = scientific(request.get("records", []))
+            observed_records = scientific(self.workspace.records(project_id))
+            expected_hash = digest(expected_records)
+            observed_hash = digest(observed_records)
+            records_status = "current" if expected_hash == observed_hash else "stale"
+            ref = f"project:{project_id}:evidence-records"
+            references.append(self._reference("project-evidence", ref,
+                                              expected_sha256=expected_hash,
+                                              observed_sha256=observed_hash,
+                                              status=records_status))
+            if records_status == "stale":
+                reasons.append({"code": "evidence-changed",
+                                "message": "Project evidence records changed; prepare a new task",
+                                "ref": ref})
+        except (WorkspaceError, OSError, KeyError, TypeError, ValueError) as exc:
+            ref = f"project:{project_id}:evidence-records"
+            references.append(self._reference("project-evidence", ref, status="unknown"))
+            reasons.append({"code": "source-unavailable",
+                            "message": "Project evidence records could not be checked",
+                            "ref": ref, "detail": type(exc).__name__})
+
+        manuscript_path = request.get("manuscript_state_path")
+        if manuscript_path:
+            ref = f"workspace:{manuscript_path}"
+            reference, found = self._file_reference(
+                kind="manuscript-state", ref=ref, path_value=manuscript_path,
+                expected_sha256=request.get("manuscript_state_sha256", ""),
+                missing_message="Manuscript authority is unavailable",
+                changed_message="Manuscript authority changed", changed_code="stale-input")
+            references.append(reference)
+            reasons.extend(found)
+
+        expected_adapter = request.get("adapter_sha256")
+        if expected_adapter:
+            ref = "writing-adapter:bundle"
+            try:
+                from .writing import WritingAdapter
+                observed_adapter = WritingAdapter().sha256
+            except (OSError, WorkspaceError, TypeError, ValueError) as exc:
+                observed_adapter = None
+                status = "unknown"
+                reasons.append({"code": "source-unavailable",
+                                "message": "Writing bundle could not be checked",
+                                "ref": ref, "detail": type(exc).__name__})
+            else:
+                status = "current" if observed_adapter == expected_adapter else "stale"
+                if status == "stale":
+                    reasons.append({"code": "writing-bundle-changed",
+                                    "message": "Writing bundle changed after task preparation",
+                                    "ref": ref})
+            references.append(self._reference("writing-adapter", ref,
+                                              expected_sha256=expected_adapter,
+                                              observed_sha256=observed_adapter,
+                                              status=status))
+        return references, reasons
+
+    def _output_assessment(self, task: dict) -> tuple[list[dict], list[dict]]:
+        references: list[dict] = []
+        reasons: list[dict] = []
+        proposal_ref = f"task:{task.get('id', 'unknown')}:result"
+        result = task.get("result")
+        if result is None and task.get("status") not in {
+            "awaiting_human", "completed", "declined"
+        }:
+            return references, reasons
+        if not isinstance(result, dict):
+            references.append(self._reference("proposal", proposal_ref, status="unknown"))
+            reasons.append({"code": "source-unavailable",
+                            "message": "Task result is missing or invalid", "ref": proposal_ref})
+            return references, reasons
+        request = task.get("request", {})
+        input_hash = digest(request)
+        bound_result = result
+        expected_action_hash = digest({"request": request, "result": bound_result})
+        result_current = (result.get("input_hash") == input_hash
+                          and expected_action_hash == task.get("action_hash"))
+        if not result_current:
+            attempts = task.get("attempts", [])
+            prior_attempt = attempts[-1] if attempts and isinstance(attempts[-1], dict) else {}
+            prior = prior_attempt.get("result")
+            decision = prior_attempt.get("decision")
+            terminal_outcome = {
+                "completed": "accept", "declined": "decline", "cancelled": "cancel"
+            }.get(task.get("status"))
+            if isinstance(prior, dict) and isinstance(decision, dict) and terminal_outcome:
+                prior_action_hash = digest({"request": request, "result": prior})
+                decided_result = {**prior, "semantic_acceptance": terminal_outcome}
+                history_is_bound = (
+                    prior.get("input_hash") == input_hash
+                    and prior_action_hash == task.get("action_hash")
+                    and decision.get("gate") == "semantic_acceptance"
+                    and decision.get("decision") == terminal_outcome
+                    and decision.get("affected_action_hash") == task.get("action_hash")
+                    and decided_result == result
+                )
+            else:
+                history_is_bound = False
+            if history_is_bound:
+                bound_result = prior
+                expected_action_hash = prior_action_hash
+                result_current = True
+        result_status = "current" if result_current else "stale"
+        references.append(self._reference(
+            "proposal", proposal_ref, expected_sha256=expected_action_hash,
+            observed_sha256=task.get("action_hash"), status=result_status))
+        if not result_current:
+            reasons.append({"code": "proposal-binding-changed",
+                            "message": "Task result no longer matches its prepared input revision",
+                            "ref": proposal_ref})
+        output_artifacts = result.get("artifacts", [])
+        if not isinstance(output_artifacts, list):
+            ref = f"task:{task.get('id', 'unknown')}:candidate:artifacts"
+            references.append(self._reference("candidate-artifact", ref, status="unknown"))
+            reasons.append({"code": "source-unavailable",
+                            "message": "Candidate artifact list is invalid", "ref": ref})
+            return references, reasons
+        for item in output_artifacts:
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                ref = f"task:{task.get('id', 'unknown')}:candidate:invalid"
+                references.append(self._reference("candidate-artifact", ref, status="unknown"))
+                reasons.append({"code": "source-unavailable",
+                                "message": "Candidate artifact reference is invalid", "ref": ref})
+                continue
+            ref = f"workspace:{item['path']}"
+            reference, found = self._file_reference(
+                kind="candidate-artifact", ref=ref, path_value=item["path"],
+                expected_sha256=item.get("sha256", ""),
+                missing_message=f"Candidate artifact is unavailable: {item['path']}",
+                changed_message="Candidate changed after review", changed_code="stale-candidate")
+            references.append(reference)
+            reasons.extend(found)
+        return references, reasons
+
+    def assess_freshness(self, task: dict) -> dict:
+        """Assess stored task bindings without persisting or repairing them."""
+        try:
+            inputs, reasons = self._input_assessment(task)
+            outputs, output_reasons = self._output_assessment(task)
+            reasons.extend(output_reasons)
+        except (WorkspaceError, OSError, KeyError, TypeError, ValueError) as exc:
+            inputs, outputs = [], []
+            reasons = [{"code": "assessment-unavailable",
+                        "message": "Task freshness could not be assessed",
+                        "ref": f"task:{task.get('id', 'unknown')}",
+                        "detail": type(exc).__name__}]
+        statuses = [row["status"] for row in inputs + outputs]
+        if any(status == "stale" for status in statuses):
+            status = "stale"
+        elif reasons or any(value == "unknown" for value in statuses):
+            status = "unknown"
+        else:
+            status = "current"
+        return {"status": status, "reasons": reasons,
+                "input_references": inputs, "output_references": outputs}
+
+    def _check_inputs(self, task: dict) -> None:
+        _, reasons = self._input_assessment(task)
+        if not reasons:
+            return
+        reason = reasons[0]
+        code = "stale_candidate" if reason["code"] == "stale-candidate" else "stale_input"
+        raise WorkspaceError(reason["message"], code)
+
+    def _check_output_artifacts(self, task: dict) -> None:
+        _, reasons = self._output_assessment(task)
+        if reasons:
+            raise WorkspaceError(reasons[0]["message"], "stale_candidate")
 
     @staticmethod
     def _save(db, task):
@@ -69,30 +351,7 @@ class TaskService:
         return task
 
     def check_inputs(self, task: dict):
-        identity = lambda rows: sorted((a["id"], a["path"], a["role"], a["sha256"]) for a in rows)
-        if identity(self.workspace.artifacts(task["project_id"])) != identity(task["request"]["artifacts"]):
-            raise WorkspaceError("Active project artifacts changed; prepare a new task", "stale_input")
-        for item in task["request"]["artifacts"]:
-            path = safe_path(self.workspace.root, item["path"], exists=True)
-            if file_hash(path) != item["sha256"]:
-                raise WorkspaceError(f"Task input changed: {item['path']}", "stale_input")
-        for item in task["request"].get("revision_context", {}).get("artifacts", []):
-            if file_hash(safe_path(self.workspace.root, item["path"], exists=True)) != item["sha256"]:
-                raise WorkspaceError(f"Reviewed candidate changed: {item['path']}", "stale_candidate")
-        # New reviewer comments are judgments about an output, not changed
-        # scientific inputs. Otherwise adding a comment makes acceptance of
-        # that same proposal impossible. Existing records are append-only.
-        scientific = lambda records: [r for r in records if r["kind"] != "review"]
-        if digest(scientific(self.workspace.records(task["project_id"]))) != digest(scientific(task["request"]["records"])):
-            raise WorkspaceError("Project evidence records changed; prepare a new task", "stale_input")
-        if task["request"].get("manuscript_state_path"):
-            state = safe_path(self.workspace.root, task["request"]["manuscript_state_path"], exists=True)
-            if file_hash(state) != task["request"]["manuscript_state_sha256"]:
-                raise WorkspaceError("Manuscript authority changed", "stale_input")
-        if task["request"].get("adapter_sha256"):
-            from .writing import WritingAdapter
-            if WritingAdapter().sha256 != task["request"]["adapter_sha256"]:
-                raise WorkspaceError("Writing bundle changed after task preparation", "stale_input")
+        self._check_inputs(task)
 
     def handoff(self, task_id: str) -> dict:
         with self.workspace.db(write=True) as db:
@@ -164,14 +423,12 @@ class TaskService:
             self.check_inputs(task)
             if outcome == "revise" and len(task["result"]["prose"]) > 120_000:
                 raise WorkspaceError("Previous proposal exceeds the revision context limit; prepare a scoped revision task with an explicit excerpt", "context_limit")
-            for item in task["result"]["artifacts"]:
-                if file_hash(safe_path(self.workspace.root, item["path"], exists=True)) != item["sha256"]:
-                    raise WorkspaceError("Candidate changed after review", "stale_candidate")
+            self._check_output_artifacts(task)
             record = {"gate": "semantic_acceptance", "actor": actor, "decision": outcome,
                       "timestamp": now(), "rationale": rationale, "affected_action_hash": action_hash,
                       "authority": "local-interactive-session"}
             db.execute("INSERT INTO decisions(task,body) VALUES (?,?)", (task_id, encoded(record)))
-            task["attempts"].append({"result": task["result"], "decision": record,
+            task["attempts"].append({"result": deepcopy(task["result"]), "decision": record,
                                      "execution_provenance": task.get("execution_provenance")})
             task["status"] = {"accept": "completed", "decline": "declined", "revise": "awaiting_agent", "cancel": "cancelled"}[outcome]
             if outcome == "revise":
