@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from research_hub.security import safe_join, validate_slug
+
 import yaml
 
 
@@ -134,7 +136,8 @@ def build_cluster_base(inputs: ClusterBaseInputs) -> str:
 
 def base_path_for_cluster(hub_root: Path, cluster_slug: str) -> Path:
     """Return ``<hub>/<slug>/<slug>.base``."""
-    return hub_root / cluster_slug / (cluster_slug + ".base")
+    slug = validate_slug(cluster_slug, field="cluster_slug")
+    return safe_join(hub_root, slug, slug + ".base", reject_symlinks=True)
 
 
 def write_cluster_base(
