@@ -1,14 +1,13 @@
 """Actual SQLite/file/state integration; scientific acceptance is not mocked PASS."""
 
 import json
-from pathlib import Path
 import threading
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 import pytest
 
-from research_hub.workspace.core import Workspace, WorkspaceError, digest, file_hash, safe_path
+from research_hub.workspace.core import Workspace, WorkspaceError, digest, encoded, file_hash, safe_path
 from research_hub.workspace.service import call_workspace
 from research_hub.workspace.tasks import TaskService, _LOCAL_HUMAN
 
@@ -70,8 +69,57 @@ def test_exact_local_decisions_and_revise_history(ws, outcome, expected):
         assert decided["action_hash"] != task["action_hash"]
         assert decided["result"] is None
     else:
+        assert TaskService(ws).get(task["id"])["freshness"]["status"] == "current"
+        assert decided["attempts"][0]["result"]["semantic_acceptance"] == "pending"
+        assert decided["result"]["semantic_acceptance"] == outcome
         with pytest.raises(WorkspaceError):
             service.import_result(task["id"], prose="late", input_hash=digest(task["request"]))
+
+
+def test_accepted_task_freshness_rechecks_predecision_result_hash(ws):
+    service = TaskService(ws)
+    task = returned_task(ws)
+    service.decide(task["id"], outcome="accept", actor="fixture",
+                   rationale="not scientific approval", action_hash=task["action_hash"],
+                   proof=_LOCAL_HUMAN)
+    assert service.get(task["id"])["freshness"]["status"] == "current"
+
+    with ws.db(write=True) as db:
+        body = json.loads(db.execute("SELECT body FROM tasks WHERE id=?", (task["id"],)).fetchone()[0])
+        # Tamper with both persisted copies while preserving the recorded binding hash.
+        body["result"]["prose"] = "altered result"
+        body["attempts"][-1]["result"]["prose"] = "altered result"
+        db.execute("UPDATE tasks SET body=? WHERE id=?", (encoded(body), task["id"]))
+
+    freshness = service.get(task["id"])["freshness"]
+    assert freshness["status"] == "stale"
+    assert any(reason["code"] == "proposal-binding-changed" for reason in freshness["reasons"])
+
+
+def test_task_with_missing_required_result_is_unknown(ws):
+    task = returned_task(ws)
+    with ws.db(write=True) as db:
+        body = json.loads(db.execute("SELECT body FROM tasks WHERE id=?", (task["id"],)).fetchone()[0])
+        body["result"] = None
+        db.execute("UPDATE tasks SET body=? WHERE id=?", (encoded(body), task["id"]))
+
+    freshness = TaskService(ws).get(task["id"])["freshness"]
+    assert freshness["status"] == "unknown"
+    assert any(reason["code"] == "source-unavailable" for reason in freshness["reasons"])
+
+
+def test_resultless_cancelled_and_failed_tasks_do_not_report_missing_output(ws):
+    service = TaskService(ws)
+    cancelled = service.create("sample", operation="review")
+    service.cancel(cancelled["id"])
+    assert service.get(cancelled["id"])["freshness"]["status"] == "current"
+
+    failed = service.create("sample", operation="review")
+    with ws.db(write=True) as db:
+        body = json.loads(db.execute("SELECT body FROM tasks WHERE id=?", (failed["id"],)).fetchone()[0])
+        body["status"] = "failed"  # launch/execute exceptions can fail before a result exists
+        db.execute("UPDATE tasks SET body=? WHERE id=?", (encoded(body), failed["id"]))
+    assert service.get(failed["id"])["freshness"]["status"] == "current"
 
 
 @pytest.mark.parametrize("status", ["failed", "cancelled", "declined"])
@@ -122,6 +170,38 @@ def test_review_comment_is_not_a_new_scientific_input(ws):
     ws.add_record("sample", kind="review", data={"comment": "Preserve the limitation", "severity": "S1"})
     TaskService(ws).check_inputs(task)
     assert TaskService(ws).get(task["id"])["status"] == "awaiting_human"
+
+
+def test_task_freshness_projection_is_live_read_only_and_reaches_all_reads(ws):
+    service = TaskService(ws)
+    task = returned_task(ws)
+    with ws.db() as db:
+        stored_before = db.execute("SELECT body FROM tasks WHERE id=?", (task["id"],)).fetchone()[0]
+
+    shown = service.get(task["id"])
+    listed = service.list("sample")[0]
+    snapshot = ws.snapshot("sample")
+    assert shown["freshness"]["status"] == "current"
+    assert listed["freshness"] == shown["freshness"]
+    assert snapshot["tasks"][0]["freshness"] == shown["freshness"]
+    assert any(ref["kind"] == "artifact" and ref["path"] == "paper.md"
+               for ref in shown["freshness"]["input_references"])
+    assert any(ref["kind"] == "proposal" and ref["ref"] == f"task:{task['id']}:result"
+               for ref in shown["freshness"]["output_references"])
+
+    (ws.root / "paper.md").write_text("Changed after task preparation", encoding="utf-8")
+    stale = service.get(task["id"])["freshness"]
+    assert stale["status"] == "stale"
+    assert any(reason["code"] == "stale-input" and reason["ref"].startswith("artifact:")
+               for reason in stale["reasons"])
+
+    (ws.root / "paper.md").unlink()
+    unavailable = service.get(task["id"])["freshness"]
+    assert unavailable["status"] == "unknown"
+    assert any(reason["code"] == "source-unavailable" for reason in unavailable["reasons"])
+    with ws.db() as db:
+        stored_after = db.execute("SELECT body FROM tasks WHERE id=?", (task["id"],)).fetchone()[0]
+    assert stored_after == stored_before
 
 
 def test_new_active_manuscript_invalidates_old_task_even_when_old_file_unchanged(ws):

@@ -562,9 +562,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     describe_parser.add_argument(
         "--filter",
+        action="append",
         choices=["subcommands", "mcp_tools", "env_vars", "skills", "personae"],
         default=None,
-        help="Emit only one subtree of the manifest",
+        help="Emit one subtree of the manifest; repeat to combine subtrees",
     )
     describe_parser.add_argument(
         "--json",
