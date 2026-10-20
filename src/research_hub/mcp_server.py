@@ -3174,6 +3174,9 @@ def auto_research_topic(
     brief_path, total_duration_sec, error}``.
     """
     try:
+        if cluster_slug is not None and cluster_slug != "":
+            cluster_slug = _validate_mcp_args(cluster_slug=cluster_slug)["cluster_slug"]
+
         from research_hub.auto import auto_pipeline
 
         report = auto_pipeline(

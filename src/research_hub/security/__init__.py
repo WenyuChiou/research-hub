@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -44,9 +45,16 @@ def validate_identifier(value: object, *, field: str = "identifier") -> str:
     return value
 
 
-def safe_join(root: Path, *segments: str) -> Path:
-    """Join untrusted path segments to root without allowing traversal."""
+def safe_join(
+    root: Path, *segments: str, reject_symlinks: bool = False
+) -> Path:
+    """Join untrusted path segments to root without allowing traversal.
+
+    ``reject_symlinks`` is useful for destructive or cluster-specific paths:
+    even a link that stays inside the root can alias a different run or cluster.
+    """
     root_resolved = Path(root).resolve()
+    candidate = root_resolved
     for seg in segments:
         if not isinstance(seg, str):
             raise ValidationError(f"path segment must be string, got {type(seg).__name__}")
@@ -56,7 +64,33 @@ def safe_join(root: Path, *segments: str) -> Path:
             raise ValidationError(f"path segment {seg!r} contains separators")
         if seg.startswith(".") and seg in {".", ".."}:
             raise ValidationError(f"path segment {seg!r} not allowed")
-    candidate = root_resolved.joinpath(*segments).resolve()
+        candidate = candidate / seg
+        if reject_symlinks:
+            try:
+                component_stat = candidate.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise ValidationError(
+                    f"cannot verify path component {candidate}: {exc}"
+                ) from exc
+            # Reject symbolic links and directory junctions, without treating
+            # unrelated Windows reparse points (for example cloud placeholders)
+            # as aliases.
+            reparse_tag = getattr(component_stat, "st_reparse_tag", None)
+            link_reparse = reparse_tag in {0xA0000003, 0xA000000C}
+            is_junction = getattr(candidate, "is_junction", None)
+            try:
+                junction = bool(is_junction()) if is_junction is not None else False
+            except OSError as exc:
+                raise ValidationError(
+                    f"cannot verify path component {candidate}: {exc}"
+                ) from exc
+            if stat.S_ISLNK(component_stat.st_mode) or link_reparse or junction:
+                raise ValidationError(
+                    f"path component {candidate} is a symlink or reparse point"
+                )
+    candidate = candidate.resolve()
     try:
         candidate.relative_to(root_resolved)
     except ValueError as exc:

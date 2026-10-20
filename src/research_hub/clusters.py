@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -20,7 +21,7 @@ from research_hub.operations import (
     move_paper,
     note_matches_query,
 )
-from research_hub.security import atomic_write_text, safe_join
+from research_hub.security import ValidationError, atomic_write_text, safe_join, validate_slug
 from research_hub.vault.hub_overview import PARENT_MOCS
 
 # Imported at module level so tests can patch research_hub.clusters._resolve_parent_collection_key_readonly
@@ -248,6 +249,23 @@ def slugify(text: str) -> str:
     return slug or "unnamed-cluster"
 
 
+def cluster_slugify(text: str) -> str:
+    """Return a valid cluster slug without truncation collisions.
+
+    ``slugify`` intentionally caps the number of words, but a single word can
+    still exceed the 64-character cluster slug contract. Preserve existing
+    output for ordinary topics and add a stable digest only when bounding a
+    long generated slug.
+    """
+    slug = slugify(text)
+    if len(slug) <= 64:
+        return slug
+
+    digest = hashlib.sha256(slug.encode("utf-8")).hexdigest()[:20]
+    prefix = slug[: 64 - len(digest) - 1].rstrip("-_")
+    return f"{prefix}-{digest}"
+
+
 def _utc_now() -> str:
     from datetime import datetime, timezone
 
@@ -432,7 +450,14 @@ class ClusterRegistry:
 
         Also scaffolds hub/<slug>/ on first creation.
         """
-        final_slug = (slug or slugify(query)).strip().lower()
+        raw_slug = (
+            cluster_slugify(query)
+            if slug is None or (isinstance(slug, str) and slug == "")
+            else slug
+        )
+        if isinstance(raw_slug, str):
+            raw_slug = raw_slug.strip().lower()
+        final_slug = validate_slug(raw_slug, field="cluster_slug")
         if final_slug in self.clusters:
             existing = self.clusters[final_slug]
             if existing.status == "merged":
@@ -441,6 +466,18 @@ class ClusterRegistry:
                     raise ValueError(f"Merged cluster tombstone cannot be resolved: {final_slug}")
                 return resolved
             return existing
+        generated_slug = cluster_slugify(query)
+        legacy_generated_slug = slugify(query)
+        if (
+            final_slug == generated_slug
+            and legacy_generated_slug != generated_slug
+            and legacy_generated_slug in self.clusters
+        ):
+            raise ValidationError(
+                f"Existing legacy cluster key {legacy_generated_slug!r} exceeds the "
+                f"64-character slug contract; migrate that registry entry manually "
+                f"before creating the bounded slug {generated_slug!r}"
+            )
         from datetime import datetime, timezone
 
         cluster = Cluster(
@@ -608,10 +645,15 @@ class ClusterRegistry:
 
     def delete(self, slug: str, dry_run: bool = False) -> dict[str, str | int | bool]:
         """Delete a cluster registry entry and unbind its notes."""
+        slug = validate_slug(slug, field="cluster_slug")
         if slug not in self.clusters:
             raise ValueError(f"Cluster not found: {slug}")
         cfg = get_config()
-        note_paths = sorted((cfg.raw / slug).glob("*.md"))
+        raw_dir = safe_join(cfg.raw, slug, reject_symlinks=True)
+        note_paths = [
+            safe_join(cfg.raw, slug, path.name, reject_symlinks=True)
+            for path in sorted(raw_dir.glob("*.md"))
+        ]
         if not dry_run:
             self.clusters.pop(slug)
             for note_path in note_paths:
@@ -640,7 +682,9 @@ class ClusterRegistry:
         *,
         expect_identity: dict[str, str] | None = None,
     ) -> Path:
-        note_path = raw_dir / cluster_slug / f"{slug}.md"
+        note_path = safe_join(
+            raw_dir, cluster_slug, f"{slug}.md", reject_symlinks=True
+        )
         if not note_path.exists():
             raise RuntimeError(f"move verification failed: missing {note_path}")
         topic_cluster = _frontmatter_value(note_path, "topic_cluster")
@@ -672,9 +716,11 @@ class ClusterRegistry:
         rollback_errors: list[str] = []
         for moved_slug in reversed(moved_slugs):
             try:
-                current = raw_dir / from_cluster / f"{moved_slug}.md"
+                current = safe_join(
+                    raw_dir, from_cluster, f"{moved_slug}.md", reject_symlinks=True
+                )
                 expected = self._note_identity(current)
-                move_paper(moved_slug, to_cluster, source_path=current)
+                move_paper(moved_slug, to_cluster, source_path=current, raw_root=raw_dir)
                 self._verify_note_in_cluster(
                     raw_dir, moved_slug, to_cluster, expect_identity=expected
                 )
@@ -703,8 +749,11 @@ class ClusterRegistry:
                 # Capture identity from the source BEFORE the move, and pass the
                 # explicit source path so move_paper never re-resolves by slug and
                 # grabs a same-slug note from a different cluster.
-                expected = self._note_identity(note_path)
-                move_paper(slug, target_slug, source_path=note_path)
+                source_path = safe_join(
+                    raw_dir, source_slug, note_path.name, reject_symlinks=True
+                )
+                expected = self._note_identity(source_path)
+                move_paper(slug, target_slug, source_path=source_path, raw_root=raw_dir)
                 self._verify_note_in_cluster(
                     raw_dir, slug, target_slug, expect_identity=expected
                 )
@@ -714,10 +763,10 @@ class ClusterRegistry:
             self._rollback_moved_notes(
                 moved_slugs, from_cluster=target_slug, to_cluster=source_slug, raw_dir=raw_dir
             )
-            self._rebuild_dedup_index_best_effort()
+            self._rebuild_dedup_index_best_effort(raw_dir)
             raise
 
-    def _rebuild_dedup_index_best_effort(self) -> bool:
+    def _rebuild_dedup_index_best_effort(self, raw_root: Path | None = None) -> bool:
         try:
             cfg = get_config()
             dedup_path = cfg.research_hub_dir / "dedup_index.json"
@@ -726,7 +775,7 @@ class ClusterRegistry:
             from research_hub.dedup import DedupIndex
 
             dedup = DedupIndex.load(dedup_path)
-            dedup.rebuild_from_obsidian(cfg.raw)
+            dedup.rebuild_from_obsidian(raw_root or cfg.raw)
             dedup.save(dedup_path)
             return True
         except Exception as exc:  # noqa: BLE001 - non-fatal post-move repair
@@ -739,7 +788,7 @@ class ClusterRegistry:
         except Exception as exc:  # noqa: BLE001
             logger.warning("merged-cluster GC skipped; config unavailable: %s", exc)
             return
-        hub_dir = safe_join(cfg.hub, source.slug)
+        hub_dir = safe_join(cfg.hub, source.slug, reject_symlinks=True)
         try:
             if hub_dir.exists():
                 shutil.rmtree(hub_dir)
@@ -776,7 +825,9 @@ class ClusterRegistry:
                     continue
                 if name in referenced:
                     continue
-                moc_path = safe_join(cfg.hub, "_moc", f"{name}.md")
+                moc_path = safe_join(
+                    cfg.hub, "_moc", f"{name}.md", reject_symlinks=True
+                )
                 try:
                     if moc_path.exists():
                         moc_path.unlink()
@@ -794,6 +845,8 @@ class ClusterRegistry:
         re-ingest on the source's seed query redirects to the target instead of
         re-creating the merged-away cluster (the duplicate-cluster bug).
         """
+        source_slug = validate_slug(source_slug, field="source_slug")
+        target_slug = validate_slug(target_slug, field="target_slug")
         source = self.clusters.get(source_slug)
         target = self.clusters.get(target_slug)
         if source is None:
@@ -801,7 +854,9 @@ class ClusterRegistry:
         if target is None:
             raise ValueError(f"Cluster not found: {target_slug}")
         raw_dir = vault_raw or get_config().raw
-        note_paths = sorted((raw_dir / source_slug).glob("*.md"))
+        source_dir = safe_join(raw_dir, source_slug, reject_symlinks=True)
+        safe_join(raw_dir, target_slug, reject_symlinks=True)
+        note_paths = sorted(source_dir.glob("*.md"))
         moved_slugs = self._move_notes_atomically(
             note_paths, source_slug=source_slug, target_slug=target_slug, raw_dir=raw_dir,
         )
@@ -810,7 +865,7 @@ class ClusterRegistry:
         source.merged_into = target_slug
         self.save()
         self._gc_merged_cluster_hub(source, target)
-        self._rebuild_dedup_index_best_effort()
+        self._rebuild_dedup_index_best_effort(raw_dir)
         self._refresh_graph_if_possible()
         return {"source": source_slug, "target": target_slug, "moved": len(moved_slugs)}
 
@@ -828,28 +883,42 @@ class ClusterRegistry:
         freshly-created target is removed, so a failed split leaves no
         half-populated cluster behind.
         """
+        source_slug = validate_slug(source_slug, field="source_slug")
         source = self.clusters.get(source_slug)
         if source is None:
             raise ValueError(f"Cluster not found: {source_slug}")
         raw_dir = vault_raw or get_config().raw
-        all_notes = sorted((raw_dir / source_slug).glob("*.md"))
+        source_dir = safe_join(raw_dir, source_slug, reject_symlinks=True)
+        requested_target_slug = validate_slug(
+            cluster_slugify(query), field="target_slug"
+        )
+        safe_join(raw_dir, requested_target_slug, reject_symlinks=True)
+        all_notes = [
+            safe_join(raw_dir, source_slug, path.name, reject_symlinks=True)
+            for path in sorted(source_dir.glob("*.md"))
+        ]
         to_move = [path for path in all_notes if note_matches_query(path, query)]
         remaining = len(all_notes) - len(to_move)
         new_cluster = self.create(query, name=new_name, seed_keywords=seed_keywords)
+        # create() can resolve a merged tombstone to another existing slug.
+        # Validate and confine that actual destination before the rollback block;
+        # a rejected destination must never pop a pre-existing redirected target.
+        target_slug = validate_slug(new_cluster.slug, field="target_slug")
+        safe_join(raw_dir, target_slug, reject_symlinks=True)
         try:
             moved_slugs = self._move_notes_atomically(
-                to_move, source_slug=source_slug, target_slug=new_cluster.slug, raw_dir=raw_dir,
+                to_move, source_slug=source_slug, target_slug=target_slug, raw_dir=raw_dir,
             )
         except Exception:
             # All-or-nothing: drop the just-created (now-empty) target cluster.
             self.clusters.pop(new_cluster.slug, None)
             self.save()
             raise
-        self._rebuild_dedup_index_best_effort()
+        self._rebuild_dedup_index_best_effort(raw_dir)
         self._refresh_graph_if_possible()
         return {
             "source": source_slug,
-            "new_cluster": new_cluster.slug,
+            "new_cluster": target_slug,
             "moved": len(moved_slugs),
             "remaining": remaining,
         }
@@ -880,17 +949,32 @@ def compute_cluster_cascade_report(cfg, slug: str) -> CascadeReport:
     from research_hub.zotero.client import ZoteroDualClient
 
     report = CascadeReport(slug=slug)
-    raw_dir = safe_join(cfg.raw, slug)
-    note_paths = sorted(raw_dir.glob("*.md")) if raw_dir.exists() else []
+    raw_dir = safe_join(cfg.raw, slug, reject_symlinks=True)
+    note_paths = (
+        [
+            safe_join(raw_dir, path.name, reject_symlinks=True)
+            for path in sorted(raw_dir.glob("*.md"))
+        ]
+        if raw_dir.exists()
+        else []
+    )
     report.obsidian_papers = len(note_paths)
     report.obsidian_folder_size_bytes = sum(
         path.stat().st_size for path in note_paths if path.exists()
     )
 
-    hub_dir = safe_join(cfg.hub, slug)
-    crystals_dir = hub_dir / "crystals"
-    report.crystal_files = len(list(crystals_dir.glob("*.md"))) if crystals_dir.exists() else 0
-    memory_json = hub_dir / "memory.json"
+    hub_dir = safe_join(cfg.hub, slug, reject_symlinks=True)
+    crystals_dir = safe_join(hub_dir, "crystals", reject_symlinks=True)
+    crystal_paths = (
+        [
+            safe_join(crystals_dir, path.name, reject_symlinks=True)
+            for path in sorted(crystals_dir.glob("*.md"))
+        ]
+        if crystals_dir.exists()
+        else []
+    )
+    report.crystal_files = len(crystal_paths)
+    memory_json = safe_join(hub_dir, "memory.json", reject_symlinks=True)
     if memory_json.exists():
         try:
             payload = json.loads(memory_json.read_text(encoding="utf-8"))
@@ -996,6 +1080,11 @@ def cascade_delete_cluster(
     from research_hub.pipeline_repair import _iter_collection_items
     from research_hub.zotero.client import ZoteroDualClient
 
+    slug = validate_slug(slug, field="cluster_slug")
+    raw_dir = safe_join(cfg.raw, slug, reject_symlinks=True)
+    deleted_dir = safe_join(cfg.raw, f"_deleted_{slug}", reject_symlinks=True)
+    hub_dir = safe_join(cfg.hub, slug, reject_symlinks=True)
+
     registry = ClusterRegistry(cfg.clusters_file)
     cluster = registry.get(slug)
     if cluster is None:
@@ -1026,8 +1115,6 @@ def cascade_delete_cluster(
                 f"zotero_collection_key is the research-hub parent collection."
             )
 
-    raw_dir = safe_join(cfg.raw, slug)
-    deleted_dir = safe_join(cfg.raw, f"_deleted_{slug}")
     if raw_dir.exists():
         deleted_dir.parent.mkdir(parents=True, exist_ok=True)
         if deleted_dir.exists():
@@ -1123,7 +1210,6 @@ def cascade_delete_cluster(
     dedup.save(dedup_path)
 
     # hub/<slug>/ — overview, crystals, memory.json, .base, briefs
-    hub_dir = safe_join(cfg.hub, slug)
     if hub_dir.exists():
         shutil.rmtree(hub_dir)
 
@@ -1240,7 +1326,30 @@ def compute_coverage(cfg) -> list[ClusterCoverage]:
     raw_root = Path(cfg.raw)
 
     for cluster in clusters:
-        cluster_dir = raw_root / cluster.slug
+        try:
+            cluster_slug = validate_slug(cluster.slug, field="cluster_slug")
+            cluster_dir = safe_join(
+                raw_root, cluster_slug, reject_symlinks=True
+            )
+        except ValidationError as exc:
+            # Keep the legacy registry entry visible in the coverage report,
+            # but never let a persisted invalid key read outside the raw root.
+            logger.warning(
+                "Skipping filesystem coverage for cluster %r with invalid slug: %s",
+                cluster.slug,
+                exc,
+            )
+            results.append(
+                ClusterCoverage(
+                    slug=cluster.slug,
+                    name=cluster.name,
+                    paper_count=0,
+                    pending_summary=0,
+                    coverage_score=0,
+                    latest_mtime=0.0,
+                )
+            )
+            continue
         if not cluster_dir.exists():
             results.append(
                 ClusterCoverage(
@@ -1254,11 +1363,20 @@ def compute_coverage(cfg) -> list[ClusterCoverage]:
             )
             continue
 
-        papers = [
-            path
-            for path in cluster_dir.glob("*.md")
-            if not path.name.startswith("00_") and not path.name.startswith("_")
-        ]
+        papers = []
+        for path in cluster_dir.glob("*.md"):
+            if path.name.startswith("00_") or path.name.startswith("_"):
+                continue
+            try:
+                papers.append(
+                    safe_join(
+                        cluster_dir, path.name, reject_symlinks=True
+                    )
+                )
+            except ValidationError as exc:
+                logger.warning(
+                    "Skipping filesystem coverage for paper %s: %s", path, exc
+                )
         paper_count = len(papers)
         pending = 0
         latest_mtime = 0.0

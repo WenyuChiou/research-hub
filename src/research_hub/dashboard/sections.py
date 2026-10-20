@@ -1318,6 +1318,33 @@ class DiagnosticsSection(DashboardSection):
         health = list(_attr(data, "health_badges", []) or [])
         drift = list(_attr(data, "drift_alerts", []) or [])
         quarantined = list(_attr(data, "quarantined", []) or [])
+        quarantine_status = _attr(data, "quarantine_status", "unavailable")
+        quarantine_issue_count = _attr(data, "quarantine_issue_count", None)
+        if not isinstance(quarantine_status, str) or quarantine_status not in {
+            "empty",
+            "complete",
+            "partial",
+            "unavailable",
+        }:
+            quarantine_status = "unavailable"
+        if type(quarantine_issue_count) is not int or quarantine_issue_count < 0:
+            quarantine_issue_count = None
+        if quarantine_status == "empty" and quarantined:
+            quarantine_status = "partial"
+            quarantine_issue_count = None
+        elif quarantine_status == "complete" and not quarantined:
+            quarantine_status = "unavailable"
+
+        if quarantine_status == "empty":
+            quarantine_heading = "Quarantined (0)"
+        elif quarantine_status == "complete":
+            quarantine_heading = f"Quarantined ({len(quarantined)})"
+        elif quarantine_status == "partial" and quarantined:
+            quarantine_heading = f"Quarantined (partial; {len(quarantined)} readable)"
+        elif quarantine_status == "partial":
+            quarantine_heading = "Quarantined (partial)"
+        else:
+            quarantine_heading = "Quarantined (unavailable)"
         return f"""
         <section id="tab-diagnostics" class="dash-panel dash-panel-diagnostics" role="tabpanel">
           <div class="diag-grid">
@@ -1337,10 +1364,10 @@ class DiagnosticsSection(DashboardSection):
             </article>
             <article class="card card-quarantine">
               <header class="card-heading">
-                <h2>Quarantined ({len(quarantined)})</h2>
-                <p class="card-meta">Candidates the fit-check gate rejected as off-topic. Restore false-positives with <code>research-hub authenticity restore</code>.</p>
+                <h2>{quarantine_heading}</h2>
+                <p class="card-meta">Candidates held by authenticity or fit-check gates. Review each layer and reason before restoring with <code>research-hub authenticity restore</code>.</p>
               </header>
-              {self._quarantine_block(quarantined)}
+              {self._quarantine_block(quarantined, quarantine_status, quarantine_issue_count)}
             </article>
           </div>
         </section>
@@ -1458,16 +1485,40 @@ class DiagnosticsSection(DashboardSection):
         </div>
         """
 
-    def _quarantine_block(self, records: list) -> str:
-        """Thin status mirror of fit-check quarantined candidates.
+    def _quarantine_block(
+        self,
+        records: list,
+        status: str = "unavailable",
+        issue_count: int | None = None,
+    ) -> str:
+        """Render known-empty, complete, partial, or unavailable quarantine status.
 
-        Mirrors the MCP `list_quarantine` / REST `get_cluster_quarantine`
-        rows: one row per rejected paper showing slug, cluster, layer, and
-        the rejection reason. No re-design — same card/list idiom as the
-        sibling drift block.
+        A partial scan shows only readable rows and never implies an exact
+        total. An unavailable scan has no numeric count.
         """
-        if not records:
-            return '<p class="diag-empty">Nothing quarantined — every candidate passed the fit-check.</p>'
+        if status == "empty":
+            return '<p class="diag-empty">No quarantined candidates.</p>'
+        if status == "unavailable":
+            return '<p class="diag-empty">Quarantine status is unavailable; total count is unknown.</p>'
+        if status == "partial":
+            if records:
+                noun = "record" if len(records) == 1 else "records"
+                notice = f"Showing {len(records)} readable quarantine {noun}; "
+            else:
+                notice = "No readable quarantine records were found; "
+            if issue_count is None:
+                notice += "some quarantine directories or records could not be inspected. "
+            elif issue_count:
+                noun = "record was" if issue_count == 1 else "records were"
+                notice += f"{issue_count} malformed or unreadable quarantine {noun} skipped. "
+            notice += "Total count is unknown."
+            notice_html = f'<p class="diag-empty">{html_escape(notice)}</p>'
+            if not records:
+                return notice_html
+        elif status != "complete" or not records:
+            return '<p class="diag-empty">Quarantine status is unavailable; total count is unknown.</p>'
+        else:
+            notice_html = ""
         rows: list[str] = []
         for record in records:
             slug = html_escape(_attr(record, "slug", "") or "")
@@ -1489,7 +1540,7 @@ class DiagnosticsSection(DashboardSection):
                 f"<code>{slug}</code> {meta_html} {reason_html}"
                 f"</li>"
             )
-        return f'<ol class="quarantine-list">{"".join(rows)}</ol>'
+        return f'{notice_html}<ol class="quarantine-list">{"".join(rows)}</ol>'
 
 
 # --- ManageSection (command builder forms for cluster CRUD) -------------
