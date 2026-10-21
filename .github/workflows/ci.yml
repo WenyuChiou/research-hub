@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v7
@@ -58,7 +58,7 @@ jobs:
         run: |
           pip install -e '.[dev,mcp]'
           pytest -q tests/test_workspace_producer_integration.py
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workspace-verification
