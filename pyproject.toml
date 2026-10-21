@@ -58,7 +58,7 @@ dev = [
     "pytest-socket>=0.7",
     "pytest-split>=0.8",
     "pytest-timeout>=2.3",
-    "responses>=0.23",
+    "responses>=0.26.3",
 ]
 
 [project.scripts]
