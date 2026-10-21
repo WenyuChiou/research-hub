@@ -52,7 +52,7 @@ browser-auth = ["rookiepy>=0.1.0", "browser-cookie3>=0.19.1"]
 playwright = ["patchright>=1.55"]
 scholar = ["scholarly>=1.7"]  # enables google-scholar search backend
 dev = [
-    "pytest>=7",
+    "pytest>=9.1.1",
     "pytest-cov>=4.0",
     "pytest-mock>=3.10",
     "pytest-socket>=0.7",
