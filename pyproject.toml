@@ -42,7 +42,7 @@ Issues = "https://github.com/WenyuChiou/research-hub/issues"
 [project.optional-dependencies]
 secrets = ["cryptography>=42"]
 import = [
-    "pdfplumber>=0.11",
+    "pdfplumber>=0.11.10",
     "python-docx>=1.1",
     "readability-lxml>=0.8",
     "requests>=2.28",
