@@ -42,7 +42,7 @@ Issues = "https://github.com/WenyuChiou/research-hub/issues"
 [project.optional-dependencies]
 secrets = ["cryptography>=42"]
 import = [
-    "pdfplumber>=0.11",
+    "pdfplumber>=0.11.10",
     "python-docx>=1.1",
     "readability-lxml>=0.8",
     "requests>=2.28",
@@ -52,13 +52,13 @@ browser-auth = ["rookiepy>=0.1.0", "browser-cookie3>=0.19.1"]
 playwright = ["patchright>=1.55"]
 scholar = ["scholarly>=1.7"]  # enables google-scholar search backend
 dev = [
-    "pytest>=7",
+    "pytest>=9.1.1",
     "pytest-cov>=4.0",
     "pytest-mock>=3.10",
     "pytest-socket>=0.7",
     "pytest-split>=0.8",
     "pytest-timeout>=2.3",
-    "responses>=0.23",
+    "responses>=0.26.3",
 ]
 
 [project.scripts]

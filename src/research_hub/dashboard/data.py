@@ -25,6 +25,7 @@ from research_hub.dashboard.types import (
     NLMArtifactRecord,
     PaperRow,
     QuarantineRecord,
+    QuarantineStatus,
     Quote,
 )
 from research_hub.paper import archive_dir, list_papers_by_label
@@ -180,24 +181,26 @@ def _cluster_nlm_artifacts(cluster_cache: dict, notebook_url: str) -> list[NLMAr
     return records
 
 
-def _collect_quarantine(cfg) -> list[QuarantineRecord]:
-    """Mirror fit-check quarantined candidates for the diagnostics footer.
+def _collect_quarantine(
+    cfg,
+) -> tuple[list[QuarantineRecord], QuarantineStatus, int | None]:
+    """Mirror authenticity/fit-check quarantine rows for diagnostics.
 
-    Reads the same source the MCP `list_quarantine` tool and the REST
-    `get_cluster_quarantine` endpoint read, so all three surfaces agree.
-    Best-effort: any failure (no quarantine dir, malformed JSON) yields an
-    empty list rather than breaking dashboard render.
+    Uses the status-aware reader so known-empty, incomplete, and unavailable
+    states remain distinct. Unexpected errors fail closed to unavailable.
     """
     try:
-        from research_hub.authenticity import list_quarantine
+        from research_hub.authenticity import list_quarantine_report
 
-        rows = list_quarantine(cfg) or []
+        listing = list_quarantine_report(cfg)
     except Exception:
         logger.exception("Failed to collect quarantine records for dashboard")
-        return []
+        return [], "unavailable", None
     records: list[QuarantineRecord] = []
-    for row in rows:
+    invalid_rows = 0
+    for row in listing.rows:
         if not isinstance(row, dict):
+            invalid_rows += 1
             continue
         records.append(
             QuarantineRecord(
@@ -208,7 +211,12 @@ def _collect_quarantine(cfg) -> list[QuarantineRecord]:
                 date=str(row.get("date", "") or ""),
             )
         )
-    return records
+    status = listing.status
+    issue_count = listing.issue_count
+    if invalid_rows:
+        status = "partial"
+        issue_count = None if issue_count is None else issue_count + invalid_rows
+    return records, status, issue_count
 
 
 def collect_dashboard_data(cfg, zot=None) -> DashboardData:
@@ -359,7 +367,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
         quotes = []
 
     drift_alerts = detect_drift(cfg, dedup)
-    quarantined = _collect_quarantine(cfg)
+    quarantined, quarantine_status, quarantine_issue_count = _collect_quarantine(cfg)
     total_papers = sum(len(cluster.papers) for cluster in clusters)
     papers_this_week = sum(cluster.new_this_week for cluster in clusters)
     clusters.sort(key=lambda cluster: (-len(cluster.papers), cluster.name.lower()))
@@ -434,4 +442,6 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
         health_badges=health_badges,
         drift_alerts=drift_alerts,
         quarantined=quarantined,
+        quarantine_status=quarantine_status,
+        quarantine_issue_count=quarantine_issue_count,
     )

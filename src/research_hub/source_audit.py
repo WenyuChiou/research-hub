@@ -8,9 +8,60 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 from pathlib import Path
+from pathlib import PureWindowsPath
 from typing import Any
 
 from jsonschema import Draft202012Validator
+
+
+MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+
+
+def _linked(path: Path) -> bool:
+    attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    return path.is_symlink() or bool(attributes & 0x400) or (
+        hasattr(path, "is_junction") and path.is_junction()
+    )
+
+
+def _artifact_path(root: Path, value: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError("artifact path is missing")
+    normalized = value.replace("\\", "/")
+    if (".." in normalized.split("/") or Path(value).is_absolute()
+            or PureWindowsPath(value).is_absolute()):
+        raise ValueError("artifact path escapes artifact_root")
+    parts = normalized.split("/")
+    if (":" in value or PureWindowsPath(value).drive
+            or any(part in {"", "."} for part in parts)):
+        raise ValueError("artifact path is not a safe relative path")
+    path = root
+    try:
+        for part in parts:
+            path = path / part
+            if _linked(path):
+                raise ValueError("linked artifact paths are not allowed")
+        if not path.is_file():
+            raise ValueError("artifact file is missing")
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(root)
+        return resolved
+    except FileNotFoundError as exc:
+        raise ValueError("artifact file is missing") from exc
+
+
+def _read_artifact(root: Path, value: str) -> tuple[Path, bytes]:
+    """Read one contained, unlinked artifact once, with a fixed byte ceiling."""
+    path = _artifact_path(root, value)
+    chunks = []
+    size = 0
+    with path.open("rb") as stream:
+        while chunk := stream.read(65536):
+            size += len(chunk)
+            if size > MAX_ARTIFACT_BYTES:
+                raise ValueError(f"artifact exceeds {MAX_ARTIFACT_BYTES} bytes")
+            chunks.append(chunk)
+    return path, b"".join(chunks)
 
 
 def evidence_packet_sha256(packet: dict[str, Any]) -> str:
@@ -43,17 +94,15 @@ def validate_source_audit(
         return findings
     root = Path(artifact_root).resolve()
 
-    def contained(value: str | None) -> Path:
+    def contained(value: str | None) -> tuple[Path, bytes]:
         if not value:
             raise ValueError("artifact path is missing")
-        path = (root / value).resolve()
         try:
-            path.relative_to(root)
+            return _read_artifact(root, value)
         except ValueError as exc:
-            raise ValueError("artifact path escapes artifact_root") from exc
-        if not path.is_file():
-            raise ValueError("artifact file is missing")
-        return path
+            if "escapes" in str(exc):
+                raise
+            raise ValueError(f"artifact unavailable: {exc}") from exc
 
     sources = {s["source_id"]: s for s in packet.get("sources", []) if isinstance(s, dict)}
     claims = {c["claim_id"]: c for c in packet.get("claims", []) if isinstance(c, dict)}
@@ -72,7 +121,7 @@ def validate_source_audit(
         try:
             for prefix in ("raw", "text"):
                 if observation[f"{prefix}_path"] is not None:
-                    data = contained(observation[f"{prefix}_path"]).read_bytes()
+                    _, data = contained(observation[f"{prefix}_path"])
                     if sha256(data).hexdigest() != observation[f"{prefix}_sha256"]:
                         report(path, f"{prefix} SHA-256 mismatch")
                     if prefix == "text":
@@ -83,12 +132,13 @@ def validate_source_audit(
                 report(path, "source_version differs from captured raw bytes")
             if observation["source_fetch_result"] is not None:
                 from research_hub.source_fetch import validate_source_fetch
-                receipt_path = contained(observation["source_fetch_result"])
-                replay = validate_source_fetch(receipt_path)
+                receipt_path, receipt_bytes = contained(observation["source_fetch_result"])
+                replay = validate_source_fetch(receipt_path, output_dir=receipt_path.parent,
+                                               receipt_bytes=receipt_bytes)
                 if not replay["valid"]:
                     report(path, "source-fetch receipt replay failed: " + "; ".join(replay["errors"]))
                     continue  # Never inspect malformed, unvalidated receipt fields.
-                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                receipt = json.loads(receipt_bytes.decode("utf-8"))
                 receipts[oid] = receipt
                 receipt_status = ("available" if receipt.get("status") == "available" else "unavailable")
                 if observation["status"] != receipt_status:
@@ -103,7 +153,7 @@ def validate_source_audit(
                         recorded = Path(str(receipt.get(receipt_key) or ""))
                         if not recorded.is_absolute():
                             recorded = receipt_path.parent / recorded
-                        if contained(observation[key]) != recorded.resolve():
+                        if _artifact_path(root, observation[key]) != recorded.resolve():
                             report(path, f"{key} differs from source-fetch artifact")
                 if receipt.get("identity_status") != "verified" and source and source.get("identity_status") == "verified":
                     report(path, "packet identity is stronger than source-fetch identity")

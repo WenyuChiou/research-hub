@@ -23,6 +23,7 @@ from typing import Literal
 
 Persona = Literal["researcher", "analyst", "humanities", "internal"]
 ReadingStatus = Literal["unread", "reading", "deep-read", "cited"]
+QuarantineStatus = Literal["empty", "complete", "partial", "unavailable"]
 HealthStatus = Literal["OK", "WARN", "FAIL"]
 DriftKind = Literal[
     "folder_mismatch",
@@ -136,7 +137,7 @@ class DriftAlert:
 
 @dataclass
 class QuarantineRecord:
-    """One fit-check quarantined (rejected) candidate, for the dashboard mirror.
+    """One authenticity/fit-check quarantined candidate, for the dashboard mirror.
 
     Shape mirrors `research_hub.authenticity.list_quarantine` rows and the
     MCP `list_quarantine` / REST `get_cluster_quarantine` payloads so all
@@ -198,6 +199,10 @@ class DashboardData:
     health_badges: list[HealthBadge] = field(default_factory=list)
     drift_alerts: list[DriftAlert] = field(default_factory=list)
     quarantined: list[QuarantineRecord] = field(default_factory=list)
+    # A default-constructed snapshot has not established an empty result.
+    quarantine_status: QuarantineStatus = "unavailable"
+    # Exact skipped-record count for partial scans; None means unknown.
+    quarantine_issue_count: int | None = None
 
     @property
     def show_zotero_column(self) -> bool:
