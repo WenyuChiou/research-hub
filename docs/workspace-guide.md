@@ -6,9 +6,9 @@ The workspace connects a research question to literature, evidence, files, and m
 
 ## Preview status
 
-This guide describes the **unmerged, unreleased workspace preview in [research-hub PR #135](https://github.com/WenyuChiou/research-hub/pull/135)**. The published PyPI `1.2.0` package does not contain these workspace commands. Source version text alone does not identify an installation: existing installed metadata may still report `1.1.1`. The commands below install the tested, immutable Hub snapshot `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` with the same workspace runtime, without relying on a feature-branch name. That snapshot retains its original documentation; this guide supplies the current merged producer pin. Confirm the installed command help.
+This guide describes the six-page workspace merged through [PR #135](https://github.com/WenyuChiou/research-hub/pull/135). Commands below pin source baseline `6381dfa7d474dd27cd4adb33f0f59ea8ec395150`. Source version text, a published wheel, and native-host capability are separate evidence: verify the installed command help and use the [capability and setup baseline](capability-baseline.md).
 
-The optional writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). Use the immutable producer `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. It is configured explicitly, not installed as a permanent research-hub dependency; the producer merge does not merge or release the Hub workspace.
+The optional writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). Use the immutable producer `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. It is configured explicitly, not installed as a permanent research-hub dependency; producer availability does not establish installation or native-host readiness.
 
 ## Start with the account-free demo
 
@@ -17,8 +17,8 @@ Use Python 3.10+ and Git. Run these commands from the parent directory where you
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
-git checkout --detach dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
+git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
 python -m pip install -e '.[mcp]'
 research-hub project demo --help
 research-hub project demo --root ./workspace-demo --json

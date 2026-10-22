@@ -88,3 +88,29 @@ def test_disambiguation_arrows_present(skill, sibling):
         f"disambiguation arrows keep auto-trigger from mis-firing between "
         f"the easily-confused skills"
     )
+
+
+def test_zotero_curator_uses_complete_canonical_runtime_layout():
+    text = _read("zotero-library-curator")
+    assert "claude plugin marketplace add WenyuChiou/ai-research-skills" in text
+    assert "claude plugin install zotero-skills@ai-research-skills --scope user" in text
+    assert "skills/zotero-skills/SKILL.md" in text
+    assert "`scripts/` at the repository root" in text
+    assert "`references/` beside the skill" in text
+    assert "~/.claude/skills/zotero-skills/SKILL.md" not in text
+    assert "git clone https://github.com/WenyuChiou/zotero-skills ~/.claude/skills/" not in text
+    assert "raw.githubusercontent.com/WenyuChiou/zotero-skills/master/SKILL.md" not in text
+
+
+def test_zotero_curator_preserves_read_only_and_credential_boundaries():
+    text = _read("zotero-library-curator")
+    for guard in (
+        "Always emit a **preview plan**, never apply.",
+        "**Back up first.**",
+        "**Do NOT call any Zotero create / update / delete endpoint.**",
+        "do not install anything merely because an audit was requested",
+        "Never print API keys or inspect credential",
+        "`credentials_status()` helper's presence/source labels only",
+        "Ask the user\nto handle credential or permission changes.",
+    ):
+        assert guard in text

@@ -4,6 +4,9 @@ Current setup path for research-hub v1.x. research-hub is not a
 Claude-only skill: it is a Python CLI with MCP, REST, dashboard, and
 portable `SKILL.md` instructions.
 
+For a local workspace without accounts, start with the [capability baseline](capability-baseline.md).
+A successful install or setup exit code does not certify every integration.
+
 ## 1. Install The CLI
 
 ```bash
@@ -20,9 +23,17 @@ pip install "research-hub-pipeline[mcp]"
 ```
 
 Use `[import]` for local PDF/DOCX/Markdown/TXT ingest, `[playwright]`
-for NotebookLM browser automation, `[secrets]` for encrypted local
-credentials, and `[mcp]` when your environment does not already include
-FastMCP.
+to install Patchright, `[browser-auth]` for optional
+browser-cookie import, `[secrets]` for encrypted local credentials, and `[mcp]`
+for the FastMCP server. The base install does not declare FastMCP; install
+`[mcp]` explicitly when using MCP. NotebookLM operations use the base
+`notebooklm-py` dependency, not a supported consumer REST API. Browser binaries
+and an authenticated session are separate prerequisites; installing an extra
+does not prove login or connectivity. In particular, `login --auto-detect`
+currently imports `playwright.sync_api`, while the `[playwright]` extra declares
+`patchright`: the extra alone does not establish that this login path can run.
+Verify Playwright and its Chromium browser separately before using that path.
+See [NotebookLM architecture](notebooklm.md).
 
 ## 2. Pick A First Path
 
@@ -41,7 +52,11 @@ research-hub doctor
 ```
 
 `doctor` checks config, vault paths, Zotero credentials when required,
-NotebookLM session state, and local workflow readiness.
+NotebookLM session state, and local workflow readiness. Read the individual
+results: an existing session file is not proof of a working authenticated request,
+and skipped, unknown, degraded, or failed checks are not ready. `setup` can
+finish after partial installation/login failures; its exit status alone is not
+a capability report. Do not run connector writes just to test setup.
 
 For a first real ingestion, keep the browser out of the path until the
 local pieces are healthy:
@@ -60,7 +75,28 @@ research-hub notebooklm generate --cluster <slug> --type brief
 research-hub notebooklm download --cluster <slug>
 ```
 
-`setup` prints the same next-step checklist after it finishes.
+`setup` prints per-step outcomes and next actions. `passed` means only the
+named command/probe reported success, not that every workflow is usable.
+`failed`, `cancelled`, `skipped`, and `unknown` remain distinct. Interactive
+init does not return its NotebookLM login result to setup, so that result is
+reported as `unknown`, even if a skip flag was supplied to outer setup.
+The existing ordinary setup exit code is preserved: zero can coexist with
+install/login/sample failure. Read the outcomes, not just the exit code.
+If init/install raises or is interrupted, setup attempts to print the stage
+outcome and unrun steps, then re-raises the original exception (including
+its exit code). A broken output stream cannot guarantee a visible summary.
+A failed or unknown sample result does not open the dashboard; inspect any
+partial writes before retrying. `--no-nlm` does not disable all network calls,
+models, or writes. Dashboard command success is not browser/UI acceptance.
+
+Autonomous JSON preserves all legacy fields and adds `ready_scope` and
+`components` (`status`, `detail`, `next_step`). Legacy `ready` and its exit code
+still check **required environment presence plus the Zotero read probe only**:
+a missing/unwritable vault can coexist with `ready: true`. Inspect the vault
+component separately. NLM state-file presence is not verified authentication;
+CLI detection and installed skill paths are not successful invocation or host
+discovery. These remain `unknown` for runtime usability. This report does not
+provide a route-specific or whole-system readiness verdict.
 
 ## 3. Connect An AI Host
 

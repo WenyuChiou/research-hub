@@ -126,8 +126,9 @@ integration pins its immutable `main` commit
 `0bce611e91bd0bf01ad6aa59eccc46ae52321b645c04f6a71225f01e90f7a3ec` and its reproducible bundle
 ZIP SHA256 is `0b084edb82233fc43bf3465a8a8cc11551f5d6a15e4b98c6ea7cdfcb95a94ef7`.
 It remains explicitly configured and optional, not a permanent research-hub
-installation dependency. The Hub workspace remains unmerged and unreleased in
-[PR #135](https://github.com/WenyuChiou/research-hub/pull/135). The
+installation dependency. The Hub workspace was merged through
+[PR #135](https://github.com/WenyuChiou/research-hub/pull/135). Source, built wheel,
+and native-host verification remain separate; see the [capability baseline](capability-baseline.md). The
 [installation guide](workspace-guide.md#writing-adapter-preview) uses immutable
 commits rather than feature-branch names. September live evidence remains
 historical; it is not evidence of a live run against this producer pin.
@@ -160,3 +161,22 @@ It writes screenshots, a trace, and a report to the selected output directory.
 See the [researcher guide](workspace-guide.md#verification) for dated scope and
 remaining live-provider/human checks. Build assets ship inside the Python wheel;
 Node is needed for UI development, not to run an installed workspace.
+
+### Capability-check budget and cache
+
+A cold workspace GET checks Codex isolation flags, disabled features and login
+status in sequence. These checks share a 10-second monotonic budget, including
+waiting for another check; each subprocess receives only the remaining budget.
+Concurrent callers share one completed check rather than starting duplicate
+subprocess chains. Unavailable results are cached for two seconds, after which
+an explicit request (for example Refresh) can retry. There is no background
+retry. Successful results retain the existing process-lifetime cache; restarting
+the workspace clears it. Internal cache invalidation is serialized with probes.
+
+Timeout/busy results remain unavailable, not evidence of authentication or live
+execution. `run_codex` still refuses unavailable capability results; a saved
+setup report cannot authorize execution. The budget leaves headroom below the
+frontend's 15-second read deadline, but is not a hard wall-clock guarantee for
+OS process creation/cleanup, scheduling or other workspace GET work. Browser
+abort does not cancel the synchronous backend probe or lock waiter; waiters
+remain bounded by their own budget, and disconnected responses may be discarded.
