@@ -1,4 +1,4 @@
-# NotebookLM Automation in v0.4.1
+# NotebookLM integration
 
 ## Attribution
 
@@ -8,13 +8,23 @@ The v0.42 browser foundation and ask-flow selector patterns are adapted from
 launch arguments, persistent-session cookie replay pattern, and streaming-answer
 stability polling into its own NotebookLM modules.
 
-## Why automation, not an API
+## Current transport and its limits
 
-NotebookLM does not expose a public REST API for personal Google
-accounts, so `research-hub` has to drive the web UI. In practice that
-means Playwright is the only realistic automation layer for upload and
-generation. Selector drift is an accepted maintenance cost, and the
-recovery workflow is documented below in the UI-update section.
+`research-hub` uses the base dependency `notebooklm-py` through
+`src/research_hub/notebooklm/client.py`, a synchronous wrapper around its
+asynchronous `NotebookLMClient`. This is an unofficial integration using
+undocumented consumer-service interfaces, **not an official consumer REST API
+or the NotebookLM Enterprise API**. Upload, generation, query and download do
+not primarily drive web-page selectors. Upstream interface/authentication drift
+can still break them.
+
+Visible browser automation is used for login/session acquisition. The optional
+`[playwright]` extra installs Patchright, but the current `--auto-detect` login
+implementation imports `playwright.sync_api`. These are different packages:
+that extra alone does not prove this path is installed. `[browser-auth]` supplies optional
+cookie-import helpers. Neither extra, a cached notebook ID, nor a saved cookie
+file proves that a current authenticated operation will succeed. Login and
+real connector operations require separate, authorized native-PC verification.
 
 ## Architecture at a glance
 
@@ -41,15 +51,21 @@ visible browser sign-in
 Playwright storage_state -> <vault>/.research_hub/nlm_sessions/state.json
 ```
 
-Upload, generate, and download flows then reuse that saved storage
-state through the NotebookLM client/upload modules.
+Upload, generate, query, and download reuse that saved storage state through
+`notebooklm-py` (the wrapper calls `NotebookLMClient.from_storage`).
+The login signals above only govern session saving; they do not verify all
+remote operations. Later selector troubleshooting applies to browser/login
+paths and historical fallbacks, not the primary operation transport.
 
 ## One-time login
 
-Install the browser automation extra, then run:
+For `--auto-detect`, install its actual Playwright dependency and browser in
+your virtual environment, then run (installation downloads software; login
+opens a visible browser):
 
 ```bash
-pip install "research-hub-pipeline[playwright]"
+python -m pip install research-hub-pipeline playwright
+python -m playwright install chromium
 research-hub notebooklm login --auto-detect
 ```
 

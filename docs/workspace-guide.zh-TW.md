@@ -6,9 +6,9 @@
 
 ## 預覽版狀態
 
-本指南適用於 **[research-hub PR #135](https://github.com/WenyuChiou/research-hub/pull/135) 中尚未合併或發布的工作區預覽版**。PyPI 上的 `1.2.0` 套件不含這些工作區指令。原始碼的版本文字無法單獨識別安裝狀態：既有安裝中繼資料仍可能顯示 `1.1.1`。下方指令安裝已測試、固定不變的 Hub 快照 `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8`，其工作區執行程式相同，且不依賴功能分支名稱。該快照保留當時的文件；本指南提供目前已合併的介接器固定版本。請確認安裝後的指令說明。
+本指南說明已透過 [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) 合併至原始碼的六頁工作區。以下固定 Hub 原始碼基線 `6381dfa7d474dd27cd4adb33f0f59ea8ec395150`；原始碼版本、已發布 wheel 與實機載入能力是三項不同證據，不能互相代替。請確認安裝後的指令說明，並參考[能力與設定基線](capability-baseline.md)。
 
-選用的寫作介接器已透過 [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17) 合併。請使用介接器 `main` 上固定不變的 commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`。它需要明確設定，不會成為 research-hub 的永久安裝相依項目；介接器合併不代表 Hub 工作區已合併或發布。
+選用的寫作介接器已透過 [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17) 合併。請使用介接器 `main` 上固定不變的 commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`。它需要明確設定，不會成為 research-hub 的永久安裝相依項目；介接器可取得不代表安裝或實機主機已就緒。
 
 ## 先從免帳號示範開始
 
@@ -17,8 +17,8 @@
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
-git checkout --detach dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
+git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
 python -m pip install -e '.[mcp]'
 research-hub project demo --help
 research-hub project demo --root ./workspace-demo --json
