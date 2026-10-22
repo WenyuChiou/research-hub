@@ -1,7 +1,7 @@
 ---
 name: zotero-library-curator
 description: Audit and curate a Zotero library — find duplicate DOIs, orphan items missing required tags, propose collection rebinds, identify bloated or under-used collections, generate tag hygiene reports, emit preview-only cleanup plans. Use when the user asks to "audit Zotero", "find duplicates", "tag hygiene report", "which collections are bloated or under-used", or "propose a Zotero cleanup plan". Defers all CRUD operations to the standalone `zotero-skills` skill or `research-hub zotero` CLI. Includes a backup-first reminder before any apply/CRUD handoff suggestion.
-compatibility: Portable `SKILL.md` instructions for agentskills.io-style hosts. Depends on the standalone `zotero-skills` skill OR the `research-hub` CLI for actual Zotero connectivity. On Claude Code the sibling skill usually lives at ~/.claude/skills/zotero-skills/; on other hosts substitute the host's skills directory or rules path.
+compatibility: Portable `SKILL.md` instructions for agentskills.io-style hosts. Depends on the standalone `zotero-skills` skill OR the `research-hub` CLI for actual Zotero connectivity. On Claude Code use the canonical marketplace plugin; on other hosts load skills/zotero-skills/SKILL.md from the resolved upstream checkout while retaining its scripts and references.
 ---
 
 # zotero-library-curator
@@ -28,31 +28,45 @@ two modes:
 2. **Apply cleanup** — must defer to `zotero-skills` or
    `research-hub zotero ... --apply`.
 
-Before running, verify at least one is present. The `zotero-skills` check is host-dependent — adapt to your agent's skills directory:
+Before running, verify at least one runtime is present. Loading a skill's
+instructions alone does not establish Zotero connectivity.
 
 ```bash
 research-hub doctor 2>/dev/null  # if research-hub CLI installed
-# Check whether the zotero-skills sibling skill is installed.
-# Claude Code:  ls ~/.claude/skills/zotero-skills/SKILL.md
-# Hermes:       ls ~/.hermes/skills/research/zotero-skills/SKILL.md
-# Other hosts:  ls <host-skills-dir>/zotero-skills/SKILL.md
 ```
 
-If **neither** is available, the host has loaded these instructions but
-has no Zotero-capable runtime (`research-hub` CLI or standalone
-`zotero-skills`). Stop and tell them:
+For `zotero-skills`, use the host's plugin/skill discovery to resolve the
+installed plugin root or upstream checkout. The canonical entry point is
+`skills/zotero-skills/SKILL.md` relative to that root, **not** root-level
+`SKILL.md`. Keep root-level `scripts/` and the skill's `references/`
+available; a raw SKILL.md-only install is not a complete runtime.
 
-> This skill audits a Zotero library, which needs Zotero connectivity
-> via one of:
->
-> - The standalone `zotero-skills` skill (handles Zotero local API).
->   Install via your host's skill installer (e.g. on Claude Code,
->   `git clone https://github.com/WenyuChiou/zotero-skills ~/.claude/skills/zotero-skills`;
->   on Hermes, `hermes skills install https://raw.githubusercontent.com/WenyuChiou/zotero-skills/master/SKILL.md`).
-> - **Or** the `research-hub` CLI: `pip install research-hub-pipeline`
->
-> Either path needs Zotero configured (local API on port 23119, or
-> Zotero Web API key). Once one is set up, re-run your audit request.
+If **neither** is available, stop and explain the available setup paths;
+do not install anything merely because an audit was requested:
+
+- **Claude Code:** use the canonical marketplace installation:
+
+  ```bash
+  claude plugin marketplace add WenyuChiou/ai-research-skills
+  claude plugin install zotero-skills@ai-research-skills --scope user
+  ```
+
+- **Other hosts (including Hermes):** follow the host's supported loader
+  against [the canonical upstream repository](https://github.com/WenyuChiou/zotero-skills).
+  Load `skills/zotero-skills/SKILL.md` from the resolved checkout, retaining
+  `scripts/` at the repository root and `references/` beside the skill.
+  Do not clone the whole repository into a host's one-level skill directory
+  and assume discovery, or use an obsolete root-level raw SKILL.md URL.
+- **Or** use the `research-hub` CLI (`pip install research-hub-pipeline`).
+
+After authorized setup, verify read-only connectivity: Zotero desktop's
+local API on port 23119, or configured Zotero Web API read access. An audit
+does not authorize writes, installing dependencies, changing credentials,
+or granting persistent access. Never print API keys or inspect credential
+files; if credential diagnosis is necessary, use the upstream
+`credentials_status()` helper's presence/source labels only. Ask the user
+to handle credential or permission changes. Re-run the audit only when a
+read-capable runtime is available.
 
 ## When to use
 
