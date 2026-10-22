@@ -160,3 +160,22 @@ It writes screenshots, a trace, and a report to the selected output directory.
 See the [researcher guide](workspace-guide.md#verification) for dated scope and
 remaining live-provider/human checks. Build assets ship inside the Python wheel;
 Node is needed for UI development, not to run an installed workspace.
+
+### Capability-check budget and cache
+
+A cold workspace GET checks Codex isolation flags, disabled features and login
+status in sequence. These checks share a 10-second monotonic budget, including
+waiting for another check; each subprocess receives only the remaining budget.
+Concurrent callers share one completed check rather than starting duplicate
+subprocess chains. Unavailable results are cached for two seconds, after which
+an explicit request (for example Refresh) can retry. There is no background
+retry. Successful results retain the existing process-lifetime cache; restarting
+the workspace clears it. Internal cache invalidation is serialized with probes.
+
+Timeout/busy results remain unavailable, not evidence of authentication or live
+execution. `run_codex` still refuses unavailable capability results; a saved
+setup report cannot authorize execution. The budget leaves headroom below the
+frontend's 15-second read deadline, but is not a hard wall-clock guarantee for
+OS process creation/cleanup, scheduling or other workspace GET work. Browser
+abort does not cancel the synchronous backend probe or lock waiter; waiters
+remain bounded by their own budget, and disconnected responses may be discarded.
