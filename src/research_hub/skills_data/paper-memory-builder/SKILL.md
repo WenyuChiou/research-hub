@@ -142,9 +142,10 @@ Do **not** touch `journal_format.md`, `reviewer_comments.md`, or `style_override
 
 ## Anti-leakage rule (binding contract)
 
-> A claim with empty or absent `evidence_artifacts` MUST have
-> `status: gap` plus a one-line `gap_reason`. Never emit such a claim as
-> `status: draft` or `status: supported`.
+> An active claim with empty or absent `evidence_artifacts` MUST have
+> `status: gap` plus a non-empty `gap_reason`. Never emit such a claim as
+> `status: draft` or `status: supported`. Editorially removed claims use
+> `status: rejected` and may omit evidence or use `[]`, without `gap_reason`.
 
 This is the contract that prevents an unsupported claim from leaking
 into the downstream writing/audit pipeline as if it were evidenced.
@@ -160,9 +161,18 @@ How it manifests in normal use:
   fully → still `status: draft`; document the doubt in `risk:` rather
   than emptying `evidence_artifacts`.
 - A claim was dropped from the latest revision → keep the row,
-  flip `status: rejected`; do not delete (audit trail).
+  use `status: rejected`; keep its ID and row (audit trail). This means
+  editorial removal, not scientific contradiction. Record the removal
+  reason in revision history; do not resurrect it on extraction refresh.
 
-The contract is enforced by `scripts/check_claims_schema.py` against
+Preserve existing IDs and unknown fields when refreshing memory. Evidence
+pointers alone do not establish scientific support or trigger promotion; a
+`gap` may retain pointers but still requires `gap_reason`. Surface contrary
+evidence for human assessment, not automatic rejection. On validation
+failure, report diagnostics and leave the original file unchanged; do not
+coerce statuses (including invalid `dropped`) or renumber claims.
+
+The structural rules are enforced by `scripts/check_claims_schema.py` against
 the JSON Schema at `references/claims.schema.json`. Run the validator
 manually after editing `.paper/claims.yml` by hand:
 

@@ -72,9 +72,13 @@ manuscript's life, not the submission outcome.
 
 When `revision_history.yml` references a claim ID like `C4`, that ID
 must exist in `claims.yml` (current snapshot). If you delete a claim
-in a later round, keep the historical reference and add a status
-field `dropped` to the corresponding entry in `claims.yml`. Don't
-silently delete IDs.
+from the manuscript in a later round, keep the historical reference and
+set `status: rejected` on the corresponding row in `claims.yml`. This is
+editorial removal, not scientific contradiction; record the removal reason
+in the revision summary. Keep the row and its ID, including on refresh.
+`rejected` permits absent or empty evidence without `gap_reason`.
+The literal status `dropped` is invalid; report it without rewriting
+existing data. Don't silently delete or renumber IDs.
 
 ## Example: 3-round revision
 
