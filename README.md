@@ -70,7 +70,7 @@ py -3 -m venv .venv
 
 Open [the local workspace](http://127.0.0.1:8765/app/). The demo needs no account and contains a small numerical summation example and a literature-review fixture. These are teaching inputs, not model-generated research findings.
 
-The snapshot retains its original documentation; use the current [workspace guide](docs/workspace-guide.md) for the merged producer pin, your own files, writing setup, task handoffs, and review. See [dated verification and remaining checks](docs/workspace-guide.md#verification) before relying on the preview.
+The pinned runtime snapshot retains older local documentation and does not include this new capability-baseline document or its clean-source tests. Read the [current online capability baseline](https://github.com/WenyuChiou/research-hub/blob/c6ef19313ab69a85e041f4a86e4b9cb19229c138/docs/capability-baseline.md) alongside that runtime; tests in this PR are evidence for this changeset, not for the exact older README commands. The snapshot retains its original documentation; use the current [workspace guide](docs/workspace-guide.md) for the merged producer pin, your own files, writing setup, task handoffs, and review. See [dated verification and remaining checks](docs/workspace-guide.md#verification) before relying on the preview.
 
 ### Published literature dashboard
 

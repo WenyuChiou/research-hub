@@ -43,7 +43,8 @@ def test_researcher_first_visuals_and_preview_install_are_bilingual():
         assert text.index(lifecycle) < text.index(screenshot) < text.index(writing)
         pin = json.loads((root / "docs/workspace-writing-source.json").read_text(encoding="utf-8"))
         assert f"git checkout --detach {pin['hub_preview_commit']}" in text
-        assert "research-hub project demo --root ./workspace-demo --json" in text
+        for executable in ("./.venv/bin/python", r".\.venv\Scripts\python.exe"):
+            assert f"{executable} -m research_hub project demo --root ./workspace-demo --json" in text
         assert "docs/workspace-architecture.md" in text
         for relative in (lifecycle, screenshot, writing):
             assert (root / relative).is_file()

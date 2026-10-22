@@ -70,7 +70,7 @@ py -3 -m venv .venv
 
 開啟[本機工作區](http://127.0.0.1:8765/app/)。示範不需要帳號，包含小型數值加總範例與文獻回顧測試資料。這些是教學輸入，並非模型產生的研究發現。
 
-該快照保留當時的文件；請依目前的[工作區指南](docs/workspace-guide.zh-TW.md)取得已合併的介接器固定版本，並了解如何使用自己的檔案、設定寫作功能、交接任務及審查。在依賴預覽版之前，請先查看[附日期的驗證狀態與待完成檢查](docs/workspace-guide.zh-TW.md#verification)。
+固定的執行程式快照保留較舊的本地文件，不含這份新增的能力基線文件與乾淨原始碼測試。使用該程式時，請搭配[目前線上的能力基線](https://github.com/WenyuChiou/research-hub/blob/c6ef19313ab69a85e041f4a86e4b9cb19229c138/docs/capability-baseline.md)；本 PR 的測試證據屬於這次變更，不代表舊版 README 的原樣指令已驗證。該快照保留當時的文件；請依目前的[工作區指南](docs/workspace-guide.zh-TW.md)取得已合併的介接器固定版本，並了解如何使用自己的檔案、設定寫作功能、交接任務及審查。在依賴預覽版之前，請先查看[附日期的驗證狀態與待完成檢查](docs/workspace-guide.zh-TW.md#verification)。
 
 ### 已發布的文獻儀表板
 
