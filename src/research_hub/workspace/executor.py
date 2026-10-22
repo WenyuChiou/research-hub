@@ -8,13 +8,13 @@ the researcher's editor. Transport completion still requires human acceptance.
 
 from __future__ import annotations
 
-from functools import lru_cache
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 
@@ -45,20 +45,75 @@ def codex_command() -> list[str]:
     return [executable]
 
 
-@lru_cache(maxsize=1)
+# A cold capability check must leave headroom below the UI's 15-second GET
+# deadline. This is a subprocess/wait budget, not an OS scheduling guarantee.
+CAPABILITY_PROBE_BUDGET_SECONDS = 10.0
+CAPABILITY_NEGATIVE_CACHE_SECONDS = 2.0
+_capability_lock = threading.Lock()
+_capability_cache: tuple[dict, float] | None = None
+
+
+def _capability_unavailable(message: str) -> dict:
+    return {"status": "unavailable", "message": message}
+
+
+def _remaining_probe_budget(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise WorkspaceError("Codex capability check timed out; refresh to retry. Handoff remains available.")
+    return remaining
+
+
+def _clear_codex_capability_cache() -> None:
+    # Serialize invalidation with completion: an older probe cannot repopulate
+    # the cache after this function returns. No automatic refresh is started.
+    global _capability_cache
+    with _capability_lock:
+        _capability_cache = None
+
+
 def codex_capability() -> dict:
+    global _capability_cache
+    deadline = time.monotonic() + CAPABILITY_PROBE_BUDGET_SECONDS
+    if not _capability_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
+        return _capability_unavailable("Codex capability check is busy; refresh to retry. Handoff remains available.")
+    try:
+        _remaining_probe_budget(deadline)
+        if _capability_cache is not None:
+            result, expires = _capability_cache
+            if time.monotonic() < expires:
+                return dict(result)
+        result = _probe_codex_capability(deadline)
+        expires = (float("inf") if result["status"] == "available" else
+                   time.monotonic() + CAPABILITY_NEGATIVE_CACHE_SECONDS)
+        _capability_cache = (result, expires)
+        return dict(result)
+    except WorkspaceError as exc:
+        # Exhausted waiters must not replace a completed owner's cache.
+        return _capability_unavailable(str(exc))
+    finally:
+        _capability_lock.release()
+
+
+codex_capability.cache_clear = _clear_codex_capability_cache
+
+
+def _probe_codex_capability(deadline: float) -> dict:
     try:
         command = codex_command()
-        help_result = subprocess.run([*command, "exec", "--help"], capture_output=True, text=True, encoding="utf-8", timeout=10)
+        help_result = subprocess.run([*command, "exec", "--help"], capture_output=True, text=True, encoding="utf-8", timeout=_remaining_probe_budget(deadline))
+        _remaining_probe_budget(deadline)
         if help_result.returncode or any(flag not in help_result.stdout for flag in ("--ignore-user-config", "--sandbox", "--ephemeral", "--output-last-message", "--strict-config")):
             raise WorkspaceError("Codex CLI lacks the required isolation flags; update it or use handoff")
-        features = subprocess.run([*command, "features", "list"], capture_output=True, text=True, encoding="utf-8", timeout=10)
+        features = subprocess.run([*command, "features", "list"], capture_output=True, text=True, encoding="utf-8", timeout=_remaining_probe_budget(deadline))
+        _remaining_probe_budget(deadline)
         names = {line.split()[0] for line in features.stdout.splitlines() if line.split()}
         if features.returncode or not set(DISABLED_FEATURES).issubset(names):
             raise WorkspaceError("Codex feature isolation is unsupported by this CLI version")
-        login = subprocess.run([*command, "login", "status"], capture_output=True, text=True, encoding="utf-8", timeout=10)
+        login = subprocess.run([*command, "login", "status"], capture_output=True, text=True, encoding="utf-8", timeout=_remaining_probe_budget(deadline))
+        _remaining_probe_budget(deadline)
         if login.returncode:
-            return {"status": "unavailable", "message": "Codex is not authenticated. Run codex login locally, then restart the workspace; handoff remains available."}
+            return {"status": "unavailable", "message": "Codex is not authenticated. Run codex login locally, then refresh the workspace; handoff remains available."}
         return {"status": "available", "message": "Codex CLI: authenticated, bounded no-tool prose proposals. No live task has been verified by this check."}
     except (WorkspaceError, OSError, subprocess.TimeoutExpired) as exc:
         return {"status": "unavailable", "message": str(exc)}

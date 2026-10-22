@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import App from "./App";
+import { READ_TIMEOUT_MS } from "./api";
 import type { ProjectDetail, Task, Workspace } from "./types";
 
 const task: Task = {
@@ -100,6 +101,64 @@ afterEach(() => {
 });
 
 describe("read polling recovery", () => {
+  it("marks a hung read stale, retries after timeout, and ignores its late completion", async () => {
+    let resolve!: (value: Response) => void;
+    reads.mockImplementationOnce(() => new Promise<Response>(yes => { resolve = yes; }));
+    const view = await mount();
+    await advance(3000);
+    await advance(READ_TIMEOUT_MS);
+    expect(screen.getByRole("alert")).toHaveTextContent("Updates are delayed");
+    expect((reads.mock.calls[0][0].signal as AbortSignal).aborted).toBe(true);
+    await advance(3000);
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await act(async () => { resolve(response({ ok: true, task: { ...task, status: "completed" } })); });
+    expect(projectReads).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.every(([, options]) => options.method === "GET")).toBe(true);
+    view.unmount();
+  });
+
+  it("recovers when task response headers arrive but the body hangs", async () => {
+    reads.mockResolvedValueOnce({ json: () => new Promise(() => {}) } as Response);
+    const view = await mount();
+    await advance(3000 + READ_TIMEOUT_MS);
+    expect(screen.getByRole("alert")).toHaveTextContent("Updates are delayed");
+    await advance(3000);
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retries a timed-out terminal-task detail refresh", async () => {
+    const view = await mount();
+    reads.mockImplementation(async () => response({ ok: true, task: { ...task, status: "completed" } }));
+    projectReads.mockImplementationOnce(() => new Promise(() => {}));
+    projectReads.mockImplementation(async () => response({ ...detail, tasks: [] }));
+    await advance(3000 + READ_TIMEOUT_MS);
+    expect(screen.getByRole("alert")).toHaveTextContent("Updates are delayed");
+    await advance(3000);
+    expect(projectReads).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("switching project cancels a hung read deadline without stale error", async () => {
+    reads.mockImplementationOnce(() => new Promise(() => {}));
+    const view = await mount();
+    await advance(3000);
+    await act(async () => {
+      fireEvent.change(screen.getByRole("combobox", { name: "Choose a project" }), { target: { value: "other" } });
+    });
+    await advance(READ_TIMEOUT_MS * 2);
+    expect(screen.getByText("Other project goal")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(reads).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("recovers after a transient read failure without replaying mutations", async () => {
     reads.mockRejectedValueOnce(new Error("temporary outage"));
     const view = await mount();
