@@ -26,6 +26,16 @@ export interface Capability {
   status: string;
   message: string;
 }
+export interface SetupSnapshot {
+  schema_version: number;
+  source: string;
+  current_status: "unknown";
+  freshness: "missing" | "invalid" | "clock_skew" | "stale" | "saved";
+  observed_at: string | null;
+  age_seconds: number | null;
+  display_max_age_seconds: number;
+  components: Record<string, string>;
+}
 export interface Workspace {
   ok: true;
   projects: Project[];
@@ -35,6 +45,7 @@ export interface Workspace {
     approval: Capability;
   };
   protection_scope: string;
+  setup_snapshot?: SetupSnapshot;
 }
 export interface ResearchRecord {
   id: string;

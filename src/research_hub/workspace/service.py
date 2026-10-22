@@ -27,9 +27,11 @@ class WorkspaceService:
     def capabilities(self, *, human: bool = False) -> dict:
         from .executor import codex_capability
         from .writing import writing_capability
+        from research_hub.setup_snapshot import read_setup_snapshot
         return {"ok": True, "projects": self.workspace.list_projects(),
                 "capabilities": {"codex": codex_capability(), "writing": writing_capability(),
                     "approval": {"status": "available" if human else "unavailable", "message": "Local operator review session enabled" if human else "Use an interactive terminal: research-hub task decide <task-id> --root <workspace> --outcome accept --actor <name> --rationale <reason>"}},
+                "setup_snapshot": read_setup_snapshot(self.workspace.root),
                 "protection_scope": PROTECTION_SCOPE}
 
     def search(self, project_id, *, query: str, limit: int = 5) -> dict:

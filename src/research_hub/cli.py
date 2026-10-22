@@ -380,6 +380,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override auto-detected AI host for install",
     )
+    setup_parser.add_argument("--save-report", action="store_true",
+        help="With --autonomous only: save a minimal local setup snapshot (not live readiness)")
     setup_parser.add_argument("--skip-install", action="store_true")
     setup_parser.add_argument("--skip-login", action="store_true")
     setup_parser.add_argument("--skip-sample", action="store_true")
