@@ -43,7 +43,8 @@ def test_researcher_first_visuals_and_preview_install_are_bilingual():
         assert text.index(lifecycle) < text.index(screenshot) < text.index(writing)
         pin = json.loads((root / "docs/workspace-writing-source.json").read_text(encoding="utf-8"))
         assert f"git checkout --detach {pin['hub_preview_commit']}" in text
-        assert "research-hub project demo --root ./workspace-demo --json" in text
+        for executable in ("./.venv/bin/python", r".\.venv\Scripts\python.exe"):
+            assert f"{executable} -m research_hub project demo --root ./workspace-demo --json" in text
         assert "docs/workspace-architecture.md" in text
         for relative in (lifecycle, screenshot, writing):
             assert (root / relative).is_file()
@@ -56,3 +57,16 @@ def test_legacy_cover_remains_available_and_unchanged():
     assert hashlib.sha256(asset.read_bytes()).hexdigest() == (
         "f77e8c9b933007132747f8a85c58d8fc7feeeddce30a9453541a3f92326abe91"
     )
+
+
+def test_dated_capability_baseline_does_not_inherit_later_timeout_or_setup_evidence():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docs/capability-baseline.md").read_text(encoding="utf-8")
+    pin = json.loads((root / "docs/workspace-writing-source.json").read_text(encoding="utf-8"))
+    assert pin["hub_preview_commit"] == "6381dfa7d474dd27cd4adb33f0f59ea8ec395150"
+    assert "does **not** include" in text
+    assert "https://github.com/WenyuChiou/research-hub/pull/175" in text
+    assert "030bbd451022a9bdf8ab91cc12af5bed0b5cf857" in text
+    assert "separate source, wheel and" in text
+    assert "not live connector verification" in text
+    assert "not a recommendation to deploy an unmerged validation branch" in text

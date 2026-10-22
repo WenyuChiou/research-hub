@@ -10,7 +10,7 @@ A local workspace connecting literature, research artifacts, and manuscripts thr
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MIT license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Workspace preview — unmerged and unreleased.** The six-page workspace below is proposed in [research-hub PR #135](https://github.com/WenyuChiou/research-hub/pull/135). PyPI `1.2.0` does not include it. Use the pinned preview installation below, or try the published literature dashboard.
+> **Workspace merged in source; installed capability must be checked separately.** [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) is merged. Use the pinned source path below for this baseline; do not infer published-wheel or native-host readiness from the source version. Start with the [capability and setup baseline](docs/capability-baseline.md).
 
 ## Why this exists
 
@@ -39,21 +39,38 @@ Files stay in your selected workspace. Registration records paths and hashes; yo
 
 ### Workspace preview
 
-Use Python 3.10+ and Git. Choose a **new or empty** `workspace-demo` directory. These commands install the tested, immutable preview snapshot `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` without depending on a feature-branch name.
+Use Python 3.10+ and Git. Choose a **new or empty** `workspace-demo` directory. These commands install the immutable source baseline `6381dfa7d474dd27cd4adb33f0f59ea8ec395150` without depending on a feature-branch name.
 
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
-git checkout --detach dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
-python -m pip install -e '.[mcp]'
-research-hub project demo --root ./workspace-demo --json
-research-hub serve --workspace --root ./workspace-demo
+git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+```
+
+Then choose one command block for your system. These call the virtual-environment Python directly: no activation script or PowerShell execution-policy change is needed.
+
+**macOS / Linux**
+
+```sh
+python3 -m venv .venv
+./.venv/bin/python -m pip install -e .
+./.venv/bin/python -m research_hub project demo --root ./workspace-demo --json
+./.venv/bin/python -m research_hub serve --workspace --root ./workspace-demo
+```
+
+**Windows PowerShell**
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m research_hub project demo --root ./workspace-demo --json
+.\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
 Open [the local workspace](http://127.0.0.1:8765/app/). The demo needs no account and contains a small numerical summation example and a literature-review fixture. These are teaching inputs, not model-generated research findings.
 
-The snapshot retains its original documentation; use the current [workspace guide](docs/workspace-guide.md) for the merged producer pin, your own files, writing setup, task handoffs, and review. See [dated verification and remaining checks](docs/workspace-guide.md#verification) before relying on the preview.
+The pinned runtime snapshot retains older local documentation and does not include this new capability-baseline document or its clean-source tests. Read the [current online capability baseline](https://github.com/WenyuChiou/research-hub/blob/c6ef19313ab69a85e041f4a86e4b9cb19229c138/docs/capability-baseline.md) alongside that runtime; tests in this PR are evidence for this changeset, not for the exact older README commands. The snapshot retains its original documentation; use the current [workspace guide](docs/workspace-guide.md) for the merged producer pin, your own files, writing setup, task handoffs, and review. See [dated verification and remaining checks](docs/workspace-guide.md#verification) before relying on the preview.
 
 ### Published literature dashboard
 
@@ -73,7 +90,7 @@ This account-free sample opens the existing dashboard. For real integrations, us
 | Portable handoff | Export a task for your AI host; import its prose and candidate hashes. Export leaves the task waiting for the agent. |
 | Connected Codex | An authenticated, compatible Codex CLI uses an explicitly trusted public writing bundle to produce prose without tools. Results wait for human review. |
 
-The public writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). This integration pins its immutable `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. [Verify and configure it explicitly](docs/workspace-guide.md#writing-adapter-preview); it is optional and is not installed as a permanent research-hub dependency. The Hub workspace remains an unmerged, unreleased preview. Connected Codex receives bounded text excerpts, not binary document contents. Use your editor for Word formatting, LaTeX compilation, and final document changes.
+The public writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). This integration pins its immutable `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. [Verify and configure it explicitly](docs/workspace-guide.md#writing-adapter-preview); it is optional and is not installed as a permanent research-hub dependency. The Hub workspace is merged in source; this does not establish published-package or native-host readiness. Connected Codex receives bounded text excerpts, not binary document contents. Use your editor for Word formatting, LaTeX compilation, and final document changes.
 
 ## What you can trust
 

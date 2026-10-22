@@ -21,8 +21,11 @@ class BootstrapReport:
     skills_installed: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
 
+    components: dict[str, dict[str, str]] = field(default_factory=dict)
+
     @property
     def ready(self) -> bool:
+        """Legacy env/Zotero-only check, not whole-system or route readiness."""
         return not self.env_vars_missing and self.zotero_reachable
 
     def to_dict(self) -> dict[str, Any]:
@@ -40,4 +43,6 @@ class BootstrapReport:
             "skills_installed": list(self.skills_installed),
             "issues": list(self.issues),
             "ready": self.ready,
+            "ready_scope": "legacy_required_env_and_zotero_probe_only",
+            "components": {name: dict(value) for name, value in self.components.items()},
         }

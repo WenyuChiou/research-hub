@@ -133,7 +133,7 @@ def _print_completion_banner(vault_path: Path, config_path: Path, *, persona: st
 
     lines = [
         "",
-        "  Setup complete!",
+        "  Vault/config initialization complete; other components may still need setup.",
         "",
         f"  Your vault:  {vault_str}",
         f"  Your config: {config_str}",
