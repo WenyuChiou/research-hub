@@ -1,6 +1,9 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  pollDelayed: "Updates are delayed. Retrying automatically; displayed data may be out of date.",
+  pollStopped: "Updates stopped. Check the error and use Refresh to try again; displayed data may be out of date.",
+  pollLastSuccess: "Last successful update:",
   writingChecks: "Manuscript checks",
   writingAuthorityNote:
     "Use the current writing authority and its editable manuscript state. Research records do not automatically overwrite that state.",
@@ -316,6 +319,9 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  pollDelayed: "更新延遲，正在自動重試；目前顯示的資料可能已過時。",
+  pollStopped: "更新已停止。請檢查錯誤，再按重新整理重試；目前顯示的資料可能已過時。",
+  pollLastSuccess: "上次成功更新：",
   writingChecks: "論文檢查",
   writingAuthorityNote:
     "使用目前的寫作規範來源與可編輯的論文狀態。研究紀錄不會自動覆寫該狀態。",
