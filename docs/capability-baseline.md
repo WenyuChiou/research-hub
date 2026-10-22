@@ -5,6 +5,22 @@
 PR #135 is merged. This is a capability inventory, not a release announcement.
 Unknown or untested is **not ready**. Software tests do not establish scientific quality.
 
+### Later changes are not included in this pinned baseline
+
+The installation commands intentionally retain the dated `6381dfa7` snapshot.
+It does **not** include the subsequent [#175 read-deadline and capability-probe
+budget fix](https://github.com/WenyuChiou/research-hub/pull/175), merged at
+`030bbd451022a9bdf8ab91cc12af5bed0b5cf857`. Do not use tests of a newer checkout
+as evidence that this older installed snapshot has those timeout protections.
+
+[Scoped setup outcomes (#176)](https://github.com/WenyuChiou/research-hub/pull/176)
+and later saved-setup/readability UI candidates have separate source, wheel and
+native-host evidence. They do not retroactively change this inventory or its
+installation pin. A saved setup observation is not live connector verification.
+Check the exact selected revision's status before installation; this document
+is not a recommendation to deploy an unmerged validation branch. Producer and
+accepted-source pins are not advanced by this documentation clarification.
+
 ## Start without accounts
 
 Follow the [pinned source installation](../README.md#workspace-preview) in a
