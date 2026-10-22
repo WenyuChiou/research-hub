@@ -38,7 +38,8 @@ def test_init_prints_next_steps_with_vault_and_config_paths(tmp_path, capsys):
     config = tmp_path / "config.json"
     _print_completion_banner(vault, config, persona="researcher")
     out = capsys.readouterr().out
-    assert "Setup complete" in out
+    assert "Vault/config initialization complete; other components may still need setup." in out
+    assert "Setup complete" not in out
     assert str(vault) in out
     assert str(config) in out
     assert "research-hub doctor" in out

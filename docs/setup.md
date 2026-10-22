@@ -75,7 +75,28 @@ research-hub notebooklm generate --cluster <slug> --type brief
 research-hub notebooklm download --cluster <slug>
 ```
 
-`setup` prints the same next-step checklist after it finishes.
+`setup` prints per-step outcomes and next actions. `passed` means only the
+named command/probe reported success, not that every workflow is usable.
+`failed`, `cancelled`, `skipped`, and `unknown` remain distinct. Interactive
+init does not return its NotebookLM login result to setup, so that result is
+reported as `unknown`, even if a skip flag was supplied to outer setup.
+The existing ordinary setup exit code is preserved: zero can coexist with
+install/login/sample failure. Read the outcomes, not just the exit code.
+If init/install raises or is interrupted, setup attempts to print the stage
+outcome and unrun steps, then re-raises the original exception (including
+its exit code). A broken output stream cannot guarantee a visible summary.
+A failed or unknown sample result does not open the dashboard; inspect any
+partial writes before retrying. `--no-nlm` does not disable all network calls,
+models, or writes. Dashboard command success is not browser/UI acceptance.
+
+Autonomous JSON preserves all legacy fields and adds `ready_scope` and
+`components` (`status`, `detail`, `next_step`). Legacy `ready` and its exit code
+still check **required environment presence plus the Zotero read probe only**:
+a missing/unwritable vault can coexist with `ready: true`. Inspect the vault
+component separately. NLM state-file presence is not verified authentication;
+CLI detection and installed skill paths are not successful invocation or host
+discovery. These remain `unknown` for runtime usability. This report does not
+provide a route-specific or whole-system readiness verdict.
 
 ## 3. Connect An AI Host
 
