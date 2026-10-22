@@ -1,12 +1,16 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
-  pollDelayed: "Updates are delayed. Retrying automatically; displayed data may be out of date.",
-  pollStopped: "Updates stopped. Check the error and use Refresh to try again; displayed data may be out of date.",
+  pollDelayed:
+    "Updates are delayed. Retrying automatically; displayed data may be out of date.",
+  pollStopped:
+    "Updates stopped. Check the error and use Refresh to try again; displayed data may be out of date.",
   pollLastSuccess: "Last successful update:",
   writingChecks: "Manuscript checks",
   writingAuthorityNote:
     "Use the current writing authority and its editable manuscript state. Research records do not automatically overwrite that state.",
+  writingAuthorityUnbound:
+    "Bind the public writing adapter to initialize manuscript authority; no manuscript checks have passed yet.",
   bindManuscript: "Bind manuscript state",
   inspectImpact: "Inspect change impact",
   manuscriptBound:
@@ -136,6 +140,33 @@ export const en = {
   noTasks:
     "No tasks yet. Prepare a task when you are ready to involve an agent.",
   readiness: "Workspace readiness",
+  setupSnapshot: "Saved setup observations",
+  snapshotScope:
+    "Local saved snapshot, not live verification. Current readiness remains unknown. This snapshot field adds no setup, login or network probes. Existing capability checks are separate.",
+  snapshotMissing: "No saved snapshot",
+  snapshotInvalid: "Snapshot unavailable or invalid",
+  snapshotClockSkew:
+    "Snapshot timestamp is in the future; observations withheld",
+  snapshotStale: "Old snapshot; observations withheld",
+  snapshotSaved: "Historical observations only",
+  snapshotObserved: "Observed at",
+  snapshotWindow:
+    "Display-age limit (seconds, not a capability validity guarantee)",
+  snapshotNext:
+    "To save a new observation, explicitly run research-hub setup --autonomous --save-report --vault <workspace-root> in a terminal. That command may probe Zotero; refreshing this page does not.",
+  snapshotEnvironment: "Required environment presence",
+  snapshotVault: "Vault filesystem checks",
+  snapshotZotero: "Zotero read probe",
+  snapshotNlm: "NotebookLM authentication",
+  snapshotCli: "Model CLI invocation",
+  snapshotSkills: "Host skill discovery",
+  snapshotPassed: "Reported pass (historical)",
+  snapshotFailed: "Reported failure (historical)",
+  snapshotCancelled: "Cancelled (historical)",
+  snapshotSkipped: "Skipped (historical)",
+  snapshotUnknown: "Unknown",
+  available: "available",
+  unavailable: "unavailable",
   codex: "Codex connection",
   writing: "Writing support",
   approval: "Human approval",
@@ -320,11 +351,14 @@ export const en = {
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
   pollDelayed: "更新延遲，正在自動重試；目前顯示的資料可能已過時。",
-  pollStopped: "更新已停止。請檢查錯誤，再按重新整理重試；目前顯示的資料可能已過時。",
+  pollStopped:
+    "更新已停止。請檢查錯誤，再按重新整理重試；目前顯示的資料可能已過時。",
   pollLastSuccess: "上次成功更新：",
   writingChecks: "論文檢查",
   writingAuthorityNote:
     "使用目前的寫作規範來源與可編輯的論文狀態。研究紀錄不會自動覆寫該狀態。",
+  writingAuthorityUnbound:
+    "請連結公開寫作介接器，建立稿件的正式狀態來源；目前尚無任何稿件檢查通過。",
   bindManuscript: "連結論文狀態",
   inspectImpact: "檢視變更影響",
   manuscriptBound: "已連結論文狀態。請檢視下方的參照與規範來源。",
@@ -443,6 +477,31 @@ export const zhTW: Record<MessageKey, string> = {
   recentActivity: "任務動態",
   noTasks: "尚無任務。準備讓代理協助時，即可建立任務。",
   readiness: "工作空間就緒狀態",
+  setupSnapshot: "已儲存的設定觀察",
+  snapshotScope:
+    "這是本機儲存快照，不是即時驗證。目前是否就緒仍未知；此快照欄位不新增設定、登入或網路探測，既有能力檢查另計。",
+  snapshotMissing: "沒有已儲存快照",
+  snapshotInvalid: "快照無法使用或格式無效",
+  snapshotClockSkew: "快照時間在未來；不顯示觀察結果",
+  snapshotStale: "快照已舊；不顯示觀察結果",
+  snapshotSaved: "僅為歷史觀察",
+  snapshotObserved: "觀察時間",
+  snapshotWindow: "顯示時間門檻（秒，不保證能力仍有效）",
+  snapshotNext:
+    "若要儲存新觀察，請在終端機明確執行 research-hub setup --autonomous --save-report --vault <workspace-root>。該命令可能探測 Zotero；重新整理此頁不會。",
+  snapshotEnvironment: "必要環境變數是否存在",
+  snapshotVault: "Vault 檔案系統檢查",
+  snapshotZotero: "Zotero 讀取探測",
+  snapshotNlm: "NotebookLM 登入效力",
+  snapshotCli: "模型 CLI 實際呼叫",
+  snapshotSkills: "主機技能發現",
+  snapshotPassed: "曾回報通過（歷史）",
+  snapshotFailed: "曾回報失敗（歷史）",
+  snapshotCancelled: "曾取消（歷史）",
+  snapshotSkipped: "曾略過（歷史）",
+  snapshotUnknown: "未知",
+  available: "可使用",
+  unavailable: "目前無法使用",
   codex: "Codex 連線",
   writing: "寫作支援",
   approval: "人工核准",
@@ -618,6 +677,13 @@ export function operationLabel(op: Operation): MessageKey {
 }
 export function statusLabel(status: string, t: Translate): string {
   return Object.hasOwn(en, status) ? t(status as MessageKey) : status;
+}
+export function projectWarningLabel(warning: string, t: Translate): string {
+  // Match only this stable backend notice. Unknown/extended diagnostics remain
+  // verbatim, including paths and error details; the API payload is unchanged.
+  return warning === en.writingAuthorityUnbound
+    ? t("writingAuthorityUnbound")
+    : warning;
 }
 export function statusTone(
   status: string,

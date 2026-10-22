@@ -3,11 +3,20 @@
   --paper: #f5f5ee;
   --white: #fffef9;
   --ink: #253c39;
-  --muted: #6b766c;
+  --muted: #59685b;
   --line: #dedfd3;
   --teal: #17695a;
-  --focus: #d19735;
+  --focus: #9a6b18;
   --wash: #f3f4ec;
+  /* Readable defaults; rem units respect the browser's preferred text size. */
+  --text-body: 1.125rem;
+  --text-control: 1rem;
+  --text-meta: 0.875rem;
+  --text-section: 1.375rem;
+  --text-subheading: 1.25rem;
+  --leading-body: 1.65;
+  --leading-control: 1.5;
+  --leading-help: 1.6;
   --body-font: "Trebuchet MS", "Microsoft JhengHei", "PingFang TC", sans-serif;
   --display-font:
     "Palatino Linotype", "Book Antiqua", "Noto Serif TC", Georgia, serif;

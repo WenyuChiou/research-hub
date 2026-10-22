@@ -171,14 +171,16 @@ describe("researcher interactions", () => {
     expect(
       within(screen.getByRole("navigation")).getAllByRole("link"),
     ).toHaveLength(6);
-    await user.click(
-      screen.getByText("Record question", { selector: "summary" }),
-    );
+    const questionSection = screen.getByText("Record question", {
+      selector: "summary",
+    });
+    await user.click(questionSection);
+    const questionForm = within(questionSection.closest("details")!);
     await user.type(
-      screen.getByRole("textbox", { name: /^Question/ }),
+      questionForm.getByRole("textbox", { name: /^Question/ }),
       "How do choices change?",
     );
-    await user.click(screen.getByRole("button", { name: /^Record question/ }));
+    await user.click(questionForm.getByRole("button", { name: /^Record question/ }));
     expect(
       await screen.findByText("How do choices change?", { selector: "p" }),
     ).toBeInTheDocument();
@@ -189,7 +191,10 @@ describe("researcher interactions", () => {
           JSON.parse(options.body).data.text === "How do choices change?",
       ),
     ).toBe(true);
-    await user.click(screen.getByRole("button", { name: "繁體中文" }));
+    const languages = within(
+      screen.getByRole("group", { name: "Interface language" }),
+    );
+    await user.click(languages.getByRole("button", { name: "繁體中文" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "研究總覽",
     );

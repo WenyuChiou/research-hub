@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
 import { ProjectPages } from "./Pages";
-import { translator, type MessageKey } from "./i18n";
+import { projectWarningLabel, translator, type MessageKey } from "./i18n";
 import type {
   Locale,
   Page,
@@ -500,7 +500,7 @@ export default function App() {
                         <strong>{t("warnings")}</strong>
                         <ul>
                           {activeDetail.warnings.map((warning, index) => (
-                            <li key={index}>{warning}</li>
+                            <li key={index}>{projectWarningLabel(warning, t)}</li>
                           ))}
                         </ul>
                       </section>
