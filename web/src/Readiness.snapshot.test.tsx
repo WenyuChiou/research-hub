@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Readiness } from "./Pages";
 import { translator } from "./i18n";
 import type { SetupSnapshot, Workspace } from "./types";
@@ -33,6 +34,39 @@ const saved: SetupSnapshot = {
 };
 
 describe("saved setup observations", () => {
+  it.each(["en", "zh-TW"] as const)(
+    "keeps setup and protection summaries as native disclosure controls in %s",
+    async (locale) => {
+      const user = userEvent.setup();
+      const t = translator(locale);
+      const { container } = render(
+        <Readiness workspace={{ ...base, setup_snapshot: saved }} t={t} />,
+      );
+      const summaries = Array.from(
+        container.querySelectorAll<HTMLElement>("details.protection > summary"),
+      );
+      expect(summaries.map((summary) => summary.textContent)).toEqual([
+        `${t("setupSnapshot")}: ${t("snapshotSaved")}`,
+        t("protection"),
+      ]);
+      for (const summary of summaries) {
+        const disclosure = summary.parentElement as HTMLDetailsElement;
+        expect(disclosure.firstElementChild).toBe(summary);
+        expect(summary).not.toHaveAttribute("role");
+        expect(summary).not.toHaveAttribute("tabindex");
+        expect(
+          summary.querySelector(
+            'button, a[href], input, select, textarea, [role="button"], [tabindex]',
+          ),
+        ).toBeNull();
+        expect(disclosure.open).toBe(false);
+        await user.click(summary);
+        expect(disclosure.open).toBe(true);
+        await user.click(summary);
+        expect(disclosure.open).toBe(false);
+      }
+    },
+  );
   it("supports older responses without making a probe or readiness claim", () => {
     const fetch = vi.spyOn(globalThis, "fetch");
     render(<Readiness workspace={base} t={translator("en")} />);

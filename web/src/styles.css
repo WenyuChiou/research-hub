@@ -617,6 +617,11 @@ h1:focus {
   font-size: var(--text-control);
   color: #5a645a;
 }
+.protection > summary {
+  min-height: 44px;
+  padding: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
 .protection p {
   margin-top: 12px;
 }

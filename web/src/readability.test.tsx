@@ -170,6 +170,7 @@ describe("workspace readability source contract", () => {
       ".notice button",
       ".capability summary",
       ".inspect summary",
+      ".protection > summary",
       ".project-control select",
       ".new-project",
       ".language-switch button",
@@ -195,6 +196,7 @@ describe("workspace readability source contract", () => {
       ".button",
       ".sidebar nav a",
       ".file-path",
+      ".protection > summary",
       "code",
     ]) {
       expect(values(selector, "overflow-wrap"), selector).toContain("anywhere");
@@ -220,6 +222,11 @@ describe("workspace readability source contract", () => {
     expect(values(".activity-row", "flex-wrap", "(max-width: 720px)")).toEqual([
       "wrap",
     ]);
+  });
+  it("pads readiness summaries without replacing native disclosure markers", () => {
+    expect(values(".protection > summary", "padding")).toEqual(["0.5rem 0px"]);
+    expect(values(".protection > summary", "display")).toEqual([]);
+    expect(values(".protection > summary", "list-style")).toEqual([]);
   });
   it("keeps muted text and focus outlines distinct on the solid surfaces", () => {
     const token = (name: string) => theme.getPropertyValue(name).trim();
