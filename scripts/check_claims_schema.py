@@ -12,10 +12,16 @@ at ``tests/test_check_claims_schema.py``.
 Enforces the anti-leakage rule from
 ``skills/paper-memory-builder/SKILL.md`` §"Anti-leakage rule":
 
-    A claim with empty or absent ``evidence_artifacts`` MUST have
-    ``status: gap`` plus a one-line ``gap_reason``.
+    An active claim with empty or absent ``evidence_artifacts`` MUST have
+    ``status: gap`` plus a non-empty ``gap_reason``. Editorially removed
+    claims use ``status: rejected`` and may omit evidence or use an empty
+    array without ``gap_reason``; rejection is not scientific contradiction.
+    A gap requires gap_reason even when evidence pointers are present.
 
-Exits non-zero on the first validation error with a human-readable
+Validation is read-only: it does not coerce statuses, renumber IDs, or
+remove unknown fields. It checks structure, not scientific support.
+
+Exits non-zero on validation errors with human-readable
 location pointer (e.g. ``claims[3].status``). Designed to be called
 from CI alongside the rest of the test suite.
 

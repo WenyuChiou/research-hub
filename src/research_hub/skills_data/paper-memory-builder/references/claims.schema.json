@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/WenyuChiou/research-hub/blob/master/skills/paper-memory-builder/references/claims.schema.json",
   "title": ".paper/claims.yml schema",
-  "description": "JSON Schema (Draft 2020-12) for paper-memory-builder's .paper/claims.yml output. Enforces the anti-leakage rule: a claim with empty/absent evidence_artifacts MUST have status: gap and a non-empty gap_reason. Validated by scripts/check_claims_schema.py in CI.",
+  "description": "JSON Schema (Draft 2020-12) for paper-memory-builder's .paper/claims.yml output. Enforces the anti-leakage rule: an active claim with empty/absent evidence_artifacts MUST have status: gap and a non-empty gap_reason; editorially removed (rejected) claims may omit evidence or use an empty array without gap_reason. Validated by scripts/check_claims_schema.py in CI.",
   "type": "object",
   "required": ["claims"],
   "additionalProperties": true,
@@ -21,7 +21,7 @@
         "id": {
           "type": "string",
           "pattern": "^C[0-9]+$",
-          "description": "Contiguous numbering C1, C2, ... preserved across regenerations."
+          "description": "C followed by digits; preserve existing IDs across regenerations, including noncontiguous numbering."
         },
         "text": {
           "type": "string",
@@ -30,12 +30,12 @@
         },
         "status": {
           "enum": ["draft", "supported", "rejected", "gap"],
-          "description": "draft = under writing/revision; supported = evidence-backed and final; rejected = dropped from manuscript (keep row for audit trail); gap = no evidence yet (requires gap_reason)."
+          "description": "draft = under writing/revision; supported = evidence-backed and final; rejected = editorial removal from manuscript, not scientific contradiction (keep row and ID for audit trail); gap = unresolved evidence gap, with or without pointers (requires gap_reason)."
         },
         "evidence_artifacts": {
           "type": "array",
           "items": {"type": "string", "minLength": 1},
-          "description": "Paths to figures, data files, logs, or outputs that back the claim. May be empty only when status is 'gap' or 'rejected'."
+          "description": "Paths to figures, data files, logs, or outputs that back the claim. May be absent or empty only when status is 'gap' or 'rejected'. Pointers alone do not verify scientific support."
         },
         "figure_or_table": {
           "type": "array",
@@ -48,7 +48,7 @@
         "gap_reason": {
           "type": "string",
           "minLength": 1,
-          "description": "Required when status='gap'. Single-line plain-English explanation of why no evidence backs the claim yet."
+          "description": "Required when status='gap'. Non-empty explanation of the unresolved evidence gap, even when pointers are present."
         },
         "sentence_in_manuscript": {
           "type": "string"
@@ -56,7 +56,7 @@
       },
       "allOf": [
         {
-          "$comment": "Anti-leakage rule: empty or absent evidence_artifacts MUST imply status: gap with a gap_reason.",
+          "$comment": "Anti-leakage rule: empty or absent evidence_artifacts requires gap with gap_reason, or rejected (editorial removal) without a required gap_reason.",
           "if": {
             "anyOf": [
               {"not": {"required": ["evidence_artifacts"]}},
