@@ -10,7 +10,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![MIT 授權](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **工作區預覽版，尚未合併或發布。** 下方的六頁工作區是 [research-hub PR #135](https://github.com/WenyuChiou/research-hub/pull/135) 提出的功能。PyPI `1.2.0` 不含此功能。請依下方指令安裝固定版本的預覽快照，或先試用已發布的文獻儀表板。
+> **工作區已合併至原始碼；安裝與實機能力須分別驗證。** [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) 已合併。下方提供固定原始碼版本；不可由版本字串推定發布套件或 AI 主機已就緒。請先看[能力與設定基線](docs/capability-baseline.md)。
 
 ## 為什麼需要它
 
@@ -39,16 +39,33 @@
 
 ### 工作區預覽版
 
-需要 Python 3.10+ 與 Git。請選擇**新建或空白的** `workspace-demo` 目錄。以下指令安裝已測試、固定不變的預覽快照 `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8`，不依賴功能分支名稱。
+需要 Python 3.10+ 與 Git。請選擇**新建或空白的** `workspace-demo` 目錄。以下指令安裝固定不變的原始碼基線 `6381dfa7d474dd27cd4adb33f0f59ea8ec395150`，不依賴功能分支名稱。
 
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
-git checkout --detach dda3cee30f43e7eca658bfeb9b20aac35ec19ce8
-python -m pip install -e '.[mcp]'
-research-hub project demo --root ./workspace-demo --json
-research-hub serve --workspace --root ./workspace-demo
+git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+```
+
+接著只選一組符合你的系統的指令。直接呼叫虛擬環境的 Python，不需啟用腳本，也不需變更 PowerShell 執行原則。
+
+**macOS / Linux**
+
+```sh
+python3 -m venv .venv
+./.venv/bin/python -m pip install -e .
+./.venv/bin/python -m research_hub project demo --root ./workspace-demo --json
+./.venv/bin/python -m research_hub serve --workspace --root ./workspace-demo
+```
+
+**Windows PowerShell**
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m research_hub project demo --root ./workspace-demo --json
+.\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
 開啟[本機工作區](http://127.0.0.1:8765/app/)。示範不需要帳號，包含小型數值加總範例與文獻回顧測試資料。這些是教學輸入，並非模型產生的研究發現。
@@ -73,7 +90,7 @@ research-hub dashboard --sample
 | 可攜式交接 | 匯出任務給你的 AI 主機，再匯入文字與候選檔案雜湊值。匯出後，任務仍等待代理回覆。 |
 | 連接 Codex | 已登入且相容的 Codex CLI 使用你明確信任的公開寫作套件，在不使用工具的模式下產生文字。結果等待人工審查。 |
 
-公開寫作介接器已透過 [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17) 合併。本整合固定使用其 `main` 上的 commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`。[請先驗證並明確設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)；它是選用介接器，不會成為 research-hub 的永久安裝相依項目。Hub 工作區仍是尚未合併或發布的預覽版。連接的 Codex 只接收有限長度的文字摘錄，不接收二進位文件內容。Word 格式、LaTeX 編譯及最終文件修改，請在你的編輯器完成。
+公開寫作介接器已透過 [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17) 合併。本整合固定使用其 `main` 上的 commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`。[請先驗證並明確設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)；它是選用介接器，不會成為 research-hub 的永久安裝相依項目。Hub 工作區已合併至原始碼，但這不代表發布套件或實機主機已驗證。連接的 Codex 只接收有限長度的文字摘錄，不接收二進位文件內容。Word 格式、LaTeX 編譯及最終文件修改，請在你的編輯器完成。
 
 ## 哪些部分可查證
 

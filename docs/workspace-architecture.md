@@ -126,8 +126,9 @@ integration pins its immutable `main` commit
 `0bce611e91bd0bf01ad6aa59eccc46ae52321b645c04f6a71225f01e90f7a3ec` and its reproducible bundle
 ZIP SHA256 is `0b084edb82233fc43bf3465a8a8cc11551f5d6a15e4b98c6ea7cdfcb95a94ef7`.
 It remains explicitly configured and optional, not a permanent research-hub
-installation dependency. The Hub workspace remains unmerged and unreleased in
-[PR #135](https://github.com/WenyuChiou/research-hub/pull/135). The
+installation dependency. The Hub workspace was merged through
+[PR #135](https://github.com/WenyuChiou/research-hub/pull/135). Source, built wheel,
+and native-host verification remain separate; see the [capability baseline](capability-baseline.md). The
 [installation guide](workspace-guide.md#writing-adapter-preview) uses immutable
 commits rather than feature-branch names. September live evidence remains
 historical; it is not evidence of a live run against this producer pin.
