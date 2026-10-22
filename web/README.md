@@ -22,7 +22,11 @@ decisions additionally require its interactive local approval session.
 - Source links allow HTTP(S) only. Authorization tokens stay in the document and
   request headers; no local storage, URL tokens, remote fonts, telemetry, or auto-run.
 - Plain fetch with abortable project requests. Polling runs every three seconds
-  only for running tasks, stops on errors, and cancels on unmount or project switch.
+  only for running tasks. Transport failures, HTTP 408/429, and server errors
+  retry after 3, 6, 12, 24, then every 30 seconds until recovery or cancellation;
+  a successful read resets the interval. Other API errors stop automatic reads
+  until Refresh. Delayed updates show the error and last successful update time. Polling cancels on unmount or project switch and never
+  replays mutations.
 - One small application bundle; no chart, icon, routing, or state management packages.
 - Automated checks cover API errors, token scope, locale parity, task state meaning,
   retained input, source links, and the question/task/output workflows. Parent

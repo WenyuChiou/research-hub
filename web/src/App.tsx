@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, segment } from "./api";
+import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
 import { ProjectPages } from "./Pages";
 import { translator, type MessageKey } from "./i18n";
@@ -37,6 +37,13 @@ export default function App() {
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [detailError, setDetailError] = useState<unknown>(null);
+  const [pollStatus, setPollStatus] = useState<{
+    projectId: string;
+    lastSuccess: number;
+    stale: boolean;
+    retrying?: boolean;
+    reason?: string;
+  } | null>(null);
   const [notice, setNotice] = useState<{
     message: string;
     error?: boolean;
@@ -112,10 +119,13 @@ export default function App() {
       controller.signal,
     )
       .then((value) => {
+        if (controller.signal.aborted) return;
         setDetail(value);
+        setPollStatus({ projectId, lastSuccess: Date.now(), stale: false });
       })
       .catch((failure) => {
-        if (!aborted(failure)) setDetailError(failure);
+        if (!controller.signal.aborted && !aborted(failure))
+          setDetailError(failure);
       });
     return () => controller.abort();
   }, [projectId, refreshCount]);
@@ -135,8 +145,14 @@ export default function App() {
         results[1].status === "fulfilled" &&
         results[1].value &&
         selectedRef.current === savedProject
-      )
+      ) {
         setDetail(results[1].value);
+        setPollStatus({
+          projectId: savedProject,
+          lastSuccess: Date.now(),
+          stale: false,
+        });
+      }
       if (results.some((result) => result.status === "rejected"))
         setNotice({ message: translator(locale)("refreshError"), error: true });
     },
@@ -152,10 +168,14 @@ export default function App() {
       : "";
   useEffect(() => {
     if (!pollingKey) return;
-    const controller = new AbortController();
+    let activeController: AbortController | undefined;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
     const poll = async () => {
+      const controller = new AbortController();
+      activeController = controller;
+      let retry = true;
       try {
         const tasks = await Promise.all(
           pollingKey
@@ -175,7 +195,8 @@ export default function App() {
             undefined,
             controller.signal,
           );
-          if (!cancelled) setDetail(fresh);
+          if (cancelled) return;
+          setDetail(fresh);
         } else {
           setDetail((previous) =>
             previous?.project.id === projectId
@@ -189,22 +210,44 @@ export default function App() {
                 }
               : previous,
           );
-          timer = setTimeout(() => void poll(), 3000);
         }
+        failures = 0;
+        setPollStatus({ projectId, lastSuccess: Date.now(), stale: false });
       } catch (failure) {
-        if (!aborted(failure) && !cancelled)
-          setNotice({
-            message:
-              failure instanceof Error ? failure.message : String(failure),
-            error: true,
-          });
+        if (cancelled) return;
+        retry =
+          !(failure instanceof ApiError) ||
+          failure.status >= 500 ||
+          failure.status === 408 ||
+          failure.status === 429;
+        // Promise.all may fail before sibling task reads finish.
+        controller.abort();
+        failures += 1;
+        setPollStatus((previous) =>
+          previous?.projectId === projectId
+            ? {
+                ...previous,
+                stale: true,
+                retrying: retry,
+                reason:
+                  failure instanceof Error ? failure.message : String(failure),
+              }
+            : previous,
+        );
+      } finally {
+        // Only reads are retried. Cleanup cancels both delayed and in-flight reads.
+        if (!cancelled && retry)
+          timer = setTimeout(
+            () => void poll(),
+            Math.min(3000 * 2 ** Math.min(Math.max(failures - 1, 0), 4), 30000),
+          );
       }
     };
     timer = setTimeout(() => void poll(), 3000);
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      controller.abort();
+      activeController?.abort();
     };
   }, [pollingKey, projectId, refreshCount]);
 
@@ -340,6 +383,17 @@ export default function App() {
               0{pages.indexOf(page) + 1}
             </span>
           </div>
+          {pollStatus?.projectId === projectId && pollStatus.stale && (
+            <div role="alert" className="notice notice-error">
+              <span>
+                {t(pollStatus.retrying ? "pollDelayed" : "pollStopped")}{" "}
+                {pollStatus.reason} {t("pollLastSuccess")}{" "}
+                <time dateTime={new Date(pollStatus.lastSuccess).toISOString()}>
+                  {new Date(pollStatus.lastSuccess).toLocaleTimeString(locale)}
+                </time>
+              </span>
+            </div>
+          )}
           {notice && (
             <div
               role={notice.error ? "alert" : "status"}
