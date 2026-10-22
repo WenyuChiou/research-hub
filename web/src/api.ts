@@ -22,7 +22,41 @@ export async function api<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  return request<T>(path, body, signal);
+  // Writes have separate outcome semantics: never timeout/replay a mutation.
+  if (body !== undefined) return request<T>(path, body, signal);
+  return readWithDeadline<T>(path, signal);
+}
+
+// Includes response-body consumption, not just receipt of HTTP headers.
+export const READ_TIMEOUT_MS = 15000;
+async function readWithDeadline<T>(path: string, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) throw signal.reason;
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const interrupted = new Promise<never>((_, reject) => {
+    onAbort = () => {
+      reject(signal!.reason);
+      controller.abort(signal!.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    timer = setTimeout(() => {
+      const failure = new ApiError(
+        "The server read timed out. Try refreshing; no write was repeated.",
+        "read_timeout",
+        408,
+      );
+      reject(failure);
+      controller.abort(failure);
+    }, READ_TIMEOUT_MS);
+  });
+  try {
+    // Race also fences late results from a transport that ignores cancellation.
+    return await Promise.race([request<T>(path, undefined, controller.signal), interrupted]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 export interface AuditReport {
