@@ -348,3 +348,24 @@ def test_collect_to_cluster_rejects_unknown_source(tmp_path):
     result = collect_to_cluster(cfg, "not-a-doi-or-url", cluster_slug="test")
     assert result["ok"] is False
     assert "source kind" in result["error"].lower()
+
+
+def test_brief_cluster_known_version_conflict_defers_generation(tmp_path):
+    from types import SimpleNamespace
+    from research_hub.workflows import brief_cluster
+    cfg = _make_cfg(tmp_path)
+    registry = MagicMock()
+    registry.get.return_value.notebooklm_notebook_id = None
+    warning = {'source': 'synthetic', 'error': 'source_version_conflict', 'severity': 'warning', 'message': 'Local payload differs; NOT updated'}
+    with patch('research_hub.clusters.ClusterRegistry', return_value=registry), \
+         patch('research_hub.notebooklm.bundle.bundle_cluster'), \
+         patch('research_hub.notebooklm.upload.upload_cluster', return_value=SimpleNamespace(errors=[warning])), \
+         patch('research_hub.notebooklm.upload.generate_artifact') as generate, \
+         patch('research_hub.notebooklm.upload.download_briefing_for_cluster', return_value=SimpleNamespace(artifact_path=tmp_path / 'existing-brief.txt')):
+        result = brief_cluster(cfg, 'some-cluster', force_regenerate=True)
+    generate.assert_not_called()
+    assert any('NOT updated' in warning for warning in result['warnings'])
+    assert any('existing artifact, NOT newly generated' in warning for warning in result['warnings'])
+    assert 'generate' not in result['steps_completed']
+    assert 'download' in result['steps_completed']
+    assert result['brief_path'] == str(tmp_path / 'existing-brief.txt')

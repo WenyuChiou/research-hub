@@ -263,8 +263,13 @@ def brief_cluster(
     need_regen = force_regenerate or not getattr(cluster, "notebooklm_notebook_id", None)
     if need_regen:
         try:
-            from research_hub.notebooklm.upload import upload_cluster, generate_artifact
-            upload_cluster(cluster, cfg)
+            from research_hub.notebooklm.upload import upload_cluster, generate_artifact, source_version_warnings
+            upload_report = upload_cluster(cluster, cfg)
+            warnings = source_version_warnings(upload_report)
+            out["warnings"].extend(f"{w['source']}: {w['message']}" for w in warnings)
+            if any(w["error"] == "source_version_conflict" for w in warnings):
+                out["warnings"].append("Any downloaded brief/preview is an existing artifact, NOT newly generated from the changed source.")
+                raise RuntimeError("Source version conflict: generation deferred; inspect cached sources.")
             out["steps_completed"].append("upload")
             generate_artifact(cluster, cfg)
             out["steps_completed"].append("generate")

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import time
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -413,6 +415,103 @@ def _entry_key(entry: Entry) -> str:
     return str(entry.get("pdf_path") or entry.get("url") or entry.get("doi") or "")
 
 
+def _payload_version(entry: Entry) -> dict[str, str] | None:
+    """Observe local payload bytes; URL identity is not content evidence."""
+    action = entry.get("action")
+    if action == "text" and entry.get("text"):
+        digest = hashlib.sha256(entry.get("text", "").encode("utf-8")).hexdigest()
+    elif action == "pdf":
+        digestor = hashlib.sha256()
+        with Path(entry["pdf_path"]).open("rb") as source:
+            for block in iter(lambda: source.read(1024 * 1024), b""):
+                digestor.update(block)
+        digest = digestor.hexdigest()
+    else:
+        return None
+    return {"kind": action, "sha256": digest}
+
+
+def _cached_version_warning(report, entry, versions, log_path, *, shard=""):
+    """A resume hit proves prior submission, not current source freshness."""
+    key = _entry_key(entry)
+    previous = versions.get(key)
+    if entry.get("action") == "url":
+        code = "source_freshness_unverified"
+        message = "URL content freshness is unverified; cached identity was not refreshed."
+    elif not isinstance(previous, dict) or not re.fullmatch(
+        r"[0-9a-f]{64}", str(previous.get("sha256", ""))
+    ):
+        code = "source_version_unknown"
+        message = "Previous upload payload version is unavailable (legacy cache); freshness is unknown."
+    else:
+        try:
+            current = _payload_version(entry)
+        except (OSError, KeyError, UnicodeError):
+            current = None
+        if current is None:
+            code = "source_version_unknown"
+            message = "Current local payload could not be read; freshness is unknown."
+        elif current == previous:
+            return
+        else:
+            code = "source_version_conflict"
+            message = "Local payload differs from the prior upload; cached source was NOT updated."
+    message += " Inspect this source and explicitly choose whether to keep or replace the prior upload; do not clear the whole cache."
+    warning = {"source": key, "error": code, "severity": "warning", "message": message}
+    if shard:
+        warning["shard"] = shard
+    report.errors.append(warning)
+    _log_jsonl(log_path, {"kind": code, **warning})
+
+
+def source_version_warnings(report) -> list[dict]:
+    """Structured advisories; presentation belongs to CLI/JSON/MCP consumers."""
+    return [item for item in getattr(report, "errors", []) if item.get("severity") == "warning"]
+
+
+def _attempt_versioned_upload(client, entry, log_path):
+    """Submit a private PDF snapshot so evidence describes submitted bytes.
+
+    The synchronous client awaits the SDK upload before returning; the snapshot
+    remains alive across retries and is removed even if upload raises. Streaming
+    bounds memory usage, and the temporary directory is owner-only.
+    """
+    if entry.get("action") != "pdf":
+        version = _payload_version(entry)
+        return _attempt_upload(client, entry, log_path), version, []
+    original = Path(entry["pdf_path"])
+    result = None
+    version = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="research-hub-upload-") as temp:
+            snapshot = Path(temp) / original.name
+            digestor = hashlib.sha256()
+            with original.open("rb") as source, snapshot.open("wb") as target:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    target.write(block)
+                    digestor.update(block)
+            version = {"kind": "pdf", "sha256": digestor.hexdigest()}
+            result = _attempt_upload(client, entry, log_path, pdf_snapshot=snapshot)
+            if result is not None:
+                result.path_or_url = str(original)
+            return result, version, []
+    except OSError:
+        if result is not None:
+            # Cleanup can fail after the SDK has already accepted the bytes.
+            # Preserve the successful checkpoint: retrying would duplicate it.
+            warning = {
+                "source": _entry_key(entry), "error": "source_snapshot_cleanup_failed",
+                "severity": "warning",
+                "message": "Upload finished but private temporary PDF cleanup failed; inspect local temporary storage before removing residual snapshots.",
+            }
+            _log_jsonl(log_path, {"kind": "source_snapshot_cleanup_failed", **warning})
+            return result, version, [warning]
+        return UploadResult(
+            source_kind="pdf", path_or_url=str(original),
+            success=False, error="Could not prepare/read PDF upload snapshot",
+        ), None, []
+
+
 def _entry_doi(entry: Entry) -> str:
     return str(entry.get("doi", "") or "").strip()
 
@@ -702,6 +801,7 @@ def _attempt_upload(
     log_path: Path,
     *,
     max_attempts: int = 3,
+    pdf_snapshot: Path | None = None,
 ):
     """Try an upload up to ``max_attempts`` times with exponential backoff.
 
@@ -716,7 +816,7 @@ def _attempt_upload(
     for attempt in range(1, max_attempts + 1):
         _log_jsonl(log_path, {"kind": "upload_attempt", "attempt": attempt, "action": action, "key": key})
         if action == "pdf":
-            result = client.upload_pdf(Path(entry["pdf_path"]))
+            result = client.upload_pdf(pdf_snapshot if pdf_snapshot is not None else Path(entry["pdf_path"]))
         elif action == "url":
             result = client.upload_url(entry["url"])
         elif action == "text":
@@ -777,14 +877,22 @@ def _plan_shard_dry_run(
     *,
     shard_size: int,
     shard_strategy: str,
+    cluster_cache: dict,
+    log_path: Path,
 ) -> None:
     ordered = _ordered_shard_entries(manifest, cfg, getattr(cluster, "slug", ""), shard_strategy)
     chunks = _chunk_entries(ordered, shard_size)
     total = len(chunks) or 1
     for shard_index, chunk in enumerate(chunks, start=1):
         shard_name = f"{notebook_name} [{shard_index}/{total}]"
+        uploaded_sources = set(cluster_cache.get("shard_uploaded_sources", {}).get(shard_name, []))
+        versions = cluster_cache.get("shard_source_versions", {}).get(shard_name, {})
         for entry in chunk:
             key = _entry_key(entry)
+            if key in uploaded_sources:
+                report.skipped_already_uploaded += 1
+                _cached_version_warning(report, entry, versions, log_path, shard=shard_name)
+                continue
             report.uploaded.append(
                 UploadResult(
                     source_kind=entry.get("action", "?"),
@@ -825,6 +933,7 @@ def _upload_cluster_shards(
     retry_count = 0
     shards: list[NotebookShard] = []
     shard_cache = cluster_cache.setdefault("shard_uploaded_sources", {})
+    shard_versions = cluster_cache.setdefault("shard_source_versions", {})
     report.notebook_name = notebook_name
 
     client = _make_client(state_file, headless=headless, keepalive_sec=600)
@@ -858,20 +967,27 @@ def _upload_cluster_shards(
             )
 
             uploaded_sources = {str(item) for item in shard_cache.get(shard_name, [])}
+            versions = shard_versions.setdefault(shard_name, {})
             for entry in chunk:
                 key = _entry_key(entry)
                 if key in uploaded_sources:
                     report.skipped_already_uploaded += 1
                     _log_jsonl(log_path, {"kind": "upload_cached_skip", "key": key, "shard": shard_name})
+                    _cached_version_warning(report, entry, versions, log_path, shard=shard_name)
                     continue
 
-                result = _attempt_upload(client, entry, log_path)
+                result, version, warnings = _attempt_versioned_upload(client, entry, log_path)
+                report.errors.extend(warnings)
                 if result is None:
                     continue
                 report.uploaded.append(result)
                 retry_count += max(0, _count_attempts_for_key(log_path, key) - 1)
                 if result.success:
                     uploaded_sources.add(key)
+                    if version is not None:
+                        versions[key] = version
+                    shard_cache[shard_name] = sorted(uploaded_sources)
+                    _save_nlm_cache(cfg.research_hub_dir / "nlm_cache.json", cache)
                 else:
                     report.errors.append({"source": key, "error": result.error, "shard": shard_name})
                 time.sleep(BETWEEN_UPLOADS_SEC)
@@ -1018,6 +1134,7 @@ def upload_cluster(
     cache = _load_nlm_cache(cache_path)
     cluster_cache = cache.setdefault(cluster.slug, {})
     uploaded_sources: set[str] = {str(item) for item in cluster_cache.get("uploaded_sources", [])}
+    versions = cluster_cache.setdefault("source_versions", {})
     notebook_name = cluster.notebooklm_notebook or cluster.name
 
     if over_cap_strategy == "shard":
@@ -1030,6 +1147,8 @@ def upload_cluster(
                 notebook_name,
                 shard_size=shard_size,
                 shard_strategy=shard_strategy,
+                cluster_cache=cluster_cache,
+                log_path=log_path,
             )
             _log_jsonl(
                 log_path,
@@ -1071,6 +1190,9 @@ def upload_cluster(
 
     if dry_run:
         _plan_dry_run(report, manifest, uploaded_sources, notebook_name, rate_limit_cap)
+        for entry in manifest.get("entries", []):
+            if entry.get("action") != "skip" and _entry_key(entry) in uploaded_sources:
+                _cached_version_warning(report, entry, versions, log_path)
         _log_jsonl(
             log_path,
             {
@@ -1166,15 +1288,19 @@ def upload_cluster(
             if key in uploaded_sources:
                 report.skipped_already_uploaded += 1
                 _log_jsonl(log_path, {"kind": "upload_cached_skip", "key": key})
+                _cached_version_warning(report, entry, versions, log_path)
                 continue
 
-            result = _attempt_upload(client, entry, log_path)
+            result, version, warnings = _attempt_versioned_upload(client, entry, log_path)
+            report.errors.extend(warnings)
             if result is None:
                 continue
             report.uploaded.append(result)
             retry_count += max(0, _count_attempts_for_key(log_path, key) - 1)
             if result.success:
                 uploaded_sources.add(key)
+                if version is not None:
+                    versions[key] = version
                 uploads += 1
                 # STAB-3: checkpoint after each successful upload so a crash
                 # mid-loop resumes from here instead of re-uploading everything.
