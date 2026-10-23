@@ -92,6 +92,10 @@ def _nlm_upload(
     except NotebookLMCapacityError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    from research_hub.notebooklm.upload import source_version_warnings
+
+    for warning in source_version_warnings(report):
+        print(f"[warn] {warning['source']}: {warning['message']}")
     print(f"Notebook: {report.notebook_name or '(planned)'}")
     if report.notebook_url:
         print(f"Notebook URL: {report.notebook_url}")
@@ -167,6 +171,10 @@ def _nlm_shard(
         shard_size=shard_size,
         shard_strategy=strategy,
     )
+    from research_hub.notebooklm.upload import source_version_warnings
+
+    for warning in source_version_warnings(report):
+        print(f"[warn] {warning['source']}: {warning['message']}")
     refreshed = ClusterRegistry(cfg.clusters_file).get(cluster_slug)
     shards = list(getattr(refreshed, "notebooklm_shards", []) or []) if refreshed is not None else []
     print(f"Shards: {len(shards)} notebook(s)")

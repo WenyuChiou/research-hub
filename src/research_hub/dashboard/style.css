@@ -369,6 +369,35 @@ section {
 .paper-title { font-size: var(--text-md-2); font-weight: 500; }
 .paper-abstract, .briefing-preview, .drift-card p { margin: 0; color: var(--fg-mute); }
 
+/* Read-only provenance remains readable at narrow widths and browser zoom. */
+.paper-content { min-width: 0; }
+.source-evidence {
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.65;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.cluster-card .source-evidence summary {
+  display: list-item;
+  list-style: disclosure-closed inside;
+  min-height: 44px;
+  padding: 12px;
+  font-size: 1rem;
+}
+.cluster-card .source-evidence details[open] > summary,
+.cluster-card .source-evidence[open] > summary { list-style-type: disclosure-open; }
+.cluster-card .source-evidence summary::-webkit-details-marker { display: inline; }
+.source-evidence-status { display: block; font-weight: 600; margin-top: 6px; }
+.source-evidence-body { padding: 0 12px 12px; }
+.source-evidence dl { display: grid; gap: 12px; margin: 12px 0; }
+.source-evidence dl > div { min-width: 0; }
+.source-evidence dt { font-weight: 600; }
+.source-evidence dd { margin: 4px 0 0; }
+.source-evidence code { font-size: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-evidence-technical { border-top: 1px solid var(--border); }
+
 .status-badge, .reading-status {
   display: inline-flex;
   align-items: center;

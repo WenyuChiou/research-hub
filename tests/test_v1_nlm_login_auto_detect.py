@@ -132,28 +132,30 @@ class _FakeSyncPlaywright:
 
 
 class _FakePlaywrightError(Exception):
-    """Stand-in for ``playwright.sync_api.Error`` -- the real playwright
+    """Stand-in for ``patchright.sync_api.Error`` -- the real Patchright
     package is an optional dependency and is not installed in CI."""
 
 
 def _inject_playwright_module(monkeypatch, sync_playwright_factory):
-    """Inject a fake ``playwright.sync_api`` module into ``sys.modules``.
+    """Inject a fake ``patchright.sync_api`` module into ``sys.modules``.
 
-    The function under test does ``from playwright.sync_api import
-    sync_playwright`` / ``import Error`` at call time. playwright is an
+    The function under test does ``from patchright.sync_api import
+    sync_playwright`` / ``import Error`` at call time. Patchright is an
     optional dependency (absent in CI), so we synthesise the module rather
     than patching an attribute on a package that may not be importable.
     """
-    fake_api = types.ModuleType("playwright.sync_api")
+    monkeypatch.setitem(sys.modules, "playwright", None)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", None)
+    fake_api = types.ModuleType("patchright.sync_api")
     fake_api.sync_playwright = sync_playwright_factory
     fake_api.Error = _FakePlaywrightError
-    pkg = sys.modules.get("playwright") or types.ModuleType("playwright")
-    monkeypatch.setitem(sys.modules, "playwright", pkg)
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_api)
+    pkg = sys.modules.get("patchright") or types.ModuleType("patchright")
+    monkeypatch.setitem(sys.modules, "patchright", pkg)
+    monkeypatch.setitem(sys.modules, "patchright.sync_api", fake_api)
 
 
 def _install_fake_playwright(monkeypatch, chromium: _FakeChromium) -> _FakePlaywright:
-    """Install a fake ``playwright.sync_api`` whose ``sync_playwright()``
+    """Install a fake ``patchright.sync_api`` whose ``sync_playwright()``
     yields a browser stack wrapping *chromium*. Returns the playwright
     handle so tests can assert ``stop()`` was called on it."""
     fake = _FakeSyncPlaywright(chromium)
@@ -435,3 +437,38 @@ def test_dispatch_routes_to_auto_detect_when_flag_set(tmp_path, monkeypatch):
     assert called["run"] is False
     # Dispatched with the storage-state target and the timeout, no `cmd`.
     assert captured["args"] == (state, 600)
+
+
+def test_missing_patchright_fails_before_profile_access(tmp_path, monkeypatch, capsys):
+    """The compatibility extra's actual provider must be available."""
+    monkeypatch.setitem(sys.modules, "patchright.sync_api", None)
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: pytest.fail("profile accessed"))
+    state = tmp_path / "state.json"
+    assert _login_with_auto_detect(state, wait_timeout=1) == 1
+    assert not state.exists()
+    message = capsys.readouterr().err
+    assert "Patchright is not installed" in message
+    assert "research-hub-pipeline[playwright]" in message
+
+
+def test_patchright_navigation_error_recovers(tmp_path, monkeypatch):
+    """The provider's Error identity must match navigation exception handling."""
+    class NavigatingPage(_FakePage):
+        @property
+        def url(self):
+            if self._idx == 0:
+                self._idx += 1
+                raise _FakePlaywrightError("navigation in progress")
+            return super().url
+
+        def goto(self, url, **kwargs):
+            raise _FakePlaywrightError("transient navigation failure")
+
+    monkeypatch.setattr(auth, "_browser_profile_dir", lambda: tmp_path / "profile")
+    context = _FakeContext(NavigatingPage(["https://notebooklm.google.com/"]))
+    fake = _install_fake_playwright(monkeypatch, _FakeChromium(context))
+    state = tmp_path / "state.json"
+    assert _login_with_auto_detect(state, wait_timeout=30) == 0
+    assert state.exists()
+    assert context.closed
+    assert fake.stopped

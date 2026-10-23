@@ -268,3 +268,25 @@ def test_auto_pipeline_search_returns_no_papers(mock_deps):
     assert not report.ok
     assert report.error == "Search returned 0 papers ??try a different topic or backend"
     mock_deps["run_pipeline"].assert_not_called()
+
+
+@pytest.mark.parametrize('code, deferred', [
+    ('source_version_conflict', True),
+    ('source_version_unknown', False),
+    ('source_freshness_unverified', False),
+])
+def test_auto_source_version_advisories(mock_deps, capsys, code, deferred):
+    from types import SimpleNamespace
+    warning = {'source': 'synthetic', 'error': code, 'severity': 'warning', 'message': 'Inspect cached source'}
+    mock_deps['registry_instance'].get.return_value = MagicMock()
+    mock_deps['upload_cluster'].return_value = SimpleNamespace(
+        errors=[warning], success_count=0, notebook_url='https://example.invalid/notebook', notebook_was_reused=False,
+    )
+    report = auto_pipeline(topic='Version warning', do_nlm=True, print_progress=False)
+    assert report.ok and report.nlm_deferred is deferred
+    assert report.nlm_warnings == [warning]
+    if deferred:
+        mock_deps['generate_artifact'].assert_not_called()
+    else:
+        mock_deps['generate_artifact'].assert_called_once()
+    assert capsys.readouterr().out == ''

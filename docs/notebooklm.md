@@ -19,9 +19,9 @@ not primarily drive web-page selectors. Upstream interface/authentication drift
 can still break them.
 
 Visible browser automation is used for login/session acquisition. The optional
-`[playwright]` extra installs Patchright, but the current `--auto-detect` login
-implementation imports `playwright.sync_api`. These are different packages:
-that extra alone does not prove this path is installed. `[browser-auth]` supplies optional
+`[playwright]` extra installs Patchright, which the `--auto-detect` login
+implementation uses through `patchright.sync_api`. The extra name is retained
+for installation compatibility. `[browser-auth]` supplies optional
 cookie-import helpers. Neither extra, a cached notebook ID, nor a saved cookie
 file proves that a current authenticated operation will succeed. Login and
 real connector operations require separate, authorized native-PC verification.
@@ -59,13 +59,13 @@ paths and historical fallbacks, not the primary operation transport.
 
 ## One-time login
 
-For `--auto-detect`, install its actual Playwright dependency and browser in
+For `--auto-detect`, install the Patchright dependency and its Chromium browser in
 your virtual environment, then run (installation downloads software; login
 opens a visible browser):
 
 ```bash
-python -m pip install research-hub-pipeline playwright
-python -m playwright install chromium
+python -m pip install "research-hub-pipeline[playwright]"
+python -m patchright install chromium
 research-hub notebooklm login --auto-detect
 ```
 
@@ -243,6 +243,36 @@ The upload flow is intentionally conservative.
 
 That cache is what makes re-runs resumable. If an upload stops halfway,
 run the same command again and already-uploaded sources are skipped.
+
+A cache hit means **previously submitted**, not necessarily up-to-date. New PDF
+uploads use a private temporary snapshot (streamed to disk, removed after the
+synchronous upload/retries finish); successful PDF and abstract-text uploads
+record a SHA-256 payload fingerprint. An unchanged known payload resumes without
+retransmission. If local bytes/text changed under the same cache identity, upload
+keeps the prior source and reports `source_version_conflict`; it does not delete,
+replace, or automatically add another source. Inspect the identified source and
+explicitly choose whether to keep or replace it—do not clear the entire cache.
+Automatic/workflow brief generation is deferred on a known conflict so it cannot
+silently generate from the superseded source. Other successful submissions in the
+same run remain checkpointed. The brief workflow may still download/preview an
+existing artifact, but explicitly labels it as not newly generated from the changed
+source. If temporary snapshot cleanup fails after upload, the successful checkpoint
+is preserved and a cleanup warning is returned rather than retrying a duplicate.
+
+Old identity-only cache entries report `source_version_unknown` and continue to
+skip; today's bytes are never treated as proof of what was uploaded previously.
+Cached URLs report `source_freshness_unverified`: this tool has not fetched or
+verified the current remote content. Unreadable cached local files also report
+unknown freshness. These advisories do not increment upload failures or change
+upload/shard CLI exit codes. CLI output presents warnings; structured upload
+results retain them in `errors` with `severity: warning`, auto reports expose
+`nlm_warnings`, and connector reports expose `warnings`.
+
+Fingerprints describe submitted local payloads, not remote ingestion correctness.
+Ordinary rebundling puts PDFs in new timestamped paths and retains the existing
+path-identity behavior (even identical bytes at a new path can be uploaded again).
+This does not introduce cross-path deduplication or a remote replacement API.
+
 
 Example rerun output:
 
