@@ -25,6 +25,7 @@ from pathlib import Path
 import re
 from typing import Any, Callable
 
+from research_hub import __version__
 from research_hub._deprecation import warn_deprecated
 from research_hub.config import get_config, require_config
 from research_hub.security import ValidationError, validate_identifier, validate_slug
@@ -41,8 +42,9 @@ class _FallbackToolManager:
 
 
 class _FallbackMCP:
-    def __init__(self, name: str, instructions: str = "") -> None:
+    def __init__(self, name: str, instructions: str = "", *, version: str | None = None) -> None:
         self.name = name
+        self.version = version
         self.instructions = instructions
         self._tool_manager = _FallbackToolManager()
 
@@ -61,6 +63,7 @@ _MCP_CLS = FastMCP if FastMCP is not None else _FallbackMCP
 
 mcp = _MCP_CLS(
     "research-hub",
+    version=__version__,
     instructions=(
         "Academic literature pipeline. Search papers, verify DOIs, "
         "get integration suggestions, manage clusters, and export citations."
