@@ -267,9 +267,20 @@ def autonomous_exit_code(report: BootstrapReport) -> int:
 
 def run_setup(args) -> int:
     """Orchestrate init -> install -> NotebookLM login."""
+    if getattr(args, "save_report", False) and not getattr(args, "autonomous", False):
+        print("[setup] --save-report requires --autonomous; no setup steps were run.")
+        return 1
     if getattr(args, "autonomous", False):
+        snapshot_target = None
+        if getattr(args, "save_report", False):
+            from research_hub.setup_snapshot import snapshot_root
+            # Validate the original root, not an already-resolved path that hides links.
+            snapshot_target = snapshot_root(args.vault or os.environ.get("RESEARCH_HUB_ROOT") or (Path.home() / "knowledge-base"))
         report = run_autonomous(vault=args.vault, persona=args.persona)
         print(json.dumps(report.to_dict(), ensure_ascii=False))
+        if snapshot_target is not None:
+            from research_hub.setup_snapshot import save_setup_snapshot
+            save_setup_snapshot(snapshot_target, report)
         return autonomous_exit_code(report)
 
     from research_hub.cli import _cmd_install

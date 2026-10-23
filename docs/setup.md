@@ -98,6 +98,43 @@ CLI detection and installed skill paths are not successful invocation or host
 discovery. These remain `unknown` for runtime usability. This report does not
 provide a route-specific or whole-system readiness verdict.
 
+### Optional saved observations in Workspace readiness
+
+By default, autonomous setup only prints its report; it does not save a snapshot.
+To opt in, choose an **existing local vault directory** that is also the root
+selected by Workspace:
+
+```bash
+research-hub setup --autonomous --save-report --vault <workspace-root> --persona agent
+```
+
+This command can perform the existing Zotero read probe. It does not log in or
+install tools. `--save-report` without `--autonomous` is rejected before setup.
+It atomically replaces `.research_hub/setup-snapshot.json` under that root with
+schema version 1, a UTC observation time, a source label, and six allowlisted
+component statuses. It omits environment values, paths, raw errors and details.
+No snapshot is copied from a different configured vault. Save failure is an
+error, not success; the existing report/legacy readiness semantics still apply.
+
+Workspace reads this small file without running setup or adding probes. Existing
+Codex capability checks are separate and unchanged: the workspace endpoint
+already calls `codex exec --help`, `codex features list`, and `codex login status`.
+The new snapshot field adds no subprocess or network calls and does not alter
+Codex/writing/approval behavior.
+
+The UI labels the result **saved historical observations, not live verification**.
+Current readiness remains unknown even for a recently saved pass. Its 24-hour
+(86,400-second) age threshold is only a display policy to hide old observations,
+not a credential/capability validity period; age is evaluated when the snapshot
+is read. Missing, invalid, future-dated or older snapshots show unknown statuses.
+Source/timestamp labels describe local file contents, not authenticated provenance.
+
+Linked/reparse paths, escaped roots, nonregular or hardlinked input files, and
+files above 8 KiB are rejected. This uses existing local workspace path checks
+and atomic replacement; it does not claim race-proof confinement against another
+process concurrently replacing ancestor directories. There is no automatic
+refresh probe, retry, login button, new permission or route-readiness guarantee.
+
 ## 3. Connect An AI Host
 
 ### MCP / REST hosts

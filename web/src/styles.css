@@ -12,8 +12,8 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--body-font);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   -webkit-font-smoothing: antialiased;
 }
 button,
@@ -56,13 +56,13 @@ p {
   margin-top: 0;
 }
 h2 {
-  font-size: 18px;
+  font-size: var(--text-section);
   font-weight: 650;
   letter-spacing: -0.3px;
   margin-bottom: 0;
 }
 h3 {
-  font-size: 17px;
+  font-size: var(--text-subheading);
   font-weight: 650;
   line-height: 1.45;
   margin-bottom: 8px;
@@ -73,10 +73,29 @@ h4 {
 p {
   margin-bottom: 12px;
 }
+h1,
+h2,
+h3,
+h4,
+p,
+.field label,
+.field small,
+.sidebar nav a {
+  overflow-wrap: anywhere;
+}
+.brand,
+.brand > span:last-child,
+.page-heading > div,
+.next-step > div,
+.panel-heading > *,
+.capability summary > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 code,
 pre {
   font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 11px;
+  font-size: var(--text-meta);
   overflow-wrap: anywhere;
 }
 pre {
@@ -115,7 +134,7 @@ pre {
   align-items: center;
   color: inherit;
   text-decoration: none;
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 650;
   letter-spacing: -0.5px;
   margin: 0 3px 43px;
@@ -124,7 +143,7 @@ pre {
   display: block;
   margin-top: 2px;
   color: #b4c3cb;
-  font-size: 10px;
+  font-size: var(--text-meta);
   font-weight: 400;
   letter-spacing: 0.2px;
 }
@@ -132,10 +151,10 @@ pre {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 42px;
+  width: 2.5rem;
+  height: 2.625rem;
   font:
-    italic 33px Georgia,
+    italic 2.0625rem Georgia,
     serif;
   position: relative;
   flex-shrink: 0;
@@ -158,19 +177,19 @@ pre {
 .project-control > label {
   color: #a8bbc7;
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: var(--text-meta);
   letter-spacing: 1.9px;
   display: block;
   margin-bottom: 9px;
 }
 .project-control select {
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   background: #223a4b;
   border-color: #425562;
   color: #fff;
   padding: 8px 28px 8px 10px;
-  font-size: 12px;
+  font-size: var(--text-control);
   text-overflow: ellipsis;
 }
 .new-project {
@@ -178,11 +197,11 @@ pre {
   border: 0;
   background: none;
   color: #bfcdc9;
-  font-size: 12px;
+  font-size: var(--text-control);
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
+  min-height: 44px;
 }
 .sidebar nav {
   margin-top: 24px;
@@ -198,7 +217,7 @@ pre {
   padding: 13px 12px;
   min-height: 48px;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--text-control);
   border: 1px solid transparent;
   transition: background 0.15s;
 }
@@ -212,15 +231,16 @@ pre {
   border-color: #426566;
 }
 .nav-symbol {
-  width: 20px;
-  font-size: 19px;
+  width: 1.25rem;
+  flex-shrink: 0;
+  font-size: 1.1875rem;
   font-family: Georgia, serif;
   color: #a4babd;
   text-align: center;
 }
 .nav-number {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--text-meta);
   opacity: 0.6;
 }
 .sidebar-footer {
@@ -229,7 +249,7 @@ pre {
 }
 .local-marker {
   color: #c3d0cd;
-  font-size: 9px;
+  font-size: var(--text-meta);
   letter-spacing: 1.6px;
   display: flex;
   align-items: center;
@@ -243,7 +263,7 @@ pre {
 }
 .sidebar-footer > p {
   color: #a3b4bf;
-  font-size: 10px;
+  font-size: var(--text-meta);
   margin: 9px 0 23px;
 }
 .language-switch {
@@ -257,9 +277,9 @@ pre {
   background: none;
   border: none;
   color: #bcccd5;
-  font-size: 11px;
+  font-size: var(--text-control);
   padding: 5px 10px;
-  min-height: 36px;
+  min-height: 44px;
   border-radius: 2px;
 }
 .language-switch button[aria-pressed="true"] {
@@ -281,7 +301,7 @@ pre {
 .breadcrumb {
   display: flex;
   gap: 14px;
-  font-size: 11px;
+  font-size: var(--text-meta);
   color: var(--muted);
   align-items: baseline;
   min-width: 0;
@@ -306,7 +326,7 @@ pre {
   margin-bottom: 34px;
 }
 .eyebrow {
-  font-size: 9px;
+  font-size: var(--text-meta);
   color: var(--muted);
   letter-spacing: 1.55px;
   text-transform: uppercase;
@@ -315,7 +335,7 @@ pre {
 }
 h1 {
   font-family: var(--display-font);
-  font-size: clamp(31px, 3vw, 45px);
+  font-size: clamp(1.9375rem, 3vw, 2.8125rem);
   font-weight: 400;
   line-height: 1.2;
   letter-spacing: -1.4px;
@@ -326,11 +346,11 @@ h1:focus {
 }
 .page-heading p {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-control);
   margin: 0;
 }
 .page-index {
-  font: 62px var(--display-font);
+  font: 3.875rem var(--display-font);
   color: #c3c5bd;
   letter-spacing: -4px;
 }
@@ -362,18 +382,18 @@ h1:focus {
   border-bottom: 1px solid var(--line);
 }
 .panel-heading a {
-  font-size: 10px;
+  font-size: var(--text-control);
   text-decoration: none;
 }
 .panel-heading h2 {
-  font-size: 16px;
+  font-size: var(--text-section);
 }
 .count {
   border: 1px solid var(--line);
   min-width: 25px;
   padding: 1px 6px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--text-meta);
   text-align: center;
   color: var(--muted);
 }
@@ -389,20 +409,20 @@ h1:focus {
   overflow: hidden;
 }
 .next-step .small-label {
-  font-size: 9px;
+  font-size: var(--text-meta);
   letter-spacing: 1.7px;
   color: #476e63;
 }
 .next-step h2 {
   font-family: var(--display-font);
-  font-size: 31px;
+  font-size: 1.9375rem;
   font-weight: 400;
   letter-spacing: -0.7px;
   margin: 11px 0 7px;
 }
 .next-step p {
   color: #52675d;
-  font-size: 12px;
+  font-size: var(--text-control);
   max-width: 500px;
   margin-bottom: 18px;
 }
@@ -453,9 +473,12 @@ h1:focus {
   justify-content: center;
   border-radius: 3px;
   border: 1px solid transparent;
-  min-height: 42px;
+  min-height: 44px;
   padding: 9px 16px;
-  font-size: 12px;
+  font-size: var(--text-control);
+  line-height: var(--leading-control);
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-weight: 600;
   text-decoration: none;
   transition:
@@ -484,10 +507,10 @@ h1:focus {
   color: var(--muted);
   padding: 6px 8px;
   font-weight: 400;
-  min-height: 38px;
+  min-height: 44px;
 }
 .text-button > span:first-child {
-  font-size: 17px;
+  font-size: 1.0625rem;
 }
 .button-row {
   display: flex;
@@ -498,6 +521,7 @@ h1:focus {
   display: none;
 }
 .panel-button {
+  max-width: calc(100% - 44px);
   margin: 0 22px 23px;
 }
 .brief {
@@ -505,14 +529,14 @@ h1:focus {
 }
 .small-label {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-meta);
   color: var(--muted);
   font-weight: 550;
   letter-spacing: 0.3px;
 }
 .goal-text {
   font-family: var(--display-font);
-  font-size: 23px;
+  font-size: 1.4375rem;
   line-height: 1.5;
   margin: 9px 0 23px;
   overflow-wrap: anywhere;
@@ -523,7 +547,7 @@ h1:focus {
 }
 .question-block p {
   margin: 8px 0 2px;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 .inventory {
   margin: 0;
@@ -540,20 +564,20 @@ h1:focus {
   border: none;
 }
 .inventory dt {
-  font-size: 12px;
+  font-size: var(--text-control);
   color: var(--muted);
 }
 .inventory dd {
   margin: 0;
   font-family: var(--display-font);
-  font-size: 24px;
+  font-size: 1.5rem;
   line-height: 1;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 .inventory dd span {
-  font: 10px var(--body-font);
+  font: var(--text-meta)/var(--leading-control) var(--body-font);
   color: var(--muted);
 }
 .capability-list {
@@ -562,7 +586,7 @@ h1:focus {
 .capability {
   padding: 13px 0;
   border-bottom: 1px solid var(--line);
-  font-size: 11px;
+  font-size: var(--text-control);
 }
 .capability:last-child {
   border: 0;
@@ -571,12 +595,12 @@ h1:focus {
   display: flex;
   gap: 10px;
   justify-content: space-between;
-  min-height: 25px;
+  min-height: 44px;
   align-items: center;
 }
 .capability-status {
   color: #416356;
-  font-size: 10px;
+  font-size: var(--text-meta);
   overflow-wrap: anywhere;
   text-align: right;
 }
@@ -590,8 +614,13 @@ h1:focus {
   border-top: 1px solid var(--line);
   padding: 16px 24px;
   background: #f6f7f2;
-  font-size: 10px;
+  font-size: var(--text-control);
   color: #5a645a;
+}
+.protection > summary {
+  min-height: 44px;
+  padding: 0.5rem 0;
+  overflow-wrap: anywhere;
 }
 .protection p {
   margin-top: 12px;
@@ -605,7 +634,7 @@ h1:focus {
 }
 .empty-mark {
   color: #718e7d;
-  font-size: 21px;
+  font-size: 1.3125rem;
   display: grid;
   place-items: center;
   width: 38px;
@@ -615,7 +644,7 @@ h1:focus {
 }
 .empty-state p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-control);
   margin: 0;
   max-width: 360px;
   line-height: 1.75;
@@ -633,7 +662,7 @@ h1:focus {
   justify-content: space-between;
   padding: 16px 24px;
   color: var(--teal);
-  font-size: 12px;
+  font-size: var(--text-control);
   font-weight: 550;
   min-height: 48px;
 }
@@ -641,7 +670,7 @@ h1:focus {
   display: none;
 }
 .disclosure > summary span {
-  font-size: 18px;
+  font-size: 1.125rem;
   transition: transform 0.15s;
 }
 .disclosure[open] > summary span {
@@ -676,7 +705,7 @@ h1:focus {
 }
 .field label {
   color: #3f4e4b;
-  font-size: 11px;
+  font-size: var(--text-control);
   font-weight: 600;
 }
 .required-dot {
@@ -685,12 +714,12 @@ h1:focus {
 .field small,
 .form-note {
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.65;
+  font-size: var(--text-control);
+  line-height: var(--leading-help);
 }
 .form-note {
   margin-bottom: 22px;
-  font-size: 12px;
+  font-size: var(--text-control);
 }
 input,
 textarea,
@@ -701,12 +730,12 @@ select {
   background: #fdfefb;
   color: var(--ink);
   padding: 10px 12px;
-  min-height: 42px;
-  font-size: 12px;
+  min-height: 44px;
+  font-size: var(--text-control);
 }
 textarea {
   resize: vertical;
-  line-height: 1.6;
+  line-height: var(--leading-help);
 }
 select[multiple] {
   min-height: 105px;
@@ -723,7 +752,7 @@ select option {
 .saved-note {
   color: #2c6754;
   margin: 12px 0 0;
-  font-size: 11px;
+  font-size: var(--text-control);
 }
 .notice {
   display: flex;
@@ -734,7 +763,7 @@ select option {
   color: #655638;
   border-radius: 4px;
   padding: 13px 17px;
-  font-size: 12px;
+  font-size: var(--text-control);
   margin-bottom: 21px;
   overflow-wrap: anywhere;
 }
@@ -744,11 +773,11 @@ select option {
 .notice button {
   background: none;
   border: 0;
-  font-size: 23px;
+  font-size: 1.4375rem;
   margin-left: auto;
   color: inherit;
-  min-height: 32px;
-  min-width: 32px;
+  min-height: 44px;
+  min-width: 44px;
 }
 .notice-error {
   background: #fff3ed;
@@ -779,7 +808,7 @@ select option {
   display: inline-flex;
   gap: 5px;
   align-items: center;
-  font-size: 9px;
+  font-size: var(--text-meta);
   font-weight: 550;
   padding: 4px 8px;
   line-height: 1.5;
@@ -827,17 +856,17 @@ select option {
 }
 .activity-mark {
   color: #799b87;
-  font-size: 19px;
+  font-size: 1.1875rem;
 }
 .activity-row > div {
   min-width: 0;
 }
 .activity-row strong {
-  font-size: 12px;
+  font-size: var(--text-control);
   font-weight: 550;
 }
 .activity-row code {
-  font-size: 9px;
+  font-size: var(--text-meta);
   display: block;
   margin-top: 4px;
   color: var(--muted);
@@ -864,20 +893,21 @@ select option {
 .record-id {
   color: var(--muted);
   display: block;
-  font-size: 10px;
+  font-size: var(--text-meta);
   margin-top: 6px;
 }
 .source-link {
-  font-size: 12px;
+  font-size: var(--text-control);
   overflow-wrap: anywhere;
 }
 .inspect {
   margin: 16px 0 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-meta);
 }
 .inspect summary {
-  min-height: 28px;
+  font-size: var(--text-control);
+  min-height: 44px;
   padding: 5px 0;
 }
 .inspect > pre {
@@ -893,7 +923,7 @@ select option {
 .preserve-lines {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 .record-part .preserve-lines {
   margin: 6px 0 0;
@@ -906,7 +936,7 @@ select option {
 }
 .limitation p {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: var(--text-control);
 }
 .evidence-links {
   margin: 20px 0;
@@ -918,7 +948,7 @@ select option {
 }
 .missing-evidence {
   color: #816326;
-  font-size: 11px;
+  font-size: var(--text-meta);
 }
 .file-row {
   display: flex;
@@ -941,7 +971,7 @@ select option {
     serif;
 }
 .file-path {
-  font-size: 12px;
+  font-size: var(--text-control);
   margin: 5px 0 0;
   overflow-wrap: anywhere;
 }
@@ -973,7 +1003,7 @@ select option {
   padding: 23px 24px;
 }
 .search-results > h3 {
-  font-size: 12px;
+  font-size: var(--text-control);
   color: var(--muted);
 }
 .search-result {
@@ -985,7 +1015,7 @@ select option {
   border-top: 1px solid var(--line);
 }
 .search-result h4 {
-  font-size: 14px;
+  font-size: var(--text-control);
   margin-bottom: 5px;
 }
 .search-result > .record-form {
@@ -1043,7 +1073,7 @@ select option {
   margin-top: 15px;
 }
 .decision-box p {
-  font-size: 11px;
+  font-size: var(--text-control);
   color: #68634c;
 }
 .decision-box .record-form {
@@ -1066,14 +1096,14 @@ select option {
   padding: 25px 24px 0 0;
 }
 .onboarding-intro h2 {
-  font: 40px/1.2 var(--display-font);
+  font: 2.5rem/1.2 var(--display-font);
   letter-spacing: -1px;
   margin: 20px 0;
   max-width: 320px;
 }
 .onboarding-intro p {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-control);
   max-width: 320px;
 }
 .onboarding-form {
@@ -1107,8 +1137,8 @@ select option {
   display: flex;
   gap: 20px;
   justify-content: space-between;
-  color: #7a8278;
-  font-size: 8px;
+  color: var(--muted);
+  font-size: var(--text-meta);
   letter-spacing: 1.4px;
 }
 .loading-state {
@@ -1118,7 +1148,7 @@ select option {
   align-items: center;
   gap: 13px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-control);
 }
 .loading-dot {
   width: 10px;
@@ -1128,7 +1158,7 @@ select option {
   animation: pulse 1.5s infinite;
 }
 .small {
-  font-size: 11px;
+  font-size: var(--text-meta);
 }
 .muted {
   color: var(--muted);
@@ -1232,20 +1262,20 @@ select option {
     min-height: 0;
     padding: 19px 18px 12px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 15px;
     overflow: visible;
   }
   .brand {
     margin: 0;
-    font-size: 19px;
+    font-size: 1.1875rem;
   }
   .brand small {
-    font-size: 9px;
+    font-size: var(--text-meta);
   }
   .brand-symbol {
-    width: 34px;
-    font-size: 30px;
+    width: 2.125rem;
+    font-size: 1.875rem;
   }
   .project-control {
     border: 0;
@@ -1256,22 +1286,22 @@ select option {
     display: none;
   }
   .project-control select {
-    min-height: 38px;
-    font-size: 11px;
+    min-height: 44px;
+    font-size: var(--text-control);
   }
   .new-project {
-    font-size: 10px;
-    min-height: 32px;
+    font-size: var(--text-control);
+    min-height: 44px;
     padding-top: 3px;
   }
   .sidebar nav {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
     margin-top: 0;
   }
   .sidebar nav a {
-    font-size: 10px;
+    font-size: var(--text-control);
     padding: 10px 8px;
     gap: 6px;
     min-height: 44px;
@@ -1280,11 +1310,12 @@ select option {
     display: none;
   }
   .nav-symbol {
-    font-size: 16px;
-    width: 17px;
+    font-size: 1rem;
+    width: 1.0625rem;
   }
   .sidebar-footer {
     grid-column: 1 / -1;
+    flex-wrap: wrap;
     padding: 0;
     display: flex;
     justify-content: space-between;
@@ -1295,12 +1326,12 @@ select option {
     display: none;
   }
   .language-switch button {
-    min-height: 32px;
+    min-height: 44px;
     padding: 3px 11px;
-    font-size: 10px;
+    font-size: var(--text-control);
   }
   .local-marker {
-    font-size: 8px;
+    font-size: var(--text-meta);
   }
   .topbar {
     padding: 9px 20px;
@@ -1308,7 +1339,7 @@ select option {
   }
   .breadcrumb {
     gap: 8px;
-    font-size: 10px;
+    font-size: var(--text-meta);
   }
   .breadcrumb > span:first-child {
     display: none;
@@ -1324,19 +1355,19 @@ select option {
     gap: 10px;
   }
   h1 {
-    font-size: 34px;
+    font-size: 2.125rem;
     letter-spacing: -0.8px;
   }
   .page-heading p {
-    font-size: 12px;
+    font-size: var(--text-control);
   }
   .page-index {
-    font-size: 45px;
+    font-size: 2.8125rem;
     align-self: flex-start;
     margin-top: 24px;
   }
   .eyebrow {
-    font-size: 8px;
+    font-size: var(--text-meta);
   }
   .next-step {
     padding: 23px;
@@ -1344,7 +1375,7 @@ select option {
     gap: 0;
   }
   .next-step h2 {
-    font-size: 28px;
+    font-size: 1.75rem;
   }
   .folio {
     display: none;
@@ -1359,7 +1390,7 @@ select option {
     padding: 20px;
   }
   .panel-heading h2 {
-    font-size: 16px;
+    font-size: var(--text-section);
   }
   .panel-heading a {
     max-width: 130px;
@@ -1386,10 +1417,11 @@ select option {
     gap: 10px;
   }
   .activity-row {
+    flex-wrap: wrap;
     gap: 9px;
   }
   .activity-row .badge {
-    max-width: 110px;
+    max-width: 100%;
     flex-shrink: 0;
   }
   .record-title {
@@ -1399,10 +1431,11 @@ select option {
     padding: 22px 18px;
   }
   .onboarding-intro h2 {
-    font-size: 33px;
+    font-size: 2.0625rem;
   }
   .content-footer {
-    font-size: 7px;
+    flex-wrap: wrap;
+    font-size: var(--text-meta);
     gap: 14px;
   }
   button,
@@ -1418,7 +1451,7 @@ select option {
 }
 .tool-intro {
   padding: 21px 24px;
-  font-size: 12px;
+  font-size: var(--text-control);
   color: var(--muted);
   margin: 0;
 }
@@ -1446,7 +1479,7 @@ select option {
   margin-top: 0;
 }
 .audit-report .metadata {
-  font-size: 11px;
+  font-size: var(--text-meta);
   color: var(--muted);
 }
 .impact-entry {
@@ -1466,7 +1499,7 @@ select option {
   grid-column: 1 / -1;
 }
 .candidate-selection legend {
-  font-size: 11px;
+  font-size: var(--text-control);
   font-weight: 600;
   margin-bottom: 8px;
 }
@@ -1491,18 +1524,18 @@ select option {
 }
 .candidate-option strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 .candidate-option code {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-meta);
   margin-top: 4px;
   color: var(--muted);
 }
 .candidate-path {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--text-control);
   margin-top: 13px;
 }
 .delivery-card {
@@ -1520,7 +1553,7 @@ select option {
 }
 .delivery-receipt .metadata {
   margin-bottom: 0;
-  font-size: 11px;
+  font-size: var(--text-meta);
 }
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -113,21 +113,30 @@ describe("final workspace regressions", () => {
     );
     render(<App />);
     await screen.findByText("Investigate evidence.");
-    await user.click(
-      screen.getByText("Record question", { selector: "summary" }),
-    );
+    const questionSection = screen.getByText("Record question", {
+      selector: "summary",
+    });
+    await user.click(questionSection);
+    const questionForm = within(questionSection.closest("details")!);
     await user.type(
-      screen.getByRole("textbox", { name: "Question" }),
+      questionForm.getByRole("textbox", { name: "Question" }),
       "Which mechanism explains the result?",
     );
-    await user.click(screen.getByRole("button", { name: /Record question/ }));
-    await screen.findByRole("button", { name: "Dismiss message" });
-    await user.click(screen.getByRole("button", { name: "EN" }));
+    await user.click(questionForm.getByRole("button", { name: /Record question/ }));
+    const savedMessage = await screen.findByText("Saved to this project.", {
+      selector: "span",
+    });
+    const actionNotice = within(savedMessage.closest('[role="status"]')!);
+    await actionNotice.findByRole("button", { name: "Dismiss message" });
+    const language = within(
+      screen.getByRole("group", { name: "Interface language" }),
+    );
+    await user.click(language.getByRole("button", { name: "EN" }));
     expect(
-      screen.getByRole("button", { name: "Dismiss message" }),
+      actionNotice.getByRole("button", { name: "Dismiss message" }),
     ).toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "繁體中文" }),
+      language.getByRole("button", { name: "繁體中文" }),
     );
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "研究總覽",

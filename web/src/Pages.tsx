@@ -60,7 +60,9 @@ export function ProjectPages({
     label: `${textValue(source.data.title)} · ${source.id}`,
   }));
   const next = nextOperation(detail);
-  const pending = detail.tasks.find((task) => task.status === "awaiting_human") ?? detail.tasks.find((task) => ["running", "blocked"].includes(task.status));
+  const pending =
+    detail.tasks.find((task) => task.status === "awaiting_human") ??
+    detail.tasks.find((task) => ["running", "blocked"].includes(task.status));
   const needSources = records("question").length > 0 && sources.length === 0;
   const recordFields = (names: string[], labels?: MessageKey[]): FieldSpec[] =>
     names.map((name, index) => ({
@@ -180,9 +182,19 @@ export function ProjectPages({
           <div>
             <SmallLabel>{t("nextStep")}</SmallLabel>
             <h2>
-              {pending ? statusLabel(pending.status, t) : needSources ? t("search") : t(operationLabel(next.operation))}
+              {pending
+                ? statusLabel(pending.status, t)
+                : needSources
+                  ? t("search")
+                  : t(operationLabel(next.operation))}
             </h2>
-            <p>{pending ? t("executionNote") : needSources ? t("noSources") : t(next.hint)}</p>
+            <p>
+              {pending
+                ? t("executionNote")
+                : needSources
+                  ? t("noSources")
+                  : t(next.hint)}
+            </p>
             <button
               className="button primary"
               onClick={() => {
@@ -194,7 +206,11 @@ export function ProjectPages({
                 }
               }}
             >
-              {pending ? t("viewReview") : needSources ? t("viewLiterature") : t("prepareTask")}
+              {pending
+                ? t("viewReview")
+                : needSources
+                  ? t("viewLiterature")
+                  : t("prepareTask")}
               <span aria-hidden="true">↗</span>
             </button>
           </div>
@@ -731,10 +747,77 @@ export function Readiness({
           );
         })}
       </div>
+      <SetupSnapshotView workspace={workspace} t={t} />
       <details className="protection">
         <summary>{t("protection")}</summary>
         <p>{workspace.protection_scope}</p>
       </details>
     </Panel>
+  );
+}
+
+function SetupSnapshotView({
+  workspace,
+  t,
+}: {
+  workspace: Workspace;
+  t: Translate;
+}) {
+  const snapshot = workspace.setup_snapshot;
+  const freshnessLabels = {
+    missing: "snapshotMissing",
+    invalid: "snapshotInvalid",
+    clock_skew: "snapshotClockSkew",
+    stale: "snapshotStale",
+    saved: "snapshotSaved",
+  } as const;
+  const labels = {
+    environment: "snapshotEnvironment",
+    vault: "snapshotVault",
+    zotero: "snapshotZotero",
+    notebooklm_auth: "snapshotNlm",
+    llm_cli: "snapshotCli",
+    skills: "snapshotSkills",
+  } as const;
+  const statuses = {
+    passed: "snapshotPassed",
+    failed: "snapshotFailed",
+    cancelled: "snapshotCancelled",
+    skipped: "snapshotSkipped",
+    unknown: "snapshotUnknown",
+  } as const;
+  const freshness = snapshot?.freshness || "missing";
+  return (
+    <details className="protection">
+      <summary>
+        {t("setupSnapshot")}:{" "}
+        {t(freshnessLabels[freshness] || "snapshotInvalid")}
+      </summary>
+      <p>{t("snapshotScope")}</p>
+      {snapshot?.observed_at && (
+        <p>
+          {t("snapshotObserved")}: <time>{snapshot.observed_at}</time>
+        </p>
+      )}
+      {snapshot && (
+        <p>
+          {t("snapshotWindow")}: {snapshot.display_max_age_seconds}
+        </p>
+      )}
+      <ul>
+        {Object.entries(labels).map(([key, label]) => {
+          const status =
+            freshness === "saved" ? snapshot?.components?.[key] : "unknown";
+          const message =
+            statuses[status as keyof typeof statuses] || "snapshotUnknown";
+          return (
+            <li key={key}>
+              {t(label)}: {t(message)}
+            </li>
+          );
+        })}
+      </ul>
+      <p>{t("snapshotNext")}</p>
+    </details>
   );
 }
