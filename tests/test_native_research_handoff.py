@@ -375,9 +375,10 @@ def test_native_metadata_html_entities_are_decoded_once(handoff_env, tmp_path, c
     assert created[0]["title"] == "Nested &lt; Evidence"
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize("incoming_cluster", ["native-review", "cross-review"])
 def test_duplicate_replay_preserves_primary_cluster_links(
-    incoming_cluster, handoff_env, tmp_path, monkeypatch
+    incoming_cluster, newline, handoff_env, tmp_path, monkeypatch
 ):
     """A new query is evidence, not a request to move an existing paper."""
     from research_hub import pipeline
@@ -423,6 +424,9 @@ def test_duplicate_replay_preserves_primary_cluster_links(
     kwargs = dict(papers_json=source, cluster_slug=incoming_cluster,
                   query="cross query", batch_label="synthetic", verify=False)
     assert pipeline.run_pipeline(**kwargs) == 0
+    # Exercise on-disk LF and CRLF independently of the host platform.
+    note.write_bytes(note.read_text(encoding="utf-8").replace("\n", newline).encode("utf-8"))
+    after_bytes = note.read_bytes()
     after = note.read_text(encoding="utf-8")
     metadata = _metadata(after)
     assert metadata["topic_cluster"] == "native-review"
@@ -436,7 +440,7 @@ def test_duplicate_replay_preserves_primary_cluster_links(
     assert "[[paper-r]]" not in after
     assert after.split("---", 2)[2] == body_before
     assert pipeline.run_pipeline(**kwargs) == 0
-    assert note.read_bytes() == after.encode("utf-8")
+    assert note.read_bytes() == after_bytes
     assert (cfg.raw / "cross-review" / "paper-r.md").read_bytes() == other_before
     assert len(list(cfg.raw.rglob("*.md"))) == 3
     assert not created and not child_notes
@@ -445,9 +449,10 @@ def test_duplicate_replay_preserves_primary_cluster_links(
         assert routes == ["CROSS123", "CROSS123"]
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize("primary", ["absent", "absent-known-query", "empty", "unavailable"])
 def test_duplicate_replay_primary_cluster_fallback(
-    primary, handoff_env, tmp_path, monkeypatch
+    primary, newline, handoff_env, tmp_path, monkeypatch
 ):
     """Keep merge's missing-field default; don't rewrite links without metadata."""
     from research_hub import pipeline
@@ -478,6 +483,9 @@ def test_duplicate_replay_primary_cluster_fallback(
     source.write_text(json.dumps([paper]), encoding="utf-8")
     kwargs = dict(papers_json=source, cluster_slug="native-review", query="new query", verify=False)
     assert pipeline.run_pipeline(**kwargs) == 0
+    # Exercise on-disk LF and CRLF independently of the host platform.
+    note.write_bytes(note.read_text(encoding="utf-8").replace("\n", newline).encode("utf-8"))
+    after_bytes = note.read_bytes()
     after = note.read_text(encoding="utf-8")
     metadata = _metadata(after)
     assert metadata["status"] == "cited"
@@ -493,5 +501,5 @@ def test_duplicate_replay_primary_cluster_fallback(
             assert metadata["topic_cluster"] == ("" if primary == "empty" else "native-review")
         assert after.split("---", 2)[2] == body
     assert pipeline.run_pipeline(**kwargs) == 0
-    assert note.read_bytes() == after.encode("utf-8")
+    assert note.read_bytes() == after_bytes
     assert not created and not child_notes
