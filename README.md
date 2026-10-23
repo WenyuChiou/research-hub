@@ -2,6 +2,8 @@
 
 # research-hub
 
+[![AgentShield Security](https://merx.help/badge/A+.svg)](https://merx.help/shield)
+
 A local workspace connecting literature, research artifacts, and manuscripts through traceable work.
 
 [繁體中文](README.zh-TW.md) · [Workspace guide](docs/workspace-guide.md) · [Existing setup](docs/setup.md) · [Developer architecture](docs/workspace-architecture.md)
