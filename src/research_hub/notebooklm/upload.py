@@ -1589,6 +1589,9 @@ def generate_artifact(
         elif kind_name == "video":
             artifact_ref = _call_trigger(client.trigger_video_overview, handle.notebook_id)
             cluster_cache["video_url"] = artifact_ref
+        elif kind_name == "slide_deck":
+            artifact_ref = _call_trigger(client.trigger_slide_deck, handle.notebook_id)
+            cluster_cache["slide_deck_url"] = artifact_ref
         else:
             raise ValueError(f"Unknown generation kind: {kind_name}")
         if not artifact_ref:
@@ -1608,6 +1611,8 @@ def generate_artifact(
 def _normalize_artifact_kind(kind: str) -> str:
     if kind == "mind-map":
         return "mind_map"
+    if kind == "slide-deck":
+        return "slide_deck"
     return kind
 
 
