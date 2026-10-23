@@ -50,6 +50,38 @@ Use this when you want the actual paper rows:
 - Use the search bar to filter titles, tags, and cluster names.
 - Open links back into Zotero, Obsidian, or NotebookLM from each row.
 
+#### Source & sync evidence / 來源與同步證據
+
+Expand the bilingual **Source & sync evidence** disclosure on a paper row to see
+its recorded DOI, Zotero key, Obsidian note path, and cluster. These values come
+from the local note and dashboard grouping; a saved Zotero key is not a live
+Zotero check. The display says **Remote sync: unknown** even when an identity is
+found in the local NotebookLM cache.
+
+The explanation distinguishes a missing, unreadable, or invalid cache from a
+valid cache without an exact matching primary-source key. No match does not mean
+that the source is absent remotely. Bundle-PDF and shard relationships are not
+guessed from a DOI, filename, or title. Ambiguous matches remain unknown.
+Blank, null, repeated, non-string, malformed YAML, or invalid UTF-8 identity fields stay
+unknown rather than borrowing text from the next line. Invalid cache metadata
+used by the dashboard is ignored for display with an explicit invalid reason;
+the paper rows remain visible and cache bytes are not repaired or rewritten.
+If unreadable note metadata prevents label counting, label counts are explicitly
+unknown rather than hiding the cluster or claiming a zero count.
+
+The cached payload version is **unknown** unless that exact uploaded-source key
+also has a saved `source_versions` entry with `kind: pdf|text` and a SHA-256.
+This optional field is read for compatibility with version-aware uploads; this
+view neither creates it nor invents fingerprints for older caches. A recorded
+fingerprint is historical, not a comparison with today's bytes or remote state.
+The key and full hash are under a second **Technical identifiers** disclosure.
+
+Read the reason and next step before acting. Opening, closing, and reopening the
+disclosures performs no probe, upload, replacement, or deletion. This is the
+native-vault **legacy Dashboard Library**, not the separate React Workspace
+literature page. Existing dashboard collection/doctor behavior is unchanged;
+the added evidence reader introduces no provider calls or additional files.
+
 ### Briefings
 
 Use this when NotebookLM is part of the workflow:

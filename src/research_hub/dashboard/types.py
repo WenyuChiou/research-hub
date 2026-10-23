@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from research_hub.dashboard.source_evidence import SourceEvidence
+
 
 Persona = Literal["researcher", "analyst", "humanities", "internal"]
 ReadingStatus = Literal["unread", "reading", "deep-read", "cited"]
@@ -54,6 +56,7 @@ class PaperRow:
     in_obsidian: bool = False
     in_nlm: bool = False
     bibtex: str = ""        # pre-rendered for the [Cite] button
+    nlm_source_evidence: SourceEvidence = field(default_factory=SourceEvidence)
 
 
 @dataclass
@@ -103,6 +106,7 @@ class ClusterCard:
     label_counts: dict[str, int] = field(default_factory=dict)
     archived_count: int = 0
     archived_papers: list[dict[str, object]] = field(default_factory=list)
+    label_counts_available: bool = True
 
     @property
     def paper_count(self) -> int:
