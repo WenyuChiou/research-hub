@@ -43,3 +43,53 @@ implementation or publication instructions or valid authorization for other task
 - A review task itself does not modify code, install dependencies, start paid
   models, or merge. Every PR merge needs separate explicit user consent after
   the user receives the review summary, actual test status, and remaining gaps.
+
+## Product Premises and Feature Proposals
+
+These project-specific premises guide future proposals and implementation;
+they are requirements, not claims that the current product already satisfies
+them. They do not replace the review rules or grant access, write, or release
+authorization.
+
+- Researchers still read, assess evidence, and make decisions. AI should help
+  them organize, summarize, and reuse selected saved literature, not replace
+  their reading or mark material as human-reviewed automatically.
+- Keep the core journey coherent: import -> scope-aware summary -> human
+  review/classification -> notes/library -> evidence-backed writing. Preserve
+  source identity, version, and retrievable provenance across these steps;
+  distinguish saved material, AI input coverage, and human review status.
+- Zotero, Obsidian, and NotebookLM are optional integrations, not prerequisites
+  for being a researcher. Design a useful core reading and library workflow
+  without these accounts; disclose unavailable capabilities honestly.
+- Apply the user's principle: "少一個功能，不能把多一步操作轉嫁給使用者。"
+  Removing a feature is not progress if it shifts work to manual re-entry,
+  copy/paste, commands, or another application. Compare the complete task,
+  including switching and recovery, rather than counting visible controls.
+- Start from an evidenced user pain point, not an assumed need for a panel or
+  more integrations. Keep frequent reading actions discoverable and reveal
+  advanced options progressively; do not hide essential status or controls.
+- Reuse existing material only within the user's selected project/source
+  scope. Do not silently scan or upload an entire private library or vault;
+  expanding scope or transmitting data needs the applicable authorization.
+- Fewer steps must not remove user agency, human review, privacy notices,
+  access authorization, or necessary safety confirmations. Make writes and
+  their ownership explicit; preserve human content and provide appropriate
+  preview, conflict handling, cancellation, and recovery.
+- Treat readable text, keyboard access, responsive layout, startup/readiness,
+  and recovery as functional requirements. Establish task and performance
+  baselines before claiming improvement; distinguish synthetic checks, real
+  source/provider tests, independent usability review, and user acceptance.
+
+Before proposing a new workflow, panel, integration, or feature removal,
+include this pain-point brief (mark unverified assumptions explicitly):
+
+1. **Who:** intended user and research context.
+2. **Current workflow:** how the task is completed today, including tools.
+3. **Friction:** the concrete failure, repeated work, or blocked outcome.
+4. **Evidence:** observed behavior, user report, or source; state gaps.
+5. **Steps removed:** work the proposal genuinely eliminates end to end.
+6. **New steps/costs:** setup, permissions, switching, maintenance, and recovery;
+   separate necessary safeguards from avoidable friction.
+7. **Non-users:** who does not need this feature and their usable fallback.
+8. **Acceptance:** observable before/after task results, failure cases, and
+   source-fidelity checks; label proposed targets rather than proven metrics.
