@@ -33,6 +33,8 @@ class ConnectorUploadReport:
     uploaded_count: int = 0
     skipped_count: int = 0
     warnings: list[dict] = field(default_factory=list)
+    failed_count: int = 0
+    errors: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
