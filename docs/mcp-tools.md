@@ -9,6 +9,9 @@ OpenClaw, or any other MCP-capable host.
 instructions for selected coding assistants; it is separate from MCP
 server configuration.
 
+For legacy summary writes, see [Zotero summary note ownership](zotero-summary-note-ownership.md)
+for preservation, migration warnings, and unknown-write recovery limits.
+
 > This human reference is maintained from the `@mcp.tool()` surface in
 > `src/research_hub/mcp_server.py`. For the exact installed manifest, run
 > `research-hub describe --filter mcp_tools --pretty`.

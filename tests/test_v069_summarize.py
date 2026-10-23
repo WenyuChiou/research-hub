@@ -178,9 +178,10 @@ def test_validate_entry_accepts_well_formed_payload():
 
 def _make_zot_with_existing_note():
     """MagicMock(spec=...) so the unwrap path in get_client doesn't trip."""
-    zot = MagicMock(spec=["children", "update_item", "create_items", "item_template"])
+    zot = MagicMock(spec=["children", "everything", "update_item", "create_items", "item_template"])
+    zot.everything.side_effect = lambda children: children
     zot.children.return_value = [
-        {"data": {"key": "NK1", "itemType": "note", "note": "old note", "parentItem": "ZK1"}}
+        {"data": {"key": "NK1", "itemType": "note", "note": "old note", "parentItem": "ZK1", "version": 7, "tags": [{"tag": "research-hub:summary:v1"}]}}
     ]
     zot.update_item.return_value = {"successful": {"0": {"key": "NK1"}}}
     return zot
@@ -238,7 +239,8 @@ def test_apply_summaries_creates_note_when_no_child_exists(cfg):
         "paper_slug": "alice2024-paper-one",
         "key_findings": ["x"], "methodology": "y", "relevance": "z",
     }]}
-    zot = MagicMock(spec=["children", "update_item", "create_items", "item_template"])
+    zot = MagicMock(spec=["children", "everything", "update_item", "create_items", "item_template"])
+    zot.everything.side_effect = lambda children: children
     zot.children.return_value = []  # no existing note
     zot.item_template.return_value = {"itemType": "note", "note": "", "parentItem": ""}
     zot.create_items.return_value = {"successful": {"0": {"key": "NEW_NOTE"}}}
@@ -262,9 +264,10 @@ def test_apply_summaries_rolls_back_markdown_on_zotero_failure(cfg):
     md_path = cfg.raw / "test-cluster" / "alice2024-paper-one.md"
     original = md_path.read_text(encoding="utf-8")
 
-    zot = MagicMock(spec=["children", "update_item", "create_items", "item_template"])
+    zot = MagicMock(spec=["children", "everything", "update_item", "create_items", "item_template"])
+    zot.everything.side_effect = lambda children: children
     zot.children.return_value = [
-        {"data": {"key": "NK1", "itemType": "note", "note": "old", "parentItem": "ZK1"}}
+        {"data": {"key": "NK1", "itemType": "note", "note": "old", "parentItem": "ZK1", "version": 7, "tags": [{"tag": "research-hub:summary:v1"}]}}
     ]
     zot.update_item.side_effect = RuntimeError("zotero exploded")
 

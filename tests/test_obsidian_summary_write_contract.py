@@ -34,6 +34,8 @@ class Zotero:
     def children(self, key):
         assert key == 'AUDIT001'
         return []
+    def everything(self, children):
+        return children
     def item_template(self, kind):
         return {'itemType': kind}
     def create_items(self, items):
@@ -195,7 +197,7 @@ def test_missing_key_and_remote_error_roll_back(tmp_path):
     before=p.read_bytes()
     r=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY],zot=Zotero(fail=True))
     snapshot('remote-failure-rollback',before,p.read_bytes(),r.to_dict())
-    assert r.applied==[] and 'synthetic remote failure' in r.errors[0] and p.read_bytes()==before
+    assert r.applied==[] and 'zotero write outcome unknown' in r.errors[0] and p.read_bytes()==before
 
 
 def test_classification_routes_are_explicit_not_scientific_inference(tmp_path):

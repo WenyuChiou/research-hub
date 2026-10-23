@@ -292,6 +292,9 @@ def apply_enrichment(
                 f"\nChaining re-summarize for {len(resummarize_keys)} paper(s) with newly recovered abstracts..."
             )
             report = summarize_cluster(cfg, cluster_slug, apply=True, paper_keys=resummarize_keys)
+            if report.apply_result is not None:
+                for warning in getattr(report.apply_result, "warnings", []):
+                    print(f"[warn] chained resummarize: {warning}")
             if report.prompt_path is not None:
                 print(f"[warn] chained resummarize skipped: no LLM CLI on PATH ({report.prompt_path})")
             elif not report.ok:
