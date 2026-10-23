@@ -1257,6 +1257,7 @@ class BriefingsSection(DashboardSection):
           </form>
         </section>
         """
+        columns = ("Artifact", "Downloaded", "Char count", "Open")
         rows: list[str] = []
         for artifact in artifacts:
             kind = str(_attr(artifact, "kind", "") or "")
@@ -1286,20 +1287,28 @@ class BriefingsSection(DashboardSection):
                     'delete</button>'
                 )
             open_html = " ".join(open_links) if open_links else '<span class="muted">n/a</span>'
-            rows.append(
-                "<tr>"
-                f"<td>{html_escape(_artifact_kind_label(kind))}</td>"
-                f"<td>{html_escape(_downloaded_date_label(str(_attr(artifact, 'downloaded_at', '') or '')))}</td>"
-                f"<td>{html_escape(_format_char_count(_attr(artifact, 'char_count', 0)))}</td>"
-                f"<td>{open_html}</td>"
-                "</tr>"
+            values = (
+                html_escape(_artifact_kind_label(kind)),
+                html_escape(_downloaded_date_label(str(_attr(artifact, "downloaded_at", "") or ""))),
+                html_escape(_format_char_count(_attr(artifact, "char_count", 0))),
+                open_html,
             )
+            # Explicit roles preserve the table relationships when narrow CSS
+            # stacks cells. Repeated visual labels are not announced twice.
+            cells = "".join(
+                '<td role="cell">'
+                f'<span class="briefing-artifact-label" aria-hidden="true">{label}</span>'
+                f'<span class="briefing-artifact-value">{value}</span></td>'
+                for label, value in zip(columns, values)
+            )
+            rows.append(f'<tr role="row">{cells}</tr>')
+        headers = "".join(f'<th scope="col" role="columnheader">{label}</th>' for label in columns)
         return (
             '<section class="briefing-artifact-tile">'
             "<h4>NotebookLM artifacts</h4>"
-            '<table class="briefing-artifact-table">'
-            "<thead><tr><th>Artifact</th><th>Downloaded</th><th>Char count</th><th>Open</th></tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody>"
+            '<table class="briefing-artifact-table" role="table" aria-label="NotebookLM artifacts">'
+            f'<thead role="rowgroup"><tr role="row">{headers}</tr></thead>'
+            f'<tbody role="rowgroup">{"".join(rows)}</tbody>'
             "</table>"
             "</section>"
         )
