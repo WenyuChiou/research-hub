@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from research_hub.dashboard.source_evidence_view import render_source_evidence
 from pathlib import Path
 import re
 
@@ -737,6 +738,10 @@ class LibrarySection(DashboardSection):
             int(_attr(cluster, "archived_count", 0) or 0),
             str(_attr(cluster, "slug", "") or ""),
         )
+        if not _attr(cluster, "label_counts_available", True):
+            label_breakdown = ('<p class="source-evidence">'
+                               '<span lang="zh-Hant">標籤統計未知：無法讀取筆記中繼資料。</span> '
+                               '<span lang="en">Label counts unknown: note metadata could not be read.</span></p>')
         archived_section = _render_archived_section(cluster)
         binding_line = self._binding_line(cluster, show_zotero, vault_root)
         overview_badge = (
@@ -981,6 +986,7 @@ class LibrarySection(DashboardSection):
             <h4 class="paper-title">{title}</h4>
             {labels_span}
             <p class="paper-abstract">{abstract}</p>
+            {render_source_evidence(cluster_slug, paper)}
           </div>
           <div class="paper-actions">
             {cite_button}
