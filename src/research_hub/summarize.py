@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from research_hub.paper_summarize import _callout, _upsert_section, _write_note_text
+
 
 # -- data model ---------------------------------------------------------
 
@@ -279,35 +281,19 @@ def _validate_entry(entry: dict, valid_slugs: set[str]) -> tuple[Optional[PaperS
 # -- write back ---------------------------------------------------------
 
 
-_SUMMARY_BLOCK_RE = re.compile(
-    r"(##\s+Summary\n\n>\s+\[!abstract\]\n)(?:>[^\n]*\n)+(\^summary)",
-    re.MULTILINE,
-)
-_FINDINGS_BLOCK_RE = re.compile(
-    r"(##\s+Key Findings\n\n>\s+\[!success\]\n)(?:>[^\n]*\n)+(\^findings)",
-    re.MULTILINE,
-)
-_METHODOLOGY_BLOCK_RE = re.compile(
-    r"(##\s+Methodology\n\n>\s+\[!info\]\n)(?:>[^\n]*\n)+(\^methodology)",
-    re.MULTILINE,
-)
-_RELEVANCE_BLOCK_RE = re.compile(
-    r"(##\s+Relevance\n\n>\s+\[!note\]\n)(?:>[^\n]*\n)+(\^relevance)",
-    re.MULTILINE,
-)
-
-
 def _replace_obsidian_block(text: str, summary: PaperSummary) -> str:
-    # v0.81: also fill `## Summary` block when summary text present.
-    # Previously this block was only ever set to "[TODO] <title>" by the
-    # ingest pipeline and never overwritten; even when claude returned
-    # substantive Key Findings the Summary block stayed [TODO].
+    blocks = [
+        ("Key Findings", "success", "\n".join(f"- {f}" for f in summary.key_findings), "findings"),
+        ("Methodology", "info", summary.methodology, "methodology"),
+        ("Relevance", "note", summary.relevance, "relevance"),
+    ]
     if summary.summary:
-        text = _SUMMARY_BLOCK_RE.sub(rf"\1> {summary.summary}\n\2", text)
-    findings_block = "".join(f"> - {f}\n" for f in summary.key_findings)
-    text = _FINDINGS_BLOCK_RE.sub(rf"\1{findings_block}\2", text)
-    text = _METHODOLOGY_BLOCK_RE.sub(rf"\1> {summary.methodology}\n\2", text)
-    text = _RELEVANCE_BLOCK_RE.sub(rf"\1> {summary.relevance}\n\2", text)
+        blocks.insert(0, ("Summary", "abstract", summary.summary, "summary"))
+    newline = "\r\n" if "\r\n" in text else "\n"
+    for header, kind, content, block_id in blocks:
+        text = _upsert_section(
+            text, header, _callout(kind, content, block_id), newline, preserve_manual=True
+        )
     return text
 
 
@@ -362,11 +348,15 @@ def _apply_one_entry(
 
     paper = paper_by_slug[summary.paper_slug]
     note_path = paper["path"]
-    original_text = note_path.read_text(encoding="utf-8") if write_obsidian else None
-    new_text = _replace_obsidian_block(original_text, summary) if write_obsidian else None
-
-    if write_obsidian and new_text is not None:
-        note_path.write_text(new_text, encoding="utf-8")
+    original_text = None
+    if write_obsidian:
+        try:
+            with note_path.open("r", encoding="utf-8", newline="") as handle:
+                original_text = handle.read()
+            new_text = _replace_obsidian_block(original_text, summary)
+            _write_note_text(note_path, new_text)
+        except (OSError, ValueError) as exc:
+            return _PerPaperOutcome(slug=summary.paper_slug, error=f"obsidian write failed: {exc}")
 
     obsidian_written = bool(write_obsidian)
     zotero_written = False
@@ -374,7 +364,7 @@ def _apply_one_entry(
         parent_key = paper.get("zotero_key", "")
         if not parent_key:
             if write_obsidian and original_text is not None:
-                note_path.write_text(original_text, encoding="utf-8")
+                _write_note_text(note_path, original_text)
                 obsidian_written = False
             return _PerPaperOutcome(slug=summary.paper_slug, error="no zotero-key in frontmatter")
         html = _build_zotero_note_html(paper, summary)
@@ -383,7 +373,7 @@ def _apply_one_entry(
             zotero_written = True
         except Exception as exc:
             if write_obsidian and original_text is not None:
-                note_path.write_text(original_text, encoding="utf-8")
+                _write_note_text(note_path, original_text)
                 obsidian_written = False
             return _PerPaperOutcome(slug=summary.paper_slug, error=f"zotero write failed: {exc}")
 
@@ -527,5 +517,11 @@ def summarize_cluster(
             write_zotero=write_zotero,
             write_obsidian=write_obsidian,
         )
+        if report.apply_result.errors:
+            report.ok = False
+            report.error = (
+                f"{len(report.apply_result.errors)} summary entry/entries failed "
+                f"({len(report.apply_result.applied)} applied): {report.apply_result.errors[0]}"
+            )
 
     return report
