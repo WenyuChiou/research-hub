@@ -3,6 +3,9 @@
 Generated against research-hub v1.x. 35+ subcommands grouped by
 workflow stage.
 
+For legacy summary writes, see [Zotero summary note ownership](zotero-summary-note-ownership.md)
+for preservation, migration warnings, and unknown-write recovery limits.
+
 ## Setup
 
 ### `init`

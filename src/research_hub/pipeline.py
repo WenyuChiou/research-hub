@@ -35,7 +35,9 @@ from research_hub.verify import VerificationResult, VerifyCache, verify_arxiv, v
 from research_hub.ingest_diff import compute_ingest_gap, write_gap_sidecar
 from research_hub.vault.hub_overview import derive_moc_links, ensure_moc, populate_overview
 from research_hub.vault.link_updater import parse_frontmatter, update_cluster_links
-from research_hub.zotero.client import add_note, check_duplicate, get_client
+# Keep the pipeline add_note seam; both callers create Hub summary notes.
+from research_hub.zotero.client import add_summary_note as add_note
+from research_hub.zotero.client import check_duplicate, get_client
 from research_hub.zotero.fetch import make_raw_md
 
 

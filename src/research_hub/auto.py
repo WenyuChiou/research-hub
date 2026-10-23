@@ -759,10 +759,17 @@ def _run_summary_step(
     try:
         summary_report = summarize_cluster(cfg, slug, llm_cli=cli, apply=True)
     except Exception as exc:
+        summary_errors = 1
         _step_log(report, "summary", False, _elapsed(started, report),
                   f"summarize failed: {exc}", print_progress)
     else:
+        if summary_report.apply_result is not None:
+            for warning in getattr(summary_report.apply_result, "warnings", []):
+                _step_log(report, "summary-note", True, _elapsed(started, report),
+                          f"WARN {warning}", print_progress)
         if not summary_report.ok:
+            summary_errors = max(1, len(summary_report.apply_result.errors)
+                                 if summary_report.apply_result is not None else 0)
             _step_log(report, "summary", False, _elapsed(started, report),
                       summary_report.error or "summarize failed", print_progress)
         else:

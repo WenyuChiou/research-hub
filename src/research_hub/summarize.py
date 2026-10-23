@@ -16,15 +16,16 @@ This module clones the crystal flow at `auto._run_crystal_step`:
      `auto._invoke_llm_cli` helper
   3. parse the first JSON object from the response
   4. validate each summary entry against the cluster's actual paper slugs
-  5. write Obsidian markdown blocks + Zotero child note HTML atomically
-     per paper (rollback the markdown change if Zotero write fails)
+  5. write Obsidian markdown blocks + an explicitly owned Zotero summary
+     note (attempt local rollback if Zotero write is not confirmed)
 
 Design choices
 --------------
 - Separate command (NOT auto-on-ingest) so a single LLM failure doesn't
   abort an ingest batch and so users can re-run on subset of papers.
 - Both write targets must succeed for an entry to count as applied;
-  the two systems stay in sync.
+  an uncertain remote response is reported for reconciliation, not retried.
+  This is not a distributed transaction or a cross-process write lock.
 - No PDF parsing: the LLM only sees the abstract. Methodology / Relevance
   are inferences, marked as such in the prompt.
 """
@@ -32,14 +33,17 @@ Design choices
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from functools import partial
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 
 from research_hub.paper_summarize import _callout, _upsert_section, _write_note_text
+from research_hub.zotero.summary_note import SUMMARY_NOTE_TAG, SUMMARY_NOTE_TAG_PREFIX
 
 
 # -- data model ---------------------------------------------------------
@@ -64,9 +68,10 @@ class SummaryApplyResult:
     errors: list[str] = field(default_factory=list)          # "<slug>: <error>"
     obsidian_writes: int = 0
     zotero_writes: int = 0
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "cluster_slug": self.cluster_slug,
             "applied": list(self.applied),
             "skipped": list(self.skipped),
@@ -74,6 +79,9 @@ class SummaryApplyResult:
             "obsidian_writes": self.obsidian_writes,
             "zotero_writes": self.zotero_writes,
         }
+        if self.warnings:
+            result["warnings"] = list(self.warnings)
+        return result
 
 
 @dataclass
@@ -104,6 +112,7 @@ class _PerPaperOutcome:
     error: str = ""
     obsidian_written: bool = False
     zotero_written: bool = False
+    warning: str = ""
 
 
 # -- prompt building ----------------------------------------------------
@@ -312,23 +321,85 @@ def _build_zotero_note_html(paper_meta: dict, summary: PaperSummary) -> str:
     return html
 
 
-def _write_zotero_child_note(zot, parent_key: str, html: str) -> None:
-    """Find the first child note attached to parent_key and overwrite its HTML.
-    Raises on failure so the caller can rollback the Obsidian write."""
-    children = zot.children(parent_key)
-    notes = [c for c in children if c.get("data", {}).get("itemType") == "note"]
-    if not notes:
-        # Create a new note
-        template = zot.item_template("note")
+# Pyzotero pagination uses mutable client.links. Keep each read/decision/write
+# together even when apply_summaries shares one client across paper workers.
+# This is process-local, not a lock against Zotero users or other Hub processes.
+_ZOTERO_SUMMARY_WRITE_LOCK = Lock()
+
+
+class _ZoteroCreateUncertain(RuntimeError):
+    """A create may have committed remotely; it must not be retried blindly."""
+
+
+def _write_zotero_child_note(zot, parent_key: str, html: str) -> str:
+    """Update one explicitly owned summary, or create one preserving other notes.
+
+    Return a warning when creation leaves unmarked (possibly legacy) notes.
+    Never adopt a note by its content. No write retries or create fallback after
+    a failed update. The existing note version is passed through to pyzotero's
+    If-Unmodified-Since-Version guard; a conflict is left for human review.
+    """
+    with _ZOTERO_SUMMARY_WRITE_LOCK:
+        children = zot.everything(zot.children(parent_key))
+        notes = []
+        managed = []
+        for child in children:
+            data = child["data"]
+            if data.get("itemType") != "note":
+                continue
+            notes.append(data)
+            tags = data.get("tags", [])
+            if not isinstance(tags, list) or any(not isinstance(tag, dict) for tag in tags):
+                raise RuntimeError("invalid Zotero note tags; ownership cannot be established")
+            reserved = {tag.get("tag") for tag in tags
+                        if isinstance(tag.get("tag"), str)
+                        and tag["tag"].startswith(SUMMARY_NOTE_TAG_PREFIX)}
+            if reserved and reserved != {SUMMARY_NOTE_TAG}:
+                raise RuntimeError("unsupported Hub summary ownership marker; review notes before writing")
+            if SUMMARY_NOTE_TAG in reserved:
+                managed.append(child)
+        if len(managed) > 1:
+            raise RuntimeError("multiple Hub summary notes; review ownership before writing")
+        if managed:
+            child = managed[0]
+            data = child["data"]
+            version = data.get("version")
+            if (data.get("parentItem") != parent_key
+                    or not isinstance(data.get("key"), str) or not data["key"]
+                    or ("key" in child and child["key"] != data["key"])
+                    or type(version) is not int or version < 1
+                    or ("version" in child and child["version"] != version)
+                    or data.get("deleted")):
+                raise RuntimeError("invalid Hub summary note identity/version; refusing an unguarded update")
+            payload = deepcopy(data)
+            payload["note"] = html
+            if not zot.update_item(payload):
+                raise RuntimeError("Zotero update was not confirmed; inspect the note before retrying")
+            return ""
+
+        template = deepcopy(zot.item_template("note"))
         template["note"] = html
         template["parentItem"] = parent_key
-        resp = zot.create_items([template])
-        if not (resp or {}).get("successful"):
-            raise RuntimeError(f"Zotero create_items returned no successful: {resp}")
-        return
-    note = notes[0]
-    note["data"]["note"] = html
-    zot.update_item(note["data"])
+        template["tags"] = [{"tag": SUMMARY_NOTE_TAG}]
+        try:
+            resp = zot.create_items([template])
+        except Exception as exc:
+            raise _ZoteroCreateUncertain(
+                "new Hub summary may already exist; inspect Zotero before retrying (no automatic retry)"
+            ) from exc
+        successful = resp.get("successful", {}) if isinstance(resp, dict) else {}
+        created = successful.get("0", {}) if isinstance(successful, dict) else {}
+        if (not isinstance(created, dict)
+                or not isinstance(created.get("key"), str) or not created["key"]):
+            if isinstance(resp, dict) and resp.get("failed"):
+                raise RuntimeError("Zotero rejected summary note creation; existing notes were preserved")
+            raise _ZoteroCreateUncertain(
+                "new Hub summary creation was not confirmed; inspect Zotero before retrying (no automatic retry)"
+            )
+        if notes:
+            return (f"created a Hub summary note; preserved {len(notes)} unmarked note(s), "
+                    "including possible legacy Hub summaries; a legacy duplicate may remain")
+        return ""
 
 
 def _apply_one_entry(
@@ -360,6 +431,7 @@ def _apply_one_entry(
 
     obsidian_written = bool(write_obsidian)
     zotero_written = False
+    warning = ""
     if write_zotero:
         parent_key = paper.get("zotero_key", "")
         if not parent_key:
@@ -369,19 +441,22 @@ def _apply_one_entry(
             return _PerPaperOutcome(slug=summary.paper_slug, error="no zotero-key in frontmatter")
         html = _build_zotero_note_html(paper, summary)
         try:
-            _write_zotero_child_note(zot, parent_key, html)
+            warning = _write_zotero_child_note(zot, parent_key, html)
             zotero_written = True
         except Exception as exc:
             if write_obsidian and original_text is not None:
                 _write_note_text(note_path, original_text)
                 obsidian_written = False
-            return _PerPaperOutcome(slug=summary.paper_slug, error=f"zotero write failed: {exc}")
+            label = ("zotero write outcome unknown" if isinstance(exc, _ZoteroCreateUncertain)
+                     else "zotero write failed")
+            return _PerPaperOutcome(slug=summary.paper_slug, error=f"{label}: {exc}")
 
     return _PerPaperOutcome(
         slug=summary.paper_slug,
         applied=True,
         obsidian_written=obsidian_written,
         zotero_written=zotero_written,
+        warning=warning,
     )
 
 
@@ -394,7 +469,7 @@ def apply_summaries(
     write_obsidian: bool = True,
     zot=None,
 ) -> SummaryApplyResult:
-    """Validate each entry + write to Obsidian + Zotero atomically per paper.
+    """Validate entries and apply writes, with best-effort local rollback.
 
     `payload` is the parsed LLM JSON ({"summaries": [...]} or [...] directly).
     `zot` may be injected for tests; production passes None and we resolve via
@@ -419,6 +494,22 @@ def apply_summaries(
                 errors=[f"(all): could not load Zotero client: {exc}"],
             )
 
+    if write_zotero:
+        # Repeated entries must not become an automatic retry after an uncertain
+        # create. Include distinct slugs that point at the same Zotero parent.
+        seen_parents: set[str] = set()
+        unique_entries = []
+        for entry in entries:
+            slug = str(entry.get("paper_slug", "") or "").strip()
+            parent = paper_by_slug.get(slug, {}).get("zotero_key", "")
+            if parent and parent in seen_parents:
+                result.skipped.append(f"{slug}: duplicate Zotero parent in payload (not retried)")
+                continue
+            if parent:
+                seen_parents.add(parent)
+            unique_entries.append(entry)
+        entries = unique_entries
+
     worker = partial(
         _apply_one_entry,
         paper_by_slug=paper_by_slug,
@@ -437,6 +528,8 @@ def apply_summaries(
             result.skipped.append(f"{outcome.slug}: {outcome.skipped_reason}")
         elif outcome.applied:
             result.applied.append(outcome.slug)
+            if outcome.warning:
+                result.warnings.append(f"{outcome.slug}: {outcome.warning}")
             if outcome.obsidian_written:
                 result.obsidian_writes += 1
             if outcome.zotero_written:

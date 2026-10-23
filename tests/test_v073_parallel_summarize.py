@@ -94,7 +94,10 @@ class _SerialExecutor:
 
 class _ZoteroStub:
     def children(self, parent_key: str):
-        return [{"data": {"key": f"N-{parent_key}", "itemType": "note", "note": "old", "parentItem": parent_key}}]
+        return [{"data": {"key": f"N-{parent_key}", "itemType": "note", "note": "old", "parentItem": parent_key, "version": 7, "tags": [{"tag": "research-hub:summary:v1"}]}}]
+
+    def everything(self, children):
+        return children
 
     def update_item(self, data):
         return {"ok": True, "data": data}

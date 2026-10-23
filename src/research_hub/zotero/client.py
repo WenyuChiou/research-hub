@@ -222,19 +222,31 @@ def get_collection(name: str) -> str:
     return key
 
 
-def add_note(zot, item_key: str, content: str) -> bool:
-    """Add a note to an existing Zotero item. Auto-wraps plain text in <p> tags."""
-    note = zot.item_template("note")
+def add_note(zot, item_key: str, content: str, *, managed_summary: bool = False) -> bool:
+    """Add a note; unowned unless explicitly requested as a managed summary.
+
+    Auto-wraps plain text in <p> tags. Existing calls keep their unowned default.
+    """
+    note = dict(zot.item_template("note"))
     if not content.strip().startswith("<"):
         content = f"<p>{content}</p>"
     note["note"] = content
     note["parentItem"] = item_key
+    if managed_summary:
+        from research_hub.zotero.summary_note import SUMMARY_NOTE_TAG
+
+        note["tags"] = [{"tag": SUMMARY_NOTE_TAG}]
     try:
         r = zot.create_items([note])
         return bool(r.get("successful"))
     except Exception as e:
         print(f"  Note error for {item_key}: {e}")
         return False
+
+
+def add_summary_note(zot, item_key: str, content: str) -> bool:
+    """Create a replaceable Hub-owned summary; generic add_note stays unowned."""
+    return add_note(zot, item_key, content, managed_summary=True)
 
 
 def check_duplicate(
