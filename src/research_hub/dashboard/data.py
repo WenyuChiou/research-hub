@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -17,6 +16,7 @@ from research_hub.utils.doi import normalize_doi
 from research_hub.dashboard.briefing import load_briefing_preview
 from research_hub.dashboard.citation import build_bibtex_for_cluster, build_bibtex_for_paper
 from research_hub.dashboard.drift import detect_drift
+from research_hub.dashboard.source_evidence import cluster_cache_view, note_source_identities, read_nlm_cache, source_evidence
 from research_hub.dashboard.types import (
     ClusterCard,
     CrystalSummary,
@@ -63,8 +63,8 @@ def _detect_persona(cfg, zot) -> str:
 
 def _read_frontmatter(md_path: Path) -> str:
     try:
-        text = md_path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
+        text = md_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
         return ""
     if not text.startswith("---"):
         return ""
@@ -85,16 +85,6 @@ def _list_field(frontmatter: str, key: str) -> list[str]:
         return [part.strip().strip("\"'") for part in match.group(1).split(",") if part.strip()]
     value = _field(frontmatter, key)
     return [part.strip() for part in value.split(";") if part.strip()] if value else []
-
-
-def _load_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 def _parse_frontmatter_dict(text: str) -> dict[str, object]:
@@ -226,7 +216,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     registry = ClusterRegistry(cfg.clusters_file)
     dedup = DedupIndex.load(cfg.research_hub_dir / "dedup_index.json")
-    nlm_cache = _load_json(cfg.research_hub_dir / "nlm_cache.json")
+    nlm_cache, nlm_cache_issue = read_nlm_cache(cfg.research_hub_dir / "nlm_cache.json")
     clusters: list[ClusterCard] = []
     briefings = []
     quotes: list[Quote] = []
@@ -236,23 +226,23 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
 
     for cluster in registry.list():
         try:
-            cluster_cache = nlm_cache.get(cluster.slug, {})
-            if not isinstance(cluster_cache, dict):
-                cluster_cache = {}
+            cluster_cache, cluster_cache_issue = cluster_cache_view(nlm_cache.get(cluster.slug, {}))
+            cluster_cache_issue = nlm_cache_issue or cluster_cache_issue
             papers: list[PaperRow] = []
             for note_path in list_cluster_notes(cluster.slug, cfg.raw):
                 try:
                     frontmatter = _read_frontmatter(note_path)
+                    identities = note_source_identities(frontmatter)
                     labels = _list_field(frontmatter, "labels")
                     status = _field(frontmatter, "status", "unread") or "unread"
-                    zotero_key = _field(frontmatter, "zotero-key")
+                    zotero_key = identities["zotero-key"]
                     paper = PaperRow(
                         slug=note_path.stem,
                         title=_field(frontmatter, "title", note_path.stem),
                         authors=_field(frontmatter, "authors"),
                         year=_field(frontmatter, "year"),
                         abstract=_field(frontmatter, "abstract"),
-                        doi=_field(frontmatter, "doi"),
+                        doi=identities["doi"],
                         tags=_list_field(frontmatter, "tags"),
                         labels=labels,
                         status=status if status in {"unread", "reading", "deep-read", "cited"} else "unread",
@@ -261,7 +251,10 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                         zotero_key=zotero_key,
                         in_zotero=bool(zotero_key) and zotero_persona,
                         in_obsidian=True,
-                        in_nlm=_in_nlm(cluster_cache, _field(frontmatter, "doi"), str(note_path)),
+                        in_nlm=_in_nlm(cluster_cache, identities["doi"], str(note_path)),
+                        nlm_source_evidence=source_evidence(
+                            cluster_cache, identities["doi"], str(note_path), issue=cluster_cache_issue,
+                        ),
                     )
                     paper.bibtex = (
                         ""
@@ -280,7 +273,14 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                 cfg.research_hub_dir / "artifacts" / cluster.slug,
             )
             label_counts: dict[str, int] = {}
-            for state in list_papers_by_label(cfg, cluster.slug):
+            label_counts_available = True
+            try:
+                label_states = list_papers_by_label(cfg, cluster.slug)
+            except (OSError, UnicodeError):
+                # An unreadable label index must not suppress source evidence.
+                label_states = []
+                label_counts_available = False
+            for state in label_states:
                 for label in state.labels:
                     label_counts[label] = label_counts.get(label, 0) + 1
                     labels_across_clusters.setdefault(label, []).append(
@@ -325,6 +325,7 @@ def collect_dashboard_data(cfg, zot=None) -> DashboardData:
                     cluster.notebooklm_notebook_url or str(cluster_cache.get("notebook_url", "")),
                 ),
                 label_counts=label_counts,
+                label_counts_available=label_counts_available,
                 archived_count=archived_count,
                 archived_papers=archived_papers,
             )

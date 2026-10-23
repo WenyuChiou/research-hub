@@ -19,9 +19,9 @@ not primarily drive web-page selectors. Upstream interface/authentication drift
 can still break them.
 
 Visible browser automation is used for login/session acquisition. The optional
-`[playwright]` extra installs Patchright, but the current `--auto-detect` login
-implementation imports `playwright.sync_api`. These are different packages:
-that extra alone does not prove this path is installed. `[browser-auth]` supplies optional
+`[playwright]` extra installs Patchright, which the `--auto-detect` login
+implementation uses through `patchright.sync_api`. The extra name is retained
+for installation compatibility. `[browser-auth]` supplies optional
 cookie-import helpers. Neither extra, a cached notebook ID, nor a saved cookie
 file proves that a current authenticated operation will succeed. Login and
 real connector operations require separate, authorized native-PC verification.
@@ -59,13 +59,13 @@ paths and historical fallbacks, not the primary operation transport.
 
 ## One-time login
 
-For `--auto-detect`, install its actual Playwright dependency and browser in
+For `--auto-detect`, install the Patchright dependency and its Chromium browser in
 your virtual environment, then run (installation downloads software; login
 opens a visible browser):
 
 ```bash
-python -m pip install research-hub-pipeline playwright
-python -m playwright install chromium
+python -m pip install "research-hub-pipeline[playwright]"
+python -m patchright install chromium
 research-hub notebooklm login --auto-detect
 ```
 
