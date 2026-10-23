@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+import os
+import stat
+import tempfile
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -94,7 +97,8 @@ def summarize_pending(
     results: list[SummarizeResult] = []
     processed = 0
     for note_path in _iter_candidate_notes(Path(cfg.raw), cluster_slug_filter):
-        text = note_path.read_text(encoding="utf-8")
+        with note_path.open("r", encoding="utf-8", newline="") as handle:
+            text = handle.read()
         meta = _parse_frontmatter(text)
         status = str(meta.get("summarize_status", "") or "").strip()
         if status not in {"pending", "failed_no_abstract"}:
@@ -137,18 +141,22 @@ def summarize_pending(
             processed += 1
             continue
 
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        updated_text = apply_parsed_summary_to_note(text, parsed)
-        updated_text = set_frontmatter_fields(
-            updated_text,
-            {
-                "summarize_status": "done",
-                "summarize_source": backend,
-                "summarized_at": now,
-            },
-        )
-        _write_note_text(note_path, updated_text)
-        results.append(SummarizeResult(note_path, "done", backend=backend))
+        try:
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            updated_text = apply_parsed_summary_to_note(text, parsed)
+            updated_text = set_frontmatter_fields(
+                updated_text,
+                {
+                    "summarize_status": "done",
+                    "summarize_source": backend,
+                    "summarized_at": now,
+                },
+            )
+            _write_note_text(note_path, updated_text)
+        except (OSError, ValueError) as exc:
+            results.append(SummarizeResult(note_path, "error", backend=backend, error=str(exc)))
+        else:
+            results.append(SummarizeResult(note_path, "done", backend=backend))
         processed += 1
 
     return results
@@ -196,15 +204,16 @@ def apply_parsed_summary_to_note(text: str, parsed: ParsedSummary) -> str:
     if split is None:
         raise ValueError("note is missing YAML frontmatter")
     opening, frontmatter, body, newline = split
-    body = _upsert_section(body, "Summary", _callout("abstract", parsed.summary, "summary"), newline)
+    body = _upsert_section(body, "Summary", _callout("abstract", parsed.summary, "summary"), newline, preserve_manual=True)
     body = _upsert_section(
         body,
         "Key Findings",
         _callout("success", parsed.key_findings, "findings"),
         newline,
+        preserve_manual=True,
     )
-    body = _upsert_section(body, "Methodology", _callout("info", parsed.methodology, "methodology"), newline)
-    body = _upsert_section(body, "Relevance", _callout("note", parsed.relevance, "relevance"), newline)
+    body = _upsert_section(body, "Methodology", _callout("info", parsed.methodology, "methodology"), newline, preserve_manual=True)
+    body = _upsert_section(body, "Relevance", _callout("note", parsed.relevance, "relevance"), newline, preserve_manual=True)
     return f"{opening}{frontmatter}{newline}---{newline}{body}"
 
 
@@ -357,14 +366,38 @@ def _strip_callout_markup(section: str) -> str:
     return "\n".join(lines)
 
 
-def _upsert_section(body: str, header: str, content: str, newline: str) -> str:
+def _upsert_section(
+    body: str, header: str, content: str, newline: str, *, preserve_manual: bool = False
+) -> str:
+    content = content.replace("\r\n", "\n").replace("\n", newline)
     rendered = f"## {header}{newline}{newline}{content.rstrip()}{newline}"
     pattern = re.compile(
         rf"^##[ \t]+{re.escape(header)}[ \t]*\r?\n+.*?(?=^##[ \t]+|\Z)",
         re.MULTILINE | re.DOTALL,
     )
-    if pattern.search(body):
-        return pattern.sub(rendered + newline, body, count=1)
+    matches = list(pattern.finditer(body))
+    if matches:
+        if preserve_manual:
+            if len(matches) != 1:
+                raise ValueError(f"ambiguous summary section: {header}")
+            section = matches[0]
+            block_id = SECTION_BLOCK_IDS[header]
+            managed = re.compile(
+                rf"^>[ \t]+\[!(?:abstract|success|info|note|warning)\][^\r\n]*\r?\n"
+                rf"(?:>[^\n]*\n)+(\^{block_id})[ \t]*(?=\r?$)",
+                re.MULTILINE,
+            )
+            callouts = list(managed.finditer(section.group()))
+            if len(callouts) != 1:
+                raise ValueError(f"no unambiguous managed callout in summary section: {header}")
+            callout = callouts[0]
+            start = section.start() + callout.start()
+            end = section.start() + callout.end()
+            # Only replace the owned callout. Preserve personal prose, source
+            # footers, headings, and whitespace before/after its block anchor.
+            return body[:start] + content.rstrip("\r\n") + body[end:]
+        # Legacy placeholder migration has its own explicit replacement policy.
+        return pattern.sub(lambda _match: rendered + newline, body, count=1)
 
     abstract_pattern = re.compile(
         r"^##[ \t]+Abstract[ \t]*\r?\n+.*?(?=^\s*---\s*$|^##[ \t]+|\Z)",
@@ -470,5 +503,23 @@ def _read_claude_paper_summarize_skill() -> str:
 
 
 def _write_note_text(path: Path, text: str) -> None:
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(text)
+    """Atomically replace one note, preserving its mode and literal newlines.
+
+    An exclusive per-write temporary avoids collisions between parallel
+    summary entries. Keep temporary content private until the final mode is
+    applied; a failed write never truncates the existing note.
+    """
+    path = Path(path)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if mode is not None:
+            os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)

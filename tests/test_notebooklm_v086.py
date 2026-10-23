@@ -139,10 +139,13 @@ def test_upload_cluster_uses_notebooklm_py_from_storage(monkeypatch, tmp_path):
 
     assert report.success_count == 2
     assert report.notebook_id == "nb-created"
-    assert _FakeUpstreamClient.instances[-1].uploads == [
-        ("file", "nb-created", str(pdf_path)),
-        ("url", "nb-created", "https://example.com/paper"),
-    ]
+    uploads = _FakeUpstreamClient.instances[-1].uploads
+    assert uploads[0][:2] == ("file", "nb-created")
+    snapshot = Path(uploads[0][2])
+    assert snapshot.name == pdf_path.name and snapshot != pdf_path
+    assert not snapshot.exists()  # snapshot lives until the awaited SDK call returns
+    assert report.uploaded[0].path_or_url == str(pdf_path)
+    assert uploads[1] == ("url", "nb-created", "https://example.com/paper")
 
 
 def test_ask_returns_structured_references_v086(monkeypatch, tmp_path):

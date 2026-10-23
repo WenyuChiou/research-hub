@@ -289,11 +289,11 @@ def _login_with_auto_detect(
     (nothing is saved).
     """
     try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
+        from patchright.sync_api import Error as PlaywrightError
+        from patchright.sync_api import sync_playwright
     except ImportError:
         print(
-            "  [nlm] Playwright is not installed; cannot run --auto-detect "
+            "  [nlm] Patchright is not installed; cannot run --auto-detect "
             "login.\n        Install it with: pip install 'research-hub-pipeline[playwright]'",
             file=sys.stderr,
         )

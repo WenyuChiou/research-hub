@@ -61,6 +61,7 @@ class AutoReport:
     total_duration_sec: float = 0.0
     ok: bool = True
     error: str = ""
+    nlm_warnings: list[dict] = field(default_factory=list)
 
 
 def auto_pipeline(
@@ -619,8 +620,16 @@ def auto_pipeline(
             cluster, cfg, headless=False,
             include_suspect_urls=include_suspect_urls,
         )
+        from research_hub.notebooklm.upload import source_version_warnings
+
         report.nlm_uploaded = upload_report.success_count
         report.notebook_url = upload_report.notebook_url
+        report.nlm_warnings = source_version_warnings(upload_report)
+        if print_progress:
+            for warning in report.nlm_warnings:
+                print(f"  [NLM warn] {warning['source']}: {warning['message']}")
+        if any(w["error"] == "source_version_conflict" for w in report.nlm_warnings):
+            raise RuntimeError("Source version conflict: generation deferred; inspect cached sources before replacing them.")
         _step_log(report, "nlm.upload", True, _elapsed(started, report),        
                   f"{upload_report.success_count} succeeded", print_progress)   
         if upload_report.notebook_was_reused and print_progress:

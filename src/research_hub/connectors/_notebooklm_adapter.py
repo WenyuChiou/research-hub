@@ -35,7 +35,7 @@ class NotebookLMConnector:
         )
 
     def upload(self, cluster: Any, cfg: Any) -> ConnectorUploadReport:
-        from research_hub.notebooklm.upload import upload_cluster
+        from research_hub.notebooklm.upload import source_version_warnings, upload_cluster
 
         result = upload_cluster(cluster, cfg)
         return ConnectorUploadReport(
@@ -48,6 +48,7 @@ class NotebookLMConnector:
             notebook_url=getattr(result, "notebook_url", "") or "",
             uploaded_count=result.success_count,
             skipped_count=getattr(result, "skipped_already_uploaded", 0) or 0,
+            warnings=source_version_warnings(result),
             failed_count=result.fail_count,
             errors=list(result.errors),
         )
