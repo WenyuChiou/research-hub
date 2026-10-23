@@ -5,6 +5,7 @@ from unittest.mock import patch
 import errno
 import json
 import os
+import re
 import stat
 import threading
 import pytest
@@ -71,7 +72,7 @@ def snapshot(name, before, after, details=None):
     (d/'before.md').write_bytes(before)
     (d/'after.md').write_bytes(after)
     if details is not None:
-        (d/'details.json').write_text(json.dumps(details, indent=2, ensure_ascii=False))
+        (d/'details.json').write_text(json.dumps(details, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def test_01_canonical_pending_note_dual_apply_fills_all_sections(tmp_path):
@@ -95,8 +96,8 @@ def test_02_mathematical_backslashes_survive_actual_note_write(tmp_path, monkeyp
     cfg,p=note(tmp_path)
     # Ensure old route has matching callouts, independent of the pending-block defect.
     if route=='cluster':
-        text=p.read_text().replace('> [!warning] Summary pending\n> Run `research-hub paper summarize --pending` to fill this\n> section from the abstract via paper-summarize.', '> [!success]\n> placeholder', 1)
-        p.write_text(text)
+        text=p.read_text(encoding="utf-8").replace('> [!warning] Summary pending\n> Run `research-hub paper summarize --pending` to fill this\n> section from the abstract via paper-summarize.', '> [!success]\n> placeholder', 1)
+        p.write_text(text, encoding="utf-8")
     before=p.read_bytes()
     if route=='cluster':
         payload={**ENTRY, 'summary': formula}
@@ -190,7 +191,7 @@ def test_missing_key_and_remote_error_roll_back(tmp_path):
     before=p.read_bytes()
     r=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY],zot=Zotero())
     assert r.applied==[] and 'no zotero-key' in r.errors[0] and p.read_bytes()==before
-    p.write_text(p.read_text().replace('zotero-key: \n','zotero-key: AUDIT001\n'))
+    p.write_text(p.read_text(encoding="utf-8").replace('zotero-key: \n','zotero-key: AUDIT001\n'), encoding="utf-8")
     before=p.read_bytes()
     r=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY],zot=Zotero(fail=True))
     snapshot('remote-failure-rollback',before,p.read_bytes(),r.to_dict())
@@ -227,18 +228,18 @@ def test_full_ingest_routes_to_selected_cluster_and_repeat_preserves_manual_body
     monkeypatch.setattr(pipeline,'add_note',lambda *a,**kw:True)
     monkeypatch.setattr(pipeline.time,'sleep',lambda _:None)
     input_path=cfg.root/'papers_input.json'
-    input_path.write_text(json.dumps([pp]))
+    input_path.write_text(json.dumps([pp]), encoding="utf-8")
     assert pipeline.run_pipeline(cluster_slug='flood-adaptation',query='flood trust')==0
     p=cfg.raw/'flood-adaptation'/'paper.md'
     assert p.is_file() and not (cfg.raw/'different-source-category'/'paper.md').exists()
-    text=p.read_text()+'\n## Manual annotation\n\nNever remove this 中文 interpretation.\n'
-    p.write_text(text)
+    text=p.read_text(encoding="utf-8")+'\n## Manual annotation\n\nNever remove this 中文 interpretation.\n'
+    p.write_text(text, encoding="utf-8")
     before=p.read_bytes()
     assert pipeline.run_pipeline(cluster_slug='flood-adaptation',query='new evidence query')==0
     after=p.read_bytes()
     snapshot('actual-repeat-ingest',before,after,{'zotero_created_count':len(created),'zotero_items':created})
     assert len(created)==1
-    assert before.split(b'\n---\n',1)[1]==after.split(b'\n---\n',1)[1]
+    assert re.split(br'\r?\n---\r?\n',before,maxsplit=1)[1]==re.split(br'\r?\n---\r?\n',after,maxsplit=1)[1]
     meta=_parse_frontmatter(after.decode())
     assert meta['zotero-key']=='AUDIT001'
     assert meta['topic_cluster']=='flood-adaptation'
@@ -249,16 +250,17 @@ def test_full_ingest_routes_to_selected_cluster_and_repeat_preserves_manual_body
 
 def test_cluster_apply_preserves_personal_prose_after_managed_callout(tmp_path):
     cfg,p=note(tmp_path)
-    text=p.read_text().replace('^findings\n', '^findings\n\nPersonal caveat: missing causal identification; keep 中文.\n')
+    text=p.read_text(encoding="utf-8").replace('^findings\n', '^findings\n\nPersonal caveat: missing causal identification; keep 中文.\n')
     text=text.replace('## Personal research notes', '## Summary of other work\n\nDo not overwrite this unrelated section.\n\n## Personal research notes')
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8")
     before=p.read_bytes()
     result=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY],write_zotero=False)
     after=p.read_bytes()
     snapshot('managed-callout-boundary',before,after,result.to_dict())
     assert result.applied==['paper']
     assert 'Personal caveat: missing causal identification; keep 中文.' in after.decode()
-    assert '## Summary of other work\n\nDo not overwrite this unrelated section.' in after.decode()
+    assert '## Summary of other work\n\nDo not overwrite this unrelated section.' in p.read_text(encoding="utf-8")
+    assert after.split(b'## Summary of other work')[1]==before.split(b'## Summary of other work')[1]
     assert after.decode().count('^findings')==1
 
 
@@ -276,28 +278,63 @@ def test_atomic_summary_write_preserves_private_file_mode(tmp_path, monkeypatch,
 
 
 def test_duplicate_entries_have_exclusive_atomic_temporary_paths(tmp_path, monkeypatch):
+    """No temp collisions or lost outcomes; Windows may reject a concurrent replace."""
     cfg,p=note(tmp_path)
     barrier=threading.Barrier(2)
     original_replace=os.replace
+    expected=summarize._replace_obsidian_block(p.read_bytes().decode("utf-8"), summarize.PaperSummary(**ENTRY)).encode("utf-8")
     temporary_paths=[]
+    replacement_errors=[]
     def synchronized_replace(src,dst):
         temporary_paths.append(str(src))
         barrier.wait(timeout=5)
-        return original_replace(src,dst)
+        try:
+            return original_replace(src,dst)
+        except PermissionError as exc:
+            replacement_errors.append(exc)
+            raise
     monkeypatch.setattr(os,'replace',synchronized_replace)
     result=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY,ENTRY],write_zotero=False)
-    assert result.applied==['paper','paper'] and not result.errors
+    # Windows can deny one simultaneous replace; this contract requires honest
+    # per-entry outcomes and intact complete bytes, not dual concurrent success.
+    assert result.applied and set(result.applied)=={'paper'}
+    assert len(result.applied)+len(result.errors)==2
+    assert len(result.errors)==len(replacement_errors)
+    for exc in replacement_errors:
+        assert os.name=='nt' and exc.winerror in {5,32}
+        assert any('obsidian write failed: '+str(exc) in error for error in result.errors)
     assert len(set(temporary_paths))==2
+    assert p.read_bytes()==expected
+    assert not list(p.parent.glob('.' + p.name + '.*.tmp'))
+
+
+@pytest.mark.parametrize('route', ['cluster', 'pending'])
+def test_replace_permission_failure_preserves_original_and_reports_error(tmp_path, monkeypatch, route):
+    cfg,p=note(tmp_path)
+    before=p.read_bytes()
+    monkeypatch.setattr(paper_summarize,'_invoke_backend',lambda *a:RESPONSE)
+    def deny_replace(src,dst):
+        assert Path(src).is_file() and Path(dst)==p
+        raise PermissionError(errno.EACCES,'synthetic replacement denied')
+    monkeypatch.setattr(os,'replace',deny_replace)
+    if route=='cluster':
+        result=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY],write_zotero=False)
+        assert result.applied==[] and result.obsidian_writes==0
+        assert len(result.errors)==1 and 'synthetic replacement denied' in result.errors[0]
+    else:
+        result=paper_summarize.summarize_pending(cfg,backend='codex')
+        assert result[0].action=='error' and 'synthetic replacement denied' in result[0].error
+    assert p.read_bytes()==before
     assert not list(p.parent.glob('.' + p.name + '.*.tmp'))
 
 
 @pytest.mark.parametrize('route', ['cluster', 'pending'])
 def test_manual_prose_and_extra_blank_lines_survive_both_summary_routes(tmp_path, monkeypatch, route):
     cfg,p=note(tmp_path)
-    original=p.read_text().replace('## Key Findings\n\n','## Key Findings\n\n\n')
+    original=p.read_text(encoding="utf-8").replace('## Key Findings\n\n','## Key Findings\n\n\n')
     original=original.replace('^findings\n','^findings\n\nPersonal finding caveat: keep exactly 中文.\n')
     original=original.replace('^relevance\n','^relevance\n\n---\nSource-footer manual note stays.\n')
-    p.write_text(original)
+    p.write_text(original, encoding="utf-8")
     monkeypatch.setattr(paper_summarize,'_invoke_backend',lambda *a:RESPONSE)
     if route=='cluster':
         result=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY],write_zotero=False)
@@ -305,7 +342,7 @@ def test_manual_prose_and_extra_blank_lines_survive_both_summary_routes(tmp_path
     else:
         result=paper_summarize.summarize_pending(cfg,backend='codex')
         assert result[0].action=='done'
-    after=p.read_text()
+    after=p.read_text(encoding="utf-8")
     assert 'Summary pending' not in after
     assert 'Personal finding caveat: keep exactly 中文.' in after
     assert '\n---\nSource-footer manual note stays.\n' in after
@@ -314,11 +351,11 @@ def test_manual_prose_and_extra_blank_lines_survive_both_summary_routes(tmp_path
 @pytest.mark.parametrize('route', ['cluster', 'pending'])
 def test_unrecognized_manual_section_fails_closed_without_success_or_writes(tmp_path, monkeypatch, route):
     cfg,p=note(tmp_path)
-    original=p.read_text()
+    original=p.read_text(encoding="utf-8")
     start=original.index('## Key Findings')
     end=original.index('## Methodology')
     original=original[:start]+'## Key Findings\n\nMy unmarked handwritten findings must stay.\n\n'+original[end:]
-    p.write_text(original)
+    p.write_text(original, encoding="utf-8")
     before=p.read_bytes()
     monkeypatch.setattr(paper_summarize,'_invoke_backend',lambda *a:RESPONSE)
     if route=='cluster':
@@ -335,7 +372,7 @@ def test_unrecognized_manual_section_fails_closed_without_success_or_writes(tmp_
 @pytest.mark.parametrize('route', ['cluster', 'pending'])
 def test_crlf_manual_bytes_remain_unchanged(tmp_path, monkeypatch, route):
     cfg,p=note(tmp_path)
-    p.write_bytes(p.read_bytes().replace(b'\n',b'\r\n'))
+    p.write_bytes(p.read_text(encoding="utf-8").replace('\n','\r\n').encode("utf-8"))
     before=p.read_bytes()
     monkeypatch.setattr(paper_summarize,'_invoke_backend',lambda *a:RESPONSE)
     if route=='cluster':
@@ -367,10 +404,10 @@ def test_cluster_report_preserves_partial_success_without_hiding_failed_entry(tm
     cfg,p=note(tmp_path)
     other=p.with_name('second.md')
     other.write_bytes(p.read_bytes())
-    original=p.read_text()
+    original=p.read_text(encoding="utf-8")
     start=original.index('## Key Findings')
     end=original.index('## Methodology')
-    p.write_text(original[:start]+'## Key Findings\n\nKeep handwritten finding.\n\n'+original[end:])
+    p.write_text(original[:start]+'## Key Findings\n\nKeep handwritten finding.\n\n'+original[end:], encoding="utf-8")
     before=p.read_bytes()
     payload={'summaries':[ENTRY,{**ENTRY,'paper_slug':'second'}]}
     monkeypatch.setattr('research_hub.llm_cli.invoke_llm_cli',lambda *a:json.dumps(payload))
@@ -380,4 +417,4 @@ def test_cluster_report_preserves_partial_success_without_hiding_failed_entry(tm
     assert report.apply_result.applied==['second']
     assert len(report.apply_result.errors)==1 and 'managed callout' in report.apply_result.errors[0]
     assert p.read_bytes()==before
-    assert 'Summary pending' not in other.read_text()
+    assert 'Summary pending' not in other.read_text(encoding="utf-8")
