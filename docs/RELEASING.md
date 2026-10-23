@@ -64,9 +64,10 @@ curl 'https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.Wen
   Registry pins to a PyPI `identifier` + `version` pair. If the
   manifest's `packages[0].version` doesn't match the bumped PyPI
   version, registry consumers either install the wrong version or
-  fail to install at all. The release-check gate does NOT currently
-  verify the three version fields are in sync — operator
-  responsibility per this runbook.
+  fail to install at all. The release-check gate's full pytest run
+  includes `tests/test_v068_3_version_sync.py`, which checks both
+  `server.json` version fields against `pyproject.toml`. This checks
+  the source manifest, not the separately published registry copy.
 - **MCP republish (step 5)** runs LAST because the registry should
   not advertise a version PyPI hasn't published yet. If you republish
   before PyPI finishes, the install command in the registry entry

@@ -181,4 +181,4 @@ def test_briefings_artifact_tile_renders_multiple_artifacts():
     html = BriefingsSection().render(_data(clusters=[cluster], total_clusters=1))
     assert "audio" in html
     assert "mind map" in html
-    assert html.count("<tr>") >= 3
+    assert html.count('<tr role="row">') >= 3
