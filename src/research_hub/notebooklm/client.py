@@ -446,6 +446,10 @@ class NotebookLMClient:
                 status = await self._client.artifacts.generate_slide_deck(notebook_id)
             else:
                 raise ValueError(f"Unknown generation kind: {kind}")
+            # The SDK returns immediate rejections as GenerationStatus too;
+            # polling a rejected task can hide its original error.
+            if getattr(status, "status", "") == "failed":
+                return status
             task_id = getattr(status, "task_id", "") or getattr(status, "id", "")
             if task_id and hasattr(self._client.artifacts, "wait_for_completion"):
                 status = await self._client.artifacts.wait_for_completion(
@@ -459,6 +463,21 @@ class NotebookLMClient:
             status = self._run(_go())
         except _UpstreamError as exc:
             raise NotebookLMError(str(exc)) from exc
+        if kind == "mind_map":
+            # Unlike async artifacts, notebooklm-py 0.4.x persists mind maps
+            # as notes and returns a dict, not a GenerationStatus.
+            note_id = status.get("note_id") if isinstance(status, dict) else None
+            if not isinstance(note_id, str) or not note_id.strip():
+                raise NotebookLMError("Mind map generation did not return a saved note id")
+            return note_id
+        generation_state = getattr(status, "status", "")
+        if generation_state != "completed":
+            detail = (
+                getattr(status, "error", None)
+                or getattr(status, "error_code", None)
+                or f"status: {generation_state or 'unknown'}"
+            )
+            raise NotebookLMError(f"Generation did not complete: {detail}")
         artifact_id = getattr(status, "task_id", "") or getattr(status, "id", "")
         url = getattr(status, "url", "") or ""
         if not (artifact_id or url):
