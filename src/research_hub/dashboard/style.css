@@ -135,14 +135,29 @@ button, input { font: inherit; }
   margin: 0 auto;
   padding: var(--space-md) 0;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: var(--space-md);
 }
 
+/* Vault paths can contain long unbroken segments. Let both header items
+   shrink/wrap in the row and stay within the mobile column's width. */
+.header-bar > * { min-width: 0; max-width: 100%; }
 .header-bar h2 { font-size: var(--text-md); }
-.header-meta { color: var(--fg-mute); font-size: var(--text-xs); }
-main { display: grid; gap: var(--space-2xl); }
+.header-meta {
+  color: var(--fg-mute);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: var(--space-2xl);
+  /* Names, paths, and command examples must not widen the active panel. */
+  overflow-wrap: anywhere;
+}
 
 section {
   background: var(--surface);
@@ -413,7 +428,7 @@ section {
 .status-no { color: var(--fail); border-color: var(--fail); background: var(--fail-soft); }
 .reading-status { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); text-transform: lowercase; }
 
-.briefing-grid, .diag-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.briefing-grid, .diag-grid { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); }
 
 .briefing-card {
   border: 1px solid var(--border);
@@ -422,6 +437,9 @@ section {
   display: grid;
   gap: var(--space-md);
 }
+
+.briefing-artifact-label { display: none; }
+.briefing-artifact-value { min-width: 0; overflow-wrap: anywhere; }
 
 .drift-card {
   border: 1px solid var(--border);
@@ -574,6 +592,8 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   border-radius: 18px;
   padding: var(--space-lg);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: var(--space-md);
 }
 
@@ -583,11 +603,11 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .overview-grid {
   display: grid;
   gap: var(--space-lg);
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 @container (min-width: 900px) {
-  .overview-grid { grid-template-columns: 1fr 1fr; }
+  .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .card-recent { grid-column: 1 / -1; }
 }
 
@@ -602,7 +622,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 .treemap-cell {
   flex: 1 1 0;
-  min-width: 200px;
+  min-width: min(200px, 100%);
   max-width: 100%;
   padding: var(--space-lg);
   border-radius: var(--radius-md);
@@ -713,7 +733,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 .recent-item {
   display: grid;
-  grid-template-columns: 160px 1fr auto;
+  grid-template-columns: 160px minmax(0, 1fr) auto;
   gap: var(--space-md);
   padding: 16px 0;
   border-bottom: 1px solid var(--border);
@@ -796,8 +816,8 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 }
 
 /* Diagnostics tab grid */
-.diag-grid { grid-template-columns: 1fr; gap: var(--space-lg); }
-@container (min-width: 900px) { .diag-grid { grid-template-columns: 1fr 1fr; } }
+.diag-grid { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
+@container (min-width: 900px) { .diag-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* v0.48: count summary at top of health card */
 .health-summary-counts {
@@ -887,7 +907,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   margin-top: var(--space-lg);
   display: grid;
   gap: var(--space-sm);
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   padding: var(--space-md);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -903,6 +923,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 .manage-filter-bar input,
 .manage-filter-bar select {
+  min-width: 0;
   width: 100%;
   padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--border);
@@ -915,7 +936,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 .manage-grid {
   display: grid;
   gap: var(--space-lg);
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   margin-top: var(--space-lg);
 }
 
@@ -1076,7 +1097,9 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 }
 
 .manage-form input,
-.manage-form select {
+.manage-form select,
+.manage-form textarea {
+  min-width: 0;
   width: 100%;
   padding: var(--space-2xs) var(--space-sm);
   background: var(--surface);
@@ -1085,6 +1108,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
   color: var(--fg);
   font: inherit;
 }
+.manage-form textarea { resize: vertical; }
 
 .manage-build-btn {
   align-self: start;
@@ -1471,6 +1495,7 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 
 .composer-form textarea,
 .composer-form select {
+  min-width: 0;
   width: 100%;
   padding: var(--space-2xs) var(--space-sm);
   background: var(--surface);
@@ -1688,6 +1713,55 @@ footer { color: var(--fg-mute); text-align: center; font-size: var(--text-xs); }
 @media (max-width: 720px) {
   .app, main[role="main"] { padding-left: 8px; padding-right: 8px; }
   .header-bar { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+  /* Overview's desktop row and table must fit inside the padded cards.
+     Preserve table semantics and all text rather than clipping overflow. */
+  .recent-item { grid-template-columns: minmax(0, 1fr); }
+  .recent-item > .open-btn { justify-self: start; }
+  .storage-table { table-layout: fixed; }
+  .storage-table thead th,
+  .storage-table tbody th,
+  .storage-table tbody td { padding: var(--space-xs); }
+
+  /* Artifact values need readable width, not four squeezed columns. Keep
+     semantic headers available to AT; each cell repeats its visual label. */
+  .briefing-artifact-table { display: block; width: 100%; }
+  .briefing-artifact-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .briefing-artifact-table tbody { display: block; }
+  .briefing-artifact-table tbody tr {
+    display: block;
+    margin-bottom: var(--space-sm);
+    padding: var(--space-sm);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .briefing-artifact-table td {
+    display: block;
+    padding: var(--space-xs) 0;
+    text-align: left;
+  }
+  .briefing-artifact-label {
+    display: block;
+    margin-bottom: var(--space-2xs);
+    font-weight: 600;
+  }
+  .briefing-artifact-value { display: block; }
+  .briefing-artifact-table td:last-child .briefing-artifact-value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+  }
 
   /* Tab strip: stack full-width so each section is reachable
      without horizontal scroll. The :checked radios still drive

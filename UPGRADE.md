@@ -17,15 +17,17 @@ backup checklist + a historical appendix for very old releases.
 
 ## v1.1 -> v1.2
 
-### Opt-in workspace preview after v1.2 (unmerged and unreleased)
+### Opt-in workspace preview after v1.2 (merged in source, unreleased)
 
-- Install the immutable Hub preview snapshot
-  `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` as described in
-  [the workspace guide](docs/workspace-guide.md), without relying on a
-  feature-branch name. The Hub workspace in
-  [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) remains unmerged
-  and unreleased. Existing dashboard, vault, citation and workflow interfaces
-  remain available.
+- The historical immutable Hub preview snapshot
+  `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` is retained here for provenance.
+  Use the current pinned installation instructions in
+  [the workspace guide](docs/workspace-guide.md), not a feature-branch name.
+  The Hub workspace in
+  [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) is merged in
+  source, but is not included in PyPI 1.2.0. Source merge does not establish
+  installed-wheel or native-host readiness. Existing dashboard, vault,
+  citation and workflow interfaces remain available.
 - The optional public writing adapter was merged through
   [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17).
   Use the current guide to clone with `core.autocrlf=false`, detach at producer
