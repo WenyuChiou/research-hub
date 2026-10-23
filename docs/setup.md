@@ -29,10 +29,9 @@ for the FastMCP server. The base install does not declare FastMCP; install
 `[mcp]` explicitly when using MCP. NotebookLM operations use the base
 `notebooklm-py` dependency, not a supported consumer REST API. Browser binaries
 and an authenticated session are separate prerequisites; installing an extra
-does not prove login or connectivity. In particular, `login --auto-detect`
-currently imports `playwright.sync_api`, while the `[playwright]` extra declares
-`patchright`: the extra alone does not establish that this login path can run.
-Verify Playwright and its Chromium browser separately before using that path.
+does not prove login or connectivity. `login --auto-detect` uses Patchright
+from the compatibility-named `[playwright]` extra. Install its Chromium browser
+separately with `python -m patchright install chromium` before using that path.
 See [NotebookLM architecture](notebooklm.md).
 
 ## 2. Pick A First Path

@@ -2141,8 +2141,9 @@ def build_parser() -> argparse.ArgumentParser:
             "no prebuilt wheel for Python 3.14); (4) --wait-file PATH — sign in "
             "in the browser then create PATH (no terminal/ENTER; scriptable); "
             "(5) --auto-detect — fully automatic, research-hub polls the "
-            "patchright Chromium cookies and saves when notebooklm.google.com "
-            "appears (no terminal, no wait-file, no click.confirm response)."
+            "live Patchright page URL and Google session cookies, saving after "
+            "the NotebookLM homepage stabilizes (no terminal, no wait-file, "
+            "no click.confirm response)."
         ),
         epilog=(
             "Examples:\n"
@@ -2187,9 +2188,9 @@ def build_parser() -> argparse.ArgumentParser:
     nlm_login.add_argument(
         "--auto-detect",
         action="store_true",
-        help="Fully automatic: research-hub polls the patchright Chromium "
-             "profile's cookies for notebooklm.google.com once the browser "
-             "opens. When you sign in and land on the NotebookLM homepage, "
+        help="Fully automatic: research-hub polls the live Patchright page "
+             "URL and browser-context Google session cookies. Once you sign "
+             "in and the NotebookLM homepage stabilizes, "
              "the session is saved automatically. No terminal/ENTER, no "
              "wait-file touch, no click.confirm response needed.",
     )
