@@ -38,7 +38,6 @@ class NotebookLMConnector:
         from research_hub.notebooklm.upload import upload_cluster
 
         result = upload_cluster(cluster, cfg)
-        uploaded = getattr(result, "uploaded", []) or []
         return ConnectorUploadReport(
             cluster_slug=getattr(cluster, "slug", ""),
             notebook_id=(
@@ -47,8 +46,10 @@ class NotebookLMConnector:
                 or ""
             ),
             notebook_url=getattr(result, "notebook_url", "") or "",
-            uploaded_count=len(uploaded),
+            uploaded_count=result.success_count,
             skipped_count=getattr(result, "skipped_already_uploaded", 0) or 0,
+            failed_count=result.fail_count,
+            errors=list(result.errors),
         )
 
     def generate(

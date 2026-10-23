@@ -11,7 +11,7 @@ Protocol view over the current implementation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -32,6 +32,8 @@ class ConnectorUploadReport:
     notebook_url: str = ""
     uploaded_count: int = 0
     skipped_count: int = 0
+    failed_count: int = 0
+    errors: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
