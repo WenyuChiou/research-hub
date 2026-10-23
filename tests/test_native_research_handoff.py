@@ -373,3 +373,125 @@ def test_native_metadata_html_entities_are_decoded_once(handoff_env, tmp_path, c
     assert cli.main(["ingest", "--input", str(path), "--cluster", "native-review", "--no-verify", "--json"]) == 0
     capsys.readouterr()
     assert created[0]["title"] == "Nested &lt; Evidence"
+
+
+@pytest.mark.parametrize("incoming_cluster", ["native-review", "cross-review"])
+def test_duplicate_replay_preserves_primary_cluster_links(
+    incoming_cluster, handoff_env, tmp_path, monkeypatch
+):
+    """A new query is evidence, not a request to move an existing paper."""
+    from research_hub import pipeline
+    from research_hub.clusters import ClusterRegistry
+    from research_hub.dedup import DedupHit, DedupIndex
+    from research_hub.vault.link_updater import update_cluster_links
+
+    cfg, created, child_notes = handoff_env
+    ClusterRegistry(cfg.clusters_file).create(
+        query="cross query", name="Cross Review", slug="cross-review",
+        zotero_collection_key="CROSS123",
+    )
+    paper = _paper("Synthetic Primary Cluster Evidence", "paper-p", "10.1000/primary")
+    manual_body = "\n# My paper\n\nManual reading annotation: keep exactly.\n\n"
+    for slug, cluster in (("paper-p", "native-review"), ("paper-q", "native-review"), ("paper-r", "cross-review")):
+        path = cfg.raw / cluster / f"{slug}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f'---\ntitle: "Synthetic Evidence {slug}"\n'
+            f'topic_cluster: "{cluster}"\n'
+            'tags: [evidence]\nstatus: cited\nverified: true\n'
+            f'doi: "{paper["doi"] if slug == "paper-p" else "10.1000/" + slug}"\n'
+            f'zotero_key: {"ORIGINAL1" if slug == "paper-p" else slug.upper()}\n'
+            'cluster_queries: [original query]\n---\n' + manual_body,
+            encoding="utf-8",
+        )
+    note = cfg.raw / "native-review" / "paper-p.md"
+    update_cluster_links(note, cfg.raw, "native-review")
+    assert "[[paper-q]]" in note.read_text(encoding="utf-8")
+    body_before = note.read_text(encoding="utf-8").split("---", 2)[2]
+    other_before = (cfg.raw / "cross-review" / "paper-r.md").read_bytes()
+    dedup = DedupIndex()
+    dedup.add(DedupHit(source="obsidian", doi=paper["doi"], title=paper["title"],
+                       zotero_key="ORIGINAL1", obsidian_path=str(note)))
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **kw: dedup)
+    routes = []
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection",
+                        lambda zot, **kw: routes.append(kw["cluster_coll"]) or "BATCH123")
+    paper["source_records"] = [{"source_id": "S-cross", "url": "https://example.test/cross"}]
+    paper["provenance"] = {"research": {"queries": ["cross query"]}}
+    source = tmp_path / "cross-handoff.json"
+    source.write_text(json.dumps([paper]), encoding="utf-8")
+    kwargs = dict(papers_json=source, cluster_slug=incoming_cluster,
+                  query="cross query", batch_label="synthetic", verify=False)
+    assert pipeline.run_pipeline(**kwargs) == 0
+    after = note.read_text(encoding="utf-8")
+    metadata = _metadata(after)
+    assert metadata["topic_cluster"] == "native-review"
+    assert metadata["status"] == "cited"
+    assert metadata["verified"] is True
+    assert metadata["zotero_key"] == "ORIGINAL1"
+    assert metadata["cluster_queries"] == ["original query", "cross query"]
+    assert metadata["source_records"] == paper["source_records"]
+    assert metadata["provenance"] == paper["provenance"]
+    assert "[[paper-q]]" in after
+    assert "[[paper-r]]" not in after
+    assert after.split("---", 2)[2] == body_before
+    assert pipeline.run_pipeline(**kwargs) == 0
+    assert note.read_bytes() == after.encode("utf-8")
+    assert (cfg.raw / "cross-review" / "paper-r.md").read_bytes() == other_before
+    assert len(list(cfg.raw.rglob("*.md"))) == 3
+    assert not created and not child_notes
+    if incoming_cluster == "cross-review":
+        # Observe existing destination collection routing, not new membership.
+        assert routes == ["CROSS123", "CROSS123"]
+
+
+@pytest.mark.parametrize("primary", ["absent", "absent-known-query", "empty", "unavailable"])
+def test_duplicate_replay_primary_cluster_fallback(
+    primary, handoff_env, tmp_path, monkeypatch
+):
+    """Keep merge's missing-field default; don't rewrite links without metadata."""
+    from research_hub import pipeline
+    from research_hub.dedup import DedupHit, DedupIndex
+
+    cfg, created, child_notes = handoff_env
+    paper = _paper("Synthetic Fallback Evidence", "fallback", "10.1000/fallback")
+    directory = cfg.raw / "native-review"
+    directory.mkdir(parents=True, exist_ok=True)
+    note = directory / "fallback.md"
+    cluster_line = {"absent": "", "absent-known-query": "cluster_queries: [new query]\n", "empty": 'topic_cluster: ""\n',
+                    "unavailable": 'topic_cluster: "native-review"\n'}[primary]
+    body = "\n# Manual annotation\nKeep me.\n\n## Related Papers in This Cluster\n\n- [[original-sibling]]\n"
+    note.write_text('---\ntitle: "Synthetic Fallback Evidence"\n' + cluster_line +
+                    'status: cited\nzotero_key: ORIGINAL1\n---\n' + body, encoding="utf-8")
+    body = note.read_text(encoding="utf-8").split("---", 2)[2]
+    sibling = directory / "new-sibling.md"
+    sibling.write_text('---\ntitle: "New Sibling"\ntopic_cluster: "native-review"\n---\n', encoding="utf-8")
+    dedup = DedupIndex()
+    dedup.add(DedupHit(source="obsidian", doi=paper["doi"], title=paper["title"],
+                       zotero_key="ORIGINAL1", obsidian_path=str(note)))
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **kw: dedup)
+    if primary == "unavailable":
+        # Exercise the conservative guard if the link metadata parser cannot
+        # read the note; evidence merging still uses real YAML parsing.
+        monkeypatch.setattr(pipeline, "parse_frontmatter", lambda path: None)
+    source = tmp_path / "fallback.json"
+    source.write_text(json.dumps([paper]), encoding="utf-8")
+    kwargs = dict(papers_json=source, cluster_slug="native-review", query="new query", verify=False)
+    assert pipeline.run_pipeline(**kwargs) == 0
+    after = note.read_text(encoding="utf-8")
+    metadata = _metadata(after)
+    assert metadata["status"] == "cited"
+    assert metadata["zotero_key"] == "ORIGINAL1"
+    assert metadata["cluster_queries"] == ["new query"]
+    if primary == "absent":
+        assert metadata["topic_cluster"] == "native-review"
+        assert "[[new-sibling]]" in after
+    else:
+        if primary == "absent-known-query":
+            assert "topic_cluster" not in metadata
+        else:
+            assert metadata["topic_cluster"] == ("" if primary == "empty" else "native-review")
+        assert after.split("---", 2)[2] == body
+    assert pipeline.run_pipeline(**kwargs) == 0
+    assert note.read_bytes() == after.encode("utf-8")
+    assert not created and not child_notes
