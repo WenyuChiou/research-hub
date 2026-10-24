@@ -43,3 +43,11 @@ page prepares a local proposal bundle from accepted candidate files, records a
 separate human decision, and exposes explicit execution and receipt reconciliation.
 A local ZIP does not authorize publication or certify every manuscript release
 check. Receipt paths identify local files and are not download links.
+
+Task cards display the existing server's input/output `freshness` assessment
+separately from historical human acceptance. Delivery selection requires a
+well-formed `current` assessment; stale, unknown, missing, and contradictory
+metadata do not make a candidate selectable, even if a legacy acceptance flag
+is true. This adds no request or automatic recheck: Refresh retrieves a new
+assessment, and the backend's existing authorization and file checks remain
+authoritative. A version match is not scientific validation or a new approval.

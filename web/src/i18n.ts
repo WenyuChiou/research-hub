@@ -52,7 +52,21 @@ export const en = {
     "Select human-accepted tasks with candidate files. Preparing a bundle does not approve or create it.",
   acceptedCandidates: "Accepted candidate tasks",
   noAcceptedCandidates:
-    "No eligible candidate files yet. Import candidate path/fingerprint pairs and complete human review before preparing a local bundle.",
+    "No eligible candidate files yet. Only human-accepted files whose latest revision check is current are selectable here.",
+  deliveryFreshnessBlocked:
+    "Changed or unverified candidates are not selectable. See each task's revision check; refresh missing checks or review the intended revision before preparing a new task.",
+  taskRevisionCheck: "Input and output revision check",
+  taskRevisionCurrent: "Matches prepared revisions",
+  taskRevisionStale: "Revision changed",
+  taskRevisionUnknown: "Revision not verified",
+  taskRevisionCurrentNote:
+    "The latest response matches the prepared revisions. This is not scientific validation or new human approval; the server still checks inputs and candidate files before delivery.",
+  taskRevisionStaleNote:
+    "An input or candidate no longer matches the prepared revision. Review the intended version before preparing a new task; this candidate cannot be selected for delivery.",
+  taskRevisionUnknownNote:
+    "The latest response does not verify the input and candidate revisions. Refresh to check again; unverified candidates cannot be selected for delivery.",
+  taskRevisionHistoricalAcceptance:
+    "Previous human acceptance applies to the reviewed revision, not to changed or unavailable files. The decision history is preserved.",
   selectAcceptedTask:
     "Select at least one currently accepted task with candidate files.",
   prepareDelivery: "Prepare local bundle",
@@ -397,7 +411,21 @@ export const zhTW: Record<MessageKey, string> = {
     "選擇已經人工接受且包含候選檔案的任務。準備封裝不會自動核准或建立檔案。",
   acceptedCandidates: "已接受的候選任務",
   noAcceptedCandidates:
-    "尚無符合條件的候選檔案。請匯入候選檔案的路徑與指紋，並完成人工審閱，再準備本機封裝。",
+    "尚無符合條件的候選檔案。只有人工已接受，且最近一次版本檢查確認一致的檔案，才可在此選取。",
+  deliveryFreshnessBlocked:
+    "版本已變更或未確認的候選檔案不可選取。請查看各任務的版本檢查；缺少結果時可重新整理，版本變更時先確認預期版本，再準備新任務。",
+  taskRevisionCheck: "輸入與產出版本檢查",
+  taskRevisionCurrent: "與準備時的版本一致",
+  taskRevisionStale: "版本已變更",
+  taskRevisionUnknown: "版本尚未確認",
+  taskRevisionCurrentNote:
+    "最近一次回應顯示版本與準備時一致。這不代表科學內容已驗證，也不是新增的人工核准；交付前伺服器仍會檢查輸入與候選檔案。",
+  taskRevisionStaleNote:
+    "輸入或候選檔案已不符合準備時的版本。請先確認預期版本再準備新任務；此候選檔案目前不可選取交付。",
+  taskRevisionUnknownNote:
+    "最近一次回應未能確認輸入與候選檔案版本。可重新整理再檢查；尚未確認的候選檔案不可選取交付。",
+  taskRevisionHistoricalAcceptance:
+    "先前的人工接受只適用於當時審閱的版本，不適用於已變更或無法取得的檔案；原決策紀錄仍會保留。",
   selectAcceptedTask: "請至少選擇一項目前已接受且包含候選檔案的任務。",
   prepareDelivery: "準備本機封裝",
   deliveryPrepared: "本機封裝已準備，等待人工審閱。",

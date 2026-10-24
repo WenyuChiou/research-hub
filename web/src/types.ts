@@ -71,6 +71,22 @@ export interface Task {
   execution_provenance?: Record<string, unknown> | null;
   updated_at?: string;
   acceptance_current?: boolean;
+  freshness?: TaskFreshness;
+}
+export type RevisionStatus = "current" | "stale" | "unknown";
+export interface TaskFreshness {
+  status: RevisionStatus;
+  reasons: { code: string; message: string; ref: string; detail?: string }[];
+  input_references: RevisionReference[];
+  output_references: RevisionReference[];
+}
+export interface RevisionReference {
+  kind: string;
+  ref: string;
+  status: RevisionStatus;
+  path?: string;
+  expected_sha256?: string;
+  observed_sha256?: string;
 }
 export interface DeliveryAction {
   id: string;
