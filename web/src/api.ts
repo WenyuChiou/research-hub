@@ -29,7 +29,11 @@ export async function api<T>(
 
 // Includes response-body consumption, not just receipt of HTTP headers.
 export const READ_TIMEOUT_MS = 15000;
-async function readWithDeadline<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function readWithDeadline<T>(
+  path: string,
+  signal?: AbortSignal,
+  workspaceInstance?: string,
+): Promise<T> {
   if (signal?.aborted) throw signal.reason;
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -52,7 +56,10 @@ async function readWithDeadline<T>(path: string, signal?: AbortSignal): Promise<
   });
   try {
     // Race also fences late results from a transport that ignores cancellation.
-    return await Promise.race([request<T>(path, undefined, controller.signal), interrupted]);
+    return await Promise.race([
+      request<T>(path, undefined, controller.signal, false, workspaceInstance),
+      interrupted,
+    ]);
   } finally {
     clearTimeout(timer);
     if (onAbort) signal?.removeEventListener("abort", onAbort);
@@ -86,8 +93,10 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
   allowAuditFindings = false,
+  workspaceInstance?: string,
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
+  if (workspaceInstance) headers["X-Workspace-Instance"] = workspaceInstance;
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     headers["X-CSRF-Token"] = metaToken("research-hub-csrf-token");
@@ -138,7 +147,10 @@ async function request<T>(
     typeof value.operation === "string" &&
     typeof value.adapter_sha256 === "string" &&
     value.semantic_acceptance === "not_performed";
-  if ((!response.ok && !(response.status === 400 && auditFindings)) || (value.ok !== true && !auditFindings)) {
+  if (
+    (!response.ok && !(response.status === 400 && auditFindings)) ||
+    (value.ok !== true && !auditFindings)
+  ) {
     throw new ApiError(
       value.error || `The request failed (HTTP ${response.status}).`,
       value.code || "request_failed",
@@ -167,4 +179,31 @@ export function downloadPacket(packet: unknown, taskId: string): void {
   anchor.download = `research-task-${taskId.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Exact-key read only; retains the normal bounded GET deadline and origin policy. */
+export function lookupPreparation<T>(
+  projectId: string,
+  key: string,
+  workspaceInstance: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  return readWithDeadline<T>(
+    `/projects/${segment(projectId)}/preparations/${segment(key)}`,
+    signal,
+    workspaceInstance,
+  );
+}
+
+export function lookupTextIntake<T>(
+  projectId: string,
+  key: string,
+  workspaceInstance: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  return readWithDeadline<T>(
+    "/projects/" + segment(projectId) + "/source-text/" + segment(key),
+    signal,
+    workspaceInstance,
+  );
 }

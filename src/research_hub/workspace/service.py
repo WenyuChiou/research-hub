@@ -28,11 +28,25 @@ class WorkspaceService:
         from .executor import codex_capability
         from .writing import writing_capability
         from research_hub.setup_snapshot import read_setup_snapshot
+        namespace = self.workspace.preparation_namespace()
+        from .text_intake import capability as text_intake_capability
         return {"ok": True, "projects": self.workspace.list_projects(),
                 "capabilities": {"codex": codex_capability(), "writing": writing_capability(),
+                    "text_intake": text_intake_capability(self.workspace),
+                    **({"prepare_reconciliation": {"version": 1, "workspace_instance_id": namespace}} if namespace else {}),
                     "approval": {"status": "available" if human else "unavailable", "message": "Local operator review session enabled" if human else "Use an interactive terminal: research-hub task decide <task-id> --root <workspace> --outcome accept --actor <name> --rationale <reason>"}},
                 "setup_snapshot": read_setup_snapshot(self.workspace.root),
                 "protection_scope": PROTECTION_SCOPE}
+
+    def preview_text(self, project_id: str, *, artifact_id: str) -> dict:
+        from .research_draft import read_selected_text
+        try:
+            preview = read_selected_text(self.workspace, project_id, artifact_id)
+        except WorkspaceError:
+            raise
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise WorkspaceError("Selected source preview is unavailable", "source_unavailable") from exc
+        return {"ok": True, "preview": preview}
 
     def search(self, project_id, *, query: str, limit: int = 5) -> dict:
         self.workspace.project(project_id)
@@ -85,6 +99,12 @@ class WorkspaceService:
             project_id = values.pop("project_id")
             if operation == "show":
                 return self.workspace.snapshot(project_id)
+            if operation == "preview_text":
+                return self.preview_text(project_id, **values)
+            if operation in {"source_text", "source_text_lookup"}:
+                from .text_intake import TextIntake
+                intake = TextIntake(self.workspace)
+                return (intake.save if operation == "source_text" else intake.lookup)(project_id, **values)
             if operation == "register":
                 return {"ok": True, "artifact": self.workspace.register_artifact(project_id, **values)}
             if operation == "record":
@@ -94,7 +114,12 @@ class WorkspaceService:
         elif resource == "task":
             if operation == "create":
                 project_id = values.pop("project_id")
+                if "prepare_request" in values:
+                    return self.tasks.prepare(project_id, **values)
                 return {"ok": True, "task": self.tasks.create(project_id, **values)}
+            if operation == "reconcile_preparation":
+                project_id = values.pop("project_id")
+                return self.tasks.reconcile_preparation(project_id, **values)
             if operation == "list":
                 return {"ok": True, "tasks": self.tasks.list(values["project_id"])}
             task_id = values.pop("task_id")

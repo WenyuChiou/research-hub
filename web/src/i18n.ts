@@ -1,6 +1,172 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  abstractRestoreBlocked:
+    "The exact saved copy was not reopened: a Prepare outcome is still locked, or its current linkage is unavailable. No selection or uncertainty was reset. Inspect the pending task before changing its source.",
+  intakeAdd: "Add existing text",
+  intakeScopeNote:
+    "Save one Hub-owned local copy of existing text (up to 40,000 UTF-8 bytes). The original file stays unchanged. No PDF reading, model call, identity verification or external integration write occurs.",
+  intakeInput: "Text input",
+  intakePasteMode: "Paste abstract or text",
+  intakeFileMode: "Choose a .txt or .md file",
+  intakeTitle: "Text title",
+  intakeLocator: "Publication or source locator (optional)",
+  intakeLocatorNote:
+    "A locator is unverified metadata and is never fetched. If omitted, this is labeled a saved local text copy, not a publication link.",
+  intakeDeclaredScope: "Declared coverage",
+  intakeScopeUnknown: "Scope unknown or mixed text",
+  intakeScopeAbstract: "This material is an abstract",
+  intakePaste: "Paste abstract or text",
+  intakePasteNote:
+    "Pasting creates new text from this field; it does not preserve the original clipboard or file bytes. Nothing is truncated.",
+  intakeFile: "Existing UTF-8 text file",
+  intakeFileNote:
+    "Strict UTF-8 .txt or .md only, up to 40,000 bytes. The saved file preserves original bytes, including BOM and line endings; this preview is not an editor.",
+  intakeBytes: "bytes",
+  intakeLocalPreview: "Selected file preview (not saved yet)",
+  intakeSave: "Save Hub text copy",
+  intakeUnavailable:
+    "Saving new text copies is unavailable on this server/platform. Existing metadata-only sources and registered-text reading still work. This implementation does not support Windows text intake.",
+  intakeMetadataInvalid:
+    "Enter a nonempty title and an optional locator, each at most 2,000 Unicode characters. Invalid Unicode cannot be saved.",
+  intakeFileRequired: "Choose a valid text file before saving.",
+  intakeRecoveryTitle: "Saved text recovery",
+  intakeRecoveryBound:
+    "Only exact text-intake identities are checked, at most three automatically per project visit. No source bytes are reconstructed from a key and no model is run.",
+  intakePendingItem: "Local text save",
+  intakeFound:
+    "This exact source and evidence copy are saved. Open the linked text; this does not prepare or run a task, or mark the source reviewed.",
+  intakeNotObserved:
+    "No committed text save is visible yet. The earlier save may still finish or leave an unregistered copy. This is not proof of failure; do not start a replacement request.",
+  intakePendingUnknown:
+    "This text save is unresolved. Keep its exact identity; no guessed source, automatic retry or new request is created.",
+  intakeCheck: "Check saved text",
+  intakeRetrySame: "Retry the same text save",
+  intakeNoPayload:
+    "The original input is no longer in this session. Only read-only checking is available; the bytes and metadata cannot be reconstructed from the key.",
+  intakeOpenSaved: "Open saved text",
+  intakeStorageUnavailable:
+    "Browser storage is unavailable. Text-save identity is retained only in this session; reload or closure may lose recovery. Title, locator, filenames and text are never saved in browser storage.",
+  intakeStorageConfirm:
+    "No text was sent because its identity could not be stored. Continue explicitly with in-session recovery only, or cancel this unsent request.",
+  intakeSessionOnly: "Save with in-session recovery only",
+  intakeSavingLeave:
+    "Saving the local copy. You may leave; a pending request may still finish. No model is being run.",
+  intakeSavedUnavailable:
+    "The source and copy are registered, but the saved bytes are now stale or unavailable. No text is reconstructed or repaired; recheck the registered evidence before selecting an abstract.",
+  intakeResolveFirst:
+    "Resolve the pending text save using its recovery controls before starting another. Reading and other work remain available.",
+  intakeLocalLocator: "Saved local text; publication locator not provided.",
+  abstractSelectEntire: "Select entire text as the abstract",
+
+  prepareRecoveryTitle: "Saved preparation recovery",
+  prepareRecoveryBound:
+    "Only exact saved request identities are checked. At most three are checked automatically per project visit; other checks and same-request retries are explicit. Nothing runs a model.",
+  preparePendingItem: "Abstract preparation",
+  prepareFound:
+    "This exact preparation is saved. Open the same task; recovery does not create a replacement or start execution.",
+  prepareNotObserved:
+    "No saved preparation is visible yet. The earlier request may still finish; this is not proof of failure or permission to create a new request.",
+  preparePendingUnknown:
+    "The outcome of this exact preparation is still unknown. Its request identity is retained; no task is guessed or automatically resubmitted.",
+  prepareCheck: "Check saved preparation",
+  prepareRetrySame: "Retry the same preparation request",
+  prepareNoPayload:
+    "The original input is no longer in this session. Only read-only checking is available; no payload will be reconstructed or submitted.",
+  prepareOpenRecovered: "Open recovered task",
+  prepareLegacyFallback:
+    "This backend does not advertise compatible preparation recovery. Prepare uses the existing keyless route; lost replies cannot be recovered durably by this UI. No recovery guarantee is claimed.",
+  prepareResolveFirst:
+    "A preparation in this project is unresolved. Use its recovery controls rather than starting another request. Reading and other work remain available.",
+  prepareStorageUnavailable:
+    "Browser storage is unavailable. Request identity can be retained only in this live session; reload or closure may lose automatic recovery. No source text, instructions or credentials are stored.",
+  prepareStorageConfirm:
+    "The request has not been sent because its identity could not be saved in browser storage. Continue only with in-session recovery, or keep working without submitting.",
+  prepareSessionOnly: "Prepare with in-session recovery only",
+  returnScope: "Saved work in the selected project:",
+  returnNotResume:
+    "This is saved project state, not a saved reading position or last-visited project.",
+  returnPending: "Tasks to revisit",
+  returnAccepted: "Human-accepted task records",
+  returnAcceptanceNote:
+    "Acceptance history is separate from current candidate eligibility and delivery. Open a task to inspect current checks before taking action.",
+  returnTaskUpdated: "Task last updated",
+  returnUnknown: "Unknown / not recorded",
+  returnOpenTask: "Open task",
+  returnBoundedTasks:
+    "Up to five most recently updated tasks. Open review & delivery for all tasks, including older unfinished work.",
+  returnEmpty:
+    "No saved tasks yet. Open Literature to add a source record or search for metadata; registering a source does not mean its full text has been read.",
+  returnLocalBundles: "Saved local bundle state",
+  returnDeliveryScope:
+    "These actions create local ZIP files only. They do not show delivery to Zotero, Obsidian or NotebookLM; external delivery is unknown here.",
+  returnBundleReview: "Local bundle awaiting human review",
+  returnNoReceipt:
+    "No local receipt recorded. This does not establish success or failure; inspect the action before retrying.",
+  returnNoBundles:
+    "No local bundle actions recorded. Accepted content is not changed by this absence.",
+  returnReceiptHistory:
+    "Last recorded receipt only; the file has not been re-verified by opening this page.",
+  returnBoundedBundles:
+    "Up to five most recently created local bundle actions; this is not a last-delivery or external-sync timeline.",
+  returnInspectBundles: "Inspect local bundle actions",
+  returnOverview: "Back to project overview",
+  returnTargetMissing:
+    "The selected task is no longer present in this project. Review the refreshed project state; no other task was selected.",
+  abstractPreparingLeave:
+    "Preparation is in flight. Leaving this source does not cancel the save; inspect the original project's tasks before submitting again.",
+  abstractPrepareUncertain:
+    "The preparation response did not establish whether a task was saved. Do not submit another task blindly. Open Review and use Refresh to inspect existing tasks; no task has been automatically matched or retried.",
+  abstractPreparedKnown:
+    "This task was saved. Open the prepared task rather than creating a duplicate.",
+  abstractOpenPrepared: "Open prepared task",
+  abstractReviewExisting: "Review existing tasks",
+  abstractRunUncertain:
+    "The Run response is uncertain; this task may already have started. Refresh and inspect this same task. An unchanged ready state does not resolve the uncertainty, so Run stays locked. No model call was retried automatically.",
+  "paper-abstract-draft": "Abstract-only draft",
+  abstractIdentity:
+    "Publication identity is unverified; publication version is unknown. Choosing a record and file does not verify that they belong together.",
+  abstractScope:
+    "Restricted drafting from the selected abstract only: no retrieval, PDF reading, full skill CLI workflow, external writes or independent semantic audit.",
+  abstractNoText:
+    "No registered evidence text is available here. This draft path supports existing UTF-8 .md/.txt evidence only, not PDFs or metadata alone. You can keep reading the source link and managing its record; no new abstract file is required to leave this step.",
+  abstractChooseFile: "Choose existing evidence text",
+  abstractChooseFilePlaceholder: "Choose a registered text file",
+  abstractReadText: "Read selected text file",
+  abstractPreviewInvalid:
+    "The selected text preview could not be verified. Choose the file again.",
+  abstractSelectHelp:
+    "Select the abstract passage in the text below with the mouse or keyboard. Nothing is selected automatically; your original file is not edited.",
+  abstractText: "Registered source text (read only)",
+  abstractSelected: "Passage selected for this task",
+  abstractNothingSelected: "Select a nonempty passage to prepare a draft.",
+  abstractDeclare:
+    "Preparing this task declares that the selected passage is the abstract for the source shown above. This is your selection, not an automatic identity or full-text check.",
+  abstractPurpose: "Purpose or question (optional)",
+  abstractPrepare: "Prepare from this abstract",
+  abstractPrepareNote:
+    "Preparation saves a task without calling a model. Review the selected passage, then use Run explicitly to send this passage, your instructions and the packaged drafting instructions to the configured runner.",
+  abstractRunner: "Last reported runner status",
+  abstractCostUnknown:
+    "Model context fit, token use and cost are not known here. Availability is not proof that a real draft run will succeed.",
+  abstractReview: "Source-aware draft review",
+  abstractBindingNote:
+    "An exact quote match is not evidence that the claim follows from it. Check meaning, numbers, missing context and limitations yourself; semantic review remains pending until a human decides.",
+  abstractStoredPassage:
+    "Exact saved passage used by this task (not a new read or freshness guarantee):",
+  abstractReturnSource: "Return to this source",
+  abstractMissingPassage:
+    "The saved passage is unavailable in this task response. No full-text reading or source verification is claimed.",
+  abstractCandidate: "Returned candidate (not automatically accepted)",
+  abstractNoCandidate:
+    "No returned candidate yet. Preparing a task is not model execution.",
+  abstractRunnerUnavailable:
+    "The connected runner is unavailable or unknown, so Run is disabled for this draft. Return to the source to continue reading; no JSON or terminal step is required.",
+  abstractOpen: "Draft from an existing abstract",
+  abstractHandoffUnsupported:
+    "This task was prepared for external handoff. This UI supports connected abstract drafting only; return to the source rather than entering a response as generic prose or JSON.",
+  abstractTargetMissing:
+    "The selected source or task is no longer present in this project. No other item was selected.",
   pollDelayed:
     "Updates are delayed. Retrying automatically; displayed data may be out of date.",
   pollStopped:
@@ -52,7 +218,21 @@ export const en = {
     "Select human-accepted tasks with candidate files. Preparing a bundle does not approve or create it.",
   acceptedCandidates: "Accepted candidate tasks",
   noAcceptedCandidates:
-    "No eligible candidate files yet. Import candidate path/fingerprint pairs and complete human review before preparing a local bundle.",
+    "No eligible candidate files yet. Only human-accepted files whose latest revision check is current are selectable here.",
+  deliveryFreshnessBlocked:
+    "Changed or unverified candidates are not selectable. See each task's revision check; refresh missing checks or review the intended revision before preparing a new task.",
+  taskRevisionCheck: "Input and output revision check",
+  taskRevisionCurrent: "Matches prepared revisions",
+  taskRevisionStale: "Revision changed",
+  taskRevisionUnknown: "Revision not verified",
+  taskRevisionCurrentNote:
+    "The latest response matches the prepared revisions. This is not scientific validation or new human approval; the server still checks inputs and candidate files before delivery.",
+  taskRevisionStaleNote:
+    "An input or candidate no longer matches the prepared revision. Review the intended version before preparing a new task; this candidate cannot be selected for delivery.",
+  taskRevisionUnknownNote:
+    "The latest response does not verify the input and candidate revisions. Refresh to check again; unverified candidates cannot be selected for delivery.",
+  taskRevisionHistoricalAcceptance:
+    "Previous human acceptance applies to the reviewed revision, not to changed or unavailable files. The decision history is preserved.",
   selectAcceptedTask:
     "Select at least one currently accepted task with candidate files.",
   prepareDelivery: "Prepare local bundle",
@@ -122,6 +302,8 @@ export const en = {
   retry: "Try again",
   loading: "Loading your workspace…",
   loadError: "Workspace could not be loaded.",
+  refreshRetained:
+    "Refresh failed. Showing the last known state of this project; it may be out of date. Pending inputs and uncertain actions are retained, not retried.",
   refreshError:
     "Your action was saved, but the view could not refresh. Refresh to see the latest state.",
   errorHelp: "Your entries are still here. Check the message and try again.",
@@ -350,6 +532,165 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  abstractRestoreBlocked:
+    "未重新開啟精確副本：準備結果仍鎖定，或目前連結無法確認。未重設選取內容或未決狀態；變更來源前請先檢查待處理任務。",
+  intakeAdd: "加入現有文字",
+  intakeScopeNote:
+    "將現有文字儲存成 Hub 管理的本機副本（最多 40,000 UTF-8 位元組），不改動原檔。不讀取 PDF、不呼叫模型、不驗證身分，也不寫入外部整合。",
+  intakeInput: "文字輸入方式",
+  intakePasteMode: "貼上摘要或文字",
+  intakeFileMode: "選擇 .txt 或 .md 檔",
+  intakeTitle: "文字標題",
+  intakeLocator: "出版來源或位置（選填）",
+  intakeLocatorNote:
+    "來源位置是未驗證的中繼資料，不會連線讀取；留空時標示為本機文字，不冒充出版連結。",
+  intakeDeclaredScope: "聲明涵蓋範圍",
+  intakeScopeUnknown: "範圍未知或混合文字",
+  intakeScopeAbstract: "這份內容是摘要",
+  intakePaste: "貼上摘要或文字",
+  intakePasteNote:
+    "貼上會由此欄位建立新文字，不宣稱保留原剪貼簿或檔案位元組，不會截斷內容。",
+  intakeFile: "現有 UTF-8 文字檔",
+  intakeFileNote:
+    "僅接受嚴格 UTF-8 的 .txt 或 .md，最多 40,000 位元組。保留原始位元組（含 BOM 與換行）；此預覽不能編輯。",
+  intakeBytes: "位元組",
+  intakeLocalPreview: "選取檔案預覽（尚未儲存）",
+  intakeSave: "儲存 Hub 文字副本",
+  intakeUnavailable:
+    "此伺服器或平台目前不能儲存新文字副本；仍可使用僅含中繼資料的來源及已註冊文字閱讀。此實作尚不支援 Windows 文字加入。",
+  intakeMetadataInvalid:
+    "請填寫非空標題及選填來源位置，各最多 2,000 個 Unicode 字元，不接受無效 Unicode。",
+  intakeFileRequired: "請先選擇有效的文字檔。",
+  intakeRecoveryTitle: "找回已存文字",
+  intakeRecoveryBound:
+    "僅查詢文字加入的精確身分，每次進入專案最多自動查三項，不從請求鍵重建來源內容，也不執行模型。",
+  intakePendingItem: "本機文字儲存",
+  intakeFound:
+    "此請求的來源與證據副本已保存。可開啟連結文字；不準備或執行任務，也不標記來源已審閱。",
+  intakeNotObserved:
+    "目前尚未看到已提交的文字儲存；先前請求仍可能完成或留下未註冊副本。這不代表失敗，請勿另建替代請求。",
+  intakePendingUnknown:
+    "此文字儲存結果仍未知。保留精確身分，不猜測來源、不自動重送，也不另建請求。",
+  intakeCheck: "查詢已存文字",
+  intakeRetrySame: "重送同一文字儲存請求",
+  intakeNoPayload:
+    "此工作階段已無原始輸入，只能唯讀查詢；無法由請求鍵重建文字與中繼資料。",
+  intakeOpenSaved: "開啟已存文字",
+  intakeStorageUnavailable:
+    "瀏覽器儲存空間不可用，只能在本工作階段保留文字儲存身分；重新載入或關閉可能無法找回。不在瀏覽器儲存標題、來源位置、檔名或文字。",
+  intakeStorageConfirm:
+    "因無法保存身分，文字尚未送出。可明確選擇僅限本工作階段恢復，或取消這筆未送出的請求。",
+  intakeSessionOnly: "僅以本工作階段恢復儲存",
+  intakeSavingLeave:
+    "正在儲存本機副本；可離開，但未完成請求仍可能完成。未執行模型。",
+  intakeSavedUnavailable:
+    "來源與副本已註冊，但已存位元組目前過期或無法讀取。不重建或修復文字；選取摘要前請重新確認證據。",
+  intakeResolveFirst:
+    "請先透過恢復控制項處理未決文字儲存，再開始新請求；仍可閱讀及進行其他工作。",
+  intakeLocalLocator: "已存本機文字，未提供出版來源位置。",
+  abstractSelectEntire: "將全文選為摘要",
+
+  prepareRecoveryTitle: "找回已準備任務",
+  prepareRecoveryBound:
+    "只查詢已保存的精確請求身分。每次進入專案最多自動查詢三項；其餘查詢與同請求重送均須明確操作，不會呼叫模型。",
+  preparePendingItem: "摘要準備請求",
+  prepareFound:
+    "已確認此請求保存的原任務。可開啟同一任務；恢復操作不另建替代任務，也不啟動執行。",
+  prepareNotObserved:
+    "目前尚未看到已保存的準備結果。先前請求仍可能完成；這不代表失敗，也不表示可以另建新請求。",
+  preparePendingUnknown:
+    "此精確請求的結果仍未知。保留其身分，不猜測任務，也不自動重送。",
+  prepareCheck: "查詢已保存準備結果",
+  prepareRetrySame: "重送同一準備請求",
+  prepareNoPayload:
+    "此工作階段已無原始輸入，只能唯讀查詢；不重建或送出推測的內容。",
+  prepareOpenRecovered: "開啟找回的任務",
+  prepareLegacyFallback:
+    "此後端未提供相容的準備恢復能力。準備操作沿用原本無請求鍵的路徑；回應遺失時，此介面無法提供持久恢復，不宣稱保證找回。",
+  prepareResolveFirst:
+    "此專案仍有結果未明的準備請求。請先使用恢復控制項，不要另開新請求；仍可閱讀或進行其他工作。",
+  prepareStorageUnavailable:
+    "瀏覽器儲存空間不可用，只能在目前工作階段保留請求身分；重新載入或關閉後可能無法自動找回。不儲存來源文字、指示或憑證。",
+  prepareStorageConfirm:
+    "因無法在瀏覽器保存身分，此請求尚未送出。可選擇僅限本工作階段的恢復，或不送出並繼續其他工作。",
+  prepareSessionOnly: "僅以本工作階段恢復準備任務",
+  returnScope: "目前所選專案已保存的工作：",
+  returnNotResume:
+    "此處是已保存的專案狀態，不代表已保存閱讀位置或上次瀏覽的專案。",
+  returnPending: "待查看任務",
+  returnAccepted: "人工已接受任務紀錄",
+  returnAcceptanceNote:
+    "接受紀錄、候選產物目前是否可交付、交付結果是不同狀態。採取動作前，請開啟任務檢視目前檢查結果。",
+  returnTaskUpdated: "任務最後更新",
+  returnUnknown: "未知／未記錄",
+  returnOpenTask: "開啟任務",
+  returnBoundedTasks:
+    "最多顯示最近更新的五項任務。開啟審查與交付可查看全部任務，包括較早的未完成工作。",
+  returnEmpty:
+    "尚無已保存任務。可至文獻新增來源紀錄或搜尋書目；登錄來源不代表已閱讀全文。",
+  returnLocalBundles: "已保存的本機封裝狀態",
+  returnDeliveryScope:
+    "這些動作只建立本機 ZIP，不表示已送達 Zotero、Obsidian 或 NotebookLM；此處無從確認外部交付。",
+  returnBundleReview: "本機封裝等待人工審查",
+  returnNoReceipt: "未記錄本機收據，不代表成功或失敗；重試前請先檢視動作。",
+  returnNoBundles: "尚無本機封裝動作紀錄；不影響已接受的內容。",
+  returnReceiptHistory: "僅為最後記錄的收據；開啟本頁並未重新核驗該檔案。",
+  returnBoundedBundles:
+    "最多顯示最近建立的五項本機封裝動作；不是最後交付或外部同步時間軸。",
+  returnInspectBundles: "檢視本機封裝動作",
+  returnOverview: "返回專案總覽",
+  returnTargetMissing:
+    "所選任務已不在此專案中。請檢視更新後的專案狀態；未替您選取其他任務。",
+  abstractPreparingLeave:
+    "準備請求進行中。離開此來源不會取消保存；再次送出前，請先查看原專案的任務。",
+  abstractPrepareUncertain:
+    "準備任務的回應無法確認是否已保存，請勿盲目重送。可開啟審查並重新整理既有任務；未自動配對任何任務，也未自動重試。",
+  abstractPreparedKnown: "此任務已保存。請開啟已準備的任務，避免重複建立。",
+  abstractOpenPrepared: "開啟已準備任務",
+  abstractReviewExisting: "查看既有任務",
+  abstractRunUncertain:
+    "執行回應不確定，此任務可能已啟動。請重新整理並檢視同一任務；仍顯示準備狀態不代表疑慮已解除，執行按鈕仍維持鎖定。未自動重試模型呼叫。",
+  "paper-abstract-draft": "僅依摘要起草",
+  abstractIdentity:
+    "出版來源身分未驗證，出版版本未知。選擇紀錄與檔案，不代表已核實兩者屬於同一來源。",
+  abstractScope:
+    "僅從所選摘要進行限定起草：不檢索、不讀 PDF、不執行完整 skill CLI 流程、不寫入外部工具，也未獨立查核語意。",
+  abstractNoText:
+    "目前沒有已登錄的證據文字。此路徑僅支援既有 UTF-8 .md／.txt 證據，不支援 PDF 或僅有書目。仍可開啟來源連結及管理紀錄；離開此步驟不必另製摘要檔。",
+  abstractChooseFile: "選擇既有證據文字",
+  abstractChooseFilePlaceholder: "選擇已登錄的文字檔",
+  abstractReadText: "讀取所選文字檔",
+  abstractPreviewInvalid: "無法確認所選文字預覽，請重新選擇檔案。",
+  abstractSelectHelp:
+    "用滑鼠或鍵盤在下方文字選取摘要段落。不自動選取全文，也不修改原檔。",
+  abstractText: "已登錄來源文字（唯讀）",
+  abstractSelected: "本次任務選取的段落",
+  abstractNothingSelected: "請選取非空白段落，再準備草稿。",
+  abstractDeclare:
+    "準備任務表示您將所選段落指定為上方來源的摘要。這是您的選擇，不是自動身分核驗或全文檢查。",
+  abstractPurpose: "用途或問題（選填）",
+  abstractPrepare: "依此摘要準備任務",
+  abstractPrepareNote:
+    "準備只保存任務，不呼叫模型。核對所選段落後，再明確按執行，才將該段落、您的指示與套件內的起草指示送給已設定的執行器。",
+  abstractRunner: "最後回報的執行器狀態",
+  abstractCostUnknown:
+    "此處無從確認模型上下文容量、token 用量及費用；顯示可用不代表真實起草一定成功。",
+  abstractReview: "對照來源審查草稿",
+  abstractBindingNote:
+    "引文逐字吻合不代表支持該主張。請自行核對語意、數值、缺漏脈絡與限制；語意審查須由人作出決定。",
+  abstractStoredPassage:
+    "此任務實際使用的已保存段落（不是重新讀取或現況保證）：",
+  abstractReturnSource: "返回此來源",
+  abstractMissingPassage:
+    "此任務回應沒有已保存段落；不宣稱已閱讀全文或核驗來源。",
+  abstractCandidate: "返回的候選草稿（未自動接受）",
+  abstractNoCandidate: "尚無返回的候選草稿；準備任務不等於模型已執行。",
+  abstractRunnerUnavailable:
+    "連線執行器不可用或狀態未知，因此此草稿的執行按鈕停用。可返回來源繼續閱讀，不要求另貼 JSON 或操作終端機。",
+  abstractOpen: "從既有摘要起草",
+  abstractHandoffUnsupported:
+    "此任務原先為外部交接準備。目前介面只支援連線摘要起草；請返回來源，不必將回應改貼為一般文字或 JSON。",
+  abstractTargetMissing: "所選來源或任務已不在此專案中，未替您選取其他項目。",
   pollDelayed: "更新延遲，正在自動重試；目前顯示的資料可能已過時。",
   pollStopped:
     "更新已停止。請檢查錯誤，再按重新整理重試；目前顯示的資料可能已過時。",
@@ -397,7 +738,21 @@ export const zhTW: Record<MessageKey, string> = {
     "選擇已經人工接受且包含候選檔案的任務。準備封裝不會自動核准或建立檔案。",
   acceptedCandidates: "已接受的候選任務",
   noAcceptedCandidates:
-    "尚無符合條件的候選檔案。請匯入候選檔案的路徑與指紋，並完成人工審閱，再準備本機封裝。",
+    "尚無符合條件的候選檔案。只有人工已接受，且最近一次版本檢查確認一致的檔案，才可在此選取。",
+  deliveryFreshnessBlocked:
+    "版本已變更或未確認的候選檔案不可選取。請查看各任務的版本檢查；缺少結果時可重新整理，版本變更時先確認預期版本，再準備新任務。",
+  taskRevisionCheck: "輸入與產出版本檢查",
+  taskRevisionCurrent: "與準備時的版本一致",
+  taskRevisionStale: "版本已變更",
+  taskRevisionUnknown: "版本尚未確認",
+  taskRevisionCurrentNote:
+    "最近一次回應顯示版本與準備時一致。這不代表科學內容已驗證，也不是新增的人工核准；交付前伺服器仍會檢查輸入與候選檔案。",
+  taskRevisionStaleNote:
+    "輸入或候選檔案已不符合準備時的版本。請先確認預期版本再準備新任務；此候選檔案目前不可選取交付。",
+  taskRevisionUnknownNote:
+    "最近一次回應未能確認輸入與候選檔案版本。可重新整理再檢查；尚未確認的候選檔案不可選取交付。",
+  taskRevisionHistoricalAcceptance:
+    "先前的人工接受只適用於當時審閱的版本，不適用於已變更或無法取得的檔案；原決策紀錄仍會保留。",
   selectAcceptedTask: "請至少選擇一項目前已接受且包含候選檔案的任務。",
   prepareDelivery: "準備本機封裝",
   deliveryPrepared: "本機封裝已準備，等待人工審閱。",
@@ -461,6 +816,8 @@ export const zhTW: Record<MessageKey, string> = {
   retry: "再試一次",
   loading: "正在載入工作空間…",
   loadError: "無法載入工作空間。",
+  refreshRetained:
+    "重新整理失敗。保留此專案最後已知狀態，內容可能已過時；暫存輸入及結果不確定的操作仍保留，未自動重試。",
   refreshError: "操作已儲存，但畫面更新失敗。請重新整理以查看最新狀態。",
   errorHelp: "您輸入的內容仍保留。請檢查訊息後再試一次。",
   saved: "已儲存至此專案。",

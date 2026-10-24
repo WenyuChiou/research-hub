@@ -132,6 +132,9 @@ class Workspace:
                 connection.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES projects(id), body TEXT NOT NULL)")
                 connection.execute("CREATE TABLE IF NOT EXISTS decisions (id INTEGER PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks(id), body TEXT NOT NULL)")
                 connection.execute("CREATE TABLE IF NOT EXISTS actions (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES projects(id), body TEXT NOT NULL)")
+                connection.execute("CREATE TABLE IF NOT EXISTS workspace_metadata (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                connection.execute("INSERT OR IGNORE INTO workspace_metadata VALUES ('instance_id', ?)", (str(uuid.uuid4()),))
+                connection.execute("CREATE TABLE IF NOT EXISTS prepare_requests (project TEXT NOT NULL REFERENCES projects(id), request_key TEXT NOT NULL, task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id), payload_digest TEXT NOT NULL, PRIMARY KEY(project, request_key))")
             yield connection
             if write:
                 connection.commit()
@@ -140,6 +143,21 @@ class Workspace:
             raise
         finally:
             connection.close()
+
+    def initialize_preparations(self) -> None:
+        """Explicit startup upgrade; reads never initialize an empty workspace."""
+        if self.db_path.exists():
+            with self.db(write=True):
+                pass
+
+    def preparation_namespace(self) -> str | None:
+        if not self.db_path.exists():
+            return None
+        with self.db() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_metadata'").fetchone():
+                return None
+            row = db.execute("SELECT value FROM workspace_metadata WHERE name='instance_id'").fetchone()
+        return row[0] if row else None
 
     def list_projects(self) -> list[dict]:
         if not self.db_path.exists():

@@ -10,6 +10,7 @@ import {
 } from "./components";
 import { operationLabel, statusTone, type Translate } from "./i18n";
 import type { DeliveryAction, Task } from "./types";
+import { taskFreshnessStatus } from "./taskFreshness";
 
 export function candidateArtifacts(
   task: Task,
@@ -38,6 +39,7 @@ export function deliveryEligible(task: Task): boolean {
   return (
     task.status === "completed" &&
     task.acceptance_current !== false &&
+    taskFreshnessStatus(task) === "current" &&
     candidateArtifacts(task).length > 0
   );
 }
@@ -57,9 +59,18 @@ export function DeliveryPanel({
   onSaved,
 }: DeliveryPanelProps) {
   const eligible = tasks.filter(deliveryEligible);
+  const unavailableCandidates = tasks.some(
+    (task) =>
+      task.status === "completed" &&
+      candidateArtifacts(task).length > 0 &&
+      !deliveryEligible(task),
+  );
   return (
     <Panel title={t("proposalDelivery")} className="delivery-panel">
       <p className="tool-intro">{t("deliveryScopeNote")}</p>
+      {unavailableCandidates && (
+        <p className="tool-intro">{t("deliveryFreshnessBlocked")}</p>
+      )}
       {eligible.length ? (
         <MutationForm
           t={t}

@@ -44,6 +44,7 @@ def add_workspace_parsers(subparsers):
                 parser.add_argument("--operation", required=True)
                 parser.add_argument("--mode", choices=["handoff", "connected"], default="handoff")
                 parser.add_argument("--instructions", default="")
+                parser.add_argument("--source-selection", help="Exact selected abstract range JSON (research profile only)")
             if resource == "task" and operation not in {"create", "list"}:
                 parser.add_argument("task_id")
             if resource == "action":
@@ -71,6 +72,8 @@ def dispatch_workspace(args) -> int:
     try:
         if getattr(args, "project", None):
             values["project_id"] = args.project
+        if getattr(args, "source_selection", None):
+            values["source_selection"] = json.loads(args.source_selection)
         if getattr(args, "data", None):
             values["data"] = json.loads(args.data)
         if getattr(args, "file", None):
@@ -78,8 +81,8 @@ def dispatch_workspace(args) -> int:
             if len(raw) > 2_100_000:
                 raise WorkspaceError("Result file is too large")
             imported = json.loads(raw)
-            if not isinstance(imported, dict) or set(imported) - {"prose", "status", "artifacts", "input_hash"}:
-                raise WorkspaceError("Result must contain only prose, status, artifacts and input_hash")
+            if not isinstance(imported, dict) or set(imported) - {"prose", "status", "artifacts", "input_hash", "draft_response"}:
+                raise WorkspaceError("Result must contain only prose, status, artifacts, input_hash and profile draft_response")
             values.update(imported)
         if resource == "manuscript" and operation == "audit":
             values["operation"] = args.check

@@ -21,6 +21,7 @@ class WorkspaceServer(ThreadingHTTPServer):
 
     def __init__(self, root, *, port=8765, human=False):
         self.service = WorkspaceService(root)
+        self.service.workspace.initialize_preparations()
         self.csrf = secrets.token_urlsafe(32)
         self.human = secrets.token_urlsafe(32) if human else None
         self.static = Path(__file__).resolve().parents[1] / "workspace_static"
@@ -68,6 +69,20 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/workspace":
                 return self._reply(200, self.server.service.capabilities(human=bool(self.server.human)))
             segments = path.strip("/").split("/")
+            if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "source-text"):
+                return self._result(call_workspace(self.server.service.workspace.root, "project", "source_text_lookup",
+                    {"project_id": segments[3], "key": segments[5],
+                     "workspace_instance_id": self.headers.get("X-Workspace-Instance")}))
+            if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "preparations"):
+                return self._result(call_workspace(self.server.service.workspace.root, "task", "reconcile_preparation",
+                    {"project_id": segments[3], "key": segments[5],
+                     "workspace_instance_id": self.headers.get("X-Workspace-Instance")}))
+            if (len(segments) == 7 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "artifacts" and segments[6] == "text"):
+                return self._result(call_workspace(self.server.service.workspace.root, "project", "preview_text",
+                                                  {"project_id": segments[3], "artifact_id": segments[5]}))
             if len(segments) == 4 and segments[:2] == ["api", "v1"]:
                 resource = {"projects": "project", "tasks": "task", "actions": "action"}.get(segments[2])
                 if resource:
@@ -109,7 +124,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             elif len(parts) == 5 and parts[:2] == ["api", "v1"]:
                 if parts[2] == "projects":
                     data["project_id"] = parts[3]
-                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare"}.get(parts[4])
+                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare", "source-text": "source_text"}.get(parts[4])
                     resource = "task" if parts[4] == "tasks" else "action" if parts[4] == "delivery" else "manuscript" if parts[4] in {"bind", "audit", "impact"} else "project"
                 elif parts[2] == "tasks":
                     resource = "task"

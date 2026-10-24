@@ -21,6 +21,16 @@ const task: Task = {
   mode: "handoff",
   status: "completed",
   action_hash: sha,
+  freshness: {
+    status: "current",
+    reasons: [],
+    input_references: [
+      { kind: "project-evidence", ref: "project:project-1:evidence-records", status: "current" },
+    ],
+    output_references: [
+      { kind: "candidate-artifact", ref: "workspace:candidates/draft.md", status: "current" },
+    ],
+  },
   result: { artifacts: [{ path: "candidates/draft.md", sha256: sha }] },
 };
 const detail: ProjectDetail = {
