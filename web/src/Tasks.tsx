@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api, downloadPacket, metaToken, segment } from "./api";
 import {
   Disclosure,
@@ -10,6 +10,7 @@ import {
 } from "./components";
 import { operationLabel, type Translate } from "./i18n";
 import type { Operation, Task } from "./types";
+import { taskFreshnessStatus } from "./taskFreshness";
 
 export interface TaskComposerProps {
   projectId: string;
@@ -93,6 +94,8 @@ export interface TaskCardProps {
   onSaved: (message: string) => Promise<void>;
 }
 export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
+  const revisionHeadingId = useId();
+  const revision = taskFreshnessStatus(task);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const humanEnabled = Boolean(metaToken("research-hub-human-token"));
@@ -151,6 +154,35 @@ export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
         </div>
         <StatusBadge status={task.status} t={t} />
       </div>
+      <section
+        className="tool-intro task-revision"
+        aria-labelledby={revisionHeadingId}
+      >
+        <h4 id={revisionHeadingId}>{t("taskRevisionCheck")}</h4>
+        <p>
+          <strong>
+            {t(
+              revision === "current"
+                ? "taskRevisionCurrent"
+                : revision === "stale"
+                  ? "taskRevisionStale"
+                  : "taskRevisionUnknown",
+            )}
+          </strong>
+        </p>
+        <p>
+          {t(
+            revision === "current"
+              ? "taskRevisionCurrentNote"
+              : revision === "stale"
+                ? "taskRevisionStaleNote"
+                : "taskRevisionUnknownNote",
+          )}
+        </p>
+        {task.status === "completed" && revision !== "current" && (
+          <p>{t("taskRevisionHistoricalAcceptance")}</p>
+        )}
+      </section>
       <div className="button-row">
         {runnable && (
           <button
