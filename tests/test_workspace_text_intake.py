@@ -144,7 +144,8 @@ def test_exact_lookup_is_read_only_and_miss_is_not_success(intake):
     assert ws.db_path.read_bytes() == before
 
 
-@pytest.mark.parametrize("raw", [b"", b" \r\n\t", b"\xef\xbb\xbf \r\n", b"bad\x00text", b"\xff", b"\xed\xa0\x80", b"a" * 40001])
+@pytest.mark.parametrize("raw", [b"", b" \r\n\t", b"\xef\xbb\xbf \r\n", b"bad\x00text", b"\xff", b"\xed\xa0\x80",
+                                pytest.param(b"a" * 40001, id="utf8-over-limit-40001-bytes")])
 def test_invalid_or_oversized_bytes_never_write(intake, validation_only, raw):
     ws, payload, _ = intake
     before = ws.db_path.read_bytes()
@@ -154,7 +155,8 @@ def test_invalid_or_oversized_bytes_never_write(intake, validation_only, raw):
     assert ws.db_path.read_bytes() == before
 
 
-@pytest.mark.parametrize("value", ["%%%%", "YQ==\n", "YR==", "é", "x" * 53337, None])
+@pytest.mark.parametrize("value", ["%%%%", "YQ==\n", "YR==", "é",
+                                  pytest.param("x" * 53337, id="base64-over-limit-53337-chars"), None])
 def test_base64_must_be_strict_bounded_and_canonical(intake, validation_only, value):
     ws, payload, _ = intake
     with pytest.raises(WorkspaceError):
@@ -537,3 +539,18 @@ def test_native_capability_matches_actual_platform_gate(intake):
     assert ws.db_path.read_bytes() == before
     assert not (ws.root / "hub-sources").exists()
     assert ws.records("paper") == ws.artifacts("paper") == []
+
+
+def test_oversized_parameter_ids_are_bounded_without_shrinking_payloads():
+    # pytest includes the node ID in PYTEST_CURRENT_TEST on setup/call/teardown.
+    # Windows rejects an environment value above 32767 characters, before our
+    # validator executes. Keep the full negative inputs, not their default repr.
+    cases = [(test_invalid_or_oversized_bytes_never_write, 40001),
+             (test_base64_must_be_strict_bounded_and_canonical, 53337)]
+    for function, expected_length in cases:
+        marker = next(mark for mark in function.pytestmark if mark.name == "parametrize")
+        oversized = [case for case in marker.args[1]
+                     if len(getattr(case, "values", (case,))[0] or b"") == expected_length]
+        assert len(oversized) == 1
+        parameter_id = getattr(oversized[0], "id", None)
+        assert isinstance(parameter_id, str) and 0 < len(parameter_id) <= 64

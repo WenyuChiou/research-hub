@@ -309,7 +309,12 @@ def check_abstract_journey(screen, service, fixtures, checks, output):
             page.get_by_role("button", name="Prepare from this abstract", exact=True).click()
         # Playwright operations pump pending route callbacks. The in-flight
         # message establishes the request state before newer navigation.
-        expect(page.get_by_text("Preparation is in flight.", exact=False)).to_be_visible()
+        # Recovery repeats this warning globally; require the active source's
+        # own composer state rather than matching either message arbitrarily.
+        expect(source_card(fixtures["other_source"]).get_by_text(
+            "Preparation is in flight. Leaving this source does not cancel the save; "
+            "inspect the original project's tasks before submitting again.", exact=True,
+        )).to_be_visible()
         screen.navigate("Manuscript")
         deadline = time.monotonic() + 10
         while not held and time.monotonic() < deadline:
