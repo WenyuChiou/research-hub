@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
-import { ProjectPages } from "./Pages";
+import { ProjectPages, type RecoveredWork } from "./Pages";
 import { projectWarningLabel, translator, type MessageKey } from "./i18n";
 import type {
   Locale,
@@ -52,9 +52,26 @@ export default function App() {
   const [refreshCount, setRefreshCount] = useState(0);
   const selectedRef = useRef(projectId);
   selectedRef.current = projectId;
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
+  const namespaceRef = useRef(
+    workspace?.capabilities.prepare_reconciliation?.workspace_instance_id,
+  );
+  namespaceRef.current =
+    workspace?.capabilities.prepare_reconciliation?.workspace_instance_id;
+  const intakeNamespaceRef = useRef(
+    workspace?.capabilities.text_intake?.workspace_instance_id,
+  );
+  intakeNamespaceRef.current =
+    workspace?.capabilities.text_intake?.workspace_instance_id;
   const headingRef = useRef<HTMLHeadingElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const headingFocusFrame = useRef<number | null>(null);
+  const navigationTarget = useRef<{
+    projectId: string;
+    page: Page;
+    id: string;
+  } | null>(null);
   const cancelHeadingFocus = useCallback(() => {
     if (headingFocusFrame.current !== null) {
       cancelAnimationFrame(headingFocusFrame.current);
@@ -71,6 +88,35 @@ export default function App() {
     document.documentElement.lang = locale;
     setNotice(null);
   }, [locale]);
+  const queuePageFocus = useCallback(() => {
+    cancelHeadingFocus();
+    const target = navigationTarget.current;
+    navigationTarget.current = null;
+    headingFocusFrame.current = requestAnimationFrame(() => {
+      headingFocusFrame.current = null;
+      if (
+        target &&
+        target.projectId === selectedRef.current &&
+        target.page === currentPage()
+      ) {
+        const element = document.getElementById(target.id);
+        if (element && !element.closest("[hidden]")) {
+          element.focus();
+          return;
+        }
+        setNotice({
+          message: translator(locale)(
+            target.id.startsWith("review-task-")
+              ? "returnTargetMissing"
+              : "abstractTargetMissing",
+          ),
+          error: true,
+        });
+      }
+      headingRef.current?.focus();
+    });
+  }, [cancelHeadingFocus, locale]);
+
   useEffect(() => {
     const onHashChange = () => {
       cancelHeadingFocus();
@@ -79,20 +125,24 @@ export default function App() {
         return;
       }
       setPage(currentPage());
-      headingFocusFrame.current = requestAnimationFrame(() => {
-        headingFocusFrame.current = null;
-        headingRef.current?.focus();
-      });
+      if (navigationTarget.current?.page !== currentPage())
+        navigationTarget.current = null;
+      queuePageFocus();
     };
     window.addEventListener("hashchange", onHashChange);
     return () => {
       window.removeEventListener("hashchange", onHashChange);
       cancelHeadingFocus();
     };
-  }, [cancelHeadingFocus, focusMain]);
-  const navigate = (next: Page) => {
+  }, [cancelHeadingFocus, focusMain, queuePageFocus]);
+  const navigate = (next: Page, focusId?: string) => {
+    navigationTarget.current = focusId
+      ? { projectId: selectedRef.current, page: next, id: focusId }
+      : null;
+    const unchanged = window.location.hash === `#${next}`;
     window.location.hash = next;
     setPage(next);
+    if (unchanged) queuePageFocus();
   };
 
   useEffect(() => {
@@ -131,8 +181,59 @@ export default function App() {
   }, [projectId, refreshCount]);
 
   const onSaved = useCallback(
-    async (message: string) => {
+    async (message: string, recovered?: RecoveredWork) => {
       const savedProject = selectedRef.current;
+      const startedDetail = detailRef.current;
+      const isText = recovered && "savedText" in recovered;
+      const responseNamespace = (value: Workspace) =>
+        isText
+          ? value.capabilities.text_intake?.workspace_instance_id
+          : value.capabilities.prepare_reconciliation?.workspace_instance_id;
+      const matchingRecovery = () =>
+        Boolean(
+          recovered &&
+          ("savedText" in recovered
+            ? recovered.savedText.artifact.project_id === savedProject &&
+              recovered.savedText.artifact.source_record_id ===
+                recovered.savedText.record.id
+            : recovered.task.project_id === savedProject &&
+              recovered.task.operation === "paper-abstract-draft") &&
+          selectedRef.current === savedProject &&
+          (isText ? intakeNamespaceRef.current : namespaceRef.current) ===
+            recovered.workspaceInstance,
+        );
+      if (recovered && !matchingRecovery()) return;
+      const insertKnownTask = (value: ProjectDetail): ProjectDetail => {
+        if (!recovered) return value;
+        if ("savedText" in recovered) {
+          const { record, artifact } = recovered.savedText;
+          return {
+            ...value,
+            records: value.records.some((item) => item.id === record.id)
+              ? value.records
+              : [...value.records, record],
+            artifacts: value.artifacts.some((item) => item.id === artifact.id)
+              ? value.artifacts
+              : [...value.artifacts, artifact],
+          };
+        }
+        return value.tasks.some((task) => task.id === recovered.task.id)
+          ? value
+          : { ...value, tasks: [...value.tasks, recovered.task] };
+      };
+      const insertedDetail =
+        recovered && startedDetail?.project.id === savedProject
+          ? insertKnownTask(startedDetail)
+          : startedDetail;
+      if (recovered) {
+        setDetail((previous) => {
+          if (!matchingRecovery() || previous?.project.id !== savedProject)
+            return previous;
+          return previous === startedDetail
+            ? insertedDetail
+            : insertKnownTask(previous);
+        });
+      }
       setNotice({ message });
       const results = await Promise.allSettled([
         api<Workspace>("/workspace"),
@@ -146,12 +247,59 @@ export default function App() {
         results[1].value &&
         selectedRef.current === savedProject
       ) {
-        setDetail(results[1].value);
+        const fresh = results[1].value;
+        if (!recovered) setDetail(fresh);
         setPollStatus({
           projectId: savedProject,
           lastSuccess: Date.now(),
           stale: false,
         });
+      }
+      if (
+        recovered &&
+        selectedRef.current === savedProject &&
+        results[0].status === "fulfilled" &&
+        responseNamespace(results[0].value) !== recovered.workspaceInstance
+      ) {
+        // A replacement workspace is a different authority even at the same origin/project ID.
+        setDetail((previous) =>
+          previous === startedDetail || previous === insertedDetail
+            ? null
+            : previous,
+        );
+        setDetailError(
+          new ApiError(
+            "The workspace identity changed. Refresh before reviewing its tasks.",
+            "workspace_mismatch",
+            409,
+          ),
+        );
+      }
+      if (
+        recovered &&
+        matchingRecovery() &&
+        (results[0].status !== "fulfilled" ||
+          responseNamespace(results[0].value) === recovered.workspaceInstance)
+      ) {
+        const projectResult = results[1];
+        setDetail((previous) => {
+          if (!matchingRecovery() || previous?.project.id !== savedProject)
+            return previous;
+          // The exact returned task is authoritative. Never overwrite an existing
+          // task or a newer detail response with this recovery response.
+          const candidate =
+            previous !== startedDetail && previous !== insertedDetail
+              ? previous
+              : projectResult.status === "fulfilled" &&
+                  projectResult.value?.project.id === savedProject
+                ? projectResult.value
+                : previous;
+          return insertKnownTask(candidate);
+        });
+        if (projectResult.status === "rejected")
+          setDetailError(projectResult.reason);
+        else if (projectResult.value?.project.id === savedProject)
+          setDetailError(null);
       }
       if (results.some((result) => result.status === "rejected"))
         setNotice({ message: translator(locale)("refreshError"), error: true });
@@ -280,6 +428,8 @@ export default function App() {
             id="project-switcher"
             value={projectId}
             onChange={(event) => {
+              navigationTarget.current = null;
+              cancelHeadingFocus();
               setProjectId(event.target.value);
               setNewProject(false);
               setNotice(null);
@@ -405,7 +555,24 @@ export default function App() {
               </button>
             </div>
           )}
-          {error !== null ? (
+          {workspace &&
+            activeDetail &&
+            (error !== null || detailError !== null) && (
+              <div className="notice notice-error">
+                <p>{t("refreshRetained")}</p>
+                {error !== null && <ErrorMessage error={error} t={t} />}
+                {detailError !== null && (
+                  <ErrorMessage error={detailError} t={t} />
+                )}
+                <button
+                  className="button secondary"
+                  onClick={() => void refresh()}
+                >
+                  {t("retry")}
+                </button>
+              </div>
+            )}
+          {error !== null && !workspace ? (
             <>
               <ErrorMessage error={error} t={t} />
               <button
@@ -483,7 +650,7 @@ export default function App() {
                 </section>
               )}
               {!showCreate &&
-                (detailError !== null ? (
+                (detailError !== null && !activeDetail ? (
                   <>
                     <ErrorMessage error={detailError} t={t} />
                     <button
@@ -500,7 +667,9 @@ export default function App() {
                         <strong>{t("warnings")}</strong>
                         <ul>
                           {activeDetail.warnings.map((warning, index) => (
-                            <li key={index}>{projectWarningLabel(warning, t)}</li>
+                            <li key={index}>
+                              {projectWarningLabel(warning, t)}
+                            </li>
                           ))}
                         </ul>
                       </section>

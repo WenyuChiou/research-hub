@@ -20,3 +20,10 @@ pyproject.toml text eol=lf
 
 # Direction-review fixture evidence has frozen raw-byte SHA-256 values.
 tests/fixtures/direction_review/** text eol=lf
+
+# Restricted abstract profiles hash these public instruction bytes exactly.
+# Preserve canonical Git LF bytes at checkout; never normalize them at runtime.
+skills/research-hub/references/research-protocol.md text eol=lf
+skills/research-hub/references/source-claim-audit.md text eol=lf
+src/research_hub/skills_data/research-hub/references/research-protocol.md text eol=lf
+src/research_hub/skills_data/research-hub/references/source-claim-audit.md text eol=lf
