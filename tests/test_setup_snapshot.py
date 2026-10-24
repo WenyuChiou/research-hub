@@ -116,17 +116,27 @@ def test_nonregular_and_hardlinked_snapshots_do_not_read(tmp_path):
     assert snapshots.read_setup_snapshot(tmp_path)["freshness"] == "invalid"
 
 
-def test_capabilities_read_is_local_read_only_and_preserves_existing_capabilities(tmp_path, monkeypatch):
+@pytest.mark.parametrize("intake_supported", [True, False])
+def test_capabilities_read_is_local_read_only_and_preserves_existing_capabilities(tmp_path, monkeypatch, intake_supported):
     from research_hub.workspace.service import WorkspaceService
     from research_hub import setup_command
     monkeypatch.setattr(setup_command, "run_autonomous", lambda **kw: pytest.fail("probe on GET"))
     monkeypatch.setattr(setup_command, "run_notebooklm_login", lambda: pytest.fail("login on GET"))
     monkeypatch.setattr("research_hub.workspace.executor.codex_capability", lambda: {"status": "unavailable", "message": "stub"})
     monkeypatch.setattr("research_hub.workspace.writing.writing_capability", lambda: {"status": "available", "message": "stub"})
+    # Exercise both advertised platform states without performing publication.
+    monkeypatch.setattr("research_hub.workspace.text_intake.publication_supported", lambda: intake_supported)
     svc = WorkspaceService(tmp_path)
     result = svc.capabilities(human=True)
     assert result["capabilities"] == {"codex": {"status": "unavailable", "message": "stub"},
-        "writing": {"status": "available", "message": "stub"}, "approval": {"status": "available", "message": "Local operator review session enabled"}}
+        "writing": {"status": "available", "message": "stub"},
+        "text_intake": {
+            "version": 1, "status": "available" if intake_supported else "unavailable",
+            "workspace_instance_id": None, "max_source_bytes": 40000, "formats": ["txt", "md"],
+            "message": ("Local bounded text copies only; no PDF reading or model execution."
+                        if intake_supported else "Safe text publication primitives are unavailable on this platform. Windows text intake is not supported by this implementation."),
+        },
+        "approval": {"status": "available", "message": "Local operator review session enabled"}}
     assert result["setup_snapshot"]["current_status"] == "unknown"
     assert list(tmp_path.iterdir()) == []
 

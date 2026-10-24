@@ -218,15 +218,23 @@ def check_abstract_journey(screen, service, fixtures, checks, output):
         page.get_by_role("button", name="Read selected text file", exact=True).click()
         textarea = page.get_by_label("Registered source text (read only)", exact=True)
         expect(textarea).to_have_value(SOURCE.replace("\r\n", "\n"))
-        # Use the real browser textarea selection/event, not a forged request.
-        # This is scripted selection; it does not claim keyboard acceptance.
-        textarea.evaluate("""(element, passage) => {
+        # Place an exact programmatic range, then send actual browser key events.
+        # React derives onSelect from keyboard/mouse events, not native `select`.
+        # This is scripted selection, not user keyboard-accessibility acceptance.
+        selection = textarea.evaluate("""(element, passage) => {
             const start = element.value.indexOf(passage);
             if (start < 0) throw new Error("Synthetic passage absent");
             element.focus();
             element.setSelectionRange(start, start + passage.length);
-            element.dispatchEvent(new Event("select", {bubbles: true}));
+            return {start: element.selectionStart, end: element.selectionEnd,
+                    text: element.value.slice(element.selectionStart, element.selectionEnd)};
         }""", ABSTRACT.replace("\r\n", "\n"))
+        assert selection["text"] == ABSTRACT.replace("\r\n", "\n")
+        textarea.press("Shift")  # Keydown/up observes the range without changing it.
+        assert textarea.evaluate("""element => ({start: element.selectionStart,
+            end: element.selectionEnd,
+            text: element.value.slice(element.selectionStart, element.selectionEnd)})""") == selection
+        expect(source_card(source).locator("p.preserve-lines")).to_have_text(ABSTRACT)
         expect(page.get_by_role("button", name="Prepare from this abstract", exact=True)).to_be_enabled()
 
     page.on("request", observe)
@@ -256,7 +264,7 @@ def check_abstract_journey(screen, service, fixtures, checks, output):
         assert counts["run_intercepted"] == 0
         assert len(mutations) == 1 and mutations[0]["url"] == tasks_url
         checks.append({"check": "Actual abstract preview and Prepare preserve exact source/artifact/range; one save, zero Run",
-                       "status": "PASS", "selection": "scripted browser textarea selection, not native keyboard acceptance"})
+                       "status": "PASS", "selection": "programmatic textarea range plus browser Shift key events, not user keyboard-accessibility acceptance"})
 
         page.get_by_role("button", name="Back to project overview", exact=True).click()
         page.get_by_role("button", name="Open task " + task["id"], exact=True).click()
