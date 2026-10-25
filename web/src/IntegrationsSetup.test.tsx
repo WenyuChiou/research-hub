@@ -202,3 +202,8 @@ it("guides first use without claiming an integration is disconnected or requirin
     screen.getByRole("button", { name: t("integrationsSetup") }),
   ).toBeEnabled();
 });
+
+it("uses an explicit readable theme for the footer trigger instead of inherited sidebar text on native gray", () => {
+  render(<IntegrationsSetup workspace={null} t={t}/>);
+  expect(screen.getByRole("button",{name:t("integrationsSetup")})).toHaveClass("button", "secondary");
+});

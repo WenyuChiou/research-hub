@@ -35,3 +35,30 @@ def test_browser_uncertain_error_copy_uses_task_scoped_exact_ui_labels():
         assert any(kw.arg == 'exact' and isinstance(kw.value, ast.Constant) and kw.value.value is True for kw in call.keywords)
         assert isinstance(call.func.value, ast.Call)
         assert isinstance(call.func.value.func, ast.Name) and call.func.value.func.id == 'task_card'
+
+
+def test_setup_trigger_contrast_gate_rejects_observed_low_contrast_and_transparency():
+    """Exercise the real pure contrast gate with captured/synthetic style values; no browser."""
+    import pytest
+    tree = ast.parse((Path(__file__).resolve().parents[1] / 'scripts/workspace_browser_smoke.py').read_text())
+    node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'check_setup_trigger_contrast')
+    scope = {}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), '<source-contrast-gate>', 'exec'), scope)
+    class Styles:
+        def __init__(self, foreground, background):
+            self.colors = {'foreground': foreground, 'background': background}
+        def locator(self, selector):
+            assert selector == '.integration-entry > button'
+            return self
+        def evaluate(self, script):
+            assert 'getComputedStyle' in script
+            return self.colors
+    gate = scope['check_setup_trigger_contrast']
+    with pytest.raises(AssertionError):
+        gate(Styles('rgb(244, 244, 238)', 'rgb(239, 239, 239)'), [], {})
+    with pytest.raises(AssertionError):
+        gate(Styles('rgb(38, 79, 72)', 'rgba(248, 250, 246, 0)'), [], {})
+    checks = []
+    gate(Styles('rgb(38, 79, 72)', 'rgb(248, 250, 246)'), checks, {'width': 390})
+    assert len(checks) == 1 and checks[0]['status'] == 'PASS'
+    assert checks[0]['contrast_ratio'] >= 4.5

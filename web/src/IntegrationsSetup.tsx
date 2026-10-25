@@ -71,7 +71,7 @@ export function IntegrationsSetup({
       <div className="integration-entry">
         <button
           ref={trigger}
-          className="button"
+          className="button secondary"
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
           onClick={() => (open ? close() : setOpen(true))}

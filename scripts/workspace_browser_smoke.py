@@ -29,6 +29,27 @@ from research_hub.workspace.server import WorkspaceServer
 from research_hub.workspace.tasks import TaskService, _LOCAL_HUMAN
 
 
+def check_setup_trigger_contrast(page, checks, viewport):
+    """Computed foreground/background only, not a full accessibility audit."""
+    colors = page.locator(".integration-entry > button").evaluate("""element => {
+        const style = getComputedStyle(element);
+        return {foreground: style.color, background: style.backgroundColor};
+    }""")
+    import re
+    def luminance(css):
+        values = [float(value) for value in re.findall(r"[\d.]+", css)]
+        assert len(values) in (3, 4), css
+        assert len(values) == 3 or values[3] == 1, "Transparent color needs explicit compositing"
+        rgb = [value / 255 for value in values[:3]]
+        linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in rgb]
+        return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
+    low, high = sorted([luminance(colors["foreground"]), luminance(colors["background"])])
+    ratio = (high + .05) / (low + .05)
+    assert ratio >= 4.5, {**colors, "contrast_ratio": ratio}
+    checks.append({"check": "Setup trigger computed normal-text contrast", "status": "PASS",
+                   "viewport": viewport, "colors": colors, "contrast_ratio": ratio})
+
+
 def prepare_revision_fixtures(workspace):
     """Seed only the run's temporary project; no executor or provider calls."""
     if os.environ.get("RESEARCH_HUB_WRITING_ADAPTER", "").strip():
@@ -438,6 +459,7 @@ def run(output: Path):
                 expect(page.get_by_role("button", name="Open review & delivery", exact=True)).to_be_visible()
                 checks.append({"check": "EN next step prioritizes pending human review", "status": "PASS"})
                 expect(page.get_by_role("heading", name="Overview", level=1, exact=True)).to_be_visible()
+                check_setup_trigger_contrast(page, checks, {"width": 1440, "height": 1000})
                 page.screenshot(path=str(output / "workspace-ui.en.png"))
                 page.get_by_role("button", name="繁體中文", exact=True).click()
                 expect(page.locator("html")).to_have_attribute("lang", "zh-TW")
@@ -454,6 +476,7 @@ def run(output: Path):
                 checks.append({"check": "Traditional Chinese navigation and real screenshot", "status": "PASS"})
                 page.set_viewport_size({"width": 390, "height": 844})
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+                check_setup_trigger_contrast(page, checks, {"width": 390, "height": 844})
                 page.screenshot(path=str(output / "workspace-ui.390px.png"), full_page=True)
                 checks.append({"check": "390px viewport has no horizontal page overflow", "status": "PASS",
                                "screenshot": "workspace-ui.390px.png", "viewport": {"width": 390, "height": 844}})
@@ -478,6 +501,27 @@ def run(output: Path):
                                "status": "PASS", "geometry": geometry,
                                "screenshot": "workspace-integrations-panel.390px.png",
                                "viewport": {"width": 390, "height": 844}, "native_zoom": "not_verified"})
+                # Reach the final guide without opening an external website.
+                guide = setup.locator('a[href="https://github.com/WenyuChiou/research-hub/blob/fix/nlm-085-integrations-guidance/docs/setup.md"]')
+                expect(guide).to_have_count(1)
+                guide.scroll_into_view_if_needed()
+                guide.focus()
+                expect(guide).to_be_focused()
+                bottom = guide.evaluate("""element => {
+                    const panel = element.closest('[role="dialog"]');
+                    const g = element.getBoundingClientRect(), p = panel.getBoundingClientRect();
+                    const h = panel.querySelector('header').getBoundingClientRect();
+                    return {guideTop:g.top, guideBottom:g.bottom, panelBottom:p.bottom,
+                            headerBottom:h.bottom, scrollTop:panel.scrollTop};
+                }""")
+                assert bottom["scrollTop"] > 0
+                assert bottom["guideTop"] >= bottom["headerBottom"] - 1
+                assert bottom["guideBottom"] <= bottom["panelBottom"] + 1
+                expect(setup.get_by_role("button", name="關閉設定說明", exact=True)).to_be_visible()
+                page.screenshot(path=str(output / "workspace-integrations-panel-bottom.390px.png"), full_page=True)
+                checks.append({"check": "Setup final guide reachable by programmatic inner scroll and focus; no external navigation",
+                               "status": "PASS", "geometry": bottom,
+                               "screenshot": "workspace-integrations-panel-bottom.390px.png"})
                 page.keyboard.press("Escape")
                 expect(setup).to_have_count(0)
                 expect(setup_button).to_be_focused()
