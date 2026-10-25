@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 from contextlib import nullcontext, redirect_stdout
 import json
 import os
@@ -2133,17 +2132,13 @@ def build_parser() -> argparse.ArgumentParser:
         "login",
         help="Authenticate NotebookLM",
         description=(
-            "Authenticate NotebookLM. Five paths: (1) default interactive Google "
-            "sign-in in a real terminal (press ENTER when the NotebookLM homepage "
-            "loads); (2) --import-from <other-vault> copies a logged-in session "
-            "from another vault; (3) --from-browser [browser] imports cookies via "
-            "rookiepy (requires the research-hub[browser-auth] extra; rookiepy has "
-            "no prebuilt wheel for Python 3.14); (4) --wait-file PATH — sign in "
-            "in the browser then create PATH (no terminal/ENTER; scriptable); "
-            "(5) --auto-detect — fully automatic, research-hub polls the "
-            "live Patchright page URL and Google session cookies, saving after "
-            "the NotebookLM homepage stabilizes (no terminal, no wait-file, "
-            "no click.confirm response)."
+            "Authenticate NotebookLM with notebooklm-py 0.8.5. Normal login "
+            "and --auto-detect open a visible browser, capture automatically "
+            "after sign-in, then verify the saved session. No ENTER is needed. "
+            "--wait-file is unsupported: its external consent gate cannot be "
+            "preserved by the SDK's automatic capture. --import-from copies "
+            "another vault's session; --from-browser uses the optional "
+            "research-hub-pipeline[browser-auth] cookie importer."
         ),
         epilog=(
             "Examples:\n"
@@ -2171,28 +2166,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--wait-file",
         default=None,
         metavar="PATH",
-        help="Non-interactive: instead of pressing ENTER, sign in in the "
-             "browser window then create this file (e.g. `touch PATH`, or an "
-             "automation wrapper does it). research-hub polls for it and "
-             "saves the session automatically. No terminal/ENTER needed.",
+        help="Unsupported with SDK 0.8.5; rejects before capture. The old "
+             "external file/ENTER consent gate is not available.",
     )
     nlm_login.add_argument(
         "--wait-timeout",
         type=int,
         default=300,
         metavar="SECONDS",
-        help="With --wait-file or --auto-detect: max seconds to wait for "
-             "the detection signal before failing closed (default: 300; "
-             "nothing is saved on timeout).",
+        help="With --auto-detect: browser sign-in timeout in seconds (default: 300).",
     )
     nlm_login.add_argument(
         "--auto-detect",
         action="store_true",
-        help="Fully automatic: research-hub polls the live Patchright page "
-             "URL and browser-context Google session cookies. Once you sign "
-             "in and the NotebookLM homepage stabilizes, "
-             "the session is saved automatically. No terminal/ENTER, no "
-             "wait-file touch, no click.confirm response needed.",
+        help="Compatibility alias for SDK-managed automatic login and saved-session "
+             "verification. Complete sign-in in the browser; no ENTER is needed.",
     )
     nlm_login.add_argument(
         "--from-browser",
@@ -3706,6 +3694,9 @@ def _main_dispatch(args, parser) -> int:
         return _synthesize(cluster=args.cluster, graph_colors=args.graph_colors)
     if args.command == "notebooklm":
         if args.notebooklm_command == "login":
+            if args.wait_file is not None:
+                parser.error("--wait-file is not supported with SDK 0.8.5; its external "
+                             "consent gate cannot be preserved by automatic capture")
             if args.wait_timeout != 300 and args.wait_file is None and not args.auto_detect:
                 parser.error("--wait-timeout requires --wait-file or --auto-detect")
             if args.auto_detect and args.wait_file is not None:
@@ -3747,7 +3738,7 @@ def _main_dispatch(args, parser) -> int:
                     return 1
                 mb = result.bytes_copied / (1024 * 1024)
                 print(
-                    f"[notebooklm login --import-from] copied logged-in session "
+                    f"[notebooklm login --import-from] copied session "
                     f"({result.files_copied} files, {mb:.0f} MB) from {src_vault}"
                 )
                 print("Verify with: research-hub notebooklm bundle --cluster <slug>")
@@ -3760,33 +3751,17 @@ def _main_dispatch(args, parser) -> int:
                 browser_arg = None if args.from_browser == "auto" else args.from_browser
                 rc = login_from_browser(dest_state, browser=browser_arg)
                 if rc == 0:
-                    print("[notebooklm login --from-browser] Login successful.")
+                    print("[notebooklm login --from-browser] Session import completed; live authentication not verified.")
                     print("Verify with: research-hub notebooklm keepalive")
                 else:
-                    version_info = sys.version_info
-                    if hasattr(version_info, "major"):
-                        version_tuple = (version_info.major, version_info.minor)
-                    else:
-                        version_tuple = (version_info[0], version_info[1])
-                    rookiepy_missing = importlib.util.find_spec("rookiepy") is None
-                    if rookiepy_missing and version_tuple >= (3, 14):
-                        print(
-                            "--from-browser needs rookiepy, which has no prebuilt wheel "
-                            f"for Python {version_tuple[0]}.{version_tuple[1]} "
-                            "(building it needs a Rust toolchain). Non-interactive "
-                            "cookie import is unavailable on this Python. Use one of: "
-                            f"(1) interactive login in a terminal: `{inv} notebooklm login --auto-detect` "
-                            "then press ENTER; (2) copy a logged-in session: "
-                            f"`{inv} notebooklm login --import-from <other-vault>`.",
-                            file=sys.stderr,
-                        )
-                    else:
-                        print(
-                            "[notebooklm login --from-browser] FAILED (exit code "
-                            f"{rc}). If rookiepy is not installed, run:\n"
-                            "  pip install 'research-hub[browser-auth]'",
-                            file=sys.stderr,
-                        )
+                    print(
+                        "[notebooklm login --from-browser] FAILED (exit code "
+                        f"{rc}). The SDK's cookie importer is optional; install with:\n"
+                        "  pip install 'research-hub-pipeline[browser-auth]'\n"
+                        f"Or use visible sign-in: `{inv} notebooklm login --auto-detect` "
+                        "(automatic capture; no ENTER).",
+                        file=sys.stderr,
+                    )
                 return rc
             return login_nlm(
                 session_dir,

@@ -23,15 +23,15 @@ pip install "research-hub-pipeline[mcp]"
 ```
 
 Use `[import]` for local PDF/DOCX/Markdown/TXT ingest, `[playwright]`
-to install Patchright, `[browser-auth]` for optional
+to install SDK Playwright plus EZProxy Patchright support, `[browser-auth]` for optional
 browser-cookie import, `[secrets]` for encrypted local credentials, and `[mcp]`
 for the FastMCP server. The base install does not declare FastMCP; install
 `[mcp]` explicitly when using MCP. NotebookLM operations use the base
 `notebooklm-py` dependency, not a supported consumer REST API. Browser binaries
 and an authenticated session are separate prerequisites; installing an extra
-does not prove login or connectivity. `login --auto-detect` uses Patchright
+does not prove login or connectivity. `login --auto-detect` delegates to the pinned SDK 0.8.5 Playwright flow
 from the compatibility-named `[playwright]` extra. Install its Chromium browser
-separately with `python -m patchright install chromium` before using that path.
+separately with `python -m playwright install chromium` before using that path.
 See [NotebookLM architecture](notebooklm.md).
 
 ## 2. Pick A First Path
