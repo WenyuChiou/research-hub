@@ -49,7 +49,7 @@ import = [
 ]
 mcp = ["fastmcp>=4.1.3"]
 browser-auth = ["notebooklm-py[cookies]==0.8.5", "browser-cookie3>=0.20.1,<1"]
-playwright = ["notebooklm-py[browser]==0.8.5", "patchright>=1.55"]
+playwright = ["notebooklm-py[browser]==0.8.5", "patchright>=1.64.2"]
 scholar = ["scholarly>=1.7"]  # enables google-scholar search backend
 dev = [
     "pytest>=9.1.1",
