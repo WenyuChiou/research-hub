@@ -1,4 +1,5 @@
 """Actual apply consumer + durable journal with synthetic provider seams only."""
+from contextlib import closing
 import tempfile,unittest,sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -141,7 +142,7 @@ class ApplyTests(unittest.TestCase):
     self.assertNotIn(b'\r\r\n',path.read_bytes())
  def test_old_private_schema_is_rejected_without_migration(self):
   self.apply(FakeZotero('lost'));j=SummaryJournal(self.root)
-  with sqlite3.connect(j.path) as db:db.execute("UPDATE metadata SET value='1' WHERE name='schema_version'")
+  with closing(sqlite3.connect(j.path)) as db, db:db.execute("UPDATE metadata SET value='1' WHERE name='schema_version'")
   before=j.path.read_bytes();z=FakeZotero();result=self.apply(z);self.assertTrue(result.errors);self.assertEqual(z.writes,0);self.assertEqual(j.path.read_bytes(),before)
  def test_original_write_ack_cannot_clear_newer_compensation_uncertainty(self):
   real=summarize._write_note_text;writes=[]

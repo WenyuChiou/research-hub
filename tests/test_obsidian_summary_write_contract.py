@@ -337,7 +337,7 @@ def test_duplicate_apply_entries_do_not_duplicate_journal_dispatch(tmp_path, mon
         return original(path,text)
     monkeypatch.setattr(summarize,'_write_note_text',write)
     result=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY,ENTRY],write_zotero=False)
-    assert len(writes)==1
+    assert len(writes)==1,result.to_dict()
     assert result.applied and set(result.applied)=={'paper'}
     assert len(result.applied)+len(result.errors)+len(result.skipped)==2
     assert len(result.receipts)==2

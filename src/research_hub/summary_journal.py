@@ -8,7 +8,7 @@ or a generic exposed CLI/MCP tool; adapter acknowledgements are caller reports.
 from contextlib import contextmanager
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import sqlite3
 import stat
@@ -70,6 +70,36 @@ def _validate_scope(source, targets, authorization):
         raise JournalError('Explicit unchanged legacy invocation scope is required', 'invalid_authorization')
 
 
+def _validation_path(path):
+    """Use one Windows namespace for strict journal containment checks only.
+
+    CPython may retain an extended prefix if a sidecar disappears during its
+    resolve checks. Give both the approved root and fixed children that prefix
+    up front; do not retry/ignore an escape or alter SQLite I/O paths.
+    """
+    if not isinstance(path, PureWindowsPath):
+        return path
+    text = str(path)
+    prefix = "\\\\?\\"
+    if text.startswith(prefix):
+        tail = text[len(prefix):]
+        if tail[:4].upper() == 'UNC\\':
+            text = '\\\\' + tail[4:]
+        elif re.match(r'^[A-Za-z]:\\', tail):
+            text = tail
+        else:
+            raise JournalError('Unsupported Windows path namespace', 'unsafe_path')
+    ordinary = PureWindowsPath(text)
+    if not ordinary.is_absolute() or '..' in ordinary.parts:
+        raise JournalError('Ambiguous Windows validation path', 'unsafe_path')
+    if re.fullmatch(r'[A-Za-z]:', ordinary.drive):
+        return type(path)(prefix + str(ordinary))
+    components = ordinary.drive[2:].split('\\') if ordinary.drive.startswith('\\\\') else []
+    if len(components) == 2 and all(c and c not in {'.', '..', '?'} and ':' not in c for c in components):
+        return type(path)(prefix + 'UNC\\' + str(ordinary)[2:])
+    raise JournalError('Unsupported Windows path namespace', 'unsafe_path')
+
+
 class SummaryJournal:
     def __init__(self, root):
         original = Path(root).expanduser().absolute()
@@ -81,7 +111,7 @@ class SummaryJournal:
     def _check_path(self):
         try:
             for path in (self.path, *(Path(str(self.path) + suffix) for suffix in ('-journal', '-wal', '-shm'))):
-                safe_path(self.root, path)
+                safe_path(_validation_path(self.root), _validation_path(path))
                 if path.exists():
                     info = path.stat()
                     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:

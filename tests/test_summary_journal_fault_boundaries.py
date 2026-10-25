@@ -1,6 +1,7 @@
 """Actual apply with synthetic sinks; no provider/model/transport acceptance.
 Retained independent failure-boundary controls, CI-collected.
 """
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -65,7 +66,7 @@ def test_corrupt_staged_material_blocks_actual_apply_without_destination_io(setu
   first=apply(cfg,z)
  assert first.errors and z.calls==z.reads==0 and note.read_text(encoding='utf-8')==raw
  j=SummaryJournal(cfg.root);body=j.list()[0]
- with sqlite3.connect(j.path) as db:
+ with closing(sqlite3.connect(j.path)) as db, db:
   db.execute("UPDATE materials SET content=? WHERE kind='candidate'",(b'corrupt synthetic material',))
  before=j.path.read_bytes();fresh=Remote();again=apply(cfg,fresh)
  assert again.errors and fresh.calls==fresh.reads==0 and note.read_text(encoding='utf-8')==raw

@@ -78,3 +78,11 @@ root remain rejected. Returned canonical paths bind journal source/target
 identity, so changing an approved ancestor spelling does not create a replay key.
 This guard is at apply: it does not claim to guard legacy inventory's earlier
 source reads or eliminate concurrent filesystem replacement races.
+
+Windows journal containment validation uses the same extended drive/UNC namespace
+for the approved root and fixed database/sidecar paths before the existing strict
+path checks. SQLite I/O paths do not change. This avoids a namespace-only mismatch
+when a volatile sidecar disappears during CPython's resolve/prefix checks; it does
+not ignore or retry an escape. Traversal, unsupported device namespaces and
+linked/reparse descendants remain refused. The modeled resolver race is not proof
+of any one native CI failure's causal target; native verification remains required.

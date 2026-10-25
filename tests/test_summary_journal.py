@@ -1,4 +1,5 @@
 """Synthetic journal foundation only; no provider adapter, model or transport."""
+from contextlib import closing
 import hashlib
 import sqlite3
 import tempfile
@@ -102,11 +103,11 @@ class JournalTests(unittest.TestCase):
   for index,mutation in enumerate(mutations):
    with self.subTest(index=index),tempfile.TemporaryDirectory() as td:
     j=SummaryJournal(td);self.reserve(j=j);self.stage(j=j);body=j.get('op-one');mutation(body['authorization'])
-    with sqlite3.connect(j.path) as db:db.execute('UPDATE operations SET body=?',(json.dumps(body),))
+    with closing(sqlite3.connect(j.path)) as db, db:db.execute('UPDATE operations SET body=?',(json.dumps(body),))
     self.error('corrupt_operation',lambda:j.dispatch('op-one','zotero'))
  def test_persisted_source_and_targets_are_revalidated(self):
   import json
   self.reserve();self.stage();body=self.j.get('op-one');body['source']['coverage']='invented-full-review';body['authorization']['scope_sha256']=scope_digest(body['source'],body['targets'])
-  with sqlite3.connect(self.j.path) as db:db.execute('UPDATE operations SET body=?',(json.dumps(body),))
+  with closing(sqlite3.connect(self.j.path)) as db, db:db.execute('UPDATE operations SET body=?',(json.dumps(body),))
   self.error('corrupt_operation',lambda:self.j.dispatch('op-one','local'))
 if __name__=='__main__':unittest.main()
