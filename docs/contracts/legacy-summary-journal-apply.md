@@ -86,3 +86,13 @@ when a volatile sidecar disappears during CPython's resolve/prefix checks; it do
 not ignore or retry an escape. Traversal, unsupported device namespaces and
 linked/reparse descendants remain refused. The modeled resolver race is not proof
 of any one native CI failure's causal target; native verification remains required.
+
+The final journal metadata observation uses `lstat` once, rejecting a leaf
+symlink/reparse point or non-single-link/non-regular file even if it replaces a
+previously checked leaf. A `FileNotFoundError` only at this final observation
+means absence, which was already permitted for SQLite's transient sidecars and
+an uninitialized database. Existing `_db` missing-database/read versus explicit
+initialization semantics remain unchanged. Containment-check failures and other
+I/O errors are not suppressed or retried. This closes an independently modeled
+sidecar disappearance window, not all concurrent path replacement races; a
+specific native CI failure cannot be attributed to it without diagnostics.

@@ -112,10 +112,16 @@ class SummaryJournal:
         try:
             for path in (self.path, *(Path(str(self.path) + suffix) for suffix in ('-journal', '-wal', '-shm'))):
                 safe_path(_validation_path(self.root), _validation_path(path))
-                if path.exists():
-                    info = path.stat()
-                    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                        raise JournalError('Journal must be a regular unlinked file', 'unsafe_path')
+                try:
+                    info = path.lstat()
+                except FileNotFoundError:
+                    # SQLite can remove a sidecar between containment validation
+                    # and this observation. Absence was already allowed; do not
+                    # suppress permission errors or retry a failed safety check.
+                    continue
+                if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                        or getattr(info, 'st_file_attributes', 0) & 0x400):
+                    raise JournalError('Journal must be a regular unlinked file', 'unsafe_path')
         except WorkspaceError as exc:
             raise JournalError(str(exc), 'unsafe_path') from exc
 

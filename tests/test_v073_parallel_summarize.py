@@ -123,10 +123,10 @@ def test_parallel_writes_produce_same_apply_result_as_sequential(tmp_path, monke
 
     parallel_result = apply_summaries(parallel_cfg, "test-cluster", payload, zot=zot)
 
-    assert serial_result.applied == [f"paper-{idx:02d}" for idx in range(1, 6)]
-    assert parallel_result.applied == serial_result.applied
-    assert parallel_result.obsidian_writes == 5
-    assert parallel_result.zotero_writes == 5
+    assert serial_result.applied == [f"paper-{idx:02d}" for idx in range(1, 6)], serial_result.to_dict()
+    assert parallel_result.applied == serial_result.applied, parallel_result.to_dict()
+    assert parallel_result.obsidian_writes == 5, parallel_result.to_dict()
+    assert parallel_result.zotero_writes == 5, parallel_result.to_dict()
     for idx in range(1, 6):
         slug = f"paper-{idx:02d}"
         serial_text = (serial_cfg.raw / "test-cluster" / f"{slug}.md").read_text(encoding="utf-8")
@@ -153,8 +153,8 @@ def test_parallel_writes_preserve_per_paper_rollback_invariant(tmp_path, monkeyp
     monkeypatch.setattr(summarize, "_write_zotero_child_note", fail_one)
     result = apply_summaries(cfg, "test-cluster", _payload(5), zot=object())
 
-    assert len(result.errors) == 1
-    assert "paper-02" in result.errors[0]
+    assert len(result.errors) == 1, result.to_dict()
+    assert "paper-02" in result.errors[0], result.to_dict()
     for idx in range(1, 6):
         path = cfg.raw / "test-cluster" / f"paper-{idx:02d}.md"
         text = path.read_text(encoding="utf-8")
@@ -182,4 +182,4 @@ def test_parallel_writes_use_4_workers_default(tmp_path, monkeypatch):
     result = apply_summaries(cfg, "test-cluster", _payload(2), zot=_ZoteroStub())
 
     assert seen["max_workers"] == 4
-    assert result.applied == ["paper-01", "paper-02"]
+    assert result.applied == ["paper-01", "paper-02"], result.to_dict()
