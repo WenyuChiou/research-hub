@@ -15,6 +15,31 @@ def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def _selected_source_path(raw_root, value):
+    """Rebase an approved root alias without resolving untrusted descendants.
+
+    Ancestor aliases (e.g. macOS /var) may change the root's canonical spelling.
+    Only that selected root is canonicalized; leaf/intermediate links and '..'
+    still reach the existing strict containment checks unchanged.
+    """
+    selected = Path(raw_root)
+    candidate = Path(value)
+    if '..' in selected.parts or '..' in candidate.parts:
+        raise JournalError('Parent traversal is not allowed', 'unsafe_path')
+    selected = selected.absolute()
+    candidate = candidate.absolute()
+    if selected.is_symlink() or (selected.exists() and getattr(selected.lstat(), 'st_file_attributes', 0) & 0x400):
+        raise JournalError('Selected raw root must not be linked', 'unsafe_path')
+    canonical = selected.resolve()
+    for spelling in (selected, canonical):
+        try:
+            relative = candidate.relative_to(spelling)
+        except ValueError:
+            continue
+        return safe_path(canonical, relative, exists=True)
+    raise JournalError('Path is outside the selected raw directory', 'unsafe_path')
+
+
 def _receipt(journal, operation_id):
     body = journal.get(operation_id)
     return {'operation_id': operation_id, 'version': 2, 'sinks': body['sinks'],
@@ -42,7 +67,7 @@ def apply_entry(cfg, paper, summary, zot, write_obsidian, write_zotero, *, prove
     original = new_text = None
     tokens = {}
     try:
-        path = safe_path(Path(cfg.raw).resolve(), Path(paper['path']).absolute(), exists=True)
+        path = _selected_source_path(cfg.raw, paper['path'])
         targets = {}
         if write_obsidian:
             targets['local'] = str(path)

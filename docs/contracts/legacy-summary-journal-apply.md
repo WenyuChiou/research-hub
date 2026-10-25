@@ -68,3 +68,13 @@ gates include complete consumer compatibility, installed-wheel checks, adapter
 semantics, source-generation provenance and user-facing recovery resolution.
 
 When receipt history is unavailable, `dispatch_may_have_started=true` is conservative across prior invocations; `current_attempt_dispatched` reports only this invocation. No current dispatch is not proof that the retained operation was never dispatched. The error remains reconciliation-required.
+
+Selected raw-directory ancestors may have an OS-canonical spelling different
+from their configured spelling (for example a temporary-directory alias).
+Apply derives the note's relative path only from that explicitly selected root
+or its canonical spelling, then runs the existing strict descendant checks.
+Leaf/intermediate links, traversal, unselected siblings and a linked/reparse raw
+root remain rejected. Returned canonical paths bind journal source/target
+identity, so changing an approved ancestor spelling does not create a replay key.
+This guard is at apply: it does not claim to guard legacy inventory's earlier
+source reads or eliminate concurrent filesystem replacement races.
