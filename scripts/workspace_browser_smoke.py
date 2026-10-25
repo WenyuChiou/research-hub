@@ -21,7 +21,8 @@ import time
 
 from playwright.sync_api import expect, sync_playwright
 
-from workspace_browser_fixtures import prepare_abstract_fixtures
+from workspace_browser_fixtures import prepare_abstract_fixtures, prepare_composer_fixtures
+from workspace_browser_sessions import check_composer_sessions
 
 from research_hub.workspace.demo import create_demo
 from research_hub.workspace.core import Workspace, digest, file_hash
@@ -420,6 +421,7 @@ def run(output: Path):
         create_demo(root)
         revision_fixtures = prepare_revision_fixtures(Workspace(root))
         abstract_fixtures = prepare_abstract_fixtures(Workspace(root))
+        composer_fixtures = prepare_composer_fixtures(Workspace(root))
         server = WorkspaceServer(root, port=0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -536,6 +538,7 @@ def run(output: Path):
                 checks.append({"check": "200% equivalent layout and keyboard skip link", "status": "PASS"})
                 check_revision_delivery(screen, tasks, revision_fixtures, checks, output)
                 check_abstract_journey(screen, tasks, abstract_fixtures, checks, output)
+                check_composer_sessions(screen, tasks, composer_fixtures, checks, output)
                 assert not errors, errors
                 report["status"] = "PASS"
             except Exception as exc:

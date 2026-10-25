@@ -58,3 +58,29 @@ def prepare_abstract_fixtures(workspace):
     return {"project_id": project_id, "source": record, "other_source": other,
             "artifact": artifact, "selection": selection, "source_path": path,
             "accepted": accepted}
+
+
+def prepare_composer_fixtures(workspace):
+    """Only local source/screening records; no accepted decisions or runner."""
+    if os.environ.get("RESEARCH_HUB_WRITING_ADAPTER", "").strip():
+        raise RuntimeError("Composer browser fixtures require no external writing adapter")
+    project_id = "composer-session-fixture"
+    other_project = "composer-other-fixture"
+    for identity in (project_id, other_project):
+        workspace.create_project(id=identity, title=identity, goal="Synthetic navigation only")
+    path = workspace.root / "composer-session-source.txt"
+    path.write_bytes(SOURCE.encode("utf-8"))
+    artifact = workspace.register_artifact(project_id, path=path.name, role="evidence")
+    sources = [workspace.add_record(project_id, kind="source", data={
+        "title": "Synthetic shared title", "locator": "fixture:composer-" + name,
+        "reading_scope": "abstract" if name == "a" else "unknown",
+    }) for name in ("a", "b")]
+    screening = workspace.add_record(project_id, kind="screening", data={
+        "source_id": sources[1]["id"], "decision": "include",
+        "rationale": "Synthetic classification display, not scientific acceptance",
+    })
+    return {"project_id": project_id, "other_project": other_project,
+            "source": sources[0], "other_source": sources[1],
+            "screening": screening, "artifact": artifact, "source_path": path,
+            "selection": {"artifact_id": artifact["id"], "source_record_id": sources[0]["id"],
+                          "start": SOURCE.index(ABSTRACT), "end": SOURCE.index(ABSTRACT) + len(ABSTRACT)}}

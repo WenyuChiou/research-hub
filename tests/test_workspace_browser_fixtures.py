@@ -69,3 +69,31 @@ def test_fixture_rejects_external_writing_adapter(tmp_path, monkeypatch):
     monkeypatch.setenv("RESEARCH_HUB_WRITING_ADAPTER", "not-to-be-invoked")
     with pytest.raises(RuntimeError, match="no external writing adapter"):
         fixtures.prepare_abstract_fixtures(Workspace(tmp_path))
+
+
+def test_composer_fixtures_bind_duplicate_titles_by_exact_source_without_tasks(tmp_path, monkeypatch):
+    monkeypatch.delenv("RESEARCH_HUB_WRITING_ADAPTER", raising=False)
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("No process/provider allowed"))
+    ws = Workspace(tmp_path)
+    data = fixtures.prepare_composer_fixtures(ws)
+    assert data["source"]["id"] != data["other_source"]["id"]
+    assert data["source"]["data"]["title"] == data["other_source"]["data"]["title"]
+    assert data["screening"]["data"]["source_id"] == data["other_source"]["id"]
+    assert not TaskService(ws).list(data["project_id"])
+    assert not ws.snapshot(data["project_id"])["actions"]
+    assert not ws.snapshot(data["other_project"])["records"]
+    preview = WorkspaceService(ws.root).preview_text(data["project_id"], artifact_id=data["artifact"]["id"])["preview"]
+    assert preview["text"] == fixtures.SOURCE
+    task = TaskService(ws).create(data["project_id"], operation="paper-abstract-draft", mode="connected", source_selection=data["selection"])
+    pack = task["request"]["research_draft"]["source_pack"]
+    assert pack["text"] == fixtures.ABSTRACT
+    assert pack["source_record_id"] == data["source"]["id"]
+    assert pack["artifact_id"] == data["artifact"]["id"]
+    assert task["status"] == "ready"
+    assert not ws.snapshot(data["project_id"])["actions"]
+
+
+def test_composer_fixture_rejects_external_writing_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCH_HUB_WRITING_ADAPTER", "must-not-be-used")
+    with pytest.raises(RuntimeError, match="no external writing adapter"):
+        fixtures.prepare_composer_fixtures(Workspace(tmp_path))
