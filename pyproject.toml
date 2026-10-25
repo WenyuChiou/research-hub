@@ -57,7 +57,7 @@ dev = [
     "pytest-mock>=3.10",
     "pytest-socket>=0.7",
     "pytest-split>=0.8",
-    "pytest-timeout>=2.3",
+    "pytest-timeout>=2.4.0",
     "responses>=0.26.3",
 ]
 
