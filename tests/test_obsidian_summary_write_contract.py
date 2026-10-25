@@ -456,7 +456,7 @@ def test_cluster_report_preserves_partial_success_without_hiding_failed_entry(tm
     monkeypatch.setattr('research_hub.llm_cli.invoke_llm_cli',lambda *a:json.dumps(payload))
     report=summarize.summarize_cluster(cfg,'flood-adaptation',llm_cli='codex',apply=True,write_zotero=False)
     assert report.ok is False
-    assert '1 applied' in report.error
+    assert '1 applied' in report.error, report.apply_result.to_dict()
     assert report.apply_result.applied==['second']
     assert len(report.apply_result.errors)==1 and 'managed callout' in report.apply_result.errors[0]
     assert p.read_bytes()==before

@@ -39,7 +39,7 @@ class ApplyTests(unittest.TestCase):
   result=self.apply(z);self.assertTrue(result.errors);self.assertIn('Human newer text',self.note.read_text(encoding='utf-8'))
   receipt=result.to_dict()['receipts'][0];self.assertEqual(receipt['sinks']['zotero']['state'],'unknown');self.assertIn('preserved_newer',[o['status'] for o in receipt['observations']])
  def test_account_free_local_only_has_no_remote_call(self):
-  z=FakeZotero();result=self.apply(z,write_zotero=False);self.assertEqual(result.applied,['paper']);self.assertEqual(z.writes,0);self.assertEqual(z.reads,0);self.assertEqual(set(result.to_dict()['receipts'][0]['sinks']),{'local'})
+  z=FakeZotero();result=self.apply(z,write_zotero=False);self.assertEqual(result.applied,['paper'],result.to_dict());self.assertEqual(z.writes,0);self.assertEqual(z.reads,0);self.assertEqual(set(result.to_dict()['receipts'][0]['sinks']),{'local'})
  def test_both_disabled_does_not_initialize_journal(self):
   self.apply(write_zotero=False,write_obsidian=False);self.assertFalse(SummaryJournal(self.root).path.exists());self.assertEqual(self.note.read_text(encoding='utf-8'),self.original)
  def test_changed_candidate_cannot_bypass_unknown_target(self):
@@ -84,13 +84,13 @@ class ApplyTests(unittest.TestCase):
   z=FakeZotero('lost');out=io.StringIO();err=io.StringIO()
   with patch.object(cli,'get_config',return_value=self.cfg),patch.object(llm_cli,'invoke_llm_cli',return_value=json.dumps({'summaries':[ENTRY]})) as model,patch.object(client,'get_client',return_value=z):
    with contextlib.redirect_stdout(out),contextlib.redirect_stderr(err):rc=cli.main(['summarize','--cluster','cluster','--llm-cli','synthetic','--apply'])
-  self.assertEqual(rc,1);self.assertEqual(model.call_count,1);self.assertIn('receipt ',out.getvalue());self.assertEqual(SummaryJournal(self.root).list()[0]['authorization']['kind'],'legacy_cli_explicit_apply')
+  self.assertEqual(rc,1);self.assertEqual(model.call_count,1);self.assertIn('receipt ',out.getvalue(),{'stdout':out.getvalue(),'stderr':err.getvalue()});self.assertEqual(SummaryJournal(self.root).list()[0]['authorization']['kind'],'legacy_cli_explicit_apply')
  def test_actual_mcp_callable_consumer_retains_scope_no_human_promotion(self):
   from research_hub import config,mcp_server
   from research_hub.zotero import client
   z=FakeZotero('lost')
   with patch.object(config,'get_config',return_value=self.cfg),patch.object(client,'get_client',return_value=z):result=mcp_server.apply_cluster_summaries('cluster',{'summaries':[ENTRY]})
-  self.assertTrue(result['errors']);self.assertEqual(result['receipts'][0]['authorization']['kind'],'legacy_mcp_apply_invocation');self.assertEqual(z.writes,1)
+  self.assertTrue(result['errors']);self.assertIn('receipts',result,{'errors':result.get('errors')});self.assertEqual(result['receipts'][0]['authorization']['kind'],'legacy_mcp_apply_invocation');self.assertEqual(z.writes,1)
  def test_cross_transport_replay_retains_original_authorization(self):
   self.apply(provenance='legacy_cli_explicit_apply');z=FakeZotero();result=self.apply(z,provenance='legacy_mcp_apply_invocation')
   self.assertFalse(result.errors);self.assertEqual(z.writes,0);self.assertEqual(result.receipts[0]['authorization']['kind'],'legacy_cli_explicit_apply')
@@ -98,23 +98,47 @@ class ApplyTests(unittest.TestCase):
   z=FakeZotero()
   with patch.object(SummaryJournal,'stage',side_effect=sqlite3.OperationalError('synthetic stage failure')):first=self.apply(z)
   self.assertTrue(first.errors);self.assertEqual(z.writes,0);old=SummaryJournal(self.root).list()[0]['id']
-  result=self.apply(z);self.assertEqual(result.applied,['paper']);self.assertEqual(z.writes,1);self.assertEqual(SummaryJournal(self.root).list()[0]['id'],old)
+  result=self.apply(z);self.assertEqual(result.applied,['paper'],result.to_dict());self.assertEqual(z.writes,1);self.assertEqual(SummaryJournal(self.root).list()[0]['id'],old)
  def test_late_remote_ack_does_not_mark_compensated_local_sink_satisfied(self):
   self.apply(FakeZotero('lost'));journal=SummaryJournal(self.root);body=journal.list()[0]
   journal.acknowledge(body['id'],'zotero',body['sinks']['zotero']['dispatch_token'],'confirmed')
   z=FakeZotero();result=self.apply(z);self.assertTrue(result.errors);self.assertEqual(z.writes,0);self.assertEqual(self.note.read_text(encoding='utf-8'),self.original)
   self.assertEqual(result.receipts[0]['sinks']['local']['state'],'compensated')
- def test_real_pyzotero_library_identity_with_mock_http_transport(self):
-  import httpx
+ def test_real_pyzotero_identity_with_fake_public_write_method(self):
+  # Constructor/identity compatibility, NOT HTTP transport acceptance. Avoid
+  # private httpx/httpx2 module imports that differ across supported SDKs.
   from pyzotero.zotero import Zotero
-  requests=[]
-  def respond(request):
-   requests.append(request);return httpx.Response(200,json={'successful':{'0':{'key':'SYNTHNOTE'}}},request=request)
-  fake_http=httpx.Client(transport=httpx.MockTransport(respond),trust_env=False)
-  with patch('pyzotero.zotero.httpx.Client',return_value=fake_http):z=Zotero('123','user','synthetic-not-a-real-key')
+  import os,socket
+  # Constructor-only offline fixture: no proxy use or socket connection is
+  # permitted; public write method below is mocked before any apply call.
+  proxy_names={'http_proxy','https_proxy','all_proxy','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY'}
+  environment={k:v for k,v in os.environ.items() if k not in proxy_names}
+  with patch.dict(os.environ,environment,clear=True),patch.object(socket.socket,'connect',side_effect=AssertionError('No SDK network in identity test')):
+   z=Zotero('123','user','synthetic-not-a-real-key')
   self.addCleanup(z.client.close)
-  with patch.object(z,'children',return_value=[]),patch.object(z,'everything',side_effect=lambda v:v),patch.object(z,'item_template',return_value={'itemType':'note'}):result=self.apply(z)
-  self.assertEqual(result.applied,['paper']);self.assertEqual(len(requests),1);self.assertEqual(requests[0].method,'POST');self.assertEqual(requests[0].url.path,'/users/123/items')
+  self.assertEqual(str(z.library_id),'123')
+  self.assertIn(z.library_type,{'user','users'})
+  with patch.object(z,'children',return_value=[]),patch.object(z,'everything',side_effect=lambda v:v),patch.object(z,'item_template',return_value={'itemType':'note'}),patch.object(z,'create_items',return_value={'successful':{'0':{'key':'SYNTHNOTE'}}}) as create:
+   result=self.apply(z)
+  self.assertEqual(result.applied,['paper'],result.to_dict())
+  create.assert_called_once()
+  payload=create.call_args.args[0]
+  self.assertEqual(payload[0]['parentItem'],'PARENT01')
+  self.assertEqual(payload[0]['tags'],[{'tag':'research-hub:summary:v1'}])
+  self.assertEqual(result.receipts[0]['sinks']['zotero']['state'],'confirmed')
+ def test_exact_lf_crlf_snapshots_and_account_free_apply(self):
+  for newline in ('\n','\r\n'):
+   with self.subTest(newline=repr(newline)),tempfile.TemporaryDirectory() as td:
+    root=Path(td);cfg=SimpleNamespace(root=root,raw=root/'raw',research_hub_dir=root/'.research_hub')
+    path=cfg.raw/'cluster/paper.md';path.parent.mkdir(parents=True)
+    raw=self.original.replace('\n',newline).encode('utf-8');path.write_bytes(raw)
+    result=summarize.apply_summaries(cfg,'cluster',[ENTRY],write_zotero=False)
+    self.assertEqual(result.applied,['paper'],result.to_dict())
+    journal=SummaryJournal(root);body=journal.list()[0]
+    self.assertEqual(journal.material(body['id'],'before'),raw)
+    self.assertEqual(journal.material(body['id'],'after'),path.read_bytes())
+    self.assertIn(('Keep exact 中文.'+newline).encode('utf-8'),path.read_bytes())
+    self.assertNotIn(b'\r\r\n',path.read_bytes())
  def test_old_private_schema_is_rejected_without_migration(self):
   self.apply(FakeZotero('lost'));j=SummaryJournal(self.root)
   with sqlite3.connect(j.path) as db:db.execute("UPDATE metadata SET value='1' WHERE name='schema_version'")
