@@ -354,3 +354,203 @@ it("late exact lookup after a project switch cannot merge or consume the old ide
   expect(notify).not.toHaveBeenCalled();
   expect(localStorage.getItem(prefix + key)).not.toBeNull();
 });
+
+it("parks only by explicit action, preserves opaque identity and read-only recovery across reload", async () => {
+  localStorage.setItem(prefix + key, JSON.stringify(identity()));
+  const fetch = vi.fn(async () => absent());
+  const first = setup(fetch);
+  await waitFor(() =>
+    expect(first.result.current.entries[0]?.phase).toBe("not_observed"),
+  );
+  expect(first.result.current.blocked).toBe(true);
+  act(() => {
+    expect(first.result.current.park(key)).toBe(true);
+    expect(first.result.current.park(key)).toBe(false);
+  });
+  expect(first.result.current.entries[0].parked).toBe(true);
+  expect(first.result.current.blocked).toBe(false);
+  expect(first.result.current.canRetry(key)).toBe(false);
+  expect(localStorage.getItem(prefix + key)).toBe(JSON.stringify(identity()));
+  const markerKey = `research-hub:disposition:v1:${encodeURIComponent(location.origin)}:${namespace}:river:text-intake:${key}`;
+  expect(JSON.parse(localStorage.getItem(markerKey)!)).toEqual({
+    version: 1,
+    origin: location.origin,
+    workspace_instance_id: namespace,
+    project_id: "river",
+    type: "text-intake",
+    key,
+    disposition: "parked",
+  });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(crypto.randomUUID).not.toHaveBeenCalled();
+  first.unmount();
+  const next = setup(fetch);
+  await waitFor(() =>
+    expect(next.result.current.entries[0]?.phase).toBe("not_observed"),
+  );
+  expect(next.result.current.entries[0].parked).toBe(true);
+  expect(next.result.current.blocked).toBe(false);
+  await act(async () => {
+    await next.result.current.retry(key);
+  });
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+it("session-only parking needs second confirmation and reload conservatively relocks", async () => {
+  localStorage.setItem(prefix + key, JSON.stringify(identity()));
+  const fetch = vi.fn(async () => absent());
+  const first = setup(fetch);
+  await waitFor(() =>
+    expect(first.result.current.entries[0]?.phase).toBe("not_observed"),
+  );
+  const denied = vi
+    .spyOn(Storage.prototype, "setItem")
+    .mockImplementation(() => {
+      throw Error("synthetic denied");
+    });
+  act(() => {
+    expect(first.result.current.park(key, true)).toBe(false);
+    expect(first.result.current.park(key)).toBe(false);
+  });
+  expect(first.result.current.blocked).toBe(true);
+  act(() => {
+    expect(first.result.current.park(key, true)).toBe(true);
+  });
+  expect(first.result.current.entries[0].parkSessionOnly).toBe(true);
+  expect(localStorage.getItem(prefix + key)).toBe(JSON.stringify(identity()));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(crypto.randomUUID).not.toHaveBeenCalled();
+  denied.mockRestore();
+  first.unmount();
+  const next = setup(fetch);
+  await waitFor(() =>
+    expect(next.result.current.entries[0]?.phase).toBe("not_observed"),
+  );
+  expect(next.result.current.blocked).toBe(true);
+  expect(next.result.current.canRetry(key)).toBe(false);
+});
+it.each(["extra", "scope", "type", "oversized", "malformed", "orphan"])(
+  "ignores %s parking marker without granting authority",
+  async (variant) => {
+    if (variant !== "orphan")
+      localStorage.setItem(prefix + key, JSON.stringify(identity()));
+    const markerKey = `research-hub:disposition:v1:${encodeURIComponent(location.origin)}:${namespace}:river:text-intake:${key}`;
+    const value = {
+      version: 1,
+      origin: location.origin,
+      workspace_instance_id: namespace,
+      project_id: "river",
+      type: "text-intake",
+      key,
+      disposition: "parked",
+    };
+    localStorage.setItem(
+      markerKey,
+      variant === "malformed"
+        ? "{"
+        : variant === "oversized"
+          ? " ".repeat(2000) + JSON.stringify(value)
+          : JSON.stringify({
+              ...value,
+              ...(variant === "extra" ? { title: "not opaque" } : {}),
+              ...(variant === "scope" ? { project_id: "other" } : {}),
+              ...(variant === "type" ? { type: "prepare" } : {}),
+            }),
+    );
+    const fetch = vi.fn(async () => absent());
+    const { result } = setup(fetch);
+    if (variant === "orphan") {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.entries).toHaveLength(0);
+      expect(fetch).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() =>
+        expect(result.current.entries[0]?.phase).toBe("not_observed"),
+      );
+      expect(result.current.blocked).toBe(true);
+      expect(result.current.entries[0].parked).toBe(false);
+    }
+  },
+);
+it("parked live conflict remains exact-checkable, never replayable; only explicit new submit allocates another key", async () => {
+  const nextKey = "33333333-3333-4333-8333-333333333333";
+  const fetch = vi.fn(async (_url: unknown, options?: RequestInit) =>
+    options?.method === "POST"
+      ? response(
+          {
+            ok: false,
+            code: "request_key_conflict",
+            error: "Synthetic conflict",
+          },
+          409,
+        )
+      : absent(),
+  );
+  const { result } = setup(fetch);
+  await act(async () => {
+    await result.current.submit(payload);
+  });
+  expect(result.current.entries[0].phase).toBe("conflict");
+  act(() => {
+    expect(result.current.park(key)).toBe(true);
+  });
+  await act(async () => {
+    await result.current.retry(key);
+    await result.current.check(key);
+  });
+  expect(result.current.entries[0].phase).toBe("not_observed");
+  expect(fetch.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(
+    1,
+  );
+  vi.mocked(crypto.randomUUID).mockReturnValue(nextKey);
+  await act(async () => {
+    await result.current.submit(payload);
+  });
+  const posts = fetch.mock.calls.filter((c) => c[1]?.method === "POST");
+  expect(posts).toHaveLength(2);
+  expect(JSON.parse(String(posts[1][1]?.body)).intake_request.key).toBe(
+    nextKey,
+  );
+  expect(localStorage.getItem(prefix + key)).toBe(JSON.stringify(identity()));
+});
+
+it("cannot park while an exact read or POST is in flight", async () => {
+  localStorage.setItem(prefix + key, JSON.stringify(identity()));
+  let finish!: (response: Response) => void;
+  const fetch = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const first = setup(fetch);
+  await waitFor(() =>
+    expect(first.result.current.entries[0]?.phase).toBe("checking"),
+  );
+  act(() => {
+    expect(first.result.current.park(key)).toBe(false);
+  });
+  await act(async () => {
+    finish(absent());
+  });
+  first.unmount();
+  localStorage.clear();
+  const second = setup(fetch);
+  let pending!: Promise<unknown>;
+  act(() => {
+    pending = second.result.current.submit(payload);
+  });
+  await waitFor(() =>
+    expect(second.result.current.entries[0]?.phase).toBe("sending"),
+  );
+  act(() => {
+    expect(second.result.current.park(key)).toBe(false);
+  });
+  await act(async () => {
+    finish(receipt());
+    await pending;
+  });
+  expect(second.result.current.entries[0].phase).toBe("found");
+  expect(second.result.current.entries[0].parked).not.toBe(true);
+});

@@ -60,6 +60,7 @@ export function AbstractDraftComposer({
   projectId,
   source,
   artifacts,
+  artifactLabels,
   capability,
   t,
   onPrepared,
@@ -69,10 +70,12 @@ export function AbstractDraftComposer({
   initialArtifactId,
   initialPreview,
   restoreVersion,
+  separateIntentVersion,
 }: {
   projectId: string;
   source: ResearchRecord;
   artifacts: Artifact[];
+  artifactLabels?: Record<string, string>;
   capability: Capability;
   t: Translate;
   onPrepared: (task: Task) => Promise<void>;
@@ -82,6 +85,7 @@ export function AbstractDraftComposer({
   initialArtifactId?: string;
   initialPreview?: TextPreview;
   restoreVersion?: number;
+  separateIntentVersion?: number;
 }) {
   const id = useId();
   const [artifactId, setArtifactId] = useState(initialArtifactId ?? "");
@@ -140,10 +144,46 @@ export function AbstractDraftComposer({
       cancelled = true;
     };
   }, []);
+  const lastSeparate = useRef(separateIntentVersion);
+  useEffect(() => {
+    if (lastSeparate.current === separateIntentVersion) return;
+    lastSeparate.current = separateIntentVersion;
+    const parked =
+      preparationKey &&
+      recovery?.entries.some(
+        (entry) => entry.key === preparationKey && entry.parked,
+      );
+    if (
+      creating ||
+      creationLock.current ||
+      recovery?.blocked ||
+      (preparationUncertain && !parked) ||
+      (preparedTaskId && !parked)
+    ) {
+      setRestoreBlocked(true);
+      return;
+    }
+    // Explicit new intent only; never reset an unrelated or keyless unknown request.
+    readController.current?.abort();
+    setReading(false);
+    setRange(null);
+    setInstructions("");
+    setPreparationKey(null);
+    setPreparationUncertain(false);
+    setPreparedTaskId(null);
+    setError(null);
+    setRestoreBlocked(false);
+  }, [separateIntentVersion]);
   const inputLocked =
     creating ||
     preparationUncertain ||
     Boolean(preparedTaskId) ||
+    Boolean(
+      preparationKey &&
+      recovery?.entries.some(
+        (entry) => entry.key === preparationKey && entry.parked,
+      ),
+    ) ||
     Boolean(recovery?.blocked);
   useEffect(() => {
     if (restoreVersion === lastRestore.current) return;
@@ -216,9 +256,7 @@ export function AbstractDraftComposer({
   async function prepare() {
     if (
       creationLock.current ||
-      recovery?.blocked ||
-      preparationUncertain ||
-      preparedTaskId ||
+      inputLocked ||
       !preview ||
       !range ||
       !selectedText.trim()
@@ -307,7 +345,8 @@ export function AbstractDraftComposer({
               <option value="">{t("abstractChooseFilePlaceholder")}</option>
               {choices.map((item) => (
                 <option key={item.id} value={item.id} disabled={!item.current}>
-                  {item.path}
+                  {artifactLabels?.[item.id] ??
+                    `${t("sourceUnverifiedFile")} — ${item.path}`}
                   {!item.current ? ` — ${t("changed")}` : ""}
                 </option>
               ))}
@@ -395,13 +434,7 @@ export function AbstractDraftComposer({
           </p>
           <button
             className="button primary"
-            disabled={
-              creating ||
-              recovery?.blocked ||
-              preparationUncertain ||
-              Boolean(preparedTaskId) ||
-              !selectedText.trim()
-            }
+            disabled={inputLocked || !selectedText.trim()}
             onClick={() => void prepare()}
           >
             {creating ? t("preparing") : t("abstractPrepare")}

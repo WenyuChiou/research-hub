@@ -489,3 +489,51 @@ it("opens the exact recovered task while the bulk refresh is still pending", asy
     fetch.mock.calls.some((call) => String(call[0]).endsWith("/run")),
   ).toBe(false);
 });
+it("explicit separate intent is required after park; late old result cannot retarget newer navigation or purpose", async () => {
+  const fetch = serve(),
+    original = fetch.getMockImplementation()!;
+  let oldFound = false;
+  fetch.mockImplementation(async (input, options) =>
+    String(input).includes("/preparations/")
+      ? response({
+          ok: true,
+          preparation: { state: oldFound ? "found" : "not_observed", key },
+          ...(oldFound ? { task } : {}),
+        })
+      : original(input, options),
+  );
+  history.replaceState({}, "", "#literature");
+  render(<App />);
+  await selectAndPrepare();
+  await screen.findByText(t("prepareNotObserved"));
+  fireEvent.click(screen.getByText(t("recoveryPark")));
+  fireEvent.click(screen.getByText(t("recoveryParkConfirm")));
+  expect(
+    screen.getByRole("button", { name: t("abstractPrepare") }),
+  ).toBeDisabled();
+  expect(fetch.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(
+    1,
+  );
+  fireEvent.click(screen.getByText(t("recoverySeparate")));
+  expect(screen.getByLabelText(t("abstractChooseFile"))).toBeEnabled();
+  expect(
+    screen.getByRole("button", { name: t("abstractPrepare") }),
+  ).toBeDisabled();
+  fireEvent.change(screen.getByLabelText(t("abstractPurpose")), {
+    target: { value: "New separate purpose" },
+  });
+  await userEvent.click(screen.getByRole("link", { name: "Manuscript" }));
+  oldFound = true;
+  fireEvent.click(screen.getByText(t("prepareCheck")));
+  await screen.findByText(t("prepareOpenRecovered"));
+  expect(location.hash).toBe("#manuscript");
+  expect(screen.getByLabelText(t("abstractPurpose"))).toHaveValue(
+    "New separate purpose",
+  );
+  expect(fetch.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(
+    1,
+  );
+  expect(fetch.mock.calls.some((c) => String(c[0]).includes("/run"))).toBe(
+    false,
+  );
+});

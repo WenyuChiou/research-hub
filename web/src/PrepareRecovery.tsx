@@ -1,3 +1,5 @@
+import { readParked, writeParked } from "./recoveryDisposition";
+import { RecoveryParkControls } from "./RecoveryParkControls";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, lookupPreparation, segment } from "./api";
 import { ErrorMessage } from "./components";
@@ -26,6 +28,9 @@ interface Identity {
   state: "pending";
 }
 export interface RecoveryEntry extends Identity {
+  parked?: boolean;
+  parkStorageFailed?: boolean;
+  parkSessionOnly?: boolean;
   phase:
     | "pending"
     | "sending"
@@ -42,6 +47,7 @@ export interface RecoveryEntry extends Identity {
 export interface PreparationRecovery {
   supported: boolean;
   blocked: boolean;
+  park: (key: string, sessionOnly?: boolean) => boolean;
   storageUnavailable: boolean;
   retryError?: unknown;
   entries: RecoveryEntry[];
@@ -193,7 +199,7 @@ export function usePreparationRecovery(
       !entry ||
       locks.current.has(key) ||
       !current() ||
-      entry.phase === "conflict"
+      (entry.phase === "conflict" && !entry.parked)
     )
       return;
     locks.current.add(key);
@@ -258,6 +264,7 @@ export function usePreparationRecovery(
       payload = payloads.current.get(key);
     if (
       !entry ||
+      entry.parked ||
       !payload ||
       !current() ||
       locks.current.has(key) ||
@@ -320,12 +327,59 @@ export function usePreparationRecovery(
     // One bounded read after an uncertain POST; never a second POST or Run.
     if (needsCheck && current()) return check(key);
   }
+  function park(key: string, sessionOnly = false): boolean {
+    const entry = records.current.get(key);
+    if (
+      !current() ||
+      !scope ||
+      !entry ||
+      entry.parked ||
+      locks.current.has(key) ||
+      ["sending", "checking", "unsent", "found"].includes(entry.phase)
+    )
+      return false;
+    if (sessionOnly && !entry.parkStorageFailed) return false;
+    if (!sessionOnly) {
+      try {
+        const persisted = JSON.parse(
+          localStorage.getItem(scope + key) ?? "null",
+        );
+        if (
+          !pendingIdentity(persisted, namespace, projectId) ||
+          persisted.key !== key
+        )
+          throw new Error("Pending identity not durable");
+        writeParked(
+          window.location.origin,
+          namespace,
+          projectId,
+          "prepare",
+          key,
+        );
+      } catch {
+        setStorageUnavailable(true);
+        records.current.set(key, { ...entry, parkStorageFailed: true });
+        publish();
+        return false;
+      }
+    }
+    records.current.set(key, {
+      ...entry,
+      parked: true,
+      parkSessionOnly: sessionOnly,
+      parkStorageFailed: false,
+    });
+    publish();
+    return true;
+  }
   async function prepare(
     payload: DraftPreparePayload,
   ): Promise<{ key: string; task?: Task }> {
     if (
       !scope ||
-      [...records.current.values()].some((entry) => entry.phase !== "found")
+      [...records.current.values()].some(
+        (entry) => entry.phase !== "found" && !entry.parked,
+      )
     )
       throw new ApiError(
         "Resolve the pending preparation first",
@@ -335,7 +389,7 @@ export function usePreparationRecovery(
     let key: string;
     try {
       key = window.crypto.randomUUID();
-      if (!uuid.test(key)) throw new Error();
+      if (!uuid.test(key) || records.current.has(key)) throw new Error();
     } catch {
       throw new ApiError(
         "Cryptographic request identity is unavailable; no task was sent",
@@ -384,8 +438,25 @@ export function usePreparationRecovery(
             if (
               pendingIdentity(value, namespace, projectId) &&
               storageKey === scope + value.key
-            )
-              records.current.set(value.key, { ...value, phase: "pending" });
+            ) {
+              let parked = false;
+              try {
+                parked = readParked(
+                  window.location.origin,
+                  namespace,
+                  projectId,
+                  "prepare",
+                  value.key,
+                );
+              } catch {
+                /* no marker authority */
+              }
+              records.current.set(value.key, {
+                ...value,
+                phase: "pending",
+                parked,
+              });
+            }
           } catch {
             /* Invalid entries are not identities; do not echo their content. */
           }
@@ -428,10 +499,11 @@ export function usePreparationRecovery(
   );
   return {
     supported: Boolean(scope),
-    blocked: visible.some((entry) => entry.phase !== "found"),
+    blocked: visible.some((entry) => entry.phase !== "found" && !entry.parked),
     storageUnavailable,
     retryError,
     entries: visible,
+    park,
     prepare,
     check,
     retry: async (key) => {
@@ -445,6 +517,7 @@ export function usePreparationRecovery(
       }
     },
     canRetry: (key) =>
+      !records.current.get(key)?.parked &&
       payloads.current.has(key) &&
       !locks.current.has(key) &&
       !["found", "conflict"].includes(
@@ -484,8 +557,10 @@ export function PreparationRecoveryPanel({
   recovery,
   t,
   onReview,
+  onSeparate,
 }: {
   recovery: PreparationRecovery;
+  onSeparate?: () => void;
   t: Translate;
   onReview: (id: string) => void;
 }) {
@@ -522,6 +597,12 @@ export function PreparationRecoveryPanel({
                             : "preparePendingUnknown",
                 )}
               </p>
+              <RecoveryParkControls
+                entry={entry}
+                recovery={recovery}
+                t={t}
+                onSeparate={onSeparate}
+              />
               {entry.error !== undefined && (
                 <ErrorMessage error={entry.error} t={t} />
               )}
@@ -545,12 +626,11 @@ export function PreparationRecoveryPanel({
                 <>
                   <button
                     className="button secondary"
-                    disabled={[
-                      "sending",
-                      "checking",
-                      "conflict",
-                      "unsent",
-                    ].includes(entry.phase)}
+                    disabled={
+                      ["sending", "checking", "conflict", "unsent"].includes(
+                        entry.phase,
+                      ) && !(entry.parked && entry.phase === "conflict")
+                    }
                     onClick={() => void recovery.check(entry.key)}
                   >
                     {t("prepareCheck")}

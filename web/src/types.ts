@@ -61,6 +61,7 @@ export interface ResearchRecord {
   data: Record<string, unknown>;
 }
 export interface Artifact {
+  registered_at?: string;
   project_id?: string;
   source_record_id?: string;
   origin?: string;

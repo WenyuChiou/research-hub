@@ -59,7 +59,14 @@ export function TextIntakeForm({
     )
       setFinished(true);
   }, [recovery.entries, requestKey]);
-  const disabled = saving || recovery.blocked || finished;
+  const disabled =
+    saving ||
+    recovery.blocked ||
+    finished ||
+    Boolean(
+      requestKey &&
+      recovery.entries.some((e) => e.key === requestKey && e.parked),
+    );
   function changeMode(next: "paste" | "file") {
     reader.current?.abort();
     setReading(false);

@@ -1,3 +1,4 @@
+import { linkedSourceArtifact, sourceArtifactLabels } from "./sourceArtifact";
 import { useState, type ReactNode } from "react";
 import { api, segment } from "./api";
 import {
@@ -98,6 +99,8 @@ export function ProjectPages({
     },
   );
   const [intakeOpen, setIntakeOpen] = useState(false);
+  const [intakeIntent, setIntakeIntent] = useState(0);
+  const [prepareIntent, setPrepareIntent] = useState(0);
   const [sourceOpenVersion, setSourceOpenVersion] = useState(0);
   function openSavedText(saved: SavedText) {
     setSourceOpenVersion((value) => value + 1);
@@ -106,16 +109,7 @@ export function ProjectPages({
     navigate("literature", "record-" + saved.record.id);
   }
   function linkedArtifact(record: ResearchRecord) {
-    const binding = record.data.intake as Record<string, unknown> | undefined;
-    return detail.artifacts.find(
-      (a) =>
-        binding?.version === 1 &&
-        a.id === binding.artifact_id &&
-        a.sha256 === binding.sha256 &&
-        a.source_record_id === record.id &&
-        a.project_id === detail.project.id &&
-        a.origin === "hub-text-intake",
-    );
+    return linkedSourceArtifact(record, detail.artifacts, detail.project.id);
   }
   function savedPreview(record: ResearchRecord) {
     const artifact = linkedArtifact(record);
@@ -262,9 +256,24 @@ export function ProjectPages({
 
   return (
     <>
-      <TextIntakeRecoveryPanel recovery={intake} t={t} onOpen={openSavedText} />
+      <TextIntakeRecoveryPanel
+        recovery={intake}
+        t={t}
+        onOpen={openSavedText}
+        onSeparate={() => {
+          if (intake.blocked) return;
+          setIntakeIntent((v) => v + 1);
+          setIntakeOpen(true);
+          navigate("literature");
+        }}
+      />
       <PreparationRecoveryPanel
         recovery={recovery}
+        onSeparate={() => {
+          if (recovery.blocked) return;
+          setPrepareIntent((v) => v + 1);
+          navigate("literature");
+        }}
         t={t}
         onReview={(taskId) => navigate("review", `review-task-${taskId}`)}
       />
@@ -396,6 +405,7 @@ export function ProjectPages({
         </div>
         {intakeOpen && (
           <TextIntakeForm
+            key={intakeIntent}
             recovery={intake}
             t={t}
             onClose={() => setIntakeOpen(false)}
@@ -509,6 +519,13 @@ export function ProjectPages({
                     projectId={detail.project.id}
                     source={record}
                     artifacts={detail.artifacts}
+                    artifactLabels={sourceArtifactLabels(
+                      detail.records,
+                      detail.artifacts,
+                      detail.project.id,
+                      t,
+                    )}
+                    separateIntentVersion={prepareIntent}
                     restoreVersion={sourceOpenVersion}
                     initialArtifactId={linkedArtifact(record)?.id}
                     initialPreview={savedPreview(record)}

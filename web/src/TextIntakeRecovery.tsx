@@ -1,3 +1,5 @@
+import { readParked, writeParked } from "./recoveryDisposition";
+import { RecoveryParkControls } from "./RecoveryParkControls";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, lookupTextIntake, segment } from "./api";
 import { ErrorMessage } from "./components";
@@ -20,6 +22,9 @@ interface Identity {
   state: "pending";
 }
 export interface IntakeEntry extends Identity {
+  parked?: boolean;
+  parkStorageFailed?: boolean;
+  parkSessionOnly?: boolean;
   phase:
     | "pending"
     | "sending"
@@ -36,6 +41,7 @@ export interface IntakeEntry extends Identity {
 export interface TextIntakeRecovery {
   supported: boolean;
   blocked: boolean;
+  park: (key: string, sessionOnly?: boolean) => boolean;
   storageUnavailable: boolean;
   error?: unknown;
   entries: IntakeEntry[];
@@ -175,7 +181,7 @@ export function useTextIntakeRecovery(
       !entry ||
       locks.current.has(key) ||
       !current() ||
-      entry.phase === "conflict"
+      (entry.phase === "conflict" && !entry.parked)
     )
       return;
     locks.current.add(key);
@@ -245,6 +251,7 @@ export function useTextIntakeRecovery(
       payload = payloads.current.get(key);
     if (
       !entry ||
+      entry.parked ||
       !payload ||
       !current() ||
       locks.current.has(key) ||
@@ -311,12 +318,59 @@ export function useTextIntakeRecovery(
     // One bounded read, never automatic replay, new-key retry, Prepare or Run.
     if (needsCheck && current()) return check(key);
   }
+  function park(key: string, sessionOnly = false): boolean {
+    const entry = records.current.get(key);
+    if (
+      !current() ||
+      !scope ||
+      !entry ||
+      entry.parked ||
+      locks.current.has(key) ||
+      ["sending", "checking", "unsent", "found"].includes(entry.phase)
+    )
+      return false;
+    if (sessionOnly && !entry.parkStorageFailed) return false;
+    if (!sessionOnly) {
+      try {
+        const persisted = JSON.parse(
+          localStorage.getItem(scope + key) ?? "null",
+        );
+        if (
+          !isIdentity(persisted, namespace, projectId) ||
+          persisted.key !== key
+        )
+          throw new Error("Pending identity not durable");
+        writeParked(
+          window.location.origin,
+          namespace,
+          projectId,
+          "text-intake",
+          key,
+        );
+      } catch {
+        setStorageUnavailable(true);
+        records.current.set(key, { ...entry, parkStorageFailed: true });
+        publish();
+        return false;
+      }
+    }
+    records.current.set(key, {
+      ...entry,
+      parked: true,
+      parkSessionOnly: sessionOnly,
+      parkStorageFailed: false,
+    });
+    publish();
+    return true;
+  }
   async function submit(
     payload: IntakePayload,
   ): Promise<{ key: string; saved?: SavedText }> {
     if (
       !scope ||
-      [...records.current.values()].some((e) => e.phase !== "found")
+      [...records.current.values()].some(
+        (e) => e.phase !== "found" && !e.parked,
+      )
     )
       throw new ApiError(
         "Resolve the pending text save first",
@@ -326,7 +380,7 @@ export function useTextIntakeRecovery(
     let key: string;
     try {
       key = crypto.randomUUID();
-      if (!requestUUID.test(key)) throw new Error();
+      if (!requestUUID.test(key) || records.current.has(key)) throw new Error();
     } catch {
       throw new ApiError(
         "Secure request identity is unavailable; no text was sent",
@@ -373,8 +427,21 @@ export function useTextIntakeRecovery(
           if (!k?.startsWith(scope)) continue;
           try {
             const v = JSON.parse(localStorage.getItem(k) ?? "null");
-            if (isIdentity(v, namespace, projectId) && k === scope + v.key)
-              records.current.set(v.key, { ...v, phase: "pending" });
+            if (isIdentity(v, namespace, projectId) && k === scope + v.key) {
+              let parked = false;
+              try {
+                parked = readParked(
+                  window.location.origin,
+                  namespace,
+                  projectId,
+                  "text-intake",
+                  v.key,
+                );
+              } catch {
+                /* no marker authority */
+              }
+              records.current.set(v.key, { ...v, phase: "pending", parked });
+            }
           } catch {
             /* Never render stored arbitrary content. */
           }
@@ -429,10 +496,11 @@ export function useTextIntakeRecovery(
   }
   return {
     supported: Boolean(scope),
-    blocked: visible.some((e) => e.phase !== "found"),
+    blocked: visible.some((e) => e.phase !== "found" && !e.parked),
     storageUnavailable,
     error,
     entries: visible,
+    park,
     submit,
     check,
     retry: async (key) => {
@@ -443,6 +511,7 @@ export function useTextIntakeRecovery(
       }
     },
     canRetry: (key) =>
+      !records.current.get(key)?.parked &&
       payloads.current.has(key) &&
       !locks.current.has(key) &&
       !["found", "conflict"].includes(
@@ -463,8 +532,10 @@ export function TextIntakeRecoveryPanel({
   recovery,
   t,
   onOpen,
+  onSeparate,
 }: {
   recovery: TextIntakeRecovery;
+  onSeparate?: () => void;
   t: Translate;
   onOpen: (saved: SavedText) => void;
 }) {
@@ -501,6 +572,12 @@ export function TextIntakeRecoveryPanel({
                             : "intakePendingUnknown",
                 )}
               </p>
+              <RecoveryParkControls
+                entry={entry}
+                recovery={recovery}
+                t={t}
+                onSeparate={onSeparate}
+              />
               {entry.error !== undefined && (
                 <ErrorMessage error={entry.error} t={t} />
               )}
@@ -527,12 +604,11 @@ export function TextIntakeRecoveryPanel({
                 <>
                   <button
                     className="button secondary"
-                    disabled={[
-                      "sending",
-                      "checking",
-                      "conflict",
-                      "unsent",
-                    ].includes(entry.phase)}
+                    disabled={
+                      ["sending", "checking", "conflict", "unsent"].includes(
+                        entry.phase,
+                      ) && !(entry.parked && entry.phase === "conflict")
+                    }
                     onClick={() => void recovery.check(entry.key)}
                   >
                     {t("intakeCheck")}

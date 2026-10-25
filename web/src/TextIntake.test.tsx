@@ -651,3 +651,66 @@ it("newer source choice on the same page is not replaced by a late text save", a
   expect(screen.queryByLabelText(t("abstractText"))).not.toBeInTheDocument();
   expect(location.hash).toBe("#literature");
 });
+it("park keeps old input locked until explicit empty separate intake; late found preserves new title", async () => {
+  const fetch = serve(),
+    original = fetch.getMockImplementation()!;
+  let oldFound = false;
+  fetch.mockImplementation(async (input, options) => {
+    if (options?.method === "POST") throw TypeError("Synthetic lost reply");
+    if (String(input).includes("/source-text/"))
+      return response({
+        ok: true,
+        intake: { version: 1, key, state: oldFound ? "found" : "not_observed" },
+        ...(oldFound ? pair : {}),
+      });
+    return original(input, options);
+  });
+  history.replaceState({}, "", "#literature");
+  render(<App />);
+  await savePaste();
+  await screen.findByText(t("intakeNotObserved"));
+  fireEvent.click(screen.getByText(t("recoveryPark")));
+  fireEvent.click(screen.getByText(t("recoveryParkConfirm")));
+  expect(screen.getByLabelText(t("intakeTitle"))).toHaveValue("Public paper");
+  expect(screen.getByRole("button", { name: t("intakeSave") })).toBeDisabled();
+  fireEvent.click(screen.getByText(t("recoverySeparate")));
+  expect(screen.getByLabelText(t("intakeTitle"))).toHaveValue("");
+  expect(screen.getByLabelText(t("intakePasteMode"))).toHaveValue("");
+  fireEvent.change(screen.getByLabelText(t("intakeTitle")), {
+    target: { value: "Different intent" },
+  });
+  await userEvent.click(screen.getByRole("link", { name: "Manuscript" }));
+  oldFound = true;
+  fireEvent.click(screen.getByText(t("intakeCheck")));
+  await screen.findByText(t("intakeOpenSaved"));
+  expect(location.hash).toBe("#manuscript");
+  expect(screen.getByLabelText(t("intakeTitle"))).toHaveValue(
+    "Different intent",
+  );
+  expect(fetch.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(
+    1,
+  );
+  expect(fetch.mock.calls.some((c) => String(c[0]).includes("/run"))).toBe(
+    false,
+  );
+});
+it("exact saved source label retains artifact ID, title, declared scope and path without a new read", async () => {
+  const fetch = serve();
+  history.replaceState({}, "", "#literature");
+  render(<App />);
+  await savePaste();
+  await screen.findByLabelText(t("abstractText"));
+  const select = screen.getByLabelText(
+    t("abstractChooseFile"),
+  ) as HTMLSelectElement;
+  const option = Array.from(select.options).find(
+    (o) => o.value === artifact.id,
+  )!;
+  expect(select).toHaveValue(artifact.id);
+  expect(option.textContent).toContain(record.data.title);
+  expect(option.textContent).toContain(t("intakeScopeUnknown"));
+  expect(option.textContent).toContain(artifact.path);
+  expect(fetch.mock.calls.some((c) => String(c[0]).endsWith("/text"))).toBe(
+    false,
+  );
+});

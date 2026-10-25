@@ -972,7 +972,13 @@ it("explicit saved-copy reopen preserves keyless Prepare uncertainty and does no
   );
   await user.click(screen.getByRole("button", { name: t("abstractPrepare") }));
   await screen.findByText(t("abstractPrepareUncertain"));
-  rerender(<AbstractDraftComposer {...props} restoreVersion={1} />);
+  rerender(
+    <AbstractDraftComposer
+      {...props}
+      restoreVersion={1}
+      separateIntentVersion={1}
+    />,
+  );
   expect(screen.getByText(t("abstractRestoreBlocked"))).toBeVisible();
   expect(screen.getByLabelText(t("abstractChooseFile"))).toHaveValue(other.id);
   expect(screen.getByLabelText(t("abstractText"))).toHaveValue(

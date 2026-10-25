@@ -1,6 +1,19 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  sourceLocallySaved: "Locally saved",
+  sourceUnverifiedFile: "Unverified source link",
+  recoveryPark: "Park unresolved request…",
+  recoveryParkConfirm: "Keep unresolved identity and park",
+  recoveryParkWarning:
+    "Parking is not server cancellation and does not prove the save failed. A late copy or task may still appear. Keep checking this exact request; do not repeat the same intent as a new request.",
+  recoveryParked:
+    "Parked locally; the outcome is still shown separately. This request has not been cancelled or replayed.",
+  recoverySeparate: "Start a separate intent",
+  recoveryParkSessionWarning:
+    "The parked disposition could not be saved for reload. Continue only in this session? Reload may block again on the unchanged pending request.",
+  recoveryParkSession: "Park for this session only",
+
   abstractRestoreBlocked:
     "The exact saved copy was not reopened: a Prepare outcome is still locked, or its current linkage is unavailable. No selection or uncertainty was reset. Inspect the pending task before changing its source.",
   intakeAdd: "Add existing text",
@@ -532,6 +545,17 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  sourceLocallySaved: "本機儲存時間",
+  sourceUnverifiedFile: "來源連結未核實",
+  recoveryPark: "暫擱結果未明的請求…",
+  recoveryParkConfirm: "保留未明請求身分並暫擱",
+  recoveryParkWarning:
+    "暫擱不是取消伺服器請求，也不代表儲存失敗。副本或任務仍可能稍後出現。請繼續查詢這個確切請求，不要把相同意圖另送成新請求。",
+  recoveryParked: "已在本機暫擱；結果另行顯示。請求未被取消，也未重送。",
+  recoverySeparate: "另起一個獨立意圖",
+  recoveryParkSessionWarning:
+    "暫擱狀態無法保存供重開使用。是否僅在本次工作階段繼續？重開後可能再次被原本未明的請求阻擋。",
+  recoveryParkSession: "僅在本次工作階段暫擱",
   abstractRestoreBlocked:
     "未重新開啟精確副本：準備結果仍鎖定，或目前連結無法確認。未重設選取內容或未決狀態；變更來源前請先檢查待處理任務。",
   intakeAdd: "加入現有文字",
