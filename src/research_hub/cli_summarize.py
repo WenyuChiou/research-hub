@@ -96,8 +96,12 @@ def _cmd_summarize(args, cfg, *, emit_json: bool = False) -> int:
         apply=args.apply,
         write_zotero=not args.no_zotero,
         write_obsidian=not args.no_obsidian,
+        provenance="legacy_cli_explicit_apply",
     )
     if not emit_json and report.apply_result is not None:
+        from research_hub.summarize import receipt_lines
+        for line in receipt_lines(getattr(report.apply_result, "receipts", [])):
+            print(line)
         for warning in getattr(report.apply_result, "warnings", []):
             print(f"  WARN {warning}", file=sys.stderr)
     if not report.ok:

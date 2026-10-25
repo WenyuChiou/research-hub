@@ -61,7 +61,7 @@ def _build_cfg(tmp_path: Path, root_name: str, count: int) -> SimpleNamespace:
     for idx in range(1, count + 1):
         slug = f"paper-{idx:02d}"
         _write_paper(raw / f"{slug}.md", slug, f"Paper {idx}", f"ZK{idx}")
-    return SimpleNamespace(raw=raw.parent, research_hub_dir=research_hub_dir)
+    return SimpleNamespace(raw=raw.parent, research_hub_dir=research_hub_dir, zotero_library_id="SYNTHETIC", zotero_library_type="user")
 
 
 def _payload(count: int) -> dict:
@@ -143,8 +143,10 @@ def test_parallel_writes_preserve_per_paper_rollback_invariant(tmp_path, monkeyp
         for idx in range(1, 6)
     }
 
-    def fail_one(zot, parent_key: str, html: str):
+    def fail_one(zot, parent_key: str, html: str, *, before_write=None):
         del zot, html
+        if before_write is not None:
+            before_write()
         if parent_key == "ZK2":
             raise RuntimeError("boom")
 

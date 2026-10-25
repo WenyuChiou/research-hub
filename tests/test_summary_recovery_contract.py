@@ -16,6 +16,8 @@ ENTRY = {'paper_slug': 'paper', 'key_findings': ['Synthetic finding'],
 
 
 class Remote:
+    library_id = "123"
+    library_type = "user"
     def __init__(self, mode, path):
         self.mode, self.path, self.calls = mode, path, 0
         self.remote_text = 'original'
@@ -43,13 +45,17 @@ class SummaryRecoveryContracts(unittest.TestCase):
             blocker.start(); self.addCleanup(blocker.stop)
 
     def apply(self, remote):
-        papers = [{'slug': 'paper', 'path': self.path, 'zotero_key': 'PARENT01', 'title': 'Synthetic'}]
+        papers = [{'slug': 'paper', 'path': self.path, 'zotero_key': 'PARENT01', 'title': 'Synthetic', 'abstract': 'Synthetic selected abstract.'}]
         with patch.object(summarize, '_read_cluster_papers_with_abstracts', return_value=papers):
-            return summarize.apply_summaries(SimpleNamespace(), 'synthetic', [ENTRY], zot=remote)
+            cfg = SimpleNamespace(root=self.path.parent, raw=self.path.parent, zotero_library_id='123', zotero_library_type='user')
+            return summarize.apply_summaries(cfg, 'synthetic', [ENTRY], zot=remote)
 
     def test_timeout_and_false_ack_remain_unknown_without_retry(self):
         for mode in ('timeout', 'false'):
             with self.subTest(mode=mode):
+                # Each mode is a separate intent; never delete an unknown claim.
+                self.path = self.path.parent / mode / 'paper.md'
+                self.path.parent.mkdir()
                 self.path.write_text(self.original, encoding='utf-8')
                 remote = Remote(mode, self.path)
                 result = self.apply(remote)

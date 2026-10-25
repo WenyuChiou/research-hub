@@ -529,7 +529,11 @@ def _paper_resummarize(
         llm_cli=llm_cli,
         apply=apply,
         paper_keys=paper_keys,
+        provenance="legacy_cli_explicit_apply",
     )
+    if report.apply_result is not None:
+        for line in summarize_mod.receipt_lines(getattr(report.apply_result, "receipts", [])):
+            print(line)
     if not report.ok:
         if report.apply_result is not None:
             receipt = report.apply_result

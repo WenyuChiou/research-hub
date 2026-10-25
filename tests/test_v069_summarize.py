@@ -88,6 +88,7 @@ def cfg(tmp_path):
                     "Paper Two", "Surveys show female-headed households relocate less.", zotero_key="ZK2")
     return SimpleNamespace(
         raw=raw.parent,
+        zotero_library_id="SYNTHETIC", zotero_library_type="user",
         research_hub_dir=research_hub_dir,
     )
 

@@ -1,0 +1,70 @@
+# Private legacy-summary apply integration (schema2)
+
+The actual `summarize.apply_summaries` per-paper writer now reserves logical
+local/Zotero targets and stages exact candidate/recovery bytes in the private
+journal before destination I/O. CLI summarize/resummarize, MCP summary apply,
+and auto/enrichment callers share that seam. Existing result fields/counters
+remain; optional versioned `receipts` add operation identity, sink states,
+observations and scope/hash bindings. CLI text prints compact receipt lines.
+No new provider API, credential, token override, provider lookup command or UI.
+
+## Boundaries
+- `summarize_cluster` already generates model output BEFORE `apply_summaries`.
+  This integration does NOT reserve before model generation or prevent model
+  regeneration on retry. MCP out-of-band payloads also arrive already generated.
+- Source hashes bind the extracted abstract reread at apply time, not proof of
+  the exact model-input revision or PDF/fulltext coverage. Receipts label this
+  limitation. Original source-to-generation revision checking is a separate gate.
+- Original authorization provenance is retained across identical CLI/MCP retry;
+  it is an explicit legacy invocation, not authenticated human identity,
+  scientific acceptance or Workspace local-human approval.
+- Same candidate+scope gives the same operation identity. Confirmed replay
+  returns the historical receipt without another destination write; this is
+  not a fresh verification of current remote/local content. Changed candidate
+  cannot bypass an unresolved logical target claim.
+- Neither-enabled-sink calls keep legacy no-write behavior and create no journal.
+  Local-only calls need no provider/client. Unknown/mismatched remote library
+  identity refuses BEFORE local or remote destination writes.
+
+## Crash and outcome contract
+Dispatch tokens are returned only after SQLite claim commit. Remote ownership
+reads occur before the callback that claims remote dispatch; callback failure
+prevents the adapter write. Errors after dispatch stay unknown absent a positive
+acknowledgement; no automatic resend or create fallback. A positive provider
+return followed by receipt-write failure is reconciliation-required, not proof
+that the provider failed. Local already-written data is not falsely rolled back
+merely because a positive receipt could not be saved.
+
+After unconfirmed remote response, local compensation is attempted with the
+existing unchanged-byte guard. Effective local states are `compensated` when
+restored, `conflicted` when newer content is preserved, or `unknown` when
+compensation is unavailable. A separate historical `write_acknowledged` fact
+remains. A later remote acknowledgement cannot turn a compensated/conflicted
+local sink into a satisfied aggregate or release its claim. A late original local
+write acknowledgement also cannot erase newer compensation uncertainty. No user-resolution
+or retry-after-compensation API is introduced in this slice.
+
+A reserved but never-staged operation can stage/retry under unchanged scope;
+unknown/dispatched operations cannot. Oversized candidate/snapshot rejects
+without destination writes or truncation. Apply-only lookup serializes first-use
+schema initialization with writers; public get/list still never initialize.
+Exact-target conflicts return the original recorded receipt instead of silently
+allocating an escape key. If the old receipt cannot be read, fallback output
+retains original blocking identities and possible prior dispatch, never a new
+unrecorded identity or false not-dispatched proof. Reconciliation observations never prove not-delivery.
+
+## Schema and safety
+Schema2 adds effective compensation states. Schema1 foundation files are refused
+without migration, reset or evidence deletion. This is an unreleased private
+contract change, not a public backwards-compatible release. Original schema1
+source/evidence remains frozen. No Workspace DB or historical profile assets
+change. No automatic expiry/pruning, no provider token guarantee, no protection
+against old binaries/external writers or malicious concurrent path replacement.
+
+Synthetic tests use fake generation/provider seams or in-process HTTP mock
+transport, never real Zotero/model calls. Previous installed stdio proof is not
+reused as proof this changed consumer passed a new transport run. Remaining
+gates include complete consumer compatibility, installed-wheel checks, adapter
+semantics, source-generation provenance and user-facing recovery resolution.
+
+When receipt history is unavailable, `dispatch_may_have_started=true` is conservative across prior invocations; `current_attempt_dispatched` reports only this invocation. No current dispatch is not proof that the retained operation was never dispatched. The error remains reconciliation-required.

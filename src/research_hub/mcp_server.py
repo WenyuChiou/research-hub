@@ -1653,6 +1653,7 @@ def summarize_cluster(
             apply=apply,
             write_zotero=write_zotero,
             write_obsidian=write_obsidian,
+            provenance="legacy_mcp_apply_invocation",
         )
         return report.to_dict()
     except Exception as exc:
@@ -1671,7 +1672,7 @@ def apply_cluster_summaries(cluster_slug: str, summaries_json: dict) -> dict:
         from research_hub.config import get_config
 
         cfg = get_config()
-        result = summarize_mod.apply_summaries(cfg, cluster_slug, summaries_json)
+        result = summarize_mod.apply_summaries(cfg, cluster_slug, summaries_json, provenance="legacy_mcp_apply_invocation")
         return result.to_dict()
     except Exception as exc:
         return _tool_error(exc)

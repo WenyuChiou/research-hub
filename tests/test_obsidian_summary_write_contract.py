@@ -28,6 +28,8 @@ RESPONSE = ('SUMMARY: Trust and adaptation intention were associated.\n'
             'RELEVANCE: Evidence about adaptation intentions; no causal claim.\n')
 
 class Zotero:
+    library_id = "123"
+    library_type = "user"
     def __init__(self, fail=False):
         self.html = None
         self.fail = fail
@@ -279,7 +281,7 @@ def test_atomic_summary_write_preserves_private_file_mode(tmp_path, monkeypatch,
     assert stat.S_IMODE(p.stat().st_mode)==0o600
 
 
-def test_duplicate_entries_have_exclusive_atomic_temporary_paths(tmp_path, monkeypatch):
+def test_concurrent_writer_primitive_has_exclusive_atomic_temporary_paths(tmp_path, monkeypatch):
     """No temp collisions or lost outcomes; Windows may reject a concurrent replace."""
     cfg,p=note(tmp_path)
     barrier=threading.Barrier(2)
@@ -296,16 +298,55 @@ def test_duplicate_entries_have_exclusive_atomic_temporary_paths(tmp_path, monke
             replacement_errors.append(exc)
             raise
     monkeypatch.setattr(os,'replace',synchronized_replace)
-    result=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY,ENTRY],write_zotero=False)
-    # Windows can deny one simultaneous replace; this contract requires honest
-    # per-entry outcomes and intact complete bytes, not dual concurrent success.
-    assert result.applied and set(result.applied)=={'paper'}
-    assert len(result.applied)+len(result.errors)==2
-    assert len(result.errors)==len(replacement_errors)
+    # Journal claims deliberately prevent duplicate apply dispatch. Exercise the
+    # underlying real atomic writer directly to retain its two-writer contract.
+    from concurrent.futures import ThreadPoolExecutor
+    def write():
+        try:
+            summarize._write_note_text(p, expected.decode("utf-8"))
+            return None
+        except PermissionError as exc:
+            return exc
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes=list(pool.map(lambda _: write(), range(2)))
+    assert any(outcome is None for outcome in outcomes)
+    assert sum(outcome is not None for outcome in outcomes)==len(replacement_errors)
     for exc in replacement_errors:
         assert os.name=='nt' and exc.winerror in {5,32}
-        assert any('obsidian write failed: '+str(exc) in error for error in result.errors)
+        assert exc in outcomes
     assert len(set(temporary_paths))==2
+    assert p.read_bytes()==expected
+    assert not list(p.parent.glob('.' + p.name + '.*.tmp'))
+
+
+def test_duplicate_apply_entries_do_not_duplicate_journal_dispatch(tmp_path, monkeypatch):
+    cfg,p=note(tmp_path)
+    from research_hub.summary_journal import SummaryJournal
+    barrier=threading.Barrier(2)
+    lookup=SummaryJournal.lookup_for_apply
+    def simultaneous_lookup(journal, operation_id):
+        observed=lookup(journal, operation_id)
+        barrier.wait(timeout=5)
+        return observed
+    monkeypatch.setattr(SummaryJournal,'lookup_for_apply',simultaneous_lookup)
+    expected=summarize._replace_obsidian_block(p.read_bytes().decode("utf-8"), summarize.PaperSummary(**ENTRY)).encode("utf-8")
+    original=summarize._write_note_text
+    writes=[]
+    def write(path,text):
+        writes.append((path,text))
+        return original(path,text)
+    monkeypatch.setattr(summarize,'_write_note_text',write)
+    result=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY,ENTRY],write_zotero=False)
+    assert len(writes)==1
+    assert result.applied and set(result.applied)=={'paper'}
+    assert len(result.applied)+len(result.errors)+len(result.skipped)==2
+    assert len(result.receipts)==2
+    assert len({receipt['operation_id'] for receipt in result.receipts})==1
+    assert all(receipt['sinks']['local']['state'] in {'confirmed', 'unknown', 'prepared_unsent'} for receipt in result.receipts)
+    monkeypatch.setattr(SummaryJournal,'lookup_for_apply',lookup)
+    replay=summarize.apply_summaries(cfg,'flood-adaptation',[ENTRY],write_zotero=False)
+    assert len(writes)==1 and replay.skipped and not replay.errors
+    assert replay.receipts[0]['operation_id']==result.receipts[0]['operation_id']
     assert p.read_bytes()==expected
     assert not list(p.parent.glob('.' + p.name + '.*.tmp'))
 
