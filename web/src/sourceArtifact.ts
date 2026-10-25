@@ -1,4 +1,5 @@
 import type { Artifact, ResearchRecord } from "./types";
+import { artifactReference, isBlobArtifact } from "./sourceStorage";
 import type { Translate } from "./i18n";
 /** Exact existing intake join; never infer identity from a similar title. */
 export function linkedSourceArtifact(
@@ -15,7 +16,8 @@ export function linkedSourceArtifact(
       a.sha256 === binding.sha256 &&
       a.source_record_id === record.id &&
       a.project_id === projectId &&
-      a.origin === "hub-text-intake",
+      a.origin === "hub-text-intake" &&
+      (!("storage" in a) || (isBlobArtifact(a) && binding.format === a.format)),
   );
 }
 export function sourceArtifactLabels(
@@ -46,7 +48,7 @@ export function sourceArtifactLabels(
         : "intakeScopeUnknown",
     );
     labels[artifact.id] =
-      `${record.data.title} — ${scope}${date ? ` — ${t("sourceLocallySaved")} ${date}` : ""} — ${artifact.path}`;
+      `${record.data.title} — ${scope}${date ? ` — ${t("sourceLocallySaved")} ${date}` : ""} — ${artifactReference(artifact)}`;
   }
   return labels;
 }

@@ -1,5 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
+import {
+  artifactReference,
+  readableArtifact,
+  previewMatchesArtifact,
+} from "./sourceStorage";
 import { ErrorMessage, ReadText, SourceLink } from "./components";
 import type { Translate } from "./i18n";
 import type {
@@ -19,7 +24,10 @@ export function uncertainMutation(error: unknown): boolean {
 
 export interface TextPreview {
   artifact_id: string;
-  path: string;
+  path?: string;
+  reference?: string;
+  storage?: { kind: string; version: number; blob_id: string };
+  format?: string;
   sha256: string;
   text: string;
   codepoint_length: number;
@@ -209,8 +217,8 @@ export function AbstractDraftComposer({
     )
       void read(initialArtifactId);
   }, [restoreVersion]);
-  const choices = artifacts.filter(
-    (item) => item.role === "evidence" && /\.(md|txt)$/i.test(item.path),
+  const choices = artifacts.filter((item) =>
+    readableArtifact(item, projectId, source.id),
   );
   const selectedText =
     preview && range
@@ -240,9 +248,12 @@ export function AbstractDraftComposer({
       );
       if (!controller.signal.aborted && alive.current) {
         if (
-          value.preview.artifact_id !== targetArtifactId ||
-          value.preview.truncated !== false ||
-          typeof value.preview.text !== "string"
+          !artifacts.some(
+            (a) =>
+              a.id === targetArtifactId &&
+              readableArtifact(a, projectId, source.id) &&
+              previewMatchesArtifact(value.preview, a),
+          )
         )
           throw new Error(t("abstractPreviewInvalid"));
         setPreview(value.preview);
@@ -346,7 +357,7 @@ export function AbstractDraftComposer({
               {choices.map((item) => (
                 <option key={item.id} value={item.id} disabled={!item.current}>
                   {artifactLabels?.[item.id] ??
-                    `${t("sourceUnverifiedFile")} — ${item.path}`}
+                    `${t("sourceUnverifiedFile")} — ${artifactReference(item)}`}
                   {!item.current ? ` — ${t("changed")}` : ""}
                 </option>
               ))}
@@ -380,7 +391,7 @@ export function AbstractDraftComposer({
       )}
       {preview && (
         <>
-          <p className="file-path">{preview.path}</p>
+          <p className="file-path">{preview.reference ?? preview.path}</p>
           <p>{t("abstractSelectHelp")}</p>
           <div className="field field-wide">
             <label htmlFor={`${id}-text`}>{t("abstractText")}</label>

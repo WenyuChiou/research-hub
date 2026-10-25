@@ -1,3 +1,4 @@
+import { artifactReference } from "./sourceStorage";
 import { linkedSourceArtifact, sourceArtifactLabels } from "./sourceArtifact";
 import { useState, type ReactNode } from "react";
 import { api, segment } from "./api";
@@ -210,7 +211,7 @@ export function ProjectPages({
                     ? t(roleLabels[artifact.role])
                     : artifact.role}
                 </SmallLabel>
-                <p className="file-path">{artifact.path}</p>
+                <p className="file-path">{artifactReference(artifact)}</p>
                 <details className="inspect">
                   <summary>{t("fingerprint")}</summary>
                   <code className="hash">{artifact.sha256}</code>

@@ -145,7 +145,7 @@ export const en = {
     "No registered evidence text is available here. This draft path supports existing UTF-8 .md/.txt evidence only, not PDFs or metadata alone. You can keep reading the source link and managing its record; no new abstract file is required to leave this step.",
   abstractChooseFile: "Choose existing evidence text",
   abstractChooseFilePlaceholder: "Choose a registered text file",
-  abstractReadText: "Read selected text file",
+  abstractReadText: "Read selected saved text",
   abstractPreviewInvalid:
     "The selected text preview could not be verified. Choose the file again.",
   abstractSelectHelp:
@@ -683,7 +683,7 @@ export const zhTW: Record<MessageKey, string> = {
     "目前沒有已登錄的證據文字。此路徑僅支援既有 UTF-8 .md／.txt 證據，不支援 PDF 或僅有書目。仍可開啟來源連結及管理紀錄；離開此步驟不必另製摘要檔。",
   abstractChooseFile: "選擇既有證據文字",
   abstractChooseFilePlaceholder: "選擇已登錄的文字檔",
-  abstractReadText: "讀取所選文字檔",
+  abstractReadText: "讀取所選已保存文字",
   abstractPreviewInvalid: "無法確認所選文字預覽，請重新選擇檔案。",
   abstractSelectHelp:
     "用滑鼠或鍵盤在下方文字選取摘要段落。不自動選取全文，也不修改原檔。",

@@ -18,14 +18,20 @@ from .tasks import _LOCAL_HUMAN
 
 class WorkspaceServer(ThreadingHTTPServer):
     daemon_threads = True
+    _service_type = WorkspaceService
 
     def __init__(self, root, *, port=8765, human=False):
-        self.service = WorkspaceService(root)
+        self.service = self._service_type(root)
         self.service.workspace.initialize_preparations()
         self.csrf = secrets.token_urlsafe(32)
         self.human = secrets.token_urlsafe(32) if human else None
         self.static = Path(__file__).resolve().parents[1] / "workspace_static"
         super().__init__(("127.0.0.1", port), WorkspaceHandler)
+
+    def _call(self, resource, operation, data=None, *, proof=None, background=False):
+        # Keep the constructor-selected service; no request selects a backend.
+        return call_workspace(self.service.workspace.root, resource, operation, data,
+                              proof=proof, background=background, _service=self.service)
 
 
 class WorkspaceHandler(BaseHTTPRequestHandler):
@@ -71,22 +77,22 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             segments = path.strip("/").split("/")
             if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "source-text"):
-                return self._result(call_workspace(self.server.service.workspace.root, "project", "source_text_lookup",
+                return self._result(self.server._call("project", "source_text_lookup",
                     {"project_id": segments[3], "key": segments[5],
                      "workspace_instance_id": self.headers.get("X-Workspace-Instance")}))
             if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "preparations"):
-                return self._result(call_workspace(self.server.service.workspace.root, "task", "reconcile_preparation",
+                return self._result(self.server._call("task", "reconcile_preparation",
                     {"project_id": segments[3], "key": segments[5],
                      "workspace_instance_id": self.headers.get("X-Workspace-Instance")}))
             if (len(segments) == 7 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "artifacts" and segments[6] == "text"):
-                return self._result(call_workspace(self.server.service.workspace.root, "project", "preview_text",
+                return self._result(self.server._call("project", "preview_text",
                                                   {"project_id": segments[3], "artifact_id": segments[5]}))
             if len(segments) == 4 and segments[:2] == ["api", "v1"]:
                 resource = {"projects": "project", "tasks": "task", "actions": "action"}.get(segments[2])
                 if resource:
-                    return self._result(call_workspace(self.server.service.workspace.root, resource, "show", {f"{resource}_id": segments[3]}))
+                    return self._result(self.server._call(resource, "show", {f"{resource}_id": segments[3]}))
             if path in {"/", "/app", "/app/"}:
                 target = safe_path(self.server.static, "index.html", exists=True)
                 html = target.read_text(encoding="utf-8")
@@ -140,7 +146,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                         proof = _LOCAL_HUMAN
             if not operation:
                 raise WorkspaceError("Unknown workspace route", "not_found")
-            self._result(call_workspace(self.server.service.workspace.root, resource, operation, data, proof=proof, background=True))
+            self._result(self.server._call(resource, operation, data, proof=proof, background=True))
         except (ValueError, OSError) as exc:
             self._reply(400, {"ok": False, "error": str(exc), "code": "invalid_request"})
 

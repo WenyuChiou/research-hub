@@ -35,7 +35,7 @@ def _sha(raw: bytes) -> str:
 class AbstractDraftAdapter:
     """Load only package-owned, pinned public instruction files; no discovery."""
     def __init__(self, profile_version: int = PROFILE_VERSION):
-        if type(profile_version) is not int or profile_version not in {1, 2}:
+        if type(profile_version) is not int or profile_version not in {1, 2, 3}:
             raise WorkspaceError("Unsupported abstract draft profile version", "unsupported_capability")
         root = Path(__file__).resolve().parents[1] / "skills_data"
         self.material = {}
@@ -50,10 +50,12 @@ class AbstractDraftAdapter:
                          "files": dict(FILES), "mode": "no-tool-abstract-draft",
                          "supported_stages": ["bounded abstract input", "draft generation"],
                          "not_performed": list(NOT_PERFORMED)}
-        if profile_version == 2:
+        if profile_version in {2, 3}:
             self.manifest["quote_binding"] = {
                 "preferred": "backend-unique-exact-quote", "resolver_version": 1,
                 "legacy_offsets": "strict-no-repair", "coordinate_frame": COORDINATE_FRAME}
+        if profile_version == 3:
+            self.manifest["source_storage"] = {"kind": "workspace_blob", "version": 1}
         self.sha256 = digest(self.manifest)
 
     def instructions(self, skill: str) -> dict:
@@ -79,6 +81,13 @@ def read_selected_text(workspace, project_id: str, artifact_id: str) -> dict:
     if not isinstance(project_id, str) or not isinstance(artifact_id, str) or not project_id or not artifact_id:
         raise WorkspaceError("Select a registered project evidence artifact", "invalid_source")
     artifact = selected_artifact(workspace, project_id, artifact_id)
+    from ._source_storage import is_blob, read_blob, reference
+    if is_blob(artifact):
+        raw = read_blob(workspace, artifact)
+        text = raw.decode("utf-8")
+        return {"artifact_id": artifact["id"], "reference": reference(artifact), "storage": artifact["storage"],
+                "format": artifact["format"], "sha256": artifact["sha256"], "text": text,
+                "codepoint_length": len(text), "bytes_read": len(raw), "truncated": False}
     path = safe_path(workspace.root, artifact["path"], exists=True)
     if path.suffix.lower() not in {".md", ".txt"}:
         raise WorkspaceError("Abstract draft requires accessible UTF-8 text; no PDF was read", "unsupported_source")
@@ -112,6 +121,8 @@ def read_selection(workspace, project_id: str, selection: dict) -> dict:
         raise WorkspaceError("Select a source record from this project", "invalid_source")
     record = {"id": selection["source_record_id"], "data": json.loads(row[0])}
     preview = read_selected_text(workspace, project_id, selection["artifact_id"])
+    if "storage" in preview and preview["reference"] != "hub-source:" + record["id"]:
+        raise WorkspaceError("Saved-text selection belongs to a different source record", "invalid_source")
     text = preview["text"]
     start, end = selection["start"], selection["end"]
     if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text) or not text[start:end].strip():
@@ -120,23 +131,33 @@ def read_selection(workspace, project_id: str, selection: dict) -> dict:
     if any(not isinstance(record["data"].get(k), str) or not record["data"][k].strip() or len(record["data"][k]) > 2000 for k in ("title", "locator")):
         raise WorkspaceError("Selected source metadata is missing or oversized", "invalid_source")
     # Source-record extras and unrelated project context never enter this pack.
-    return {"artifact_id": preview["artifact_id"], "source_record_id": record["id"],
+    result = {"artifact_id": preview["artifact_id"], "source_record_id": record["id"],
             "source_sha256": preview["sha256"], "start": start, "end": end,
             "text": selected, "text_sha256": _sha(selected.encode("utf-8")),
             "source": {"title": record["data"]["title"], "locator": record["data"]["locator"],
                        "identity_status": "unverified", "publication_version": "unknown"},
             "scope": "abstract", "scope_basis": "operator-selected range, not automatically verified",
             "bytes_read": preview["bytes_read"], "truncated": False}
+    if "storage" in preview:
+        result.update(storage=preview["storage"], reference=preview["reference"])
+    return result
 
 
 def task_profile_version(task) -> int:
     version = task["request"]["research_draft"]["profile"].get("profile_version")
-    if type(version) is not int or version not in {1, 2}:
+    if type(version) is not int or version not in {1, 2, 3}:
         raise WorkspaceError("Unsupported abstract draft profile version", "unsupported_capability")
     return version
 
 
-def prepare(workspace, project_id, selection, *, profile_version=PROFILE_VERSION):
+def prepare(workspace, project_id, selection, *, profile_version=None):
+    from ._source_storage import is_blob
+    # Bind the new storage identity only under a new profile, never redefine v1/v2.
+    blob = is_blob(selected_artifact(workspace, project_id, selection["artifact_id"])) if isinstance(selection, dict) and isinstance(selection.get("artifact_id"), str) else False
+    if profile_version is None:
+        profile_version = 3 if blob else PROFILE_VERSION
+    if blob != (profile_version == 3):
+        raise WorkspaceError("Selected storage requires its explicit abstract profile", "unsupported_storage")
     adapter = AbstractDraftAdapter(profile_version)
     return {"profile": adapter.manifest, "profile_sha256": adapter.sha256,
             "source_selection": selection, "source_pack": read_selection(workspace, project_id, selection)}
@@ -173,7 +194,7 @@ def response_instruction(version: int) -> str:
             "text, quote, start, end. quote must equal the selected source text[start:end] using zero-based Unicode "
             "character offsets. Every statement needs a quote; a quote does not prove semantic support. "
         )
-    if version != 2 or type(version) is not int:
+    if version not in {2, 3} or type(version) is not int:
         raise WorkspaceError("Unsupported abstract draft profile version", "unsupported_capability")
     return (
         "Return one JSON object, no fences, with exactly summary, findings, methodology, limitations. "
@@ -198,7 +219,7 @@ def build_prompt(workspace, task) -> str:
 
 def resolve_response(response, source: dict, *, profile_version=PROFILE_VERSION) -> tuple[dict, dict]:
     """Deterministic exact binding only; never repair supplied offsets or infer support."""
-    if type(profile_version) is not int or profile_version not in {1, 2}:
+    if type(profile_version) is not int or profile_version not in {1, 2, 3}:
         raise WorkspaceError("Unsupported abstract draft profile version", "unsupported_capability")
     if not isinstance(response, dict) or set(response) != set(SECTIONS):
         raise WorkspaceError("Abstract draft requires the bounded statement envelope, not arbitrary prose", "invalid_output")
@@ -214,7 +235,7 @@ def resolve_response(response, source: dict, *, profile_version=PROFILE_VERSION)
             if not isinstance(item, dict):
                 raise WorkspaceError("Statement requires an exact source binding", "invalid_output")
             explicit = set(item) == {"text", "quote", "start", "end"}
-            quote_only = profile_version == 2 and set(item) == {"text", "quote"}
+            quote_only = profile_version in {2, 3} and set(item) == {"text", "quote"}
             if not explicit and not quote_only:
                 raise WorkspaceError("Statement requires an exact source binding", "invalid_output")
             if any(not isinstance(item[k], str) or not item[k].strip() or len(item[k]) > 4000 for k in ("text", "quote")):

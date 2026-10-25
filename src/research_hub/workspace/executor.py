@@ -137,6 +137,11 @@ def input_excerpts(workspace, task: dict) -> list[dict]:
     remaining = 120_000
     candidates = task["request"].get("revision_context", {}).get("artifacts", [])
     for artifact in candidates + task["request"]["artifacts"]:
+        from ._source_storage import coverage
+        metadata_only = coverage(artifact)
+        if metadata_only is not None:
+            excerpts.append(metadata_only)
+            continue
         path = safe_path(workspace.root, artifact["path"], exists=True)
         item = {"path": artifact["path"], "sha256": artifact["sha256"]}
         if path.suffix.lower() in {".md", ".tex", ".txt", ".csv", ".json", ".bib", ".py", ".r"}:

@@ -147,6 +147,11 @@ Only this invocation's temporary name/inode is cleaned up on ordinary exit.
 
 
 class TextIntake:
+    _blob_storage = False
+
+    def _check_capability(self):
+        _supported()
+
     def __init__(self, workspace):
         self.workspace = workspace
 
@@ -166,6 +171,9 @@ class TextIntake:
         if row is None:
             if db.execute("SELECT 1 FROM artifacts WHERE id=?", (artifact_id,)).fetchone():
                 raise WorkspaceError("Text-intake artifact remains but its source linkage is unavailable", "ledger_unavailable")
+            from ._source_storage import has_table
+            if has_table(db) and db.execute("SELECT 1 FROM source_text_blobs WHERE artifact_id=?", (artifact_id,)).fetchone():
+                raise WorkspaceError("Saved-text bytes remain without source linkage", "ledger_unavailable")
             return None
         data = json.loads(row[2])
         if not isinstance(data, dict):
@@ -182,11 +190,14 @@ class TextIntake:
         source_format = intake.get("format")
         if (not isinstance(payload_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", payload_hash)
                 or source_format not in ("md", "txt") or not isinstance(artifact, dict)
-                or artifact.get("path") != f"hub-sources/{project_id}/{record_id}/{payload_hash}.{source_format}"
+                or ("storage" not in artifact and artifact.get("path") != f"hub-sources/{project_id}/{record_id}/{payload_hash}.{source_format}")
                 or artifact.get("source_record_id") != record_id or artifact.get("id") != artifact_id
                 or artifact.get("project_id") != project_id or artifact.get("origin") != "hub-text-intake"
                 or artifact.get("role") != "evidence" or artifact.get("sha256") != intake.get("sha256")):
             raise WorkspaceError("Text-intake artifact linkage is inconsistent", "ledger_unavailable")
+        if "storage" in artifact:
+            from ._source_storage import row as storage_row
+            storage_row(db, artifact)
         return {"id": record_id, "kind": "source", "data": data}, artifact
 
     def _result(self, pair, key, **state):
@@ -213,7 +224,7 @@ class TextIntake:
 
     def save(self, project_id: str, *, intake_request, title, reading_scope, input_kind,
              format, content_base64, locator=""):
-        _supported()
+        self._check_capability()
         if (not isinstance(intake_request, dict) or set(intake_request) != {"version", "workspace_instance_id", "key"}
                 or type(intake_request["version"]) is not int or intake_request["version"] != 1):
             raise WorkspaceError("Unsupported text-intake identity envelope")
@@ -248,6 +259,9 @@ class TextIntake:
                                "reading_scope": reading_scope, "input_kind": input_kind, "format": format, "sha256": sha256})
         try:
             with self.workspace.db(write=True) as db:
+                if self._blob_storage:
+                    from ._source_storage import initialize
+                    initialize(db)
                 pair = self._lookup(db, project_id, record_id, artifact_id, key)
                 if pair:
                     if pair[0]["data"]["intake"].get("payload_digest") != payload_hash:
@@ -255,7 +269,8 @@ class TextIntake:
                     disposition = "existing"
                 else:
                     relative = f"hub-sources/{project_id}/{record_id}/{payload_hash}.{format}"
-                    _publish_copy(self.workspace, relative, raw)
+                    if not self._blob_storage:
+                        _publish_copy(self.workspace, relative, raw)
                     timestamp = now()
                     artifact = {"id": artifact_id, "project_id": project_id, "path": relative, "role": "evidence",
                                 "sha256": sha256, "registered_at": timestamp, "source_record_id": record_id,
@@ -266,8 +281,15 @@ class TextIntake:
                             "scope_basis": "operator-declared, not independently verified", "recorded_at": timestamp,
                             "intake": {"version": 1, "key": key, "payload_digest": payload_hash, "artifact_id": artifact_id,
                                        "sha256": sha256, "input_kind": input_kind, "format": format}}
+                    if self._blob_storage:
+                        artifact.pop("path")
+                        artifact.update(storage={"kind": "workspace_blob", "version": 1, "blob_id": artifact_id},
+                                        format=format, byte_length=len(raw))
                     db.execute("INSERT INTO artifacts VALUES (?,?,?)", (artifact_id, project_id, encoded(artifact)))
                     db.execute("INSERT INTO records VALUES (?,?,?,?)", (record_id, project_id, "source", encoded(data)))
+                    if self._blob_storage:
+                        db.execute("INSERT INTO source_text_blobs VALUES (?,?,?,?,?,?,?,?)",
+                                   (artifact_id, project_id, record_id, 1, format, sha256, len(raw), raw))
                     pair = {"id": record_id, "kind": "source", "data": data}, artifact
                     disposition = "created"
         except OSError as error:

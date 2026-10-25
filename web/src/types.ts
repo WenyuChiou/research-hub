@@ -46,6 +46,8 @@ export interface Workspace {
       workspace_instance_id: string;
       max_source_bytes: number;
       formats: string[];
+      storage?: { kind: string; version: number };
+      experimental?: boolean;
     };
     prepare_reconciliation?: { version: number; workspace_instance_id: string };
     codex: Capability;
@@ -66,7 +68,10 @@ export interface Artifact {
   source_record_id?: string;
   origin?: string;
   id: string;
-  path: string;
+  path?: string;
+  storage?: { kind: string; version: number; blob_id: string };
+  format?: string;
+  byte_length?: number;
   role: string;
   sha256: string;
   current: boolean;

@@ -503,7 +503,15 @@ def test_profile_revisions_change_binding_unknown_versions_reject(context):
     second = route.prepare(ws, "paper", selection, profile_version=2)
     assert first["source_pack"] == second["source_pack"]
     assert first["profile_sha256"] != second["profile_sha256"]
-    for version in (0, 3, True, "2"):
+    # Private BLOB evidence deliberately owns profile 3; it must not silently
+    # reinterpret a legacy file selection or redefine either historical profile.
+    third = route.AbstractDraftAdapter(3)
+    assert third.manifest["profile_version"] == 3
+    assert third.sha256 not in {first["profile_sha256"], second["profile_sha256"]}
+    with pytest.raises(WorkspaceError) as mismatch:
+        route.prepare(ws, "paper", selection, profile_version=3)
+    assert mismatch.value.code == "unsupported_storage"
+    for version in (0, 4, True, "2"):
         with pytest.raises(WorkspaceError):
             route.AbstractDraftAdapter(version)
     task = create(context)

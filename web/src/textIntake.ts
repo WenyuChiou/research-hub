@@ -1,3 +1,4 @@
+import { isBlobArtifact, previewMatchesArtifact } from "./sourceStorage";
 import { ApiError } from "./api";
 import type { TextPreview } from "./AbstractDraft";
 import type { Artifact, ResearchRecord, Workspace } from "./types";
@@ -40,7 +41,12 @@ export function intakeSupported(
     cap.max_source_bytes === TEXT_LIMIT &&
     Array.isArray(cap.formats) &&
     cap.formats.includes("txt") &&
-    cap.formats.includes("md"),
+    cap.formats.includes("md") &&
+    (!("storage" in cap) ||
+      (cap.storage?.kind === "workspace_blob" &&
+        cap.storage.version === 1 &&
+        Object.keys(cap.storage).length === 2 &&
+        cap.experimental === true)),
   );
 }
 export function validUnicode(value: string): boolean {
@@ -165,7 +171,8 @@ export function validSavedText(
     binding?.version !== 1 ||
     binding.key !== key ||
     binding.artifact_id !== a.id ||
-    binding.sha256 !== a.sha256
+    binding.sha256 !== a.sha256 ||
+    ("storage" in a && (!isBlobArtifact(a) || binding.format !== a.format))
   )
     return false;
   if (v.preview_status === "unavailable" || v.preview_status === "stale")
@@ -177,7 +184,7 @@ export function validSavedText(
     p &&
     p.artifact_id === a.id &&
     p.sha256 === a.sha256 &&
-    p.path === a.path &&
+    previewMatchesArtifact(p, a) &&
     p.truncated === false &&
     typeof p.text === "string" &&
     validUnicode(p.text) &&

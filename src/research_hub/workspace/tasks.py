@@ -84,7 +84,8 @@ class TaskService:
         requested_artifacts = request.get("artifacts", [])
 
         def identity(rows):
-            return sorted((a["id"], a["path"], a["role"], a["sha256"]) for a in rows)
+            from ._source_storage import identity as storage_identity
+            return sorted((a["id"], storage_identity(a), a["role"], a["sha256"]) for a in rows)
 
         try:
             if request.get("operation") == "paper-abstract-draft":
@@ -113,6 +114,21 @@ class TaskService:
                             "detail": type(exc).__name__})
 
         for item in requested_artifacts if isinstance(requested_artifacts, list) else []:
+            if isinstance(item, dict) and "storage" in item:
+                from ._source_storage import current_hash
+                ref = f"artifact:{item.get('id', 'unknown')}"
+                try:
+                    observed = current_hash(self.workspace, item)
+                    status = "current" if observed == item.get("sha256") else "stale"
+                    references.append(self._reference("artifact", ref, expected_sha256=item.get("sha256"), observed_sha256=observed, status=status))
+                    if status != "current":
+                        reasons.append({"code": "stale-input", "message": "Saved-text input changed", "ref": ref})
+                except (WorkspaceError, OSError, ValueError, TypeError, KeyError) as error:
+                    status = "stale" if getattr(error, "code", None) == "stale_input" else "unknown"
+                    references.append(self._reference("artifact", ref, status=status))
+                    reasons.append({"code": "stale-input" if status == "stale" else "source-unavailable",
+                                    "message": "Saved-text input is changed or unavailable", "ref": ref})
+                continue
             if not isinstance(item, dict) or not isinstance(item.get("path"), str):
                 ref = f"task:{task.get('id', 'unknown')}:input:invalid"
                 references.append(self._reference("artifact", ref, status="unknown"))
@@ -515,7 +531,7 @@ class TaskService:
                     raise WorkspaceError("Result artifact hash mismatch", "invalid_output")
                 relative = path.relative_to(self.workspace.root).as_posix()
                 inputs = task["request"]["artifacts"] + task["request"].get("revision_context", {}).get("artifacts", [])
-                if any(a["path"] == relative for a in inputs) or relative.startswith(".research/"):
+                if any(a.get("path") == relative for a in inputs) or relative.startswith(".research/"):
                     raise WorkspaceError("Result cannot replace a source artifact", "invalid_output")
                 output_files.append({"path": path.relative_to(self.workspace.root).as_posix(), "sha256": item["sha256"]})
             result = {"status": status, "prose": prose, "artifacts": output_files,

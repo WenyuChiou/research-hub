@@ -24,15 +24,22 @@ class WorkspaceService:
         self.workspace = Workspace(root)
         self.tasks = TaskService(self.workspace)
 
+    def _text_intake(self):
+        from .text_intake import TextIntake
+        return TextIntake(self.workspace)
+
+    def _text_intake_capability(self):
+        from .text_intake import capability
+        return capability(self.workspace)
+
     def capabilities(self, *, human: bool = False) -> dict:
         from .executor import codex_capability
         from .writing import writing_capability
         from research_hub.setup_snapshot import read_setup_snapshot
         namespace = self.workspace.preparation_namespace()
-        from .text_intake import capability as text_intake_capability
         return {"ok": True, "projects": self.workspace.list_projects(),
                 "capabilities": {"codex": codex_capability(), "writing": writing_capability(),
-                    "text_intake": text_intake_capability(self.workspace),
+                    "text_intake": self._text_intake_capability(),
                     **({"prepare_reconciliation": {"version": 1, "workspace_instance_id": namespace}} if namespace else {}),
                     "approval": {"status": "available" if human else "unavailable", "message": "Local operator review session enabled" if human else "Use an interactive terminal: research-hub task decide <task-id> --root <workspace> --outcome accept --actor <name> --rationale <reason>"}},
                 "setup_snapshot": read_setup_snapshot(self.workspace.root),
@@ -102,8 +109,7 @@ class WorkspaceService:
             if operation == "preview_text":
                 return self.preview_text(project_id, **values)
             if operation in {"source_text", "source_text_lookup"}:
-                from .text_intake import TextIntake
-                intake = TextIntake(self.workspace)
+                intake = self._text_intake()
                 return (intake.save if operation == "source_text" else intake.lookup)(project_id, **values)
             if operation == "register":
                 return {"ok": True, "artifact": self.workspace.register_artifact(project_id, **values)}
@@ -166,14 +172,15 @@ class WorkspaceService:
         raise WorkspaceError("Unknown workspace operation", "not_found")
 
 
-def call_workspace(root, resource, operation, data=None, *, proof=None, background=False) -> dict:
+def call_workspace(root, resource, operation, data=None, *, proof=None, background=False, _service=None) -> dict:
     try:
         if resource == "project" and operation == "demo":
             if data:
                 raise WorkspaceError("Demo takes only an explicit empty workspace root")
             from .demo import create_demo
             return create_demo(root)
-        return WorkspaceService(root).dispatch(resource, operation, data, proof=proof, background=background)
+        service = _service if _service is not None else WorkspaceService(root)
+        return service.dispatch(resource, operation, data, proof=proof, background=background)
     except WorkspaceError as exc:
         return {"ok": False, "error": str(exc), "code": exc.code}
     except sqlite3.Error as exc:
@@ -188,7 +195,8 @@ def manuscript_impact(workspace, project_id):
     for artifact in workspace.artifacts(project_id):
         if not artifact["current"]:
             sections = ["Methods", "Results", "Discussion", "Abstract", "Figures", "Tables", "Supplement", "Reviewer response"] if artifact["role"] in {"analysis", "evidence", "figure", "table"} else ["Manuscript", "Abstract", "Supplement", "Reviewer response"]
-            items.append({"source": artifact["path"], "affected": sections, "reason": "Registered bytes changed or file is unavailable; human review required"})
+            from ._source_storage import reference as storage_reference
+            items.append({"source": storage_reference(artifact), "affected": sections, "reason": "Registered bytes changed or file is unavailable; human review required"})
     stale_tasks = []
     for task in TaskService(workspace).list(project_id):
         try:
