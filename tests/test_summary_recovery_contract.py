@@ -69,15 +69,21 @@ class SummaryRecoveryContracts(unittest.TestCase):
         self.assertIn('outcome unknown', ' '.join(result.errors))
 
     def test_compensation_io_failure_keeps_structured_unknown_receipt(self):
+        # Reproduce Windows checkout/write newline bytes on any host.
+        self.path.write_bytes(self.original.replace('\n', '\r\n').encode('utf-8'))
         original_writer = summarize._write_note_text
+        writes = []
         def write(path, text):
-            if text == self.original: raise OSError('Synthetic compensation disk full')
+            writes.append(text)
+            if len(writes) == 2: raise OSError('Synthetic compensation disk full')
             original_writer(path, text)
         remote = Remote('timeout', self.path)
         with patch.object(summarize, '_write_note_text', write):
             result = self.apply(remote)
         self.assertEqual(remote.calls, 1)
         self.assertEqual(result.applied, [])
+        self.assertEqual(len(writes), 2)
+        self.assertEqual(writes[1].encode('utf-8'), self.original.replace('\n', '\r\n').encode('utf-8'))
         self.assertIn('rollback unavailable', ' '.join(result.to_dict()['errors']))
         self.assertIn('outcome unknown', ' '.join(result.errors))
 
