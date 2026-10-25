@@ -40,7 +40,7 @@ def test_browser_uncertain_error_copy_uses_task_scoped_exact_ui_labels():
 def test_setup_trigger_contrast_gate_rejects_observed_low_contrast_and_transparency():
     """Exercise the real pure contrast gate with captured/synthetic style values; no browser."""
     import pytest
-    tree = ast.parse((Path(__file__).resolve().parents[1] / 'scripts/workspace_browser_smoke.py').read_text())
+    tree = ast.parse((Path(__file__).resolve().parents[1] / 'scripts/workspace_browser_smoke.py').read_text(encoding='utf-8'))
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'check_setup_trigger_contrast')
     scope = {}
     exec(compile(ast.Module(body=[node], type_ignores=[]), '<source-contrast-gate>', 'exec'), scope)
