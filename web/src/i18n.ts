@@ -320,6 +320,7 @@ export const en = {
   refreshError:
     "Your action was saved, but the view could not refresh. Refresh to see the latest state.",
   errorHelp: "Your entries are still here. Check the message and try again.",
+  errorUncertainHelp: "The outcome is not confirmed. Use the status or recovery controls for this same operation; do not submit it again as a new request.",
   saved: "Saved to this project.",
   saving: "Saving…",
   dismiss: "Dismiss message",
@@ -844,6 +845,7 @@ export const zhTW: Record<MessageKey, string> = {
     "重新整理失敗。保留此專案最後已知狀態，內容可能已過時；暫存輸入及結果不確定的操作仍保留，未自動重試。",
   refreshError: "操作已儲存，但畫面更新失敗。請重新整理以查看最新狀態。",
   errorHelp: "您輸入的內容仍保留。請檢查訊息後再試一次。",
+  errorUncertainHelp: "結果尚未確認。請使用這次操作的狀態或復原控制項；不要把它當成新請求再次送出。",
   saved: "已儲存至此專案。",
   saving: "儲存中…",
   dismiss: "關閉訊息",

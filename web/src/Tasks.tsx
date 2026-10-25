@@ -294,7 +294,13 @@ export function TaskCard({
           </div>
         </Disclosure>
       )}
-      {error !== null && <ErrorMessage error={error} t={t} />}
+      {error !== null && (
+        <ErrorMessage
+          error={error}
+          t={t}
+          guidance={runUncertain ? "uncertain" : "retry"}
+        />
+      )}
       {task.error && <ErrorMessage error={new Error(task.error)} t={t} />}
       {task.blocker && <p role="status">{task.blocker}</p>}
       {task.execution_provenance && (

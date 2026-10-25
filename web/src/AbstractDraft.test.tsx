@@ -609,6 +609,7 @@ describe("uncertain write outcomes are not replayed", () => {
       expect(
         await screen.findByText(t("abstractPrepareUncertain")),
       ).toBeVisible();
+      expect(screen.queryByText(t("errorHelp"))).not.toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: t("abstractPrepare") }),
       ).toBeDisabled();
@@ -643,6 +644,7 @@ describe("uncertain write outcomes are not replayed", () => {
     fireEvent.click(run);
     fireEvent.click(run);
     expect(await screen.findByText(t("abstractRunUncertain"))).toBeVisible();
+    expect(screen.queryByText(t("errorHelp"))).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Run/ })).toBeDisabled();
     expect(screen.getByText("😀 Abstract: A.")).toBeVisible();
     expect(fetch).toHaveBeenCalledTimes(1);

@@ -81,12 +81,22 @@ export function Field({
   );
 }
 
-export function ErrorMessage({ error, t }: { error: unknown; t: Translate }) {
+export function ErrorMessage({
+  error,
+  t,
+  guidance = "retry",
+}: {
+  error: unknown;
+  t: Translate;
+  guidance?: "retry" | "uncertain";
+}) {
   return (
     <div role="alert" className="notice notice-error">
       <strong>{error instanceof Error ? error.message : String(error)}</strong>
       {error instanceof ApiError && <code>{error.code}</code>}
-      <span>{t("errorHelp")}</span>
+      <span>
+        {t(guidance === "uncertain" ? "errorUncertainHelp" : "errorHelp")}
+      </span>
     </div>
   );
 }

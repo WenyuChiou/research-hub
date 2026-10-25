@@ -283,6 +283,13 @@ def check_abstract_journey(screen, service, fixtures, checks, output):
         run.click()
         expect(task_card(task["id"]).get_by_text("The Run response is uncertain", exact=False)).to_be_visible()
         expect(run).to_be_disabled()
+        expect(task_card(task["id"]).get_by_text(
+            "Your entries are still here. Check the message and try again.", exact=True,
+        )).to_have_count(0)
+        expect(task_card(task["id"]).get_by_text(
+            "The outcome is not confirmed. Use the status or recovery controls for this same operation; "
+            "do not submit it again as a new request.", exact=True,
+        )).to_be_visible()
         with page.expect_response(lambda response: response.url == project_url and response.request.method == "GET"):
             page.get_by_role("button", name="Refresh", exact=True).click()
         expect(run).to_be_disabled()
@@ -300,7 +307,7 @@ def check_abstract_journey(screen, service, fixtures, checks, output):
         assert counts["run_intercepted"] == 1
         page.unroute(project_url, fail_refresh_once)
         checks.append({"check": "Mocked uncertain Run survives unchanged ready Refresh and failed Refresh/Retry without dispatch or replay",
-                       "status": "PASS", "boundary": "503 HTTP fixture, not actual model execution"})
+                       "status": "PASS", "boundary": "503 HTTP fixture, not actual model execution; uncertainty copy has no generic retry advice"})
 
         task_card(task["id"]).get_by_role("button", name="Return to this source", exact=True).click()
         select_existing(fixtures["other_source"])
@@ -447,7 +454,9 @@ def run(output: Path):
                 checks.append({"check": "Traditional Chinese navigation and real screenshot", "status": "PASS"})
                 page.set_viewport_size({"width": 390, "height": 844})
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
-                checks.append({"check": "390px viewport has no horizontal page overflow", "status": "PASS"})
+                page.screenshot(path=str(output / "workspace-ui.390px.png"), full_page=True)
+                checks.append({"check": "390px viewport has no horizontal page overflow", "status": "PASS",
+                               "screenshot": "workspace-ui.390px.png", "viewport": {"width": 390, "height": 844}})
                 page.set_viewport_size({"width": 720, "height": 500})  # 200% of desktop layout width.
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
                 page.get_by_role("button", name="EN", exact=True).click()

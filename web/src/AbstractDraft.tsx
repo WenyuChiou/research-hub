@@ -374,7 +374,13 @@ export function AbstractDraftComposer({
       )}
       {creating && <p role="status">{t("abstractPreparingLeave")}</p>}
       {restoreBlocked && <p role="status">{t("abstractRestoreBlocked")}</p>}
-      {error !== null && <ErrorMessage error={error} t={t} />}
+      {error !== null && (
+        <ErrorMessage
+          error={error}
+          t={t}
+          guidance={preparationUncertain ? "uncertain" : "retry"}
+        />
+      )}
       {preparationUncertain && !preparedTaskId && (
         <p role="status">{t("abstractPrepareUncertain")}</p>
       )}

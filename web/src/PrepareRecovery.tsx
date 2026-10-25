@@ -604,7 +604,15 @@ export function PreparationRecoveryPanel({
                 onSeparate={onSeparate}
               />
               {entry.error !== undefined && (
-                <ErrorMessage error={entry.error} t={t} />
+                <ErrorMessage
+                  error={entry.error}
+                  t={t}
+                  guidance={
+                    entry.phase !== "found" && entry.phase !== "unsent"
+                      ? "uncertain"
+                      : "retry"
+                  }
+                />
               )}
               {entry.phase === "found" && entry.task ? (
                 <>
