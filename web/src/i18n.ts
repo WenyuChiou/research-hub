@@ -1,6 +1,34 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  integrationFirstUse:
+    "Start with local text and review — no integration account is needed. Optional service guidance is under Integrations & setup at the bottom of the sidebar.",
+  integrationClose: "Close setup guidance",
+  integrationCompact: "Optional · current connection unknown",
+  integrationsSetup: "Integrations & setup",
+  integrationsOptional:
+    "Optional: no integration account is required for saved local text and review. Set up only the services you choose.",
+  integrationsHistorical:
+    "Saved setup observations only — not current connectivity or authorization. Missing or stale observations mean unknown, not disconnected. See Readiness for observation details.",
+  integrationVault:
+    "Choose your existing vault folder during setup; Obsidian does not require an API key. Do not replace your vault to reconnect.",
+  integrationZotero:
+    "Choose the correct library and a suitably scoped key in the local setup flow, never in this page.",
+  integrationNlm:
+    "NotebookLM uses a saved browser session, not a Hub API-key field. Login and browser prerequisites are separate.",
+  integrationOfficial: "Official site / guidance",
+  integrationSetupStep:
+    "On the computer running this Hub, use its installed environment. For first-time setup, review the prompts before accepting config, installation or login changes:",
+  integrationReuse:
+    "Saved local configuration, vault selection and session state are reused on that computer; do not run setup on every visit. Reconfigure only when your destination changes; reconnect when credentials expire, are revoked, or access fails. Permanent authentication is not guaranteed.",
+  integrationCheck:
+    "If access fails, inspect individual checks first (some checks contact services); a saved pass or zero exit code is not whole-system readiness:",
+  integrationNlmReconnect:
+    "Only if NotebookLM login is needed, use the existing local login flow; it opens a browser and needs the documented browser prerequisites:",
+  integrationPrivacy:
+    "This panel neither reads nor stores keys, cookies or vault paths, and does not run these commands. Keep credentials in the existing local configuration/session store, never in browser storage or shared logs. Encryption depends on your configured secrets support.",
+  integrationGuide: "Full setup steps and storage/prerequisite guidance",
+
   sourceLocallySaved: "Locally saved",
   sourceUnverifiedFile: "Unverified source link",
   recoveryPark: "Park unresolved request…",
@@ -175,6 +203,11 @@ export const en = {
     "No returned candidate yet. Preparing a task is not model execution.",
   abstractRunnerUnavailable:
     "The connected runner is unavailable or unknown, so Run is disabled for this draft. Return to the source to continue reading; no JSON or terminal step is required.",
+  abstractInputInvalidated: "The saved text changed or is unavailable. Its cached passage and range were cleared; preparation outcome locks were kept. Read current text only after any pending preparation is resolved.",
+  abstractSessionScopeInvalid: "The workspace identity is unavailable or inconsistent. This draft is locked; refresh the workspace before preparing.",
+  abstractSessionFull: "This tab's draft limit is reached. Return to an unsent draft and explicitly discard it before opening another. Unresolved preparations are retained.",
+  abstractSessionOnly: "Draft text is kept only in this tab session while switching sources or projects. Closing or reloading the tab loses unsent text; saved preparation recovery remains separate.",
+  abstractDiscardSession: "Discard this unsent draft",
   abstractOpen: "Draft from an existing abstract",
   abstractHandoffUnsupported:
     "This task was prepared for external handoff. This UI supports connected abstract drafting only; return to the source rather than entering a response as generic prose or JSON.",
@@ -390,6 +423,8 @@ export const en = {
   unverified: "Unverified",
   openSource: "Open source",
   screening: "Screening decisions",
+  screeningSourceUnavailable: "Source record unavailable in this project.",
+  screeningSourceUntitled: "Untitled source",
   screenSource: "Record screening decision",
   sourceId: "Source ID",
   decision: "Decision",
@@ -546,6 +581,34 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  integrationFirstUse:
+    "可以先從本機文字與審閱開始，不需要整合帳號。選用服務的說明在側欄底部的「整合服務與設定」。",
+  integrationClose: "關閉設定說明",
+  integrationCompact: "選用服務・目前連線未知",
+  integrationsSetup: "整合服務與設定",
+  integrationsOptional:
+    "整合服務皆為選用：儲存本機文字與審閱不需要整合帳號。只設定你要使用的服務。",
+  integrationsHistorical:
+    "僅顯示已儲存的設定觀察，不代表目前連線或授權。沒有或過期的觀察是未知，不代表已斷線。觀察詳情請看就緒狀態。",
+  integrationVault:
+    "設定時選擇既有 vault 資料夾；Obsidian 不需要 API key。不要為了重新連線而更換 vault。",
+  integrationZotero:
+    "在本機設定流程選擇正確的文獻庫與適當權限的金鑰，不要在此頁輸入。",
+  integrationNlm:
+    "NotebookLM 使用已儲存的瀏覽器工作階段，不是 Hub 的 API key 欄位。登入與瀏覽器前置需求是不同事項。",
+  integrationOfficial: "官方網站／說明",
+  integrationSetupStep:
+    "在執行此 Hub 的電腦使用其安裝環境。首次設定時，先確認提示，再接受設定、安裝或登入變更：",
+  integrationReuse:
+    "同一台電腦會重用已儲存的本機設定、vault 選擇與工作階段，不必每次進入都重新設定。目的地變更才調整設定；憑證過期、撤銷或存取失敗時才重新連線。不保證永久登入有效。",
+  integrationCheck:
+    "存取失敗時先檢視個別檢查（部分檢查會連線服務）；已儲存的通過紀錄或零結束碼不代表整體可用：",
+  integrationNlmReconnect:
+    "只有需要 NotebookLM 登入時才使用既有本機登入流程；此指令會開啟瀏覽器，且需要文件列出的瀏覽器前置需求：",
+  integrationPrivacy:
+    "此區塊不讀取或儲存金鑰、cookies 或 vault 路徑，也不執行這些指令。憑證保留在既有本機設定／工作階段儲存區，不要放入瀏覽器儲存或分享的紀錄。是否加密取決於你的 secrets 支援設定。",
+  integrationGuide: "完整設定步驟與儲存／前置需求說明",
+
   sourceLocallySaved: "本機儲存時間",
   sourceUnverifiedFile: "來源連結未核實",
   recoveryPark: "暫擱結果未明的請求…",
@@ -712,6 +775,11 @@ export const zhTW: Record<MessageKey, string> = {
   abstractNoCandidate: "尚無返回的候選草稿；準備任務不等於模型已執行。",
   abstractRunnerUnavailable:
     "連線執行器不可用或狀態未知，因此此草稿的執行按鈕停用。可返回來源繼續閱讀，不要求另貼 JSON 或操作終端機。",
+  abstractInputInvalidated: "已儲存文字已變更或無法取得。已清除暫存段落與範圍，但保留準備結果鎖定；請先釐清待處理作業，再讀取目前文字。",
+  abstractSessionScopeInvalid: "工作區識別無法確認或互相矛盾。此草稿已鎖定，請重新整理工作區後再準備。",
+  abstractSessionFull: "此分頁的草稿數量已達上限。請返回未送出的草稿並明確捨棄後再開啟另一份；尚未釐清的準備作業仍會保留。",
+  abstractSessionOnly: "切換來源或專案時，草稿文字僅保留於此分頁工作階段。關閉或重新載入分頁會遺失未送出文字；已儲存的準備作業復原另行保留。",
+  abstractDiscardSession: "捨棄此未送出草稿",
   abstractOpen: "從既有摘要起草",
   abstractHandoffUnsupported:
     "此任務原先為外部交接準備。目前介面只支援連線摘要起草；請返回來源，不必將回應改貼為一般文字或 JSON。",
@@ -910,6 +978,8 @@ export const zhTW: Record<MessageKey, string> = {
   unverified: "尚未驗證",
   openSource: "開啟來源",
   screening: "文獻篩選決定",
+  screeningSourceUnavailable: "此專案目前無法取得這筆來源記錄。",
+  screeningSourceUntitled: "未命名來源",
   screenSource: "記錄篩選決定",
   sourceId: "來源識別碼",
   decision: "決定",

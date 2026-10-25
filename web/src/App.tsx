@@ -1,3 +1,5 @@
+import { ComposerSessions } from "./composerSession";
+import { IntegrationsSetup } from "./IntegrationsSetup";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
@@ -30,6 +32,8 @@ const aborted = (error: unknown) =>
 
 /** Mounted by main.tsx. All data comes from the local Research Hub API. */
 export default function App() {
+  const navigationEpoch = useRef(0);
+  const [composerSessions] = useState(() => new ComposerSessions());
   const [locale, setLocale] = useState<Locale>("en");
   const [page, setPage] = useState<Page>(currentPage);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -119,6 +123,7 @@ export default function App() {
 
   useEffect(() => {
     const onHashChange = () => {
+      navigationEpoch.current++;
       cancelHeadingFocus();
       if (window.location.hash === "#main-content") {
         focusMain();
@@ -136,6 +141,7 @@ export default function App() {
     };
   }, [cancelHeadingFocus, focusMain, queuePageFocus]);
   const navigate = (next: Page, focusId?: string) => {
+    navigationEpoch.current++;
     navigationTarget.current = focusId
       ? { projectId: selectedRef.current, page: next, id: focusId }
       : null;
@@ -428,6 +434,7 @@ export default function App() {
             id="project-switcher"
             value={projectId}
             onChange={(event) => {
+              navigationEpoch.current++;
               navigationTarget.current = null;
               cancelHeadingFocus();
               setProjectId(event.target.value);
@@ -455,6 +462,9 @@ export default function App() {
             <a
               key={item}
               href={`#${item}`}
+              onClick={() => {
+                navigationEpoch.current++;
+              }}
               aria-current={page === item ? "page" : undefined}
             >
               <span className="nav-symbol" aria-hidden="true">
@@ -468,6 +478,11 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-footer">
+          <IntegrationsSetup
+            workspace={workspace}
+            projectId={projectId}
+            t={t}
+          />
           <span className="local-marker">
             <i aria-hidden="true" />
             {t("local")}
@@ -595,6 +610,7 @@ export default function App() {
                     <SmallEyebrow text={t("startEyebrow")} />
                     <h2>{t("startTitle")}</h2>
                     <p>{t("startBody")}</p>
+                    <p>{t("integrationFirstUse")}</p>
                     <div aria-hidden="true" className="onboarding-lines">
                       <i />
                       <i />
@@ -676,6 +692,8 @@ export default function App() {
                     )}
                     <ProjectPages
                       key={projectId}
+                      navigationEpoch={navigationEpoch}
+                      composerSessions={composerSessions}
                       detail={activeDetail}
                       workspace={workspace}
                       page={page}

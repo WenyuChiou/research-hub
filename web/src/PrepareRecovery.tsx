@@ -53,6 +53,7 @@ export interface PreparationRecovery {
   entries: RecoveryEntry[];
   prepare: (
     payload: DraftPreparePayload,
+    onIdentity?: (key: string) => void,
   ) => Promise<{ key: string; task?: Task }>;
   check: (key: string) => Promise<Task | undefined>;
   retry: (key: string) => Promise<void>;
@@ -106,7 +107,8 @@ export function usePreparationRecovery(
   projectId: string,
   capability: Workspace["capabilities"]["prepare_reconciliation"],
   tasks: Task[],
-  onFound: (task: Task) => Promise<void>,
+  onFound: (task: Task, key: string) => Promise<void>,
+  onRetired?: (key: string) => void,
 ): PreparationRecovery {
   const namespace =
     capability?.version === 1 &&
@@ -171,7 +173,7 @@ export function usePreparationRecovery(
     });
     publish();
     try {
-      await foundCallback.current(task);
+      await foundCallback.current(task, key);
       if (current()) {
         const latest = records.current.get(key);
         if (latest?.phase === "found") {
@@ -302,6 +304,7 @@ export function usePreparationRecovery(
     } catch (error) {
       if (!current()) return;
       if (knownRejection(error)) {
+        onRetired?.(key);
         removeStored(key);
         records.current.delete(key);
         payloads.current.delete(key);
@@ -374,6 +377,7 @@ export function usePreparationRecovery(
   }
   async function prepare(
     payload: DraftPreparePayload,
+    onIdentity?: (key: string) => void,
   ): Promise<{ key: string; task?: Task }> {
     if (
       !scope ||
@@ -414,6 +418,8 @@ export function usePreparationRecovery(
       phase: persisted ? "pending" : "unsent",
     });
     publish();
+    // Let the session owner retain the exact key before any dispatch or asynchronous refresh.
+    onIdentity?.(key);
     // Storage failure is disclosed before any write. Explicit in-session action follows.
     return { key, task: persisted ? await send(key) : undefined };
   }
@@ -545,6 +551,7 @@ export function usePreparationRecovery(
           !tasks.some((task) => task.id === entry.task!.id))
       )
         return;
+      if (entry.phase === "unsent") onRetired?.(key);
       removeStored(key);
       records.current.delete(key);
       payloads.current.delete(key);

@@ -18,88 +18,70 @@ or the NotebookLM Enterprise API**. Upload, generation, query and download do
 not primarily drive web-page selectors. Upstream interface/authentication drift
 can still break them.
 
-Visible browser automation is used for login/session acquisition. The optional
-`[playwright]` extra installs Patchright, which the `--auto-detect` login
-implementation uses through `patchright.sync_api`. The extra name is retained
-for installation compatibility. `[browser-auth]` supplies optional
-cookie-import helpers. Neither extra, a cached notebook ID, nor a saved cookie
-file proves that a current authenticated operation will succeed. Login and
-real connector operations require separate, authorized native-PC verification.
+The tested SDK contract is pinned to **notebooklm-py 0.8.5**. Its current app
+host is `notebook.google.com`; the legacy `notebooklm.google.com` is also
+recognized upstream. This pin is an upgrade candidate for older token-parsing
+failures, not proof that any particular saved session is valid or repaired.
 
-## Architecture at a glance
-
-The current login path is `--auto-detect`: research-hub launches a
-visible browser context, opens NotebookLM, waits for you to complete
-Google sign-in, and saves the session only after two signals are true:
-
-- the live page is on `notebooklm.google.com`
-- the browser context contains a Google session cookie
-
-This avoids the old failure mode where a transient anonymous
-NotebookLM page flash was saved as if it were a real login.
-
-```text
-research-hub notebooklm login --auto-detect
-    |
-    v
-src/research_hub/notebooklm/auth.py :: _login_with_auto_detect()
-    |
-    v
-visible browser sign-in
-    |
-    v
-Playwright storage_state -> <vault>/.research_hub/nlm_sessions/state.json
-```
-
-Upload, generate, query, and download reuse that saved storage state through
-`notebooklm-py` (the wrapper calls `NotebookLMClient.from_storage`).
-The login signals above only govern session saving; they do not verify all
-remote operations. Later selector troubleshooting applies to browser/login
-paths and historical fallbacks, not the primary operation transport.
+The optional `[playwright]` extra includes the SDK's Playwright browser support
+(and retains Patchright for Hub's separate EZProxy integration). `[browser-auth]`
+uses the SDK's optional cookie-import dependency and retains the separate EZProxy
+`browser-cookie3` fallback. Neither extra, an app URL,
+a cached notebook ID, nor a SID cookie proves authenticated access. Missing
+CSRF fields can mean a signed-out/consent landing or page drift; they alone do
+not prove expiry. A successful browser login also does not validate upload,
+generation, query or download.
 
 ## One-time login
 
-For `--auto-detect`, install the Patchright dependency and its Chromium browser in
-your virtual environment, then run (installation downloads software; login
-opens a visible browser):
+Install browser support in the intended environment, then start visible sign-in:
 
 ```bash
 python -m pip install "research-hub-pipeline[playwright]"
-python -m patchright install chromium
+python -m playwright install chromium
 research-hub notebooklm login --auto-detect
 ```
 
-Expected behavior:
+`research-hub notebooklm login` uses the same normal SDK flow; `--auto-detect`
+is retained as a compatibility alias. Complete any Google sign-in or challenge
+in the browser. **The SDK saves automatically; no ENTER or ready-file is needed.**
+Starting this normal flow authorizes that automatic session capture. Hub delegates
+host/cookie handling to the SDK, then probes the saved session through the SDK
+and lists notebooks before returning success. Missing, invalid or indeterminate
+authentication returns failure rather than "logged in". If capture succeeded but
+the probe failed, the saved state may exist; the diagnostic does not claim it is
+usable. Do not repeatedly retry an unknown error as if expiry were established.
 
 ```text
-[nlm] Browser opened. Sign in to NotebookLM in the window.
-      The session saves automatically once the homepage loads -- no ENTER needed.
+research-hub notebooklm login [--auto-detect]
+    -> SDK visible browser login / automatic capture
+    -> <vault>/.research_hub/nlm_sessions/state.json
+    -> SDK saved-session verification (notebooks.list)
 ```
 
-Google may still require a visible new-device challenge or phone
-verification. Complete it in the browser. If the command times out,
-nothing is saved; rerun it after finishing the challenge.
+### Legacy external-signal login is unavailable
 
-Fallback login paths still exist for advanced use:
+`--wait-file PATH` previously gated credential saving on a caller-created file
+and terminal newline. SDK 0.8.5 no longer has that ENTER gate. Hub now rejects
+this mode **before launching or touching the state or signal file**, including
+when combined with another login mode. It does not silently reinterpret the
+external consent signal as permission for automatic capture. Callers that require
+that gate must not switch to normal login without explicitly accepting its
+capture semantics; staged credential capture is not implemented by this repair.
+
+Advanced explicit import paths remain:
 
 ```bash
-research-hub notebooklm login
-research-hub notebooklm login --wait-file ./nlm-ready.txt
 research-hub notebooklm login --from-browser chrome
 research-hub notebooklm login --import-from <other-vault>
 ```
 
-Use `--from-browser` only when you installed the browser-cookie import
-extra and understand that browser cookie access is OS/browser-specific.
-
-The saved session file is:
-
-```text
-<vault>/.research_hub/nlm_sessions/state.json
-```
-
-Treat that file like a password store. It contains Google session
-cookies for the local OS user.
+Browser-cookie access requires its optional extra and OS/browser-specific
+permission. Copy/import success is not live-authentication proof. Treat the state
+file and SDK-owned browser profile beside it like password stores. No headless
+re-authentication, CDP attachment, scheduled login, or new persistent access grant
+is enabled by this compatibility change. Real connector acceptance still needs
+separate authorized native-PC verification.
 
 ## Binding a cluster to a notebook
 

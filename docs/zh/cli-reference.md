@@ -235,10 +235,13 @@ research-hub migrate-yaml [--assign-cluster SLUG] [--folder PATH]
 
 ```bash
 research-hub notebooklm login --auto-detect [--wait-timeout 300]
-research-hub notebooklm login [--wait-file PATH] [--wait-timeout 300]
+research-hub notebooklm login
 research-hub notebooklm login --from-browser [chrome|edge|firefox|brave|auto]
 research-hub notebooklm login --import-from VAULT_PATH [--overwrite]
 ```
+
+一般登入與 `--auto-detect` 使用 SDK 0.8.5 自動擷取，隨後驗證已儲存的工作階段；不需按 ENTER。
+`--wait-file` 不再支援，會在擷取前拒絕執行，不會將舊的外部同意訊號改為自動儲存。
 
 ### `notebooklm bundle`
 

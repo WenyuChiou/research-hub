@@ -52,7 +52,9 @@ def _network_fence(request):
         pytest_socket.enable_socket()
     else:
         pytest_socket.socket_allow_hosts(
-            ["127.0.0.1", "localhost", "::1"], allow_unix_socket=True
+            ["127.0.0.1", "localhost", "::1"], allow_unix_socket=True,
+            # Known loopback names need no DNS, including under --disable-socket.
+            resolution_cache={"localhost": {"127.0.0.1", "::1"}},
         )
     try:
         yield
