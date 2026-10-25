@@ -111,7 +111,12 @@ class SummaryJournal:
     def _check_path(self):
         try:
             for path in (self.path, *(Path(str(self.path) + suffix) for suffix in ('-journal', '-wal', '-shm'))):
-                safe_path(_validation_path(self.root), _validation_path(path))
+                # Only fixed SQLite sidecar leaves use a single non-following
+                # observation. Their parent retains strict containment; the
+                # persistent database retains its existing full-path check.
+                # A sidecar can vanish between safe_path's exists/lstat calls.
+                checked = path if path == self.path else path.parent
+                safe_path(_validation_path(self.root), _validation_path(checked))
                 try:
                     info = path.lstat()
                 except FileNotFoundError:
@@ -121,7 +126,12 @@ class SummaryJournal:
                     continue
                 if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
                         or getattr(info, 'st_file_attributes', 0) & 0x400):
-                    raise JournalError('Journal must be a regular unlinked file', 'unsafe_path')
+                    raise JournalError(
+                        'Journal must be a regular unlinked file '
+                        f'(leaf={"database" if path == self.path else path.name[len(self.path.name):]}, '
+                        f'mode={stat.S_IFMT(info.st_mode):#x}, links={info.st_nlink}, '
+                        f'attributes={getattr(info, "st_file_attributes", 0):#x})',
+                        'unsafe_path')
         except WorkspaceError as exc:
             raise JournalError(str(exc), 'unsafe_path') from exc
 

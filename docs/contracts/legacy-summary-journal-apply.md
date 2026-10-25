@@ -96,3 +96,14 @@ initialization semantics remain unchanged. Containment-check failures and other
 I/O errors are not suppressed or retried. This closes an independently modeled
 sidecar disappearance window, not all concurrent path replacement races; a
 specific native CI failure cannot be attributed to it without diagnostics.
+
+For the fixed `-journal`, `-wal`, and `-shm` sidecar names, containment checks
+now resolve their parent only, followed by the single non-following leaf
+observation above. This avoids a second leaf exists/lstat race inside the generic
+path resolver. The persistent database retains full-path containment validation.
+Parent validation errors still fail closed. Link-count zero remains unknown and
+rejected, not evidence of an ordinary single-link file. Rejection diagnostics
+include only numeric file type, link count, and Windows attributes, not file
+contents or additional private paths. CPython Windows directory-metadata fallback
+can report an unavailable link count when another handle is open; that separate
+boundary is not repaired here. No retry, delivery confirmation or resend is added.

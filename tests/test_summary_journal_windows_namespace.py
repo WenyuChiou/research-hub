@@ -55,7 +55,7 @@ def test_known_sidecar_reparse_is_still_rejected(tmp_path,monkeypatch):
     original=Path.lstat
     def lstat(path,*args,**kwargs):
         if str(path).removeprefix('\\\\?\\')==str(sidecar):
-            return SimpleNamespace(st_mode=stat.S_IFREG,st_file_attributes=0x400)
+            return SimpleNamespace(st_mode=stat.S_IFREG,st_nlink=1,st_file_attributes=0x400)
         return original(path,*args,**kwargs)
     monkeypatch.setattr(Path,'lstat',lstat)
     with pytest.raises(JournalError) as error:journal.list()
