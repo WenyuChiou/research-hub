@@ -1,6 +1,7 @@
+import { ComposerSessions } from "./composerSession";
 import { artifactReference } from "./sourceStorage";
 import { linkedSourceArtifact, sourceArtifactLabels } from "./sourceArtifact";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { api, segment } from "./api";
 import {
   Disclosure,
@@ -58,6 +59,8 @@ export interface RecoveredText {
 export type RecoveredWork = RecoveredPreparation | RecoveredText;
 
 export interface PagesProps {
+  composerSessions?: ComposerSessions;
+  navigationEpoch?: { current: number };
   detail: ProjectDetail;
   workspace: Workspace;
   page: Page;
@@ -68,24 +71,43 @@ export interface PagesProps {
 const textValue = (value: unknown) => String(value ?? "");
 
 export function ProjectPages({
+  composerSessions: providedSessions,
+  navigationEpoch: providedEpoch,
   detail,
   workspace,
   page,
   t,
   onSaved,
-  navigate,
+  navigate: parentNavigate,
 }: PagesProps) {
+  const localEpoch = useRef(0);
+  const navigationEpoch = providedEpoch ?? localEpoch;
+  const [localSessions] = useState(() => new ComposerSessions());
+  const composerSessions = providedSessions ?? localSessions;
+  const composerScope = composerSessions.scope(workspace);
+  const navigate: PagesProps["navigate"] = (...args) => {
+    navigationEpoch.current++;
+    parentNavigate(...args);
+  };
   const recovery = usePreparationRecovery(
     detail.project.id,
     workspace.capabilities.prepare_reconciliation,
     detail.tasks,
-    async (task) => {
+    async (task, key) => {
+      composerSessions.settlePreparation(
+        composerScope,
+        detail.project.id,
+        key,
+        task.id,
+      );
       await onSaved(t("taskCreated"), {
         task,
         workspaceInstance:
           workspace.capabilities.prepare_reconciliation!.workspace_instance_id,
       });
     },
+    (key) =>
+      composerSessions.settlePreparation(composerScope, detail.project.id, key),
   );
   const intake = useTextIntakeRecovery(
     detail.project.id,
@@ -507,6 +529,7 @@ export function ProjectPages({
                 <button
                   className="button secondary"
                   onClick={() => {
+                    navigationEpoch.current++;
                     setIntakeOpen(false);
                     setSourceOpenVersion((value) => value + 1);
                     setAbstractSourceId(record.id);
@@ -516,7 +539,18 @@ export function ProjectPages({
                 </button>
                 {abstractSourceId === record.id && (
                   <AbstractDraftComposer
-                    key={record.id}
+                    key={JSON.stringify([composerScope, record.id])}
+                    navigationEpoch={navigationEpoch}
+                    sessions={composerSessions}
+                    sessionKey={
+                      composerScope.startsWith("invalid:")
+                        ? undefined
+                        : JSON.stringify([
+                            composerScope,
+                            detail.project.id,
+                            record.id,
+                          ])
+                    }
                     projectId={detail.project.id}
                     source={record}
                     artifacts={detail.artifacts}
@@ -564,17 +598,52 @@ export function ProjectPages({
             </Disclosure>
           </Panel>
           <Panel title={t("screening")}>
-            {recordList(records("screening"), "noScreening", (record) => (
-              <>
-                <div className="record-title">
-                  <code>{textValue(record.data.source_id)}</code>
-                  <span className="badge neutral">
-                    {statusLabel(textValue(record.data.decision), t)}
-                  </span>
-                </div>
-                <ReadText value={record.data.rationale} />
-              </>
-            ))}
+            {recordList(records("screening"), "noScreening", (record) => {
+              const source = sources.find(
+                (item) => item.id === record.data.source_id,
+              );
+              return (
+                <>
+                  <div className="record-title">
+                    {source ? (
+                      <h3>
+                        {textValue(source.data.title).trim() ||
+                          t("screeningSourceUntitled")}
+                      </h3>
+                    ) : (
+                      <p>{t("screeningSourceUnavailable")}</p>
+                    )}
+                    <span className="badge neutral">
+                      {statusLabel(textValue(record.data.decision), t)}
+                    </span>
+                  </div>
+                  <code className="record-id">
+                    {textValue(record.data.source_id)}
+                  </code>
+                  {source && (
+                    <>
+                      <p>
+                        {t("intakeDeclaredScope")}:{" "}
+                        {t(
+                          source.data.reading_scope === "abstract"
+                            ? "intakeScopeAbstract"
+                            : "intakeScopeUnknown",
+                        )}
+                      </p>
+                      <button
+                        className="button secondary"
+                        onClick={() =>
+                          navigate("literature", `record-${source.id}`)
+                        }
+                      >
+                        {t("abstractReturnSource")}
+                      </button>
+                    </>
+                  )}
+                  <ReadText value={record.data.rationale} />
+                </>
+              );
+            })}
             <Disclosure title={t("screenSource")}>
               <MutationForm
                 t={t}

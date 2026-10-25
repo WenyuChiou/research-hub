@@ -203,6 +203,11 @@ export const en = {
     "No returned candidate yet. Preparing a task is not model execution.",
   abstractRunnerUnavailable:
     "The connected runner is unavailable or unknown, so Run is disabled for this draft. Return to the source to continue reading; no JSON or terminal step is required.",
+  abstractInputInvalidated: "The saved text changed or is unavailable. Its cached passage and range were cleared; preparation outcome locks were kept. Read current text only after any pending preparation is resolved.",
+  abstractSessionScopeInvalid: "The workspace identity is unavailable or inconsistent. This draft is locked; refresh the workspace before preparing.",
+  abstractSessionFull: "This tab's draft limit is reached. Return to an unsent draft and explicitly discard it before opening another. Unresolved preparations are retained.",
+  abstractSessionOnly: "Draft text is kept only in this tab session while switching sources or projects. Closing or reloading the tab loses unsent text; saved preparation recovery remains separate.",
+  abstractDiscardSession: "Discard this unsent draft",
   abstractOpen: "Draft from an existing abstract",
   abstractHandoffUnsupported:
     "This task was prepared for external handoff. This UI supports connected abstract drafting only; return to the source rather than entering a response as generic prose or JSON.",
@@ -418,6 +423,8 @@ export const en = {
   unverified: "Unverified",
   openSource: "Open source",
   screening: "Screening decisions",
+  screeningSourceUnavailable: "Source record unavailable in this project.",
+  screeningSourceUntitled: "Untitled source",
   screenSource: "Record screening decision",
   sourceId: "Source ID",
   decision: "Decision",
@@ -768,6 +775,11 @@ export const zhTW: Record<MessageKey, string> = {
   abstractNoCandidate: "尚無返回的候選草稿；準備任務不等於模型已執行。",
   abstractRunnerUnavailable:
     "連線執行器不可用或狀態未知，因此此草稿的執行按鈕停用。可返回來源繼續閱讀，不要求另貼 JSON 或操作終端機。",
+  abstractInputInvalidated: "已儲存文字已變更或無法取得。已清除暫存段落與範圍，但保留準備結果鎖定；請先釐清待處理作業，再讀取目前文字。",
+  abstractSessionScopeInvalid: "工作區識別無法確認或互相矛盾。此草稿已鎖定，請重新整理工作區後再準備。",
+  abstractSessionFull: "此分頁的草稿數量已達上限。請返回未送出的草稿並明確捨棄後再開啟另一份；尚未釐清的準備作業仍會保留。",
+  abstractSessionOnly: "切換來源或專案時，草稿文字僅保留於此分頁工作階段。關閉或重新載入分頁會遺失未送出文字；已儲存的準備作業復原另行保留。",
+  abstractDiscardSession: "捨棄此未送出草稿",
   abstractOpen: "從既有摘要起草",
   abstractHandoffUnsupported:
     "此任務原先為外部交接準備。目前介面只支援連線摘要起草；請返回來源，不必將回應改貼為一般文字或 JSON。",
@@ -966,6 +978,8 @@ export const zhTW: Record<MessageKey, string> = {
   unverified: "尚未驗證",
   openSource: "開啟來源",
   screening: "文獻篩選決定",
+  screeningSourceUnavailable: "此專案目前無法取得這筆來源記錄。",
+  screeningSourceUntitled: "未命名來源",
   screenSource: "記錄篩選決定",
   sourceId: "來源識別碼",
   decision: "決定",

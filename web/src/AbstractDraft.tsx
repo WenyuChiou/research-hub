@@ -1,4 +1,16 @@
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  ComposerSession,
+  ComposerSessions,
+  emptyComposer,
+  type ComposerSnapshot,
+} from "./composerSession";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { api, ApiError, segment } from "./api";
 import {
   artifactReference,
@@ -66,6 +78,9 @@ export function originalRange(
 
 export function AbstractDraftComposer({
   projectId,
+  sessions,
+  sessionKey,
+  navigationEpoch,
   source,
   artifacts,
   artifactLabels,
@@ -81,6 +96,9 @@ export function AbstractDraftComposer({
   separateIntentVersion,
 }: {
   projectId: string;
+  sessions?: ComposerSessions;
+  sessionKey?: string;
+  navigationEpoch?: { current: number };
   source: ResearchRecord;
   artifacts: Artifact[];
   artifactLabels?: Record<string, string>;
@@ -96,24 +114,55 @@ export function AbstractDraftComposer({
   separateIntentVersion?: number;
 }) {
   const id = useId();
-  const [artifactId, setArtifactId] = useState(initialArtifactId ?? "");
-  const [preview, setPreview] = useState<TextPreview | null>(
-    initialPreview ?? null,
+  const [binding] = useState(() => {
+    const initial = {
+      ...emptyComposer(),
+      artifactId: initialArtifactId ?? "",
+      preview: initialPreview ?? null,
+    };
+    return sessions
+      ? {
+          restored: Boolean(sessionKey && sessions.has(sessionKey)),
+          session: sessionKey ? sessions.acquire(sessionKey, initial) : null,
+        }
+      : { restored: false, session: new ComposerSession(initial) };
+  });
+  const session = binding.session;
+  const [unavailableSession] = useState(
+    () => new ComposerSession(emptyComposer()),
   );
-  const [range, setRange] = useState<{ start: number; end: number } | null>(
-    null,
-  );
-  const [instructions, setInstructions] = useState("");
+  const entry = session ?? unavailableSession;
+  const state = useSyncExternalStore(entry.subscribe, entry.get);
+  const {
+    artifactId,
+    preview,
+    range,
+    instructions,
+    creating,
+    preparationUncertain,
+    preparedTaskId,
+    preparationKey,
+    inputInvalidated,
+  } = state;
+  function field<K extends keyof ComposerSnapshot>(key: K) {
+    return (value: ComposerSnapshot[K]) => {
+      entry.update({ [key]: value });
+    };
+  }
+  const setArtifactId = field("artifactId"),
+    setPreview = field("preview"),
+    setRange = field("range"),
+    setInstructions = field("instructions");
+  const setPreparationUncertain = field("preparationUncertain"),
+    setPreparedTaskId = field("preparedTaskId"),
+    setPreparationKey = field("preparationKey");
   const [reading, setReading] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [preparationUncertain, setPreparationUncertain] = useState(false);
-  const [preparedTaskId, setPreparedTaskId] = useState<string | null>(null);
-  const [preparationKey, setPreparationKey] = useState<string | null>(null);
+  const hydrated = useRef(binding.restored);
   useEffect(() => {
     const recovered = recovery?.entries.find(
       (entry) => entry.key === preparationKey && entry.phase === "found",
     )?.task;
-    if (recovered) {
+    if (recovered && entry.get().preparationKey === preparationKey) {
       setPreparedTaskId(recovered.id);
       setPreparationUncertain(false);
     }
@@ -142,6 +191,8 @@ export function AbstractDraftComposer({
     void Promise.resolve().then(() => {
       if (
         !cancelled &&
+        session &&
+        !hydrated.current &&
         initialArtifactId &&
         !initialPreview &&
         artifacts.some((a) => a.id === initialArtifactId && a.current)
@@ -165,6 +216,7 @@ export function AbstractDraftComposer({
       creating ||
       creationLock.current ||
       recovery?.blocked ||
+      (preparationKey && !parked) ||
       (preparationUncertain && !parked) ||
       (preparedTaskId && !parked)
     ) {
@@ -172,6 +224,7 @@ export function AbstractDraftComposer({
       return;
     }
     // Explicit new intent only; never reset an unrelated or keyless unknown request.
+    entry.update({ operation: entry.get().operation + 1 });
     readController.current?.abort();
     setReading(false);
     setRange(null);
@@ -183,15 +236,11 @@ export function AbstractDraftComposer({
     setRestoreBlocked(false);
   }, [separateIntentVersion]);
   const inputLocked =
+    !session ||
     creating ||
     preparationUncertain ||
     Boolean(preparedTaskId) ||
-    Boolean(
-      preparationKey &&
-      recovery?.entries.some(
-        (entry) => entry.key === preparationKey && entry.parked,
-      ),
-    ) ||
+    Boolean(preparationKey) ||
     Boolean(recovery?.blocked);
   useEffect(() => {
     if (restoreVersion === lastRestore.current) return;
@@ -200,6 +249,7 @@ export function AbstractDraftComposer({
       setRestoreBlocked(true);
       return;
     }
+    if (preview && initialArtifactId === artifactId) return;
     if (!initialArtifactId) {
       if (source.data.intake) setRestoreBlocked(true);
       return;
@@ -220,13 +270,28 @@ export function AbstractDraftComposer({
   const choices = artifacts.filter((item) =>
     readableArtifact(item, projectId, source.id),
   );
+  const validPreview =
+    preview &&
+    artifacts.some(
+      (item) =>
+        item.id === artifactId &&
+        item.current &&
+        readableArtifact(item, projectId, source.id) &&
+        previewMatchesArtifact(preview, item),
+    );
+  useEffect(() => {
+    if (preview && !validPreview) {
+      entry.update({ preview: null, range: null, inputInvalidated: true });
+    }
+  }, [preview, validPreview, entry]);
   const selectedText =
-    preview && range
+    validPreview && preview && range
       ? Array.from(preview.text).slice(range.start, range.end).join("")
       : "";
   function clearSelection(next: string) {
     readController.current?.abort();
     setArtifactId(next);
+    entry.update({ inputInvalidated: false });
     setPreview(null);
     setRange(null);
     setReading(false);
@@ -257,6 +322,7 @@ export function AbstractDraftComposer({
         )
           throw new Error(t("abstractPreviewInvalid"));
         setPreview(value.preview);
+        entry.update({ inputInvalidated: false });
       }
     } catch (failure) {
       if (!controller.signal.aborted && alive.current) setError(failure);
@@ -267,6 +333,9 @@ export function AbstractDraftComposer({
   async function prepare() {
     if (
       creationLock.current ||
+      entry.get().creating ||
+      entry.get().preparationUncertain ||
+      Boolean(entry.get().preparedTaskId) ||
       inputLocked ||
       !preview ||
       !range ||
@@ -274,9 +343,11 @@ export function AbstractDraftComposer({
     )
       return;
     creationLock.current = true;
+    const operation = entry.get().operation + 1;
+    entry.update({ operation, creating: true });
     const startedNavigation = navigationVersion.current;
+    const startedEpoch = navigationEpoch?.current;
     const startedHash = window.location.hash;
-    setCreating(true);
     setError(null);
     try {
       const payload: DraftPreparePayload = {
@@ -292,8 +363,10 @@ export function AbstractDraftComposer({
       };
       let task: Task | undefined;
       if (recovery?.supported) {
-        const result = await recovery.prepare(payload);
-        if (alive.current) setPreparationKey(result.key);
+        const result = await recovery.prepare(payload, (key) => {
+          entry.update({ preparationKey: key }, operation);
+        });
+        entry.update({ preparationKey: result.key }, operation);
         task = result.task;
         if (!task) return; // Pending identity is kept by the project recovery controller.
       } else {
@@ -310,26 +383,35 @@ export function AbstractDraftComposer({
           "invalid_response",
           200,
         );
-      if (alive.current) {
-        setPreparedTaskId(value.task.id);
+      const accepted = entry.update(
+        {
+          preparedTaskId: value.task.id,
+          preparationUncertain: false,
+          creating: false,
+        },
+        operation,
+      );
+      if (alive.current && accepted) {
         if (!recovery?.supported) await onPrepared(value.task);
         // Hidden pages stay mounted. A late save must not override newer page
         // intent, including a hash change whose event has not fired yet.
         if (
           alive.current &&
           navigationVersion.current === startedNavigation &&
+          navigationEpoch?.current === startedEpoch &&
           window.location.hash === startedHash
         )
           onReview?.(value.task.id);
       }
     } catch (failure) {
-      if (alive.current) {
-        setError(failure);
-        if (uncertainMutation(failure)) setPreparationUncertain(true);
-      }
+      const accepted = entry.update(
+        { preparationUncertain: uncertainMutation(failure) },
+        operation,
+      );
+      if (alive.current && accepted) setError(failure);
     } finally {
       creationLock.current = false;
-      if (alive.current) setCreating(false);
+      entry.update({ creating: false }, operation);
     }
   }
   return (
@@ -339,6 +421,14 @@ export function AbstractDraftComposer({
       <SourceLink locator={source.data.locator} />
       <p>{t("abstractIdentity")}</p>
       <p>{t("abstractScope")}</p>
+      {!session && (
+        <p role="status">
+          {t(
+            sessionKey ? "abstractSessionFull" : "abstractSessionScopeInvalid",
+          )}
+        </p>
+      )}
+      {sessions && <p>{t("abstractSessionOnly")}</p>}
       {!recovery?.supported && <p>{t("prepareLegacyFallback")}</p>}
       {recovery?.blocked && <p role="status">{t("prepareResolveFirst")}</p>}
       {choices.length === 0 ? (
@@ -373,6 +463,7 @@ export function AbstractDraftComposer({
         </>
       )}
       {creating && <p role="status">{t("abstractPreparingLeave")}</p>}
+      {inputInvalidated && <p role="status">{t("abstractInputInvalidated")}</p>}
       {restoreBlocked && <p role="status">{t("abstractRestoreBlocked")}</p>}
       {error !== null && (
         <ErrorMessage
@@ -395,7 +486,7 @@ export function AbstractDraftComposer({
           )}
         </button>
       )}
-      {preview && (
+      {validPreview && preview && (
         <>
           <p className="file-path">{preview.reference ?? preview.path}</p>
           <p>{t("abstractSelectHelp")}</p>
@@ -457,6 +548,17 @@ export function AbstractDraftComposer({
             {creating ? t("preparing") : t("abstractPrepare")}
           </button>
         </>
+      )}
+      {sessions && sessionKey && !inputLocked && (
+        <button
+          className="button secondary"
+          onClick={() => {
+            readController.current?.abort();
+            if (sessions.discard(sessionKey)) onCancel();
+          }}
+        >
+          {t("abstractDiscardSession")}
+        </button>
       )}
       <button
         className="button secondary"
