@@ -1,10 +1,34 @@
 from __future__ import annotations
 
 import time
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 from research_hub.summarize import apply_summaries
+
+
+
+def _failure_details(result):
+    """Failure-only bounded diagnostics for this synthetic five-paper fixture."""
+    data = result.to_dict()
+    print("SYNTHETIC_APPLY_DIAGNOSTICS")
+    for name in ("applied", "skipped", "obsidian_writes", "zotero_writes"):
+        print(name + "=" + json.dumps(data.get(name), ensure_ascii=True)[:2048])
+    errors = data.get("errors", [])
+    print("error_count=" + str(len(errors)))
+    for index, error in enumerate(errors[:5]):
+        text = str(error)
+        print("error[" + str(index) + "]=" + text[:8192])
+        if len(text) > 8192:
+            print("[error exceeds diagnostic bound: " + str(len(text)) + " characters]")
+    receipts = data.get("receipts", [])
+    print("receipt_count=" + str(len(receipts)))
+    for index, receipt in enumerate(receipts[:5]):
+        # No full receipt, source text, authorization, target or payload dump.
+        states = {name: sink.get("state") for name, sink in receipt.get("sinks", {}).items() if name in {"local", "zotero"}}
+        print("receipt[" + str(index) + "].states=" + json.dumps(states, sort_keys=True))
+    return "See captured SYNTHETIC_APPLY_DIAGNOSTICS (original predicate unchanged)"
 
 
 def _write_paper(path: Path, slug: str, title: str, zotero_key: str) -> None:
@@ -123,10 +147,10 @@ def test_parallel_writes_produce_same_apply_result_as_sequential(tmp_path, monke
 
     parallel_result = apply_summaries(parallel_cfg, "test-cluster", payload, zot=zot)
 
-    assert serial_result.applied == [f"paper-{idx:02d}" for idx in range(1, 6)], serial_result.to_dict()
-    assert parallel_result.applied == serial_result.applied, parallel_result.to_dict()
-    assert parallel_result.obsidian_writes == 5, parallel_result.to_dict()
-    assert parallel_result.zotero_writes == 5, parallel_result.to_dict()
+    assert serial_result.applied == [f"paper-{idx:02d}" for idx in range(1, 6)], _failure_details(serial_result)
+    assert parallel_result.applied == serial_result.applied, _failure_details(parallel_result)
+    assert parallel_result.obsidian_writes == 5, _failure_details(parallel_result)
+    assert parallel_result.zotero_writes == 5, _failure_details(parallel_result)
     for idx in range(1, 6):
         slug = f"paper-{idx:02d}"
         serial_text = (serial_cfg.raw / "test-cluster" / f"{slug}.md").read_text(encoding="utf-8")
@@ -153,8 +177,8 @@ def test_parallel_writes_preserve_per_paper_rollback_invariant(tmp_path, monkeyp
     monkeypatch.setattr(summarize, "_write_zotero_child_note", fail_one)
     result = apply_summaries(cfg, "test-cluster", _payload(5), zot=object())
 
-    assert len(result.errors) == 1, result.to_dict()
-    assert "paper-02" in result.errors[0], result.to_dict()
+    assert len(result.errors) == 1, _failure_details(result)
+    assert "paper-02" in result.errors[0], _failure_details(result)
     for idx in range(1, 6):
         path = cfg.raw / "test-cluster" / f"paper-{idx:02d}.md"
         text = path.read_text(encoding="utf-8")
@@ -182,4 +206,22 @@ def test_parallel_writes_use_4_workers_default(tmp_path, monkeypatch):
     result = apply_summaries(cfg, "test-cluster", _payload(2), zot=_ZoteroStub())
 
     assert seen["max_workers"] == 4
-    assert result.applied == ["paper-01", "paper-02"], result.to_dict()
+    assert result.applied == ["paper-01", "paper-02"], _failure_details(result)
+
+
+def test_failure_diagnostics_are_bounded_and_omit_receipt_material(capsys):
+    result = SimpleNamespace(to_dict=lambda: {
+        'applied': [], 'skipped': [], 'obsidian_writes': 0, 'zotero_writes': 0,
+        'errors': ['SYNTHETIC_START' + 'x' * 9000] * 6,
+        'receipts': [{'source': 'DO_NOT_DUMP_SOURCE', 'authorization': 'DO_NOT_DUMP_AUTH',
+                      'sinks': {'local': {'state': 'unknown', 'payload': 'DO_NOT_DUMP_PAYLOAD'}}}] * 6,
+    })
+    message = _failure_details(result)
+    output = capsys.readouterr().out
+    assert message.startswith('See captured SYNTHETIC_APPLY_DIAGNOSTICS')
+    assert 'error_count=6' in output and 'receipt_count=6' in output
+    assert output.count('SYNTHETIC_START') == 5
+    assert 'error[5]=' not in output and 'receipt[5].states=' not in output
+    assert output.count('exceeds diagnostic bound') == 5
+    assert '"local": "unknown"' in output and 'DO_NOT_DUMP' not in output
+    assert len(output) < 45000
