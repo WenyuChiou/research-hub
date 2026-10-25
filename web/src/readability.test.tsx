@@ -272,3 +272,9 @@ describe("workspace readability source contract", () => {
     ).toHaveAccessibleDescription(hint);
   });
 });
+
+it("keeps integration guidance in an independent viewport-bounded panel", () => {
+  expect(values(".integrations-panel", "position")).toContain("fixed");
+  expect(values(".integrations-panel", "overflow-y")).toContain("auto");
+  expect(values(".integration-entry", "flex-basis")).toContain("100%");
+});

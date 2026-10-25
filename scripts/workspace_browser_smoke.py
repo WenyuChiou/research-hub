@@ -457,6 +457,30 @@ def run(output: Path):
                 page.screenshot(path=str(output / "workspace-ui.390px.png"), full_page=True)
                 checks.append({"check": "390px viewport has no horizontal page overflow", "status": "PASS",
                                "screenshot": "workspace-ui.390px.png", "viewport": {"width": 390, "height": 844}})
+                # Bottom entry opens a separate panel, never expands the sidebar.
+                setup_button = page.get_by_role("button", name="整合服務與設定", exact=True)
+                before_sidebar = page.locator(".sidebar").bounding_box()
+                setup_button.focus()
+                page.keyboard.press("Enter")
+                setup = page.get_by_role("dialog", name="整合服務與設定", exact=True)
+                expect(setup).to_be_visible()
+                expect(setup.get_by_role("heading", name="整合服務與設定", exact=True)).to_be_focused()
+                expect(setup.get_by_text("python -m research_hub setup", exact=True)).to_be_visible()
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+                geometry = setup.bounding_box()
+                after_sidebar = page.locator(".sidebar").bounding_box()
+                assert geometry and before_sidebar and after_sidebar
+                assert abs(before_sidebar["height"] - after_sidebar["height"]) <= 1
+                assert geometry["x"] >= 0 and geometry["x"] + geometry["width"] <= 391
+                assert geometry["y"] >= 0 and geometry["y"] + geometry["height"] <= 845
+                page.screenshot(path=str(output / "workspace-integrations-panel.390px.png"), full_page=True)
+                checks.append({"check": "390px bottom integration entry opens bounded independent panel without sidebar growth",
+                               "status": "PASS", "geometry": geometry,
+                               "screenshot": "workspace-integrations-panel.390px.png",
+                               "viewport": {"width": 390, "height": 844}, "native_zoom": "not_verified"})
+                page.keyboard.press("Escape")
+                expect(setup).to_have_count(0)
+                expect(setup_button).to_be_focused()
                 page.set_viewport_size({"width": 720, "height": 500})  # 200% of desktop layout width.
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
                 page.get_by_role("button", name="EN", exact=True).click()

@@ -1,6 +1,34 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  integrationFirstUse:
+    "Start with local text and review — no integration account is needed. Optional service guidance is under Integrations & setup at the bottom of the sidebar.",
+  integrationClose: "Close setup guidance",
+  integrationCompact: "Optional · current connection unknown",
+  integrationsSetup: "Integrations & setup",
+  integrationsOptional:
+    "Optional: no integration account is required for saved local text and review. Set up only the services you choose.",
+  integrationsHistorical:
+    "Saved setup observations only — not current connectivity or authorization. Missing or stale observations mean unknown, not disconnected. See Readiness for observation details.",
+  integrationVault:
+    "Choose your existing vault folder during setup; Obsidian does not require an API key. Do not replace your vault to reconnect.",
+  integrationZotero:
+    "Choose the correct library and a suitably scoped key in the local setup flow, never in this page.",
+  integrationNlm:
+    "NotebookLM uses a saved browser session, not a Hub API-key field. Login and browser prerequisites are separate.",
+  integrationOfficial: "Official site / guidance",
+  integrationSetupStep:
+    "On the computer running this Hub, use its installed environment. For first-time setup, review the prompts before accepting config, installation or login changes:",
+  integrationReuse:
+    "Saved local configuration, vault selection and session state are reused on that computer; do not run setup on every visit. Reconfigure only when your destination changes; reconnect when credentials expire, are revoked, or access fails. Permanent authentication is not guaranteed.",
+  integrationCheck:
+    "If access fails, inspect individual checks first (some checks contact services); a saved pass or zero exit code is not whole-system readiness:",
+  integrationNlmReconnect:
+    "Only if NotebookLM login is needed, use the existing local login flow; it opens a browser and needs the documented browser prerequisites:",
+  integrationPrivacy:
+    "This panel neither reads nor stores keys, cookies or vault paths, and does not run these commands. Keep credentials in the existing local configuration/session store, never in browser storage or shared logs. Encryption depends on your configured secrets support.",
+  integrationGuide: "Full setup steps and storage/prerequisite guidance",
+
   sourceLocallySaved: "Locally saved",
   sourceUnverifiedFile: "Unverified source link",
   recoveryPark: "Park unresolved request…",
@@ -546,6 +574,34 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  integrationFirstUse:
+    "可以先從本機文字與審閱開始，不需要整合帳號。選用服務的說明在側欄底部的「整合服務與設定」。",
+  integrationClose: "關閉設定說明",
+  integrationCompact: "選用服務・目前連線未知",
+  integrationsSetup: "整合服務與設定",
+  integrationsOptional:
+    "整合服務皆為選用：儲存本機文字與審閱不需要整合帳號。只設定你要使用的服務。",
+  integrationsHistorical:
+    "僅顯示已儲存的設定觀察，不代表目前連線或授權。沒有或過期的觀察是未知，不代表已斷線。觀察詳情請看就緒狀態。",
+  integrationVault:
+    "設定時選擇既有 vault 資料夾；Obsidian 不需要 API key。不要為了重新連線而更換 vault。",
+  integrationZotero:
+    "在本機設定流程選擇正確的文獻庫與適當權限的金鑰，不要在此頁輸入。",
+  integrationNlm:
+    "NotebookLM 使用已儲存的瀏覽器工作階段，不是 Hub 的 API key 欄位。登入與瀏覽器前置需求是不同事項。",
+  integrationOfficial: "官方網站／說明",
+  integrationSetupStep:
+    "在執行此 Hub 的電腦使用其安裝環境。首次設定時，先確認提示，再接受設定、安裝或登入變更：",
+  integrationReuse:
+    "同一台電腦會重用已儲存的本機設定、vault 選擇與工作階段，不必每次進入都重新設定。目的地變更才調整設定；憑證過期、撤銷或存取失敗時才重新連線。不保證永久登入有效。",
+  integrationCheck:
+    "存取失敗時先檢視個別檢查（部分檢查會連線服務）；已儲存的通過紀錄或零結束碼不代表整體可用：",
+  integrationNlmReconnect:
+    "只有需要 NotebookLM 登入時才使用既有本機登入流程；此指令會開啟瀏覽器，且需要文件列出的瀏覽器前置需求：",
+  integrationPrivacy:
+    "此區塊不讀取或儲存金鑰、cookies 或 vault 路徑，也不執行這些指令。憑證保留在既有本機設定／工作階段儲存區，不要放入瀏覽器儲存或分享的紀錄。是否加密取決於你的 secrets 支援設定。",
+  integrationGuide: "完整設定步驟與儲存／前置需求說明",
+
   sourceLocallySaved: "本機儲存時間",
   sourceUnverifiedFile: "來源連結未核實",
   recoveryPark: "暫擱結果未明的請求…",

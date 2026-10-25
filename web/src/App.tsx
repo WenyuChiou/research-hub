@@ -1,3 +1,4 @@
+import { IntegrationsSetup } from "./IntegrationsSetup";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
@@ -468,6 +469,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-footer">
+          <IntegrationsSetup workspace={workspace} projectId={projectId} t={t} />
           <span className="local-marker">
             <i aria-hidden="true" />
             {t("local")}
@@ -595,6 +597,7 @@ export default function App() {
                     <SmallEyebrow text={t("startEyebrow")} />
                     <h2>{t("startTitle")}</h2>
                     <p>{t("startBody")}</p>
+                    <p>{t("integrationFirstUse")}</p>
                     <div aria-hidden="true" className="onboarding-lines">
                       <i />
                       <i />
