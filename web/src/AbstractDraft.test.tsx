@@ -991,3 +991,20 @@ it("explicit saved-copy reopen preserves keyless Prepare uncertainty and does no
     fetch.mock.calls.filter((call) => call[1]?.method === "POST"),
   ).toHaveLength(1);
 });
+
+// Actual DOM check paired with the Python smoke/i18n binding regression.
+// No browser launch or out-of-root Vite module access is required.
+it("browser smoke read-source locator matches the rendered explicit action", async () => {
+  const fetch = vi.fn(async (_input: RequestInfo | URL, _options?: RequestInit) => response({ ok: true, preview }));
+  vi.stubGlobal("fetch", fetch);
+  renderComposer();
+  const user = userEvent.setup();
+  await user.selectOptions(screen.getByLabelText(t("abstractChooseFile")), artifact.id);
+  expect(fetch).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Read selected saved text" }));
+  expect(await screen.findByLabelText(t("abstractText"))).toHaveValue(preview.text.replace(/\r\n?/g, "\n"));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(fetch.mock.calls[0][0])).toBe("/api/v1/projects/river/artifacts/evidence-a/text");
+  expect(fetch.mock.calls[0][1]?.method ?? "GET").toBe("GET");
+
+});

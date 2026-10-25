@@ -14,7 +14,7 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 from research_hub.workspace import executor, text_intake, writing
@@ -183,6 +183,9 @@ class SQLiteContractTests(unittest.TestCase):
         server.server_port = 43210; server.csrf = 'synthetic-csrf'; server.human = 'synthetic-human'
         def request(path, payload=None, extra=None, csrf=True):
             handler = WorkspaceHandler.__new__(WorkspaceHandler)
+            # Explicit in-memory connection seam for bounded rejection draining.
+            handler.connection = Mock()
+            handler.connection.gettimeout.return_value = 15.0
             handler.server = server; handler.path = '/api/v1' + path
             handler.headers = Message()
             headers = {'Host': '127.0.0.1:43210', **(extra or {})}

@@ -215,7 +215,7 @@ def check_abstract_journey(screen, service, fixtures, checks, output):
     def select_existing(source):
         source_card(source).get_by_role("button", name="Draft from an existing abstract", exact=True).click()
         page.get_by_label("Choose existing evidence text", exact=True).select_option(fixtures["artifact"]["id"])
-        page.get_by_role("button", name="Read selected text file", exact=True).click()
+        page.get_by_role("button", name="Read selected saved text", exact=True).click()
         textarea = page.get_by_label("Registered source text (read only)", exact=True)
         expect(textarea).to_have_value(SOURCE.replace("\r\n", "\n"))
         # Place an exact programmatic range, then send actual browser key events.

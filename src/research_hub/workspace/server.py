@@ -8,6 +8,7 @@ import json
 import mimetypes
 from pathlib import Path
 import secrets
+import time
 from urllib.parse import unquote, urlsplit
 import webbrowser
 
@@ -110,8 +111,51 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
     def _result(self, result):
         self._reply(200 if result.get("ok") else (403 if result.get("code") == "human_required" else 400), result)
 
+    def _discard_rejected_body(self):
+        """Best-effort bounded drain after denial; never parse or authorize data.
+
+        Closing HTTP/1.0 with unread request bytes can race response delivery.
+        This mitigates only small, unambiguously framed bodies, not every reset.
+        The read-wait budget is 250ms, not a hard scheduler/wall-clock bound.
+        It occupies an existing handler thread and is not general DoS protection.
+        """
+        self.close_connection = True
+        lengths = self.headers.get_all("Content-Length", [])
+        if self.headers.get_all("Transfer-Encoding") is not None or len(lengths) != 1:
+            return
+        value = lengths[0]
+        if not 1 <= len(value) <= 5 or not value.isascii() or not value.isdecimal():
+            return
+        remaining = int(value)
+        if not 0 < remaining <= 65_536:
+            return
+        previous = None
+        restore = False
+        try:
+            previous = self.connection.gettimeout()
+            restore = True
+            deadline = time.monotonic() + 0.25
+            while remaining:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    break
+                self.connection.settimeout(min(previous, budget) if previous is not None else budget)
+                chunk = self.rfile.read1(min(8192, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            pass  # Failed draining must not replace the denial or dispatch work.
+        finally:
+            if restore:
+                try:
+                    self.connection.settimeout(previous)
+                except OSError:
+                    pass
+
     def do_POST(self):
         if not self._trusted_origin() or not hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), self.server.csrf):
+            self._discard_rejected_body()
             return self._reply(403, {"ok": False, "error": "Untrusted request", "code": "forbidden"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
