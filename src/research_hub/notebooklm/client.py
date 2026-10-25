@@ -66,6 +66,7 @@ class UploadResult:
     success: bool = False
     error: str = ""
     title: str = ""
+    retryable: bool = True
 
     @property
     def ok(self) -> bool:
@@ -258,10 +259,20 @@ class NotebookLMClient:
                 success=True,
                 title=source_title,
             )
-        except _UpstreamError as exc:
-            return UploadResult(source_kind=source_kind, path_or_url=path_or_url, error=str(exc))
         except Exception as exc:
-            return UploadResult(source_kind=source_kind, path_or_url=path_or_url, error=str(exc))
+            # The SDK knows whether a mutation may already have committed.
+            # Post-registration file failures may be unwrapped OSErrors with
+            # source_id/stage attributes, not only typed SDK exceptions.
+            retryable = not (
+                getattr(exc, "unconfirmed", False)
+                or getattr(exc, "commit_state", None) == "confirmed"
+                or getattr(exc, "source_id", None)
+            )
+            detail = str(exc)
+            if not retryable:
+                detail += " Inspect the notebook before retrying; this upload may already exist."
+            return UploadResult(source_kind=source_kind, path_or_url=path_or_url,
+                                error=detail, retryable=retryable)
 
     def upload_pdf(self, pdf_path: Path) -> UploadResult:
         notebook_id = getattr(self, "_active_notebook_id", "")
@@ -464,9 +475,10 @@ class NotebookLMClient:
         except _UpstreamError as exc:
             raise NotebookLMError(str(exc)) from exc
         if kind == "mind_map":
-            # Unlike async artifacts, notebooklm-py 0.4.x persists mind maps
-            # as notes and returns a dict, not a GenerationStatus.
-            note_id = status.get("note_id") if isinstance(status, dict) else None
+            # SDK 0.8.5 persists a note and returns MindMapResult, not a
+            # generation task. Keep dictionary-shaped adapter responses usable.
+            note_id = (status.get("note_id") if isinstance(status, dict)
+                       else getattr(status, "note_id", None))
             if not isinstance(note_id, str) or not note_id.strip():
                 raise NotebookLMError("Mind map generation did not return a saved note id")
             return note_id
@@ -502,74 +514,37 @@ class NotebookLMClient:
             self._run(_go())
             return out_path.read_text(encoding="utf-8")
 
-    async def _save_state(self) -> None:
-        """v0.88.7: persist rotated Google cookies back to state.json.
-
-        Google rotates short-lived auth tokens (SIDCC / SIDTS / OSID /
-        CSRF) during each session. Without this, the local state.json
-        captured at ``notebooklm login`` time stays frozen — subsequent
-        research-hub runs load increasingly-stale cookies, and Google
-        eventually rejects them with "Authentication expired or
-        invalid" (which presents to the user as "the login keeps
-        getting wiped"). Calling notebooklm-py's
-        ``save_cookies_to_storage`` after each successful client
-        lifetime persists the freshly-rotated jar, with the upstream
-        helper's OS-level file lock to keep concurrent CLI runs safe.
-
-        Best-effort: state-save failure must never poison the
-        operation that actually succeeded.
-        """
-        try:
-            from notebooklm.auth import save_cookies_to_storage
-        except Exception:
-            return
-        auth = getattr(self._client, "auth", None)
-        if auth is None:
-            return
-        cookie_jar = getattr(auth, "cookie_jar", None)
-        storage_path = getattr(auth, "storage_path", None)
-        if cookie_jar is None or not storage_path:
-            return
-        try:
-            from pathlib import Path as _Path
-            storage_path_obj = _Path(str(storage_path))
-            save_cookies_to_storage(cookie_jar, storage_path_obj)
-            # G3 P1 #2: rotating cookie persistence also writes state.json
-            # — re-tighten to 0600 each time so cookie rotation doesn't
-            # silently relax perms back to 0644 on some platforms.
-            from research_hub.notebooklm.auth import _tighten_state_file_perms
-            _tighten_state_file_perms(storage_path_obj)
-        except Exception as exc:
-            # v0.90.0 G1#2 fix: still best-effort (don't poison successful
-            # operation), but surface the failure so the next session's
-            # auth-expired error has a breadcrumb to root cause. Pre-fix
-            # silently swallowed all save errors.
-            print(
-                f"  [nlm] WARN cookie persistence to {storage_path} failed: "
-                f"{type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
-
     def refresh_and_save(self) -> None:
-        """v0.88.7: force a token refresh + state.json write mid-session.
+        """Best-effort SDK-managed refresh and cookie persistence.
 
-        Optional opportunistic hook for long-running flows (e.g. bulk
-        upload of 30+ sources) where you want the cookie jar persisted
-        before the next leg, not only at close().
+        SDK 0.8.5 refresh_auth persists the live jar through its serialized
+        lifecycle writer. Never write AuthTokens.cookie_jar: it is a bootstrap
+        compatibility shadow and can overwrite a newer session.
         """
         async def _go():
-            refresh = getattr(self._client, "refresh_auth", None)
-            if refresh is not None:
-                try:
-                    await self._maybe_await(refresh())
-                except Exception:
-                    pass
-            await self._save_state()
+            await self._maybe_await(self._client.refresh_auth())
+
+        def _warn(message: str) -> None:
+            # Diagnostics are best-effort too; never print SDK exception text,
+            # which can contain request URLs, tokens, HTML or private paths.
+            try:
+                print(f"  [nlm] WARN {message}", file=sys.stderr)
+            except Exception:
+                pass
 
         try:
             self._run(_go())
         except Exception:
-            pass
+            # Upstream close logs save errors, but explicit refresh can raise
+            # from its persistence boundary without logging. Handled SDK
+            # outcomes do not reach this branch, avoiding a second warning.
+            _warn("session refresh/persistence failed; saved authentication may be stale")
+        finally:
+            try:
+                from research_hub.notebooklm.auth import _tighten_state_file_perms
+                _tighten_state_file_perms(self._state_file)
+            except Exception:
+                _warn("could not verify saved-session permissions after refresh")
 
     def close(self) -> None:
         if self._closed:

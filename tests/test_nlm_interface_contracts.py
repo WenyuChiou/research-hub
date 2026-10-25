@@ -12,8 +12,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from notebooklm._artifacts import ArtifactsAPI
-from notebooklm.types import GenerationStatus
+import httpx
+from notebooklm import AuthTokens, NotebookLMClient as SDKClient
+from notebooklm.types import GenerationStatus, MindMapResult
+from notebooklm.options import ClientConfig, WebBackendConfig
 
 from research_hub.clusters import Cluster, ClusterRegistry
 from research_hub.connectors._notebooklm_adapter import NotebookLMConnector
@@ -24,19 +26,37 @@ from tests._mcp_helpers import _get_mcp_tool
 
 
 @pytest.fixture
-def sdk_client(tmp_path):
-    core = SimpleNamespace(
-        get_source_ids=AsyncMock(return_value=["source-synthetic"]),
-        rpc_call=AsyncMock(return_value=[[json.dumps({"name": "Synthetic map"})]]),
-    )
-    notes = SimpleNamespace(create=AsyncMock(return_value=SimpleNamespace(id="note-synthetic")))
-    artifacts = ArtifactsAPI(core, notes)
+def sdk_client(tmp_path, monkeypatch):
+    # Compose the real pinned SDK; only its RPC/note boundary is synthetic.
+    # No from_storage, profile path, credentials, browser, or remote request.
+    upstream = SDKClient(AuthTokens(
+        cookies={}, csrf_token="synthetic", session_id="synthetic",
+        cookie_jar=httpx.Cookies(),
+    ), config=ClientConfig(backend=WebBackendConfig()))
+    def no_network(request):
+        raise AssertionError("unexpected SDK HTTP request")
+
+    monkeypatch.setattr(upstream._web_runtime.kernel, "_async_client_factory",
+        lambda **kwargs: httpx.AsyncClient(
+            **kwargs, transport=httpx.MockTransport(no_network), trust_env=False))
+    artifacts = upstream.artifacts
+    core = artifacts._generation._rpc
+    notes = artifacts._generation._note_service
+    monkeypatch.setattr(artifacts._generation._notebooks, "get_source_ids",
+                        AsyncMock(return_value=["source-synthetic"]))
+    monkeypatch.setattr(core, "rpc_call", AsyncMock(
+        return_value=[[json.dumps({"name": "Synthetic map"})]],
+    ))
+    monkeypatch.setattr(notes, "create_note", AsyncMock(
+        return_value=SimpleNamespace(id="note-synthetic", created_at=None),
+    ))
     client = NotebookLMClient.__new__(NotebookLMClient)
-    client._client = SimpleNamespace(artifacts=artifacts)
+    client._client = upstream
     client._timeout = 0.01
     client._state_file = tmp_path / "unused-state.json"
     client._closed = False
     client._loop = asyncio.new_event_loop()
+    client._run(upstream.__aenter__())
     yield client, artifacts, core, notes
     client.close()
 
@@ -147,19 +167,22 @@ def test_completed_briefing_downloads_exact_generated_artifact(sdk_client, monke
     assert result.ok is True and result.text == "Synthetic report"
 
 
-def test_real_sdk_mind_map_dictionary_uses_note_id_without_polling(sdk_client, monkeypatch):
+def test_real_sdk_typed_mind_map_uses_note_id_without_polling(sdk_client, monkeypatch):
     client, artifacts, core, notes = sdk_client
     poller = AsyncMock(side_effect=AssertionError("mind maps are already persisted notes"))
     monkeypatch.setattr(artifacts, "wait_for_completion", poller)
     assert client.trigger_mind_map("notebook-synthetic") == "note-synthetic"
     assert core.rpc_call.await_count == 1
-    notes.create.assert_awaited_once_with(
+    notes.create_note.assert_awaited_once_with(
         "notebook-synthetic", title="Synthetic map", content=json.dumps({"name": "Synthetic map"})
     )
     poller.assert_not_awaited()
 
 
 @pytest.mark.parametrize("sdk_response", [
+    MindMapResult(mind_map=None, note_id=None),
+    MindMapResult(mind_map={}, note_id=""),
+    MindMapResult(mind_map={}, note_id="  "),
     {"mind_map": None, "note_id": None}, {"mind_map": {}, "note_id": ""},
     {"mind_map": {}, "note_id": "  "}, {"mind_map": {}, "note_id": 123},
 ])
@@ -235,7 +258,7 @@ def test_sdk_timeout_and_cancellation_preserve_cache_and_close_client(
 ):
     client, artifacts, *_ = sdk_client
     _report_generation(artifacts, monkeypatch, final_status="pending")
-    expected_error = TimeoutError
+    expected_error = NotebookLMError
     if failure == "timeout":
         # Run the real SDK timeout branch without a timer/sleep or network.
         client._timeout = -1
@@ -282,3 +305,132 @@ def test_connector_upload_preserves_partial_counts_and_errors(
     # Preserve the real upload report; mapping must not rewrite partial results.
     assert report.success_count == successes
     assert report.fail_count == failures
+
+
+def test_sdk_generation_refusal_exception_never_polls(sdk_client, monkeypatch):
+    from notebooklm.exceptions import ArtifactFeatureUnavailableError
+    client, artifacts, *_ = sdk_client
+    monkeypatch.setattr(artifacts, "generate_report", AsyncMock(
+        side_effect=ArtifactFeatureUnavailableError("report")))
+    poller = AsyncMock(side_effect=AssertionError("refused generation must not poll"))
+    monkeypatch.setattr(artifacts, "wait_for_completion", poller)
+    with pytest.raises(NotebookLMError, match="unavailable"):
+        client.trigger_briefing("notebook-synthetic")
+    poller.assert_not_awaited()
+
+
+@pytest.mark.parametrize("commit_state", ["unknown", "confirmed"])
+def test_sdk_unconfirmed_or_committed_upload_is_not_replayed(sdk_client, monkeypatch, tmp_path, commit_state):
+    from notebooklm.exceptions import RPCError
+    from notebooklm.outcomes import CommitState, OperationMetadata
+    from research_hub.notebooklm.upload import _attempt_upload
+    client, *_ = sdk_client
+    error = RPCError("Synthetic transport response lost")
+    error._operation_metadata = OperationMetadata(commit_state=CommitState(commit_state))
+    add_url = AsyncMock(side_effect=error)
+    monkeypatch.setattr(client._client.sources, "add_url", add_url)
+    facade = SimpleNamespace(upload_url=lambda url: client.upload_source("notebook-synthetic", url=url))
+    monkeypatch.setattr("research_hub.notebooklm.upload.time.sleep", lambda _: None)
+    result = _attempt_upload(facade, {"action": "url", "url": "https://example.invalid/synthetic"},
+                             tmp_path / "upload.jsonl")
+    assert not result.success
+    assert add_url.await_count == 1
+    assert result.retryable is False
+
+
+def test_real_sdk_from_storage_context_opens_and_closes_without_credentials(tmp_path, monkeypatch):
+    import notebooklm.client as sdk_module
+    from notebooklm._auth import tokens
+    synthetic_auth = AuthTokens(cookies={}, csrf_token="synthetic", session_id="synthetic",
+                                cookie_jar=httpx.Cookies())
+    loader = AsyncMock(return_value=tokens.InlineLoadedAuth(synthetic_auth))
+    monkeypatch.setattr(tokens, "_load_stored_auth", loader)
+    original_assembly = sdk_module._assemble_client
+    requests = []
+
+    def reject_request(request):
+        requests.append(request)
+        raise AssertionError("unexpected HTTP request")
+
+    def assemble(*args, **kwargs):
+        kwargs["async_client_factory"] = lambda **opts: httpx.AsyncClient(
+            **opts, transport=httpx.MockTransport(reject_request), trust_env=False)
+        return original_assembly(*args, **kwargs)
+
+    monkeypatch.setattr(sdk_module, "_assemble_client", assemble)
+    # Isolate inherited SDK environment preferences; no file contents are read.
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    with pytest.warns(DeprecationWarning):
+        client = NotebookLMClient(tmp_path / "unused.json", timeout_sec=30)
+    assert isinstance(client._client, SDKClient)
+    loader.assert_awaited_once()
+    assert loader.call_args.kwargs["policy"].allow_headless is False
+    client.close()
+    assert client._closed and client._loop.is_closed()
+    assert requests == [] and not (tmp_path / "unused.json").exists()
+
+
+def test_sdk_public_call_signatures_used_by_hub(sdk_client):
+    import inspect
+    from notebooklm.rpc import ReportFormat
+    client, artifacts, *_ = sdk_client
+    sdk = client._client
+    calls = [
+        (sdk.notebooks.list, (), {}), (sdk.notebooks.create, (), {"title": "Synthetic"}),
+        (sdk.sources.list, ("nb",), {}),
+        (sdk.sources.add_file, ("nb",), {"file_path": "synthetic.pdf"}),
+        (sdk.sources.add_text, ("nb",), {"title": "Synthetic", "content": "text"}),
+        (sdk.sources.add_url, ("nb",), {"url": "https://example.invalid/"}),
+        (sdk.sources.get_fulltext, ("nb", "source"), {}),
+        (sdk.chat.ask, ("nb",), {"question": "Synthetic?", "source_ids": ["source"]}),
+        (artifacts.generate_report, ("nb",),
+            {"report_format": ReportFormat.CUSTOM, "custom_prompt": "Synthetic"}),
+        (artifacts.generate_audio, ("nb",), {}), (artifacts.generate_video, ("nb",), {}),
+        (artifacts.generate_slide_deck, ("nb",), {}),
+        (artifacts.wait_for_completion, ("nb", "task"), {"timeout": 1}),
+        (artifacts.download_report, ("nb", "synthetic.md"), {"artifact_id": "artifact"}),
+        (artifacts.download_slide_deck, ("nb",),
+            {"output_path": "synthetic.pdf", "output_format": "pdf"}),
+    ]
+    for method, args, kwargs in calls:
+        inspect.signature(method).bind(*args, **kwargs)  # Never executes the request.
+
+
+def test_sdk_notebook_and_chat_return_types_are_preserved(sdk_client, monkeypatch):
+    from notebooklm.types import AskResult, ChatReference, Notebook, SourceFulltext
+    client, *_ = sdk_client
+    monkeypatch.setattr(client._client.notebooks, "list", AsyncMock(
+        return_value=[Notebook(id="nb-synthetic", title="Synthetic")]))
+    assert client.list_notebooks()[0].notebook_id == "nb-synthetic"
+    reply = AskResult(answer="Synthetic answer", conversation_id="conversation", turn_number=1,
+        is_follow_up=False, references=[ChatReference(source_id="source-synthetic",
+            citation_number=1, cited_text="Synthetic citation", start_char=0, end_char=18)])
+    monkeypatch.setattr(client._client.chat, "ask", AsyncMock(return_value=reply))
+    result = client.ask("nb-synthetic", question="Synthetic?")
+    assert result["ok"] is True and result["answer"] == reply.answer
+    assert result["references"][0]["source_id"] == "source-synthetic"
+    fulltext = SourceFulltext(source_id="source-synthetic", title="Synthetic", content="Synthetic text")
+    monkeypatch.setattr(client._client.sources, "get_fulltext", AsyncMock(return_value=fulltext))
+    assert client.source_fulltext("nb-synthetic", "source-synthetic") is fulltext
+
+
+@pytest.mark.parametrize("typed_error", [False, True])
+def test_sdk_retained_source_failure_is_not_replayed(sdk_client, monkeypatch, tmp_path, typed_error):
+    from notebooklm.exceptions import RPCError
+    from notebooklm._web.sources._upload_decode import raise_partial_upload_failure
+    from research_hub.notebooklm.upload import _attempt_upload
+    client, *_ = sdk_client
+    original = RPCError("Synthetic finalize failure") if typed_error else OSError("Synthetic read failure")
+    with pytest.raises(type(original)) as raised:
+        raise_partial_upload_failure(original, "synthetic.pdf", source_id="source-synthetic",
+                                     stage="upload_finalize")
+    assert raised.value is original and raised.value.source_id == "source-synthetic"
+    add_file = AsyncMock(side_effect=raised.value)
+    monkeypatch.setattr(client._client.sources, "add_file", add_file)
+    facade = SimpleNamespace(upload_pdf=lambda path: client.upload_source("notebook-synthetic", file_path=path))
+    monkeypatch.setattr("research_hub.notebooklm.upload.time.sleep", lambda _: None)
+    result = _attempt_upload(facade, {"action": "pdf", "pdf_path": str(tmp_path / "synthetic.pdf")},
+                             tmp_path / "upload.jsonl")
+    assert not result.success and result.retryable is False
+    assert add_file.await_count == 1
+    assert "Inspect the notebook" in result.error

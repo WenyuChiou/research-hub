@@ -104,6 +104,12 @@ def test_skill_data_mirror_dirs_match_expected_set():
         child.name for child in mirror_root.iterdir()
         if child.is_dir()
     }
+    from research_hub.skill_installer import SKILL_PACK
+    public_names = {source for source, _target in SKILL_PACK}
+    assert "_profiles" in actual and "_profiles" not in public_names
+    assert not (mirror_root / "_profiles" / "SKILL.md").exists()
+    actual.remove("_profiles")
+    assert actual == public_names
     missing = EXPECTED_SKILL_DIR_NAMES - actual
     extra = actual - EXPECTED_SKILL_DIR_NAMES
     assert not (missing or extra), (

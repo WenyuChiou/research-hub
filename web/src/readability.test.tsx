@@ -272,3 +272,22 @@ describe("workspace readability source contract", () => {
     ).toHaveAccessibleDescription(hint);
   });
 });
+
+it("keeps integration guidance in an independent viewport-bounded panel", () => {
+  expect(values(".integrations-panel", "position")).toContain("fixed");
+  expect(values(".integrations-panel", "overflow-y")).toContain("auto");
+  expect(values(".integration-entry", "flex-basis")).toContain("100%");
+});
+
+it("keeps the setup trigger secondary theme above normal-text contrast", () => {
+  const foreground = values(".button.secondary", "color").at(-1)!;
+  const background = values(".button.secondary", "background").at(-1)!;
+  const hex = (value: string) => {
+    const resolved = resolve(value);
+    if (resolved.startsWith("#")) return resolved;
+    const channels = resolved.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    expect(channels, "CSSOM must provide an opaque RGB color").not.toBeNull();
+    return "#" + channels!.slice(1).map(channel => Number(channel).toString(16).padStart(2, "0")).join("");
+  };
+  expect(contrast(hex(foreground), hex(background))).toBeGreaterThanOrEqual(4.5);
+});

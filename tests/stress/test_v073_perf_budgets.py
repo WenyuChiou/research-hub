@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from threading import Lock
 from types import SimpleNamespace
 
 import pytest
@@ -148,20 +149,37 @@ def test_parallel_summarize_writes_under_5s_for_30_papers(tmp_path, monkeypatch)
         ]
     }
 
-    def slow_zotero_write(zot, parent_key: str, html: str):
-        del zot, parent_key, html
+    writes = []
+    writes_lock = Lock()
+
+    def slow_zotero_write(zot, parent_key: str, html: str, *, before_write=None):
+        del zot, html
+        # Preserve the real durable dispatch claim before simulated provider I/O.
+        assert before_write is not None
+        before_write()
+        with writes_lock:
+            writes.append(parent_key)
         time.sleep(0.1)
+        return ""
 
     monkeypatch.setattr(summarize, "_write_zotero_child_note", slow_zotero_write)
 
     start = time.perf_counter()
     result = apply_summaries(
-        SimpleNamespace(raw=cfg.raw, research_hub_dir=cfg.research_hub_dir),
+        SimpleNamespace(raw=cfg.raw, research_hub_dir=cfg.research_hub_dir,
+                        zotero_library_id="SYNTHETIC-STRESS", zotero_library_type="user"),
         "stress",
         payload,
         zot=object(),
     )
     elapsed = time.perf_counter() - start
 
-    assert len(result.applied) == 30
+    print(f"Synthetic 30-paper journaled apply: {elapsed:.6f}s (budget <5s)")
+    assert len(result.applied) == 30, result.errors
+    assert not result.errors and not result.skipped
+    assert result.obsidian_writes == result.zotero_writes == 30
+    assert sorted(writes) == sorted(f"ZK{idx}" for idx in range(30))
+    assert len(result.receipts) == 30
+    assert all(receipt["sinks"][sink]["state"] == "confirmed"
+               for receipt in result.receipts for sink in ("local", "zotero"))
     assert elapsed < 5.0

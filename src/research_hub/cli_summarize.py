@@ -96,15 +96,27 @@ def _cmd_summarize(args, cfg, *, emit_json: bool = False) -> int:
         apply=args.apply,
         write_zotero=not args.no_zotero,
         write_obsidian=not args.no_obsidian,
+        provenance="legacy_cli_explicit_apply",
     )
     if not emit_json and report.apply_result is not None:
+        from research_hub.summarize import receipt_lines
+        for line in receipt_lines(getattr(report.apply_result, "receipts", [])):
+            print(line)
         for warning in getattr(report.apply_result, "warnings", []):
             print(f"  WARN {warning}", file=sys.stderr)
     if not report.ok:
         if emit_json:
             _emit_cli_json("summarize", 1, report)
             return 1
-        print(f"summarize failed: {report.error}", file=sys.stderr)
+        if report.apply_result is not None:
+            receipt = report.apply_result
+            print(f"confirmed applied: {len(receipt.applied)}  skipped: {len(receipt.skipped)}  errors: {len(receipt.errors)}")
+            print(f"confirmed obsidian writes: {receipt.obsidian_writes}, zotero writes: {receipt.zotero_writes}")
+            for skip in receipt.skipped:
+                print(f"  SKIP {skip}")
+            for error in receipt.errors:
+                print(f"  ERROR {error}", file=sys.stderr)
+        print(f"summarize not completed: {report.error}", file=sys.stderr)
         return 1
     if report.prompt_path:
         if emit_json:

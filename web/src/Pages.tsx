@@ -1,4 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { ComposerSessions } from "./composerSession";
+import { artifactReference } from "./sourceStorage";
+import { linkedSourceArtifact, sourceArtifactLabels } from "./sourceArtifact";
+import { useRef, useState, type ReactNode } from "react";
 import { api, segment } from "./api";
 import {
   Disclosure,
@@ -22,6 +25,18 @@ import {
 import { TaskCard, TaskComposer } from "./Tasks";
 import { ManuscriptTools } from "./ManuscriptTools";
 import { DeliveryPanel } from "./Delivery";
+import { ReturningWork } from "./ReturningWork";
+import { AbstractDraftComposer } from "./AbstractDraft";
+import { TextIntakeForm } from "./TextIntake";
+import {
+  TextIntakeRecoveryPanel,
+  useTextIntakeRecovery,
+} from "./TextIntakeRecovery";
+import type { SavedText } from "./textIntake";
+import {
+  PreparationRecoveryPanel,
+  usePreparationRecovery,
+} from "./PrepareRecovery";
 import type {
   Operation,
   Page,
@@ -29,27 +44,109 @@ import type {
   ResearchRecord,
   SearchResult,
   Workspace,
+  Task,
 } from "./types";
 
+export interface RecoveredPreparation {
+  task: Task;
+  workspaceInstance: string;
+}
+
+export interface RecoveredText {
+  savedText: SavedText;
+  workspaceInstance: string;
+}
+export type RecoveredWork = RecoveredPreparation | RecoveredText;
+
 export interface PagesProps {
+  composerSessions?: ComposerSessions;
+  navigationEpoch?: { current: number };
   detail: ProjectDetail;
   workspace: Workspace;
   page: Page;
   t: Translate;
-  onSaved: (message: string) => Promise<void>;
-  navigate: (page: Page) => void;
+  onSaved: (message: string, recovered?: RecoveredWork) => Promise<void>;
+  navigate: (page: Page, focusId?: string) => void;
 }
 const textValue = (value: unknown) => String(value ?? "");
 
 export function ProjectPages({
+  composerSessions: providedSessions,
+  navigationEpoch: providedEpoch,
   detail,
   workspace,
   page,
   t,
   onSaved,
-  navigate,
+  navigate: parentNavigate,
 }: PagesProps) {
+  const localEpoch = useRef(0);
+  const navigationEpoch = providedEpoch ?? localEpoch;
+  const [localSessions] = useState(() => new ComposerSessions());
+  const composerSessions = providedSessions ?? localSessions;
+  const composerScope = composerSessions.scope(workspace);
+  const navigate: PagesProps["navigate"] = (...args) => {
+    navigationEpoch.current++;
+    parentNavigate(...args);
+  };
+  const recovery = usePreparationRecovery(
+    detail.project.id,
+    workspace.capabilities.prepare_reconciliation,
+    detail.tasks,
+    async (task, key) => {
+      composerSessions.settlePreparation(
+        composerScope,
+        detail.project.id,
+        key,
+        task.id,
+      );
+      await onSaved(t("taskCreated"), {
+        task,
+        workspaceInstance:
+          workspace.capabilities.prepare_reconciliation!.workspace_instance_id,
+      });
+    },
+    (key) =>
+      composerSessions.settlePreparation(composerScope, detail.project.id, key),
+  );
+  const intake = useTextIntakeRecovery(
+    detail.project.id,
+    workspace.capabilities.text_intake,
+    detail,
+    async (savedText) => {
+      await onSaved(t("saved"), {
+        savedText,
+        workspaceInstance:
+          workspace.capabilities.text_intake!.workspace_instance_id,
+      });
+    },
+  );
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [intakeIntent, setIntakeIntent] = useState(0);
+  const [prepareIntent, setPrepareIntent] = useState(0);
+  const [sourceOpenVersion, setSourceOpenVersion] = useState(0);
+  function openSavedText(saved: SavedText) {
+    setSourceOpenVersion((value) => value + 1);
+    setIntakeOpen(false);
+    setAbstractSourceId(saved.record.id);
+    navigate("literature", "record-" + saved.record.id);
+  }
+  function linkedArtifact(record: ResearchRecord) {
+    return linkedSourceArtifact(record, detail.artifacts, detail.project.id);
+  }
+  function savedPreview(record: ResearchRecord) {
+    const artifact = linkedArtifact(record);
+    const saved = intake.entries.find(
+      (e) => e.saved?.record.id === record.id,
+    )?.saved;
+    return artifact?.current &&
+      saved?.preview_status === "available" &&
+      saved.preview?.sha256 === artifact.sha256
+      ? saved.preview
+      : undefined;
+  }
   const [operation, setOperation] = useState<Operation>("frame");
+  const [abstractSourceId, setAbstractSourceId] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [searchWarnings, setSearchWarnings] = useState<string[]>([]);
   const records = (kind: string) =>
@@ -100,7 +197,12 @@ export function ProjectPages({
     return items.length ? (
       <div className="record-list">
         {items.map((record) => (
-          <article className="research-record" key={record.id}>
+          <article
+            className="research-record"
+            key={record.id}
+            id={`record-${record.id}`}
+            tabIndex={-1}
+          >
             {render(record)}
             <InspectJson
               title={`${t("inspect")} · ${record.id}`}
@@ -131,7 +233,7 @@ export function ProjectPages({
                     ? t(roleLabels[artifact.role])
                     : artifact.role}
                 </SmallLabel>
-                <p className="file-path">{artifact.path}</p>
+                <p className="file-path">{artifactReference(artifact)}</p>
                 <details className="inspect">
                   <summary>{t("fingerprint")}</summary>
                   <code className="hash">{artifact.sha256}</code>
@@ -177,6 +279,27 @@ export function ProjectPages({
 
   return (
     <>
+      <TextIntakeRecoveryPanel
+        recovery={intake}
+        t={t}
+        onOpen={openSavedText}
+        onSeparate={() => {
+          if (intake.blocked) return;
+          setIntakeIntent((v) => v + 1);
+          setIntakeOpen(true);
+          navigate("literature");
+        }}
+      />
+      <PreparationRecoveryPanel
+        recovery={recovery}
+        onSeparate={() => {
+          if (recovery.blocked) return;
+          setPrepareIntent((v) => v + 1);
+          navigate("literature");
+        }}
+        t={t}
+        onReview={(taskId) => navigate("review", `review-task-${taskId}`)}
+      />
       <div hidden={page !== "overview"} className="page-content">
         <section className="next-step">
           <div>
@@ -251,36 +374,7 @@ export function ProjectPages({
                 )}
               </Disclosure>
             </Panel>
-            <Panel
-              title={t("recentActivity")}
-              meta={
-                <a href="#review">
-                  {t("viewReview")} <span aria-hidden="true">↗</span>
-                </a>
-              }
-            >
-              {detail.tasks.length ? (
-                <div className="activity-list">
-                  {detail.tasks
-                    .slice(0, 5)
-                    .reverse()
-                    .map((task) => (
-                      <div key={task.id} className="activity-row">
-                        <span className="activity-mark" aria-hidden="true">
-                          ↗
-                        </span>
-                        <div>
-                          <strong>{t(operationLabel(task.operation))}</strong>
-                          <code>{task.id}</code>
-                        </div>
-                        <StatusBadge status={task.status} t={t} />
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <EmptyState>{t("noTasks")}</EmptyState>
-              )}
-            </Panel>
+            <ReturningWork detail={detail} t={t} navigate={navigate} />
           </div>
           <aside className="side-column">
             <Panel title={t("workbench")}>
@@ -314,6 +408,34 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
+        <div>
+          <button
+            className="button primary"
+            disabled={!intake.supported || intakeOpen}
+            onClick={() => {
+              setIntakeOpen(true);
+              setAbstractSourceId(null);
+            }}
+          >
+            {t("intakeAdd")}
+          </button>
+          {!intake.supported && (
+            <p role="status">
+              {t("intakeUnavailable")}{" "}
+              {workspace.capabilities.text_intake?.message}
+            </p>
+          )}
+        </div>
+        {intakeOpen && (
+          <TextIntakeForm
+            key={intakeIntent}
+            recovery={intake}
+            t={t}
+            onClose={() => setIntakeOpen(false)}
+            onOpen={openSavedText}
+          />
+        )}
+
         <Panel title={t("search")} className="search-panel">
           <MutationForm
             t={t}
@@ -387,9 +509,79 @@ export function ProjectPages({
                     )}
                   </span>
                 </div>
-                <SourceLink locator={record.data.locator} />
+                {record.data.locator_kind === "local-copy" ? (
+                  <p>{t("intakeLocalLocator")}</p>
+                ) : (
+                  <SourceLink locator={record.data.locator} />
+                )}
                 <p className="small muted">{textValue(record.data.doi)}</p>
+                {record.data.intake != null && (
+                  <p>
+                    {t("intakeDeclaredScope")}:{" "}
+                    {t(
+                      record.data.reading_scope === "abstract"
+                        ? "intakeScopeAbstract"
+                        : "intakeScopeUnknown",
+                    )}
+                  </p>
+                )}
                 <code className="record-id">{record.id}</code>
+                <button
+                  className="button secondary"
+                  onClick={() => {
+                    navigationEpoch.current++;
+                    setIntakeOpen(false);
+                    setSourceOpenVersion((value) => value + 1);
+                    setAbstractSourceId(record.id);
+                  }}
+                >
+                  {t("abstractOpen")}
+                </button>
+                {abstractSourceId === record.id && (
+                  <AbstractDraftComposer
+                    key={JSON.stringify([composerScope, record.id])}
+                    navigationEpoch={navigationEpoch}
+                    sessions={composerSessions}
+                    sessionKey={
+                      composerScope.startsWith("invalid:")
+                        ? undefined
+                        : JSON.stringify([
+                            composerScope,
+                            detail.project.id,
+                            record.id,
+                          ])
+                    }
+                    projectId={detail.project.id}
+                    source={record}
+                    artifacts={detail.artifacts}
+                    artifactLabels={sourceArtifactLabels(
+                      detail.records,
+                      detail.artifacts,
+                      detail.project.id,
+                      t,
+                    )}
+                    separateIntentVersion={prepareIntent}
+                    restoreVersion={sourceOpenVersion}
+                    initialArtifactId={linkedArtifact(record)?.id}
+                    initialPreview={savedPreview(record)}
+                    capability={workspace.capabilities.codex}
+                    recovery={recovery}
+                    t={t}
+                    onReview={(taskId) =>
+                      navigate(
+                        "review",
+                        taskId ? `review-task-${taskId}` : undefined,
+                      )
+                    }
+                    onCancel={() => {
+                      setAbstractSourceId(null);
+                      navigate("literature", `record-${record.id}`);
+                    }}
+                    onPrepared={async () => {
+                      await onSaved(t("taskCreated"));
+                    }}
+                  />
+                )}
               </>
             ))}
             <Disclosure title={t("addSource")}>
@@ -406,17 +598,52 @@ export function ProjectPages({
             </Disclosure>
           </Panel>
           <Panel title={t("screening")}>
-            {recordList(records("screening"), "noScreening", (record) => (
-              <>
-                <div className="record-title">
-                  <code>{textValue(record.data.source_id)}</code>
-                  <span className="badge neutral">
-                    {statusLabel(textValue(record.data.decision), t)}
-                  </span>
-                </div>
-                <ReadText value={record.data.rationale} />
-              </>
-            ))}
+            {recordList(records("screening"), "noScreening", (record) => {
+              const source = sources.find(
+                (item) => item.id === record.data.source_id,
+              );
+              return (
+                <>
+                  <div className="record-title">
+                    {source ? (
+                      <h3>
+                        {textValue(source.data.title).trim() ||
+                          t("screeningSourceUntitled")}
+                      </h3>
+                    ) : (
+                      <p>{t("screeningSourceUnavailable")}</p>
+                    )}
+                    <span className="badge neutral">
+                      {statusLabel(textValue(record.data.decision), t)}
+                    </span>
+                  </div>
+                  <code className="record-id">
+                    {textValue(record.data.source_id)}
+                  </code>
+                  {source && (
+                    <>
+                      <p>
+                        {t("intakeDeclaredScope")}:{" "}
+                        {t(
+                          source.data.reading_scope === "abstract"
+                            ? "intakeScopeAbstract"
+                            : "intakeScopeUnknown",
+                        )}
+                      </p>
+                      <button
+                        className="button secondary"
+                        onClick={() =>
+                          navigate("literature", `record-${source.id}`)
+                        }
+                      >
+                        {t("abstractReturnSource")}
+                      </button>
+                    </>
+                  )}
+                  <ReadText value={record.data.rationale} />
+                </>
+              );
+            })}
             <Disclosure title={t("screenSource")}>
               <MutationForm
                 t={t}
@@ -628,6 +855,12 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "review"} className="page-content">
+        <button
+          className="button secondary"
+          onClick={() => navigate("overview")}
+        >
+          {t("returnOverview")}
+        </button>
         <div className="notice execution-note">
           <span aria-hidden="true">↳</span>
           <p>{t("executionNote")}</p>
@@ -641,13 +874,27 @@ export function ProjectPages({
               {detail.tasks.length ? (
                 <div className="task-list">
                   {detail.tasks.map((task) => (
-                    <TaskCard
+                    <div
                       key={task.id}
-                      task={task}
-                      approvalMessage={workspace.capabilities.approval.message}
-                      t={t}
-                      onSaved={onSaved}
-                    />
+                      id={`review-task-${task.id}`}
+                      tabIndex={-1}
+                    >
+                      <TaskCard
+                        runnerAvailable={
+                          workspace.capabilities.codex.status === "available"
+                        }
+                        onReturnToSource={(sourceId) => {
+                          setAbstractSourceId(sourceId);
+                          navigate("literature", `record-${sourceId}`);
+                        }}
+                        task={task}
+                        approvalMessage={
+                          workspace.capabilities.approval.message
+                        }
+                        t={t}
+                        onSaved={onSaved}
+                      />
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -700,13 +947,15 @@ export function ProjectPages({
             <Readiness workspace={workspace} t={t} />
           </aside>
         </div>
-        <DeliveryPanel
-          projectId={detail.project.id}
-          tasks={detail.tasks}
-          actions={detail.actions ?? []}
-          t={t}
-          onSaved={onSaved}
-        />
+        <div id="review-local-delivery" tabIndex={-1}>
+          <DeliveryPanel
+            projectId={detail.project.id}
+            tasks={detail.tasks}
+            actions={detail.actions ?? []}
+            t={t}
+            onSaved={onSaved}
+          />
+        </div>
       </div>
     </>
   );

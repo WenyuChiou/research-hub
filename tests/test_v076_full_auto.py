@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from research_hub.summarize import SummaryApplyResult
 
 from research_hub.auto import auto_pipeline
 
@@ -74,7 +75,7 @@ def test_auto_pipeline_runs_summary_when_enabled(monkeypatch, tmp_path):
         return SimpleNamespace(
             ok=True,
             cli_used=llm_cli,
-            apply_result=SimpleNamespace(applied=["paper"], errors=[]),
+            apply_result=SummaryApplyResult("test-cluster", applied=["paper"], errors=[]),
         )
 
     def fake_summarize_pending(cfg, *, cluster_slug_filter=None, backend="claude", **kwargs):
@@ -137,7 +138,7 @@ def test_summary_step_counts_real_summarize_result_objects(monkeypatch, tmp_path
         lambda *_a, **_k: SimpleNamespace(
             ok=True,
             cli_used="codex",
-            apply_result=SimpleNamespace(applied=["paper"], errors=[]),
+            apply_result=SummaryApplyResult("test-cluster", applied=["paper"], errors=[]),
         ),
     )
     monkeypatch.setattr(

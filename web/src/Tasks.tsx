@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, downloadPacket, metaToken, segment } from "./api";
 import {
   Disclosure,
@@ -9,7 +9,9 @@ import {
   StatusBadge,
 } from "./components";
 import { operationLabel, type Translate } from "./i18n";
+import { AbstractDraftReview, uncertainMutation } from "./AbstractDraft";
 import type { Operation, Task } from "./types";
+import { taskFreshnessStatus } from "./taskFreshness";
 
 export interface TaskComposerProps {
   projectId: string;
@@ -88,22 +90,59 @@ export function parseOutputArtifacts(
 
 export interface TaskCardProps {
   task: Task;
+  runnerAvailable?: boolean;
+  onReturnToSource?: (sourceId: string) => void;
   approvalMessage: string;
   t: Translate;
   onSaved: (message: string) => Promise<void>;
 }
-export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
+export function TaskCard({
+  task,
+  approvalMessage,
+  t,
+  onSaved,
+  runnerAvailable = false,
+  onReturnToSource,
+}: TaskCardProps) {
+  const revisionHeadingId = useId();
+  const revision = taskFreshnessStatus(task);
+  const abstractDraft = task.operation === "paper-abstract-draft";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [runLocked, setRunLocked] = useState(false);
+  const runLock = useRef(false);
+  const [runUncertain, setRunUncertain] = useState(false);
+  useEffect(() => {
+    // A new object with the same preparable state is not a receipt that an
+    // uncertain Run never started. Only observed post-claim/review/terminal
+    // state resolves this local uncertainty; never retry the write here.
+    if (
+      [
+        "running",
+        "awaiting_human",
+        "completed",
+        "failed",
+        "cancelled",
+        "declined",
+        "blocked",
+      ].includes(task.status)
+    ) {
+      runLock.current = false;
+      setRunLocked(false);
+      setRunUncertain(false);
+    }
+  }, [task]);
   const humanEnabled = Boolean(metaToken("research-hub-human-token"));
   const runnable =
     task.mode === "connected" &&
     ["ready", "awaiting_agent"].includes(task.status);
-  const importable = ["ready", "awaiting_agent", "blocked"].includes(
-    task.status,
-  );
+  const importable =
+    !abstractDraft &&
+    ["ready", "awaiting_agent", "blocked"].includes(task.status);
   const handoffable =
-    task.mode === "handoff" && task.status === "awaiting_agent";
+    !abstractDraft &&
+    task.mode === "handoff" &&
+    task.status === "awaiting_agent";
   const cancellable = [
     "ready",
     "awaiting_agent",
@@ -112,8 +151,13 @@ export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
     "blocked",
   ].includes(task.status);
   async function action(kind: "run" | "handoff" | "cancel" | "recover") {
+    if (abstractDraft && kind === "run" && runLock.current) return;
     setBusy(true);
     setError(null);
+    if (abstractDraft && kind === "run") {
+      runLock.current = true;
+      setRunLocked(true);
+    }
     try {
       const value = await api<{ ok: true; task: Task; packet?: unknown }>(
         `/tasks/${segment(task.id)}/${kind}`,
@@ -135,6 +179,13 @@ export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
       await onSaved(t(message));
     } catch (failure) {
       setError(failure);
+      if (abstractDraft && kind === "run") {
+        setRunUncertain(uncertainMutation(failure));
+        if (!uncertainMutation(failure)) {
+          runLock.current = false;
+          setRunLocked(false);
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -151,11 +202,42 @@ export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
         </div>
         <StatusBadge status={task.status} t={t} />
       </div>
+      <section
+        className="tool-intro task-revision"
+        aria-labelledby={revisionHeadingId}
+      >
+        <h4 id={revisionHeadingId}>{t("taskRevisionCheck")}</h4>
+        <p>
+          <strong>
+            {t(
+              revision === "current"
+                ? "taskRevisionCurrent"
+                : revision === "stale"
+                  ? "taskRevisionStale"
+                  : "taskRevisionUnknown",
+            )}
+          </strong>
+        </p>
+        <p>
+          {t(
+            revision === "current"
+              ? "taskRevisionCurrentNote"
+              : revision === "stale"
+                ? "taskRevisionStaleNote"
+                : "taskRevisionUnknownNote",
+          )}
+        </p>
+        {task.status === "completed" && revision !== "current" && (
+          <p>{t("taskRevisionHistoricalAcceptance")}</p>
+        )}
+      </section>
       <div className="button-row">
         {runnable && (
           <button
             className="button primary"
-            disabled={busy}
+            disabled={
+              busy || (abstractDraft && (!runnerAvailable || runLocked))
+            }
             onClick={() => void action("run")}
           >
             {busy ? t("preparing") : t("runTask")}{" "}
@@ -182,6 +264,22 @@ export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
           </button>
         )}
       </div>
+      {abstractDraft && (
+        <>
+          {runUncertain && <p role="status">{t("abstractRunUncertain")}</p>}
+          {task.mode === "handoff" && (
+            <p role="status">{t("abstractHandoffUnsupported")}</p>
+          )}
+          {!runnerAvailable && (
+            <p role="status">{t("abstractRunnerUnavailable")}</p>
+          )}
+          <AbstractDraftReview
+            task={task}
+            t={t}
+            onReturnToSource={onReturnToSource}
+          />
+        </>
+      )}
       {task.status === "running" && (
         <Disclosure title={t("taskRecovery")}>
           <div className="tool-intro">
@@ -196,11 +294,20 @@ export function TaskCard({ task, approvalMessage, t, onSaved }: TaskCardProps) {
           </div>
         </Disclosure>
       )}
-      {error !== null && <ErrorMessage error={error} t={t} />}
+      {error !== null && (
+        <ErrorMessage
+          error={error}
+          t={t}
+          guidance={runUncertain ? "uncertain" : "retry"}
+        />
+      )}
       {task.error && <ErrorMessage error={new Error(task.error)} t={t} />}
       {task.blocker && <p role="status">{task.blocker}</p>}
       {task.execution_provenance && (
-        <InspectJson title={t("taskDiagnostics")} value={task.execution_provenance} />
+        <InspectJson
+          title={t("taskDiagnostics")}
+          value={task.execution_provenance}
+        />
       )}
       <details className="inspect">
         <summary>{t("taskDetails")}</summary>

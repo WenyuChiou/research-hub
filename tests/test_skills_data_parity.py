@@ -27,6 +27,8 @@ from pathlib import Path
 
 import pytest
 
+from research_hub.skill_installer import SKILL_PACK
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_TREE = REPO_ROOT / "skills"
@@ -36,6 +38,9 @@ SKILLS_DATA_TREE = REPO_ROOT / "src" / "research_hub" / "skills_data"
 # ``skills_data/``. Add with a comment explaining why. Empty since
 # Phase 7 Wave C removed the ``zotero-skills`` vendored shadow.
 SHADOW_ONLY_IN_SKILLS_TREE: set[str] = set()
+# Versioned instruction evidence is a package resource, not an installable skill.
+PACKAGE_RESOURCE_NAMES = {"_profiles"}
+PUBLIC_SKILL_NAMES = {source for source, _target in SKILL_PACK}
 
 
 def _list_skill_names(root: Path) -> set[str]:
@@ -52,7 +57,13 @@ def test_skill_dir_lists_match_modulo_shadows():
     skill in skills/ but not skills_data/ must be declared in
     SHADOW_ONLY_IN_SKILLS_TREE."""
     in_skills = _list_skill_names(SKILLS_TREE)
-    in_data = _list_skill_names(SKILLS_DATA_TREE)
+    all_data = _list_skill_names(SKILLS_DATA_TREE)
+    in_data = all_data - PACKAGE_RESOURCE_NAMES
+    assert in_data == PUBLIC_SKILL_NAMES, "Package directories must match the installer's public skill manifest"
+    for name in PACKAGE_RESOURCE_NAMES:
+        assert name in all_data
+        assert name not in PUBLIC_SKILL_NAMES
+        assert not (SKILLS_DATA_TREE / name / "SKILL.md").exists()
 
     only_in_data = in_data - in_skills
     only_in_skills = in_skills - in_data
@@ -70,9 +81,7 @@ def test_skill_dir_lists_match_modulo_shadows():
 
 
 # Parametrize over the skills that should be byte-mirrored.
-_MIRRORED_SKILLS = sorted(
-    {p.name for p in SKILLS_DATA_TREE.iterdir() if p.is_dir()}
-)
+_MIRRORED_SKILLS = sorted(PUBLIC_SKILL_NAMES)
 
 
 @pytest.mark.parametrize("skill", _MIRRORED_SKILLS)

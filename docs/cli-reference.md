@@ -326,10 +326,14 @@ research-hub migrate-yaml [--assign-cluster SLUG] [--folder PATH]
 
 ```bash
 research-hub notebooklm login --auto-detect [--wait-timeout 300]
-research-hub notebooklm login [--wait-file PATH] [--wait-timeout 300]
+research-hub notebooklm login
 research-hub notebooklm login --from-browser [chrome|edge|firefox|brave|auto]
 research-hub notebooklm login --import-from VAULT_PATH [--overwrite]
 ```
+
+Normal login and `--auto-detect` use SDK 0.8.5 automatic capture, then verify the
+saved session; no ENTER is needed. `--wait-file` is unsupported and fails before
+capture, preserving the old external-consent boundary. See [login details](notebooklm.md).
 
 ### `notebooklm bundle`
 

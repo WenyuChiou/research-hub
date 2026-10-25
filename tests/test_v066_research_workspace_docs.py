@@ -111,6 +111,11 @@ def test_no_orphan_packaged_skill_without_root_source():
         if not child.is_dir():
             continue
         name = child.name
+        if name == "_profiles":
+            from research_hub.skill_installer import SKILL_PACK
+            assert name not in {source for source, _target in SKILL_PACK}
+            assert not (child / "SKILL.md").exists()
+            continue  # Explicit immutable resource namespace, not a live skill.
         source_name = legacy_target_to_source.get(name, name)
         src = SKILLS_ROOT / source_name
         assert src.exists(), (
