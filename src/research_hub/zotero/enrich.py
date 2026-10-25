@@ -298,7 +298,14 @@ def apply_enrichment(
             if report.prompt_path is not None:
                 print(f"[warn] chained resummarize skipped: no LLM CLI on PATH ({report.prompt_path})")
             elif not report.ok:
-                print(f"[warn] chained resummarize failed: {report.error}")
+                if report.apply_result is not None:
+                    receipt = report.apply_result
+                    print(f"[warn] chained resummarize confirmed applied: {len(receipt.applied)}; errors: {len(receipt.errors)}")
+                    for skip in receipt.skipped:
+                        print(f"[warn] chained resummarize SKIP: {skip}")
+                    for error in receipt.errors:
+                        print(f"[warn] chained resummarize ERROR: {error}")
+                print(f"[warn] chained resummarize not completed: {report.error}")
             elif report.apply_result is not None and report.apply_result.errors:
                 print(
                     f"[warn] chained resummarize applied with {len(report.apply_result.errors)} error(s)"

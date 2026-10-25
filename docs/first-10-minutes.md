@@ -43,7 +43,7 @@ pip install research-hub-pipeline[playwright,secrets]
 pip install research-hub-pipeline[import,secrets]
 ```
 
-`[secrets]` enables Zotero key encryption at rest (recommended for all personas that use Zotero). `[mcp]` is included by default for AI integration.
+`[secrets]` enables Zotero key encryption at rest (recommended for all personas that use Zotero). For MCP integration, install `research-hub-pipeline[mcp]` explicitly; FastMCP is optional, not part of the base install.
 
 ---
 

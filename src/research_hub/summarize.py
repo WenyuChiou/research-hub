@@ -327,7 +327,11 @@ def _build_zotero_note_html(paper_meta: dict, summary: PaperSummary) -> str:
 _ZOTERO_SUMMARY_WRITE_LOCK = Lock()
 
 
-class _ZoteroCreateUncertain(RuntimeError):
+class _ZoteroWriteUncertain(RuntimeError):
+    """A remote write may have committed; never infer failure from a lost reply."""
+
+
+class _ZoteroCreateUncertain(_ZoteroWriteUncertain):
     """A create may have committed remotely; it must not be retried blindly."""
 
 
@@ -373,8 +377,16 @@ def _write_zotero_child_note(zot, parent_key: str, html: str) -> str:
                 raise RuntimeError("invalid Hub summary note identity/version; refusing an unguarded update")
             payload = deepcopy(data)
             payload["note"] = html
-            if not zot.update_item(payload):
-                raise RuntimeError("Zotero update was not confirmed; inspect the note before retrying")
+            try:
+                confirmed = zot.update_item(payload)
+            except Exception as exc:
+                raise _ZoteroWriteUncertain(
+                    f"Hub summary update may already have committed; inspect Zotero before retrying (no automatic retry): {exc}"
+                ) from exc
+            if not confirmed:
+                raise _ZoteroWriteUncertain(
+                    "Hub summary update was not confirmed; inspect Zotero before retrying (no automatic retry)"
+                )
             return ""
 
         template = deepcopy(zot.item_template("note"))
@@ -400,6 +412,24 @@ def _write_zotero_child_note(zot, parent_key: str, html: str) -> str:
             return (f"created a Hub summary note; preserved {len(notes)} unmarked note(s), "
                     "including possible legacy Hub summaries; a legacy duplicate may remain")
         return ""
+
+
+def _rollback_summary_note(note_path: Path, original_text: str, written_text: str) -> str:
+    """Best-effort compensation, not a distributed/cross-process transaction.
+
+    Never overwrite a change already observable after the remote operation.
+    The check does not lock out another writer racing after it; callers must
+    retain an explicit reconciliation outcome rather than claim atomicity.
+    """
+    try:
+        with note_path.open("r", encoding="utf-8", newline="") as handle:
+            current = handle.read()
+        if current != written_text:
+            return "local rollback skipped: note changed after this write; newer content preserved; inspect both destinations"
+        _write_note_text(note_path, original_text)
+        return "local note restored; remote outcome remains as reported"
+    except (OSError, ValueError) as exc:
+        return f"local rollback unavailable; inspect local note and remote destination before retrying: {exc}"
 
 
 def _apply_one_entry(
@@ -435,21 +465,21 @@ def _apply_one_entry(
     if write_zotero:
         parent_key = paper.get("zotero_key", "")
         if not parent_key:
-            if write_obsidian and original_text is not None:
-                _write_note_text(note_path, original_text)
-                obsidian_written = False
-            return _PerPaperOutcome(slug=summary.paper_slug, error="no zotero-key in frontmatter")
+            rollback = (_rollback_summary_note(note_path, original_text, new_text)
+                        if write_obsidian and original_text is not None else "")
+            return _PerPaperOutcome(slug=summary.paper_slug,
+                                    error="no zotero-key in frontmatter" + (f"; {rollback}" if rollback else ""))
         html = _build_zotero_note_html(paper, summary)
         try:
             warning = _write_zotero_child_note(zot, parent_key, html)
             zotero_written = True
         except Exception as exc:
-            if write_obsidian and original_text is not None:
-                _write_note_text(note_path, original_text)
-                obsidian_written = False
-            label = ("zotero write outcome unknown" if isinstance(exc, _ZoteroCreateUncertain)
+            rollback = (_rollback_summary_note(note_path, original_text, new_text)
+                        if write_obsidian and original_text is not None else "")
+            label = ("zotero write outcome unknown" if isinstance(exc, _ZoteroWriteUncertain)
                      else "zotero write failed")
-            return _PerPaperOutcome(slug=summary.paper_slug, error=f"{label}: {exc}")
+            return _PerPaperOutcome(slug=summary.paper_slug,
+                                    error=f"{label}: {exc}" + (f"; {rollback}" if rollback else ""))
 
     return _PerPaperOutcome(
         slug=summary.paper_slug,

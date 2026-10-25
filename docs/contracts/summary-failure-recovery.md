@@ -1,0 +1,9 @@
+# Summary two-destination failure/recovery boundary
+
+Confirmed source-baseline faults were reproduced with a synthetic remote adapter: an update committed before its reply was lost was labeled failed; rollback failure escaped per-paper reporting; rollback erased a human edit completed during the remote wait. These are not observations about a live Zotero server.
+
+Unconfirmed update exceptions/false acknowledgements now produce an unknown outcome, as unconfirmed creates already do. No automatic retry, fallback create or second write is attempted. A known pre-write validation/rejection remains a failure. Counters describe confirmed applied papers only, not proof that zero effects occurred for unknown papers.
+
+Local rollback is best-effort compensation. It compares the current exact text with the text written by this invocation, preserving a newer observed edit. Read/write failure is returned in that paper's error instead of throwing away the structured batch results. It does not provide a compare-and-swap filesystem primitive or cross-process lock: another writer can race between comparison and replacement. Inspect both destinations before explicit retry. No distributed atomicity or synchronization guarantee is claimed.
+
+CI-collected `tests/test_summary_recovery_contract.py` uses the actual summary writer, CLI handler and auto consumer with temporary synthetic notes, a fake remote adapter, and socket/subprocess traps. It covers unknown acknowledgements, preserved newer edits, structured compensation failures, complete consumer errors and deferred secondary writes. The older standalone summary probe remains supplemental; its unused abstract-recovery import stub reflects its original constrained environment, not a requirement or live-provider result. Source and packaged current skill wording match; plugin metadata satisfies repository skill-version rules without publishing/installing a plugin.

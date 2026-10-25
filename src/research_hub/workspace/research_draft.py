@@ -37,7 +37,9 @@ class AbstractDraftAdapter:
     def __init__(self, profile_version: int = PROFILE_VERSION):
         if type(profile_version) is not int or profile_version not in {1, 2, 3}:
             raise WorkspaceError("Unsupported abstract draft profile version", "unsupported_capability")
-        root = Path(__file__).resolve().parents[1] / "skills_data"
+        # Historical profile identities must not follow evolving operator skills.
+        # All three profile versions bind these same original instruction bytes.
+        root = Path(__file__).resolve().parents[1] / "skills_data" / "_profiles" / "abstract-draft-instructions-v1"
         self.material = {}
         for relative, expected in FILES.items():
             path = safe_path(root, relative, exists=True)
