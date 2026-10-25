@@ -54,12 +54,14 @@ def test_persistent_database_retains_full_path_validation(tmp_path, monkeypatch)
     original = module.safe_path
     seen = []
     def checked(root, path):
-        seen.append(path)
+        seen.append((root, path))
         return original(root, path)
     monkeypatch.setattr(module, 'safe_path', checked)
     assert journal.list() == []
-    assert journal.path in seen
-    assert all(path in (journal.path, journal.path.parent) for path in seen)
+    approved_root = module._validation_path(journal.root)
+    database = module._validation_path(journal.path)
+    parent = module._validation_path(journal.path.parent)
+    assert seen == [(approved_root, database), *([(approved_root, parent)] * 3)]
 
 
 def test_sidecar_parent_symlink_still_fails_without_database_write(tmp_path):
