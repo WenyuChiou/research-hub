@@ -42,7 +42,10 @@ from pathlib import Path
 from threading import Lock
 from typing import Optional
 
-from research_hub.paper_summarize import _callout, _upsert_section, _write_note_text
+from research_hub.paper_summarize import (
+    _callout, _upsert_section, _write_note_text,
+    mark_summary_content_done, sections_are_substantive,
+)
 from research_hub.zotero.summary_note import SUMMARY_NOTE_TAG, SUMMARY_NOTE_TAG_PREFIX
 
 
@@ -140,6 +143,7 @@ def _read_cluster_papers_with_abstracts(
     cluster_slug: str,
     *,
     paper_keys: list[str] | None = None,
+    skip_existing: bool = False,
 ) -> list[dict]:
     """Walk raw/<slug>/*.md, return list of dicts with slug + frontmatter
     fields + abstract text. Reuses the same exclusion rules as crystal."""
@@ -168,6 +172,8 @@ def _read_cluster_papers_with_abstracts(
             fm[key.strip()] = value.strip().strip('"').strip("'")
         zotero_key = fm.get("zotero-key", "")
         if allowed_keys and zotero_key not in allowed_keys:
+            continue
+        if skip_existing and sections_are_substantive(text):
             continue
         abstract = _extract_section(text, "Abstract")
         papers.append({
@@ -205,6 +211,10 @@ def build_summarize_prompt(
 ) -> str:
     """Build the LLM prompt requesting per-paper summaries as JSON."""
     papers = _read_cluster_papers_with_abstracts(cfg, cluster_slug, paper_keys=paper_keys)
+    return _build_summarize_prompt(papers, cluster_slug, paper_keys=paper_keys)
+
+
+def _build_summarize_prompt(papers: list[dict], cluster_slug: str, *, paper_keys=None) -> str:
     if not papers:
         if paper_keys:
             raise ValueError(f"no papers found in cluster '{cluster_slug}' for the requested paper keys")
@@ -320,7 +330,7 @@ def _replace_obsidian_block(text: str, summary: PaperSummary) -> str:
         text = _upsert_section(
             text, header, _callout(kind, content, block_id), newline, preserve_manual=True
         )
-    return text
+    return mark_summary_content_done(text)
 
 
 def _build_zotero_note_html(paper_meta: dict, summary: PaperSummary) -> str:
@@ -483,6 +493,7 @@ def apply_summaries(
     write_zotero: bool = True,
     write_obsidian: bool = True,
     zot=None,
+    selected_slugs: set[str] | None = None,
     provenance: str = "legacy_parent_apply_invocation",
 ) -> SummaryApplyResult:
     """Validate entries and apply writes, with best-effort local rollback.
@@ -495,7 +506,12 @@ def apply_summaries(
     entries = entries if isinstance(entries, list) else []
 
     papers = _read_cluster_papers_with_abstracts(cfg, cluster_slug)
-    paper_by_slug = {p["slug"]: p for p in papers}
+    # Generation may select only missing summaries or explicit paper keys.
+    # Do not let an unsolicited response expand that selection at apply time.
+    paper_by_slug = {
+        p["slug"]: p for p in papers
+        if selected_slugs is None or p["slug"] in selected_slugs
+    }
     valid_slugs = set(paper_by_slug.keys())
 
     result = SummaryApplyResult(cluster_slug=cluster_slug)
@@ -570,6 +586,7 @@ def summarize_cluster(
     write_zotero: bool = True,
     write_obsidian: bool = True,
     paper_keys: list[str] | None = None,
+    skip_existing: bool = True,
     provenance: str = "legacy_parent_apply_invocation",
 ) -> SummaryReport:
     """End-to-end: emit prompt → invoke LLM → parse → optionally apply.
@@ -577,6 +594,9 @@ def summarize_cluster(
     `apply=False` (default) just emits the prompt + invokes the LLM and
     returns the parsed payload. `apply=True` also writes back to Obsidian
     + Zotero. The split keeps the dry-run path safe.
+
+    Existing substantive sections are preserved by default, including notes
+    with a stale pending status. ``skip_existing=False`` requests regeneration.
 
     `llm_cli` overrides auto-detection. None = use the first supported LLM CLI
     on PATH. If no CLI is available, the prompt is saved to
@@ -591,8 +611,18 @@ def summarize_cluster(
 
     report = SummaryReport(cluster_slug=cluster_slug)
 
+    papers = _read_cluster_papers_with_abstracts(
+        cfg, cluster_slug, paper_keys=paper_keys, skip_existing=skip_existing,
+    )
+    if skip_existing and not papers and _read_cluster_papers_with_abstracts(
+        cfg, cluster_slug, paper_keys=paper_keys,
+    ):
+        if apply:
+            report.apply_result = SummaryApplyResult(cluster_slug=cluster_slug)
+        return report
+
     try:
-        prompt = build_summarize_prompt(cfg, cluster_slug, paper_keys=paper_keys)
+        prompt = _build_summarize_prompt(papers, cluster_slug, paper_keys=paper_keys)
     except ValueError as exc:
         report.ok = False
         report.error = str(exc)
@@ -630,6 +660,7 @@ def summarize_cluster(
             payload,
             write_zotero=write_zotero,
             write_obsidian=write_obsidian,
+            selected_slugs={paper["slug"] for paper in papers},
             provenance=provenance,
         )
         if report.apply_result.errors:

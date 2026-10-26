@@ -529,6 +529,7 @@ def _paper_resummarize(
         llm_cli=llm_cli,
         apply=apply,
         paper_keys=paper_keys,
+        skip_existing=False,
         provenance="legacy_cli_explicit_apply",
     )
     if report.apply_result is not None:
