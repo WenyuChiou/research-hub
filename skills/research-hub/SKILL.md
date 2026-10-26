@@ -16,26 +16,28 @@ to the CLI. The CLI provides deterministic ingest/storage, vault and
 library maintenance, NotebookLM workflows, dashboard, and MCP/REST tools;
 scholarly search adapters are optional.
 
-Before running any workflow command from this skill, check the runtime:
+Before running Hub CLI workflow commands from this skill, check that interface:
 
 ```bash
 research-hub describe --json
 research-hub doctor
 ```
 
-If `research-hub` is **not found**, the host has loaded the skill
-instructions but the executable runtime is missing. This can happen
-after a marketplace/manual skill install without the Python package.
-Block Hub commands/writes, but continue available host-native search, reading,
-citation chaining and evidence reasoning within the user's scope. Explain that
-Hub storage, vault/library actions and NotebookLM automation need the CLI:
+If `research-hub` is **not found**, this executor cannot invoke that CLI route.
+This can happen after a skill-only install or with a different environment/PATH;
+it does not prove the product or another supported MCP/native interface is absent.
+Do not attempt unavailable CLI commands. Continue available host-native search,
+reading, citation chaining and evidence reasoning within the user's scope, and
+inventory any other supported interface before claiming overall unavailability.
+Existing access and write permissions still apply. If the user needs the CLI
+route, its setup path is (not an automatic installation requirement):
 
 ```bash
 pip install research-hub-pipeline
 research-hub setup --persona researcher   # or analyst | humanities | internal
 ```
 
-Do not invent CLI output or report an ingest. A missing runtime does not block
+Do not invent CLI output or report an ingest. A missing CLI route does not block
 native-only research, comparison, topic vetting, or project/paper memory work.
 
 If `doctor` runs but reports missing Zotero credentials, missing
@@ -72,7 +74,11 @@ For AI hosts such as Claude Code, Codex, Gemini CLI, Cursor, OpenClaw,
 Hermes, or generic API clients, use this sequence unless the user gives
 a narrower command:
 
-1. Capability check:
+1. Inventory the actual host-native search, deep-research (if present), reading,
+   citation and relevant skill capabilities using the Stage 1 procedure in
+   `references/research-protocol.md`. Record used versus untested/unavailable
+   paths. Do not infer availability from the host name. For Hub operations,
+   check the available installed interface separately:
 
    ```bash
    research-hub describe --json

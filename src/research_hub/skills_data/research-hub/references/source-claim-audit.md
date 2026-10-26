@@ -102,3 +102,13 @@ A packet-only pass means structural/status consistency, never source-passage
 verification. A profile pass additionally proves local binding consistency,
 never scientific sufficiency, source authenticity, complete coverage, novelty,
 or submission readiness. Human source/semantic review remains required.
+
+## Report what was checked
+
+A search ledger is not an execution receipt. Follow the native protocol's
+receipt levels and preserve the actual host observation. A direction-check
+`current` binding can include a supplied nonexistent locator: that checker does
+not interpret locator prose. A source-audit quote/range match adds local binding,
+not semantic entailment. Report which checker and optional profile actually ran,
+its inputs/version and findings, separately from manual source assessment.
+Never describe packet-only or filled-field validation as verified reading.
