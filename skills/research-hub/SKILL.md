@@ -67,6 +67,9 @@ core/closest/classic/contrary roles; and report unresolved evidence and bounded
 completion. Neither a successful search nor a valid ingest certifies coverage,
 novelty or scientific sufficiency. Use optional source-audit sidecars only when
 local binding checks help; strict ResearchEvidencePacket v1 stays unchanged.
+For an optional portable Stage1 observation handoff and local byte-check/save,
+read `references/native-discovery-export.md`; native research stays useful
+without Hub persistence, and no Stage2 or external write is implied.
 
 ## Agent preflight protocol
 

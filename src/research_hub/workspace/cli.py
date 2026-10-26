@@ -13,7 +13,7 @@ from .tasks import _LOCAL_HUMAN
 
 def add_workspace_parsers(subparsers):
     for resource, operations in {
-        "project": ("create", "demo", "list", "show", "register", "record", "search"),
+        "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay"),
         "manuscript": ("bind", "state", "audit", "impact"),
         "task": ("create", "list", "show", "run", "handoff", "import", "decide", "cancel", "recover"),
         "action": ("prepare", "show", "decide", "execute", "reconcile"),
@@ -31,6 +31,10 @@ def add_workspace_parsers(subparsers):
                 parser.add_argument("--title", required=True)
                 parser.add_argument("--archetype", choices=["empirical", "review"], default="empirical")
                 parser.add_argument("--goal", default="")
+            if resource == "project" and operation in {"discovery-check", "discovery-save"}:
+                parser.add_argument("--path", required=True, help="Explicit native observations JSON inside root")
+            if resource == "project" and operation == "discovery-replay":
+                parser.add_argument("--artifact-id", required=True)
             if resource == "project" and operation == "register":
                 parser.add_argument("--path", required=True)
                 parser.add_argument("--role", required=True)
@@ -67,7 +71,7 @@ def add_workspace_parsers(subparsers):
 def dispatch_workspace(args) -> int:
     resource, operation = args.command, args.workspace_operation
     values = {key: value for key, value in vars(args).items() if key in {
-        "id", "title", "archetype", "goal", "path", "role", "kind", "query", "limit", "operation", "mode", "instructions", "task_id", "task_ids", "action_id", "outcome", "actor", "rationale", "candidate"}}
+        "artifact_id", "id", "title", "archetype", "goal", "path", "role", "kind", "query", "limit", "operation", "mode", "instructions", "task_id", "task_ids", "action_id", "outcome", "actor", "rationale", "candidate"}}
     proof = None
     try:
         if getattr(args, "project", None):
