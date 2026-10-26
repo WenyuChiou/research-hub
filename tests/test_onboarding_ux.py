@@ -31,6 +31,28 @@ def _reset_config_cache() -> None:
     config_mod._config_path = None
 
 
+@pytest.fixture
+def synthetic_doctor_state(tmp_path, monkeypatch):
+    """Header checks must not resolve user credentials or probe a real session."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    monkeypatch.setattr("research_hub.zotero.client._load_credentials", lambda: (None, None, "user"))
+    monkeypatch.setattr(
+        "research_hub.doctor.check_nlm_chrome_orphans",
+        lambda: SimpleNamespace(name="nlm_chrome_orphans", status="INFO", message="not probed", remedy=""),
+    )
+    probes = []
+
+    def session_health(path):
+        if not Path(path).is_relative_to(tmp_path):
+            pytest.fail("Session probe escaped the synthetic vault")
+        probes.append(path)
+        return {"ok": False, "reason": "synthetic session not verified"}
+
+    # run_doctor imports this function at the session-check call site.
+    monkeypatch.setattr("research_hub.notebooklm.auth.check_session_health", session_health)
+    return probes
+
+
 def test_init_prints_next_steps_with_vault_and_config_paths(tmp_path, capsys):
     from research_hub.init_wizard import _print_completion_banner
 
@@ -43,8 +65,8 @@ def test_init_prints_next_steps_with_vault_and_config_paths(tmp_path, capsys):
     assert str(vault) in out
     assert str(config) in out
     assert "research-hub doctor" in out
-    assert 'research-hub plan "your research topic"' in out
-    assert 'research-hub auto "your research topic"' in out
+    assert "research-hub import-folder <folder> --cluster <slug> --extensions md,txt" in out
+    assert "research-hub auto" not in out
     assert "research-hub serve --dashboard" in out
     assert "research-hub install --mcp" not in out
 
@@ -55,7 +77,7 @@ def test_init_prints_analyst_next_steps(tmp_path, capsys):
     _print_completion_banner(tmp_path / "vault", tmp_path / "config.json", persona="analyst")
     out = capsys.readouterr().out
     assert "research-hub import-folder <folder> --cluster <slug>" in out
-    assert 'research-hub auto "your topic" --no-nlm' in out
+    assert "research-hub auto" not in out
     assert "research-hub serve --dashboard" in out
     assert "research-hub install --mcp" not in out
 
@@ -207,7 +229,7 @@ def test_install_mcp_skips_if_already_configured(tmp_path, capsys):
     assert before == after
 
 
-def test_doctor_header_shows_config_and_vault_paths(tmp_path, capsys, monkeypatch):
+def test_doctor_header_shows_config_and_vault_paths(tmp_path, capsys, monkeypatch, synthetic_doctor_state):
     from research_hub.doctor import run_doctor
 
     config = tmp_path / "config.json"
@@ -215,6 +237,9 @@ def test_doctor_header_shows_config_and_vault_paths(tmp_path, capsys, monkeypatc
     (vault / "raw").mkdir(parents=True)
     (vault / "hub").mkdir(parents=True)
     (vault / ".research_hub").mkdir(parents=True)
+    session_file = vault / ".research_hub" / "nlm_sessions" / "state.json"
+    session_file.parent.mkdir()
+    session_file.write_text("{}", encoding="utf-8")
     config.write_text(
         json.dumps({"knowledge_base": {"root": str(vault)}, "no_zotero": True}),
         encoding="utf-8",
@@ -236,14 +261,18 @@ def test_doctor_header_shows_config_and_vault_paths(tmp_path, capsys, monkeypatc
         lambda cfg: SimpleNamespace(name="frontmatter", status="OK", message="ok", remedy=""),
     )
 
-    run_doctor()
+    results = run_doctor()
+    assert synthetic_doctor_state == [session_file]
+    session_result = next(row for row in results if row.name == "nlm_session")
+    assert session_result.status == "WARN"
+    assert "liveness unverified" in session_result.message
     out = capsys.readouterr().out
     assert "research-hub health check" in out
     assert f"Config:  {config}" in out
     assert f"Vault:   {vault}" in out
 
 
-def test_doctor_header_shows_not_found_when_no_config(capsys, monkeypatch):
+def test_doctor_header_shows_not_found_when_no_config(capsys, monkeypatch, synthetic_doctor_state):
     from research_hub.doctor import run_doctor
 
     monkeypatch.setattr("research_hub.config._resolve_config_path", lambda: None)
@@ -264,6 +293,7 @@ def test_doctor_header_shows_not_found_when_no_config(capsys, monkeypatch):
     )
 
     run_doctor()
+    assert synthetic_doctor_state == []
     out = capsys.readouterr().out
     assert "Config:  (not found - run: research-hub init)" in out
     assert "Vault:   (unknown)" in out

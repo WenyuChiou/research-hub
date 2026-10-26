@@ -40,8 +40,7 @@ def test_q0_yes_keeps_zotero_branch(tmp_path, monkeypatch):
     from research_hub import init_wizard
 
     config_dir = _patch_init(monkeypatch, init_wizard, tmp_path)
-    # v0.62: with chrome not ready, init asks "Run NotebookLM login later?" [y/N] at the end
-    answers = iter(["y", "1", "z-key", "123", "n"])
+    answers = iter(["y", "1", "y", "z-key", "123", "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     monkeypatch.setattr("requests.head", lambda *args, **kwargs: SimpleNamespace(status_code=200))
 
