@@ -792,6 +792,17 @@ def _run_summary_step(
                   "no automatic second write was attempted", print_progress)
         return
 
+    unavailable = (
+        [receipt for receipt in summary_report.apply_result.receipts
+         if receipt.get("status") == "receipt_unavailable"]
+        if summary_report.apply_result is not None else []
+    )
+    if unavailable:
+        _step_log(report, "summary", False, _elapsed(started, report),
+                  f"layer-1: {summary_count} confirmed; layer-2 deferred: receipt projection unavailable "
+                  f"for {len(unavailable)} operation(s); inspect the journal and destinations before continuing", print_progress)
+        return
+
     # --- Layer 2: ## Key Findings / Methodology / Relevance, via paper-summarize ---
     # Drives the v0.87.1 §O3 paper_summarize path so KF/Methodology/Relevance
     # placeholders also get filled (and summarize_status flips pending → done).
