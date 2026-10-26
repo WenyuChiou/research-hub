@@ -9,6 +9,7 @@ import stat
 from contextlib import contextmanager
 from pathlib import Path
 from functools import lru_cache
+from urllib.parse import urlencode
 
 from jsonschema import Draft202012Validator
 
@@ -191,10 +192,11 @@ def save_profile(workspace, project_id, path):
     except (OSError, sqlite3.Error):
         return {'ok':False,'code':'registration_incomplete','snapshot_path':relative,
                 'snapshot_sha256':digest,'message':'Snapshot saved; registration not confirmed. Explicit same-input save can reconcile; no task or external action ran.'}
-    return {'ok':True,'artifact':artifact,'report':report,'snapshot_sha256':digest}
+    return {'ok':True,'artifact':artifact,'report':report,'snapshot_sha256':digest,
+            'view_path':'/app/#literature?' + urlencode({'project':project_id,'discovery':artifact['id']})}
 
 
-def replay_profile(workspace, project_id, artifact_id):
+def _registered_profile(workspace, project_id, artifact_id):
     workspace.project(project_id)
     with workspace.db() as db:
         row = db.execute('SELECT body FROM artifacts WHERE project=? AND id=?', (project_id, artifact_id)).fetchone()
@@ -203,5 +205,28 @@ def replay_profile(workspace, project_id, artifact_id):
              'Discovery artifact is not registered in this project')
     raw, value = _read_profile(workspace, item['path'])
     _require(hashlib.sha256(raw).hexdigest() == item['sha256'], 'Registered discovery snapshot changed')
+    return item, raw, value
+
+
+def replay_profile(workspace, project_id, artifact_id):
+    item, raw, value = _registered_profile(workspace, project_id, artifact_id)
     report = _assess(workspace, project_id, value, raw)
     return {'ok':report['binding'] == 'current','artifact':{**item, 'current':True},'report':report}
+
+
+def view_profile(workspace, project_id, artifact_id):
+    """Read-only display of one validated snapshot; never disclose capture contents."""
+    item, raw, value = _registered_profile(workspace, project_id, artifact_id)
+    report = _assess(workspace, project_id, value, raw)
+    # Explicit display allowlist: receipt references/material paths are not UI data.
+    source_fields = ('id', 'work_id', 'title', 'locator', 'access', 'need_ids',
+                     'relevance', 'version', 'reading_level', 'attempt_ids')
+    attempt_fields = ('id', 'need_ids', 'kind', 'tool', 'input', 'status', 'outcome', 'result_count')
+    return {'ok': True, 'artifact': {'id': item['id'], 'sha256': item['sha256'],
+                                   'registered_at': item.get('registered_at')},
+            'report': report,
+            'discovery': {'format': value['format'], 'project_id': value['project_id'],
+                          'run_id': value['run_id'], 'brief': value['brief'],
+                          'needs': value['needs'], 'completion': value['completion'],
+                          'sources': [{k: source[k] for k in source_fields} for source in value['sources']],
+                          'attempts': [{k: attempt[k] for k in attempt_fields} for attempt in value['attempts']]}}

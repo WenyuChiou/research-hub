@@ -1,3 +1,4 @@
+import { DiscoveryPanel } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { artifactReference } from "./sourceStorage";
 import { linkedSourceArtifact, sourceArtifactLabels } from "./sourceArtifact";
@@ -59,6 +60,8 @@ export interface RecoveredText {
 export type RecoveredWork = RecoveredPreparation | RecoveredText;
 
 export interface PagesProps {
+  discoveryArtifact?: string | null;
+  invalidDiscoveryLink?: boolean;
   composerSessions?: ComposerSessions;
   navigationEpoch?: { current: number };
   detail: ProjectDetail;
@@ -71,6 +74,8 @@ export interface PagesProps {
 const textValue = (value: unknown) => String(value ?? "");
 
 export function ProjectPages({
+  discoveryArtifact = null,
+  invalidDiscoveryLink = false,
   composerSessions: providedSessions,
   navigationEpoch: providedEpoch,
   detail,
@@ -408,6 +413,14 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
+        <DiscoveryPanel
+          projectId={detail.project.id}
+          artifacts={detail.artifacts}
+          selected={discoveryArtifact}
+          invalid={invalidDiscoveryLink}
+          active={page === "literature"}
+          t={t}
+        />
         <div>
           <button
             className="button primary"

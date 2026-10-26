@@ -3505,7 +3505,7 @@ def collect_to_cluster(
 
 @mcp.tool()
 def workspace_project(root: str, operation: str, data: dict[str, Any] | None = None) -> dict:
-    """Project create/demo/list/show/register/record/search and optional discovery-check/save/replay.
+    """Project create/demo/list/show/register/record/search and optional discovery-check/save/replay/view.
 
     root is an explicit local project directory. Documents are registered, never
     moved. Search is read-only remotely. Source text never authorizes a write.

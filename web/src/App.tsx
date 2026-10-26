@@ -1,3 +1,4 @@
+import { discoveryRoute } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { IntegrationsSetup } from "./IntegrationsSetup";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,7 +25,7 @@ const pages: Page[] = [
 ];
 const glyphs = ["◫", "≡", "⌘", "⌁", "¶", "✓"];
 function currentPage(): Page {
-  const page = window.location.hash.slice(1);
+  const page = window.location.hash.slice(1).split("?", 1)[0];
   return pages.includes(page as Page) ? (page as Page) : "overview";
 }
 const aborted = (error: unknown) =>
@@ -37,7 +38,10 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>("en");
   const [page, setPage] = useState<Page>(currentPage);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(
+    () => discoveryRoute().project ?? "",
+  );
+  const [discovery, setDiscovery] = useState(discoveryRoute);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [detailError, setDetailError] = useState<unknown>(null);
@@ -129,6 +133,9 @@ export default function App() {
         focusMain();
         return;
       }
+      const route = discoveryRoute();
+      setDiscovery(route);
+      if (route.project) setProjectId(route.project);
       setPage(currentPage());
       if (navigationTarget.current?.page !== currentPage())
         navigationTarget.current = null;
@@ -146,6 +153,12 @@ export default function App() {
       ? { projectId: selectedRef.current, page: next, id: focusId }
       : null;
     const unchanged = window.location.hash === `#${next}`;
+    setDiscovery({
+      requested: false,
+      valid: false,
+      project: null,
+      artifact: null,
+    });
     window.location.hash = next;
     setPage(next);
     if (unchanged) queuePageFocus();
@@ -437,6 +450,13 @@ export default function App() {
               navigationEpoch.current++;
               navigationTarget.current = null;
               cancelHeadingFocus();
+              setDiscovery({
+                requested: false,
+                valid: false,
+                project: null,
+                artifact: null,
+              });
+              window.history.replaceState({}, "", "#" + page);
               setProjectId(event.target.value);
               setNewProject(false);
               setNotice(null);
@@ -692,6 +712,14 @@ export default function App() {
                     )}
                     <ProjectPages
                       key={projectId}
+                      discoveryArtifact={
+                        discovery.project === projectId
+                          ? discovery.artifact
+                          : null
+                      }
+                      invalidDiscoveryLink={
+                        discovery.requested && !discovery.valid
+                      }
                       navigationEpoch={navigationEpoch}
                       composerSessions={composerSessions}
                       detail={activeDetail}

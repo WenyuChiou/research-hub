@@ -87,6 +87,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                     {"project_id": segments[3], "key": segments[5],
                      "workspace_instance_id": self.headers.get("X-Workspace-Instance")}))
             if (len(segments) == 7 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "artifacts" and segments[6] == "discovery"):
+                return self._result(self.server._call("project", "discovery-view",
+                    {"project_id": segments[3], "artifact_id": segments[5]}))
+            if (len(segments) == 7 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "artifacts" and segments[6] == "text"):
                 return self._result(self.server._call("project", "preview_text",
                                                   {"project_id": segments[3], "artifact_id": segments[5]}))

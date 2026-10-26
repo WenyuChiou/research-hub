@@ -23,6 +23,7 @@ from playwright.sync_api import expect, sync_playwright
 
 from workspace_browser_fixtures import prepare_abstract_fixtures, prepare_composer_fixtures
 from workspace_browser_sessions import check_composer_sessions
+from workspace_browser_discovery import prepare_discovery_fixture, check_discovery_journey
 
 from research_hub.workspace.demo import create_demo
 from research_hub.workspace.core import Workspace, digest, file_hash
@@ -422,6 +423,7 @@ def run(output: Path):
         revision_fixtures = prepare_revision_fixtures(Workspace(root))
         abstract_fixtures = prepare_abstract_fixtures(Workspace(root))
         composer_fixtures = prepare_composer_fixtures(Workspace(root))
+        discovery_fixture = prepare_discovery_fixture(Workspace(root))
         server = WorkspaceServer(root, port=0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -539,6 +541,7 @@ def run(output: Path):
                 check_revision_delivery(screen, tasks, revision_fixtures, checks, output)
                 check_abstract_journey(screen, tasks, abstract_fixtures, checks, output)
                 check_composer_sessions(screen, tasks, composer_fixtures, checks, output)
+                check_discovery_journey(screen, tasks, discovery_fixture, checks, output)
                 assert not errors, errors
                 report["status"] = "PASS"
             except Exception as exc:

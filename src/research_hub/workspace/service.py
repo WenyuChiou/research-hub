@@ -104,13 +104,15 @@ class WorkspaceService:
             if operation == "create":
                 return {"ok": True, "project": self.workspace.create_project(**values)}
             project_id = values.pop("project_id")
-            if operation in {"discovery-check", "discovery-save", "discovery-replay"}:
-                from .discovery import check_profile, save_profile, replay_profile
+            if operation in {"discovery-check", "discovery-save", "discovery-replay", "discovery-view"}:
+                from .discovery import check_profile, save_profile, replay_profile, view_profile
                 if operation == "discovery-check":
                     report = check_profile(self.workspace, project_id, **values)
                     return {"ok": report["binding"] == "current", "report": report}
                 if operation == "discovery-save":
                     return save_profile(self.workspace, project_id, **values)
+                if operation == "discovery-view":
+                    return view_profile(self.workspace, project_id, **values)
                 return replay_profile(self.workspace, project_id, **values)
             if operation == "show":
                 return self.workspace.snapshot(project_id)
