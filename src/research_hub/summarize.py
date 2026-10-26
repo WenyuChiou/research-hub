@@ -92,7 +92,12 @@ def receipt_lines(receipts):
     for receipt in receipts:
         states = ', '.join(f"{sink}={value['state']}" for sink, value in receipt.get('sinks', {}).items())
         observations = ', '.join(f"{item['sink']}={item['status']}" for item in receipt.get('observations', []))
-        yield f"receipt {receipt['operation_id']}: {states or receipt.get('status', 'unknown')}" + (f"; observations: {observations}" if observations else '')
+        if receipt.get('status') == 'receipt_unavailable':
+            confirmed = ', '.join(f'{sink}=confirmed' for sink in receipt.get('confirmed_sinks', []))
+            detail = 'receipt_unavailable' + (f'; {confirmed}' if confirmed else '')
+        else:
+            detail = states or receipt.get('status', 'unknown')
+        yield f"receipt {receipt['operation_id']}: {detail}" + (f"; observations: {observations}" if observations else '')
 
 
 @dataclass
@@ -537,18 +542,18 @@ def apply_summaries(
     for outcome in outcomes:
         if outcome.receipt is not None:
             result.receipts.append(outcome.receipt)
+        if outcome.warning:
+            result.warnings.append(f"{outcome.slug}: {outcome.warning}")
+        if outcome.applied:
+            result.applied.append(outcome.slug)
+        if outcome.obsidian_written:
+            result.obsidian_writes += 1
+        if outcome.zotero_written:
+            result.zotero_writes += 1
         if outcome.error:
             result.errors.append(f"{outcome.slug}: {outcome.error}")
         elif outcome.skipped_reason:
             result.skipped.append(f"{outcome.slug}: {outcome.skipped_reason}")
-        elif outcome.applied:
-            result.applied.append(outcome.slug)
-            if outcome.warning:
-                result.warnings.append(f"{outcome.slug}: {outcome.warning}")
-            if outcome.obsidian_written:
-                result.obsidian_writes += 1
-            if outcome.zotero_written:
-                result.zotero_writes += 1
 
     return result
 

@@ -534,13 +534,13 @@ def _paper_resummarize(
     if report.apply_result is not None:
         for line in summarize_mod.receipt_lines(getattr(report.apply_result, "receipts", [])):
             print(line)
+        for warning in getattr(report.apply_result, "warnings", []):
+            print(f"  WARN {warning}", file=sys.stderr)
     if not report.ok:
         if report.apply_result is not None:
             receipt = report.apply_result
             print(f"confirmed applied: {len(receipt.applied)}  skipped: {len(receipt.skipped)}  errors: {len(receipt.errors)}")
             print(f"confirmed obsidian writes: {receipt.obsidian_writes}, zotero writes: {receipt.zotero_writes}")
-            for warning in getattr(receipt, "warnings", []):
-                print(f"  WARN {warning}", file=sys.stderr)
             for skip in receipt.skipped:
                 print(f"  SKIP {skip}")
             for error in receipt.errors:
