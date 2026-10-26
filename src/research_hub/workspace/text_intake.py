@@ -44,7 +44,7 @@ def _supported() -> None:
 
 
 @contextmanager
-def _directory(root: Path, parts: tuple[str, ...], *, create: bool):
+def _directory(root: Path, parts: tuple[str, ...], *, create: bool, private: bool = True):
     """Pin every directory without following symlinks, including root ancestors."""
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     descriptor = os.open(root.anchor, flags)
@@ -62,7 +62,7 @@ def _directory(root: Path, parts: tuple[str, ...], *, create: bool):
                     pass
             child = os.open(component, flags, dir_fd=descriptor)
             info = os.fstat(child)
-            if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+            if private and (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077):
                 os.close(child)
                 raise WorkspaceError("Text-copy directory is not privately owned; existing permissions were preserved", "unsafe_path")
             os.close(descriptor)
@@ -72,7 +72,7 @@ def _directory(root: Path, parts: tuple[str, ...], *, create: bool):
         os.close(descriptor)
 
 
-def _read_file(directory: int, name: str) -> bytes:
+def _read_file(directory: int, name: str, *, limit: int = MAX_SOURCE_BYTES) -> bytes:
     descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     with os.fdopen(descriptor, "rb") as stream:
         info = os.fstat(stream.fileno())
@@ -81,17 +81,17 @@ def _read_file(directory: int, name: str) -> bytes:
         # only byte-identical final content may be reused by the same intent.
         if not stat.S_ISREG(info.st_mode):
             raise WorkspaceError("Text-copy target is not a regular file", "unsafe_path")
-        return stream.read(MAX_SOURCE_BYTES + 1)
+        return stream.read(limit + 1)
 
 
-def _verify_location(workspace, parts, directory):
-    with _directory(workspace.root, parts, create=False) as current:
+def _verify_location(workspace, parts, directory, *, private: bool = True):
+    with _directory(workspace.root, parts, create=False, private=private) as current:
         expected, actual = os.fstat(directory), os.fstat(current)
         if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino):
             raise WorkspaceError("Text-copy directory changed during publication", "unsafe_path")
 
 
-def _publish_copy(workspace, relative: str, raw: bytes) -> None:
+def _publish_copy(workspace, relative: str, raw: bytes, *, limit: int = MAX_SOURCE_BYTES) -> None:
     """Complete, fsynced, no-replace publication; identical orphan reuse is safe.
 
 Do not remove final copies on DB failure: commit uncertainty and external edits
@@ -103,7 +103,7 @@ Only this invocation's temporary name/inode is cleaned up on ordinary exit.
     with _directory(workspace.root, parts[:-1], create=True) as directory:
         name = parts[-1]
         try:
-            existing = _read_file(directory, name)
+            existing = _read_file(directory, name, limit=limit)
         except FileNotFoundError:
             existing = None
         if existing is not None:
@@ -125,7 +125,7 @@ Only this invocation's temporary name/inode is cleaned up on ordinary exit.
                 os.link(temporary, name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
                 linked = True
             except FileExistsError:
-                if _read_file(directory, name) != raw:
+                if _read_file(directory, name, limit=limit) != raw:
                     raise WorkspaceError("Text-copy target changed; nothing was overwritten", "file_conflict")
             os.fsync(directory)
         finally:
@@ -141,7 +141,7 @@ Only this invocation's temporary name/inode is cleaned up on ordinary exit.
         final = os.stat(name, dir_fd=directory, follow_symlinks=False)
         if linked and (final.st_dev, final.st_ino) != (identity.st_dev, identity.st_ino):
             raise WorkspaceError("Text-copy publication identity changed; no source was saved", "unsafe_path")
-        if _read_file(directory, name) != raw:
+        if _read_file(directory, name, limit=limit) != raw:
             raise WorkspaceError("Text-copy bytes changed before registration", "file_conflict")
         _verify_location(workspace, parts[:-1], directory)
 

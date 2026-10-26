@@ -213,7 +213,7 @@ class Workspace:
                 item["current"] = False
         return items
 
-    def register_artifact(self, project_id: str, *, path: str, role: str) -> dict:
+    def register_artifact(self, project_id: str, *, path: str, role: str, expected_sha256: str | None = None) -> dict:
         self.project(project_id)
         if role not in ROLES:
             raise WorkspaceError("Unsupported artifact role")
@@ -225,7 +225,23 @@ class Workspace:
         relative = target.relative_to(self.root).as_posix()
         if relative.startswith(".research/"):
             raise WorkspaceError("Internal state cannot be registered as research evidence")
-        item = {"id": uuid.uuid4().hex, "path": relative, "role": role, "sha256": file_hash(target), "registered_at": now()}
+        if expected_sha256 is not None:
+            # Only the opt-in captured-profile path needs bounded pinned reads;
+            # generic existing artifact registration retains its old contract.
+            from . import text_intake as local_files
+            if not local_files.publication_supported():
+                raise WorkspaceError("Safe captured-artifact registration unavailable", "unsupported_capability")
+            with local_files._directory(self.root, Path(relative).parts[:-1], create=False, private=False) as directory:
+                captured = local_files._read_file(directory, Path(relative).name, limit=4 * 1024 * 1024)
+                if len(captured) > 4 * 1024 * 1024:
+                    raise WorkspaceError("Captured artifact exceeds byte limit", "invalid_request")
+                local_files._verify_location(self, Path(relative).parts[:-1], directory, private=False)
+            observed_hash = hashlib.sha256(captured).hexdigest()
+        else:
+            observed_hash = file_hash(target)
+        item = {"id": uuid.uuid4().hex, "path": relative, "role": role, "sha256": observed_hash, "registered_at": now()}
+        if expected_sha256 is not None and item["sha256"] != expected_sha256:
+            raise WorkspaceError("Artifact differs from the captured input", "stale_input")
         with self.db(write=True) as db:
             for row in db.execute("SELECT id,body FROM artifacts WHERE project=?", (project_id,)):
                 previous = json.loads(row[1])
