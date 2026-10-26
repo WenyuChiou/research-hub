@@ -144,3 +144,25 @@ def test_browser_guard_preserves_real_read_dispatch():
     writes = []
     guard_read_only(route, writes)
     assert calls == ['read'] and not writes
+
+
+def test_browser_first_use_replaces_document_and_waits_for_actual_workspace():
+    from types import SimpleNamespace
+    from scripts.workspace_browser_discovery import open_fresh_discovery
+    events = []
+    class Reply:
+        def __enter__(self):
+            events.append('wait-installed')
+            return self
+        def __exit__(self, *_):
+            events.append('response-arrived')
+        @property
+        def value(self):
+            assert events[-1] == 'response-arrived'
+            return SimpleNamespace(json=lambda: {'capabilities': {'text_intake': {'status': 'available'}}})
+    page = SimpleNamespace(
+        goto=lambda url: events.append(url),
+        expect_response=lambda url: Reply() if url == 'http://local/api/v1/workspace' else pytest.fail(url))
+    open_fresh_discovery(page, 'http://local', '/app/#literature?project=p&discovery=a')
+    assert events == ['about:blank', 'wait-installed',
+                      'http://local/app/#literature?project=p&discovery=a', 'response-arrived']

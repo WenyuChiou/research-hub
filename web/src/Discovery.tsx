@@ -132,139 +132,144 @@ export function DiscoveryPanel({
       : null;
   return (
     <Panel title={t("discoveryTitle")}>
-      <p>{t("discoveryIntro")}</p>
-      <p className="small muted">{t("discoveryPlatform")}</p>
-      {choices.length ? (
-        <ul>
-          {choices.map((a) => (
-            <li key={a.id}>
-              <a href={discoveryLink(projectId, a.id)}>
-                {t("discoveryOpen")} · {a.registered_at ?? a.id}
-              </a>
-              {!a.current && <span> — {t("changed")}</span>}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>{t("discoveryEmpty")}</p>
-      )}
-      {invalid && <p role="alert">{t("discoveryInvalidLink")}</p>}
-      {failure != null && (
-        <>
-          <ErrorMessage error={failure} t={t} />
-          <button
-            className="button secondary"
-            onClick={() => setRefresh((n) => n + 1)}
-          >
-            {t("discoveryRefresh")}
-          </button>
-        </>
-      )}
-      {selected && !invalid && !result && !failure && (
-        <p role="status">{t("loading")}</p>
-      )}
-      {result && (
-        <section aria-label={t("discoveryResult")}>
-          <h3>{result.discovery.brief}</h3>
-          <p>
-            {t("discoverySnapshot")}: <code>{result.artifact.sha256}</code>
-          </p>
-          <p role="status">
-            {t("discoveryBinding")}: {result.report.binding}
-          </p>
-          <p>{t("discoveryLimits")}</p>
-          <p>
-            {t("discoveryReferenceCount")}:{" "}
-            {result.report.material_reference_count}
-          </p>
-          <p>
-            {t("discoveryUnbound")}:{" "}
-            {result.report.unbound_source_material.join(", ") ||
-              t("discoveryNone")}
-          </p>
-          <h4>{t("discoveryNeeds")}</h4>
+      <div className="discovery-body">
+        <p>{t("discoveryIntro")}</p>
+        <p className="small muted">{t("discoveryPlatform")}</p>
+        {choices.length ? (
           <ul>
-            {result.discovery.needs.slice(0, limit).map((n) => (
-              <li key={n.id}>
-                <strong>{n.text}</strong> — {n.status} · {n.families.join(", ")}
+            {choices.map((a) => (
+              <li key={a.id}>
+                <a href={discoveryLink(projectId, a.id)}>
+                  {t("discoveryOpen")} · {a.registered_at ?? a.id}
+                </a>
+                {!a.current && <span> — {t("changed")}</span>}
               </li>
             ))}
           </ul>
-          <p>
-            {result.discovery.completion.status}:{" "}
-            {result.discovery.completion.reason}
-          </p>
-          <p>
-            {t("discoveryResidual")}:{" "}
-            {result.discovery.completion.residual_need_ids.join(", ") ||
-              t("discoveryNone")}
-          </p>
-          <h4>{t("sources")}</h4>
-          {result.discovery.sources.slice(0, limit).map((source) => (
-            <article className="record-card" key={source.id}>
-              <h5>{source.title}</h5>
-              <code>{source.id}</code>
-              <SourceLink locator={source.locator} />
-              <p>{source.relevance}</p>
-              <p>
-                {t("discoveryVersion")}:{" "}
-                {source.version ?? t("discoveryUnknown")} · {source.access}
-              </p>
-              <p>
-                {t("discoveryReading")}: {source.reading_level}
-              </p>
-              <p>
-                {t("discoverySourceBytes")}:{" "}
-                {result.report.material_bindings.find(
-                  (b) => b.kind === "source" && b.id === source.id,
-                )?.status ?? t("discoveryUnboundShort")}
-              </p>
-            </article>
-          ))}
-          <details>
-            <summary>{t("discoveryAttempts")}</summary>
-            {result.discovery.attempts.slice(0, limit).map((a) => (
-              <article key={a.id}>
-                <h5>
-                  {a.id} · {a.kind}
-                </h5>
-                <p>{a.input}</p>
+        ) : (
+          <p>{t("discoveryEmpty")}</p>
+        )}
+        {invalid && <p role="alert">{t("discoveryInvalidLink")}</p>}
+        {failure != null && (
+          <>
+            <ErrorMessage error={failure} t={t} />
+            <button
+              className="button secondary"
+              onClick={() => setRefresh((n) => n + 1)}
+            >
+              {t("discoveryRefresh")}
+            </button>
+          </>
+        )}
+        {selected && !invalid && !result && !failure && (
+          <p role="status">{t("loading")}</p>
+        )}
+        {result && (
+          <section aria-label={t("discoveryResult")}>
+            <h3>{result.discovery.brief}</h3>
+            <p>
+              {t("discoverySnapshot")}: <code>{result.artifact.sha256}</code>
+            </p>
+            <p role="status">
+              {t("discoveryBinding")}: {result.report.binding}
+            </p>
+            <p>{t("discoveryLimits")}</p>
+            <p>
+              {t("discoveryReferenceCount")}:{" "}
+              {result.report.material_reference_count}
+            </p>
+            <p>
+              {t("discoveryUnbound")}:{" "}
+              {result.report.unbound_source_material.join(", ") ||
+                t("discoveryNone")}
+            </p>
+            <h4>{t("discoveryNeeds")}</h4>
+            <ul>
+              {result.discovery.needs.slice(0, limit).map((n) => (
+                <li key={n.id}>
+                  <strong>{n.text}</strong> — {n.status} ·{" "}
+                  {n.families.join(", ")}
+                </li>
+              ))}
+            </ul>
+            <p>
+              {result.discovery.completion.status}:{" "}
+              {result.discovery.completion.reason}
+            </p>
+            <p>
+              {t("discoveryResidual")}:{" "}
+              {result.discovery.completion.residual_need_ids.join(", ") ||
+                t("discoveryNone")}
+            </p>
+            <h4>{t("sources")}</h4>
+            {result.discovery.sources.slice(0, limit).map((source) => (
+              <article className="discovery-source" key={source.id}>
+                <h5>{source.title}</h5>
+                <div className="discovery-source-meta">
+                  <code>{source.id}</code>
+                  <SourceLink locator={source.locator} />
+                </div>
+                <p>{source.relevance}</p>
                 <p>
-                  {a.tool ?? t("discoveryUnknown")} · {a.status} · {a.outcome}
+                  {t("discoveryVersion")}:{" "}
+                  {source.version ?? t("discoveryUnknown")} · {source.access}
                 </p>
                 <p>
-                  {t("discoveryAttemptBytes")}:{" "}
+                  {t("discoveryReading")}: {source.reading_level}
+                </p>
+                <p>
+                  {t("discoverySourceBytes")}:{" "}
                   {result.report.material_bindings.find(
-                    (b) => b.kind === "attempt" && b.id === a.id,
+                    (b) => b.kind === "source" && b.id === source.id,
                   )?.status ?? t("discoveryUnboundShort")}
-                </p>
-                <p>
-                  {t("discoveryResultCount")}:{" "}
-                  {a.result_count ?? t("discoveryUnknown")}
                 </p>
               </article>
             ))}
-          </details>
-          {Math.max(
-            result.discovery.needs.length,
-            result.discovery.sources.length,
-            result.discovery.attempts.length,
-          ) > limit && (
+            <details>
+              <summary>{t("discoveryAttempts")}</summary>
+              {result.discovery.attempts.slice(0, limit).map((a) => (
+                <article key={a.id}>
+                  <h5>
+                    {a.id} · {a.kind}
+                  </h5>
+                  <p>{a.input}</p>
+                  <p>
+                    {a.tool ?? t("discoveryUnknown")} · {a.status} · {a.outcome}
+                  </p>
+                  <p>
+                    {t("discoveryAttemptBytes")}:{" "}
+                    {result.report.material_bindings.find(
+                      (b) => b.kind === "attempt" && b.id === a.id,
+                    )?.status ?? t("discoveryUnboundShort")}
+                  </p>
+                  <p>
+                    {t("discoveryResultCount")}:{" "}
+                    {a.result_count ?? t("discoveryUnknown")}
+                  </p>
+                </article>
+              ))}
+            </details>
+            {Math.max(
+              result.discovery.needs.length,
+              result.discovery.sources.length,
+              result.discovery.attempts.length,
+            ) > limit && (
+              <button
+                className="button secondary"
+                onClick={() => setLimit((n) => n + 50)}
+              >
+                {t("discoveryMore")}
+              </button>
+            )}
             <button
               className="button secondary"
-              onClick={() => setLimit((n) => n + 50)}
+              onClick={() => setRefresh((n) => n + 1)}
             >
-              {t("discoveryMore")}
+              {t("discoveryRefresh")}
             </button>
-          )}
-          <button
-            className="button secondary"
-            onClick={() => setRefresh((n) => n + 1)}
-          >
-            {t("discoveryRefresh")}
-          </button>
-        </section>
-      )}
+          </section>
+        )}
+      </div>
     </Panel>
   );
 }

@@ -46,6 +46,16 @@ def guard_read_only(route, writes):
         route.continue_()
 
 
+
+def open_fresh_discovery(page, base, view_path):
+    # Hash-only goto reuses the preceding journey's App and capability fixture.
+    page.goto('about:blank')
+    with page.expect_response(base + '/api/v1/workspace') as refreshed:
+        page.goto(base + view_path)
+    workspace_reply = refreshed.value.json()
+    assert 'text_intake' in workspace_reply['capabilities'], 'Must not inherit legacy capability fixture'
+
+
 def check_discovery_journey(screen, service, fixture, checks, output):
     from playwright.sync_api import expect
     page = screen.page
@@ -57,7 +67,7 @@ def check_discovery_journey(screen, service, fixture, checks, output):
     page.route(pattern, observed)
     try:
         page.set_viewport_size({'width': 1440, 'height': 1000})
-        page.goto(screen.base + fixture['saved']['view_path'])
+        open_fresh_discovery(page, screen.base, fixture['saved']['view_path'])
         result = page.get_by_role('region', name='Saved Stage 1 result', exact=True)
         expect(result).to_be_visible()
         expect(result.get_by_role('heading', name='Same synthetic title', exact=True)).to_have_count(2)
@@ -78,11 +88,26 @@ def check_discovery_journey(screen, service, fixture, checks, output):
         result.get_by_role('button', name='Recheck saved evidence (read only)', exact=True).click()
         result = page.get_by_role('region', name='Saved Stage 1 result', exact=True)
         expect(result.get_by_text('Referenced bytes at last check: not-current', exact=True)).to_be_visible()
-        result.get_by_text('Recorded searches and reads (not live agent activity)', exact=True).click()
+        attempts = result.locator('summary').filter(has_text='Recorded searches and reads (not live agent activity)')
+        attempts.click()
+        expect(attempts).to_be_focused()
         expect(result.get_by_text('Captured observation-byte binding: unknown', exact=True)).to_be_visible()
         expect(result.get_by_text('synthetic native search · observed · partial', exact=True)).to_be_visible()
         page.set_viewport_size({'width': 390, 'height': 844})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+        expect(attempts).to_be_focused()
+        skip_link = page.get_by_role('link', name='Skip to main content', exact=True)
+        expect(skip_link).not_to_be_focused()
+        expect(skip_link).not_to_be_in_viewport()
+        skip_geometry = skip_link.evaluate("""element => {
+            const r = element.getBoundingClientRect();
+            return {focused: element === document.activeElement, top:r.top, bottom:r.bottom};
+        }""")
+        # Frame the beginning deliberately; do not move focus or hide a focus indicator.
+        page.evaluate('scrollTo(0, 0)')
+        expect(attempts).to_be_focused()
+        expect(skip_link).not_to_be_in_viewport()
+        page.screenshot(path=str(output / 'workspace-native-discovery.390px.viewport.png'))
         page.screenshot(path=str(output / 'workspace-native-discovery.390px.png'), full_page=True)
         snapshot = service.workspace.snapshot(project)
         assert not snapshot['tasks'] and not snapshot['actions'] and not snapshot['records']
@@ -91,7 +116,8 @@ def check_discovery_journey(screen, service, fixture, checks, output):
         checks.append({'check': 'Single saved Stage1 link, exact duplicate-title IDs, setup interruption, missing capture and zero mutations',
                        'status': 'PASS', 'synthetic_only': True, 'execution_verified': False,
                        'semantic_assessment': 'not_performed', 'native_host_acceptance': 'not_tested',
-                       'screenshots': ['workspace-native-discovery.png', 'workspace-native-discovery.390px.png'],
+                       'screenshots': ['workspace-native-discovery.png', 'workspace-native-discovery.390px.png', 'workspace-native-discovery.390px.viewport.png'],
+                       'fresh_document': True, 'skip_link_geometry': skip_geometry,
                        'viewport': {'width': 390, 'height': 844}, 'native_zoom': 'not_tested'})
     finally:
         page.unroute(pattern, observed)

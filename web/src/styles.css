@@ -1629,3 +1629,33 @@ select option {
 .integrations-panel code {
   white-space: normal;
 }
+
+/* Saved Stage1 results follow the same inset rhythm as other panel bodies. */
+.discovery-body {
+  padding: 1.25rem 1.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.discovery-source {
+  border-top: 1px solid var(--line);
+  padding-block: 1rem;
+}
+.discovery-source h5 {
+  font-size: var(--text-body);
+  margin: 0 0 0.5rem;
+}
+.discovery-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+}
+.discovery-source-meta > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .discovery-body {
+    padding: 1rem;
+  }
+}

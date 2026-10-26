@@ -365,3 +365,23 @@ it("large source sets render a bounded first page with an explicit more control,
     }),
   ).not.toBeInTheDocument();
 });
+
+it("uses a padded discovery body and separates exact source ID from its external locator", async () => {
+  window.history.replaceState({}, "", link());
+  serve();
+  render(<App />);
+  const result = await screen.findByRole("region", {
+    name: "Saved Stage 1 result",
+  });
+  expect(result.closest(".discovery-body")).not.toBeNull();
+  const source = within(result)
+    .getAllByRole("heading", { name: "Same synthetic title" })[0]
+    .closest("article")!;
+  const meta = source.querySelector<HTMLElement>(".discovery-source-meta")!;
+  expect(meta).not.toBeNull();
+  expect(within(meta).getByText("s1", { exact: true }).tagName).toBe("CODE");
+  expect(within(meta).getByRole("link")).toHaveAttribute(
+    "href",
+    "https://example.org/synthetic",
+  );
+});
