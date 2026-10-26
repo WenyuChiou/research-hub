@@ -36,7 +36,7 @@ To run with coverage:
 pytest --cov=research_hub --cov-report=term-missing
 ```
 
-The CI workflow on GitHub Actions runs the suite on Python 3.10, 3.11, and 3.12 against every push.
+The CI workflow runs regular push checks on `master` and `verify/**`, and full PR checks against any base branch. Other feature-branch pushes need a PR. The `verify/**` route provides deliberate exact-commit push diagnostics; it does not replace PR merge, stress, or skill-version acceptance. See [CI routing and checkout identity](docs/ci-routing.md) for the matrix, cancellation policy, and verification boundary.
 
 ---
 
