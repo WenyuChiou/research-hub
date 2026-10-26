@@ -1,10 +1,13 @@
 # Your first 10 minutes with research-hub
 
-A guided tour for each of the 4 personas. Pick yours below and follow the matching path.
+A guided tour for each of the 4 personas. Research Hub is optional: you can
+read sources and use the research skills without this pipeline or any connected
+accounts. Use this guide when you want Research Hub to organize local notes or
+connect services.
 
 > Not sure which persona? See `docs/personas.md` for the full feature matrix. The TL;DR:
-> - **Researcher** — PhD STEM, uses Zotero
-> - **Humanities** — uses Zotero + works heavily with quotes / non-DOI sources
+> - **Researcher** — academic papers, with optional Zotero sync
+> - **Humanities** — quotes / non-DOI sources, with optional Zotero sync
 > - **Analyst** — industry researcher, no Zotero, imports PDFs
 > - **Internal KM** — knowledge management for a lab / company, mixed file types
 
@@ -25,7 +28,6 @@ Or create a local demo vault you can inspect in Obsidian:
 
 ```bash
 research-hub init --sample
-research-hub serve --dashboard
 ```
 
 This skips Zotero, NotebookLM, and LLM CLI probes. It is the fastest
@@ -36,11 +38,14 @@ way to confirm the package installed correctly.
 ## 0 minutes: install
 
 ```bash
-# Researcher / Humanities (need Zotero + NotebookLM)
-pip install research-hub-pipeline[playwright,secrets]
+# Local Markdown/text reading (any persona; no accounts)
+pip install research-hub-pipeline
 
-# Analyst / Internal KM (no Zotero, work with local files)
-pip install research-hub-pipeline[import,secrets]
+# Also extract local PDF/DOCX files
+pip install research-hub-pipeline[import]
+
+# Optional Zotero encryption and NotebookLM browser login, when needed
+pip install research-hub-pipeline[playwright,secrets]
 ```
 
 `[secrets]` enables Zotero key encryption at rest (recommended for all personas that use Zotero). For MCP integration, install `research-hub-pipeline[mcp]` explicitly; FastMCP is optional, not part of the base install.
@@ -56,8 +61,16 @@ research-hub init --persona <researcher|humanities|analyst|internal>
 Or run with no flag for an interactive 4-option prompt. You'll be asked for:
 
 - **Vault path** (default: `~/knowledge-base/`) — where your data lives
-- **Zotero API key + library ID** (researcher / humanities only)
+- **Connect Zotero now or later** (researcher / humanities): Zotero is an
+  optional reference manager for saving and organizing papers. Choose N to
+  start with local files; choosing Y opens its key setup and asks for an API
+  key + library ID. Existing saved settings are reused.
 - **Persona** if not provided via flag
+
+NotebookLM login is a separate optional choice. You can connect later with
+`research-hub notebooklm login --auto-detect`. Neither a saved session file
+nor `init` returning zero proves authenticated access; inspect each
+`research-hub doctor` result before using a connected workflow.
 
 After `init`:
 
@@ -80,14 +93,28 @@ Run `research-hub where` any time to confirm paths.
 
 ## 5 minutes: first useful action (per persona)
 
-For your first `auto` run, use `--no-nlm` until `research-hub doctor`
-reports Zotero and the vault are healthy. This keeps browser automation
-out of the debugging path.
+For any persona, start without accounts using a folder you selected:
+
+```bash
+research-hub import-folder ./papers --cluster my-reading --extensions md,txt
+research-hub serve --dashboard
+```
+
+This writes local notes, not Zotero items. For PDFs/DOCX, install `[import]`
+and use `--extensions pdf,md,txt,docx`. Obsidian is optional; the notes are
+Markdown files. URL imports may fetch remote content, so they are excluded
+from this local-only example.
+
+The connected examples below need their named service. Before the first
+Zotero-backed `auto`/`ingest`/`add` run, configure Zotero and inspect `doctor`
+results for the vault and Zotero access. Use `auto --no-nlm` while NotebookLM
+is deferred; this flag does not disable Zotero writes, other network calls,
+or model use.
 
 ### Researcher
 
 ```bash
-# Add a paper by DOI or arXiv ID
+# With Zotero configured and access checked, add a paper by DOI or arXiv ID
 research-hub add 10.48550/arxiv.2310.06770 --cluster llm-agents
 
 # After 5+ papers in the cluster, generate AI answers
