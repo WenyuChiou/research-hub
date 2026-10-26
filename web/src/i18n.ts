@@ -1,6 +1,38 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  discoveryAttemptBytes: "Captured observation-byte binding",
+  discoveryMore: "Show the next 50 entries in each list",
+  discoveryTitle: "Stage 1 · saved native research",
+  discoveryIntro:
+    "Your native AI agent performs the research. Open its saved result here; no integration account or manual JSON entry is required to review a saved result.",
+  discoveryPlatform:
+    "This optional saved-file view currently requires a supported POSIX Hub. Windows file access is not yet supported; native research/export remains usable. This is not cross-platform completion.",
+  discoveryOpen: "Open saved Stage 1 result",
+  discoveryEmpty:
+    "No Stage 1 snapshot is registered here. Ask your native agent to research and hand off its result to this selected project; do not repeat research solely to fill missing historical receipts.",
+  discoveryInvalidLink:
+    "This Stage 1 link is incomplete or ambiguous. Open an exact saved result from this project.",
+  discoveryRefresh: "Recheck saved evidence (read only)",
+  discoveryResult: "Saved Stage 1 result",
+  discoverySnapshot: "Exact snapshot",
+  discoveryBinding: "Referenced bytes at last check",
+  discoveryLimits:
+    "Observations and reading levels are caller-declared. Byte checks do not authenticate execution, establish semantic support, or mean human review. This view does not run research, resend requests, or write to services.",
+  discoveryReferenceCount: "Material references (not unique files or calls)",
+  discoveryUnbound: "Sources without original material bytes",
+  discoveryNeeds: "Research needs and recorded progress",
+  discoveryResidual: "Unresolved needs",
+  discoveryVersion: "Declared version",
+  discoveryUnknown: "Unknown",
+  discoveryReading: "Declared reading level",
+  discoverySourceBytes: "Original source-byte binding",
+  discoveryUnboundShort: "Unbound",
+  discoveryAttempts: "Recorded searches and reads (not live agent activity)",
+  discoveryResultCount: "Caller-declared result count",
+  discoveryNone: "None listed",
+
+
   integrationFirstUse:
     "Start with local text and review — no integration account is needed. Optional service guidance is under Integrations & setup at the bottom of the sidebar.",
   integrationClose: "Close setup guidance",
@@ -581,6 +613,38 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  discoveryAttemptBytes: "已擷取觀察的位元組綁定",
+  discoveryMore: "各清單顯示接續的 50 筆",
+  discoveryTitle: "Stage 1 · 已儲存的原生研究",
+  discoveryIntro:
+    "研究由原生 AI agent 執行。在此開啟已儲存成果；檢視成果不需要整合帳號或手動輸入 JSON。",
+  discoveryPlatform:
+    "此選用檔案檢視目前需要支援的 POSIX Hub。Windows 檔案存取尚未支援；原生研究與匯出仍可使用。這不代表跨平台流程已完成。",
+  discoveryOpen: "開啟已儲存的 Stage 1 成果",
+  discoveryEmpty:
+    "此專案尚無 Stage 1 快照。請原生 agent 研究並將成果交接到此選定專案；不要只為補歷史收據而重做研究。",
+  discoveryInvalidLink:
+    "此 Stage 1 連結不完整或有歧義。請從此專案開啟確切的已儲存成果。",
+  discoveryRefresh: "重新檢查已儲存證據（唯讀）",
+  discoveryResult: "已儲存的 Stage 1 成果",
+  discoverySnapshot: "確切快照",
+  discoveryBinding: "最近檢查的引用位元組狀態",
+  discoveryLimits:
+    "觀察與閱讀程度由呼叫者宣告。位元組檢查不驗證執行真實性、語義支持或人工審查。本頁不執行研究、重送請求或寫入外部服務。",
+  discoveryReferenceCount: "材料引用數（不是獨立檔案或呼叫數）",
+  discoveryUnbound: "未綁定原始材料位元組的來源",
+  discoveryNeeds: "研究需求與已記錄進度",
+  discoveryResidual: "未解決需求",
+  discoveryVersion: "宣告版本",
+  discoveryUnknown: "未知",
+  discoveryReading: "宣告閱讀程度",
+  discoverySourceBytes: "原始來源位元組綁定",
+  discoveryUnboundShort: "未綁定",
+  discoveryAttempts: "已記錄的搜尋與閱讀（不是即時 agent 活動）",
+  discoveryResultCount: "呼叫者宣告的結果數",
+  discoveryNone: "未列出",
+
+
   integrationFirstUse:
     "可以先從本機文字與審閱開始，不需要整合帳號。選用服務的說明在側欄底部的「整合服務與設定」。",
   integrationClose: "關閉設定說明",

@@ -12,6 +12,30 @@ A local workspace connecting literature, research artifacts, and manuscripts thr
 
 > **Workspace merged in source; installed capability must be checked separately.** [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) is merged. Use the pinned source path below for this baseline; do not infer published-wheel or native-host readiness from the source version. Start with the [capability and setup baseline](docs/capability-baseline.md).
 
+## Start with native literature discovery (Stage 1)
+
+In a native AI agent that can read the research-hub skill and has public search/read tools, start with one request:
+
+> Find literature on LLMs simulating human decisions.
+
+The agent should choose a sensible initial scope, search/read available sources, and return a short list with original links, relevance, versions, and reading/access limits—not ask you to fill a research form or write JSON. Zotero, Obsidian, NotebookLM, and Hub storage are optional.
+
+A real cloud-native rehearsal on 2026-10-26 returned three distinct starting points:
+- [Aher et al. (2023)](https://proceedings.mlr.press/v202/aher23a.html): simulation of group behavior from existing experiments.
+- [Park et al. (assessed 2024 preprint v1)](https://arxiv.org/abs/2411.10109v1): personalized agents grounded in human interviews; newer versions were not read in this rehearsal.
+- [Gao et al. (2025)](https://doi.org/10.1073/pnas.2501660122): mismatched decision distributions as a validity check. The rehearsal read a DOI-matched public PDF mirror, not a successfully retrieved publisher PDF.
+
+Then, if useful, say:
+
+> Focus on economic decisions and compare the human baselines and evaluation methods.
+
+Search snippets are not full-paper reading; human-like outputs are not evidence that human participants can be replaced. The agent retains unavailable sources and unresolved questions rather than inventing coverage.
+
+**What was actually exercised:** one request → native search and original-text sections → a short, qualified result. This was a cloud-native run after directly reading the skill—not verification of Codex/Claude Code installation, automatic skill triggering, every host, Hub saving, or UI opening. No JSON, CLI, additional integration/provider account, or Stage 2 was required in that rehearsal.
+
+For an optional visual handoff, the agent—not the researcher—can organize observations and use an already available, authorized Hub interface to save them. A confirmed save returns an exact saved-result link. The [saved-result contract](docs/contracts/native-discovery-view.md) separates this path from native research: current secure file persistence/viewing is POSIX-only, Windows is not yet supported, and opening a result does not authenticate research or start provider writes.
+
+
 ## Why this exists
 
 Research crosses files and tools: a paper informs a question, an analysis changes a result, and a manuscript needs revision. Keep those connections visible when you or an AI assistant picks up the next task.

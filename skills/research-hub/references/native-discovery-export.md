@@ -126,3 +126,40 @@ duplicate keys, nonfinite JSON and unsupported formats are rejected. Preserve ra
 receipt files only when appropriate to the user's scope; never include credentials
 or unrelated private context. Concurrent external file edits remain detectable on
 later replay, not preventable by a semantic validator.
+
+
+## Agent-owned handoff to the visual workspace
+
+Do not ask the researcher to author JSON, copy receipt IDs, or enter the same
+literature again. After the native research run, the agent organizes its actual
+observations and captured receipts into this profile using its available file
+tools. Preserve unknown/missing observations; do not invent cross-links. This
+export step is agent work, not an extra researcher form.
+
+If an already available Hub interface and supported workspace are explicitly
+selected, and the existing request authorizes local saving there, use the existing
+MCP `workspace_project` operation `discovery-save` with that root, project_id,
+and relative profile path. The CLI route above is an alternative, not a required
+user task. Do not silently install Hub, create a project, start a server, change
+accounts, or widen save scope. If required location/scope is missing, ask only
+for that missing choice; native-only research remains valid.
+
+On confirmed save, return the exact `view_path` with the research summary and
+remaining uncertainties. Resolve it only against the already verified Hub server
+origin (never invent a URL/port). Opening it selects the exact project and saved
+artifact in Literature. The read-only Stage1 view shows needs, recorded progress,
+source titles/IDs, relevance, versions/access/declared reading limits, and
+unknown/stale material bindings. It is not live parallel-agent telemetry or
+human acceptance. Attempts sharing one tool return remain separate references,
+not separate authenticated calls.
+
+An unavailable Hub or unsupported Windows file route must not block the native
+research report or become a request for manual JSON. Preserve the portable output
+and state that the visual handoff is unavailable. Windows-safe saved-file access
+is not yet implemented by this slice. A successful POSIX handoff is not a claim
+that Codex, Claude Code, Windows, or live providers have all been validated.
+
+Returning researchers open the same exact result link; rechecking is read-only.
+A new research request may create a new immutable snapshot, never overwrite old
+evidence or imply renewed authorization. No Stage2 processing or provider writes
+are triggered by opening, rechecking, or closing setup guidance.
