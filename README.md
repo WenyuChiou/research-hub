@@ -12,6 +12,14 @@ A local workspace connecting literature, research artifacts, and manuscripts thr
 
 > **Workspace merged in source; installed capability must be checked separately.** [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) is merged. Use the pinned source path below for this baseline; do not infer published-wheel or native-host readiness from the source version. Start with the [capability and setup baseline](docs/capability-baseline.md).
 
+## Why this exists
+
+Research crosses files and tools: a paper informs a question, an analysis changes a result, and a manuscript needs revision. Keep those connections visible when you or an AI assistant picks up the next task.
+
+![Concept diagram: research questions connect literature, evidence, analysis, manuscript proposals, and human review; changed inputs return work for review.](docs/images/workspace-lifecycle.en.png)
+
+Start with local files. Connect Zotero for references, Obsidian for notes, and NotebookLM for source-based briefings when needed. Empirical studies and literature reviews share the workspace.
+
 ## Start with native literature discovery (Stage 1)
 
 In a native AI agent that can read the research-hub skill and has public search/read tools, start with one request:
@@ -35,14 +43,6 @@ Search snippets are not full-paper reading; human-like outputs are not evidence 
 
 For an optional visual handoff, the agent—not the researcher—can organize observations and use an already available, authorized Hub interface to save them. A confirmed save returns an exact saved-result link. The [saved-result contract](docs/contracts/native-discovery-view.md) separates this path from native research: current secure file persistence/viewing is POSIX-only, Windows is not yet supported, and opening a result does not authenticate research or start provider writes.
 
-
-## Why this exists
-
-Research crosses files and tools: a paper informs a question, an analysis changes a result, and a manuscript needs revision. Keep those connections visible when you or an AI assistant picks up the next task.
-
-![Concept diagram: research questions connect literature, evidence, analysis, manuscript proposals, and human review; changed inputs return work for review.](docs/images/workspace-lifecycle.en.png)
-
-Start with local files. Connect Zotero for references, Obsidian for notes, and NotebookLM for source-based briefings when needed. Empirical studies and literature reviews share the workspace.
 
 ## What you work with
 
