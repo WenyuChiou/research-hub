@@ -23,15 +23,15 @@ pip install "research-hub-pipeline[mcp]"
 ```
 
 Use `[import]` for local PDF/DOCX/Markdown/TXT ingest, `[playwright]`
-to install Patchright, `[browser-auth]` for optional
+to install SDK Playwright plus EZProxy Patchright support, `[browser-auth]` for optional
 browser-cookie import, `[secrets]` for encrypted local credentials, and `[mcp]`
 for the FastMCP server. The base install does not declare FastMCP; install
 `[mcp]` explicitly when using MCP. NotebookLM operations use the base
 `notebooklm-py` dependency, not a supported consumer REST API. Browser binaries
 and an authenticated session are separate prerequisites; installing an extra
-does not prove login or connectivity. `login --auto-detect` uses Patchright
+does not prove login or connectivity. `login --auto-detect` delegates to the pinned SDK 0.8.5 Playwright flow
 from the compatibility-named `[playwright]` extra. Install its Chromium browser
-separately with `python -m patchright install chromium` before using that path.
+separately with `python -m playwright install chromium` before using that path.
 See [NotebookLM architecture](notebooklm.md).
 
 ## 2. Pick A First Path
@@ -41,7 +41,7 @@ See [NotebookLM architecture](notebooklm.md).
 | No accounts yet | `research-hub init --sample` or `research-hub dashboard --sample` |
 | Zotero + Obsidian | `research-hub setup --skip-login` |
 | Zotero + Obsidian + NotebookLM | `research-hub setup` |
-| Local PDFs/reports only | `research-hub setup --persona analyst` |
+| Local files, any persona | `research-hub init --persona researcher` (or `analyst`, `humanities`, `internal`); defer optional connections |
 | Autonomous agent bootstrap | `python -m research_hub setup --autonomous --vault ./vault --persona agent` |
 
 Then run:
@@ -57,8 +57,28 @@ and skipped, unknown, degraded, or failed checks are not ready. `setup` can
 finish after partial installation/login failures; its exit status alone is not
 a capability report. Do not run connector writes just to test setup.
 
-For a first real ingestion, keep the browser out of the path until the
-local pieces are healthy:
+Research Hub itself is optional; the research skills and source reading do
+not require this pipeline. Zotero is an optional reference manager for saving
+and organizing papers. Init can reuse saved settings or let you connect later.
+Rerunning init reuses its saved vault and persona unless you explicitly override
+them. If the existing configuration is unreadable or malformed, init stops
+without overwriting it; check its permissions and JSON structure before retrying.
+Init does not launch a browser to check readiness. Optional browser package
+presence leaves browser launch and authentication unverified; login runs only
+when explicitly selected, and `--no-browser` defers it.
+To start with selected local Markdown/text files, without accounts:
+
+```bash
+research-hub import-folder ./papers --cluster my-reading --extensions md,txt
+```
+
+This writes local notes without Zotero; Obsidian is optional. PDF/DOCX extraction
+needs `[import]` and `--extensions pdf,md,txt,docx`. URL imports can fetch remote
+content. See [first-use paths](onboarding.md).
+
+For a first Zotero-backed ingestion, configure its key and library ID and
+inspect the vault and Zotero access results from `doctor` first. Then defer
+NotebookLM with:
 
 ```bash
 research-hub auto "agent-based modeling" --max-papers 3 --no-nlm

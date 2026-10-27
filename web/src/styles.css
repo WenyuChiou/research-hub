@@ -239,6 +239,8 @@ pre {
   text-align: center;
 }
 .nav-number {
+  flex-shrink: 0;
+  white-space: nowrap;
   margin-left: auto;
   font-size: var(--text-meta);
   opacity: 0.6;
@@ -1570,5 +1572,90 @@ select option {
   .panel,
   .sidebar nav a[aria-current="page"] {
     border: 1px solid ButtonText;
+  }
+}
+
+.integration-entry {
+  flex-basis: 100%;
+  width: 100%;
+}
+.integration-entry .button {
+  width: 100%;
+}
+.integration-entry small {
+  display: block;
+  font-size: 0.875rem;
+  margin-top: 0.4rem;
+}
+.integrations-panel {
+  position: fixed;
+  z-index: 50;
+  inset: 1rem 1rem auto auto;
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 0.5rem 2rem #0003;
+  font-size: 1rem;
+}
+.integrations-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  position: sticky;
+  top: -1rem;
+  background: var(--paper);
+  padding: 0.5rem 0;
+  z-index: 1;
+}
+.integrations-panel-header h2 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+.integrations-panel ul,
+.integrations-panel ol {
+  padding-left: 1.2rem;
+}
+.integrations-panel li + li {
+  margin-top: 0.65rem;
+}
+.integrations-panel code {
+  white-space: normal;
+}
+
+/* Saved Stage1 results follow the same inset rhythm as other panel bodies. */
+.discovery-body {
+  padding: 1.25rem 1.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.discovery-source {
+  border-top: 1px solid var(--line);
+  padding-block: 1rem;
+}
+.discovery-source h5 {
+  font-size: var(--text-body);
+  margin: 0 0 0.5rem;
+}
+.discovery-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+}
+.discovery-source-meta > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .discovery-body {
+    padding: 1rem;
   }
 }

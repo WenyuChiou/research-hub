@@ -741,9 +741,9 @@ def _run_summary_step(
     `research-hub paper summarize --pending` command afterwards, which
     was an opaque gotcha for new users.
 
-    Failure of either layer is logged but does not block the other —
-    each is best-effort and the structured layer can be retried via
-    `paper summarize --pending` at any time.
+    An incomplete first layer defers the second writer. Its full receipt must
+    be reconciled before an explicit new attempt; unknown remote writes must
+    not be followed automatically by another local write or a done marker.
     """
     from research_hub.summarize import summarize_cluster
 
@@ -764,6 +764,13 @@ def _run_summary_step(
                   f"summarize failed: {exc}", print_progress)
     else:
         if summary_report.apply_result is not None:
+            summary_count = len(summary_report.apply_result.applied)
+            for error in summary_report.apply_result.errors:
+                _step_log(report, "summary-receipt", False, _elapsed(started, report),
+                          error, print_progress)
+            for skip in summary_report.apply_result.skipped:
+                _step_log(report, "summary-receipt", True, _elapsed(started, report),
+                          f"SKIP {skip}", print_progress)
             for warning in getattr(summary_report.apply_result, "warnings", []):
                 _step_log(report, "summary-note", True, _elapsed(started, report),
                           f"WARN {warning}", print_progress)
@@ -777,6 +784,24 @@ def _run_summary_step(
             if apply_result is not None:
                 summary_count = len(apply_result.applied)
                 summary_errors = len(apply_result.errors)
+
+    if summary_errors:
+        _step_log(report, "summary", False, _elapsed(started, report),
+                  f"layer-1: {summary_count} ok / {summary_errors} errors requiring attention; "
+                  "layer-2 deferred: inspect the complete receipt and both destinations before an explicit retry; "
+                  "no automatic second write was attempted", print_progress)
+        return
+
+    unavailable = (
+        [receipt for receipt in summary_report.apply_result.receipts
+         if receipt.get("status") == "receipt_unavailable"]
+        if summary_report.apply_result is not None else []
+    )
+    if unavailable:
+        _step_log(report, "summary", False, _elapsed(started, report),
+                  f"layer-1: {summary_count} confirmed; layer-2 deferred: receipt projection unavailable "
+                  f"for {len(unavailable)} operation(s); inspect the journal and destinations before continuing", print_progress)
+        return
 
     # --- Layer 2: ## Key Findings / Methodology / Relevance, via paper-summarize ---
     # Drives the v0.87.1 §O3 paper_summarize path so KF/Methodology/Relevance

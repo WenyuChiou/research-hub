@@ -7,6 +7,7 @@ export type Page =
   | "manuscript"
   | "review";
 export type Operation =
+  | "paper-abstract-draft"
   | "frame"
   | "outline"
   | "draft"
@@ -40,6 +41,15 @@ export interface Workspace {
   ok: true;
   projects: Project[];
   capabilities: {
+    text_intake?: Capability & {
+      version: number;
+      workspace_instance_id: string;
+      max_source_bytes: number;
+      formats: string[];
+      storage?: { kind: string; version: number };
+      experimental?: boolean;
+    };
+    prepare_reconciliation?: { version: number; workspace_instance_id: string };
     codex: Capability;
     writing: Capability;
     approval: Capability;
@@ -53,24 +63,67 @@ export interface ResearchRecord {
   data: Record<string, unknown>;
 }
 export interface Artifact {
+  registered_at?: string;
+  project_id?: string;
+  source_record_id?: string;
+  origin?: string;
   id: string;
-  path: string;
+  path?: string;
+  storage?: { kind: string; version: number; blob_id: string };
+  format?: string;
+  byte_length?: number;
   role: string;
   sha256: string;
   current: boolean;
 }
+export interface DraftSourcePack {
+  artifact_id: string;
+  source_record_id: string;
+  source_sha256: string;
+  start: number;
+  end: number;
+  text: string;
+  text_sha256: string;
+  source: {
+    title: string;
+    locator: string;
+    identity_status: string;
+    publication_version: string;
+  };
+  scope: "abstract";
+  scope_basis: string;
+  truncated: false;
+}
 export interface Task {
+  project_id?: string;
   id: string;
   operation: Operation;
   mode: "handoff" | "connected";
   status: string;
   action_hash: string;
   result?: unknown;
+  request?: { research_draft?: { source_pack: DraftSourcePack } };
   error?: string;
   blocker?: string;
   execution_provenance?: Record<string, unknown> | null;
   updated_at?: string;
   acceptance_current?: boolean;
+  freshness?: TaskFreshness;
+}
+export type RevisionStatus = "current" | "stale" | "unknown";
+export interface TaskFreshness {
+  status: RevisionStatus;
+  reasons: { code: string; message: string; ref: string; detail?: string }[];
+  input_references: RevisionReference[];
+  output_references: RevisionReference[];
+}
+export interface RevisionReference {
+  kind: string;
+  ref: string;
+  status: RevisionStatus;
+  path?: string;
+  expected_sha256?: string;
+  observed_sha256?: string;
 }
 export interface DeliveryAction {
   id: string;

@@ -7,7 +7,7 @@ description: "After research-hub ingests a cluster of cited papers, fill the per
 
 The `auto` pipeline ingests metadata + abstract only — Summary / Key Findings / Methodology / Relevance stay as `[TODO]` skeletons in both Obsidian and Zotero. Cluster-level summarization (NotebookLM brief, crystals) does NOT fill per-paper notes. So after `auto`, the user has nothing scannable per paper without opening the PDF.
 
-This skill fills that gap. One LLM call per paper, JSON-validated, written to both vault systems atomically (rollback the markdown change if Zotero write fails so the two stay in sync).
+This skill fills that gap. One LLM call per paper produces JSON-validated content for both destinations. These writes are not a distributed transaction: unconfirmed remote writes remain unknown, and local compensation is best-effort, never proof that the destinations are synchronized.
 
 ## When to use
 
@@ -44,10 +44,10 @@ For each paper, three sections are rewritten:
    - Anchor IDs (`^findings`, `^methodology`, `^relevance`) preserved.
 
 2. **Zotero child note** for the paper's parent item (looked up via `zotero-key` frontmatter):
-   - Existing note HTML overwritten with `<h1>Summary` + Abstract + Key Findings `<ul>` + Methodology + Relevance.
-   - If no child note exists, one is created.
+   - Only an explicitly owned Hub summary note is updated with `<h1>Summary` + Abstract + Key Findings `<ul>` + Methodology + Relevance. Unmarked notes are preserved.
+   - If no owned summary exists, a tagged summary is created; ambiguous ownership is refused. See `docs/zotero-summary-note-ownership.md` for preservation and unknown-outcome limits.
 
-Both writes must succeed for a paper to count as "applied". A Zotero write failure rolls back the markdown change so the two systems stay in sync.
+Both writes must be confirmed for a paper to count as "applied". If the remote outcome is unconfirmed, report it as unknown and do not retry automatically. Local compensation restores the original note only if its current text still matches this invocation's written text; a newer observed edit is preserved. Failed compensation is reported for reconciliation rather than hiding other papers' outcomes. This check does not exclude a concurrent writer racing after the check. Inspect both destinations before an explicit retry; success counters count confirmed applied papers, not proof that failed/unknown papers were untouched.
 
 ## Failure modes
 
@@ -55,15 +55,16 @@ Both writes must succeed for a paper to count as "applied". A Zotero write failu
 - **LLM returns malformed JSON**: report is `ok=False` with `error="LLM response had no parseable JSON object"`. No writes.
 - **Paper slug in payload not in cluster**: that entry is skipped with reason logged; other entries still applied.
 - **Empty key_findings / methodology / relevance**: entry skipped.
-- **Zotero write fails for one paper**: that paper's markdown change is rolled back; other papers still applied.
+- **Zotero write is unconfirmed for one paper**: report unknown, do not retry automatically, and attempt guarded local compensation. A newer observed edit or compensation failure is preserved/reported; other papers retain their own outcomes.
 
 ## Verification
 
 This skill's contract is exercised end-to-end by the test suite. The
 suites stub the LLM CLI but execute real Obsidian markdown writes against
 a fixture vault and real Zotero child-note writes against a mocked Zotero
-adapter. Rollback semantics (markdown rolls back if Zotero write fails)
-are explicitly tested.
+adapter. Successful rollback, unavailable compensation, newer observed edits,
+and unknown remote acknowledgement are distinct contracts; the bounded direct
+fault script adds coverage without claiming live-provider acceptance.
 
 ```bash
 # Run the full paper-summarize suite (23 tests)
@@ -103,5 +104,5 @@ After applying, scan `raw/<cluster>/*.md` — every paper's `## Key Findings` ca
 
 - Findings-first: the prompt instructs the LLM to state the result, not "The paper shows that…".
 - Anchored to the abstract: every Key Finding must trace to something the abstract claims. The LLM is told to mark uncertain claims with `[likely]`.
-- Idempotent: re-running on a cluster with already-filled findings will overwrite them with whatever the LLM produces this run. Use `--no-zotero` or `--no-obsidian` if you want to preview one side first.
-- Same dual-write discipline as the abstract-sync helpers in `.scratch/`: one transactional unit per paper.
+- Re-running may regenerate different content and overwrite the selected summary sections; this is not an idempotency or duplicate-prevention guarantee. `--no-zotero` and `--no-obsidian` disable only their named destination: they are not preview flags, and `--apply` still writes to the other enabled destination. Omit `--apply` to avoid summary destination writes; model invocation and local prompt artifacts may still occur.
+- Each paper has separate destination outcomes with best-effort local compensation, not an atomic cross-system transaction. Preserve unknown outcomes and reconcile the exact intended write before any explicit retry.

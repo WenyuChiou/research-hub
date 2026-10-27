@@ -8,6 +8,7 @@ import json
 import mimetypes
 from pathlib import Path
 import secrets
+import time
 from urllib.parse import unquote, urlsplit
 import webbrowser
 
@@ -18,13 +19,20 @@ from .tasks import _LOCAL_HUMAN
 
 class WorkspaceServer(ThreadingHTTPServer):
     daemon_threads = True
+    _service_type = WorkspaceService
 
     def __init__(self, root, *, port=8765, human=False):
-        self.service = WorkspaceService(root)
+        self.service = self._service_type(root)
+        self.service.workspace.initialize_preparations()
         self.csrf = secrets.token_urlsafe(32)
         self.human = secrets.token_urlsafe(32) if human else None
         self.static = Path(__file__).resolve().parents[1] / "workspace_static"
         super().__init__(("127.0.0.1", port), WorkspaceHandler)
+
+    def _call(self, resource, operation, data=None, *, proof=None, background=False):
+        # Keep the constructor-selected service; no request selects a backend.
+        return call_workspace(self.service.workspace.root, resource, operation, data,
+                              proof=proof, background=background, _service=self.service)
 
 
 class WorkspaceHandler(BaseHTTPRequestHandler):
@@ -68,10 +76,28 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/workspace":
                 return self._reply(200, self.server.service.capabilities(human=bool(self.server.human)))
             segments = path.strip("/").split("/")
+            if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "source-text"):
+                return self._result(self.server._call("project", "source_text_lookup",
+                    {"project_id": segments[3], "key": segments[5],
+                     "workspace_instance_id": self.headers.get("X-Workspace-Instance")}))
+            if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "preparations"):
+                return self._result(self.server._call("task", "reconcile_preparation",
+                    {"project_id": segments[3], "key": segments[5],
+                     "workspace_instance_id": self.headers.get("X-Workspace-Instance")}))
+            if (len(segments) == 7 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "artifacts" and segments[6] == "discovery"):
+                return self._result(self.server._call("project", "discovery-view",
+                    {"project_id": segments[3], "artifact_id": segments[5]}))
+            if (len(segments) == 7 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "artifacts" and segments[6] == "text"):
+                return self._result(self.server._call("project", "preview_text",
+                                                  {"project_id": segments[3], "artifact_id": segments[5]}))
             if len(segments) == 4 and segments[:2] == ["api", "v1"]:
                 resource = {"projects": "project", "tasks": "task", "actions": "action"}.get(segments[2])
                 if resource:
-                    return self._result(call_workspace(self.server.service.workspace.root, resource, "show", {f"{resource}_id": segments[3]}))
+                    return self._result(self.server._call(resource, "show", {f"{resource}_id": segments[3]}))
             if path in {"/", "/app", "/app/"}:
                 target = safe_path(self.server.static, "index.html", exists=True)
                 html = target.read_text(encoding="utf-8")
@@ -89,8 +115,51 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
     def _result(self, result):
         self._reply(200 if result.get("ok") else (403 if result.get("code") == "human_required" else 400), result)
 
+    def _discard_rejected_body(self):
+        """Best-effort bounded drain after denial; never parse or authorize data.
+
+        Closing HTTP/1.0 with unread request bytes can race response delivery.
+        This mitigates only small, unambiguously framed bodies, not every reset.
+        The read-wait budget is 250ms, not a hard scheduler/wall-clock bound.
+        It occupies an existing handler thread and is not general DoS protection.
+        """
+        self.close_connection = True
+        lengths = self.headers.get_all("Content-Length", [])
+        if self.headers.get_all("Transfer-Encoding") is not None or len(lengths) != 1:
+            return
+        value = lengths[0]
+        if not 1 <= len(value) <= 5 or not value.isascii() or not value.isdecimal():
+            return
+        remaining = int(value)
+        if not 0 < remaining <= 65_536:
+            return
+        previous = None
+        restore = False
+        try:
+            previous = self.connection.gettimeout()
+            restore = True
+            deadline = time.monotonic() + 0.25
+            while remaining:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    break
+                self.connection.settimeout(min(previous, budget) if previous is not None else budget)
+                chunk = self.rfile.read1(min(8192, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            pass  # Failed draining must not replace the denial or dispatch work.
+        finally:
+            if restore:
+                try:
+                    self.connection.settimeout(previous)
+                except OSError:
+                    pass
+
     def do_POST(self):
         if not self._trusted_origin() or not hmac.compare_digest(self.headers.get("X-CSRF-Token", ""), self.server.csrf):
+            self._discard_rejected_body()
             return self._reply(403, {"ok": False, "error": "Untrusted request", "code": "forbidden"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -109,7 +178,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             elif len(parts) == 5 and parts[:2] == ["api", "v1"]:
                 if parts[2] == "projects":
                     data["project_id"] = parts[3]
-                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare"}.get(parts[4])
+                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare", "source-text": "source_text"}.get(parts[4])
                     resource = "task" if parts[4] == "tasks" else "action" if parts[4] == "delivery" else "manuscript" if parts[4] in {"bind", "audit", "impact"} else "project"
                 elif parts[2] == "tasks":
                     resource = "task"
@@ -125,7 +194,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                         proof = _LOCAL_HUMAN
             if not operation:
                 raise WorkspaceError("Unknown workspace route", "not_found")
-            self._result(call_workspace(self.server.service.workspace.root, resource, operation, data, proof=proof, background=True))
+            self._result(self.server._call(resource, operation, data, proof=proof, background=True))
         except (ValueError, OSError) as exc:
             self._reply(400, {"ok": False, "error": str(exc), "code": "invalid_request"})
 

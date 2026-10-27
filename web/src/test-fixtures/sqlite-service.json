@@ -1,0 +1,1292 @@
+{
+  "provenance": {
+    "generator": "scripts/generate_sqlite_ui_fixture.py",
+    "source": "actual SQLiteWorkspaceService dispatch; synthetic temporary workspace",
+    "optional_probes": "codex and writing explicitly stubbed unavailable; no provider/native probe executed",
+    "not_acceptance": "No browser, HTTP, installed package, native Windows or scientific quality acceptance"
+  },
+  "workspace": {
+    "ok": true,
+    "projects": [
+      {
+        "archetype": "empirical",
+        "created_at": "2026-10-24T22:24:09.139658Z",
+        "goal": "",
+        "id": "other-project",
+        "title": "Other synthetic project"
+      },
+      {
+        "archetype": "empirical",
+        "created_at": "2026-10-24T22:24:09.067643Z",
+        "goal": "",
+        "id": "synthetic-sqlite-ui",
+        "title": "Synthetic SQLite UI contract"
+      }
+    ],
+    "capabilities": {
+      "codex": {
+        "status": "unavailable",
+        "message": "Synthetic fixture: provider probe not performed."
+      },
+      "writing": {
+        "status": "unavailable",
+        "message": "Synthetic fixture: optional writing probe not performed."
+      },
+      "text_intake": {
+        "version": 1,
+        "status": "available",
+        "workspace_instance_id": "cf6078b4-7d9f-4084-a58b-50de33fb1d73",
+        "max_source_bytes": 40000,
+        "formats": [
+          "txt",
+          "md"
+        ],
+        "storage": {
+          "kind": "workspace_blob",
+          "version": 1
+        },
+        "experimental": true,
+        "message": "Private experimental SQLite saved text; no source files, PDF reading or model execution. Not public Windows acceptance."
+      },
+      "prepare_reconciliation": {
+        "version": 1,
+        "workspace_instance_id": "cf6078b4-7d9f-4084-a58b-50de33fb1d73"
+      },
+      "approval": {
+        "status": "unavailable",
+        "message": "Use an interactive terminal: research-hub task decide <task-id> --root <workspace> --outcome accept --actor <name> --rationale <reason>"
+      }
+    },
+    "setup_snapshot": {
+      "schema_version": 1,
+      "source": "saved_local_setup_snapshot",
+      "current_status": "unknown",
+      "freshness": "missing",
+      "observed_at": null,
+      "age_seconds": null,
+      "display_max_age_seconds": 86400,
+      "components": {
+        "environment": "unknown",
+        "vault": "unknown",
+        "zotero": "unknown",
+        "notebooklm_auth": "unknown",
+        "llm_cli": "unknown",
+        "skills": "unknown"
+      }
+    },
+    "protection_scope": "Workspace tasks are proposal-only and retain inputs, results and human decisions. Codex produces no-tool prose; original documents remain in your editor. Legacy dashboard/MCP direct-write tools are outside this workspace approval boundary. Local approval is an operator-session assertion, not identity authentication on a shared computer."
+  },
+  "project_id": "synthetic-sqlite-ui",
+  "intake_payload": {
+    "project_id": "synthetic-sqlite-ui",
+    "intake_request": {
+      "version": 1,
+      "workspace_instance_id": "cf6078b4-7d9f-4084-a58b-50de33fb1d73",
+      "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5"
+    },
+    "title": "Saved synthetic water abstract",
+    "locator": "",
+    "reading_scope": "abstract",
+    "input_kind": "file",
+    "format": "md",
+    "content_base64": "77u/UFJFRklYIE5PVCBTRUxFQ1RFRA0KU2VsZWN0ZWQg8J+YgCBhYnN0cmFjdCBwYXNzYWdlLg0KU1VGRklYIE5PVCBTRUxFQ1RFRA=="
+  },
+  "saved": {
+    "ok": true,
+    "intake": {
+      "version": 1,
+      "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+      "disposition": "created"
+    },
+    "record": {
+      "id": "f5e012e54f285cfa8f8595840afe324c",
+      "kind": "source",
+      "data": {
+        "title": "Saved synthetic water abstract",
+        "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+        "locator_kind": "local-copy",
+        "identity_status": "unverified",
+        "publication_version": "unknown",
+        "human_acceptance": "pending",
+        "reading_scope": "abstract",
+        "scope_basis": "operator-declared, not independently verified",
+        "recorded_at": "2026-10-24T22:24:09.142839Z",
+        "intake": {
+          "version": 1,
+          "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+          "payload_digest": "c37a41bdacb6089c2716de83810874e7b70574bd54055bea49fbd633f8aebf04",
+          "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+          "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+          "input_kind": "file",
+          "format": "md"
+        }
+      }
+    },
+    "artifact": {
+      "id": "2fd5c170107950a99c7801aa3a424ed6",
+      "project_id": "synthetic-sqlite-ui",
+      "role": "evidence",
+      "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+      "registered_at": "2026-10-24T22:24:09.142839Z",
+      "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+      "origin": "hub-text-intake",
+      "storage": {
+        "kind": "workspace_blob",
+        "version": 1,
+        "blob_id": "2fd5c170107950a99c7801aa3a424ed6"
+      },
+      "format": "md",
+      "byte_length": 76,
+      "current": true
+    },
+    "preview": {
+      "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+      "reference": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+      "storage": {
+        "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+        "kind": "workspace_blob",
+        "version": 1
+      },
+      "format": "md",
+      "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+      "text": "﻿PREFIX NOT SELECTED\r\nSelected 😀 abstract passage.\r\nSUFFIX NOT SELECTED",
+      "codepoint_length": 71,
+      "bytes_read": 76,
+      "truncated": false
+    },
+    "preview_status": "available"
+  },
+  "replay": {
+    "ok": true,
+    "intake": {
+      "version": 1,
+      "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+      "disposition": "existing"
+    },
+    "record": {
+      "id": "f5e012e54f285cfa8f8595840afe324c",
+      "kind": "source",
+      "data": {
+        "human_acceptance": "pending",
+        "identity_status": "unverified",
+        "intake": {
+          "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+          "format": "md",
+          "input_kind": "file",
+          "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+          "payload_digest": "c37a41bdacb6089c2716de83810874e7b70574bd54055bea49fbd633f8aebf04",
+          "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+          "version": 1
+        },
+        "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+        "locator_kind": "local-copy",
+        "publication_version": "unknown",
+        "reading_scope": "abstract",
+        "recorded_at": "2026-10-24T22:24:09.142839Z",
+        "scope_basis": "operator-declared, not independently verified",
+        "title": "Saved synthetic water abstract"
+      }
+    },
+    "artifact": {
+      "byte_length": 76,
+      "format": "md",
+      "id": "2fd5c170107950a99c7801aa3a424ed6",
+      "origin": "hub-text-intake",
+      "project_id": "synthetic-sqlite-ui",
+      "registered_at": "2026-10-24T22:24:09.142839Z",
+      "role": "evidence",
+      "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+      "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+      "storage": {
+        "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+        "kind": "workspace_blob",
+        "version": 1
+      },
+      "current": true
+    },
+    "preview": {
+      "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+      "reference": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+      "storage": {
+        "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+        "kind": "workspace_blob",
+        "version": 1
+      },
+      "format": "md",
+      "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+      "text": "﻿PREFIX NOT SELECTED\r\nSelected 😀 abstract passage.\r\nSUFFIX NOT SELECTED",
+      "codepoint_length": 71,
+      "bytes_read": 76,
+      "truncated": false
+    },
+    "preview_status": "available"
+  },
+  "lookup": {
+    "ok": true,
+    "intake": {
+      "version": 1,
+      "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+      "state": "found"
+    },
+    "record": {
+      "id": "f5e012e54f285cfa8f8595840afe324c",
+      "kind": "source",
+      "data": {
+        "human_acceptance": "pending",
+        "identity_status": "unverified",
+        "intake": {
+          "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+          "format": "md",
+          "input_kind": "file",
+          "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+          "payload_digest": "c37a41bdacb6089c2716de83810874e7b70574bd54055bea49fbd633f8aebf04",
+          "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+          "version": 1
+        },
+        "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+        "locator_kind": "local-copy",
+        "publication_version": "unknown",
+        "reading_scope": "abstract",
+        "recorded_at": "2026-10-24T22:24:09.142839Z",
+        "scope_basis": "operator-declared, not independently verified",
+        "title": "Saved synthetic water abstract"
+      }
+    },
+    "artifact": {
+      "byte_length": 76,
+      "format": "md",
+      "id": "2fd5c170107950a99c7801aa3a424ed6",
+      "origin": "hub-text-intake",
+      "project_id": "synthetic-sqlite-ui",
+      "registered_at": "2026-10-24T22:24:09.142839Z",
+      "role": "evidence",
+      "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+      "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+      "storage": {
+        "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+        "kind": "workspace_blob",
+        "version": 1
+      },
+      "current": true
+    },
+    "preview": {
+      "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+      "reference": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+      "storage": {
+        "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+        "kind": "workspace_blob",
+        "version": 1
+      },
+      "format": "md",
+      "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+      "text": "﻿PREFIX NOT SELECTED\r\nSelected 😀 abstract passage.\r\nSUFFIX NOT SELECTED",
+      "codepoint_length": 71,
+      "bytes_read": 76,
+      "truncated": false
+    },
+    "preview_status": "available"
+  },
+  "second_saved": {
+    "ok": true,
+    "intake": {
+      "version": 1,
+      "key": "d99d8e73-3afa-4f47-b633-3750f564dc8e",
+      "disposition": "created"
+    },
+    "record": {
+      "id": "687e4b2ed3135bc89cd04097edf0be3f",
+      "kind": "source",
+      "data": {
+        "title": "Second synthetic source — scope unknown",
+        "locator": "hub-source:687e4b2ed3135bc89cd04097edf0be3f",
+        "locator_kind": "local-copy",
+        "identity_status": "unverified",
+        "publication_version": "unknown",
+        "human_acceptance": "pending",
+        "reading_scope": "unknown",
+        "scope_basis": "operator-declared, not independently verified",
+        "recorded_at": "2026-10-24T22:24:09.148967Z",
+        "intake": {
+          "version": 1,
+          "key": "d99d8e73-3afa-4f47-b633-3750f564dc8e",
+          "payload_digest": "55a5f6f274bee5b0033505939dcbcd78688ac15cd4ad8d22fdcb9f62447c6d4f",
+          "artifact_id": "1ab717940bac5082ba99976f789b857c",
+          "sha256": "f7984ab6ea6023c2676a49e4d34a1074a4c723288c497ba0455a804296b11b2d",
+          "input_kind": "paste",
+          "format": "txt"
+        }
+      }
+    },
+    "artifact": {
+      "id": "1ab717940bac5082ba99976f789b857c",
+      "project_id": "synthetic-sqlite-ui",
+      "role": "evidence",
+      "sha256": "f7984ab6ea6023c2676a49e4d34a1074a4c723288c497ba0455a804296b11b2d",
+      "registered_at": "2026-10-24T22:24:09.148967Z",
+      "source_record_id": "687e4b2ed3135bc89cd04097edf0be3f",
+      "origin": "hub-text-intake",
+      "storage": {
+        "kind": "workspace_blob",
+        "version": 1,
+        "blob_id": "1ab717940bac5082ba99976f789b857c"
+      },
+      "format": "txt",
+      "byte_length": 21,
+      "current": true
+    },
+    "preview": {
+      "artifact_id": "1ab717940bac5082ba99976f789b857c",
+      "reference": "hub-source:687e4b2ed3135bc89cd04097edf0be3f",
+      "storage": {
+        "blob_id": "1ab717940bac5082ba99976f789b857c",
+        "kind": "workspace_blob",
+        "version": 1
+      },
+      "format": "txt",
+      "sha256": "f7984ab6ea6023c2676a49e4d34a1074a4c723288c497ba0455a804296b11b2d",
+      "text": "Another saved source.",
+      "codepoint_length": 21,
+      "bytes_read": 21,
+      "truncated": false
+    },
+    "preview_status": "available"
+  },
+  "legacy_preview": {
+    "ok": true,
+    "preview": {
+      "artifact_id": "5e27f428f05b4de4b51e1a4c30e6507b",
+      "path": "legacy.txt",
+      "sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1",
+      "text": "Legacy file abstract.",
+      "codepoint_length": 21,
+      "bytes_read": 21,
+      "truncated": false
+    }
+  },
+  "before_prepare": {
+    "ok": true,
+    "project": {
+      "archetype": "empirical",
+      "created_at": "2026-10-24T22:24:09.067643Z",
+      "goal": "",
+      "id": "synthetic-sqlite-ui",
+      "title": "Synthetic SQLite UI contract"
+    },
+    "artifacts": [
+      {
+        "byte_length": 76,
+        "format": "md",
+        "id": "2fd5c170107950a99c7801aa3a424ed6",
+        "origin": "hub-text-intake",
+        "project_id": "synthetic-sqlite-ui",
+        "registered_at": "2026-10-24T22:24:09.142839Z",
+        "role": "evidence",
+        "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+        "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+        "storage": {
+          "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+          "kind": "workspace_blob",
+          "version": 1
+        },
+        "current": true
+      },
+      {
+        "byte_length": 21,
+        "format": "txt",
+        "id": "1ab717940bac5082ba99976f789b857c",
+        "origin": "hub-text-intake",
+        "project_id": "synthetic-sqlite-ui",
+        "registered_at": "2026-10-24T22:24:09.148967Z",
+        "role": "evidence",
+        "sha256": "f7984ab6ea6023c2676a49e4d34a1074a4c723288c497ba0455a804296b11b2d",
+        "source_record_id": "687e4b2ed3135bc89cd04097edf0be3f",
+        "storage": {
+          "blob_id": "1ab717940bac5082ba99976f789b857c",
+          "kind": "workspace_blob",
+          "version": 1
+        },
+        "current": true
+      },
+      {
+        "id": "5e27f428f05b4de4b51e1a4c30e6507b",
+        "path": "legacy.txt",
+        "registered_at": "2026-10-24T22:24:09.150215Z",
+        "role": "evidence",
+        "sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1",
+        "current": true
+      }
+    ],
+    "records": [
+      {
+        "id": "f5e012e54f285cfa8f8595840afe324c",
+        "kind": "source",
+        "data": {
+          "human_acceptance": "pending",
+          "identity_status": "unverified",
+          "intake": {
+            "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+            "format": "md",
+            "input_kind": "file",
+            "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+            "payload_digest": "c37a41bdacb6089c2716de83810874e7b70574bd54055bea49fbd633f8aebf04",
+            "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "version": 1
+          },
+          "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+          "locator_kind": "local-copy",
+          "publication_version": "unknown",
+          "reading_scope": "abstract",
+          "recorded_at": "2026-10-24T22:24:09.142839Z",
+          "scope_basis": "operator-declared, not independently verified",
+          "title": "Saved synthetic water abstract"
+        }
+      },
+      {
+        "id": "687e4b2ed3135bc89cd04097edf0be3f",
+        "kind": "source",
+        "data": {
+          "human_acceptance": "pending",
+          "identity_status": "unverified",
+          "intake": {
+            "artifact_id": "1ab717940bac5082ba99976f789b857c",
+            "format": "txt",
+            "input_kind": "paste",
+            "key": "d99d8e73-3afa-4f47-b633-3750f564dc8e",
+            "payload_digest": "55a5f6f274bee5b0033505939dcbcd78688ac15cd4ad8d22fdcb9f62447c6d4f",
+            "sha256": "f7984ab6ea6023c2676a49e4d34a1074a4c723288c497ba0455a804296b11b2d",
+            "version": 1
+          },
+          "locator": "hub-source:687e4b2ed3135bc89cd04097edf0be3f",
+          "locator_kind": "local-copy",
+          "publication_version": "unknown",
+          "reading_scope": "unknown",
+          "recorded_at": "2026-10-24T22:24:09.148967Z",
+          "scope_basis": "operator-declared, not independently verified",
+          "title": "Second synthetic source — scope unknown"
+        }
+      },
+      {
+        "id": "d2e335e3adde4e73b83442caf4e830dc",
+        "kind": "source",
+        "data": {
+          "identity_status": "unverified",
+          "locator": "fixture:legacy",
+          "recorded_at": "2026-10-24T22:24:09.151014Z",
+          "title": "Legacy synthetic source"
+        }
+      }
+    ],
+    "actions": [],
+    "tasks": [],
+    "manuscript": null,
+    "workflow": {
+      "schema_version": "1.1",
+      "workflow_id": "workspace-synthetic-sqlite-ui",
+      "current_stage": "orient",
+      "status": "running",
+      "updated_at": "2026-10-24T22:24:09.138002Z",
+      "trace_id": "8313b565eaf0486da42b5372d8103c84",
+      "correlation_id": "0251b8f8ae2b47d093786696592c46bb",
+      "policy_checkpoint_ref": null,
+      "policy_hash": null,
+      "evidence_packet_refs": [],
+      "actions": [],
+      "decisions": [],
+      "artifacts": [],
+      "attempt_history": [],
+      "pending_action": null,
+      "pending_external_action": null,
+      "external_write_ledger": [],
+      "recovery_status": "clean",
+      "migration_history": [],
+      "blocker": null
+    },
+    "warnings": [
+      "Bind the public writing adapter to initialize manuscript authority; no manuscript checks have passed yet."
+    ]
+  },
+  "prepare_payload": {
+    "project_id": "synthetic-sqlite-ui",
+    "operation": "paper-abstract-draft",
+    "mode": "handoff",
+    "instructions": "Synthetic contract only, no provider.",
+    "source_selection": {
+      "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+      "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+      "start": 22,
+      "end": 50
+    },
+    "prepare_request": {
+      "version": 1,
+      "workspace_instance_id": "cf6078b4-7d9f-4084-a58b-50de33fb1d73",
+      "key": "ee4fb2ca-cc1e-4390-825a-daba098f5d76"
+    }
+  },
+  "prepared": {
+    "ok": true,
+    "task": {
+      "id": "81fde00450974ce3bf066081289b7db4",
+      "project_id": "synthetic-sqlite-ui",
+      "operation": "paper-abstract-draft",
+      "mode": "handoff",
+      "status": "awaiting_agent",
+      "request": {
+        "schema_version": 1,
+        "task_id": "81fde00450974ce3bf066081289b7db4",
+        "operation": "paper-abstract-draft",
+        "project": {
+          "id": "synthetic-sqlite-ui"
+        },
+        "instructions": "Synthetic contract only, no provider.",
+        "artifacts": [
+          {
+            "byte_length": 76,
+            "format": "md",
+            "id": "2fd5c170107950a99c7801aa3a424ed6",
+            "origin": "hub-text-intake",
+            "project_id": "synthetic-sqlite-ui",
+            "registered_at": "2026-10-24T22:24:09.142839Z",
+            "role": "evidence",
+            "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+            "storage": {
+              "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+              "kind": "workspace_blob",
+              "version": 1
+            },
+            "current": true
+          }
+        ],
+        "records": [],
+        "allowed_changes": "proposal-only",
+        "skill": "paper-summarize",
+        "adapter_sha256": null,
+        "research_draft": {
+          "profile": {
+            "profile": "paper-abstract-draft",
+            "profile_version": 3,
+            "skill": "paper-summarize",
+            "source_commit": "f4fd94d6d2f815b37d967d7e0d861ef80c009929",
+            "files": {
+              "paper-summarize/SKILL.md": "385162d00efc94406fd41aacb30aecbb4ee219dabc4b5184c8573ac96af6b800",
+              "research-hub/references/research-protocol.md": "b5eeb2dde4430a5c88f55e586fa5f5fd262da8402815d61fc1c906b211f1d109",
+              "research-hub/references/source-claim-audit.md": "9775a88b2c3845c4dcf3424c0e76af6c7c104e129b0e91d0ba16bcdce792d881"
+            },
+            "mode": "no-tool-abstract-draft",
+            "supported_stages": [
+              "bounded abstract input",
+              "draft generation"
+            ],
+            "not_performed": [
+              "cluster CLI",
+              "retrieval",
+              "PDF reading",
+              "Zotero/Obsidian writes",
+              "independent semantic audit",
+              "human acceptance"
+            ],
+            "quote_binding": {
+              "preferred": "backend-unique-exact-quote",
+              "resolver_version": 1,
+              "legacy_offsets": "strict-no-repair",
+              "coordinate_frame": "selected-text/python-unicode-codepoints"
+            },
+            "source_storage": {
+              "kind": "workspace_blob",
+              "version": 1
+            }
+          },
+          "profile_sha256": "2b8d02a235a4212da271b2ff7d133d7ad0b926795ca1309e7bf08dad10ada34e",
+          "source_selection": {
+            "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+            "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+            "start": 22,
+            "end": 50
+          },
+          "source_pack": {
+            "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+            "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+            "source_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "start": 22,
+            "end": 50,
+            "text": "Selected 😀 abstract passage.",
+            "text_sha256": "78818ed24bc49370e4656e29f96574e003135b65a85026e840b004015d7cf799",
+            "source": {
+              "title": "Saved synthetic water abstract",
+              "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+              "identity_status": "unverified",
+              "publication_version": "unknown"
+            },
+            "scope": "abstract",
+            "scope_basis": "operator-selected range, not automatically verified",
+            "bytes_read": 76,
+            "truncated": false,
+            "storage": {
+              "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+              "kind": "workspace_blob",
+              "version": 1
+            },
+            "reference": "hub-source:f5e012e54f285cfa8f8595840afe324c"
+          }
+        }
+      },
+      "action_hash": "480b631e2e01e97abaf61f8bcc5455ed4b07db6bf4bfd4140408e7e185ed63cd",
+      "result": null,
+      "attempts": [],
+      "updated_at": "2026-10-24T22:24:09.159596Z",
+      "freshness": {
+        "status": "current",
+        "reasons": [],
+        "input_references": [
+          {
+            "kind": "active-project-artifacts",
+            "ref": "project:synthetic-sqlite-ui:artifacts",
+            "status": "current",
+            "expected_sha256": "8c2ff8108e228ce97b393b4b4093caf0504d40cec92ccf77e9d6c59c78ecc918",
+            "observed_sha256": "8c2ff8108e228ce97b393b4b4093caf0504d40cec92ccf77e9d6c59c78ecc918"
+          },
+          {
+            "kind": "artifact",
+            "ref": "artifact:2fd5c170107950a99c7801aa3a424ed6",
+            "status": "current",
+            "expected_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "observed_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02"
+          },
+          {
+            "kind": "project-evidence",
+            "ref": "project:synthetic-sqlite-ui:evidence-records",
+            "status": "current",
+            "expected_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "observed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "kind": "research-draft",
+            "ref": "research-draft:selected-source-and-bundle",
+            "status": "current"
+          }
+        ],
+        "output_references": []
+      }
+    },
+    "preparation": {
+      "version": 1,
+      "key": "ee4fb2ca-cc1e-4390-825a-daba098f5d76",
+      "disposition": "created"
+    }
+  },
+  "reconciled": {
+    "ok": true,
+    "preparation": {
+      "state": "found",
+      "key": "ee4fb2ca-cc1e-4390-825a-daba098f5d76"
+    },
+    "task": {
+      "action_hash": "480b631e2e01e97abaf61f8bcc5455ed4b07db6bf4bfd4140408e7e185ed63cd",
+      "attempts": [],
+      "id": "81fde00450974ce3bf066081289b7db4",
+      "mode": "handoff",
+      "operation": "paper-abstract-draft",
+      "project_id": "synthetic-sqlite-ui",
+      "request": {
+        "adapter_sha256": null,
+        "allowed_changes": "proposal-only",
+        "artifacts": [
+          {
+            "byte_length": 76,
+            "current": true,
+            "format": "md",
+            "id": "2fd5c170107950a99c7801aa3a424ed6",
+            "origin": "hub-text-intake",
+            "project_id": "synthetic-sqlite-ui",
+            "registered_at": "2026-10-24T22:24:09.142839Z",
+            "role": "evidence",
+            "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+            "storage": {
+              "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+              "kind": "workspace_blob",
+              "version": 1
+            }
+          }
+        ],
+        "instructions": "Synthetic contract only, no provider.",
+        "operation": "paper-abstract-draft",
+        "project": {
+          "id": "synthetic-sqlite-ui"
+        },
+        "records": [],
+        "research_draft": {
+          "profile": {
+            "files": {
+              "paper-summarize/SKILL.md": "385162d00efc94406fd41aacb30aecbb4ee219dabc4b5184c8573ac96af6b800",
+              "research-hub/references/research-protocol.md": "b5eeb2dde4430a5c88f55e586fa5f5fd262da8402815d61fc1c906b211f1d109",
+              "research-hub/references/source-claim-audit.md": "9775a88b2c3845c4dcf3424c0e76af6c7c104e129b0e91d0ba16bcdce792d881"
+            },
+            "mode": "no-tool-abstract-draft",
+            "not_performed": [
+              "cluster CLI",
+              "retrieval",
+              "PDF reading",
+              "Zotero/Obsidian writes",
+              "independent semantic audit",
+              "human acceptance"
+            ],
+            "profile": "paper-abstract-draft",
+            "profile_version": 3,
+            "quote_binding": {
+              "coordinate_frame": "selected-text/python-unicode-codepoints",
+              "legacy_offsets": "strict-no-repair",
+              "preferred": "backend-unique-exact-quote",
+              "resolver_version": 1
+            },
+            "skill": "paper-summarize",
+            "source_commit": "f4fd94d6d2f815b37d967d7e0d861ef80c009929",
+            "source_storage": {
+              "kind": "workspace_blob",
+              "version": 1
+            },
+            "supported_stages": [
+              "bounded abstract input",
+              "draft generation"
+            ]
+          },
+          "profile_sha256": "2b8d02a235a4212da271b2ff7d133d7ad0b926795ca1309e7bf08dad10ada34e",
+          "source_pack": {
+            "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+            "bytes_read": 76,
+            "end": 50,
+            "reference": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+            "scope": "abstract",
+            "scope_basis": "operator-selected range, not automatically verified",
+            "source": {
+              "identity_status": "unverified",
+              "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+              "publication_version": "unknown",
+              "title": "Saved synthetic water abstract"
+            },
+            "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+            "source_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "start": 22,
+            "storage": {
+              "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+              "kind": "workspace_blob",
+              "version": 1
+            },
+            "text": "Selected 😀 abstract passage.",
+            "text_sha256": "78818ed24bc49370e4656e29f96574e003135b65a85026e840b004015d7cf799",
+            "truncated": false
+          },
+          "source_selection": {
+            "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+            "end": 50,
+            "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+            "start": 22
+          }
+        },
+        "schema_version": 1,
+        "skill": "paper-summarize",
+        "task_id": "81fde00450974ce3bf066081289b7db4"
+      },
+      "result": null,
+      "status": "awaiting_agent",
+      "updated_at": "2026-10-24T22:24:09.159596Z",
+      "freshness": {
+        "status": "current",
+        "reasons": [],
+        "input_references": [
+          {
+            "kind": "active-project-artifacts",
+            "ref": "project:synthetic-sqlite-ui:artifacts",
+            "status": "current",
+            "expected_sha256": "8c2ff8108e228ce97b393b4b4093caf0504d40cec92ccf77e9d6c59c78ecc918",
+            "observed_sha256": "8c2ff8108e228ce97b393b4b4093caf0504d40cec92ccf77e9d6c59c78ecc918"
+          },
+          {
+            "kind": "artifact",
+            "ref": "artifact:2fd5c170107950a99c7801aa3a424ed6",
+            "status": "current",
+            "expected_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "observed_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02"
+          },
+          {
+            "kind": "project-evidence",
+            "ref": "project:synthetic-sqlite-ui:evidence-records",
+            "status": "current",
+            "expected_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "observed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "kind": "research-draft",
+            "ref": "research-draft:selected-source-and-bundle",
+            "status": "current"
+          }
+        ],
+        "output_references": []
+      }
+    }
+  },
+  "snapshot": {
+    "ok": true,
+    "project": {
+      "archetype": "empirical",
+      "created_at": "2026-10-24T22:24:09.067643Z",
+      "goal": "",
+      "id": "synthetic-sqlite-ui",
+      "title": "Synthetic SQLite UI contract"
+    },
+    "artifacts": [
+      {
+        "byte_length": 76,
+        "format": "md",
+        "id": "2fd5c170107950a99c7801aa3a424ed6",
+        "origin": "hub-text-intake",
+        "project_id": "synthetic-sqlite-ui",
+        "registered_at": "2026-10-24T22:24:09.142839Z",
+        "role": "evidence",
+        "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+        "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+        "storage": {
+          "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+          "kind": "workspace_blob",
+          "version": 1
+        },
+        "current": true
+      },
+      {
+        "byte_length": 21,
+        "format": "txt",
+        "id": "1ab717940bac5082ba99976f789b857c",
+        "origin": "hub-text-intake",
+        "project_id": "synthetic-sqlite-ui",
+        "registered_at": "2026-10-24T22:24:09.148967Z",
+        "role": "evidence",
+        "sha256": "f7984ab6ea6023c2676a49e4d34a1074a4c723288c497ba0455a804296b11b2d",
+        "source_record_id": "687e4b2ed3135bc89cd04097edf0be3f",
+        "storage": {
+          "blob_id": "1ab717940bac5082ba99976f789b857c",
+          "kind": "workspace_blob",
+          "version": 1
+        },
+        "current": true
+      },
+      {
+        "id": "5e27f428f05b4de4b51e1a4c30e6507b",
+        "path": "legacy.txt",
+        "registered_at": "2026-10-24T22:24:09.150215Z",
+        "role": "evidence",
+        "sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1",
+        "current": true
+      }
+    ],
+    "records": [
+      {
+        "id": "f5e012e54f285cfa8f8595840afe324c",
+        "kind": "source",
+        "data": {
+          "human_acceptance": "pending",
+          "identity_status": "unverified",
+          "intake": {
+            "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+            "format": "md",
+            "input_kind": "file",
+            "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+            "payload_digest": "c37a41bdacb6089c2716de83810874e7b70574bd54055bea49fbd633f8aebf04",
+            "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+            "version": 1
+          },
+          "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+          "locator_kind": "local-copy",
+          "publication_version": "unknown",
+          "reading_scope": "abstract",
+          "recorded_at": "2026-10-24T22:24:09.142839Z",
+          "scope_basis": "operator-declared, not independently verified",
+          "title": "Saved synthetic water abstract"
+        }
+      },
+      {
+        "id": "687e4b2ed3135bc89cd04097edf0be3f",
+        "kind": "source",
+        "data": {
+          "human_acceptance": "pending",
+          "identity_status": "unverified",
+          "intake": {
+            "artifact_id": "1ab717940bac5082ba99976f789b857c",
+            "format": "txt",
+            "input_kind": "paste",
+            "key": "d99d8e73-3afa-4f47-b633-3750f564dc8e",
+            "payload_digest": "55a5f6f274bee5b0033505939dcbcd78688ac15cd4ad8d22fdcb9f62447c6d4f",
+            "sha256": "f7984ab6ea6023c2676a49e4d34a1074a4c723288c497ba0455a804296b11b2d",
+            "version": 1
+          },
+          "locator": "hub-source:687e4b2ed3135bc89cd04097edf0be3f",
+          "locator_kind": "local-copy",
+          "publication_version": "unknown",
+          "reading_scope": "unknown",
+          "recorded_at": "2026-10-24T22:24:09.148967Z",
+          "scope_basis": "operator-declared, not independently verified",
+          "title": "Second synthetic source — scope unknown"
+        }
+      },
+      {
+        "id": "d2e335e3adde4e73b83442caf4e830dc",
+        "kind": "source",
+        "data": {
+          "identity_status": "unverified",
+          "locator": "fixture:legacy",
+          "recorded_at": "2026-10-24T22:24:09.151014Z",
+          "title": "Legacy synthetic source"
+        }
+      }
+    ],
+    "actions": [],
+    "tasks": [
+      {
+        "action_hash": "665596e8929aa58f59502a6c42db565cc6ca1f23f1c547ab479147e26dbed582",
+        "attempts": [],
+        "id": "6737781dff184d659ef20aed8aa59015",
+        "mode": "handoff",
+        "operation": "paper-abstract-draft",
+        "project_id": "synthetic-sqlite-ui",
+        "request": {
+          "adapter_sha256": null,
+          "allowed_changes": "proposal-only",
+          "artifacts": [
+            {
+              "current": true,
+              "id": "5e27f428f05b4de4b51e1a4c30e6507b",
+              "path": "legacy.txt",
+              "registered_at": "2026-10-24T22:24:09.150215Z",
+              "role": "evidence",
+              "sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1"
+            }
+          ],
+          "instructions": "",
+          "operation": "paper-abstract-draft",
+          "project": {
+            "id": "synthetic-sqlite-ui"
+          },
+          "records": [],
+          "research_draft": {
+            "profile": {
+              "files": {
+                "paper-summarize/SKILL.md": "385162d00efc94406fd41aacb30aecbb4ee219dabc4b5184c8573ac96af6b800",
+                "research-hub/references/research-protocol.md": "b5eeb2dde4430a5c88f55e586fa5f5fd262da8402815d61fc1c906b211f1d109",
+                "research-hub/references/source-claim-audit.md": "9775a88b2c3845c4dcf3424c0e76af6c7c104e129b0e91d0ba16bcdce792d881"
+              },
+              "mode": "no-tool-abstract-draft",
+              "not_performed": [
+                "cluster CLI",
+                "retrieval",
+                "PDF reading",
+                "Zotero/Obsidian writes",
+                "independent semantic audit",
+                "human acceptance"
+              ],
+              "profile": "paper-abstract-draft",
+              "profile_version": 2,
+              "quote_binding": {
+                "coordinate_frame": "selected-text/python-unicode-codepoints",
+                "legacy_offsets": "strict-no-repair",
+                "preferred": "backend-unique-exact-quote",
+                "resolver_version": 1
+              },
+              "skill": "paper-summarize",
+              "source_commit": "f4fd94d6d2f815b37d967d7e0d861ef80c009929",
+              "supported_stages": [
+                "bounded abstract input",
+                "draft generation"
+              ]
+            },
+            "profile_sha256": "ab0f71cc4aa7708757b5bbf7cc7989e9534c13434b2602422b1034fc20896539",
+            "source_pack": {
+              "artifact_id": "5e27f428f05b4de4b51e1a4c30e6507b",
+              "bytes_read": 21,
+              "end": 21,
+              "scope": "abstract",
+              "scope_basis": "operator-selected range, not automatically verified",
+              "source": {
+                "identity_status": "unverified",
+                "locator": "fixture:legacy",
+                "publication_version": "unknown",
+                "title": "Legacy synthetic source"
+              },
+              "source_record_id": "d2e335e3adde4e73b83442caf4e830dc",
+              "source_sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1",
+              "start": 0,
+              "text": "Legacy file abstract.",
+              "text_sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1",
+              "truncated": false
+            },
+            "source_selection": {
+              "artifact_id": "5e27f428f05b4de4b51e1a4c30e6507b",
+              "end": 21,
+              "source_record_id": "d2e335e3adde4e73b83442caf4e830dc",
+              "start": 0
+            }
+          },
+          "schema_version": 1,
+          "skill": "paper-summarize",
+          "task_id": "6737781dff184d659ef20aed8aa59015"
+        },
+        "result": null,
+        "status": "awaiting_agent",
+        "updated_at": "2026-10-24T22:24:09.175974Z",
+        "freshness": {
+          "status": "current",
+          "reasons": [],
+          "input_references": [
+            {
+              "kind": "active-project-artifacts",
+              "ref": "project:synthetic-sqlite-ui:artifacts",
+              "status": "current",
+              "expected_sha256": "7a86ce0df2143131a3f42e1bbb00eb2aad176fa93f92c814f608fe9029b13ca6",
+              "observed_sha256": "7a86ce0df2143131a3f42e1bbb00eb2aad176fa93f92c814f608fe9029b13ca6"
+            },
+            {
+              "kind": "artifact",
+              "ref": "artifact:5e27f428f05b4de4b51e1a4c30e6507b",
+              "status": "current",
+              "path": "legacy.txt",
+              "expected_sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1",
+              "observed_sha256": "98bdfdd1425a61be2ac5e1145498ffb0a3b36f7f05e953bc0360f290e3d58da1"
+            },
+            {
+              "kind": "project-evidence",
+              "ref": "project:synthetic-sqlite-ui:evidence-records",
+              "status": "current",
+              "expected_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "observed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            {
+              "kind": "research-draft",
+              "ref": "research-draft:selected-source-and-bundle",
+              "status": "current"
+            }
+          ],
+          "output_references": []
+        }
+      },
+      {
+        "action_hash": "480b631e2e01e97abaf61f8bcc5455ed4b07db6bf4bfd4140408e7e185ed63cd",
+        "attempts": [],
+        "id": "81fde00450974ce3bf066081289b7db4",
+        "mode": "handoff",
+        "operation": "paper-abstract-draft",
+        "project_id": "synthetic-sqlite-ui",
+        "request": {
+          "adapter_sha256": null,
+          "allowed_changes": "proposal-only",
+          "artifacts": [
+            {
+              "byte_length": 76,
+              "current": true,
+              "format": "md",
+              "id": "2fd5c170107950a99c7801aa3a424ed6",
+              "origin": "hub-text-intake",
+              "project_id": "synthetic-sqlite-ui",
+              "registered_at": "2026-10-24T22:24:09.142839Z",
+              "role": "evidence",
+              "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+              "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+              "storage": {
+                "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+                "kind": "workspace_blob",
+                "version": 1
+              }
+            }
+          ],
+          "instructions": "Synthetic contract only, no provider.",
+          "operation": "paper-abstract-draft",
+          "project": {
+            "id": "synthetic-sqlite-ui"
+          },
+          "records": [],
+          "research_draft": {
+            "profile": {
+              "files": {
+                "paper-summarize/SKILL.md": "385162d00efc94406fd41aacb30aecbb4ee219dabc4b5184c8573ac96af6b800",
+                "research-hub/references/research-protocol.md": "b5eeb2dde4430a5c88f55e586fa5f5fd262da8402815d61fc1c906b211f1d109",
+                "research-hub/references/source-claim-audit.md": "9775a88b2c3845c4dcf3424c0e76af6c7c104e129b0e91d0ba16bcdce792d881"
+              },
+              "mode": "no-tool-abstract-draft",
+              "not_performed": [
+                "cluster CLI",
+                "retrieval",
+                "PDF reading",
+                "Zotero/Obsidian writes",
+                "independent semantic audit",
+                "human acceptance"
+              ],
+              "profile": "paper-abstract-draft",
+              "profile_version": 3,
+              "quote_binding": {
+                "coordinate_frame": "selected-text/python-unicode-codepoints",
+                "legacy_offsets": "strict-no-repair",
+                "preferred": "backend-unique-exact-quote",
+                "resolver_version": 1
+              },
+              "skill": "paper-summarize",
+              "source_commit": "f4fd94d6d2f815b37d967d7e0d861ef80c009929",
+              "source_storage": {
+                "kind": "workspace_blob",
+                "version": 1
+              },
+              "supported_stages": [
+                "bounded abstract input",
+                "draft generation"
+              ]
+            },
+            "profile_sha256": "2b8d02a235a4212da271b2ff7d133d7ad0b926795ca1309e7bf08dad10ada34e",
+            "source_pack": {
+              "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+              "bytes_read": 76,
+              "end": 50,
+              "reference": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+              "scope": "abstract",
+              "scope_basis": "operator-selected range, not automatically verified",
+              "source": {
+                "identity_status": "unverified",
+                "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+                "publication_version": "unknown",
+                "title": "Saved synthetic water abstract"
+              },
+              "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+              "source_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+              "start": 22,
+              "storage": {
+                "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+                "kind": "workspace_blob",
+                "version": 1
+              },
+              "text": "Selected 😀 abstract passage.",
+              "text_sha256": "78818ed24bc49370e4656e29f96574e003135b65a85026e840b004015d7cf799",
+              "truncated": false
+            },
+            "source_selection": {
+              "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+              "end": 50,
+              "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+              "start": 22
+            }
+          },
+          "schema_version": 1,
+          "skill": "paper-summarize",
+          "task_id": "81fde00450974ce3bf066081289b7db4"
+        },
+        "result": null,
+        "status": "awaiting_agent",
+        "updated_at": "2026-10-24T22:24:09.173206Z",
+        "freshness": {
+          "status": "current",
+          "reasons": [],
+          "input_references": [
+            {
+              "kind": "active-project-artifacts",
+              "ref": "project:synthetic-sqlite-ui:artifacts",
+              "status": "current",
+              "expected_sha256": "8c2ff8108e228ce97b393b4b4093caf0504d40cec92ccf77e9d6c59c78ecc918",
+              "observed_sha256": "8c2ff8108e228ce97b393b4b4093caf0504d40cec92ccf77e9d6c59c78ecc918"
+            },
+            {
+              "kind": "artifact",
+              "ref": "artifact:2fd5c170107950a99c7801aa3a424ed6",
+              "status": "current",
+              "expected_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+              "observed_sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02"
+            },
+            {
+              "kind": "project-evidence",
+              "ref": "project:synthetic-sqlite-ui:evidence-records",
+              "status": "current",
+              "expected_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "observed_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            {
+              "kind": "research-draft",
+              "ref": "research-draft:selected-source-and-bundle",
+              "status": "current"
+            }
+          ],
+          "output_references": []
+        }
+      }
+    ],
+    "manuscript": null,
+    "workflow": {
+      "schema_version": "1.1",
+      "workflow_id": "workspace-synthetic-sqlite-ui",
+      "current_stage": "orient",
+      "status": "running",
+      "updated_at": "2026-10-24T22:24:09.138002Z",
+      "trace_id": "8313b565eaf0486da42b5372d8103c84",
+      "correlation_id": "0251b8f8ae2b47d093786696592c46bb",
+      "policy_checkpoint_ref": null,
+      "policy_hash": null,
+      "evidence_packet_refs": [],
+      "actions": [],
+      "decisions": [],
+      "artifacts": [],
+      "attempt_history": [],
+      "pending_action": null,
+      "pending_external_action": null,
+      "external_write_ledger": [],
+      "recovery_status": "clean",
+      "migration_history": [],
+      "blocker": null
+    },
+    "warnings": [
+      "Bind the public writing adapter to initialize manuscript authority; no manuscript checks have passed yet."
+    ]
+  },
+  "stale_lookup": {
+    "ok": true,
+    "intake": {
+      "version": 1,
+      "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+      "state": "found"
+    },
+    "record": {
+      "id": "f5e012e54f285cfa8f8595840afe324c",
+      "kind": "source",
+      "data": {
+        "human_acceptance": "pending",
+        "identity_status": "unverified",
+        "intake": {
+          "artifact_id": "2fd5c170107950a99c7801aa3a424ed6",
+          "format": "md",
+          "input_kind": "file",
+          "key": "a6fc1447-54c9-4014-a2b4-7919d31efba5",
+          "payload_digest": "c37a41bdacb6089c2716de83810874e7b70574bd54055bea49fbd633f8aebf04",
+          "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+          "version": 1
+        },
+        "locator": "hub-source:f5e012e54f285cfa8f8595840afe324c",
+        "locator_kind": "local-copy",
+        "publication_version": "unknown",
+        "reading_scope": "abstract",
+        "recorded_at": "2026-10-24T22:24:09.142839Z",
+        "scope_basis": "operator-declared, not independently verified",
+        "title": "Saved synthetic water abstract"
+      }
+    },
+    "artifact": {
+      "byte_length": 76,
+      "format": "md",
+      "id": "2fd5c170107950a99c7801aa3a424ed6",
+      "origin": "hub-text-intake",
+      "project_id": "synthetic-sqlite-ui",
+      "registered_at": "2026-10-24T22:24:09.142839Z",
+      "role": "evidence",
+      "sha256": "3feb5510fc4bd694824b642b14df5946934dcebd2ffc9aee96c1e146d2f8de02",
+      "source_record_id": "f5e012e54f285cfa8f8595840afe324c",
+      "storage": {
+        "blob_id": "2fd5c170107950a99c7801aa3a424ed6",
+        "kind": "workspace_blob",
+        "version": 1
+      },
+      "current": false
+    },
+    "preview": null,
+    "preview_status": "stale"
+  }
+}

@@ -49,6 +49,7 @@ def test_init_wizard_retries_zotero_credentials_on_validation_failure(tmp_path, 
             "y",  # Q0: do you use Zotero?
             "1",  # persona menu in Zotero branch -> researcher
             str(tmp_path / "vault"),
+            "y",  # connect Zotero now
             "bad-key",
             "111",
             "y",
@@ -87,6 +88,7 @@ def test_init_wizard_aborts_when_user_aborts_after_network_failure(tmp_path, mon
             "y",  # Q0: do you use Zotero?
             "1",  # persona menu in Zotero branch -> researcher
             str(tmp_path / "vault"),
+            "y",  # connect Zotero now
             "key",
             "111",
             "a",

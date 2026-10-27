@@ -833,16 +833,16 @@ def check_nlm_auth_paths() -> CheckResult:
 
     inv = recommended_cli_invocation()
     interactive = f"{inv} notebooklm login --auto-detect"
-    if importlib.util.find_spec("rookiepy") is not None:
+    if importlib.util.find_spec("rookie_cookies") is not None:
         return CheckResult(
             "nlm_auth_paths",
             "OK",
-            f"interactive: {interactive}; --from-browser: available (rookiepy installed)",
+            f"interactive: {interactive}; --from-browser: available (rookie_cookies installed)",
         )
     return CheckResult(
         "nlm_auth_paths",
         "INFO",
-        f"interactive: {interactive}; --from-browser: unavailable (rookiepy not installed)",
+        f"interactive: {interactive}; --from-browser: unavailable (rookie_cookies not installed)",
     )
 
 

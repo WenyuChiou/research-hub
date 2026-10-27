@@ -132,6 +132,11 @@ class Workspace:
                 connection.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES projects(id), body TEXT NOT NULL)")
                 connection.execute("CREATE TABLE IF NOT EXISTS decisions (id INTEGER PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks(id), body TEXT NOT NULL)")
                 connection.execute("CREATE TABLE IF NOT EXISTS actions (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES projects(id), body TEXT NOT NULL)")
+                connection.execute("CREATE TABLE IF NOT EXISTS workspace_metadata (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                connection.execute("INSERT OR IGNORE INTO workspace_metadata VALUES ('instance_id', ?)", (str(uuid.uuid4()),))
+                connection.execute("CREATE TABLE IF NOT EXISTS prepare_requests (project TEXT NOT NULL REFERENCES projects(id), request_key TEXT NOT NULL, task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id), payload_digest TEXT NOT NULL, PRIMARY KEY(project, request_key))")
+            from ._source_storage import check_schema
+            check_schema(connection)
             yield connection
             if write:
                 connection.commit()
@@ -140,6 +145,21 @@ class Workspace:
             raise
         finally:
             connection.close()
+
+    def initialize_preparations(self) -> None:
+        """Explicit startup upgrade; reads never initialize an empty workspace."""
+        if self.db_path.exists():
+            with self.db(write=True):
+                pass
+
+    def preparation_namespace(self) -> str | None:
+        if not self.db_path.exists():
+            return None
+        with self.db() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_metadata'").fetchone():
+                return None
+            row = db.execute("SELECT value FROM workspace_metadata WHERE name='instance_id'").fetchone()
+        return row[0] if row else None
 
     def list_projects(self) -> list[dict]:
         if not self.db_path.exists():
@@ -187,13 +207,13 @@ class Workspace:
             items = [item for item in items if not item.get("superseded_by")]
         for item in items:
             try:
-                path = safe_path(self.root, item["path"], exists=True)
-                item["current"] = file_hash(path) == item["sha256"]
-            except (WorkspaceError, OSError):
+                from ._source_storage import current_hash
+                item["current"] = current_hash(self, item) == item["sha256"]
+            except (WorkspaceError, OSError, KeyError, TypeError, ValueError):
                 item["current"] = False
         return items
 
-    def register_artifact(self, project_id: str, *, path: str, role: str) -> dict:
+    def register_artifact(self, project_id: str, *, path: str, role: str, expected_sha256: str | None = None) -> dict:
         self.project(project_id)
         if role not in ROLES:
             raise WorkspaceError("Unsupported artifact role")
@@ -205,12 +225,28 @@ class Workspace:
         relative = target.relative_to(self.root).as_posix()
         if relative.startswith(".research/"):
             raise WorkspaceError("Internal state cannot be registered as research evidence")
-        item = {"id": uuid.uuid4().hex, "path": relative, "role": role, "sha256": file_hash(target), "registered_at": now()}
+        if expected_sha256 is not None:
+            # Only the opt-in captured-profile path needs bounded pinned reads;
+            # generic existing artifact registration retains its old contract.
+            from . import text_intake as local_files
+            if not local_files.publication_supported():
+                raise WorkspaceError("Safe captured-artifact registration unavailable", "unsupported_capability")
+            with local_files._directory(self.root, Path(relative).parts[:-1], create=False, private=False) as directory:
+                captured = local_files._read_file(directory, Path(relative).name, limit=4 * 1024 * 1024)
+                if len(captured) > 4 * 1024 * 1024:
+                    raise WorkspaceError("Captured artifact exceeds byte limit", "invalid_request")
+                local_files._verify_location(self, Path(relative).parts[:-1], directory, private=False)
+            observed_hash = hashlib.sha256(captured).hexdigest()
+        else:
+            observed_hash = file_hash(target)
+        item = {"id": uuid.uuid4().hex, "path": relative, "role": role, "sha256": observed_hash, "registered_at": now()}
+        if expected_sha256 is not None and item["sha256"] != expected_sha256:
+            raise WorkspaceError("Artifact differs from the captured input", "stale_input")
         with self.db(write=True) as db:
             for row in db.execute("SELECT id,body FROM artifacts WHERE project=?", (project_id,)):
                 previous = json.loads(row[1])
-                if not previous.get("superseded_by") and (previous["path"] == relative or (role == "main_manuscript" and previous["role"] == role)):
-                    if previous["path"] == relative and previous["sha256"] == item["sha256"] and previous["role"] == role:
+                if not previous.get("superseded_by") and (previous.get("path") == relative or (role == "main_manuscript" and previous["role"] == role)):
+                    if previous.get("path") == relative and previous["sha256"] == item["sha256"] and previous["role"] == role:
                         return {**previous, "current": True}
                     previous["superseded_by"] = item["id"]
                     db.execute("UPDATE artifacts SET body=? WHERE id=?", (encoded(previous), row[0]))
@@ -265,7 +301,8 @@ class Workspace:
         if workflow_path.exists():
             from research_hub.workflow_runtime import load_state
             workflow = load_state(workflow_path)
-        warnings = [f"Source changed or unavailable: {a['path']}" for a in artifacts if not a["current"]]
+        from ._source_storage import reference as storage_reference
+        warnings = [f"Source changed or unavailable: {storage_reference(a)}" for a in artifacts if not a["current"]]
         if state is None:
             warnings.append("Bind the public writing adapter to initialize manuscript authority; no manuscript checks have passed yet.")
         else:

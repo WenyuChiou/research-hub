@@ -61,7 +61,11 @@ describe("localized readiness and writing-authority warning", () => {
       screen.getAllByText("目前無法使用", { selector: ".capability-status" }),
     ).toHaveLength(3);
     expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
-    Object.values(workspace.capabilities).forEach((capability) => {
+    [
+      workspace.capabilities.codex,
+      workspace.capabilities.writing,
+      workspace.capabilities.approval,
+    ].forEach((capability) => {
       expect(screen.getByText(capability.message)).toBeInTheDocument();
       expect(capability.status).toBe("unavailable");
     });
@@ -89,7 +93,9 @@ describe("localized readiness and writing-authority warning", () => {
     vi.stubGlobal("fetch", fetch);
     render(<App />);
     await screen.findByText(writingWarning, { exact: true });
-    const sidebar = screen.getByText("EN", { selector: "button" }).closest("aside");
+    const sidebar = screen
+      .getByText("EN", { selector: "button" })
+      .closest("aside");
     const languages = within(
       within(sidebar!).getByRole("group", { name: "Interface language" }),
     );

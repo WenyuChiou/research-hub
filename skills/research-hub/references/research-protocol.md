@@ -6,6 +6,73 @@ This is a shared instruction contract, not another search engine or autonomous
 ledger. Keep the host's native search, reading, citation chaining, and reasoning
 choices. Research Hub search/audit/source-fetch adapters remain optional.
 
+## Stage 1: native capability inventory
+
+Before substantive discovery, inspect the actual host's available search,
+deep-research, page/PDF reading, citation-following and relevant research skills.
+Record the available tool/skill name, its observed limits and whether it was
+used for this task. Do not infer tools from the host's brand or assume a
+separate deep-research mode exists. Reuse supported native capabilities before
+adding accounts, API adapters or installation steps. Missing Hub CLI does not
+mean the product lacks a capability: distinguish this executor's availability,
+installed/source interface inspection and an actually exercised workflow.
+Native-only research is valid; it is not evidence of Hub ingest or provider writes.
+
+Use the needs-to-query map below as an execution plan, not a completed checklist.
+For each load-bearing need, choose topical, nearest-work and contrary/boundary
+families proportionately; invoke the available native tools, inspect results,
+follow useful citations, and revise queries when the observed material exposes
+an uncovered concept or closer alternative. Preserve unsuccessful attempts.
+A tool timeout or inaccessible result is not an empty literature result. Stop
+at the declared bounds with unmet needs visible, not after a fixed paper quota.
+
+Keep these receipt levels distinct (descriptions, not a new runtime schema):
+
+| Level | Minimum observable basis | What it does not establish |
+|---|---|---|
+| `declared-only` | Author's query/reading entry, without inspectable invocation or material | Execution, retrieval, reading or support |
+| `invocation-observed` | Actual tool/call reference, query/input, time or sequence, and visible outcome/error | Full returned coverage or source reading |
+| `artifact-bound` | Accessible returned/captured material with identity/version limits; exact bytes/hash when locally saved | Authenticity, full-text reading or semantic support |
+| `source-assessed` | Actual reviewed passage/section and reading level, linked claim, assessment and reviewer reference | Exhaustive coverage, novelty or human approval |
+
+These are separate evidence dimensions, not automatic promotions: an invocation
+may fail; an independently supplied source can be read without this session's
+search receipt. Keep unknown fields unknown. When the host cannot export a tool
+receipt, retain its visible reference and access limitation; do not fabricate a
+local capture or reject useful native reading solely for lacking a Hub receipt.
+Ledger entry counts do not prove executed searches; inspect the observations
+before reporting execution counts. Do not copy inaccessible tool IDs
+and label them independently replayed. Store no credentials or unrelated private
+context in receipts; retain only task-scoped observations.
+
+A reconstructed bibliography is not a historical invocation receipt. Preserve
+independently verified paper content and its actual reading provenance even
+when the original search event cannot be inspected. Do not make the user repeat
+a search merely to repair a missing receipt; keep that execution claim unknown.
+A new bounded lookup is justified by an unresolved information need, not by a
+cosmetic desire to fill the log. Record it as a new attempt, never backdate it.
+
+For important sources, distinguish metadata, abstract, excerpt, full-text and
+unavailable reading. Verify the bibliographic identity and locator against the
+material actually retrieved; a plausible title/URL or filled locator field is
+not verification. A captured summary is not its cited original. Use the existing
+source-audit profile for local quote/range/byte checks when available, preserving
+its semantic and authenticity limits.
+
+For feasibility, name the actual materials, needed fields (variables or
+observations), resolution/coverage, and reuse conditions. Unconfirmed availability,
+missing fields or unresolved permission cannot be called ready. Carry a bounded
+next check and a useful revised/minimum candidate where justified; do not turn
+unknown into failure or silently invent a resource constraint.
+
+The final capability record separates `executed here` (actual invocation and
+outcome), `structurally checked` (schema/source inspection only), `available but
+untested`, and `unavailable here` (observed reason). Add `availability unknown`
+when even availability was not established. An executed failure remains a
+failure, not a passed capability. Bind claims to the actual runtime/interface
+version or source pin when known. Do not infer missing product wiring from one
+executor's missing command. No row authorizes access, writing or the next stage.
+
 ## Preserve the actual question
 
 1. Retain the user's objective and original constraints verbatim in the plan.
@@ -92,6 +159,8 @@ marginal qualified yield when observable; and `continue`, `partial`, or
   `partial` or continuation; superficial zero-yield rounds cannot close them
 
 If Hub's executable is missing, do available native-only research and report
-that Hub ingest/storage/NotebookLM actions are unavailable. Do not fabricate
-CLI output, claim writes, or install credentials. Native research does not
+that the CLI route is unavailable in this executor. Inspect other supported
+interfaces before making an overall capability claim; an untested MCP/native
+route remains untested, not absent. Do not fabricate CLI output, claim writes,
+or install credentials. Native research does not
 itself authorize library/vault writes, costly experiments, or submission.

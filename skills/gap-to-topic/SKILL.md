@@ -191,6 +191,11 @@ look open when it is not. So this gate is **adversarial**:
    question, population/system, method and outcome. Search failures, truncation
    or unknown native payloads are not zero-result proof of openness.
 
+Use the template's candidate revision record after closest/contrary comparison:
+retain the original proposition, observed overlap, revised proposition and
+remaining discriminating test. Do not leave an unchanged novelty claim behind
+a generic unknown verdict when observed prior work already narrows it.
+
 A gap is never declared "open" on the basis of "absent from my corpus" —
 absence in a corpus is not absence in the literature.
 

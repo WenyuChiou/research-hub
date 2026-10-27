@@ -5,10 +5,52 @@ from __future__ import annotations
 import os
 import shutil
 import socket
+import traceback
 import uuid
 from pathlib import Path
 
 import pytest
+
+
+_ONBOARDING_SOCKET_GUARD = pytest.StashKey()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    if item.path.name != "test_init_capabilities.py":
+        return
+    import pytest_socket
+
+    patches = pytest.MonkeyPatch()
+    refusals = []
+    item.stash[_ONBOARDING_SOCKET_GUARD] = (patches, refusals)
+    for refusal_type in (pytest_socket.SocketBlockedError, pytest_socket.SocketConnectBlockedError):
+        original_init = refusal_type.__init__
+
+        def record(self, *args, _original=original_init, **kwargs):
+            refusals.append((type(self).__name__, "".join(traceback.format_stack(limit=12))))
+            return _original(self, *args, **kwargs)
+
+        patches.setattr(refusal_type, "__init__", record)
+    # urllib3 probes/binds an IPv6 socket while requests is first imported by
+    # shared fixtures. Supply the same offline result without attempting I/O.
+    patches.setattr(socket, "has_ipv6", False)
+    from urllib3.util import connection
+    patches.setattr(connection, "HAS_IPV6", False)
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_teardown(item, nextitem):
+    try:
+        yield
+    finally:
+        state = item.stash.get(_ONBOARDING_SOCKET_GUARD, None)
+        if state is not None:
+            patches, refusals = state
+            patches.undo()
+            if refusals:
+                pytest.fail("Unexpected socket refusal(s), including caught RuntimeError:\n"
+                            + "\n".join(kind + "\n" + stack for kind, stack in refusals), pytrace=False)
 
 
 def pytest_configure(config) -> None:
@@ -52,7 +94,9 @@ def _network_fence(request):
         pytest_socket.enable_socket()
     else:
         pytest_socket.socket_allow_hosts(
-            ["127.0.0.1", "localhost", "::1"], allow_unix_socket=True
+            ["127.0.0.1", "localhost", "::1"], allow_unix_socket=True,
+            # Known loopback names need no DNS, including under --disable-socket.
+            resolution_cache={"localhost": {"127.0.0.1", "::1"}},
         )
     try:
         yield

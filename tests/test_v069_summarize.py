@@ -88,6 +88,7 @@ def cfg(tmp_path):
                     "Paper Two", "Surveys show female-headed households relocate less.", zotero_key="ZK2")
     return SimpleNamespace(
         raw=raw.parent,
+        zotero_library_id="SYNTHETIC", zotero_library_type="user",
         research_hub_dir=research_hub_dir,
     )
 
@@ -254,8 +255,8 @@ def test_apply_summaries_creates_note_when_no_child_exists(cfg):
 
 
 def test_apply_summaries_rolls_back_markdown_on_zotero_failure(cfg):
-    """If Zotero write fails for a paper, that paper's markdown change must
-    be reverted so Obsidian + Zotero stay in sync. Other papers still apply."""
+    """An unconfirmed remote write stays unknown; unchanged local text can be
+    compensated without claiming the destinations are synchronized."""
     payload = {"summaries": [{
         "paper_slug": "alice2024-paper-one",
         "key_findings": ["should rollback"],
@@ -274,7 +275,7 @@ def test_apply_summaries_rolls_back_markdown_on_zotero_failure(cfg):
     result = apply_summaries(cfg, "test-cluster", payload, zot=zot)
 
     assert result.applied == []
-    assert any("zotero write failed" in e for e in result.errors)
+    assert any("zotero write outcome unknown" in e and "no automatic retry" in e for e in result.errors)
     # Markdown must be restored to its original state
     assert md_path.read_text(encoding="utf-8") == original
 

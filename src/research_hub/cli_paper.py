@@ -529,9 +529,24 @@ def _paper_resummarize(
         llm_cli=llm_cli,
         apply=apply,
         paper_keys=paper_keys,
+        skip_existing=False,
+        provenance="legacy_cli_explicit_apply",
     )
+    if report.apply_result is not None:
+        for line in summarize_mod.receipt_lines(getattr(report.apply_result, "receipts", [])):
+            print(line)
+        for warning in getattr(report.apply_result, "warnings", []):
+            print(f"  WARN {warning}", file=sys.stderr)
     if not report.ok:
-        print(f"resummarize failed: {report.error}", file=sys.stderr)
+        if report.apply_result is not None:
+            receipt = report.apply_result
+            print(f"confirmed applied: {len(receipt.applied)}  skipped: {len(receipt.skipped)}  errors: {len(receipt.errors)}")
+            print(f"confirmed obsidian writes: {receipt.obsidian_writes}, zotero writes: {receipt.zotero_writes}")
+            for skip in receipt.skipped:
+                print(f"  SKIP {skip}")
+            for error in receipt.errors:
+                print(f"  ERROR {error}", file=sys.stderr)
+        print(f"resummarize not completed: {report.error}", file=sys.stderr)
         return 1
     if report.prompt_path:
         print(f"no LLM CLI on PATH; prompt saved to {report.prompt_path}")

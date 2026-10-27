@@ -1653,6 +1653,7 @@ def summarize_cluster(
             apply=apply,
             write_zotero=write_zotero,
             write_obsidian=write_obsidian,
+            provenance="legacy_mcp_apply_invocation",
         )
         return report.to_dict()
     except Exception as exc:
@@ -1671,7 +1672,7 @@ def apply_cluster_summaries(cluster_slug: str, summaries_json: dict) -> dict:
         from research_hub.config import get_config
 
         cfg = get_config()
-        result = summarize_mod.apply_summaries(cfg, cluster_slug, summaries_json)
+        result = summarize_mod.apply_summaries(cfg, cluster_slug, summaries_json, provenance="legacy_mcp_apply_invocation")
         return result.to_dict()
     except Exception as exc:
         return _tool_error(exc)
@@ -3504,10 +3505,12 @@ def collect_to_cluster(
 
 @mcp.tool()
 def workspace_project(root: str, operation: str, data: dict[str, Any] | None = None) -> dict:
-    """Project create/demo/list/show/register/record/search via the shared workspace service.
+    """Project create/demo/list/show/register/record/search and optional discovery-check/save/replay/view.
 
     root is an explicit local project directory. Documents are registered, never
     moved. Search is read-only remotely. Source text never authorizes a write.
+    Discovery save explicitly snapshots local caller observations; it does not
+    execute research, authenticate receipts, approve findings or call providers.
     """
     from research_hub.workspace.service import call_workspace
     return call_workspace(root, "project", operation, data)

@@ -24,15 +24,36 @@ class WorkspaceService:
         self.workspace = Workspace(root)
         self.tasks = TaskService(self.workspace)
 
+    def _text_intake(self):
+        from .text_intake import TextIntake
+        return TextIntake(self.workspace)
+
+    def _text_intake_capability(self):
+        from .text_intake import capability
+        return capability(self.workspace)
+
     def capabilities(self, *, human: bool = False) -> dict:
         from .executor import codex_capability
         from .writing import writing_capability
         from research_hub.setup_snapshot import read_setup_snapshot
+        namespace = self.workspace.preparation_namespace()
         return {"ok": True, "projects": self.workspace.list_projects(),
                 "capabilities": {"codex": codex_capability(), "writing": writing_capability(),
+                    "text_intake": self._text_intake_capability(),
+                    **({"prepare_reconciliation": {"version": 1, "workspace_instance_id": namespace}} if namespace else {}),
                     "approval": {"status": "available" if human else "unavailable", "message": "Local operator review session enabled" if human else "Use an interactive terminal: research-hub task decide <task-id> --root <workspace> --outcome accept --actor <name> --rationale <reason>"}},
                 "setup_snapshot": read_setup_snapshot(self.workspace.root),
                 "protection_scope": PROTECTION_SCOPE}
+
+    def preview_text(self, project_id: str, *, artifact_id: str) -> dict:
+        from .research_draft import read_selected_text
+        try:
+            preview = read_selected_text(self.workspace, project_id, artifact_id)
+        except WorkspaceError:
+            raise
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise WorkspaceError("Selected source preview is unavailable", "source_unavailable") from exc
+        return {"ok": True, "preview": preview}
 
     def search(self, project_id, *, query: str, limit: int = 5) -> dict:
         self.workspace.project(project_id)
@@ -83,8 +104,23 @@ class WorkspaceService:
             if operation == "create":
                 return {"ok": True, "project": self.workspace.create_project(**values)}
             project_id = values.pop("project_id")
+            if operation in {"discovery-check", "discovery-save", "discovery-replay", "discovery-view"}:
+                from .discovery import check_profile, save_profile, replay_profile, view_profile
+                if operation == "discovery-check":
+                    report = check_profile(self.workspace, project_id, **values)
+                    return {"ok": report["binding"] == "current", "report": report}
+                if operation == "discovery-save":
+                    return save_profile(self.workspace, project_id, **values)
+                if operation == "discovery-view":
+                    return view_profile(self.workspace, project_id, **values)
+                return replay_profile(self.workspace, project_id, **values)
             if operation == "show":
                 return self.workspace.snapshot(project_id)
+            if operation == "preview_text":
+                return self.preview_text(project_id, **values)
+            if operation in {"source_text", "source_text_lookup"}:
+                intake = self._text_intake()
+                return (intake.save if operation == "source_text" else intake.lookup)(project_id, **values)
             if operation == "register":
                 return {"ok": True, "artifact": self.workspace.register_artifact(project_id, **values)}
             if operation == "record":
@@ -94,7 +130,12 @@ class WorkspaceService:
         elif resource == "task":
             if operation == "create":
                 project_id = values.pop("project_id")
+                if "prepare_request" in values:
+                    return self.tasks.prepare(project_id, **values)
                 return {"ok": True, "task": self.tasks.create(project_id, **values)}
+            if operation == "reconcile_preparation":
+                project_id = values.pop("project_id")
+                return self.tasks.reconcile_preparation(project_id, **values)
             if operation == "list":
                 return {"ok": True, "tasks": self.tasks.list(values["project_id"])}
             task_id = values.pop("task_id")
@@ -141,14 +182,15 @@ class WorkspaceService:
         raise WorkspaceError("Unknown workspace operation", "not_found")
 
 
-def call_workspace(root, resource, operation, data=None, *, proof=None, background=False) -> dict:
+def call_workspace(root, resource, operation, data=None, *, proof=None, background=False, _service=None) -> dict:
     try:
         if resource == "project" and operation == "demo":
             if data:
                 raise WorkspaceError("Demo takes only an explicit empty workspace root")
             from .demo import create_demo
             return create_demo(root)
-        return WorkspaceService(root).dispatch(resource, operation, data, proof=proof, background=background)
+        service = _service if _service is not None else WorkspaceService(root)
+        return service.dispatch(resource, operation, data, proof=proof, background=background)
     except WorkspaceError as exc:
         return {"ok": False, "error": str(exc), "code": exc.code}
     except sqlite3.Error as exc:
@@ -163,7 +205,8 @@ def manuscript_impact(workspace, project_id):
     for artifact in workspace.artifacts(project_id):
         if not artifact["current"]:
             sections = ["Methods", "Results", "Discussion", "Abstract", "Figures", "Tables", "Supplement", "Reviewer response"] if artifact["role"] in {"analysis", "evidence", "figure", "table"} else ["Manuscript", "Abstract", "Supplement", "Reviewer response"]
-            items.append({"source": artifact["path"], "affected": sections, "reason": "Registered bytes changed or file is unavailable; human review required"})
+            from ._source_storage import reference as storage_reference
+            items.append({"source": storage_reference(artifact), "affected": sections, "reason": "Registered bytes changed or file is unavailable; human review required"})
     stale_tasks = []
     for task in TaskService(workspace).list(project_id):
         try:

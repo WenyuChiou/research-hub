@@ -11,6 +11,7 @@ import stat
 
 from research_hub.locks import file_lock
 from .core import WorkspaceError, atomic_json, file_hash, safe_path
+from ._source_storage import reference as storage_reference, current_hash, coverage as storage_coverage
 
 
 PREFIX = "skills/academic-writing-skills/"
@@ -43,7 +44,7 @@ def check_alignment(workspace, project_id: str, state: dict) -> None:
     for artifact in workspace.artifacts(project_id):
         if artifact["role"] not in MANUSCRIPT_ROLES:
             source = sources_by_id.get(artifact["id"], {})
-            if (source.get("path_or_reference") != artifact["path"] or not isinstance(source.get("scope"), list)
+            if (source.get("path_or_reference") != storage_reference(artifact) or not isinstance(source.get("scope"), list)
                     or artifact["role"] not in source["scope"]):
                 raise WorkspaceError("Manuscript research authority alignment is stale; review existing state explicitly", "stale_alignment")
     questions = {(r["id"], r["data"]["text"]) for r in workspace.records(project_id) if r["kind"] == "question"}
@@ -120,7 +121,7 @@ class WritingAdapter:
             # Manuscript artifacts are documents to edit/audit. Code, data and
             # figures remain authority sources and frozen task inputs, not prose.
             state["artifacts"] = [{"id": a["id"], "path": a["path"], "role": a["role"], "status": "ACTIVE", "required_for_release": a["role"] in {"main_manuscript", "supplement"}} for a in artifacts if a["role"] in MANUSCRIPT_ROLES]
-            state["authority_sources"] = [{"id": a["id"], "kind": "research_artifact", "path_or_reference": a["path"], "scope": [a["role"]], "status": "UNVERIFIED", "last_verified": ""} for a in artifacts if a["role"] in {"analysis", "evidence", "figure", "table"}]
+            state["authority_sources"] = [{"id": a["id"], "kind": "research_artifact", "path_or_reference": storage_reference(a), "scope": [a["role"]], "status": "UNVERIFIED", "last_verified": ""} for a in artifacts if a["role"] in {"analysis", "evidence", "figure", "table"}]
             questions = [r for r in workspace.records(project_id) if r["kind"] == "question"]
             state["contract"]["questions"] = [{"id": r["id"], "text": r["data"]["text"], "lock": "SEMANTIC"} for r in questions]
             state["contract"]["task"] = project["goal"]
@@ -137,7 +138,8 @@ class WritingAdapter:
         verified = WritingAdapter(self.root)
         state = self.bind(workspace, project_id)
         document = json.loads(state.read_text(encoding="utf-8"))
-        checked = {a["path"]: a["sha256"] for a in workspace.artifacts(project_id)}
+        inputs = workspace.artifacts(project_id)
+        checked = {storage_reference(a): a["sha256"] for a in inputs}
         if any(not a["current"] for a in workspace.artifacts(project_id)):
             raise WorkspaceError("Registered input changed before manuscript check", "stale_input")
         state_hash = file_hash(state)
@@ -157,7 +159,7 @@ class WritingAdapter:
                 raise WorkspaceError("Candidate check requires an exact file")
             args += [str(state), str(safe_path(workspace.root, candidate, exists=True)), "--json"]
         elif operation == "docx":
-            paths = [str(safe_path(workspace.root, a["path"], exists=True)) for a in workspace.artifacts(project_id) if a["path"].lower().endswith(".docx")]
+            paths = [str(safe_path(workspace.root, a["path"], exists=True)) for a in workspace.artifacts(project_id) if a.get("path", "").lower().endswith(".docx")]
             if not paths:
                 raise WorkspaceError("No registered DOCX artifact")
             args += [*paths, "--json"]
@@ -171,12 +173,17 @@ class WritingAdapter:
             raise WorkspaceError("Writing check returned invalid JSON; no PASS recorded", "invalid_output") from exc
         if not isinstance(report, (dict, list)):
             raise WorkspaceError("Writing check returned an invalid report", "invalid_output")
-        if file_hash(state) != state_hash or any(file_hash(safe_path(workspace.root, path, exists=True)) != checksum for path, checksum in checked.items()):
+        if (file_hash(state) != state_hash or any(current_hash(workspace, a) != a["sha256"] for a in inputs)
+                or (candidate and file_hash(safe_path(workspace.root, candidate, exists=True)) != checked[candidate])):
             raise WorkspaceError("Input changed during manuscript check; report is stale", "stale_input")
-        return {"ok": result.returncode == 0, "operation": operation, "report": report,
+        outcome = {"ok": result.returncode == 0, "operation": operation, "report": report,
                 "exit_code": result.returncode, "adapter_sha256": verified.sha256,
                 "checked_artifacts": checked, "manuscript_state_sha256": state_hash,
                 "semantic_acceptance": "not_performed"}
+        coverage = [storage_coverage(a) for a in inputs if "storage" in a]
+        if coverage:
+            outcome["source_coverage"] = coverage
+        return outcome
 
 
 def writing_capability() -> dict:

@@ -843,7 +843,7 @@ def _attempt_upload(
             },
         )
         # v0.88.10: don't retry SDK contract / validation / auth errors
-        if _is_non_retryable(result.error or ""):
+        if not getattr(result, "retryable", True) or _is_non_retryable(result.error or ""):
             _log_jsonl(
                 log_path,
                 {

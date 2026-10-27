@@ -301,12 +301,10 @@ def test_close_save_state_is_best_effort_on_failure(
     client.close()
 
 
-def test_refresh_and_save_calls_refresh_then_save(
+def test_refresh_and_save_delegates_persistence_without_shadow_write(
     tmp_path: Path, saved_calls: list, fake_client_class
 ) -> None:
-    """refresh_and_save() must call upstream refresh_auth and then persist
-    cookies via _save_state (which calls save_cookies_to_storage directly —
-    this is the explicit mid-session heartbeat path, not the on-close path)."""
+    """SDK refresh owns persistence; Hub must not overwrite its live jar."""
     from research_hub.notebooklm.client import NotebookLMClient
 
     state = tmp_path / "state.json"
@@ -316,14 +314,10 @@ def test_refresh_and_save_calls_refresh_then_save(
     client.refresh_and_save()
 
     assert client._client.refresh_called == 1
-    assert len(saved_calls) == 1, "refresh_and_save() must persist after refresh"
+    assert saved_calls == [], "must not write the bootstrap cookie shadow"
 
-    # After Fix-3, close() does NOT call _save_state() directly, so the
-    # total saved_calls count stays at 1 (only the refresh_and_save call).
     client.close()
-    assert len(saved_calls) == 1, (
-        "close() must NOT add a second direct save (upstream __aexit__ handles it)"
-    )
+    assert saved_calls == [], "upstream lifecycle owns all cookie persistence"
 
 
 def test_save_state_skipped_when_no_storage_path(
@@ -357,3 +351,40 @@ def test_save_state_skipped_when_no_storage_path(
     # all, so saved_calls is empty regardless. This test verifies the old
     # no-storage-path path doesn't somehow trigger a rogue direct save.
     assert saved_calls == [], "no direct save_cookies_to_storage call from close()"
+
+
+def test_refresh_failure_warns_without_leaking_error_details(
+    tmp_path, fake_client_class, monkeypatch, capsys
+):
+    from unittest.mock import AsyncMock
+    from research_hub.notebooklm.client import NotebookLMClient
+    state = tmp_path / "state.json"
+    state.write_text("{}", encoding="utf-8")
+    client = NotebookLMClient(state)
+    monkeypatch.setattr(client._client, "refresh_auth", AsyncMock(
+        side_effect=OSError("private-token <html> /private/session.json")))
+    client.refresh_and_save()  # Must not poison the already successful operation.
+    output = capsys.readouterr().err
+    assert output.count("WARN") == 1 and "refresh/persistence" in output
+    assert all(secret not in output for secret in ("private-token", "<html>", "/private/", str(state)))
+    client.close()
+
+
+def test_refresh_permission_hardening_failure_is_best_effort_and_sanitized(
+    tmp_path, fake_client_class, monkeypatch, capsys
+):
+    from research_hub.notebooklm.client import NotebookLMClient
+    state = tmp_path / "state.json"
+    state.write_text("{}", encoding="utf-8")
+    client = NotebookLMClient(state)
+
+    def fail_hardening(path):
+        raise OSError("private-token <html> /private/session.json")
+
+    monkeypatch.setattr("research_hub.notebooklm.auth._tighten_state_file_perms", fail_hardening)
+    client.refresh_and_save()
+    assert client._client.refresh_called == 1
+    output = capsys.readouterr().err
+    assert output.count("WARN") == 1 and "permissions" in output
+    assert all(secret not in output for secret in ("private-token", "<html>", "/private/", str(state)))
+    client.close()

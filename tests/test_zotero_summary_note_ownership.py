@@ -18,6 +18,8 @@ def note(key, *, owned=False, parent="PARENT01", version=7):
 
 
 class FakeZotero:
+    library_id = "SYNTHETIC"
+    library_type = "user"
     def __init__(self, notes=(), *, later=()):
         self.notes = deepcopy(list(notes))
         self.later = deepcopy(list(later))
@@ -122,7 +124,9 @@ def test_ownership_refusal_rolls_back_local_note_with_unchanged_result_fields(tm
     assert len(result.errors) == 1 and "multiple" in result.errors[0]
     assert path.read_text(encoding="utf-8") == original
     assert not zot.updated and not zot.created
-    assert set(result.to_dict()) == {"cluster_slug", "applied", "skipped", "errors", "obsidian_writes", "zotero_writes"}
+    assert set(result.to_dict()) == {"cluster_slug", "applied", "skipped", "errors", "obsidian_writes", "zotero_writes", "receipts"}
+    assert result.receipts[0]["sinks"]["local"]["state"] == "compensated"
+    assert result.receipts[0]["sinks"]["zotero"]["state"] == "rejected"
 
 
 def test_repeat_apply_updates_owned_note_without_extra_create():
