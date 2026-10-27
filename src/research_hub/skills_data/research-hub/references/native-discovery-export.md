@@ -28,9 +28,13 @@ search merely to fill a log or convert a bibliography into historical tool event
 
 Alongside the readable synthesis, the agent may emit a UTF-8 JSON file with format
 `research-discovery-observations/1.0`. It describes caller-observed evidence, not
-cryptographically authenticated execution. The bundled schema is
-`research_hub/schemas/research-discovery-observations-1.0.json`; unsupported versions
-and extra fields are rejected by the optional checker. Do not add these fields to
+cryptographically authenticated execution. The schema is bundled with the loaded
+skill at [`references/research-discovery-observations-1.0.json`](research-discovery-observations-1.0.json).
+Resolve that path relative to the directory containing the loaded `SKILL.md`, even
+when working in another project. The Hub package also keeps the canonical,
+byte-identical copy at `research_hub/schemas/research-discovery-observations-1.0.json`.
+The optional checker rejects unsupported versions and extra fields and checks
+relationships that the schema alone cannot establish. Do not add these fields to
 ResearchEvidencePacket v1 or the source-audit profile.
 
 ## Exact record shape
