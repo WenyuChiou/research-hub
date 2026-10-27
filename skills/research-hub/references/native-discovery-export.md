@@ -166,8 +166,8 @@ are triggered by opening, rechecking, or closing setup guidance.
 
 ## Optional standalone reader (no Hub runtime)
 
-The agent may render already selected observations with
-`skills/research-hub/scripts/render_native_reader.py`. It uses only Python's
+The agent may render already selected observations with the loaded skill's
+`scripts/render_native_reader.py`. It uses only Python's
 standard library; no Hub installation, account, model, network or browser is
 used. Do not ask the researcher to re-enter literature. The agent prepares the
 presentation files from existing, authorized observations and supplied prose.
@@ -176,9 +176,23 @@ checks rendering fields, exact references and generated links, not native
 execution, material-byte binding, scientific entailment or reading authenticity.
 The observations format and schema remain unchanged.
 
+Locate the actual loaded `SKILL.md` through the host's supplied skill/resource
+location, then resolve `scripts/render_native_reader.py` relative to that file's
+directory. Use the resulting absolute local script path with an already available
+Python interpreter. For URI-backed skills, obtain the accessible local path from
+the host; `skill://` is not a shell pathname. Do not guess user/cache paths or
+substitute a same-named project file or unrelated checkout.
+
+Keep the working directory at the user's selected project so the input/output
+arguments below remain project-relative. Replace `<resolved-reader-script>` with
+that resolved path; the quotes also cover spaces in skill locations. If the loaded
+skill has no accessible helper, or the host has no existing Python runtime,
+retain the native report and state that this optional renderer is unavailable;
+do not silently install Hub or ask the researcher to reconstruct the data.
+
 ```text
-python skills/research-hub/scripts/render_native_reader.py --observations observations.json --content-en reader.en.json --content-zh-TW reader.zh-TW.json --bibliography verified-bibliography.json --check-only
-python skills/research-hub/scripts/render_native_reader.py --observations observations.json --content-en reader.en.json --content-zh-TW reader.zh-TW.json --bibliography verified-bibliography.json --output-dir new-reader-output
+python "<resolved-reader-script>" --observations observations.json --content-en reader.en.json --content-zh-TW reader.zh-TW.json --bibliography verified-bibliography.json --check-only
+python "<resolved-reader-script>" --observations observations.json --content-en reader.en.json --content-zh-TW reader.zh-TW.json --bibliography verified-bibliography.json --output-dir new-reader-output
 ```
 
 Each language file is optional. A supplied file must declare that exact

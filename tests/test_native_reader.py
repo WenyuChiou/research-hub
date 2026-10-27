@@ -440,6 +440,44 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.assertEqual(json.loads(result.stdout)["languages"], ["en", "zh-TW"])
         self.assertTrue((output / "manifest.json").is_file())
 
+    def test_documented_script_location_guidance_uses_loaded_resource(self):
+        guidance = (SCRIPT.parent.parent / "references/native-discovery-export.md").read_text(encoding="utf-8")
+        section = guidance.split("## Optional standalone reader (no Hub runtime)", 1)[1]
+        flat = " ".join(section.split())
+        for clause in ("actual loaded `SKILL.md`", "relative to that file's directory", "Keep the working directory", "Do not guess user/cache paths", "same-named project file", "If the loaded skill has no accessible helper", "retain the native report", "`skill://` is not a shell pathname"):
+            self.assertIn(clause, flat)
+        self.assertNotIn("python skills/research-hub/scripts/render_native_reader.py", section)
+        self.assertEqual(section.count('python "<resolved-reader-script>"'), 2)
+
+    def test_script_location_from_loaded_skill_preserves_project_cwd(self):
+        loaded = self.root / "loaded skill with spaces"
+        project = self.root / "user project with spaces"
+        loaded.mkdir()
+        project.mkdir()
+        skill_md = loaded / "SKILL.md"
+        skill_md.write_bytes((SCRIPT.parent.parent / "SKILL.md").read_bytes())
+        selected_script = skill_md.resolve().parent / "scripts/render_native_reader.py"
+        selected_script.parent.mkdir()
+        selected_script.write_bytes(SCRIPT.read_bytes())
+        for source, name in ((self.obs, "observations.json"), (self.en, "reader.en.json"), (self.zh, "reader.zh-TW.json"), (self.bib, "bibliography.json")):
+            (project / name).write_bytes(source.read_bytes())
+        relative = Path("skills/research-hub/scripts/render_native_reader.py")
+        self.assertFalse((project / relative).exists())
+        old = subprocess.run([sys.executable, "-I", "-S", "-B", str(relative), "--help"], cwd=project, capture_output=True, timeout=10)
+        self.assertEqual(old.returncode, 2)
+        command = [sys.executable, "-I", "-S", "-B", str(selected_script), "--observations", "observations.json", "--content-en", "reader.en.json", "--content-zh-TW", "reader.zh-TW.json", "--bibliography", "bibliography.json"]
+        project_before, loaded_before = self.snapshot(project), self.snapshot(loaded)
+        checked = subprocess.run([*command, "--check-only"], cwd=project, capture_output=True, timeout=30)
+        self.assertEqual(checked.returncode, 0, checked.stderr.decode(errors="replace"))
+        self.assertFalse(json.loads(checked.stdout)["writes"])
+        self.assertEqual(self.snapshot(project), project_before)
+        self.assertEqual(self.snapshot(loaded), loaded_before)
+        generated = subprocess.run([*command, "--output-dir", "new-reader-output"], cwd=project, capture_output=True, timeout=30)
+        self.assertEqual(generated.returncode, 0, generated.stderr.decode(errors="replace"))
+        self.assertEqual(Path(json.loads(generated.stdout)["output_dir"]), project / "new-reader-output")
+        self.assertTrue((project / "new-reader-output/manifest.json").is_file())
+        self.assertEqual(self.snapshot(loaded), loaded_before)
+
     def test_packaged_script_is_the_exact_source_mirror(self):
         mirror = ROOT / "src/research_hub/skills_data/research-hub/scripts/render_native_reader.py"
         self.assertEqual(SCRIPT.read_bytes(), mirror.read_bytes())
