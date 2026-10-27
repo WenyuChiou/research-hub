@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills/research-hub/scripts/render_native_reader.py"
 SPEC = importlib.util.spec_from_file_location("native_reader", SCRIPT)
 reader = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(reader)
+with patch.object(sys, "dont_write_bytecode", True):
+    SPEC.loader.exec_module(reader)
 
 
 def fixture():
@@ -65,7 +66,7 @@ class NativeReaderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="native-reader-test-")
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.observations, self.content, self.bibliography = fixture()
         self.obs = self.root / "observations.json"
         self.en = self.root / "content.en.json"
@@ -82,6 +83,32 @@ class NativeReaderTests(unittest.TestCase):
 
     def snapshot(self, path):
         return {str(p.relative_to(path)): (p.read_bytes(), p.stat().st_mtime_ns) for p in path.rglob("*") if p.is_file()}
+
+    def test_import_writes_no_skill_bytecode_and_restores_host_flag(self):
+        clone = self.root / "import-probe"
+        test_path = clone / "tests/test_native_reader.py"
+        script_path = clone / "skills/research-hub/scripts/render_native_reader.py"
+        test_path.parent.mkdir(parents=True)
+        script_path.parent.mkdir(parents=True)
+        test_path.write_bytes(Path(__file__).read_bytes())
+        script_path.write_bytes(SCRIPT.read_bytes())
+        code = """import importlib.util, json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+before = sys.dont_write_bytecode
+assert before is False, 'probe requires default bytecode-enabled startup'
+spec = importlib.util.spec_from_file_location('native_reader_import_probe', root / 'tests/test_native_reader.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+artifacts = sorted(str(p.relative_to(root)) for p in (root / 'skills').rglob('*.pyc'))
+assert artifacts == [], artifacts
+assert sys.dont_write_bytecode is before, 'test import changed the host bytecode flag'
+print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
+"""
+        result = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(clone)],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"skill_bytecode": [], "host_flag_restored": True})
 
     def rejected(self):
         self.save_inputs()
