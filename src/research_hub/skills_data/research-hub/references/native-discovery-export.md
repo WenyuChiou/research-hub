@@ -282,6 +282,15 @@ new staged output set, incomplete until its final `manifest.json` is fully
 written. On interruption, retain the partial directory without treating HTML
 file existence as completion; choose a new output set after reconciliation.
 
+A parsed `status: complete` manifest and matching input and output hashes
+establish only present artifact consistency; they do not establish that the
+invocation succeeded or that `fsync` ensured durability. Record a successful
+zero exit and the `status: generated` response, including its
+`manifest_sha256`, separately from artifact checks. A failed or unknown
+invocation outcome remains unconfirmed even if the files match. Preserve that
+directory; retry using the same verified unchanged inputs in a fresh output
+directory.
+
 Outputs are `reader.en.html` and/or `reader.zh-TW.html` only for supplied
 languages, `references.bib`, `native-reader.json` (original observations plus
 separate presentation inputs and any selected attachment identities), selected

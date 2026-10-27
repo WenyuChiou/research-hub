@@ -419,6 +419,86 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         with self.assertRaises(reader.ReaderError):
             reader.generate(output, inputs, files, manifest)
 
+    def test_recovery_keeps_invocation_acknowledgment_separate_from_file_consistency(self):
+        inputs, files, manifest = self.prepared()
+        input_snapshot = {key: (path.read_bytes(), path.stat().st_mtime_ns) for key, (path, _, _) in inputs.items()}
+        original_write, original_generate = reader.write_file, reader.generate
+        manifest_bytes = reader.canonical(manifest)
+
+        def arguments(output):
+            return ["--observations", str(self.obs), "--content-en", str(self.en), "--content-zh-TW", str(self.zh),
+                    "--bibliography", str(self.bib), "--output-dir", str(output)]
+
+        for scenario in ("manifest-fsync-error", "lost-postwrite-ack"):
+            with self.subTest(scenario=scenario):
+                output = self.root / scenario
+                stdout, stderr = io.StringIO(), io.StringIO()
+                intercepted = []
+
+                def fail_manifest_fsync(path, data):
+                    if data == manifest_bytes:
+                        intercepted.append("fsync")
+                        with patch.object(reader.os, "fsync", side_effect=OSError("synthetic manifest fsync failure")):
+                            return original_write(path, data)
+                    return original_write(path, data)
+
+                def interrupt_after_write(*args, **kwargs):
+                    original_generate(*args, **kwargs)
+                    raise SystemExit("synthetic lost acknowledgment")
+
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    if scenario == "manifest-fsync-error":
+                        with patch.object(reader, "write_file", side_effect=fail_manifest_fsync):
+                            code = reader.main(arguments(output))
+                        self.assertEqual(code, 1)
+                        self.assertEqual(intercepted, ["fsync"])
+                        failure = json.loads(stderr.getvalue())
+                        self.assertEqual(failure["status"], "failed")
+                        self.assertIn("synthetic manifest fsync failure", failure["error"])
+                    else:
+                        with patch.object(reader, "generate", side_effect=interrupt_after_write):
+                            with self.assertRaisesRegex(SystemExit, "synthetic lost acknowledgment"):
+                                reader.main(arguments(output))
+                        self.assertEqual(stderr.getvalue(), "")
+                self.assertEqual(stdout.getvalue(), "")  # No successful invocation acknowledgment.
+
+                for key, (path, expected, _) in inputs.items():
+                    self.assertEqual(path.read_bytes(), expected)
+                    self.assertEqual(manifest["inputs"][key], {"name": path.name, "bytes": len(expected), "sha256": hashlib.sha256(expected).hexdigest()})
+                for name, expected in files.items():
+                    actual = (output / name).read_bytes()
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(manifest["outputs"][name], {"bytes": len(actual), "sha256": hashlib.sha256(actual).hexdigest()})
+                marker = output / "manifest.json"
+                if scenario == "lost-postwrite-ack":
+                    self.assertTrue(marker.is_file())
+                if marker.is_file():  # A future stronger publication strategy may leave no final marker after fsync failure.
+                    self.assertEqual(marker.read_bytes(), manifest_bytes)
+                    self.assertEqual(json.loads(marker.read_bytes())["status"], "complete")
+
+                before = self.snapshot(output)
+                repeated_stdout, repeated_stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(repeated_stdout), contextlib.redirect_stderr(repeated_stderr):
+                    self.assertEqual(reader.main(arguments(output)), 1)
+                self.assertEqual(repeated_stdout.getvalue(), "")
+                repeat_failure = json.loads(repeated_stderr.getvalue())
+                self.assertEqual(repeat_failure["status"], "failed")
+                self.assertIn("output already exists", repeat_failure["error"])
+                self.assertEqual(self.snapshot(output), before)
+
+                retry = self.root / (scenario + "-retry")
+                retry_stdout, retry_stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(retry_stdout), contextlib.redirect_stderr(retry_stderr):
+                    self.assertEqual(reader.main(arguments(retry)), 0)
+                acknowledgment = json.loads(retry_stdout.getvalue())
+                self.assertEqual(acknowledgment["status"], "generated")
+                self.assertEqual(retry_stderr.getvalue(), "")
+                self.assertEqual(acknowledgment["manifest_sha256"], hashlib.sha256((retry / "manifest.json").read_bytes()).hexdigest())
+                self.assertEqual(json.loads((retry / "manifest.json").read_bytes()), manifest)
+                self.assertEqual({name: (retry / name).read_bytes() for name in files}, files)
+                self.assertEqual(self.snapshot(output), before)
+                self.assertEqual({key: (path.read_bytes(), path.stat().st_mtime_ns) for key, (path, _, _) in inputs.items()}, input_snapshot)
+
     def test_broken_generated_links_are_detected(self):
         for markup in (b'<a href="missing.json">bad</a>', b'<a href="#absent">bad</a>', b'<a href="../outside">bad</a>'):
             with self.subTest(markup=markup):
@@ -439,6 +519,18 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
         self.assertEqual(json.loads(result.stdout)["languages"], ["en", "zh-TW"])
         self.assertTrue((output / "manifest.json").is_file())
+
+    def test_recovery_guidance_distinguishes_consistency_and_acknowledgment(self):
+        references = [SCRIPT.parent.parent / "references/native-discovery-export.md",
+                      ROOT / "src/research_hub/skills_data/research-hub/references/native-discovery-export.md"]
+        for path in references:
+            with self.subTest(path=path):
+                flat = " ".join(path.read_text(encoding="utf-8").split())
+                for clause in ("matching input and output hashes establish only present artifact consistency",
+                               "do not establish that the invocation succeeded", "successful zero exit",
+                               "`status: generated`", "`manifest_sha256`", "failed or unknown invocation",
+                               "same verified unchanged inputs", "fresh output directory"):
+                    self.assertIn(clause, flat)
 
     def test_documented_script_location_guidance_uses_loaded_resource(self):
         guidance = (SCRIPT.parent.parent / "references/native-discovery-export.md").read_text(encoding="utf-8")
