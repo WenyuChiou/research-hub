@@ -154,9 +154,17 @@ and add browser-dependent NotebookLM work last.
 | Zotero + Obsidian only | `research-hub auto "topic" --no-nlm`, `zotero backfill`, Obsidian dashboard output |
 | Obsidian + NotebookLM only | `research-hub import-folder <folder> --cluster <slug>`, then NotebookLM bundle/upload |
 | Zotero + NotebookLM only | Zotero-backed search and NotebookLM operations |
-| No accounts yet | `research-hub dashboard --sample` |
+| No accounts yet | Use available host-native search/reading with [research-protocol.md](references/research-protocol.md); optionally preserve observations/readers with [native-discovery-export.md](references/native-discovery-export.md) |
+
+Native-only research does not require a Hub installation, setup/doctor run,
+integration account, or dashboard launch. If the user separately selects a Hub
+sample preview, `research-hub dashboard --sample` remains an optional demo;
+sample data is not the user's research result or an acceptance test.
 
 ## Setup Commands
+
+Use these only for selected Hub-backed operations when the needed setup is
+authorized. They are not prerequisites for native-only research.
 
 ```bash
 pip install research-hub-pipeline[playwright,secrets]
@@ -280,10 +288,12 @@ installer target exists.
 
 ## Guardrails
 
-- Do not assume installing `ai-research-skills` or copying `SKILL.md`
-  installed the `research-hub` CLI; check the runtime explicitly.
-- Always run `research-hub doctor` when setup state is uncertain.
-- Do not invent DOIs, citations, or paper metadata; use search/enrich/verify commands.
+- For a selected Hub CLI operation, check runtime availability; installing
+  `ai-research-skills` or copying `SKILL.md` does not install that CLI.
+- Use `research-hub doctor` only when the available CLI's setup state is relevant
+  and uncertain for the selected Hub operation. Native-only research needs no doctor run.
+- Do not invent DOIs, citations, or paper metadata; use authoritative sources
+  and available verification tools within the user's scope.
 - Do not delete clusters without reviewing cascade impact.
 - Treat the vault as user-owned local data; avoid overwriting notes unless asked.
 - Prefer `import-folder` for non-academic or internal documents.
