@@ -153,6 +153,95 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.assertFalse(json.loads(stdout.getvalue())["writes"])
         self.assertEqual(self.snapshot(self.root), before)
 
+    def test_delivery_notes_and_selected_attachments_are_discoverable_in_each_language(self):
+        sidecar = self.root / "assessment-status.sidecar.json"
+        readme = self.root / "README.md"
+        sidecar.write_bytes(reader.canonical({"synthetic_recorded_counts": {"screened": 3, "included": 1, "global_total": None}}))
+        readme.write_text("Synthetic supplied assessment limits; no scientific acceptance.\n", encoding="utf-8")
+        for language, note in [("en", "Synthetic recorded counts: screened 3, included 1; global total unknown."),
+                               ("zh-TW", "合成紀錄：已篩選 3 項、納入 1 項；全域總數未知。")]:
+            self.content[language]["delivery_notes"] = [note, '<script>supplied note remains text</script>']
+        self.save_inputs()
+        inputs, files, manifest = reader.prepare(self.obs, self.en, self.zh, self.bib, attachments=[sidecar, readme])
+        for language in ("en", "zh-TW"):
+            markup = files["reader." + language + ".html"].decode()
+            page = reader.Navigation()
+            page.feed(markup)
+            self.assertTrue({sidecar.name, readme.name} <= set(page.links))
+            self.assertIn(self.content[language]["delivery_notes"][0], markup)
+            self.assertIn("&lt;script&gt;supplied note remains text&lt;/script&gt;", markup)
+            self.assertNotIn("<script>", markup)
+        exported = json.loads(files["native-reader.json"])
+        self.assertEqual(exported["observations"], self.observations)
+        self.assertEqual(exported["content"], self.content)
+        self.assertEqual([entry["name"] for entry in exported["attachments"]], [readme.name, sidecar.name])
+        for path in (readme, sidecar):
+            self.assertEqual(files[path.name], path.read_bytes())
+            self.assertEqual(manifest["outputs"][path.name]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        _, reverse_files, reverse_manifest = reader.prepare(self.obs, self.en, self.zh, self.bib, attachments=[readme, sidecar])
+        self.assertEqual((files, manifest), (reverse_files, reverse_manifest))
+        output = reader.generate(self.root / "with-attachments", inputs, files, manifest)
+        self.assertEqual((output / sidecar.name).read_bytes(), sidecar.read_bytes())
+        self.assertEqual((output / readme.name).read_bytes(), readme.read_bytes())
+
+    def test_check_only_with_attachments_and_delivery_notes_writes_nothing(self):
+        readme = self.root / "README.md"
+        readme.write_text("Synthetic supporting notes.\n", encoding="utf-8")
+        self.content["en"]["delivery_notes"] = ["Synthetic supplied counts, not renderer decisions."]
+        self.save_inputs()
+        before = self.snapshot(self.root)
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            code = reader.main(["--observations", str(self.obs), "--content-en", str(self.en), "--attachment", str(readme), "--check-only"])
+        self.assertEqual(code, 0)
+        self.assertFalse(json.loads(stdout.getvalue())["writes"])
+        self.assertEqual(self.snapshot(self.root), before)
+
+    def test_invalid_delivery_notes_are_rejected_without_changing_observations(self):
+        for notes in ("not an array", [""], [None], ["unsafe\x00note"]):
+            with self.subTest(notes=notes):
+                self.content["en"]["delivery_notes"] = notes
+                self.rejected()
+
+    def test_attachments_reject_unsafe_names_collisions_nontext_and_excess_count(self):
+        for name, raw in [("active.html", b"<script>active</script>"), ("native-reader.json", b"{}"),
+                          ("manifest.json", b"{}"), ("bad name.txt", b"text"),
+                          ("bad.txt", b"\xff"), ("nul.txt", b"unsafe\x00text")]:
+            with self.subTest(name=name):
+                path = self.root / name
+                path.write_bytes(raw)
+                with self.assertRaises((reader.ReaderError, UnicodeError)):
+                    reader.prepare(self.obs, self.en, attachments=[path])
+        other = self.root / "other"
+        other.mkdir()
+        first, second = self.root / "README.md", other / "readme.md"
+        first.write_text("one", encoding="utf-8")
+        second.write_text("two", encoding="utf-8")
+        with self.assertRaisesRegex(reader.ReaderError, "duplicate attachment"):
+            reader.prepare(self.obs, self.en, attachments=[first, second])
+        with self.assertRaisesRegex(reader.ReaderError, "at most 8 attachments"):
+            reader.prepare(self.obs, self.en, attachments=[first] * 9)
+        with self.assertRaisesRegex(reader.ReaderError, "input or output parent is missing"):
+            reader.prepare(self.obs, self.en, attachments=[self.root / "absent.txt"])
+
+    def test_attachment_change_prevents_a_complete_manifest(self):
+        path = self.root / "README.md"
+        path.write_text("original supplied limits", encoding="utf-8")
+        inputs, files, manifest = reader.prepare(self.obs, self.en, attachments=[path])
+        path.write_text("changed supplied limits", encoding="utf-8")
+        output = self.root / "changed-attachment"
+        with self.assertRaisesRegex(reader.ReaderError, "input changed during generation"):
+            reader.generate(output, inputs, files, manifest)
+        self.assertFalse((output / "manifest.json").exists())
+
+    def test_required_export_discoverability_detects_an_omitted_valid_link(self):
+        readme = self.root / "README.md"
+        readme.write_text("Synthetic supporting limits", encoding="utf-8")
+        _, files, _ = reader.prepare(self.obs, self.en, self.zh, attachments=[readme])
+        files["reader.zh-TW.html"] = files["reader.zh-TW.html"].replace(b'href="README.md"', b'href="native-reader.json"')
+        reader.verify_links(files)  # All links that remain are valid; discoverability is a separate invariant.
+        with self.assertRaisesRegex(reader.ReaderError, "required export is not discoverable"):
+            reader.verify_links(files, required_exports=["README.md"])
+
     def test_same_inputs_are_byte_deterministic_and_preserve_existing_output(self):
         inputs, files, manifest = self.prepared()
         first = reader.generate(self.root / "first", inputs, files, manifest)

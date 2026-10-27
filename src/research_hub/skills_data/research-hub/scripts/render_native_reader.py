@@ -196,8 +196,10 @@ def joined(record, sources):
 
 
 def content_view(value, language, sources, shared_claims):
-    obj(value, ["format", "language", "records"])
+    obj(value, ["format", "language", "records"], ["delivery_notes"])
     require(value["format"] == "native-reader-content/1.0" and value["language"] == language, "requested language content is missing or mismatched")
+    for note in rows(value.get("delivery_notes", [])):
+        text(note)
     found, claim_ids = {}, set()
     for record in rows(value["records"]):
         obj(record, "source_id work_id version reading_level reading_ref".split(), ["category", "summary", "limitations", "claims"])
@@ -284,7 +286,7 @@ def paragraph(label, value):
     return "<p><strong>" + esc(label) + ":</strong> " + esc(value) + "</p>"
 
 
-def reader_html(language, observations, sources, content, bibliography, languages, input_hashes):
+def reader_html(language, observations, sources, content, bibliography, languages, input_hashes, delivery_notes=(), attachments=()):
     title, source_label, needs_label, completion_label, bib_label, category_label, summary_label, claims_label, limits_label, missing, unknown = LABELS[language]
     ordered = sorted(sources.values(), key=lambda source: identity(source)[0])
     out = ["<!doctype html><html lang=\"" + language + "\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
@@ -293,7 +295,13 @@ def reader_html(language, observations, sources, content, bibliography, language
            "<p>" + esc(NOTICE[language]) + "</p><nav aria-label=\"Exports\"><a href=\"native-reader.json\">JSON</a><a href=\"references.bib\">BibTeX</a>"]
     for lang in languages:
         out.append('<a href="reader.' + lang + '.html">' + lang + "</a>")
-    out.extend(["</nav>", paragraph("Languages supplied", ", ".join(languages) or missing), paragraph("Languages not supplied", ", ".join(sorted(set(LABELS) - set(languages))) or "—"), paragraph("Brief", observations["brief"]), paragraph("Run / project", observations["run_id"] + " / " + observations["project_id"]),
+    for name in attachments:
+        out.append('<a download href="' + esc(name) + '">' + esc(name) + '</a>')
+    out.append("</nav>")
+    if delivery_notes:
+        heading = "Supplied delivery notes" if language == "en" else "提供的交付說明"
+        out.append('<section id="delivery-notes"><h2>' + heading + '</h2>' + ''.join('<p>' + esc(note) + '</p>' for note in delivery_notes) + '</section>')
+    out.extend([paragraph("Languages supplied", ", ".join(languages) or missing), paragraph("Languages not supplied", ", ".join(sorted(set(LABELS) - set(languages))) or "—"), paragraph("Brief", observations["brief"]), paragraph("Run / project", observations["run_id"] + " / " + observations["project_id"]),
                 paragraph("Distinct work IDs / source-version observations", str(len({s['work_id'] for s in ordered})) + " / " + str(len(ordered))), "</header><nav aria-label=\"Contents\"><h2>" + esc(source_label) + "</h2><ul>"])
     for source in ordered:
         out.append('<li><a href="#' + source_anchor(source) + '">' + esc(source["title"]) + " — " + esc(source["id"]) + "</a></li>")
@@ -343,7 +351,7 @@ class Navigation(HTMLParser):
             self.links.append(attrs.get("href", ""))
 
 
-def verify_links(files):
+def verify_links(files, required_exports=()):
     pages = {}
     for name, data in files.items():
         if name.endswith(".html"):
@@ -352,6 +360,7 @@ def verify_links(files):
             page.close()
             pages[name] = page
     for name, page in pages.items():
+        require(set(required_exports) <= set(page.links), "required export is not discoverable in " + name)
         for href in page.links:
             parsed = urlsplit(href)
             if parsed.scheme:
@@ -377,7 +386,7 @@ def safe_path(value, must_exist=True):
     return path
 
 
-def read_input(value):
+def read_file(value):
     path = safe_path(value)
     before = path.stat()
     require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1, "input must be a single-link regular file")
@@ -389,6 +398,11 @@ def read_input(value):
         after = os.fstat(stream.fileno())
     require(len(data) <= LIMIT, "input exceeds 4 MiB")
     require((opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns), "input changed during read")
+    return path, data
+
+
+def read_input(value):
+    path, data = read_file(value)
     def pairs(items):
         result = {}
         for key, item in items:
@@ -401,7 +415,7 @@ def read_input(value):
     return path, data, payload
 
 
-def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None):
+def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None, attachments=()):
     inputs = {"observations": read_input(observations)}
     profile = inputs["observations"][2]
     sources = observations_view(profile)
@@ -417,16 +431,33 @@ def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None
         inputs["bibliography"] = read_input(bibliography)
         bibliography_payload = inputs["bibliography"][2]
         bibliography_records = bibliography_view(bibliography_payload, sources)
+    require(isinstance(attachments, (list, tuple)) and len(attachments) <= 8, "at most 8 attachments are supported")
+    supporting_files, folded_names = {}, set()
+    for value in attachments:
+        path, data = read_file(value)
+        name = path.name
+        require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:json|md|txt)", name, flags=re.IGNORECASE), "unsafe attachment name or type")
+        require(name.casefold() not in {"native-reader.json", "manifest.json"}, "attachment collides with a generated export")
+        require(name.casefold() not in folded_names, "duplicate attachment name")
+        require("\x00" not in data.decode("utf-8-sig"), "attachment must be UTF-8 text without NUL")
+        folded_names.add(name.casefold())
+        supporting_files[name] = data
+        inputs["attachment:" + name] = path, data, None
+    attachment_names = sorted(supporting_files)
     input_hashes = {key: sha(item[1]) for key, item in inputs.items()}
     languages = sorted(content)
     exported = {"format": "native-reader-presentation/1.0", "observations": profile, "content": presentation, "bibliography": bibliography_payload,
                 "languages_supplied": languages, "languages_not_supplied": sorted(set(LABELS) - set(languages)),
                 "bib_keys": {key: bib_key(sources[key]) for key in sorted(bibliography_records)},
                 "validation_scope": "presentation fields, exact references and generated links only; native evidence checker and semantic verification not performed"}
+    if attachment_names:
+        exported["attachments"] = [{"name": name, "bytes": len(supporting_files[name]), "sha256": sha(supporting_files[name])} for name in attachment_names]
     files = {"native-reader.json": canonical(exported), "references.bib": bibtex(sources, bibliography_records)}
+    files.update(supporting_files)
     for language in languages:
-        files["reader." + language + ".html"] = reader_html(language, profile, sources, content[language], bibliography_records, languages, input_hashes)
-    verify_links(files)
+        files["reader." + language + ".html"] = reader_html(language, profile, sources, content[language], bibliography_records, languages, input_hashes,
+            presentation[language].get("delivery_notes", []), attachment_names)
+    verify_links(files, required_exports=["native-reader.json", "references.bib", *attachment_names])
     manifest = {"format": "native-reader-output/1.0", "status": "complete", "inputs": {key: {"name": item[0].name, "bytes": len(item[1]), "sha256": sha(item[1])} for key, item in inputs.items()},
                 "outputs": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in sorted(files.items())},
                 "languages": languages, "source_records": len(sources), "distinct_work_ids": len({s["work_id"] for s in sources.values()}),
@@ -451,7 +482,7 @@ def generate(output, inputs, files, manifest):
     for name, data in sorted(files.items()):
         write_file(path / name, data)
     for input_path, original, _ in inputs.values():
-        require(read_input(input_path)[1] == original, "input changed during generation; output remains incomplete")
+        require(read_file(input_path)[1] == original, "input changed during generation; output remains incomplete")
     write_file(path / "manifest.json", canonical(manifest))  # Completion record is last.
     return path
 
@@ -462,12 +493,13 @@ def main(argv=None):
     parser.add_argument("--content-en", type=Path)
     parser.add_argument("--content-zh-TW", dest="content_zh_tw", type=Path)
     parser.add_argument("--bibliography", type=Path)
+    parser.add_argument("--attachment", action="append", type=Path, default=[], help="explicit supporting UTF-8 JSON/Markdown/text file; repeat up to 8 times")
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(argv)
     try:
         require(args.check_only or args.output_dir is not None, "--output-dir is required for generation")
-        inputs, files, manifest = prepare(args.observations, args.content_en, args.content_zh_tw, args.bibliography)
+        inputs, files, manifest = prepare(args.observations, args.content_en, args.content_zh_tw, args.bibliography, args.attachment)
         if args.check_only:
             print(json.dumps({"status": "render-inputs-valid", "writes": False, "manifest_preview": manifest}, ensure_ascii=True, sort_keys=True))
         else:

@@ -197,6 +197,7 @@ Presentation input is a view wrapper, not a second research-evidence schema:
 {
   "format": "native-reader-content/1.0",
   "language": "en",
+  "delivery_notes": ["Supplied cohort counts, decision boundaries and unknowns; not inferred by the renderer."],
   "records": [{
     "source_id": "S1", "work_id": "W1", "version": null,
     "reading_level": "excerpt", "reading_ref": "saved-reading:S1",
@@ -211,6 +212,14 @@ Presentation input is a view wrapper, not a second research-evidence schema:
   }]
 }
 ```
+
+The optional root `delivery_notes` array contains plain supplied text, displayed
+near the top of that language's reader. Use existing recorded cohort counts,
+assessment limits and unknown totals when relevant; retain work-versus-version
+distinctions and overlapping categories. Notes are not computed inclusion or
+reading decisions, new summaries or translations. Missing notes/languages stay
+missing. Shared machine-readable count text may be copied unchanged to both
+language wrappers without claiming translation parity.
 
 The first five record fields are mandatory and join exactly to an existing
 observation source/work/nullable-version and its recorded reading scope/reference.
@@ -234,6 +243,20 @@ export. Every supplied bibliography record is retained regardless of access or
 reading level. Source/work/version joins, rather than titles, produce stable
 distinct anchors and BibTeX keys, including separate versions of one work.
 
+To make existing assessment/provenance sidecars and delivery instructions
+discoverable, the agent may explicitly repeat `--attachment PATH` up to eight
+times on either command above. Each selected file must be ordinary unlinked
+UTF-8 text without NUL, at most 4 MiB, with an ASCII basename of letters,
+digits, dots, underscores or hyphens (starting with a letter/digit) and a
+`.json`, `.md` or `.txt` suffix. Generated-export names and case-insensitive
+duplicate basenames are refused. No directory scan or automatic file selection
+occurs. Attachment JSON is supporting text, not another validated evidence
+schema. Copies retain their exact bytes, input/output hashes and a download link
+in every supplied language reader; a missing required export link fails the
+presentation check. The renderer does not interpret assessment statuses or
+decide eligibility. Select only files authorized for this particular delivery;
+local generation does not authorize publication of their contents.
+
 Inputs are bounded to 4 MiB each, reject duplicate JSON keys/nonfinite values,
 and must be ordinary unlinked files. Bibliographic HTTP(S) links are checked;
 unsafe URL schemes are refused, and provenance references stay escaped text.
@@ -247,7 +270,8 @@ file existence as completion; choose a new output set after reconciliation.
 
 Outputs are `reader.en.html` and/or `reader.zh-TW.html` only for supplied
 languages, `references.bib`, `native-reader.json` (original observations plus
-separate presentation inputs), and a deterministic manifest of input/output
+separate presentation inputs and any selected attachment identities), selected
+supporting files, and a deterministic manifest of input/output
 hashes. Check local fragment/export links and manifest hashes before handing
 over the exact HTML paths. Generated readers are local artifacts, not permission
 to publish or upload source material. PDF generation and actual browser, assistive
