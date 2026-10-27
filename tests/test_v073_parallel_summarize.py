@@ -161,7 +161,7 @@ def test_parallel_writes_produce_same_apply_result_as_sequential(tmp_path, monke
 def test_parallel_writes_preserve_per_paper_rollback_invariant(tmp_path, monkeypatch):
     import research_hub.summarize as summarize
     from research_hub.summary_journal import SummaryJournal
-    from _journal_boundary_diagnostics import JournalBoundaryDiagnostics
+    from tests._journal_boundary_diagnostics import JournalBoundaryDiagnostics
 
     cfg = _build_cfg(tmp_path, "rollback", 5)
     trace = JournalBoundaryDiagnostics(monkeypatch.setattr, SummaryJournal,

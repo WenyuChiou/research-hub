@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from _journal_boundary_diagnostics import JournalBoundaryDiagnostics, _native_metadata
+from tests._journal_boundary_diagnostics import JournalBoundaryDiagnostics, _native_metadata
 
 
 class BoundaryDiagnosticsTests(unittest.TestCase):
