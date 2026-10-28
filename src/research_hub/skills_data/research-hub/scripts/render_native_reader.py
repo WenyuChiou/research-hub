@@ -552,6 +552,14 @@ def read_input(value):
     return path, data, payload
 
 
+def validate_attachment_name(name):
+    require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:json|md|txt|pdf)", name, flags=re.IGNORECASE | re.ASCII), "unsafe attachment name or type")
+    stem = name.split(".", 1)[0].upper()
+    reserved = {"CON", "PRN", "AUX", "NUL"} | {f"{prefix}{number}" for prefix in ("COM", "LPT") for number in range(1, 10)}
+    require(stem not in reserved, "Windows reserved attachment name")
+    return name
+
+
 def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None, attachments=()):
     inputs = {"observations": read_input(observations)}
     profile = inputs["observations"][2]
@@ -573,7 +581,7 @@ def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None
     for value in attachments:
         path, data = read_file(value)
         name = path.name
-        require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:json|md|txt|pdf)", name, flags=re.IGNORECASE), "unsafe attachment name or type")
+        validate_attachment_name(name)
         require(name.casefold() not in {"native-reader.json", "manifest.json"}, "attachment collides with a generated export")
         require(name.casefold() not in folded_names, "duplicate attachment name")
         if path.suffix.lower() != ".pdf":
