@@ -20,14 +20,21 @@ PIN = json.loads((ROOT / "docs/workspace-writing-source.json").read_text(encodin
 def test_bilingual_installation_uses_immutable_sources():
     assert PIN["source_status"] == "merged-main"
     assert PIN["runtime_dependency"] is False
-    for name in ("README.md", "README.zh-TW.md", "docs/workspace-guide.md", "docs/workspace-guide.zh-TW.md"):
+    # The front-page demo uses a newer, independently verified source pin;
+    # the historical guide and producer manifest retain their original pin.
+    for name, guide in (("README.md", "docs/workspace-guide.md"),
+                        ("README.zh-TW.md", "docs/workspace-guide.zh-TW.md")):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "git checkout --detach c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a" in text
+        assert f"{guide}#writing-adapter-preview" in text
+        assert "git clone -b codex/" not in text
+        assert "-b codex/writing-workspace-adapter" not in text
+    for name in ("docs/workspace-guide.md", "docs/workspace-guide.zh-TW.md"):
         text = (ROOT / name).read_text(encoding="utf-8")
         assert f"git checkout --detach {PIN['hub_preview_commit']}" in text
         assert "git clone -b codex/" not in text
         assert "-b codex/writing-workspace-adapter" not in text
-        assert PIN["commit"] in text
-    for name in ("docs/workspace-guide.md", "docs/workspace-guide.zh-TW.md"):
-        text = (ROOT / name).read_text(encoding="utf-8")
+        assert f"git -C ../academic-writing-adapter checkout --detach {PIN['commit']}" in text
         assert PIN["adapter_manifest_sha256"] in text
         assert PIN["bundle_sha256"] in text
 
