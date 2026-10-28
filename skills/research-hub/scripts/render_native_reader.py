@@ -296,7 +296,8 @@ def reader_html(language, observations, sources, content, bibliography, language
     for lang in languages:
         out.append('<a href="reader.' + lang + '.html">' + lang + "</a>")
     for name in attachments:
-        out.append('<a download href="' + esc(name) + '">' + esc(name) + '</a>')
+        label = ("Supplied PDF attachment (language/content not verified): " if language == "en" else "提供的 PDF 附件（語言及內容未經驗證）：") if name.lower().endswith(".pdf") else ""
+        out.append('<a download href="' + esc(name) + '">' + esc(label + name) + '</a>')
     out.append("</nav>")
     if delivery_notes:
         heading = "Supplied delivery notes" if language == "en" else "提供的交付說明"
@@ -440,10 +441,11 @@ def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None
     for value in attachments:
         path, data = read_file(value)
         name = path.name
-        require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:json|md|txt)", name, flags=re.IGNORECASE), "unsafe attachment name or type")
+        require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:json|md|txt|pdf)", name, flags=re.IGNORECASE), "unsafe attachment name or type")
         require(name.casefold() not in {"native-reader.json", "manifest.json"}, "attachment collides with a generated export")
         require(name.casefold() not in folded_names, "duplicate attachment name")
-        require("\x00" not in data.decode("utf-8-sig"), "attachment must be UTF-8 text without NUL")
+        if path.suffix.lower() != ".pdf":
+            require("\x00" not in data.decode("utf-8-sig"), "attachment must be UTF-8 text without NUL")
         folded_names.add(name.casefold())
         supporting_files[name] = data
         inputs["attachment:" + name] = path, data, None
@@ -497,7 +499,7 @@ def main(argv=None):
     parser.add_argument("--content-en", type=Path)
     parser.add_argument("--content-zh-TW", dest="content_zh_tw", type=Path)
     parser.add_argument("--bibliography", type=Path)
-    parser.add_argument("--attachment", action="append", type=Path, default=[], help="explicit supporting UTF-8 JSON/Markdown/text file; repeat up to 8 times")
+    parser.add_argument("--attachment", action="append", type=Path, default=[], help="explicit supporting UTF-8 JSON/Markdown/text or opaque PDF file; repeat up to 8 times")
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(argv)

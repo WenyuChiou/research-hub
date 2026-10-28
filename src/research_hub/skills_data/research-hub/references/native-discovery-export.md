@@ -263,10 +263,14 @@ distinct anchors and BibTeX keys, including separate versions of one work.
 
 To make existing assessment/provenance sidecars and delivery instructions
 discoverable, the agent may explicitly repeat `--attachment PATH` up to eight
-times on either command above. Each selected file must be ordinary unlinked
-UTF-8 text without NUL, at most 4 MiB, with an ASCII basename of letters,
-digits, dots, underscores or hyphens (starting with a letter/digit) and a
-`.json`, `.md` or `.txt` suffix. Generated-export names and case-insensitive
+times on either command above. Each selected file must be an ordinary single-link regular file, at most 4 MiB,
+with an ASCII basename of letters, digits, dots, underscores or hyphens (starting
+with a letter/digit) and a `.json`, `.md`, `.txt` or `.pdf` suffix (case-insensitive).
+JSON, Markdown and text attachments must be UTF-8 without NUL. PDF attachments
+are read and copied as opaque bytes; their validity, contents, language and
+correspondence to a report are not verified. No PDF is generated, parsed,
+translated or treated as evidence of full-text reading. PDF download links are
+labeled as supplied attachments rather than verified matching-language reports. Generated-export names and case-insensitive
 duplicate basenames are refused. No directory scan or automatic file selection
 occurs. Attachment JSON is supporting text, not another validated evidence
 schema. Copies retain their exact bytes, input/output hashes and a download link
@@ -283,8 +287,9 @@ Check-only writes nothing and does not create an output directory. Generation
 requires a new output directory with an existing unlinked parent; existing
 outputs, traversal and input/output overlap are refused. Each directory is a
 new staged output set, incomplete until its final `manifest.json` is fully
-written. On interruption, retain the partial directory without treating HTML
-file existence as completion; choose a new output set after reconciliation.
+written. If an input changes during the final recheck or generation is interrupted,
+partial output files may already exist; retain the partial directory without
+treating HTML file existence as completion; choose a new output set after reconciliation.
 
 A parsed `status: complete` manifest and matching input and output hashes
 establish only present artifact consistency; they do not establish that the
