@@ -370,6 +370,288 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.assertIn(self.observations["completion"]["reason"], zh)
         self.assertIn(self.observations["needs"][0]["text"], zh)
 
+    def test_observation_translations_are_bound_labeled_and_additive(self):
+        self.observations['needs'].append({'id': 'N2', 'text': 'Original residual need', 'families': [], 'status': 'unresolved'})
+        self.observations['completion']['residual_need_ids'] = ['N2']
+        self.observations['completion']['status'] = 'partial'
+        self.save_inputs()
+        original_hash = hashlib.sha256(self.obs.read_bytes()).hexdigest()
+        one, two = self.observations['sources'][:2]
+        for language in ('en', 'zh-TW'):
+            self.content[language]['format'] = 'native-reader-content/1.1'
+            self.content[language]['observation_translations'] = {
+                'observations_sha256': original_hash,
+                'run_id': self.observations['run_id'], 'project_id': self.observations['project_id'],
+                'brief': language + ' supplied brief <script>bad</script>',
+                'completion_reason': language + ' supplied reason',
+                'needs': [{'id': 'N2', 'text': language + ' translated residual need'}],
+                'sources': [{'source_id': two['id'], 'work_id': two['work_id'], 'version': two['version'],
+                             'title': language + ' translated title', 'relevance': language + ' translated relevance <img src=x>'}],
+            }
+        self.save_inputs()
+        _, files, manifest = self.prepared()
+        exported = json.loads(files['native-reader.json'])
+        self.assertEqual(exported['observations'], self.observations)
+        self.assertEqual(exported['content'], self.content)
+        self.assertEqual(exported['observations']['completion']['status'], 'partial')
+        self.assertEqual(exported['observations']['completion']['residual_need_ids'], ['N2'])
+        self.assertEqual(exported['observations']['needs'][-1]['status'], 'unresolved')
+        self.assertEqual(manifest['inputs']['observations']['sha256'], original_hash)
+        for language, label, title_label in [('en', 'Supplied translation (not verified)', 'Supplied title translation (not verified)'),
+                                              ('zh-TW', '提供的翻譯（未經驗證）', '提供的標題翻譯（未經驗證）')]:
+            with self.subTest(language=language):
+                markup = files['reader.' + language + '.html'].decode()
+                self.assertIn(label, markup)
+                self.assertIn(title_label, markup)
+                self.assertIn(language + ' supplied brief &lt;script&gt;bad&lt;/script&gt;', markup)
+                self.assertIn(language + ' translated relevance &lt;img src=x&gt;', markup)
+                self.assertNotIn('<script>bad</script>', markup)
+                self.assertNotIn('<img src=x>', markup)
+                self.assertIn(self.observations['brief'], markup)
+                self.assertIn(self.observations['completion']['reason'], markup)
+                self.assertIn('Original residual need', markup)
+                self.assertIn('N2', markup)
+                self.assertIn('partial', markup)
+                self.assertIn('unresolved', markup)
+                self.assertIn(language + ' translated residual need', markup)
+                self.assertIn(language + ' supplied reason', markup)
+                brief_section = markup.split('<section id="brief">', 1)[1].split('</section>', 1)[0]
+                completion_section = markup.split('<section id="completion">', 1)[1].split('</section>', 1)[0]
+                needs_section = markup.split('<section id="needs">', 1)[1].split('</section>', 1)[0]
+                self.assertIn(language + ' supplied brief', brief_section)
+                self.assertIn(self.observations['brief'], brief_section)
+                self.assertIn(language + ' supplied reason', completion_section)
+                self.assertIn(self.observations['completion']['reason'], completion_section)
+                self.assertIn('N2', needs_section)
+                self.assertIn('unresolved', needs_section)
+                self.assertIn(language + ' translated residual need', needs_section)
+                target = markup.split('<article id="' + reader.source_anchor(two) + '">', 1)[1].split('</article>', 1)[0]
+                self.assertIn(two['title'], target)
+                self.assertIn(two['relevance'], target)
+                self.assertIn(language + ' translated title', target)
+                self.assertIn(language + ' translated relevance', target)
+                other = markup.split('<article id="' + reader.source_anchor(one) + '">', 1)[1].split('</article>', 1)[0]
+                self.assertNotIn(language + ' translated title', other)
+                self.assertNotIn(language + ' translated relevance', other)
+                reader.verify_links(files)
+
+    def test_translation_titles_in_indexes_bind_to_exact_version_and_language(self):
+        self.observations['needs'].append({'id': 'N2', 'text': 'Original residual need', 'families': [], 'status': 'unresolved'})
+        self.observations['completion']['residual_need_ids'] = ['N2']
+        self.save_inputs()
+        one, two = self.observations['sources'][:2]
+        for language in ('en', 'zh-TW'):
+            self.content[language]['format'] = 'native-reader-content/1.1'
+            self.content[language]['observation_translations'] = {
+                'observations_sha256': hashlib.sha256(self.obs.read_bytes()).hexdigest(),
+                'run_id': self.observations['run_id'], 'project_id': self.observations['project_id'],
+                'brief': language + ' translated brief', 'completion_reason': language + ' translated reason',
+                'needs': [{'id': 'N2', 'text': language + ' translated need'}],
+                'sources': [{'source_id': two['id'], 'work_id': two['work_id'], 'version': two['version'],
+                             'title': language + ' title <img src=x>', 'relevance': language + ' relevance'},
+                            {'source_id': one['id'], 'work_id': one['work_id'], 'version': one['version'],
+                             'title': language + ' S1 title'}]}
+        self.save_inputs()
+        _, files, _ = self.prepared()
+
+        class LangAndLinks(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.stack = []
+                self.text = []
+                self.links = []
+                self.anchor = None
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                lang = attrs.get('lang', self.stack[-1][1] if self.stack else None)
+                if tag not in {'meta', 'link', 'br', 'hr', 'img', 'input'}:
+                    self.stack.append((tag, lang))
+                if tag == 'a':
+                    self.anchor = [attrs.get('href'), []]
+            def handle_data(self, value):
+                lang = self.stack[-1][1] if self.stack else None
+                if self.text and self.text[-1][1] == lang:
+                    self.text[-1] = (self.text[-1][0] + value, lang)
+                else:
+                    self.text.append((value, lang))
+                if self.anchor is not None:
+                    self.anchor[1].append(value)
+            def handle_endtag(self, tag):
+                if tag == 'a' and self.anchor is not None:
+                    self.links.append((self.anchor[0], ''.join(self.anchor[1])))
+                    self.anchor = None
+                while self.stack:
+                    current, _ = self.stack.pop()
+                    if current == tag:
+                        break
+
+        for language, label in [('en', 'Supplied title translation (not verified)'),
+                                ('zh-TW', '提供的標題翻譯（未經驗證）')]:
+            with self.subTest(language=language):
+                markup = files['reader.' + language + '.html'].decode()
+                self.assertIn('title &lt;img src=x&gt;', markup)
+                self.assertNotIn('<img src=x>', markup)
+                parsed = LangAndLinks()
+                parsed.feed(markup)
+                parsed.close()
+                for original in (self.observations['brief'], self.observations['completion']['reason'],
+                                 'Original residual need', two['title'], two['relevance']):
+                    self.assertTrue(any(original in text and lang == '' for text, lang in parsed.text))
+                for translation in (language + ' translated brief', language + ' translated reason',
+                                    language + ' translated need', language + ' title <img src=x>', language + ' relevance'):
+                    self.assertTrue(any(translation in text and lang == language for text, lang in parsed.text))
+                for label_text in (label,):
+                    self.assertTrue(any(label_text in text and lang == language for text, lang in parsed.text))
+                for section in ('categories', 'literature'):
+                    fragment = markup.split('<section id="' + section + '">', 1)[1]
+                    if section == 'categories':
+                        fragment = fragment.split('<section id="literature">', 1)[0]
+                    else:
+                        fragment = fragment.split('</section>', 1)[0]
+                    links = LangAndLinks()
+                    links.feed(fragment)
+                    target = [text for href, text in links.links if href == '#' + reader.source_anchor(two)]
+                    self.assertEqual(len(target), 1)
+                    self.assertIn(two['title'], target[0])
+                    self.assertIn(label, target[0])
+                    self.assertIn(language + ' title <img src=x>', target[0])
+                    self.assertIn(two['id'], target[0])
+                    self.assertIn(two['version'], target[0])
+                    other = [text for href, text in links.links if href == '#' + reader.source_anchor(one)]
+                    self.assertEqual(len(other), 1)
+                    self.assertIn(language + ' S1 title', other[0])
+                    self.assertIn(one['id'], other[0])
+                    self.assertIn(one['version'], other[0])
+                    self.assertNotIn(language + ' title <img src=x>', other[0])
+                    if section == 'literature':
+                        work = [text for href, text in links.links if href == '#work-' + reader.token(one['work_id'])]
+                        self.assertEqual(len(work), 1)
+                        self.assertNotIn(language + ' S1 title', work[0])
+                        self.assertNotIn(language + ' title <img src=x>', work[0])
+                        self.assertNotIn(label, work[0])
+        reader.verify_links(files)
+
+    def test_observation_translation_overlay_optional_and_legacy_unchanged(self):
+        self.save_inputs()
+        _, original, original_manifest = self.prepared()
+        for language in ('en', 'zh-TW'):
+            self.content[language]['format'] = 'native-reader-content/1.1'
+        self.save_inputs()
+        _, newer, newer_manifest = self.prepared()
+        # Only the content input hash in the footer changes when the format
+        # marker changes; the actual reader content and bibliography stay equal.
+        for key in ('reader.en.html', 'reader.zh-TW.html'):
+            self.assertEqual(newer[key].split(b'<footer>')[0], original[key].split(b'<footer>')[0])
+            self.assertNotIn(b'<span lang="">', newer[key])
+        self.assertEqual(newer['references.bib'], original['references.bib'])
+        self.assertEqual(json.loads(newer['native-reader.json'])['observations'], self.observations)
+        self.assertEqual(newer_manifest['inputs']['observations'], original_manifest['inputs']['observations'])
+        for language in ('en', 'zh-TW'):
+            self.content[language]['format'] = 'native-reader-content/1.0'
+            self.content[language]['observation_translations'] = {'observations_sha256': hashlib.sha256(self.obs.read_bytes()).hexdigest(),
+                'run_id': self.observations['run_id'], 'project_id': self.observations['project_id']}
+        self.rejected()
+
+    def test_sparse_translation_matches_unknown_version_without_invention(self):
+        self.save_inputs()
+        source = self.observations['sources'][2]
+        self.assertIsNone(source['version'])
+        self.content['en']['format'] = 'native-reader-content/1.1'
+        self.content['en']['observation_translations'] = {
+            'observations_sha256': hashlib.sha256(self.obs.read_bytes()).hexdigest(),
+            'run_id': self.observations['run_id'], 'project_id': self.observations['project_id'],
+            'sources': [{'source_id': source['id'], 'work_id': source['work_id'],
+                         'version': None, 'relevance': 'only translated relevance'}],
+        }
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        markup = files['reader.en.html'].decode()
+        source_page = markup.split('<article id="' + reader.source_anchor(source) + '">', 1)[1].split('</article>', 1)[0]
+        self.assertIn('only translated relevance', source_page)
+        self.assertIn('Unknown version (null)', source_page)
+        self.assertIn(source['relevance'], source_page)
+        self.assertIn('Original title', source_page)
+        self.assertNotIn('Supplied title translation (not verified)', source_page)
+        self.assertNotIn('only translated relevance', files['reader.zh-TW.html'].decode())
+        self.assertEqual(json.loads(files['native-reader.json'])['observations'], self.observations)
+
+    def test_observation_translation_rejects_mismatch_and_scientific_overrides(self):
+        self.save_inputs()
+        source = self.observations['sources'][0]
+        original = {'observations_sha256': hashlib.sha256(self.obs.read_bytes()).hexdigest(),
+                    'run_id': self.observations['run_id'], 'project_id': self.observations['project_id'],
+                    'brief': 'translated', 'needs': [{'id': 'N1', 'text': 'need'}],
+                    'sources': [{'source_id': source['id'], 'work_id': source['work_id'], 'version': source['version'], 'relevance': 'relevance'}]}
+        cases = [
+            lambda v: v.update(observations_sha256='0' * 64),
+            lambda v: v.update(observations_sha256='bad'),
+            lambda v: v.update(run_id='wrong-run'),
+            lambda v: v.update(project_id='wrong-project'),
+            lambda v: v.update(language='zh-TW'),
+            lambda v: v.update(status='bounded-complete'),
+            lambda v: v.update(residual_need_ids=[]),
+            lambda v: v['needs'].append({'id': 'N1', 'text': 'duplicate'}),
+            lambda v: v['needs'][0].update(id='N-missing'),
+            lambda v: v['needs'][0].update(status='covered'),
+            lambda v: v['sources'].append(dict(v['sources'][0])),
+            lambda v: v['sources'][0].update(source_id='missing-source'),
+            lambda v: v['sources'][0].update(work_id='wrong-work'),
+            lambda v: v['sources'][0].update(version='wrong-version'),
+            lambda v: v['sources'][0].update(version=None),
+            lambda v: v['sources'][0].pop('source_id'),
+            lambda v: v['sources'][0].update(reading_level='full-text'),
+            lambda v: v['sources'][0].update(attempt_ids=[]),
+            lambda v: v.update(needs='not-an-array'),
+            lambda v: v.update(sources='not-an-array'),
+            lambda v: v.update(brief='bad\x00control'),
+            lambda v: v.update(brief=''),
+            lambda v: v.pop('observations_sha256'),
+            lambda v: v.pop('run_id'),
+            lambda v: v.pop('project_id'),
+        ]
+        self.content['en']['format'] = 'native-reader-content/1.1'
+        for index, mutate in enumerate(cases):
+            with self.subTest(case=index):
+                value = copy.deepcopy(original)
+                mutate(value)
+                self.content['en']['observation_translations'] = value
+                self.rejected()
+        self.content['en']['observation_translations'] = copy.deepcopy(original)
+        self.content['en']['language'] = 'zh-TW'
+        self.rejected()
+        self.content['en']['language'] = 'en'
+        self.save_inputs()
+        # Semantically identical JSON with distinct input bytes must fail binding.
+        self.obs.write_bytes(self.obs.read_bytes() + b'\n')
+        with self.assertRaises((reader.ReaderError, ValueError, TypeError)):
+            self.prepared()
+
+    def test_translation_overlay_duplicate_json_fields_are_rejected(self):
+        self.save_inputs()
+        self.content['en']['format'] = 'native-reader-content/1.1'
+        self.content['en']['observation_translations'] = {
+            'observations_sha256': hashlib.sha256(self.obs.read_bytes()).hexdigest(),
+            'run_id': self.observations['run_id'], 'project_id': self.observations['project_id'],
+            'brief': 'translated'}
+        self.save_inputs()
+        raw = self.en.read_text(encoding='utf-8')
+        self.assertEqual(raw.count('"brief": "translated"'), 1)
+        raw = raw.replace('"brief": "translated"', '"brief": "translated", "brief": "duplicate"')
+        self.en.write_text(raw, encoding='utf-8')
+        with self.assertRaisesRegex(reader.ReaderError, 'duplicate JSON key'):
+            self.prepared()
+
+    def test_invalid_overlay_fails_without_creating_output(self):
+        self.content['en']['format'] = 'native-reader-content/1.1'
+        self.content['en']['observation_translations'] = {'observations_sha256': '0' * 64,
+            'run_id': self.observations['run_id'], 'project_id': self.observations['project_id'], 'brief': 'not bound'}
+        self.save_inputs()
+        output = self.root / 'must-not-be-created'
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = reader.main(['--observations', str(self.obs), '--content-en', str(self.en), '--output-dir', str(output)])
+        self.assertNotEqual(code, 0)
+        self.assertFalse(output.exists())
+
     def test_category_label_is_escaped_and_unclassified_source_not_invented(self):
         self.content["en"]["records"][0]["category"]["label"] = '<svg onload="alert(1)">'
         self.save_inputs()

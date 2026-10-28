@@ -195,9 +195,43 @@ def joined(record, sources):
     return source
 
 
-def content_view(value, language, sources, shared_claims):
-    obj(value, ["format", "language", "records"], ["delivery_notes"])
-    require(value["format"] == "native-reader-content/1.0" and value["language"] == language, "requested language content is missing or mismatched")
+def observation_translations_view(value, observations, observations_sha256, sources):
+    """Bind caller-supplied presentation text to one exact observation snapshot."""
+    obj(value, ["observations_sha256", "run_id", "project_id"], ["brief", "completion_reason", "needs", "sources"])
+    require(value["observations_sha256"] == observations_sha256, "translation observation hash mismatch")
+    require(value["run_id"] == observations["run_id"] and value["project_id"] == observations["project_id"], "translation run/project mismatch")
+    for field in ("brief", "completion_reason"):
+        if field in value:
+            text(value[field])
+    needs = indexed(value.get("needs", []), "id")
+    original_needs = {item["id"] for item in observations["needs"]}
+    for item in needs.values():
+        obj(item, ["id", "text"])
+        require(item["id"] in original_needs, "unknown translated need")
+        text(item["text"])
+    translated_sources = {}
+    for item in rows(value.get("sources", [])):
+        obj(item, ["source_id", "work_id", "version"], ["title", "relevance"])
+        source = joined(item, sources)
+        require(source["id"] not in translated_sources, "duplicate translated source")
+        require("title" in item or "relevance" in item, "translated source has no text")
+        for field in ("title", "relevance"):
+            if field in item:
+                text(item[field])
+        translated_sources[source["id"]] = item
+    return {"brief": value.get("brief"), "completion_reason": value.get("completion_reason"), "needs": needs, "sources": translated_sources}
+
+
+def content_view(value, language, sources, shared_claims, observations, observations_sha256):
+    version = value.get("format") if isinstance(value, dict) else None
+    optional = ["delivery_notes"]
+    if version == "native-reader-content/1.1":
+        optional.append("observation_translations")
+    obj(value, ["format", "language", "records"], optional)
+    require(isinstance(version, str) and version in {"native-reader-content/1.0", "native-reader-content/1.1"} and value["language"] == language, "requested language content is missing or mismatched")
+    translations = None
+    if "observation_translations" in value:
+        translations = observation_translations_view(value["observation_translations"], observations, observations_sha256, sources)
     for note in rows(value.get("delivery_notes", [])):
         text(note)
     found, claim_ids = {}, set()
@@ -228,7 +262,7 @@ def content_view(value, language, sources, shared_claims):
             require(key not in shared_claims or shared_claims[key] == binding, "cross-language claim identity/scope mismatch")
             shared_claims[key] = binding
         found[source["id"]] = record
-    return found
+    return found, translations
 
 
 def bibliography_view(value, sources):
@@ -304,7 +338,7 @@ def paragraph(label, value):
     return "<p><strong>" + esc(label) + ":</strong> " + esc(value) + "</p>"
 
 
-def reader_html(language, observations, sources, content, bibliography, languages, input_hashes, delivery_notes=(), attachments=()):
+def reader_html(language, observations, sources, content, bibliography, languages, input_hashes, delivery_notes=(), attachments=(), translations=None):
     title, source_label, needs_label, completion_label, bib_label, category_label, summary_label, claims_label, limits_label, missing, unknown = LABELS[language]
     zh = language == "zh-TW"
     def ui(en, tw):
@@ -315,8 +349,25 @@ def reader_html(language, observations, sources, content, bibliography, language
                  "public": "公開", "restricted": "受限", "unknown": "未知"}
     def status(value):
         return status_zh[value] + " (" + value + ")" if zh else value
+    has_translations = translations is not None
+    def original_value(value):
+        # The observations schema does not identify the language of free text.
+        return '<span lang="">' + esc(value) + '</span>' if has_translations else esc(value)
+    def original_paragraph(label, value):
+        if not has_translations:
+            return paragraph(label, value)
+        return '<p><strong>' + esc(label) + ':</strong> ' + original_value(value) + '</p>'
     def original_title(value):
-        return ui('Original title: ', '原始標題：') + esc(value)
+        return ui('Original title: ', '原始標題：') + original_value(value)
+    def supplied_translation(value, label=None):
+        if value is None:
+            return ""
+        return paragraph(label or ui('Supplied translation (not verified)', '提供的翻譯（未經驗證）'), value)
+    translations = translations or {"brief": None, "completion_reason": None, "needs": {}, "sources": {}}
+    def index_title(source):
+        translated = translations['sources'].get(source['id'], {}).get('title')
+        extra = (' — ' + ui('Supplied title translation (not verified): ', '提供的標題翻譯（未經驗證）：') + esc(translated)) if translated is not None else ''
+        return original_title(source['title']) + extra
     def back():
         return '<p><a href="#contents">' + ui('Back to contents', '返回目錄') + '</a></p>'
     ordered = sorted(sources.values(), key=lambda source: identity(source)[0])
@@ -340,16 +391,17 @@ def reader_html(language, observations, sources, content, bibliography, language
         label = ui("Supplied PDF attachment (language/content not verified): ", "提供的 PDF 附件（語言及內容未經驗證）：") if name.lower().endswith(".pdf") else ""
         out.append('<a download href="' + esc(name) + '">' + esc(label + name) + '</a>')
     out.extend(["</nav>", paragraph(ui("Languages supplied", "已提供的語言"), ", ".join(languages) or missing), paragraph(ui("Languages not supplied", "未提供的語言"), ", ".join(sorted(set(LABELS) - set(languages))) or "—"), "</header><main id=\"main\">",
-                '<section id="brief"><h2>' + ui('Research brief', '研究簡述') + '</h2>', paragraph(ui('Original brief', '原始研究簡述'), observations['brief']),
+                '<section id="brief"><h2>' + ui('Research brief', '研究簡述') + '</h2>', supplied_translation(translations['brief']) + original_paragraph(ui('Original brief', '原始研究簡述'), observations['brief']),
                 paragraph(ui('Run / project', '執行 / 專案'), observations['run_id'] + ' / ' + observations['project_id']),
                 paragraph(ui('Distinct work IDs / source-version observations', '不同作品 ID / 來源版本紀錄'), str(len(works)) + ' / ' + str(len(ordered))), '</section>',
                 '<section id="completion"><h2>' + esc(completion_label) + '</h2>'])
     completion = observations['completion']
-    out.extend([paragraph(ui('Recorded status', '紀錄狀態'), status(completion['status'])), paragraph(ui('Original recorded reason', '原始紀錄原因'), completion['reason']),
+    out.extend([paragraph(ui('Recorded status', '紀錄狀態'), status(completion['status'])), supplied_translation(translations['completion_reason']) + original_paragraph(ui('Original recorded reason', '原始紀錄原因'), completion['reason']),
                 paragraph(ui('Residual need IDs', '剩餘需求 ID'), ', '.join(completion['residual_need_ids']) or '—'), '</section>',
                 '<section id="needs"><h2>' + esc(needs_label) + '</h2>'])
     for need in observations['needs']:
-        out.append(paragraph(need['id'] + ' / ' + status(need['status']) + ' / ' + ui('original', '原文'), need['text']))
+        translated_need = translations['needs'].get(need['id'])
+        out.append(supplied_translation(translated_need['text'] if translated_need else None, need['id'] + ' / ' + ui('Supplied translation (not verified)', '提供的翻譯（未經驗證）')) + original_paragraph(need['id'] + ' / ' + status(need['status']) + ' / ' + ui('original', '原文'), need['text']))
     out.extend(['</section><nav id="contents" aria-label="' + ui('Contents', '目錄') + '"><h2>' + ui('Contents', '目錄') + '</h2>',
                 '<a href="#categories">' + ui('Provided categories', '提供的分類') + '</a><a href="#literature">' + ui('Works and versions', '作品與版本') + '</a><a href="#bibliography">' + esc(bib_label) + '</a><a href="#delivery-notes">' + ui('Appendix', '附錄') + '</a></nav>',
                 '<section id="categories"><h2>' + ui('Provided categories', '提供的分類') + '</h2><p>' + ui('Labels are supplied presentation labels, not scientific classifications or inclusion decisions.', '分類名稱僅為提供的呈現標籤，不代表科學分類或納入決定。') + '</p>'])
@@ -358,21 +410,22 @@ def reader_html(language, observations, sources, content, bibliography, language
     for label, category_sources in sorted(categories.items()):
         out.append('<h3>' + esc(label) + '</h3><ul>')
         for source in category_sources:
-            out.append('<li><a href="#' + source_anchor(source) + '">' + original_title(source["title"]) + " — " + esc(source["work_id"]) + " / " + esc(source["id"]) + " / " + esc(source["version"] if source["version"] is not None else unknown) + '</a></li>')
+            out.append('<li><a href="#' + source_anchor(source) + '">' + index_title(source) + " — " + esc(source["work_id"]) + " / " + esc(source["id"]) + " / " + esc(source["version"] if source["version"] is not None else unknown) + '</a></li>')
         out.append('</ul>')
     out.extend([back(), '</section><section id="literature"><h2>' + ui('Works and versions', '作品與版本') + '</h2><ul>'])
     for work_id, versions in sorted(works.items()):
         out.append('<li><a href="#' + work_anchor(work_id) + '">' + original_title(versions[0]['title']) + ' — ' + esc(work_id) + '</a><ul>')
         for source in versions:
-            out.append('<li><a href="#' + source_anchor(source) + '">' + original_title(source['title']) + ' — ' + esc(source['id']) + ' / ' + esc(source['version'] if source['version'] is not None else unknown) + '</a></li>')
+            out.append('<li><a href="#' + source_anchor(source) + '">' + index_title(source) + ' — ' + esc(source['id']) + ' / ' + esc(source['version'] if source['version'] is not None else unknown) + '</a></li>')
         out.append('</ul></li>')
     out.append('</ul></section>')
     for work_id, versions in sorted(works.items()):
         out.append('<section id="' + work_anchor(work_id) + '"><h2>' + ui('Work', '作品') + ': ' + esc(work_id) + '</h2>')
         for source in versions:
             record = content.get(source['id'], {})
-            out.extend(['<article id="' + source_anchor(source) + '"><h3>' + original_title(source['title']) + '</h3>', paragraph(ui('Source / work', '來源 / 作品'), source['id'] + ' / ' + source['work_id']), paragraph(ui('Version', '版本'), source['version'] if source['version'] is not None else unknown),
-                        '<div class="scope">' + paragraph(ui('Recorded reading level / access', '紀錄的閱讀層級 / 取得狀態'), status(source['reading_level']) + ' / ' + status(source['access'])) + paragraph(ui('Original recorded reading reference', '原始紀錄閱讀參照'), source['reading_ref'] or missing) + '</div>', paragraph(ui('Original relevance', '原始相關性說明'), source['relevance']), paragraph(ui('Recorded need IDs / attempt IDs', '紀錄的需求 ID / 嘗試 ID'), ', '.join(source['need_ids']) + ' / ' + ', '.join(source['attempt_ids']))])
+            translated_source = translations['sources'].get(source['id'], {})
+            out.extend(['<article id="' + source_anchor(source) + '"><h3>' + original_title(source['title']) + '</h3>' + supplied_translation(translated_source.get('title'), ui('Supplied title translation (not verified)', '提供的標題翻譯（未經驗證）')), paragraph(ui('Source / work', '來源 / 作品'), source['id'] + ' / ' + source['work_id']), paragraph(ui('Version', '版本'), source['version'] if source['version'] is not None else unknown),
+                        '<div class="scope">' + paragraph(ui('Recorded reading level / access', '紀錄的閱讀層級 / 取得狀態'), status(source['reading_level']) + ' / ' + status(source['access'])) + paragraph(ui('Original recorded reading reference', '原始紀錄閱讀參照'), source['reading_ref'] or missing) + '</div>', supplied_translation(translated_source.get('relevance'), ui('Supplied relevance translation (not verified)', '提供的相關性翻譯（未經驗證）')) + original_paragraph(ui('Original relevance', '原始相關性說明'), source['relevance']), paragraph(ui('Recorded need IDs / attempt IDs', '紀錄的需求 ID / 嘗試 ID'), ', '.join(source['need_ids']) + ' / ' + ', '.join(source['attempt_ids']))])
             link = locator_link(source['locator'])
             out.append('<p><strong>' + ui('Original locator', '原始定位資訊') + ':</strong> ' + ('<a href="' + esc(link) + '" rel="noreferrer">' + esc(source['locator']) + '</a>' if link else esc(source['locator'])) + '</p>')
             if source['material'] is not None:
@@ -493,12 +546,12 @@ def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None
     inputs = {"observations": read_input(observations)}
     profile = inputs["observations"][2]
     sources = observations_view(profile)
-    content, presentation, shared_claims = {}, {}, {}
+    content, presentation, shared_claims, translations = {}, {}, {}, {}
     for language, path in [("en", content_en), ("zh-TW", content_zh_tw)]:
         if path is not None:
             inputs[language] = read_input(path)
             presentation[language] = inputs[language][2]
-            content[language] = content_view(presentation[language], language, sources, shared_claims)
+            content[language], translations[language] = content_view(presentation[language], language, sources, shared_claims, profile, sha(inputs["observations"][1]))
     bibliography_payload = None
     bibliography_records = {}
     if bibliography is not None:
@@ -531,7 +584,7 @@ def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None
     files.update(supporting_files)
     for language in languages:
         files["reader." + language + ".html"] = reader_html(language, profile, sources, content[language], bibliography_records, languages, input_hashes,
-            presentation[language].get("delivery_notes", []), attachment_names)
+            presentation[language].get("delivery_notes", []), attachment_names, translations[language])
     verify_links(files, required_exports=["native-reader.json", "references.bib", *attachment_names])
     manifest = {"format": "native-reader-output/1.0", "status": "complete", "inputs": {key: {"name": item[0].name, "bytes": len(item[1]), "sha256": sha(item[1])} for key, item in inputs.items()},
                 "outputs": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in sorted(files.items())},
