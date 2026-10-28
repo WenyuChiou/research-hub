@@ -2,77 +2,43 @@
 
 # research-hub
 
-以可追溯的工作流程，串連文獻、研究檔案與稿件的本機工作區。
+給研究者的本機工作區：整理文獻、證據與稿件，並由你審查 AI 提案。
 
-繁體中文 · [English](README.md) · [工作區指南](docs/workspace-guide.zh-TW.md) · [既有功能安裝](docs/setup.md) · [開發者架構](docs/workspace-architecture.md)
+繁體中文 · [English](README.md) · [工作區指南](docs/workspace-guide.zh-TW.md) · [安裝指南](docs/setup.md) · [開發者架構](docs/workspace-architecture.md)
 
-[![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![MIT 授權](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/) [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml) [![MIT 授權](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **工作區已合併至原始碼；安裝與實機能力須分別驗證。** [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) 已合併。下方提供固定原始碼版本；不可由版本字串推定發布套件或 AI 主機已就緒。請先看[能力與設定基線](docs/capability-baseline.md)。
+## 為什麼使用 research-hub？
 
-## 為什麼需要它
+研究散落在文獻、筆記、分析結果和稿件之間。一篇論文可能影響研究問題，一份資料更新可能讓某個結論或稿件段落需要重新檢視。research-hub 提供本機工作區，讓研究者與 AI 助理能記錄這些關聯、交接任務，並在採納提案前進行人工審查。
 
-研究會跨越檔案與工具：一篇文獻影響研究問題，一次分析改變結果，稿件也需要跟著修訂。當你或 AI 助理接手下一項工作時，這些關係應該仍然清楚可查。
+- **保留脈絡：** 將研究問題、來源、證據、結果與稿件放在同一個專案中，而不只留在對話歷史裡。
+- **追蹤變動：** 登錄檔案路徑與檔案指紋（hash），協助辨識檔案是否改變，再檢視可能需要重新審查的工作。
+- **保留決策權：** AI 工作產生的提案要經人工檢視；本機交付也需要另行核准。
 
 ![概念圖：研究問題串連文獻、證據、分析、稿件提案與人工審查；輸入變動後，相關工作需要重新檢視。](docs/images/workspace-lifecycle.zh-TW.png)
 
-先從本機檔案開始，再視需要連接 Zotero 管理文獻、Obsidian 整理筆記，以及 NotebookLM 製作來源導向的摘要。實證研究與文獻回顧都能使用同一個工作區。
+<a id="start-here"></a>
+<a id="first-run-checklist"></a>
 
-## 從原生文獻探索開始（Stage 1）
+## 安裝與快速開始
 
-在能讀取 research-hub skill、且有公開搜尋／閱讀工具的原生 AI agent 中，可以先說一句：
+<a id="workspace-preview"></a>
 
-> 幫我找 LLM 模擬人類決策的文獻。
+### 在本機試用工作區
 
-Agent 應先採用合理範圍，搜尋與閱讀可取得來源，再回傳有原文連結、相關性、版本及閱讀／存取限制的短清單；不是要求你先填研究表單或寫 JSON。Zotero、Obsidian、NotebookLM 與 Hub 儲存都是選用。
+建議先試用下方工作區；如果只想看已發布的舊版文獻儀表板，再看下面的選項。
 
-2026-10-26 的真實雲端原生試跑得到三種不同起點：
-- [Aher et al.（2023）](https://proceedings.mlr.press/v202/aher23a.html)：從既有實驗看群體行為模擬。
-- [Park et al.（本輪核讀 2024 預印本 v1）](https://arxiv.org/abs/2411.10109v1)：從真人訪談看個人化代理；新版未在本輪閱讀。
-- [Gao et al.（2025）](https://doi.org/10.1073/pnas.2501660122)：用不匹配的決策分布檢查模擬有效性。本輪讀取的是核對 DOI 的公開 PDF 鏡像，不是成功取得出版社 PDF。
-
-需要續做時，再說：
-
-> 聚焦經濟決策，幫我比較真人基準和評估方法。
-
-搜尋摘要不等於全文閱讀，「像人」也不等於「可取代真人」。Agent 應保留取不到的來源與未決問題，不捏造覆蓋率。
-
-**實際驗證範圍：**一句請求 → 原生搜尋與原文段落閱讀 → 有限制說明的短清單。這是直接讀取 skill 後的雲端原生實跑，不代表 Codex／Claude Code 安裝、技能自動觸發、所有宿主、Hub 儲存或 UI 開啟已驗收。本輪不需要 JSON、CLI、整合帳號或 Stage 2。
-
-若另選視覺化交接，應由 agent 整理觀察、使用已可用且獲授權的 Hub 介面儲存，不讓研究者重複輸入。確認儲存後會回傳確切成果連結。[已儲存成果契約](docs/contracts/native-discovery-view.md) 將此路徑與原生研究分開：目前安全檔案儲存／檢視僅支援 POSIX，Windows 尚未支援；開啟成果不驗證研究真實性，也不啟動外部服務寫入。
-
-
-## 在工作區做什麼
-
-![實際工作區介面，使用本機示範資料，呈現專案導覽與可追溯的研究紀錄。](docs/images/workspace-ui.zh-TW.png)
-
-| 頁面 | 你的工作 |
-|---|---|
-| 專案 | 記錄研究問題、目標與專案類型。 |
-| 文獻 | 尋找來源，記錄納入或排除的理由。 |
-| 證據 | 連結主張與來源，檢視尚未確認的支持關係。 |
-| 設計與結果 | 記錄方法、結果、限制與佐證檔案。 |
-| 稿件 | 登錄 Word、LaTeX 或 Markdown，準備大綱與修訂。 |
-| 審查與交付 | 檢視提案、記錄決定，準備本機交付檔。 |
-
-檔案保留在你選定的工作區。登錄會記下路徑與雜湊值；原始文件仍由你的編輯器修改。
-
-## 如何開始
-
-### 工作區預覽版
-
-需要 Python 3.10+ 與 Git。請選擇**新建或空白的** `workspace-demo` 目錄。以下指令安裝固定不變的原始碼基線 `6381dfa7d474dd27cd4adb33f0f59ea8ec395150`，不依賴功能分支名稱。
+需要 Python 3.10+ 與 Git。以下從原始碼安裝工作區，並在**新建或空白的** `workspace-demo` 目錄建立示範資料。這條路徑與 PyPI 發布套件不同：套件版本號不保證包含目前原始碼的工作區功能。
 
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
-git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+git fetch origin c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
+git checkout --detach c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
 ```
 
-接著只選一組符合你的系統的指令。直接呼叫虛擬環境的 Python，不需啟用腳本，也不需變更 PowerShell 執行原則。
+依作業系統選一組指令。這裡直接呼叫虛擬環境的 Python，不需要啟用腳本或變更 PowerShell 執行原則。安裝相依套件需要網路。
 
 **macOS / Linux**
 
@@ -85,6 +51,8 @@ python3 -m venv .venv
 
 **Windows PowerShell**
 
+一個 Windows 測試環境使用較早的 `14ddc070` 原始碼建立示範時遇到 `WinError 5`，原因尚未確定。請參閱[驗證與環境紀錄](docs/readme-verification-history.md)。
+
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
@@ -92,80 +60,103 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
-開啟[本機工作區](http://127.0.0.1:8765/app/)。示範不需要帳號，包含小型數值加總範例與文獻回顧測試資料。這些是教學輸入，並非模型產生的研究發現。
+開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)。示範包含兩個教學專案。開啟後可選 **繁體中文**，再在**專案**下拉選單中，選擇 `DEMO: three floating-point summation cases`（`summation-demo`，浮點加總範例）或 `DEMO: floating-point reading and review outline`（`review-demo`，文獻回顧範例），再開啟**文獻**看看文獻頁面。這些是教學輸入，不是研究發現，也不需要帳號。使用完畢後按 `Ctrl+C` 停止前景伺服器。
 
-固定的執行程式快照保留較舊的本地文件，不含這份新增的能力基線文件與乾淨原始碼測試。使用該程式時，請搭配[目前線上的能力基線](https://github.com/WenyuChiou/research-hub/blob/c6ef19313ab69a85e041f4a86e4b9cb19229c138/docs/capability-baseline.md)；本 PR 的測試證據屬於這次變更，不代表舊版 README 的原樣指令已驗證。該快照保留當時的文件；請依目前的[工作區指南](docs/workspace-guide.zh-TW.md)取得已合併的介接器固定版本，並了解如何使用自己的檔案、設定寫作功能、交接任務及審查。在依賴預覽版之前，請先查看[附日期的驗證狀態與待完成檢查](docs/workspace-guide.zh-TW.md#verification)。
+使用自己的檔案，請直接前往[使用自己的專案](docs/workspace-guide.zh-TW.md#使用自己的專案)；指南中較早的安裝固定版本是歷史紀錄。
 
-### 已發布的文獻儀表板
-
-```sh
-python -m pip install research-hub-pipeline
-research-hub dashboard --sample
-```
-
-這個免帳號範例會開啟既有儀表板。要連接實際工具，請參閱[安裝指南](docs/setup.md)、[前十分鐘](docs/first-10-minutes.md)與[儀表板導覽](docs/dashboard-walkthrough.md)。
-
-## 寫作如何進行
-
-![概念圖：研究者準備任務，透過可攜式 AI 交接或已連接的 Codex 文字工作者取得提案，再檢查並明確接受或要求修改。](docs/images/workspace-writing.zh-TW.png)
-
-| 模式 | 如何運作 |
-|---|---|
-| 可攜式交接 | 匯出任務給你的 AI 主機，再匯入文字與候選檔案雜湊值。匯出後，任務仍等待代理回覆。 |
-| 連接 Codex | 已登入且相容的 Codex CLI 使用你明確信任的公開寫作套件，在不使用工具的模式下產生文字。結果等待人工審查。 |
-
-公開寫作介接器已透過 [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17) 合併。本整合固定使用其 `main` 上的 commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`。[請先驗證並明確設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)；它是選用介接器，不會成為 research-hub 的永久安裝相依項目。Hub 工作區已合併至原始碼，但這不代表發布套件或實機主機已驗證。連接的 Codex 只接收有限長度的文字摘錄，不接收二進位文件內容。Word 格式、LaTeX 編譯及最終文件修改，請在你的編輯器完成。
-
-## 哪些部分可查證
-
-- **可追溯的輸入：** 任務保留輸入版本、結果與決定。已登錄的檔案內容變動後，任務可能過期；工作區會列出需要重新檢視的影響。
-- **分開判斷：** 文獻識別碼能解析，不代表它支持某項主張。來源身分、主張支持程度與人工任務接受，各自獨立。
-- **明確交付：** 已接受的提案可經另一次核准，打包成本機 ZIP。這不授權投稿或雲端上傳。
-
-本機核准記錄操作者的聲明，不能驗證共用電腦上的個人身分。既有 MCP、儀表板與雲端直接寫入工具，不受工作區核准機制保護。任務完成也不會自動推進工作流程的八個階段。詳見[邊界與復原指南](docs/workspace-guide.zh-TW.md#boundaries-and-recovery)。
+<a id="published-dashboard"></a>
 
 <details>
-<summary>既有整合、憑證與疑難排解</summary>
+<summary>選用：試用已發布的舊版文獻儀表板</summary>
 
-<a id="start-here"></a>
-<a id="first-run-checklist"></a>
+[PyPI 套件](https://pypi.org/project/research-hub-pipeline/)提供較早的文獻儀表板，不是較新的原始碼工作區。若要試用免帳號範例，以下獨立虛擬環境與空白根目錄的方式已在 Linux、Python 3.12 測試：
 
-依[安裝指南](docs/setup.md)選擇整合，再執行 `research-hub doctor`。NotebookLM 需要在可見瀏覽器中登入 Google；最近記錄的認證嘗試失敗，尚未重新驗證。在你自行檢查成功之前，請視為功能降級／未檢查。詳見 [NotebookLM 設定](docs/notebooklm.md)與[疑難排解](docs/notebooklm-troubleshooting.md)。
+```sh
+python3 -m venv .dashboard-venv
+./.dashboard-venv/bin/python -m pip install research-hub-pipeline==1.2.0
+mkdir -p "$HOME/research-hub-preview"
+RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hub dashboard --sample
+```
 
-| 既有人物設定 | 選用安裝額外項目 |
-|---|---|
-| Researcher（研究者） | `[playwright,secrets]` |
-| Humanities（人文研究） | `[playwright,secrets]` |
-| Analyst（分析人員） | `[import,secrets]` |
-| Internal KM（內部知識管理） | `[import,secrets]` |
-
-<a id="credential-reference"></a>
-
-以下憑證用於既有整合；本機工作區示範不需要任何憑證。
-
-<!-- env-vars-table-start -->
-
-| Name | Required | Purpose |
-|---|---|---|
-| `ZOTERO_API_KEY` | 僅 Zotero | Zotero API 認證 |
-| `ZOTERO_LIBRARY_ID` | 僅 Zotero | Zotero 文獻庫識別碼 |
-| `SEMANTIC_SCHOLAR_API_KEY` | 否 | 選用搜尋 API 金鑰 |
-| `SEMANTIC_SCHOLAR_RPS` | 否 | 選用搜尋請求速率設定 |
-| `TAVILY_API_KEY` | 否 | 選用網頁搜尋後端 |
-| `BRAVE_API_KEY` | 否 | 選用網頁搜尋後端 |
-
-<!-- env-vars-table-end -->
-
-<a id="connect-your-ai-host"></a>
-
-透過 [MCP／REST](docs/ai-integrations.md)連接 AI、查看 [AI 主機支援表](docs/ai-host-support.md)，或使用[本機檔案匯入](docs/import-folder.zh-TW.md)。[CLI 參考](docs/cli-reference.md)、[EZproxy 指南](docs/ezproxy.md)與[實際操作檢查表](docs/live-smoke.md)提供詳細操作說明。
+請在 HOME 下使用新建或空白的 `research-hub-preview` 目錄：指令會在其中建立 `.research_hub` 與 `logs`。程式會印出產生的暫存 HTML 路徑；請在瀏覽器開啟該路徑。在乾淨 HOME 未設定根目錄時，直接執行 `dashboard --sample` 曾失敗；平台與瀏覽器的限制見[驗證紀錄](docs/readme-verification-history.md)。若要連接實際服務，請參閱[安裝指南](docs/setup.md)、[儀表板導覽](docs/dashboard-walkthrough.md)與[前十分鐘](docs/first-10-minutes.md)。
 
 </details>
 
-## 開發者連結
+## 在工作區做什麼
 
-[工作區架構](docs/workspace-architecture.md)說明任務帳本與核准邊界。技術細節見[工作流程執行機制](docs/workflow-runtime.md)、[MCP 工具](docs/mcp-tools.md)、[穩定 API](docs/stable-api.md)、[檔案格式](docs/file-formats.md)及 [OpenWiki](openwiki/quickstart.md)。目前清單可用 `python -m research_hub describe --filter mcp_tools` 與 `--filter skills` 查詢。
+![歷史工作區介面截圖：本機示範資料中的專案導覽與研究紀錄。](docs/images/workspace-ui.zh-TW.png)
 
-既有儀表板素材仍可查看：[MCP 流程圖](docs/images/research-hub-cover.png)、[儀表板操作錄影](docs/images/dashboard-walkthrough.gif)與[完整解析度影片](docs/demo/dashboard-walkthrough.mp4)。
+*歷史示範畫面，於 2026-09-08 審視；目前介面可能不同。*
 
-[參與開發](CONTRIBUTING.md) · [版本紀錄](CHANGELOG.md) · [發布流程](docs/RELEASING.md) · [MIT 授權](LICENSE)
+| 頁面 | 使用範例 |
+|---|---|
+| 研究總覽 | 檢視研究問題、目標與專案脈絡。 |
+| 文獻 | 收集來源，記錄納入或排除的理由。 |
+| 證據 | 將主張連到來源，檢視尚未確認的支持關係。 |
+| 設計與結果 | 記錄方法、結果、限制與佐證檔案。 |
+| 論文 | 登錄 Word、LaTeX 或 Markdown，準備大綱與修訂。 |
+| 審閱與交付 | 檢視提案、記錄決定，準備本機交付檔。 |
+
+原始檔仍由你的編輯器修改；工作區登錄的是檔案路徑與雜湊。識別碼能解析不代表來源支持某項主張，請自行查核證據及科學判斷。
+
+## 從文獻探索開始
+
+在能載入 research-hub 技能、並有搜尋與閱讀工具的相容 AI 工具（AI 主機）中，可先提出具體需求，例如：
+
+> 幫我找 LLM 模擬人類決策的文獻，列出原文連結、相關性、版本與可取得的全文限制。
+
+接著可要求「聚焦經濟決策，比較真人基準與評估方法」。先檢視來源、可讀範圍與未解問題，再決定下一步。搜尋摘要不等於全文閱讀。此研究方式可獨立於 Hub 使用；Zotero、Obsidian、NotebookLM 與 Hub 儲存都不是先決條件。要使用 Hub 的視覺工作區或儲存功能，則需要安裝並啟動 Hub。
+
+Native reader 可整理提供的研究摘要、來源索引與書目，也可附上明確提供的 PDF。PDF 僅原封複製並提供下載；這不代表它已被解析、翻譯、驗證或全文閱讀。原生閱讀器可將使用者提供的翻譯與原始觀察並列，並標示為未經驗證；閱讀器不會產生翻譯或驗證翻譯的準確性。提供翻譯的格式請見[原生閱讀器匯出指南](src/research_hub/skills_data/research-hub/references/native-discovery-export.md)。
+
+更多 skill 與 AI 主機安裝方式，見 [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills)、[AI 主機支援表](docs/ai-host-support.md)及 [MCP／REST 整合](docs/ai-integrations.md)。可選的 Hub 結果儲存與檢視邊界見[已儲存成果契約](docs/contracts/native-discovery-view.md)。
+
+## 寫作、審查與交付
+
+![概念圖：研究者準備任務，透過可攜式 AI 交接或已連接的 Codex 文字工作者取得提案，再檢查並明確接受或要求修改。](docs/images/workspace-writing.zh-TW.png)
+
+| 模式 | 工作方式 |
+|---|---|
+| 可攜式交接 | 匯出任務到 AI 主機，再匯入文字與候選檔案雜湊。匯出後任務等待代理回覆。 |
+| 連接 Codex | 經登入且相容的 Codex CLI，使用明確信任的公開寫作套件產生文字，結果等待人工審查。 |
+
+[寫作設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)說明選用介接器的驗證及設定。連接的 Codex 接收有限長度的文字摘錄，不接收二進位文件內容。Word 格式、LaTeX 編譯和最終文件修改仍在你的編輯器完成。已接受的提案可經另一次核准打包成本機 ZIP；這不授權投稿或雲端上傳。工作區核准也不自動涵蓋既有 CLI、MCP、儀表板及雲端直接寫入工具。[邊界與復原指南](docs/workspace-guide.zh-TW.md#boundaries-and-recovery)列出細節。
+
+<a id="credential-reference"></a>
+<a id="connect-your-ai-host"></a>
+
+## 選用整合
+
+- **Zotero：** 管理文獻；連線工作流程需要 API key 和 library ID。
+- **Obsidian：** 在本機 vault 中整理筆記，也可先使用本機檔案。
+- **NotebookLM：** 用來源資料製作摘要；需要瀏覽器登入與可用的工作階段。請參閱[設定](docs/notebooklm.md)與[疑難排解](docs/notebooklm-troubleshooting.md)。
+- **AI 主機：** 透過 [MCP／REST](docs/ai-integrations.md) 或可攜式 skills 連接；MCP 安裝需要額外的 `[mcp]` 套件。
+
+依需要選擇整合，執行 `./.venv/bin/python -m research_hub doctor`（macOS／Linux）或 `.\.venv\Scripts\python.exe -m research_hub doctor`（Windows PowerShell），逐項查看結果；設定或安裝成功不代表每個服務都已驗證。[安裝指南](docs/setup.md)列出選用套件及憑證；另見[本機檔案匯入](docs/import-folder.zh-TW.md)、[EZproxy](docs/ezproxy.md)與[實際連線檢查表](docs/live-smoke.md)。
+
+<details>
+<summary>整合憑證與選用套件</summary>
+
+本機工作區示範不需要這些憑證。既有人物角色的選用套件：Researcher 與 Humanities 使用 `[playwright,secrets]`；Analyst 與 Internal KM 使用 `[import,secrets]`。
+
+<!-- env-vars-table-start -->
+
+| 名稱 | 必要性 | 用途 |
+|---|---|---|
+| `ZOTERO_API_KEY` | 僅 Zotero | Zotero API 驗證 |
+| `ZOTERO_LIBRARY_ID` | 僅 Zotero | Zotero 文獻庫識別碼 |
+| `SEMANTIC_SCHOLAR_API_KEY` | 否 | 選用搜尋 API key |
+| `SEMANTIC_SCHOLAR_RPS` | 否 | 選用搜尋請求頻率設定 |
+| `TAVILY_API_KEY` | 否 | 選用網路搜尋服務 |
+| `BRAVE_API_KEY` | 否 | 選用網路搜尋服務 |
+
+<!-- env-vars-table-end -->
+
+</details>
+
+## 文件與貢獻
+
+- [工作區指南](docs/workspace-guide.zh-TW.md) · [工作區架構](docs/workspace-architecture.md) · [能力基線](docs/capability-baseline.md) · [驗證紀錄](docs/readme-verification-history.md)
+- [CLI 參考](docs/cli-reference.md) · [MCP 工具](docs/mcp-tools.md) · [穩定 API](docs/stable-api.md) · [檔案格式](docs/file-formats.md) · [工作流程執行架構](docs/workflow-runtime.md) · [OpenWiki](openwiki/quickstart.md)
+- [既有儀表板操作錄影](docs/images/dashboard-walkthrough.gif) · [完整解析度影片](docs/demo/dashboard-walkthrough.mp4) · [MCP 流程圖](docs/images/research-hub-cover.png)
+- [參與開發](CONTRIBUTING.md) · [版本紀錄](CHANGELOG.md) · [發布流程](docs/RELEASING.md) · [MIT 授權](LICENSE)

@@ -2,77 +2,42 @@
 
 # research-hub
 
-A local workspace connecting literature, research artifacts, and manuscripts through traceable work.
+A workspace on your computer for researchers to organize papers, evidence, and drafts, with AI-assisted proposals you review.
 
-[繁體中文](README.zh-TW.md) · [Workspace guide](docs/workspace-guide.md) · [Existing setup](docs/setup.md) · [Developer architecture](docs/workspace-architecture.md)
+[繁體中文](README.zh-TW.md) · [Workspace guide](docs/workspace-guide.md) · [Setup guide](docs/setup.md) · [Developer architecture](docs/workspace-architecture.md)
 
-[![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![MIT license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/research-hub-pipeline.svg)](https://pypi.org/project/research-hub-pipeline/) [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml) [![MIT license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Workspace merged in source; installed capability must be checked separately.** [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) is merged. Use the pinned source path below for this baseline; do not infer published-wheel or native-host readiness from the source version. Start with the [capability and setup baseline](docs/capability-baseline.md).
+## Why research-hub?
 
-## Why this exists
+Research is spread across papers, notes, analysis, and manuscripts. A new paper can change a question; an updated file can make a conclusion or section worth revisiting. research-hub gives researchers and AI assistants a local workspace to record those connections, hand off tasks, and review proposals before accepting them.
 
-Research crosses files and tools: a paper informs a question, an analysis changes a result, and a manuscript needs revision. Keep those connections visible when you or an AI assistant picks up the next task.
+- **Keep context:** bring questions, sources, evidence, results, and manuscripts into one project rather than leaving them only in a conversation.
+- **Track changes:** register file paths and a file fingerprint (hash) to help detect changes, then inspect work that may need review when inputs change.
+- **Keep decisions human:** AI proposals require review; a local delivery requires separate approval.
 
 ![Concept diagram: research questions connect literature, evidence, analysis, manuscript proposals, and human review; changed inputs return work for review.](docs/images/workspace-lifecycle.en.png)
 
-Start with local files. Connect Zotero for references, Obsidian for notes, and NotebookLM for source-based briefings when needed. Empirical studies and literature reviews share the workspace.
+## Install and get started
 
-## Start with native literature discovery (Stage 1)
+<a id="start-here"></a>
+<a id="first-run-checklist"></a>
+<a id="workspace-preview"></a>
 
-In a native AI agent that can read the research-hub skill and has public search/read tools, start with one request:
+### Try the local workspace
 
-> Find literature on LLMs simulating human decisions.
+Start with the workspace below. If you only want to try the older published literature dashboard, see the separate option below.
 
-The agent should choose a sensible initial scope, search/read available sources, and return a short list with original links, relevance, versions, and reading/access limits—not ask you to fill a research form or write JSON. Zotero, Obsidian, NotebookLM, and Hub storage are optional.
-
-A real cloud-native rehearsal on 2026-10-26 returned three distinct starting points:
-- [Aher et al. (2023)](https://proceedings.mlr.press/v202/aher23a.html): simulation of group behavior from existing experiments.
-- [Park et al. (assessed 2024 preprint v1)](https://arxiv.org/abs/2411.10109v1): personalized agents grounded in human interviews; newer versions were not read in this rehearsal.
-- [Gao et al. (2025)](https://doi.org/10.1073/pnas.2501660122): mismatched decision distributions as a validity check. The rehearsal read a DOI-matched public PDF mirror, not a successfully retrieved publisher PDF.
-
-Then, if useful, say:
-
-> Focus on economic decisions and compare the human baselines and evaluation methods.
-
-Search snippets are not full-paper reading; human-like outputs are not evidence that human participants can be replaced. The agent retains unavailable sources and unresolved questions rather than inventing coverage.
-
-**What was actually exercised:** one request → native search and original-text sections → a short, qualified result. This was a cloud-native run after directly reading the skill—not verification of Codex/Claude Code installation, automatic skill triggering, every host, Hub saving, or UI opening. No JSON, CLI, additional integration/provider account, or Stage 2 was required in that rehearsal.
-
-For an optional visual handoff, the agent—not the researcher—can organize observations and use an already available, authorized Hub interface to save them. A confirmed save returns an exact saved-result link. The [saved-result contract](docs/contracts/native-discovery-view.md) separates this path from native research: current secure file persistence/viewing is POSIX-only, Windows is not yet supported, and opening a result does not authenticate research or start provider writes.
-
-
-## What you work with
-
-![Actual workspace UI running local demo fixtures, showing the project navigation and traceable research records.](docs/images/workspace-ui.en.png)
-
-| Page | Your work |
-|---|---|
-| Project | State the question, goal, and project type. |
-| Literature | Find references and record inclusion or exclusion decisions. |
-| Evidence | Connect claims to sources and inspect unresolved support. |
-| Design & results | Record methods, results, limitations, and supporting files. |
-| Manuscript | Register Word, LaTeX, or Markdown; prepare outlines and revisions. |
-| Review & delivery | Inspect proposals, record decisions, and prepare a local handoff. |
-
-Files stay in your selected workspace. Registration records paths and hashes; your editor remains responsible for changing original documents.
-
-## How to try it
-
-### Workspace preview
-
-Use Python 3.10+ and Git. Choose a **new or empty** `workspace-demo` directory. These commands install the immutable source baseline `6381dfa7d474dd27cd4adb33f0f59ea8ec395150` without depending on a feature-branch name.
+You need Python 3.10+ and Git. These commands install a specific source revision and create teaching fixtures in a **new or empty** `workspace-demo` directory. The source workspace is separate from the PyPI release: a package version does not establish that the installed wheel contains current source features.
 
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
-git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
+git fetch origin c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
+git checkout --detach c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
 ```
 
-Then choose one command block for your system. These call the virtual-environment Python directly: no activation script or PowerShell execution-policy change is needed.
+Choose the block for your system. They call the virtual environment's Python directly, without activation or changing PowerShell execution policy. Dependency installation needs network access.
 
 **macOS / Linux**
 
@@ -85,6 +50,8 @@ python3 -m venv .venv
 
 **Windows PowerShell**
 
+One Windows test environment using the earlier `14ddc070` source encountered `WinError 5` during demo creation; its cause is not yet known. See [verification and environment notes](docs/readme-verification-history.md).
+
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
@@ -92,56 +59,84 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
-Open [the local workspace](http://127.0.0.1:8765/app/). The demo needs no account and contains a small numerical summation example and a literature-review fixture. These are teaching inputs, not model-generated research findings.
+Open [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/). The demo contains two teaching projects. In the **Projects** dropdown, choose `DEMO: three floating-point summation cases` (`summation-demo`) or `DEMO: floating-point reading and review outline` (`review-demo`), then open **Literature** to see the literature page. These are teaching inputs, not research findings, and need no account. Stop the foreground server with `Ctrl+C` when finished.
 
-The pinned runtime snapshot retains older local documentation and does not include this new capability-baseline document or its clean-source tests. Read the [current online capability baseline](https://github.com/WenyuChiou/research-hub/blob/c6ef19313ab69a85e041f4a86e4b9cb19229c138/docs/capability-baseline.md) alongside that runtime; tests in this PR are evidence for this changeset, not for the exact older README commands. The snapshot retains its original documentation; use the current [workspace guide](docs/workspace-guide.md) for the merged producer pin, your own files, writing setup, task handoffs, and review. See [dated verification and remaining checks](docs/workspace-guide.md#verification) before relying on the preview.
+For your own files, go directly to [bring your own project](docs/workspace-guide.md#bring-your-own-project); the guide’s earlier installation pin is historical.
 
-### Published literature dashboard
+<a id="published-dashboard"></a>
+
+<details>
+<summary>Optional: try the older published literature dashboard</summary>
+
+The [PyPI package](https://pypi.org/project/research-hub-pipeline/) provides the older literature dashboard, not the newer source workspace. For an account-free sample, this separate virtual environment and empty root were tested on Linux with Python 3.12:
 
 ```sh
-python -m pip install research-hub-pipeline
-research-hub dashboard --sample
+python3 -m venv .dashboard-venv
+./.dashboard-venv/bin/python -m pip install research-hub-pipeline==1.2.0
+mkdir -p "$HOME/research-hub-preview"
+RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hub dashboard --sample
 ```
 
-This account-free sample opens the existing dashboard. For real integrations, use the [setup guide](docs/setup.md), [first 10 minutes](docs/first-10-minutes.md), and [dashboard tour](docs/dashboard-walkthrough.md).
+Use a new or empty `research-hub-preview` directory under HOME: the command creates `.research_hub` and `logs` there. It prints the generated temporary HTML path; open that path in your browser. The bare `dashboard --sample` failed in a fresh HOME without the root setting; see [verification notes](docs/readme-verification-history.md) for platform and browser limits. For real services, see [setup](docs/setup.md), the [dashboard tour](docs/dashboard-walkthrough.md), and [first 10 minutes](docs/first-10-minutes.md).
 
-## How writing works
+</details>
+
+## Work in the workspace
+
+![Historical workspace UI capture showing local demo project navigation and research records.](docs/images/workspace-ui.en.png)
+
+*Historical demo capture, reviewed 2026-09-08; the current interface may differ.*
+
+| Page | Example work |
+|---|---|
+| Overview | Review the research question, goal, and project context. |
+| Literature | Collect sources and record reasons to include or exclude them. |
+| Evidence | Link claims to sources and inspect unresolved support. |
+| Design & results | Record methods, results, limitations, and supporting files. |
+| Manuscript | Register Word, LaTeX, or Markdown and prepare outlines and revisions. |
+| Review & delivery | Inspect proposals, record decisions, and prepare a local handoff. |
+
+Your editor remains responsible for changes to original files; the workspace registers their paths and hashes. A resolvable identifier does not prove a source supports a claim: check the evidence and scientific judgments yourself.
+
+## Discover literature
+
+In a compatible AI tool (an AI host) that can load the research-hub skill and has search and reading tools, start with a concrete request, for example:
+
+> Find literature on LLMs simulating human decisions; include original links, relevance, versions, and limits on available full text.
+
+Then ask to focus on economic decisions and compare human baselines and evaluation methods. Review the sources, reading coverage, and open questions before deciding what to do next. Search snippets are not full-text reading. This research approach can be used independently of Hub; Zotero, Obsidian, NotebookLM, and Hub storage are optional. The Hub visual workspace and saved-result view do require Hub.
+
+The native reader can organize supplied research summaries, source indexes, and bibliographies, and attach a PDF explicitly supplied by the user. The PDF is copied unchanged for download; that does not mean it was parsed, translated, verified, or read in full. The reader can display caller-supplied translations alongside original observations, labeled unverified; it does not generate translations or verify their accuracy. See the [native reader export guide](src/research_hub/skills_data/research-hub/references/native-discovery-export.md) for the supplied-translation format.
+
+See [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills), the [AI host support matrix](docs/ai-host-support.md), and [MCP/REST integration](docs/ai-integrations.md). The optional [saved-result contract](docs/contracts/native-discovery-view.md) describes what a Hub handoff stores and its platform boundaries.
+
+## Write, review, and deliver
 
 ![Concept diagram: a researcher prepares a task, uses a portable AI handoff or a connected Codex prose worker, checks the proposal, and explicitly accepts or requests changes.](docs/images/workspace-writing.en.png)
 
-| Mode | What happens |
+| Mode | How it works |
 |---|---|
-| Portable handoff | Export a task for your AI host; import its prose and candidate hashes. Export leaves the task waiting for the agent. |
-| Connected Codex | An authenticated, compatible Codex CLI uses an explicitly trusted public writing bundle to produce prose without tools. Results wait for human review. |
+| Portable handoff | Export a task to your AI host, then import prose and candidate file hashes. Export leaves the task waiting for the agent. |
+| Connected Codex | An authenticated, compatible Codex CLI uses an explicitly trusted public writing bundle to produce prose; the result waits for human review. |
 
-The public writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). This integration pins its immutable `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. [Verify and configure it explicitly](docs/workspace-guide.md#writing-adapter-preview); it is optional and is not installed as a permanent research-hub dependency. The Hub workspace is merged in source; this does not establish published-package or native-host readiness. Connected Codex receives bounded text excerpts, not binary document contents. Use your editor for Word formatting, LaTeX compilation, and final document changes.
+The optional [writing setup](docs/workspace-guide.md#writing-adapter-preview) explains how to verify and configure the adapter. Connected Codex receives bounded text excerpts, not binary document contents. Use your editor for Word formatting, LaTeX compilation, and final document changes. Accepted proposals can be packaged into a local ZIP after separate approval; this does not authorize publication or cloud upload. Workspace approval does not automatically protect existing direct-write CLI, MCP, dashboard, or cloud tools. See [boundaries and recovery](docs/workspace-guide.md#boundaries-and-recovery).
 
-## What you can trust
+## Optional integrations
 
-- **Traceable inputs:** tasks retain input revisions, results, and decisions. Changed registered bytes can make a task stale; the workspace reports review impact.
-- **Separate judgments:** a resolvable reference does not prove a claim. Source identity, claim support, and human task acceptance remain distinct.
-- **Explicit handoff:** accepted proposals can enter a separately approved local ZIP. This does not authorize publication or cloud upload.
+<a id="connect-your-ai-host"></a>
 
-Local approval records an operator's assertion; it does not authenticate identity on a shared computer. Existing direct-write MCP, dashboard, and cloud tools are outside workspace approval protection. The workflow's eight stages do not advance automatically when a task finishes. Read the [boundaries and recovery guide](docs/workspace-guide.md#boundaries-and-recovery).
+- **Zotero:** manage references; the connection requires an API key and library ID.
+- **Obsidian:** organize notes in a local vault, or begin with local files.
+- **NotebookLM:** create source-based briefings; it requires browser sign-in and a working session. See [setup](docs/notebooklm.md) and [troubleshooting](docs/notebooklm-troubleshooting.md).
+- **AI hosts:** connect through [MCP/REST](docs/ai-integrations.md) or portable skills; MCP requires the optional `[mcp]` extra.
 
-<details>
-<summary>Existing integrations, credentials, and troubleshooting</summary>
-
-<a id="start-here"></a>
-<a id="first-run-checklist"></a>
-
-Use [setup](docs/setup.md) to choose integrations, then run `research-hub doctor`. NotebookLM needs a visible Google sign-in; its last recorded authentication attempt failed and has not been reverified. Treat that integration as degraded/unchecked until your own check succeeds. See [NotebookLM setup](docs/notebooklm.md) and [troubleshooting](docs/notebooklm-troubleshooting.md).
-
-| Existing persona | Optional extras |
-|---|---|
-| Researcher | `[playwright,secrets]` |
-| Humanities | `[playwright,secrets]` |
-| Analyst | `[import,secrets]` |
-| Internal KM | `[import,secrets]` |
+Choose integrations as needed and run `./.venv/bin/python -m research_hub doctor` (macOS/Linux) or `.\.venv\Scripts\python.exe -m research_hub doctor` (Windows PowerShell) to inspect them individually. Setup or installation does not itself verify a service. The [setup guide](docs/setup.md) covers extras and credentials; see also [local file import](docs/import-folder.md), [EZproxy](docs/ezproxy.md), and the [live smoke checklist](docs/live-smoke.md).
 
 <a id="credential-reference"></a>
+<details>
+<summary>Integration credentials and extras</summary>
 
-These credentials apply to the existing integrations; the local workspace demo needs none.
+The local workspace demo needs none of these credentials. Existing personas use optional extras: Researcher and Humanities `[playwright,secrets]`; Analyst and Internal KM `[import,secrets]`.
 
 <!-- env-vars-table-start -->
 
@@ -156,16 +151,11 @@ These credentials apply to the existing integrations; the local workspace demo n
 
 <!-- env-vars-table-end -->
 
-<a id="connect-your-ai-host"></a>
-
-Connect through [MCP/REST](docs/ai-integrations.md), check the [AI host support matrix](docs/ai-host-support.md), or use [local file import](docs/import-folder.md). The [CLI reference](docs/cli-reference.md), [EZproxy guide](docs/ezproxy.md), and [live smoke checklist](docs/live-smoke.md) cover detailed operations.
-
 </details>
 
-## Developer links
+## Documentation and contributing
 
-The [workspace architecture](docs/workspace-architecture.md) explains the task ledger and approval boundaries. See the [workflow runtime](docs/workflow-runtime.md), [MCP tools](docs/mcp-tools.md), [stable API](docs/stable-api.md), [file formats](docs/file-formats.md), and [OpenWiki](openwiki/quickstart.md) for technical detail. Use `python -m research_hub describe --filter mcp_tools` and `--filter skills` for current inventories.
-
-Earlier dashboard material remains available: [MCP flow diagram](docs/images/research-hub-cover.png), [recorded dashboard demo](docs/images/dashboard-walkthrough.gif), and [full-resolution video](docs/demo/dashboard-walkthrough.mp4).
-
-[Contributing](CONTRIBUTING.md) · [Releases](CHANGELOG.md) · [Release process](docs/RELEASING.md) · [MIT license](LICENSE)
+- [Workspace guide](docs/workspace-guide.md) · [Workspace architecture](docs/workspace-architecture.md) · [Capability baseline](docs/capability-baseline.md) · [Verification history](docs/readme-verification-history.md)
+- [CLI reference](docs/cli-reference.md) · [MCP tools](docs/mcp-tools.md) · [Stable API](docs/stable-api.md) · [File formats](docs/file-formats.md) · [Workflow runtime](docs/workflow-runtime.md) · [OpenWiki](openwiki/quickstart.md)
+- [Recorded dashboard demo](docs/images/dashboard-walkthrough.gif) · [Full-resolution video](docs/demo/dashboard-walkthrough.mp4) · [MCP flow diagram](docs/images/research-hub-cover.png)
+- [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Release process](docs/RELEASING.md) · [MIT license](LICENSE)
