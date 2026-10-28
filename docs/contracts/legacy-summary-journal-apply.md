@@ -87,9 +87,9 @@ not ignore or retry an escape. Traversal, unsupported device namespaces and
 linked/reparse descendants remain refused. The modeled resolver race is not proof
 of any one native CI failure's causal target; native verification remains required.
 
-The final journal metadata observation uses `lstat` once, rejecting a leaf
-symlink/reparse point or non-single-link/non-regular file even if it replaces a
-previously checked leaf. A `FileNotFoundError` only at this final observation
+The final journal metadata observation uses non-following `lstat`, rejecting a
+leaf symlink/reparse point or non-single-link/non-regular file even if it replaces
+a previously checked leaf, subject to the bounded POSIX sidecar handling below. A `FileNotFoundError` only at this final observation
 means absence, which was already permitted for SQLite's transient sidecars and
 an uninitialized database. Existing `_db` missing-database/read versus explicit
 initialization semantics remain unchanged. Containment-check failures and other
@@ -98,12 +98,21 @@ sidecar disappearance window, not all concurrent path replacement races; a
 specific native CI failure cannot be attributed to it without diagnostics.
 
 For the fixed `-journal`, `-wal`, and `-shm` sidecar names, containment checks
-now resolve their parent only, followed by the single non-following leaf
-observation above. This avoids a second leaf exists/lstat race inside the generic
+now resolve their parent only, followed by the non-following leaf observation
+above (and the limited re-observation described below). This avoids a second leaf exists/lstat race inside the generic
 path resolver. The persistent database retains full-path containment validation.
-Parent validation errors still fail closed. Link-count zero remains unknown and
-rejected, not evidence of an ordinary single-link file. Rejection diagnostics
+Parent validation errors still fail closed. A regular POSIX sidecar observed with
+link count zero is not accepted as a valid file: its parent is revalidated and
+the current named leaf is observed once more. Absence is allowed as before; an
+extant replacement must satisfy the same non-following file/link/reparse checks.
+Persistent zero, unsafe replacements and I/O errors fail closed. The persistent
+database and non-POSIX zero-count observations are never granted this handling. Rejection diagnostics
 include only numeric file type, link count, and Windows attributes, not file
 contents or additional private paths. CPython Windows directory-metadata fallback
 can report an unavailable link count when another handle is open; that separate
-boundary is not repaired here. No retry, delivery confirmation or resend is added.
+boundary is not repaired here. No provider retry, delivery confirmation or resend is added.
+
+This bounded re-observation does not eliminate TOCTOU or make this filesystem
+boundary resistant to a malicious concurrent writer. The matching Linux stress
+failure is consistent with the observed unlink race, but its actual cause was
+not proven by this change or by synthetic tests.

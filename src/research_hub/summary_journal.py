@@ -8,6 +8,7 @@ or a generic exposed CLI/MCP tool; adapter acknowledgements are caller reports.
 from contextlib import contextmanager
 import hashlib
 import json
+import os
 from pathlib import Path, PureWindowsPath
 import re
 import sqlite3
@@ -124,6 +125,18 @@ class SummaryJournal:
                     # and this observation. Absence was already allowed; do not
                     # suppress permission errors or retry a failed safety check.
                     continue
+                # A POSIX lstat can return metadata for a sidecar unlinked
+                # after lookup (st_nlink == 0). Observe the *current name*
+                # once more, after revalidating its parent; do not accept the
+                # detached inode or retry any other safety or I/O failure.
+                if (os.name == 'posix' and path != self.path
+                        and stat.S_ISREG(info.st_mode) and info.st_nlink == 0
+                        and not getattr(info, 'st_file_attributes', 0) & 0x400):
+                    safe_path(_validation_path(self.root), _validation_path(path.parent))
+                    try:
+                        info = path.lstat()
+                    except FileNotFoundError:
+                        continue
                 if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
                         or getattr(info, 'st_file_attributes', 0) & 0x400):
                     raise JournalError(
