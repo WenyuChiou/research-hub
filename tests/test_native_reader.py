@@ -8,6 +8,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -225,10 +226,10 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
             def handle_starttag(self, tag, attrs):
                 if tag == "header":
                     self.in_header = True
-                elif self.in_header and tag == "nav" and dict(attrs).get("aria-label") == "Exports":
+                elif self.in_header and tag == "nav" and dict(attrs).get("aria-label") in {"Exports", "匯出及語言"}:
                     self.in_exports = True
                 elif self.in_header and tag == "a" and self.in_exports:
-                    self.anchor = [dict(attrs).get("href"), []]
+                    self.anchor = [dict(attrs), []]
                 elif self.in_header and tag == "p":
                     self.paragraph = []
 
@@ -255,19 +256,129 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
                 inputs, files, manifest = reader.prepare(self.obs, self.en, self.zh if both else None)
                 output = reader.generate(self.root / ("navigation-bilingual" if both else "navigation-en"), inputs, files, manifest)
                 expected_languages = ["en", "zh-TW"] if both else ["en"]
-                expected_links = [("reader." + lang + ".html", lang) for lang in expected_languages]
+                expected_links = [("reader." + lang + ".html", {"en": "English", "zh-TW": "繁體中文"}[lang], lang) for lang in expected_languages]
                 for language in expected_languages:
                     with self.subTest(language=language):
                         header = HeaderNavigation()
                         header.feed((output / ("reader." + language + ".html")).read_text(encoding="utf-8"))
                         header.close()
-                        language_links = [(href, label) for href, label in header.links if href and href.startswith("reader.") and href.endswith(".html")]
+                        language_links = [(attrs.get("href"), label, attrs.get("lang")) for attrs, label in header.links if attrs.get("href", "").startswith("reader.") and attrs.get("href", "").endswith(".html")]
                         self.assertEqual(language_links, expected_links)
-                        for href, _ in language_links:
+                        for attrs, label in header.links:
+                            if attrs.get("href", "").startswith("reader."):
+                                self.assertEqual(attrs.get("hreflang"), attrs.get("lang"))
+                        for href, _, _ in language_links:
                             self.assertTrue((output / href).is_file())
                         if not both:
                             self.assertFalse((output / "reader.zh-TW.html").exists())
                             self.assertIn("Languages not supplied: zh-TW", header.paragraphs)
+
+    def test_reader_first_structure_and_all_version_anchors(self):
+        # Synthetic facts intentionally include an unresolved residual and two
+        # distinct versions of a work. This tests markup, not usability.
+        for language in ("en", "zh-TW"):
+            self.content[language]["delivery_notes"] = ["SYNTHETIC DELIVERY APPENDIX"]
+        self.save_inputs()
+        _, files, manifest = self.prepared()
+
+        class Structure(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.elements, self.links, self.stack, self.text = [], [], [], []
+                self.anchor = None
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                self.elements.append((tag, attrs, tuple(self.stack)))
+                if tag == "a":
+                    self.anchor = [attrs, []]
+                if tag not in {"meta", "link", "br", "hr", "img", "input"}:
+                    self.stack.append(tag)
+            def handle_endtag(self, tag):
+                if tag == "a" and self.anchor is not None:
+                    self.links.append((self.anchor[0], "".join(self.anchor[1])))
+                    self.anchor = None
+                if self.stack and self.stack[-1] == tag:
+                    self.stack.pop()
+            def handle_data(self, value):
+                self.text.append(value)
+                if self.anchor is not None:
+                    self.anchor[1].append(value)
+
+        for language in ("en", "zh-TW"):
+            with self.subTest(language=language):
+                page = Structure()
+                page.feed(files["reader." + language + ".html"].decode())
+                page.close()
+                ids = {attrs["id"]: (index, tag, attrs, parents)
+                       for index, (tag, attrs, parents) in enumerate(page.elements) if "id" in attrs}
+                for name in ("main", "contents", "needs", "completion", "literature", "delivery-notes"):
+                    self.assertIn(name, ids)
+                self.assertEqual(ids["main"][1], "main")
+                self.assertLess(ids["needs"][0], ids["contents"][0])
+                self.assertLess(ids["completion"][0], ids["contents"][0])
+                self.assertLess(ids["contents"][0], ids["literature"][0])
+                self.assertLess(ids["literature"][0], ids["delivery-notes"][0])
+                self.assertEqual(ids["delivery-notes"][1], "details")
+                self.assertNotIn("open", ids["delivery-notes"][2])
+                self.assertIn("main", ids["contents"][3])
+                self.assertTrue(any(a.get("href") == "#main" and label.strip() for a, label in page.links))
+                self.assertTrue(any(a.get("href") == "#contents" and len(label.strip()) > 2 for a, label in page.links))
+                visible = " ".join(page.text)
+                for expected in (self.observations["brief"], "N1", "partial", "SYNTHETIC DELIVERY APPENDIX"):
+                    self.assertIn(expected, visible)
+                for source in self.observations["sources"]:
+                    anchor = reader.source_anchor(source)
+                    self.assertIn(anchor, ids)
+                    self.assertTrue(any(a.get("href") == "#" + anchor for a, _ in page.links))
+                for work in {source["work_id"] for source in self.observations["sources"]}:
+                    self.assertIn("work-" + reader.token(work), ids)
+                self.assertEqual(manifest["source_records"], 5)
+                self.assertEqual(manifest["distinct_work_ids"], 4)
+
+    def test_categories_are_supplied_per_version_and_works_group_versions(self):
+        for language in ("en", "zh-TW"):
+            self.content[language]["records"][0]["category"]["label"] = "N1"
+            self.content[language]["records"][1]["category"]["label"] = "N2"
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        one, two, three = self.observations["sources"][:3]
+        for language in ("en", "zh-TW"):
+            with self.subTest(language=language):
+                markup = files["reader." + language + ".html"].decode()
+                categories = markup.split('<section id="categories">', 1)[1].split('<section id="literature">', 1)[0]
+                n1 = categories.split('<h3>N1</h3>', 1)[1].split('</ul>', 1)[0]
+                n2 = categories.split('<h3>N2</h3>', 1)[1].split('</ul>', 1)[0]
+                self.assertIn('#' + reader.source_anchor(one), n1)
+                self.assertNotIn('#' + reader.source_anchor(two), n1)
+                self.assertIn('#' + reader.source_anchor(two), n2)
+                self.assertNotIn('#' + reader.source_anchor(one), n2)
+                self.assertNotIn('#' + reader.source_anchor(three), categories)
+                work = markup.split('<section id="work-' + reader.token(one["work_id"]) + '">', 1)[1]
+                work = work.split('</section>\n<section id="work-', 1)[0]
+                self.assertIn('id="' + reader.source_anchor(one) + '"', work)
+                self.assertIn('id="' + reader.source_anchor(two) + '"', work)
+                self.assertNotIn('id="' + reader.source_anchor(three) + '"', work)
+
+    def test_untranslated_originals_and_bibliography_limits_are_explicit(self):
+        _, files, _ = self.prepared()
+        en, zh = (files["reader." + language + ".html"].decode() for language in ("en", "zh-TW"))
+        for marker in ("Original brief", "Original recorded reason", "original", "version records", "not necessarily complete citations"):
+            self.assertIn(marker, en)
+        for marker in ("原始研究簡述", "原始紀錄原因", "原文", "部分完成 (partial)", "未解決 (unresolved)", "版本紀錄", "不一定是完整引文"):
+            self.assertIn(marker, zh)
+        self.assertIn(self.observations["brief"], zh)
+        self.assertIn(self.observations["completion"]["reason"], zh)
+        self.assertIn(self.observations["needs"][0]["text"], zh)
+
+    def test_category_label_is_escaped_and_unclassified_source_not_invented(self):
+        self.content["en"]["records"][0]["category"]["label"] = '<svg onload="alert(1)">'
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        markup = files["reader.en.html"].decode()
+        categories = markup.split('<section id="categories">', 1)[1].split('<section id="literature">', 1)[0]
+        self.assertNotIn('<svg', categories)
+        self.assertIn('&lt;svg', categories)
+        self.assertNotIn('#' + reader.source_anchor(self.observations["sources"][2]), categories)
 
     def test_empty_bibliography_is_distinct_from_omitted_bibliography(self):
         empty = {"format": "native-reader-bibliography/1.0", "records": []}
@@ -489,11 +600,87 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.assertEqual(bib.count("@misc{"), 5)
         self.assertNotIn(r"\write18", bib)
         self.assertIn(r"\textbackslash{}write18", bib)
-        self.assertIn(r"\{Author\}", bib)
+        self.assertIn(r"\textbraceleft{}Author\textbraceright{}", bib)
         key = reader.bib_key(self.observations["sources"][2])
         entry = bib.split("@misc{" + key + ",", 1)[1].split("@misc{", 1)[0]
         self.assertNotIn("year =", entry)
         self.assertNotIn("author =", entry)
+
+    def test_bibliography_metadata_is_visible_per_version_and_safely_escaped(self):
+        # The same work has two versions; each must retain its own supplied metadata.
+        one, two = self.bibliography["records"][:2]
+        one.update({"authors": ['A <svg onload="bad"> & {Name}', r"B \write18"],
+                    "year": 2024, "venue": 'Journal <script> & _%{}',
+                    "doi": "10.1234/abc&def", "url": "https://example.test/a?x=1&y=2"})
+        two.update({"authors": ["Second Version Author"], "year": 2025, "venue": "Other venue",
+                    "doi": "10.1234/second", "url": "https://example.test/second"})
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        self.assertEqual(json.loads(files["native-reader.json"])["bibliography"], self.bibliography)
+        source_one, source_two = self.observations["sources"][:2]
+        key_one, key_two = reader.bib_key(source_one), reader.bib_key(source_two)
+        self.assertNotEqual(key_one, key_two)
+        for lang in ("en", "zh-TW"):
+            with self.subTest(lang=lang):
+                markup = files["reader." + lang + ".html"].decode()
+                sec_one = markup.split('<section id="bib-' + key_one + '">', 1)[1].split('</section>', 1)[0]
+                sec_two = markup.split('<section id="bib-' + key_two + '">', 1)[1].split('</section>', 1)[0]
+                for value in ('A &lt;svg onload=&quot;bad&quot;&gt; &amp; {Name}',
+                              r'B \write18', '2024', 'Journal &lt;script&gt; &amp; _%{}',
+                              '10.1234/abc&amp;def', 'https://example.test/a?x=1&amp;y=2'):
+                    self.assertIn(value, sec_one)
+                for label in (('Authors (supplied display names)', 'Year', 'Venue', 'DOI', 'URL') if lang == 'en' else ('作者（提供的顯示名稱）', '年份', '出版處', 'DOI', 'URL')):
+                    self.assertIn(label, sec_one)
+                self.assertIn('<li>A &lt;svg onload=&quot;bad&quot;&gt; &amp; {Name}</li>', sec_one)
+                self.assertIn(r'<li>B \write18</li>', sec_one)
+                self.assertIn('S1 / work-one / v1', sec_one)
+                self.assertIn('S2 / work-one / v2', sec_two)
+                self.assertNotIn('<svg', sec_one)
+                self.assertNotIn('<script>', sec_one)
+                self.assertNotIn('Second Version Author', sec_one)
+                self.assertIn('Second Version Author', sec_two)
+                self.assertIn('2025', sec_two)
+                self.assertNotIn('2024', sec_two)
+                self.assertNotIn('Not supplied' if lang == 'en' else '未提供', sec_one)
+        bib = files["references.bib"].decode()
+        entry_one = bib.split('@misc{' + key_one + ',', 1)[1].split('\n}', 1)[0]
+        entry_two = bib.split('@misc{' + key_two + ',', 1)[1].split('\n}', 1)[0]
+        self.assertIn(r'\textbackslash{}write18', entry_one)
+        self.assertIn(r'\textbraceleft{}Name\textbraceright{}', entry_one)
+        self.assertIn(r'Journal <script> \& \_\%\textbraceleft{}\textbraceright{}', entry_one)
+        self.assertIn('Second Version Author', entry_two)
+        self.assertNotIn('Second Version Author', entry_one)
+
+    def test_bibliography_missing_fields_are_explicit_not_inferred(self):
+        record = self.bibliography["records"][0]
+        for field in ("authors", "year", "venue", "doi", "url"):
+            record.pop(field, None)  # optional fields can be absent rather than null
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        key = reader.bib_key(self.observations["sources"][0])
+        for lang, missing in (("en", "Not supplied"), ("zh-TW", "未提供")):
+            with self.subTest(lang=lang):
+                markup = files["reader." + lang + ".html"].decode()
+                sec = markup.split('<section id="bib-' + key + '">', 1)[1].split('</section>', 1)[0]
+                self.assertEqual(sec.count(missing), 5)
+                self.assertNotIn('2020', sec)
+        entry = files["references.bib"].decode().split('@misc{' + key + ',', 1)[1].split('\n}', 1)[0]
+        for field in ('author', 'year', 'journal', 'doi', 'url'):
+            self.assertNotIn('  ' + field + ' =', entry)
+        # An empty author list has no names and is also displayed as missing.
+        record["authors"] = []
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        sec = files["reader.en.html"].decode().split('<section id="bib-' + key + '">', 1)[1].split('</section>', 1)[0]
+        self.assertEqual(sec.count('Not supplied'), 5)
+        record['venue'] = 'One known field'
+        record['year'] = 2026
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        sec = files['reader.en.html'].decode().split('<section id="bib-' + key + '">', 1)[1].split('</section>', 1)[0]
+        self.assertEqual(sec.count('Not supplied'), 3)
+        self.assertIn('One known field', sec)
+        self.assertIn('2026', sec)
 
     def test_author_names_preserve_order_duplicates_and_validation(self):
         names = ["J. Wang", "A. Chen", "J. Wang"]
@@ -512,6 +699,351 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.save_inputs()
         with self.assertRaisesRegex(reader.ReaderError, "duplicate reference"):
             self.prepared()
+
+    def test_bibliography_1_0_export_is_byte_compatible(self):
+        source = self.observations["sources"][0]
+        source["title"] = "One"
+        self.bibliography["records"] = [self.bibliography["records"][0]]
+        record = self.bibliography["records"][0]
+        record.update({"title": "One", "authors": ["Alice Smith", "Institute of Water"],
+                       "year": 2020, "venue": "Journal", "doi": "10.1234/example",
+                       "url": "https://example.test/x"})
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        key = reader.bib_key(source)
+        expected = ("% Supplied verified bibliography only; verification is caller-recorded.\n"
+                    + "@misc{" + key + ",\n"
+                    + "  title = {One},\n  author = {{Alice Smith} and {Institute of Water}},\n"
+                    + "  year = {2020},\n  journal = {Journal},\n  doi = {10.1234/example},\n"
+                    + "  url = {https://example.test/x}\n}\n").encode()
+        self.assertEqual(files["references.bib"], expected)
+        record["author_kinds"] = ["person", "literal"]
+        self.rejected()  # 1.0 must not silently change behavior.
+
+    def test_bibliography_1_1_kinds_preserve_order_identity_and_escape(self):
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        one, two = self.bibliography["records"][:2]
+        one["authors"] = ["Alice Smith", "Bob Jones"]
+        one["author_kinds"] = ["person", "person"]
+        two["authors"] = ["Claire <Test> & Name", "Institute {Water} & Co"]
+        two["author_kinds"] = ["person", "literal"]
+        self.save_inputs()
+        _, files, manifest = self.prepared()
+        self.assertEqual(manifest["bibliography_records"], 5)
+        exported = json.loads(files["native-reader.json"])
+        self.assertEqual(exported["bibliography"], self.bibliography)
+        first, second = self.observations["sources"][:2]
+        key1, key2 = reader.bib_key(first), reader.bib_key(second)
+        self.assertNotEqual(key1, key2)
+        self.assertEqual(exported["bib_keys"]["S1"], key1)
+        self.assertEqual(exported["bib_keys"]["S2"], key2)
+        bib = files["references.bib"].decode()
+        e1 = bib.split("@misc{" + key1 + ",", 1)[1].split("\n}", 1)[0]
+        e2 = bib.split("@misc{" + key2 + ",", 1)[1].split("\n}", 1)[0]
+        self.assertIn("author = {Alice Smith and Bob Jones}", e1)
+        self.assertIn(r"author = {Claire <Test> \& Name and {Institute \textbraceleft{}Water\textbraceright{} \& Co}}", e2)
+        for language in ("en", "zh-TW"):
+            html = files["reader." + language + ".html"].decode()
+            sec1 = html.split('<section id="bib-' + key1 + '">', 1)[1].split('</section>', 1)[0]
+            sec2 = html.split('<section id="bib-' + key2 + '">', 1)[1].split('</section>', 1)[0]
+            self.assertIn('S1 / work-one / v1', sec1)
+            self.assertIn('S2 / work-one / v2', sec2)
+            self.assertIn('Claire &lt;Test&gt; &amp; Name', sec2)
+            self.assertNotIn('Claire', sec1)
+
+    def test_bibliography_1_1_omitted_kinds_stay_literal(self):
+        one = self.bibliography["records"][0]
+        one["authors"] = ["Alice Smith", "World Health Organization"]
+        self.save_inputs()
+        _, before, _ = self.prepared()
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        self.save_inputs()
+        _, after, _ = self.prepared()
+        self.assertEqual(before["references.bib"], after["references.bib"])
+        self.assertIn(b"author = {{Alice Smith} and {World Health Organization}}", after["references.bib"])
+
+    def test_bibliography_1_1_rejects_bad_kinds_and_ambiguous_person(self):
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        record["authors"] = ["Alice Smith", "Organization"]
+        for bad in (None, [], ["person"], ["person", "person", "literal"], ["person", "unknown"],
+                    ["person", None], "person"):
+            with self.subTest(kinds=bad):
+                record["author_kinds"] = bad
+                self.rejected()
+        for name in ("Alice and Bob", "Alice AND Bob", "Alice\tand\nBob"):
+            with self.subTest(person=name):
+                record["authors"] = [name]
+                record["author_kinds"] = ["person"]
+                self.rejected()
+                record["author_kinds"] = ["literal"]
+                self.save_inputs()
+                self.prepared()  # Literal strings retain the existing behavior.
+        record["authors"] = []
+        record["author_kinds"] = []
+        self.save_inputs()
+        self.prepared()
+        record["authors"] = None
+        record["author_kinds"] = []
+        self.rejected()
+        del record["authors"]
+        self.rejected()
+
+    @unittest.skipUnless(shutil.which("bibtex"), "BibTeX executable not available")
+    def test_bibtex_person_particle_suffix_and_literal_controls(self):
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        self.bibliography["records"] = [self.bibliography["records"][0]]
+        record = self.bibliography["records"][0]
+        record["authors"] = ["Alice Smith", "Ludwig van Beethoven", "Brown, Jr, Alice", "World Health Organization"]
+        record["author_kinds"] = ["person", "person", "person", "literal"]
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        (self.root / "test.bib").write_bytes(files["references.bib"])
+        (self.root / "test.aux").write_text('\\citation{*}\n\\bibstyle{names}\n\\bibdata{test}\n')
+        (self.root / "names.bst").write_text('''ENTRY { author } {} {}
+FUNCTION {misc} {
+  author #1 "{ff}|{vv}|{ll}|{jj}" format.name$ write$ newline$
+  author #2 "{ff}|{vv}|{ll}|{jj}" format.name$ write$ newline$
+  author #3 "{ff}|{vv}|{ll}|{jj}" format.name$ write$ newline$
+  author #4 "{ff}|{vv}|{ll}|{jj}" format.name$ write$ newline$
+}
+READ
+ITERATE {call.type$}
+''')
+        run = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        output = (self.root / "test.bbl").read_text()
+        self.assertEqual(output.splitlines(), ["Alice||Smith|", "Ludwig|van|Beethoven|", "Alice||Brown|Jr", "||{World Health Organization}|"])
+
+    def test_doi_rejects_control_characters_in_both_bibliography_versions(self):
+        record = self.bibliography["records"][0]
+        for version in ("1.0", "1.1"):
+            with self.subTest(version=version):
+                self.bibliography["format"] = "native-reader-bibliography/" + version
+                for suffix in ("a\x00b", "a\x01b", "a\x1fb", "a\x7fb", "a\u0080b", "a\u0085b", "a\u009fb", "a\tb", "a\nb", "a\rb"):
+                    with self.subTest(suffix=repr(suffix)):
+                        record["doi"] = "10.1234/" + suffix
+                        self.rejected()
+                record["doi"] = "10.1234/valid-doi_2026"
+                self.save_inputs()
+                _, files, _ = self.prepared()
+                self.assertEqual(json.loads(files["native-reader.json"])["bibliography"]["records"][0]["doi"], record["doi"])
+                self.assertIn(record["doi"], files["reader.en.html"].decode())
+                self.assertIn(record["doi"].encode(), files["references.bib"])
+
+    def test_person_comma_grammar_rejects_empty_or_excess_components(self):
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        record["author_kinds"] = ["person"]
+        for name in ("Alice, Bob, Carol, Dave", "Alice,", ", Bob", ",", "Alice,,Bob", "Alice, Bob,", ", Alice, Bob", "Alice, , Bob", "A, -", "-, A", "A, -, B", "A, B, -", "---", "A, - - -"):
+            with self.subTest(invalid=name):
+                record["authors"] = [name]
+                self.rejected()
+        for name in ("Alice Smith", "Ludwig van Beethoven", "van Beethoven, Ludwig", "Brown, Jr, Alice", "A, B-C"):
+            with self.subTest(valid=name):
+                record["authors"] = [name]
+                self.save_inputs()
+                _, files, _ = self.prepared()
+                self.assertEqual(json.loads(files["native-reader.json"])["bibliography"]["records"][0]["authors"], [name])
+                key = reader.bib_key(self.observations["sources"][0])
+                self.assertIn('@misc{' + key, files["references.bib"].decode())
+        # Literal/legacy names are not reinterpreted as person syntax.
+        record["authors"] = ["Institute, Region, Division, Program"]
+        record["author_kinds"] = ["literal"]
+        self.save_inputs()
+        self.prepared()
+        self.bibliography["format"] = "native-reader-bibliography/1.0"
+        del record["author_kinds"]
+        self.save_inputs()
+        self.prepared()
+
+    @unittest.skipUnless(shutil.which("bibtex"), "BibTeX executable not available")
+    def test_bibtex_excess_person_commas_are_rejected_before_export(self):
+        # Real parser negative control demonstrates the rejected syntax breaks
+        # format.name$; no TeX process or network is invoked.
+        name = "Alice, Bob, Carol, Dave"
+        (self.root / "test.bib").write_text('@misc{x, author={' + name + '}}\n')
+        (self.root / "test.aux").write_text('\\citation{*}\n\\bibstyle{names}\n\\bibdata{test}\n')
+        (self.root / "names.bst").write_text('ENTRY { author } {} {}\nFUNCTION {misc} { author #1 "{ff}|{vv}|{ll}|{jj}" format.name$ write$ newline$ }\nREAD\nITERATE {call.type$}\n')
+        run = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn("too many commas", (run.stdout + run.stderr).lower())
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        record["authors"] = [name]
+        record["author_kinds"] = ["person"]
+        self.rejected()
+
+    @unittest.skipUnless(shutil.which("bibtex"), "BibTeX executable not available")
+    def test_bibtex_separator_only_person_component_negative_control(self):
+        (self.root / "test.aux").write_text('\\citation{*}\n\\bibstyle{names}\n\\bibdata{test}\n')
+        (self.root / "names.bst").write_text('ENTRY { author } {} {}\nFUNCTION {misc} { author #1 "{ff}|{vv}|{ll}|{jj}" format.name$ write$ newline$ }\nREAD\nITERATE {call.type$}\n')
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        record["author_kinds"] = ["person"]
+        for name in ("A, -",):
+            with self.subTest(name=name):
+                (self.root / "test.bib").write_text('@misc{x, author={' + name + '}}\n')
+                run = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(run.returncode, 0, run.stdout + run.stderr)
+                record["authors"] = [name]
+                self.rejected()
+        # A substantive hyphenated component must not be rejected.
+        self.bibliography["records"] = [record]
+        name = "A, B-C"
+        record["authors"] = [name]
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        (self.root / "test.bib").write_bytes(files["references.bib"])
+        run = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn("B-C||A|", (self.root / "test.bbl").read_text())
+        # An input tilde is encoded as a literal TeX macro, not the BibTeX
+        # name separator that a raw, unencoded tilde would be.
+        record["authors"] = ["A, ~"]
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        (self.root / "test.bib").write_bytes(files["references.bib"])
+        run = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn(r"\textasciitilde{}||A|", (self.root / "test.bbl").read_text())
+
+    def test_person_braces_rejected_without_changing_legacy_or_literal(self):
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        for name in ("Alice {Smith", "Alice Smith}", "}{", "Alice }Smith{", "A {{Name} Smith", "Alice {Example} Smith", "{Q}"):
+            with self.subTest(person=name):
+                record["authors"] = [name]
+                record["author_kinds"] = ["person"]
+                self.rejected()
+                # The same input remains accepted in literal and 1.0 forms;
+                # brace serialization is intentionally hardened for both.
+                record["author_kinds"] = ["literal"]
+                self.save_inputs()
+                self.prepared()
+                self.bibliography["format"] = "native-reader-bibliography/1.0"
+                del record["author_kinds"]
+                self.save_inputs()
+                self.prepared()
+                self.bibliography["format"] = "native-reader-bibliography/1.1"
+
+    @unittest.skipUnless(shutil.which("bibtex"), "BibTeX executable not available")
+    def test_bibtex_person_brace_field_injection_negative_and_escaped_positive(self):
+        (self.root / "test.aux").write_text('\\citation{*}\n\\bibstyle{names}\n\\bibdata{test}\n')
+        (self.root / "names.bst").write_text('ENTRY { author note } {} {}\nFUNCTION {misc} { author write$ newline$ note empty$ { "" } { note } if$ write$ newline$ }\nREAD\nITERATE {call.type$}\n')
+        bib = self.root / "test.bib"
+        injected_name = 'Alice }, note = "Injected"'
+        # Historical legacy encoding, not the current serializer: BibTeX
+        # interprets backslash-braces as grouping and exposes field injection.
+        legacy_tex = injected_name.replace('}', r'\}')
+        bib.write_text('@misc{x, author={' + legacy_tex + '}}\n')
+        negative = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(negative.returncode, 0, negative.stdout + negative.stderr)
+        self.assertIn('Injected', (self.root / 'test.bbl').read_text())
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        self.bibliography["records"] = [self.bibliography["records"][0]]
+        record = self.bibliography["records"][0]
+        record["authors"] = [injected_name]
+        record["author_kinds"] = ["person"]
+        self.rejected()
+        record["authors"] = ["Alice & Smith"]
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        bib.write_bytes(files["references.bib"])
+        positive = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+        self.assertEqual(positive.returncode, 0, positive.stdout + positive.stderr)
+        result = (self.root / 'test.bbl').read_text()
+        self.assertIn(r'Alice \& Smith', result)
+        self.assertNotIn('Injected', result)
+
+    @unittest.skipUnless(shutil.which("bibtex"), "BibTeX executable not available")
+    def test_bibtex_fields_retain_escaped_values_without_injected_fields_or_entries(self):
+        # BibTeX, not TeX, parses this private synthetic fixture. No TeX process
+        # is invoked. The note field and extra record are injection sentinels.
+        from urllib.parse import quote
+
+        self.bibliography["records"] = self.bibliography["records"][:2]
+        payloads = [
+            r'Title }, note = "INJECTED", } @misc{injected, title={X} \bad {open',
+            r'Title {balanced} and }unmatched \\tail',
+        ]
+        for version in ("1.0", "1.1"):
+            with self.subTest(bibliography=version):
+                self.bibliography["format"] = "native-reader-bibliography/" + version
+                for i, record in enumerate(self.bibliography["records"]):
+                    source = self.observations["sources"][i]
+                    source["title"] = record["title"] = payloads[i]
+                    record["authors"] = [r'Group }, note = "INJECTED" {A} \cmd', r'Person \backslash']
+                    record["year"] = 2024 + i
+                    record["venue"] = r'Venue }, note = "INJECTED" {balanced} \tail'
+                    record["doi"] = '10.1234/a},note="INJECTED"{b}\\z'
+                    record["url"] = 'https://example.test/x},note="INJECTED"{b}\\z'
+                    if version == "1.1":
+                        record["author_kinds"] = ["literal", "person"]
+                    else:
+                        record.pop("author_kinds", None)
+                self.save_inputs()
+                _, files, manifest = self.prepared()
+                self.assertEqual(json.loads(files["native-reader.json"])["bibliography"], self.bibliography)
+                self.assertEqual(manifest["bibliography_records"], 2)
+                (self.root / "test.bib").write_bytes(files["references.bib"])
+                (self.root / "test.aux").write_text('\\citation{*}\n\\bibstyle{fields}\n\\bibdata{test}\n')
+                (self.root / "fields.bst").write_text('''ENTRY { title author journal doi url note } {} {}
+FUNCTION {misc} {
+  "START" write$ newline$
+  "KEY:" write$ cite$ write$ newline$
+  "TITLE:" write$ title write$ newline$
+  "AUTHOR:" write$ author write$ newline$
+  "JOURNAL:" write$ journal write$ newline$
+  "DOI:" write$ doi write$ newline$
+  "URL:" write$ url write$ newline$
+  "NOTE:" write$ note empty$ { "NO_NOTE" } { note } if$ write$ newline$
+  "END" write$ newline$
+}
+READ
+ITERATE {call.type$}
+''')
+                run = subprocess.run([shutil.which("bibtex"), "test"], cwd=self.root, capture_output=True, text=True, timeout=10)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                lines = (self.root / "test.bbl").read_text().splitlines()
+                self.assertEqual(lines.count("START"), 2)
+                self.assertEqual(lines.count("END"), 2)
+                blocks, current, field = {}, None, None
+                labels = ("KEY", "TITLE", "AUTHOR", "JOURNAL", "DOI", "URL", "NOTE")
+                for line in lines:
+                    if line == "START":
+                        current = {}
+                    elif line == "END":
+                        self.assertEqual(set(current), set(labels))
+                        blocks[current["KEY"]] = current
+                        current, field = None, None
+                    elif current is not None:
+                        label = next((label for label in labels if line.startswith(label + ":")), None)
+                        if label is not None:
+                            field = label
+                            current[field] = line[len(label) + 1:]
+                        else:
+                            self.assertIsNotNone(field)
+                            current[field] += " " + line.lstrip()
+                self.assertEqual(set(blocks), {reader.bib_key(s) for s in self.observations["sources"][:2]})
+                # Independent oracle for the proposed single-pass character encoding.
+                mapping = {"\\": r"\textbackslash{}", "{": r"\textbraceleft{}", "}": r"\textbraceright{}", "$": r"\$", "&": r"\&", "%": r"\%", "#": r"\#", "_": r"\_", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}", "\n": " ", "\r": " ", "\t": " "}
+                def encoded(value):
+                    return "".join(mapping.get(c, c) for c in value)
+                for i, record in enumerate(self.bibliography["records"]):
+                    block = blocks[reader.bib_key(self.observations["sources"][i])]
+                    title, authors, journal, doi, url, note = (block[k] for k in ("TITLE", "AUTHOR", "JOURNAL", "DOI", "URL", "NOTE"))
+                    self.assertEqual(title, encoded(record["title"]))
+                    first = "{" + encoded(record["authors"][0]) + "}"
+                    second = encoded(record["authors"][1])
+                    if version == "1.0":
+                        second = "{" + second + "}"
+                    self.assertEqual(authors, first + " and " + second)
+                    self.assertEqual(journal, encoded(record["venue"]))
+                    safe = ":/?#[]@!$&'()*+,;=%-._~"
+                    self.assertEqual(doi, quote(record["doi"], safe=safe))
+                    self.assertEqual(url, quote(record["url"], safe=safe))
+                    self.assertEqual(note, "NO_NOTE")
 
     def test_wrong_work_even_with_same_version_is_rejected(self):
         self.content["en"]["records"][0]["work_id"] = "wrong-work"

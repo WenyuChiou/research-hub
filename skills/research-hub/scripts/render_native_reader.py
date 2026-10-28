@@ -233,10 +233,14 @@ def content_view(value, language, sources, shared_claims):
 
 def bibliography_view(value, sources):
     obj(value, ["format", "records"])
-    require(value["format"] == "native-reader-bibliography/1.0", "unsupported bibliography format")
+    version = value["format"]
+    require(isinstance(version, str) and version in {"native-reader-bibliography/1.0", "native-reader-bibliography/1.1"}, "unsupported bibliography format")
     found = {}
     for record in rows(value["records"]):
-        obj(record, ["source_id", "work_id", "version", "title", "verification_ref"], ["authors", "year", "venue", "doi", "url"])
+        optional = ["authors", "year", "venue", "doi", "url"]
+        if version == "native-reader-bibliography/1.1":
+            optional.append("author_kinds")
+        obj(record, ["source_id", "work_id", "version", "title", "verification_ref"], optional)
         source = joined(record, sources)
         require(source["id"] not in found, "duplicate bibliography source")
         require(record["title"] == source["title"], "bibliography changes original title")
@@ -245,19 +249,31 @@ def bibliography_view(value, sources):
             # Display names are ordered metadata, not unique reference IDs.
             for name in rows(record["authors"]):
                 text(name)
+        if "author_kinds" in record:
+            kinds = rows(record["author_kinds"])
+            require(isinstance(record.get("authors"), list) and len(kinds) == len(record["authors"]), "author kinds require a matching authors list")
+            for name, kind in zip(record["authors"], kinds):
+                require(isinstance(kind, str) and kind in {"person", "literal"}, "invalid author kind")
+                if kind == "person":
+                    require(re.search(r"(?<!\S)and(?!\S)", name, flags=re.IGNORECASE) is None, "person author contains ambiguous BibTeX and delimiter")
+                    require("{" not in name and "}" not in name, "person author contains BibTeX grouping braces")
+                    parts = name.split(",")
+                    require(len(parts) <= 3 and all(any(not c.isspace() and c != "-" for c in part) for part in parts), "person author must have at most two commas and name components containing non-separator text")
         if record.get("year") is not None:
             require(type(record["year"]) is int and 0 < record["year"] < 10000, "invalid supplied year")
         text(record.get("venue"), True)
         if record.get("url") is not None:
             url(record["url"])
         if record.get("doi") is not None:
-            require(isinstance(record["doi"], str) and re.fullmatch(r"10\.\d{4,9}/[^\s]+", record["doi"]), "invalid supplied DOI")
+            doi = text(record["doi"])
+            require(not any(127 <= ord(c) <= 159 for c in doi), "control character in DOI")
+            require(re.fullmatch(r"10\.\d{4,9}/[^\s]+", doi), "invalid supplied DOI")
         found[source["id"]] = record
     return found
 
 
 def tex(value):
-    escapes = {"\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "$": r"\$", "&": r"\&", "%": r"\%", "#": r"\#", "_": r"\_", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}", "\n": " ", "\r": " ", "\t": " "}
+    escapes = {"\\": r"\textbackslash{}", "{": r"\textbraceleft{}", "}": r"\textbraceright{}", "$": r"\$", "&": r"\&", "%": r"\%", "#": r"\#", "_": r"\_", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}", "\n": " ", "\r": " ", "\t": " "}
     return "".join(escapes.get(c, c) for c in value)
 
 
@@ -267,7 +283,9 @@ def bibtex(sources, bibliography):
         record = bibliography[key]
         fields = {"title": tex(record["title"])}
         if record.get("authors"):
-            fields["author"] = " and ".join("{" + tex(name) + "}" for name in record["authors"])
+            kinds = record.get("author_kinds", ["literal"] * len(record["authors"]))
+            fields["author"] = " and ".join(tex(name) if kind == "person" else "{" + tex(name) + "}"
+                                           for name, kind in zip(record["authors"], kinds))
         for source_key, target_key in [("year", "year"), ("venue", "journal")]:
             if record.get(source_key) is not None:
                 fields[target_key] = tex(str(record[source_key]))
@@ -288,55 +306,106 @@ def paragraph(label, value):
 
 def reader_html(language, observations, sources, content, bibliography, languages, input_hashes, delivery_notes=(), attachments=()):
     title, source_label, needs_label, completion_label, bib_label, category_label, summary_label, claims_label, limits_label, missing, unknown = LABELS[language]
+    zh = language == "zh-TW"
+    def ui(en, tw):
+        return tw if zh else en
+    status_zh = {"continue": "繼續", "partial": "部分完成", "bounded-complete": "範圍內完成",
+                 "covered": "已涵蓋", "unresolved": "未解決", "not-assessed": "未評估",
+                 "unavailable": "無法取得", "metadata": "僅書目資料", "abstract": "摘要", "excerpt": "摘錄", "full-text": "全文",
+                 "public": "公開", "restricted": "受限", "unknown": "未知"}
+    def status(value):
+        return status_zh[value] + " (" + value + ")" if zh else value
+    def original_title(value):
+        return ui('Original title: ', '原始標題：') + esc(value)
+    def back():
+        return '<p><a href="#contents">' + ui('Back to contents', '返回目錄') + '</a></p>'
     ordered = sorted(sources.values(), key=lambda source: identity(source)[0])
+    works = {}
+    categories = {}
+    for source in ordered:
+        works.setdefault(source["work_id"], []).append(source)
+        category = content.get(source["id"], {}).get("category")
+        if category:
+            categories.setdefault(category["label"], []).append(source)
+    def work_anchor(work_id):
+        return "work-" + token(work_id)
     out = ["<!doctype html><html lang=\"" + language + "\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
            "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">",
-           "<title>" + esc(title) + "</title><style>body{max-width:76ch;margin:auto;padding:1.5rem;font:1rem/1.65 system-ui;color:#202b36;background:#faf9f6}a{color:#005c78}article,section{margin:1.5rem 0;padding:1rem;border:1px solid #bbc6cc;border-radius:.4rem}p,li{white-space:pre-wrap;overflow-wrap:anywhere}code{overflow-wrap:anywhere}:target{outline:3px solid #b48b35}nav a{margin-right:1rem}.scope{background:#eef2f3;padding:.5rem}dt{font-weight:600}dd{margin:0 0 .5rem}</style></head><body id=\"top\"><header><h1>" + esc(title) + "</h1>",
-           "<p>" + esc(NOTICE[language]) + "</p><nav aria-label=\"Exports\"><a href=\"native-reader.json\">JSON</a><a href=\"references.bib\">BibTeX</a>"]
+           "<title>" + esc(title) + "</title><style>body{max-width:76ch;margin:auto;padding:1.5rem;font:1rem/1.65 system-ui;color:#202b36;background:#faf9f6}a{color:#005c78}article,section,details{margin:1.5rem 0;padding:1rem;border:1px solid #bbc6cc;border-radius:.4rem}p,li,pre{white-space:pre-wrap;overflow-wrap:anywhere}code{overflow-wrap:anywhere}:target{outline:3px solid #b48b35}nav a{margin-right:1rem}.scope{background:#eef2f3;padding:.5rem}dt{font-weight:600}dd{margin:0 0 .5rem}</style></head><body id=\"top\"><a href=\"#main\">" + ui("Skip to content", "跳至主要內容") + "</a><header><h1>" + esc(title) + "</h1>",
+           "<p>" + esc(NOTICE[language]) + "</p><nav aria-label=\"" + ui("Exports", "匯出及語言") + "\"><a href=\"native-reader.json\">JSON</a><a href=\"references.bib\">BibTeX</a>"]
+    language_names = {"en": "English", "zh-TW": "繁體中文"}
     for lang in languages:
-        out.append('<a href="reader.' + lang + '.html">' + lang + "</a>")
+        out.append('<a href="reader.' + lang + '.html" lang="' + lang + '" hreflang="' + lang + '">' + language_names[lang] + '</a>')
     for name in attachments:
-        label = ("Supplied PDF attachment (language/content not verified): " if language == "en" else "提供的 PDF 附件（語言及內容未經驗證）：") if name.lower().endswith(".pdf") else ""
+        label = ui("Supplied PDF attachment (language/content not verified): ", "提供的 PDF 附件（語言及內容未經驗證）：") if name.lower().endswith(".pdf") else ""
         out.append('<a download href="' + esc(name) + '">' + esc(label + name) + '</a>')
-    out.append("</nav>")
-    if delivery_notes:
-        heading = "Supplied delivery notes" if language == "en" else "提供的交付說明"
-        out.append('<section id="delivery-notes"><h2>' + heading + '</h2>' + ''.join('<p>' + esc(note) + '</p>' for note in delivery_notes) + '</section>')
-    out.extend([paragraph("Languages supplied", ", ".join(languages) or missing), paragraph("Languages not supplied", ", ".join(sorted(set(LABELS) - set(languages))) or "—"), paragraph("Brief", observations["brief"]), paragraph("Run / project", observations["run_id"] + " / " + observations["project_id"]),
-                paragraph("Distinct work IDs / source-version observations", str(len({s['work_id'] for s in ordered})) + " / " + str(len(ordered))), "</header><nav aria-label=\"Contents\"><h2>" + esc(source_label) + "</h2><ul>"])
-    for source in ordered:
-        out.append('<li><a href="#' + source_anchor(source) + '">' + esc(source["title"]) + " — " + esc(source["id"]) + "</a></li>")
-    out.append('</ul><a href="#needs">' + esc(needs_label) + '</a><a href="#completion">' + esc(completion_label) + '</a><a href="#bibliography">' + esc(bib_label) + "</a></nav>")
-    for source in ordered:
-        record = content.get(source["id"], {})
-        out.extend(['<article id="' + source_anchor(source) + '"><h2>' + esc(source["title"]) + "</h2>", paragraph("Source / work", source["id"] + " / " + source["work_id"]), paragraph("Version", source["version"] if source["version"] is not None else unknown),
-                    '<div class="scope">' + paragraph("Recorded reading level / access", source["reading_level"] + " / " + source["access"]) + paragraph("Recorded reading reference", source["reading_ref"] or missing) + "</div>", paragraph("Relevance", source["relevance"])])
-        link = locator_link(source["locator"])
-        out.append('<p>Locator: ' + ('<a href="' + esc(link) + '" rel="noreferrer">' + esc(source["locator"]) + "</a>" if link else esc(source["locator"])) + "</p>")
-        if source["material"] is not None:
-            out.append(paragraph("Recorded material reference (not opened or rebound)", source["material"]["path"] + " / " + source["material"]["sha256"]))
-        category = record.get("category")
-        out.extend([paragraph(category_label, (category["label"] + " — " + category["reason"]) if category else missing), paragraph(summary_label, record.get("summary") or missing)])
-        out.append("<h3>" + esc(claims_label) + "</h3>")
-        if not record.get("claims"):
-            out.append("<p>" + esc(missing) + "</p>")
-        for claim in record.get("claims", []):
-            out.extend(['<section id="claim-' + token([source["id"], claim["id"]]) + '"><h4>' + esc(claim["id"]) + "</h4><p>" + esc(claim["text"]) + "</p>", paragraph("Provided scope", claim["reading_level"]), paragraph("Recorded reference / supplied locator", (claim["reading_ref"] or missing) + " / " + (claim["locator"] or missing)), "</section>"])
-        out.append("<h3>" + esc(limits_label) + "</h3><ul>" + "".join("<li>" + esc(v) + "</li>" for v in record.get("limitations", [])) + "</ul>")
-        if source["id"] in bibliography:
-            out.append('<p><a href="#bib-' + bib_key(source) + '">' + esc(bib_label) + "</a></p>")
-        out.append('<a href="#top">↑</a></article>')
-    out.append('<section id="needs"><h2>' + esc(needs_label) + "</h2>")
-    for need in observations["needs"]:
-        out.append(paragraph(need["id"] + " / " + need["status"], need["text"]))
-    completion = observations["completion"]
-    out.extend(['</section><section id="completion"><h2>' + esc(completion_label) + "</h2>", paragraph("Recorded status", completion["status"]), paragraph("Recorded reason", completion["reason"]), paragraph("Residual needs", ", ".join(completion["residual_need_ids"]) or "—"), '</section><section id="bibliography"><h2>' + esc(bib_label) + "</h2>"])
+    out.extend(["</nav>", paragraph(ui("Languages supplied", "已提供的語言"), ", ".join(languages) or missing), paragraph(ui("Languages not supplied", "未提供的語言"), ", ".join(sorted(set(LABELS) - set(languages))) or "—"), "</header><main id=\"main\">",
+                '<section id="brief"><h2>' + ui('Research brief', '研究簡述') + '</h2>', paragraph(ui('Original brief', '原始研究簡述'), observations['brief']),
+                paragraph(ui('Run / project', '執行 / 專案'), observations['run_id'] + ' / ' + observations['project_id']),
+                paragraph(ui('Distinct work IDs / source-version observations', '不同作品 ID / 來源版本紀錄'), str(len(works)) + ' / ' + str(len(ordered))), '</section>',
+                '<section id="completion"><h2>' + esc(completion_label) + '</h2>'])
+    completion = observations['completion']
+    out.extend([paragraph(ui('Recorded status', '紀錄狀態'), status(completion['status'])), paragraph(ui('Original recorded reason', '原始紀錄原因'), completion['reason']),
+                paragraph(ui('Residual need IDs', '剩餘需求 ID'), ', '.join(completion['residual_need_ids']) or '—'), '</section>',
+                '<section id="needs"><h2>' + esc(needs_label) + '</h2>'])
+    for need in observations['needs']:
+        out.append(paragraph(need['id'] + ' / ' + status(need['status']) + ' / ' + ui('original', '原文'), need['text']))
+    out.extend(['</section><nav id="contents" aria-label="' + ui('Contents', '目錄') + '"><h2>' + ui('Contents', '目錄') + '</h2>',
+                '<a href="#categories">' + ui('Provided categories', '提供的分類') + '</a><a href="#literature">' + ui('Works and versions', '作品與版本') + '</a><a href="#bibliography">' + esc(bib_label) + '</a><a href="#delivery-notes">' + ui('Appendix', '附錄') + '</a></nav>',
+                '<section id="categories"><h2>' + ui('Provided categories', '提供的分類') + '</h2><p>' + ui('Labels are supplied presentation labels, not scientific classifications or inclusion decisions.', '分類名稱僅為提供的呈現標籤，不代表科學分類或納入決定。') + '</p>'])
+    if not categories:
+        out.append('<p>' + esc(missing) + '</p>')
+    for label, category_sources in sorted(categories.items()):
+        out.append('<h3>' + esc(label) + '</h3><ul>')
+        for source in category_sources:
+            out.append('<li><a href="#' + source_anchor(source) + '">' + original_title(source["title"]) + " — " + esc(source["work_id"]) + " / " + esc(source["id"]) + " / " + esc(source["version"] if source["version"] is not None else unknown) + '</a></li>')
+        out.append('</ul>')
+    out.extend([back(), '</section><section id="literature"><h2>' + ui('Works and versions', '作品與版本') + '</h2><ul>'])
+    for work_id, versions in sorted(works.items()):
+        out.append('<li><a href="#' + work_anchor(work_id) + '">' + original_title(versions[0]['title']) + ' — ' + esc(work_id) + '</a><ul>')
+        for source in versions:
+            out.append('<li><a href="#' + source_anchor(source) + '">' + original_title(source['title']) + ' — ' + esc(source['id']) + ' / ' + esc(source['version'] if source['version'] is not None else unknown) + '</a></li>')
+        out.append('</ul></li>')
+    out.append('</ul></section>')
+    for work_id, versions in sorted(works.items()):
+        out.append('<section id="' + work_anchor(work_id) + '"><h2>' + ui('Work', '作品') + ': ' + esc(work_id) + '</h2>')
+        for source in versions:
+            record = content.get(source['id'], {})
+            out.extend(['<article id="' + source_anchor(source) + '"><h3>' + original_title(source['title']) + '</h3>', paragraph(ui('Source / work', '來源 / 作品'), source['id'] + ' / ' + source['work_id']), paragraph(ui('Version', '版本'), source['version'] if source['version'] is not None else unknown),
+                        '<div class="scope">' + paragraph(ui('Recorded reading level / access', '紀錄的閱讀層級 / 取得狀態'), status(source['reading_level']) + ' / ' + status(source['access'])) + paragraph(ui('Original recorded reading reference', '原始紀錄閱讀參照'), source['reading_ref'] or missing) + '</div>', paragraph(ui('Original relevance', '原始相關性說明'), source['relevance']), paragraph(ui('Recorded need IDs / attempt IDs', '紀錄的需求 ID / 嘗試 ID'), ', '.join(source['need_ids']) + ' / ' + ', '.join(source['attempt_ids']))])
+            link = locator_link(source['locator'])
+            out.append('<p><strong>' + ui('Original locator', '原始定位資訊') + ':</strong> ' + ('<a href="' + esc(link) + '" rel="noreferrer">' + esc(source['locator']) + '</a>' if link else esc(source['locator'])) + '</p>')
+            if source['material'] is not None:
+                out.append(paragraph(ui('Recorded material reference (not opened or rebound)', '紀錄的材料參照（未開啟或重新綁定）'), source['material']['path'] + ' / ' + source['material']['sha256']))
+            category = record.get('category')
+            out.extend([paragraph(category_label, (category['label'] + ' — ' + category['reason']) if category else missing), paragraph(summary_label, record.get('summary') or missing), '<h4>' + esc(claims_label) + '</h4>'])
+            if not record.get('claims'):
+                out.append('<p>' + esc(missing) + '</p>')
+            for claim in record.get('claims', []):
+                out.extend(['<section id="claim-' + token([source['id'], claim['id']]) + '"><h5>' + esc(claim['id']) + '</h5><p>' + esc(claim['text']) + '</p>', paragraph(ui('Provided scope', '提供的範圍'), status(claim['reading_level'])), paragraph(ui('Recorded reference / supplied locator', '紀錄參照 / 提供的定位資訊'), (claim['reading_ref'] or missing) + ' / ' + (claim['locator'] or missing)), '</section>'])
+            out.append('<h4>' + esc(limits_label) + '</h4><ul>' + ''.join('<li>' + esc(v) + '</li>' for v in record.get('limitations', [])) + '</ul>')
+            if source['id'] in bibliography:
+                out.append('<p><a href="#bib-' + bib_key(source) + '">' + esc(bib_label) + '</a></p>')
+            out.append(back() + '</article>')
+        out.append('</section>')
+    out.extend(['<section id="bibliography"><h2>' + esc(bib_label) + '</h2><p>' + ui('BibTeX exports supplied version records; fields may be unknown or missing, so these are not necessarily complete citations. Check version records and author formatting on import.', 'BibTeX 匯出的是提供的版本紀錄；欄位可能未知或缺漏，因此不一定是完整引文。匯入時請檢查版本紀錄與作者格式。') + '</p>'])
     for key in sorted(bibliography):
         record = bibliography[key]
-        out.extend(['<section id="bib-' + bib_key(sources[key]) + '"><h3>' + esc(record["title"]) + "</h3>", paragraph("BibTeX key", bib_key(sources[key])), paragraph("Caller-recorded verification reference", record["verification_ref"]), "</section>"])
-    out.append("</section><footer>" + paragraph("Input SHA256", json.dumps(input_hashes, ensure_ascii=False, sort_keys=True)) + '<a href="#top">↑</a></footer></body></html>')
+        source = sources[key]
+        out.extend(['<section id="bib-' + bib_key(source) + '"><h3>' + original_title(record['title']) + '</h3>',
+                    paragraph(ui('Source / work / version', '來源 / 作品 / 版本'), source['id'] + ' / ' + source['work_id'] + ' / ' + (source['version'] if source['version'] is not None else unknown)),
+                    '<p><strong>' + ui('Authors (supplied display names)', '作者（提供的顯示名稱）') + ':</strong></p>' + ('<ul>' + ''.join('<li>' + esc(name) + '</li>' for name in record['authors']) + '</ul>' if record.get('authors') else '<p>' + esc(missing) + '</p>'),
+                    paragraph(ui('Year', '年份'), record.get('year') if record.get('year') is not None else missing),
+                    paragraph(ui('Venue', '出版處'), record.get('venue') if record.get('venue') is not None else missing),
+                    paragraph('DOI', record.get('doi') if record.get('doi') is not None else missing),
+                    paragraph('URL', record.get('url') if record.get('url') is not None else missing),
+                    paragraph(ui('BibTeX key', 'BibTeX 鍵值'), bib_key(source)),
+                    paragraph(ui('Caller-recorded verification reference', '呼叫者紀錄的驗證參照'), record['verification_ref']), '</section>'])
+    out.extend([back(), '</section><details id="delivery-notes"><summary>' + ui('Appendix: supplied delivery notes and tool audit', '附錄：提供的交付說明與工具稽核') + '</summary>'])
+    if delivery_notes:
+        out.append('<h2>' + ui('Supplied delivery notes', '提供的交付說明') + '</h2>' + ''.join('<p>' + esc(note) + '</p>' for note in delivery_notes))
+    out.extend(['<h2>' + ui('Original capability and attempt records', '原始能力與嘗試紀錄') + '</h2><pre>' + esc(json.dumps({'capabilities': observations['capabilities'], 'attempts': observations['attempts']}, ensure_ascii=False, sort_keys=True, indent=2)) + '</pre>', back(), '</details></main><footer>' + paragraph(ui('Input SHA256', '輸入 SHA256'), json.dumps(input_hashes, ensure_ascii=False, sort_keys=True)) + back() + '</footer></body></html>'])
     return "\n".join(out).encode("utf-8")
-
 
 class Navigation(HTMLParser):
     def __init__(self):

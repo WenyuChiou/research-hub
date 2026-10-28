@@ -202,8 +202,15 @@ python "<resolved-reader-script>" --observations observations.json --content-en 
 Each language file is optional. A supplied file must declare that exact
 language; an absent language produces no HTML and is recorded as missing.
 Without language files, only JSON/BibTeX/manifest exports are generated.
-Missing per-source prose stays visibly not supplied. The helper neither
-translates nor asserts semantic parity. Original bibliographic titles remain
+The reader presents the original research brief, recorded completion and needs
+first, followed by a category/work index and the source literature. Categories
+are only caller-provided presentation labels, not scientific classifications
+or acceptance decisions. Versions are grouped by their recorded `work_id`
+without collapsing their distinct source anchors. Delivery notes remain available
+in a collapsed appendix. Fixed interface labels and enumerated statuses are
+localized, but free-text observations without a supplied translation are labeled
+as original rather than silently translated. Missing per-source prose stays
+visibly not supplied. The helper neither translates nor asserts semantic parity. Original bibliographic titles remain
 unchanged. All five recorded reading levels (`metadata`, `abstract`, `excerpt`,
 `full-text`, `unavailable`), access limits and partial/residual needs stay visible;
 restricted and abstract-only leads are retained. Nothing decides inclusion or
@@ -232,7 +239,7 @@ Presentation input is a view wrapper, not a second research-evidence schema:
 ```
 
 The optional root `delivery_notes` array contains plain supplied text, displayed
-near the top of that language's reader. Use existing recorded cohort counts,
+in a collapsed appendix after the literature. Use existing recorded cohort counts,
 assessment limits and unknown totals when relevant; retain work-versus-version
 distinctions and overlapping categories. Notes are not computed inclusion or
 reading decisions, new summaries or translations. Missing notes/languages stay
@@ -249,17 +256,67 @@ exceed the source's reading level. Abstract/excerpt/full-text claims need a
 non-null supplied locator. These checks bind presentation references; they do
 not establish that the claim is supported. No referenced material is opened.
 
-Optional bibliography input uses `format: native-reader-bibliography/1.0`
-and a `records` array. Each record requires `source_id`, `work_id`, `version`,
+Optional bibliography input uses `format: native-reader-bibliography/1.0` or
+`native-reader-bibliography/1.1` and a `records` array. Each record requires
+`source_id`, `work_id`, `version`,
 the unchanged source `title`, and `verification_ref` exactly equal to that
 source's recorded locator or non-null reading reference. Optional fields are
 `authors` (list or null), `year` (integer or null), `venue`, `doi`, and `url`
-(text or null). The agent supplies only already verified metadata; the renderer
-does not independently verify it. Unknown fields are omitted from BibTeX, never
+(text or null). In both versions, a supplied DOI must be nonempty text with no
+disallowed control characters and must match the DOI syntax check, which also
+rejects whitespace. The agent supplies only already verified metadata; the
+renderer does not independently verify it. Unknown fields are omitted from BibTeX, never
 inferred from a URL, title or summary. Missing bibliography yields an empty BibTeX
 export. Every supplied bibliography record is retained regardless of access or
 reading level. Source/work/version joins, rather than titles, produce stable
 distinct anchors and BibTeX keys, including separate versions of one work.
+Reader bibliography sections show the supplied authors (as display names), year,
+venue, DOI and URL for each version, with missing fields marked as not supplied.
+The BibTeX export contains supplied version records, not necessarily complete
+citations; unknown fields can be absent. Check each citation and the imported
+author formatting before reuse; no external import or acceptance is attested.
+
+Version 1.0 continues to protect each supplied author display name as a literal
+BibTeX author, but the literal-brace serialization change described below also
+applies to it. Version 1.1 optionally accepts
+`author_kinds` on each record: an array parallel to the supplied `authors`
+array, with exactly the same length and only `person` or `literal` entries.
+If `author_kinds` is present, `authors` must be an array (including an empty
+array if both arrays are empty); `author_kinds: null` is invalid. When
+`author_kinds` is omitted, the literal behavior is retained. This illustrative
+record fragment explicitly distinguishes a person from an organization; it does
+not infer classifications:
+
+```json
+{
+  "authors": ["Alice Smith", "Research Organization"],
+  "author_kinds": ["person", "literal"]
+}
+```
+
+`literal` keeps individual protective braces; `person` emits the escaped supplied name without
+those braces. The renderer does not infer person versus organization or split a
+name into given and family components. A `person` value containing a standalone
+BibTeX `and` author delimiter (case-insensitive, at whitespace boundaries) is
+rejected: provide separate author entries or choose `literal` where appropriate.
+Explicit `person` names containing either `{` or `}` are rejected, even when
+the braces are balanced. Person names may contain at most two commas, and each
+comma-separated component must contain at least one character that is neither
+whitespace nor a hyphen; separator-only components such as `-` are unsupported.
+Hyphenated names with actual text remain accepted. These are bounded syntax
+checks, not name or identity verification. The caller is
+responsible for providing valid BibTeX person-name syntax and checking the
+imported result; the renderer does not verify the meaning or identity of a name.
+
+For BibTeX text fields (including titles, names and venues), literal input
+braces are serialized as the balanced TeX macros `\textbraceleft{}` and
+`\textbraceright{}`; literal backslashes use `\textbackslash{}`. This also
+changes the exported bytes for 1.0 text fields containing braces; 1.0 text
+fields without braces retain their prior serialization. The JSON export preserves the
+original supplied text. DOI and URL fields continue to use percent-encoding.
+Synthetic BibTeX parser tests do not establish actual TeX rendering or
+compatibility across citation styles. Inspect the imported and typeset result;
+escaping alone is not a general guarantee of safe or correct output.
 
 To make existing assessment/provenance sidecars and delivery instructions
 discoverable, the agent may explicitly repeat `--attachment PATH` up to eight
@@ -282,7 +339,8 @@ local generation does not authorize publication of their contents.
 Inputs are bounded to 4 MiB each, reject duplicate JSON keys/nonfinite values,
 and must be ordinary unlinked files. Bibliographic HTTP(S) links are checked;
 unsafe URL schemes are refused, and provenance references stay escaped text.
-HTML and BibTeX text are escaped. No scripts or remote assets are emitted.
+HTML and BibTeX text use the escaping described above; this does not establish
+correct rendering or general safety. No scripts or remote assets are emitted.
 Check-only writes nothing and does not create an output directory. Generation
 requires a new output directory with an existing unlinked parent; existing
 outputs, traversal and input/output overlap are refused. Each directory is a
