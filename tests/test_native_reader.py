@@ -330,6 +330,83 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.assertEqual((output / sidecar.name).read_bytes(), sidecar.read_bytes())
         self.assertEqual((output / readme.name).read_bytes(), readme.read_bytes())
 
+    def test_supplied_pdf_is_opaque_copied_hashed_and_linked_in_both_readers(self):
+        # Deliberately not a valid PDF: no parser, validity or language claim.
+        pdf = self.root / "report.PDF"
+        raw = b"\x00\xffopaque supplied bytes\n"
+        pdf.write_bytes(raw)
+        text = self.root / "notes.txt"
+        text.write_bytes(b"unchanged UTF-8 text\n")
+        inputs, files, manifest = reader.prepare(self.obs, self.en, self.zh, self.bib, attachments=[pdf, text])
+        self.assertEqual(files[pdf.name], raw)
+        self.assertEqual(files[text.name], text.read_bytes())
+        digest = hashlib.sha256(raw).hexdigest()
+        self.assertEqual(manifest["inputs"]["attachment:" + pdf.name]["sha256"], digest)
+        self.assertEqual(manifest["outputs"][pdf.name]["sha256"], digest)
+        exported = json.loads(files["native-reader.json"])
+        self.assertEqual(next(a for a in exported["attachments"] if a["name"] == pdf.name)["sha256"], digest)
+        for lang, label in [("en", "Supplied PDF attachment (language/content not verified):"),
+                            ("zh-TW", "提供的 PDF 附件（語言及內容未經驗證）：")]:
+            markup = files["reader." + lang + ".html"].decode()
+            self.assertIn('<a download href="report.PDF">', markup)
+            self.assertIn(label, markup)
+            self.assertNotIn("<embed", markup)
+            self.assertNotIn("<iframe", markup)
+        output = reader.generate(self.root / "with-pdf", inputs, files, manifest)
+        self.assertEqual((output / pdf.name).read_bytes(), raw)
+        self.assertEqual(json.loads((output / "manifest.json").read_bytes())["outputs"][pdf.name]["sha256"], digest)
+
+    def test_pdf_limits_names_collisions_and_linked_inputs(self):
+        pdf = self.root / "Report.pdf"
+        pdf.write_bytes(b"x" * reader.LIMIT)
+        _, files, _ = reader.prepare(self.obs, self.en, attachments=[pdf])
+        self.assertEqual(len(files[pdf.name]), reader.LIMIT)
+        pdf.write_bytes(b"x" * (reader.LIMIT + 1))
+        with self.assertRaisesRegex(reader.ReaderError, "exceeds 4 MiB"):
+            reader.prepare(self.obs, self.en, attachments=[pdf])
+        pdf.write_bytes(b"opaque")
+        for name in ("bad name.pdf", "report.pdf.exe", "report.pdf.html"):
+            path = self.root / name
+            path.write_bytes(b"opaque")
+            with self.subTest(name=name), self.assertRaises(reader.ReaderError):
+                reader.prepare(self.obs, self.en, attachments=[path])
+        other = self.root / "other-pdf"
+        other.mkdir()
+        duplicate = other / "report.PDF"
+        duplicate.write_bytes(b"different")
+        with self.assertRaisesRegex(reader.ReaderError, "duplicate attachment"):
+            reader.prepare(self.obs, self.en, attachments=[pdf, duplicate])
+        link = self.root / "linked.pdf"
+        try:
+            link.symlink_to(pdf)
+        except (OSError, NotImplementedError):
+            pass
+        else:
+            with self.assertRaisesRegex(reader.ReaderError, "linked paths"):
+                reader.prepare(self.obs, self.en, attachments=[link])
+        hardlink = self.root / "hardlink.pdf"
+        try:
+            os.link(pdf, hardlink)
+        except (OSError, NotImplementedError):
+            pass
+        else:
+            with self.assertRaisesRegex(reader.ReaderError, "single-link regular file"):
+                reader.prepare(self.obs, self.en, attachments=[pdf])
+
+    def test_changed_pdf_leaves_partial_output_without_completion_manifest(self):
+        pdf = self.root / "report.pdf"
+        original = b"old\x00\xff"
+        pdf.write_bytes(original)
+        inputs, files, manifest = reader.prepare(self.obs, self.en, self.zh, attachments=[pdf])
+        pdf.write_bytes(b"new\x00\xfe")
+        output = self.root / "changed-pdf"
+        with self.assertRaisesRegex(reader.ReaderError, "input changed during generation"):
+            reader.generate(output, inputs, files, manifest)
+        self.assertTrue(output.is_dir())
+        self.assertEqual((output / pdf.name).read_bytes(), original)
+        self.assertTrue((output / "reader.en.html").exists())
+        self.assertFalse((output / "manifest.json").exists())
+
     def test_check_only_with_attachments_and_delivery_notes_writes_nothing(self):
         readme = self.root / "README.md"
         readme.write_text("Synthetic supporting notes.\n", encoding="utf-8")
