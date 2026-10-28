@@ -1,7 +1,9 @@
 """Offline synthetic acceptance for the optional standard-library skill renderer."""
 import contextlib
 import copy
+import errno
 import hashlib
+from html.parser import HTMLParser
 import importlib.util
 import io
 import json
@@ -144,6 +146,149 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         _, files, manifest = reader.prepare(self.obs)
         self.assertEqual(set(files), {"references.bib", "native-reader.json"})
         self.assertEqual(manifest["languages"], [])
+
+    def test_each_bilingual_reader_has_its_notice_once_in_the_header(self):
+        expected = {
+            "en": "Caller-provided observations and presentation only. Reading, source support, bibliography verification and translation parity are not attested. No inclusion or Stage 2 decision is made.",
+            "zh-TW": "本頁僅呈現呼叫者提供的觀察與內容，不認證實際閱讀、來源支持、書目查核或翻譯對等性，也不作納入文獻或 Stage 2 決定。",
+        }
+
+        class HeaderText(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.depth = 0
+                self.ignored = 0
+                self.header_count = 0
+                self.parts = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "header":
+                    self.header_count += 1
+                    self.depth += 1
+                elif self.depth and tag in {"script", "style"}:
+                    self.ignored += 1
+
+            def handle_endtag(self, tag):
+                if self.depth and tag in {"script", "style"} and self.ignored:
+                    self.ignored -= 1
+                elif tag == "header" and self.depth:
+                    self.depth -= 1
+
+            def handle_data(self, data):
+                if self.depth and not self.ignored:
+                    self.parts.append(data)
+
+        control = HeaderText()
+        control.feed("<header>visible<script>" + expected["en"] + "</script><style>" + expected["zh-TW"] + "</style></header><main>" + expected["en"] + "</main>")
+        control.close()
+        self.assertEqual("".join(control.parts), "visible")
+
+        inputs, files, manifest = self.prepared()
+        output = reader.generate(self.root / "bilingual-notice", inputs, files, manifest)
+        for language, notice in expected.items():
+            with self.subTest(language=language):
+                header = HeaderText()
+                header.feed((output / ("reader." + language + ".html")).read_text(encoding="utf-8"))
+                header.close()
+                self.assertEqual((header.header_count, header.depth, header.ignored), (1, 0, 0))
+                header_text = "".join(header.parts)
+                self.assertEqual(header_text.count(notice), 1)
+                other = "zh-TW" if language == "en" else "en"
+                self.assertNotIn(expected[other], header_text)
+
+    def test_missing_bibliography_has_only_the_bibtex_header(self):
+        expected = b"% Supplied verified bibliography only; verification is caller-recorded.\n\n"
+        for prose in (True, False):
+            with self.subTest(bilingual_prose=prose):
+                inputs, files, manifest = reader.prepare(self.obs, self.en if prose else None, self.zh if prose else None)
+                output = reader.generate(self.root / ("no-bibliography-prose" if prose else "no-bibliography-only"), inputs, files, manifest)
+                self.assertEqual((output / "references.bib").read_bytes(), expected)
+                delivered_manifest = json.loads((output / "manifest.json").read_bytes())
+                self.assertEqual(delivered_manifest["bibliography_records"], 0)
+                self.assertEqual(delivered_manifest["languages"], ["en", "zh-TW"] if prose else [])
+                exported = json.loads((output / "native-reader.json").read_bytes())
+                self.assertIsNone(exported["bibliography"])
+                self.assertEqual(exported["bib_keys"], {})
+
+    def test_language_navigation_links_and_missing_language_notice(self):
+        class HeaderNavigation(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.in_header = False
+                self.in_exports = False
+                self.anchor = None
+                self.paragraph = None
+                self.links = []
+                self.paragraphs = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "header":
+                    self.in_header = True
+                elif self.in_header and tag == "nav" and dict(attrs).get("aria-label") == "Exports":
+                    self.in_exports = True
+                elif self.in_header and tag == "a" and self.in_exports:
+                    self.anchor = [dict(attrs).get("href"), []]
+                elif self.in_header and tag == "p":
+                    self.paragraph = []
+
+            def handle_data(self, data):
+                if self.anchor is not None:
+                    self.anchor[1].append(data)
+                if self.paragraph is not None:
+                    self.paragraph.append(data)
+
+            def handle_endtag(self, tag):
+                if tag == "a" and self.anchor is not None:
+                    self.links.append((self.anchor[0], "".join(self.anchor[1])))
+                    self.anchor = None
+                elif tag == "p" and self.paragraph is not None:
+                    self.paragraphs.append("".join(self.paragraph))
+                    self.paragraph = None
+                elif tag == "nav" and self.in_exports:
+                    self.in_exports = False
+                elif tag == "header":
+                    self.in_header = False
+
+        for both in (True, False):
+            with self.subTest(bilingual=both):
+                inputs, files, manifest = reader.prepare(self.obs, self.en, self.zh if both else None)
+                output = reader.generate(self.root / ("navigation-bilingual" if both else "navigation-en"), inputs, files, manifest)
+                expected_languages = ["en", "zh-TW"] if both else ["en"]
+                expected_links = [("reader." + lang + ".html", lang) for lang in expected_languages]
+                for language in expected_languages:
+                    with self.subTest(language=language):
+                        header = HeaderNavigation()
+                        header.feed((output / ("reader." + language + ".html")).read_text(encoding="utf-8"))
+                        header.close()
+                        language_links = [(href, label) for href, label in header.links if href and href.startswith("reader.") and href.endswith(".html")]
+                        self.assertEqual(language_links, expected_links)
+                        for href, _ in language_links:
+                            self.assertTrue((output / href).is_file())
+                        if not both:
+                            self.assertFalse((output / "reader.zh-TW.html").exists())
+                            self.assertIn("Languages not supplied: zh-TW", header.paragraphs)
+
+    def test_empty_bibliography_is_distinct_from_omitted_bibliography(self):
+        empty = {"format": "native-reader-bibliography/1.0", "records": []}
+        self.bib.write_bytes(reader.canonical(empty))
+        for prose in (True, False):
+            results = {}
+            for supplied in (True, False):
+                with self.subTest(bilingual_prose=prose, bibliography_supplied=supplied):
+                    inputs, files, manifest = reader.prepare(self.obs, self.en if prose else None, self.zh if prose else None,
+                                                             self.bib if supplied else None)
+                    output = reader.generate(self.root / ("empty-bib-" + str(prose) + "-" + str(supplied)), inputs, files, manifest)
+                    exported = json.loads((output / "native-reader.json").read_bytes())
+                    delivered_manifest = json.loads((output / "manifest.json").read_bytes())
+                    results[supplied] = (output / "references.bib").read_bytes()
+                    self.assertEqual(exported["bibliography"], empty if supplied else None)
+                    self.assertEqual(exported["bib_keys"], {})
+                    self.assertEqual(delivered_manifest["bibliography_records"], 0)
+                    self.assertEqual("bibliography" in delivered_manifest["inputs"], supplied)
+                    if supplied:
+                        self.assertEqual(delivered_manifest["inputs"]["bibliography"]["sha256"], hashlib.sha256(self.bib.read_bytes()).hexdigest())
+            self.assertEqual(results[True], results[False])
+            self.assertEqual(results[True], b"% Supplied verified bibliography only; verification is caller-recorded.\n\n")
 
     def test_check_only_writes_nothing(self):
         before = self.snapshot(self.root)
@@ -400,6 +545,63 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         with self.assertRaises(reader.ReaderError):
             reader.generate(existing, inputs, files, manifest)
         self.assertFalse(list(existing.iterdir()))
+
+    def test_output_parent_symlink_is_rejected_without_writing_through(self):
+        inputs, files, manifest = self.prepared()
+        input_snapshot = {key: (path.read_bytes(), path.stat().st_mtime_ns) for key, (path, _, _) in inputs.items()}
+        target = self.root / "symlink-target"
+        target.mkdir()
+        (target / "sentinel.txt").write_bytes(b"preserve this file")
+        before = self.snapshot(target)
+        link = self.root / "linked-parent"
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except NotImplementedError:
+            self.skipTest("directory symlinks are not implemented on this platform")
+        except OSError as error:
+            unsupported = {errno.ENOSYS, getattr(errno, "ENOTSUP", errno.ENOSYS), getattr(errno, "EOPNOTSUPP", errno.ENOSYS)}
+            if getattr(error, "winerror", None) in {50, 1314} or error.errno in unsupported:
+                self.skipTest("directory symlink unsupported or Windows privilege unavailable: " + str(error))
+            raise
+        self.assertTrue(link.is_symlink())
+        with self.assertRaisesRegex(reader.ReaderError, "linked paths"):
+            reader.generate(link / "output", inputs, files, manifest)
+        self.assertEqual(self.snapshot(target), before)
+        self.assertFalse((target / "output").exists())
+        self.assertEqual({key: (path.read_bytes(), path.stat().st_mtime_ns) for key, (path, _, _) in inputs.items()}, input_snapshot)
+
+    def test_partial_file_write_is_preserved_and_fresh_retry_succeeds(self):
+        inputs, files, manifest = self.prepared()
+        input_snapshot = {key: (path.read_bytes(), path.stat().st_mtime_ns) for key, (path, _, _) in inputs.items()}
+        first_name = sorted(files)[0]
+        self.assertGreater(len(files[first_name]), 1)
+        prefix = files[first_name][:len(files[first_name]) // 2]
+        output = self.root / "partial-file"
+        attempted = []
+
+        def fail_after_prefix(path, data):
+            attempted.append(path.name)
+            self.assertEqual((path.name, data), (first_name, files[first_name]))
+            with path.open("xb") as stream:
+                stream.write(prefix)
+            raise OSError("synthetic partial write failure")
+
+        with patch.object(reader, "write_file", side_effect=fail_after_prefix):
+            with self.assertRaisesRegex(OSError, "synthetic partial write failure"):
+                reader.generate(output, inputs, files, manifest)
+        self.assertEqual(attempted, [first_name])
+        self.assertEqual({path.name for path in output.iterdir()}, {first_name})
+        self.assertEqual((output / first_name).read_bytes(), prefix)
+        self.assertFalse((output / "manifest.json").exists())
+        partial_snapshot = self.snapshot(output)
+        with self.assertRaisesRegex(reader.ReaderError, "output already exists"):
+            reader.generate(output, inputs, files, manifest)
+        self.assertEqual(self.snapshot(output), partial_snapshot)
+        retry = reader.generate(self.root / "partial-file-retry", inputs, files, manifest)
+        self.assertEqual({name: (retry / name).read_bytes() for name in files}, files)
+        self.assertEqual(json.loads((retry / "manifest.json").read_bytes()), manifest)
+        self.assertEqual(self.snapshot(output), partial_snapshot)
+        self.assertEqual({key: (path.read_bytes(), path.stat().st_mtime_ns) for key, (path, _, _) in inputs.items()}, input_snapshot)
 
     def test_interrupted_generation_has_no_completed_manifest(self):
         inputs, files, manifest = self.prepared()
