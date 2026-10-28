@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -521,6 +522,91 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.obs.write_bytes(b" " * (reader.LIMIT + 1))
         with self.assertRaisesRegex(reader.ReaderError, "exceeds 4 MiB"):
             reader.prepare(self.obs)
+
+    def fifo_swap_rejected(self, stage):
+        # The child alone performs the potentially blocking open. subprocess.run
+        # kills and reaps that owned child on timeout, even on a regressed reader.
+        code = """
+import importlib.util
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+script, root, stage = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+spec = importlib.util.spec_from_file_location("fifo_reader", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+target = root / "observations.json"
+real_open = os.open
+reads = 0
+
+def swap_before_open(path, flags, *args, **kwargs):
+    global reads
+    if Path(path) == target:
+        reads += 1
+        if reads == (1 if stage == "prepare" else 2):
+            target.rename(root / "original-observations.json")
+            os.mkfifo(target)
+    return real_open(path, flags, *args, **kwargs)
+
+with patch.object(module.os, "open", swap_before_open):
+    result = module.main([
+        "--observations", str(target),
+        "--content-en", str(root / "content.en.json"),
+        "--content-zh-TW", str(root / "content.zh-TW.json"),
+        "--bibliography", str(root / "bibliography.json"),
+        "--output-dir", str(root / "new-output"),
+    ])
+raise SystemExit(result)
+"""
+        mirror = ROOT / "src/research_hub/skills_data/research-hub/scripts/render_native_reader.py"
+        _, expected_files, _ = self.prepared()
+        for script in (SCRIPT, mirror):
+            with self.subTest(script=script, stage=stage):
+                with tempfile.TemporaryDirectory(dir=self.root) as temporary:
+                    root = Path(temporary)
+                    for source in (self.obs, self.en, self.zh, self.bib):
+                        (root / source.name).write_bytes(source.read_bytes())
+                    existing = root / "existing-output"
+                    existing.mkdir()
+                    (existing / "user-note.txt").write_bytes(b"preserve existing output")
+                    before = self.snapshot(root)
+                    result = subprocess.run(
+                        [sys.executable, "-I", "-S", "-B", "-c", code,
+                         str(script), str(root), stage],
+                        capture_output=True, timeout=5, check=False,
+                    )
+                    self.assertEqual(result.returncode, 1, result.stderr.decode(errors="replace"))
+                    self.assertEqual(result.stdout, b"")
+                    failure = json.loads(result.stderr)
+                    self.assertEqual(failure["status"], "failed")
+                    self.assertIn("single-link regular file", failure["error"])
+                    self.assertTrue((root / self.obs.name).is_fifo())
+                    original = root / "original-observations.json"
+                    self.assertEqual((original.read_bytes(), original.stat().st_mtime_ns),
+                                     before[self.obs.name])
+                    for name, snapshot in before.items():
+                        if name != self.obs.name:
+                            path = root / name
+                            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), snapshot)
+                    output = root / "new-output"
+                    self.assertFalse((output / "manifest.json").exists())
+                    if stage == "prepare":
+                        self.assertFalse(output.exists())
+                    else:
+                        self.assertEqual({p.name: p.read_bytes() for p in output.iterdir()},
+                                         expected_files)
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"),
+                         "FIFO replacement requires POSIX nonblocking open")
+    def test_fifo_swap_during_prepare_fails_without_writes(self):
+        self.fifo_swap_rejected("prepare")
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"),
+                         "FIFO replacement requires POSIX nonblocking open")
+    def test_fifo_swap_during_final_recheck_preserves_incomplete_output(self):
+        self.fifo_swap_rejected("recheck")
 
     def test_hardlinked_input_is_rejected(self):
         import os

@@ -391,8 +391,12 @@ def read_file(value):
     before = path.stat()
     require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1, "input must be a single-link regular file")
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    # A FIFO substituted after the pathname check must not block before fstat.
+    if os.name == "posix":
+        flags |= os.O_NONBLOCK
     with os.fdopen(os.open(path, flags), "rb") as stream:
         opened = os.fstat(stream.fileno())
+        require(stat.S_ISREG(opened.st_mode) and opened.st_nlink == 1, "input must be a single-link regular file")
         require((before.st_dev, before.st_ino) == (opened.st_dev, opened.st_ino), "input identity changed")
         data = stream.read(LIMIT + 1)
         after = os.fstat(stream.fileno())
