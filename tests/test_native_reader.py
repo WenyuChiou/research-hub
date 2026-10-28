@@ -1002,6 +1002,80 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         record["author_kinds"] = ["person", "literal"]
         self.rejected()  # 1.0 must not silently change behavior.
 
+    def test_bibliography_1_1_title_tokens_preserve_punctuation(self):
+        title = "LLMs & Likert: a 45-Year eBay study"
+        self.observations["sources"][0]["title"] = title
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        record.update(title=title, authors=None)
+        self.bibliography["records"] = [record]
+        self.save_inputs()
+        _, files, _ = self.prepared()
+        self.assertIn(r"title = {{LLMs} \& {Likert}: {a} {45}-{Year} {eBay} {study}}",
+                      files["references.bib"].decode())
+        self.assertEqual(json.loads(files["native-reader.json"])["bibliography"], self.bibliography)
+
+    def test_bibliography_1_1_preserves_title_case_and_short_title_in_pandoc_import(self):
+        binary = shutil.which("pandoc")
+        if binary is None:
+            self.skipTest("Pandoc not available; no installation attempted")
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        self.bibliography["records"] = [record]
+        for title in ("LLMs and Likert Ratings in eBay Research",
+                      "eBay, iPhone and COVID-19: a Likert-scale Study",
+                      "Étude de Likert: a naïve eBay Comparison",
+                      "LLMs & Likert: a 45-Year eBay study"):
+            with self.subTest(title=title):
+                self.observations["sources"][0]["title"] = title
+                record.update(title=title, authors=None)
+                self.save_inputs()
+                _, files, _ = self.prepared()
+                process = subprocess.run([binary, "--from=bibtex", "--to=csljson"],
+                                         input=files["references.bib"], capture_output=True,
+                                         timeout=15, check=False)
+                self.assertEqual(process.returncode, 0, process.stderr.decode(errors="replace"))
+                imported = json.loads(process.stdout)
+                self.assertEqual(len(imported), 1)
+                self.assertEqual(imported[0]["id"], reader.bib_key(self.observations["sources"][0]))
+                self.assertEqual(imported[0]["title"], title)
+                if ":" in title:
+                    self.assertEqual(imported[0]["title-short"], title.split(":", 1)[0])
+                else:
+                    self.assertNotIn("title-short", imported[0])
+                self.assertEqual(json.loads(files["native-reader.json"])["bibliography"], self.bibliography)
+
+    def test_bibliography_1_1_protected_words_survive_adjacent_escaped_literals_in_pandoc(self):
+        binary = shutil.which("pandoc")
+        if binary is None:
+            self.skipTest("Pandoc not available; no installation attempted")
+        self.bibliography["format"] = "native-reader-bibliography/1.1"
+        record = self.bibliography["records"][0]
+        self.bibliography["records"] = [record]
+        titles = ["A {B} C", "A }B C", "A B{C D", "A {B{C D",
+                  "A {B}{C} D", "A {{B}}C: dE", "A {}{B} C", "A }{B C",
+                  "A {B}C }{D: eF"]
+        titles.extend("A " + char + "B: cD" for char in "\\~^$&%#_")
+        for title in titles:
+            with self.subTest(title=title):
+                self.observations["sources"][0]["title"] = title
+                record.update(title=title, authors=None)
+                self.save_inputs()
+                _, files, _ = self.prepared()
+                process = subprocess.run([binary, "--from=bibtex", "--to=csljson"],
+                                         input=files["references.bib"], capture_output=True,
+                                         timeout=15, check=False)
+                self.assertEqual(process.returncode, 0, process.stderr.decode(errors="replace"))
+                imported = json.loads(process.stdout)
+                self.assertEqual(len(imported), 1)
+                # Pandoc already omits these literal-brace macros in 1.0;
+                # grouping must not additionally consume the adjacent words.
+                expected = title.replace("{", "").replace("}", "")
+                self.assertEqual(imported[0]["title"], expected)
+                if ":" in title:
+                    self.assertEqual(imported[0]["title-short"], expected.split(":", 1)[0])
+                self.assertEqual(json.loads(files["native-reader.json"])["bibliography"], self.bibliography)
+
     def test_bibliography_1_1_kinds_preserve_order_identity_and_escape(self):
         self.bibliography["format"] = "native-reader-bibliography/1.1"
         one, two = self.bibliography["records"][:2]
@@ -1041,7 +1115,11 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.bibliography["format"] = "native-reader-bibliography/1.1"
         self.save_inputs()
         _, after, _ = self.prepared()
-        self.assertEqual(before["references.bib"], after["references.bib"])
+        # 1.1 title grouping is separately tested. Omitted author kinds keep
+        # every non-title field byte-identical to the 1.0 export.
+        def without_titles(value):
+            return b"\n".join(line for line in value.splitlines() if not line.startswith(b"  title = "))
+        self.assertEqual(without_titles(before["references.bib"]), without_titles(after["references.bib"]))
         self.assertIn(b"author = {{Alice Smith} and {World Health Organization}}", after["references.bib"])
 
     def test_bibliography_1_1_rejects_bad_kinds_and_ambiguous_person(self):
@@ -1315,7 +1393,13 @@ ITERATE {call.type$}
                 for i, record in enumerate(self.bibliography["records"]):
                     block = blocks[reader.bib_key(self.observations["sources"][i])]
                     title, authors, journal, doi, url, note = (block[k] for k in ("TITLE", "AUTHOR", "JOURNAL", "DOI", "URL", "NOTE"))
-                    self.assertEqual(title, encoded(record["title"]))
+                    expected_title = encoded(record["title"])
+                    if version == "1.1":
+                        expected_title = [
+                            r'{Title} {\textbraceright{}}, {note} = "{INJECTED}", {\textbraceright{}} @{misc}{\textbraceleft{}}{injected}, {title}={\textbraceleft{}}{X}{\textbraceright{}} \textbackslash{}{bad} {\textbraceleft{}}{open}',
+                            r'{Title} {\textbraceleft{}}{balanced}{\textbraceright{}} {and} {\textbraceright{}}{unmatched} \textbackslash{}\textbackslash{}{tail}',
+                        ][i]
+                    self.assertEqual(title, expected_title)
                     first = "{" + encoded(record["authors"][0]) + "}"
                     second = encoded(record["authors"][1])
                     if version == "1.0":

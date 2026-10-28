@@ -306,16 +306,26 @@ def bibliography_view(value, sources):
     return found
 
 
-def tex(value):
+def tex(value, *, isolate_brace_macros=False):
     escapes = {"\\": r"\textbackslash{}", "{": r"\textbraceleft{}", "}": r"\textbraceright{}", "$": r"\$", "&": r"\&", "%": r"\%", "#": r"\#", "_": r"\_", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}", "\n": " ", "\r": " ", "\t": " "}
+    if isolate_brace_macros:
+        # Bound macro arguments before adjoining case-protected word groups.
+        for char in "{}":
+            escapes[char] = "{" + escapes[char] + "}"
     return "".join(escapes.get(c, c) for c in value)
 
 
-def bibtex(sources, bibliography):
+def bibtex(sources, bibliography, *, protect_title_case=False):
     entries = []
     for key in sorted(bibliography):
         record = bibliography[key]
-        fields = {"title": tex(record["title"])}
+        title = tex(record["title"])
+        if protect_title_case:
+            # Protect every word, not guessed proper names. Keep punctuation
+            # outside groups so consumers can still derive short titles.
+            title = "".join("{" + tex(part) + "}" if i % 2 else tex(part, isolate_brace_macros=True)
+                            for i, part in enumerate(re.split(r"(\w+)", record["title"])))
+        fields = {"title": title}
         if record.get("authors"):
             kinds = record.get("author_kinds", ["literal"] * len(record["authors"]))
             fields["author"] = " and ".join(tex(name) if kind == "person" else "{" + tex(name) + "}"
@@ -580,7 +590,11 @@ def prepare(observations, content_en=None, content_zh_tw=None, bibliography=None
                 "validation_scope": "presentation fields, exact references and generated links only; native evidence checker and semantic verification not performed"}
     if attachment_names:
         exported["attachments"] = [{"name": name, "bytes": len(supporting_files[name]), "sha256": sha(supporting_files[name])} for name in attachment_names]
-    files = {"native-reader.json": canonical(exported), "references.bib": bibtex(sources, bibliography_records)}
+    files = {"native-reader.json": canonical(exported), "references.bib": bibtex(
+        sources, bibliography_records,
+        protect_title_case=bibliography_payload is not None
+        and bibliography_payload["format"] == "native-reader-bibliography/1.1",
+    )}
     files.update(supporting_files)
     for language in languages:
         files["reader." + language + ".html"] = reader_html(language, profile, sources, content[language], bibliography_records, languages, input_hashes,

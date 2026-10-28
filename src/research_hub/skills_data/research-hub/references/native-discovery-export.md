@@ -352,6 +352,20 @@ checks, not name or identity verification. The caller is
 responsible for providing valid BibTeX person-name syntax and checking the
 imported result; the renderer does not verify the meaning or identity of a name.
 
+Version 1.1 protects each supplied title word (Unicode letter/digit/underscore
+runs) with a BibTeX case-preserving group; punctuation and whitespace remain
+outside word groups. Literal-brace escape macros are isolated in their own
+balanced groups, preventing them from consuming adjoining protected words in
+Pandoc. This preserves supplied case without guessing which words are proper
+names, while letting importers derive short titles at colons. It also
+prevents ordinary sentence-case normalization; it does not infer preferred
+citation-style capitalization. Version 1.0 title serialization is unchanged.
+This protects supplied case, not source accuracy or compatibility with every
+citation style. Imported short titles remain consumer-derived, not supplied
+bibliographic metadata. Pandoc 3.1.11.1 still omits literal brace glyphs encoded
+by these macros, as it does for 1.0; case protection does not promise an exact
+round trip of every literal character.
+
 For BibTeX text fields (including titles, names and venues), literal input
 braces are serialized as the balanced TeX macros `\textbraceleft{}` and
 `\textbraceright{}`; literal backslashes use `\textbackslash{}`. This also
