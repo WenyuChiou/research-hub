@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import hashlib
 import json
+import re
 
 
 def _readme_text() -> str:
@@ -41,8 +42,9 @@ def test_researcher_first_visuals_and_preview_install_are_bilingual():
         writing = f"docs/images/workspace-writing.{locale}.png"
         assert lifecycle in text[:2500]
         assert text.index(lifecycle) < text.index(screenshot) < text.index(writing)
-        pin = json.loads((root / "docs/workspace-writing-source.json").read_text(encoding="utf-8"))
-        assert f"git checkout --detach {pin['hub_preview_commit']}" in text
+        # README uses a newer source snapshot; the producer manifest retains
+        # its historical preview pin and must not be silently rewritten.
+        assert "git checkout --detach c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a" in text
         for executable in ("./.venv/bin/python", r".\.venv\Scripts\python.exe"):
             assert f"{executable} -m research_hub project demo --root ./workspace-demo --json" in text
         assert "docs/workspace-architecture.md" in text
@@ -70,3 +72,15 @@ def test_dated_capability_baseline_does_not_inherit_later_timeout_or_setup_evide
     assert "separate source, wheel and" in text
     assert "not live connector verification" in text
     assert "not a recommendation to deploy an unmerged validation branch" in text
+
+
+def test_readme_command_blocks_and_compatibility_anchors_match():
+    root = Path(__file__).resolve().parents[1]
+    english = (root / "README.md").read_text(encoding="utf-8")
+    chinese = (root / "README.zh-TW.md").read_text(encoding="utf-8")
+    blocks = lambda text: re.findall(r"```(?:sh|powershell)\n(.*?)```", text, re.S)
+    assert blocks(english) == blocks(chinese)
+    for name in ("start-here", "first-run-checklist", "workspace-preview",
+                 "credential-reference", "connect-your-ai-host", "published-dashboard"):
+        marker = f'<a id="{name}"></a>'
+        assert english.count(marker) == chinese.count(marker) == 1
