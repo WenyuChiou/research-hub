@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills/research-hub/scripts/render_native_reader.py"
@@ -839,6 +840,40 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         with self.assertRaisesRegex(reader.ReaderError, "input or output parent is missing"):
             reader.prepare(self.obs, self.en, attachments=[self.root / "absent.txt"])
 
+    @unittest.skipUnless(os.name == "posix", "fixture name cannot be created on all filesystems")
+    def test_posix_device_named_attachment_is_rejected_before_output(self):
+        device = self.root / "CON.txt"
+        device.write_text("synthetic only", encoding="utf-8")
+        output = self.root / "unsafe-output"
+        with self.assertRaisesRegex(reader.ReaderError, "Windows reserved"):
+            inputs, files, manifest = reader.prepare(self.obs, self.en, attachments=[device])
+            reader.generate(output, inputs, files, manifest)
+        self.assertFalse(output.exists())
+        self.assertEqual(device.read_text(encoding="utf-8"), "synthetic only")
+
+    def test_attachment_name_portability_rejects_windows_device_stems(self):
+        # Test the lexical contract independently of the host filesystem: a
+        # Windows filesystem may refuse creation before the renderer sees it.
+        devices = ["CON", "PRN", "AUX", "NUL"] + [
+            prefix + str(n) for prefix in ("COM", "LPT") for n in range(1, 10)
+        ]
+        for device in devices:
+            for suffix in (".json", ".md", ".txt", ".pdf"):
+                for name in (device + suffix, device.lower() + ".extra" + suffix.upper()):
+                    with self.subTest(name=name):
+                        with self.assertRaisesRegex(reader.ReaderError, "Windows reserved"):
+                            reader.validate_attachment_name(name)
+        for name in ("CONSOLE.txt", "COM0.txt", "COM10.json", "LPT10.md", "nulled.pdf", "safe..txt"):
+            with self.subTest(name=name):
+                self.assertEqual(reader.validate_attachment_name(name), name)
+        # Include characters matched by Unicode-aware IGNORECASE despite the
+        # documented ASCII rule, as well as already-invalid basename forms.
+        for name in ("safe.txt.", "safe.txt ", "CON .txt", "résumé.txt", "COM¹.txt", "CONIN$.txt",
+                     "ſafe.txt", "K.txt", "İ.txt", "ı.txt"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(reader.ReaderError, "unsafe attachment name"):
+                    reader.validate_attachment_name(name)
+
     def test_attachment_change_prevents_a_complete_manifest(self):
         path = self.root / "README.md"
         path.write_text("original supplied limits", encoding="utf-8")
@@ -870,6 +905,37 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         with self.assertRaises(reader.ReaderError):
             reader.generate(first, inputs, files, manifest)
         self.assertEqual(self.snapshot(first), before)
+
+    def test_synthetic_output_zip_round_trip_preserves_exact_bytes(self):
+        # Packaging is caller-owned: this exercises a standard-library ZIP of a
+        # safe-name fixture, not all ZIP tools or cross-platform extraction.
+        note = self.root / "synthetic-notes.txt"
+        note.write_text("合成內容 & <plain text>\n", encoding="utf-8")
+        inputs, files, manifest = reader.prepare(
+            self.obs, self.en, self.zh, self.bib, attachments=[note]
+        )
+        output = reader.generate(self.root / "zip-source", inputs, files, manifest)
+        expected = {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()}
+        self.assertEqual(set(expected), set(manifest["outputs"]) | {"manifest.json"})
+        archive = self.root / "synthetic-delivery.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name in sorted(expected):
+                self.assertEqual(Path(name).name, name)
+                zf.write(output / name, arcname=name)
+        extracted = self.root / "zip-extracted"
+        extracted.mkdir()
+        with zipfile.ZipFile(archive) as zf:
+            self.assertIsNone(zf.testzip())
+            self.assertEqual(set(zf.namelist()), set(expected))
+            self.assertEqual(len(zf.namelist()), len(expected))
+            self.assertTrue(all(Path(n).name == n and n not in {".", ".."} for n in zf.namelist()))
+            zf.extractall(extracted)
+        actual = {p.name: p.read_bytes() for p in extracted.iterdir() if p.is_file()}
+        self.assertEqual(actual, expected)
+        restored_manifest = json.loads(actual["manifest.json"])
+        for name, record in restored_manifest["outputs"].items():
+            self.assertEqual(len(actual[name]), record["bytes"])
+            self.assertEqual(hashlib.sha256(actual[name]).hexdigest(), record["sha256"])
 
     def test_escaping_blocks_active_html_and_bibtex_injection(self):
         _, files, _ = self.prepared()

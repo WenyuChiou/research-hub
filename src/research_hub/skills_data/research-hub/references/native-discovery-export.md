@@ -381,6 +381,15 @@ discoverable, the agent may explicitly repeat `--attachment PATH` up to eight
 times on either command above. Each selected file must be an ordinary single-link regular file, at most 4 MiB,
 with an ASCII basename of letters, digits, dots, underscores or hyphens (starting
 with a letter/digit) and a `.json`, `.md`, `.txt` or `.pdf` suffix (case-insensitive).
+Windows device basenames (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`,
+`LPT1`–`LPT9`, case-insensitive even before additional extensions) are refused
+rather than renamed. This lexical check does not establish cross-platform ZIP
+extraction or filesystem acceptance.
+This tightens attachment-name validation independently of content or bibliography
+version (including content 1.0 and bibliography 1.0/1.1): previously accepted
+device names and the four non-ASCII letters admitted by Unicode case-insensitive
+matching are now rejected. Existing generated output is not renamed or rewritten;
+other content and export formats are unchanged.
 JSON, Markdown and text attachments must be UTF-8 without NUL. PDF attachments
 are read and copied as opaque bytes; their validity, contents, language and
 correspondence to a report are not verified. No PDF is generated, parsed,
