@@ -2,7 +2,7 @@
 
 # research-hub
 
-以可追溯的工作流程，串連文獻、研究檔案與稿件的本機工作區。
+給研究者的本機工作區：整理文獻、證據與稿件，並由你審查 AI 提案。
 
 繁體中文 · [English](README.md) · [工作區指南](docs/workspace-guide.zh-TW.md) · [安裝指南](docs/setup.md) · [開發者架構](docs/workspace-architecture.md)
 
@@ -13,7 +13,7 @@
 研究散落在文獻、筆記、分析結果和稿件之間。一篇論文可能影響研究問題，一份資料更新可能讓某個結論或稿件段落需要重新檢視。research-hub 提供本機工作區，讓研究者與 AI 助理能記錄這些關聯、交接任務，並在採納提案前進行人工審查。
 
 - **保留脈絡：** 將研究問題、來源、證據、結果與稿件放在同一個專案中，而不只留在對話歷史裡。
-- **追蹤變動：** 登錄檔案的路徑與雜湊值，檢視輸入變動後可能需要重新審查的工作。
+- **追蹤變動：** 登錄檔案路徑與檔案指紋（hash），協助辨識檔案是否改變，再檢視可能需要重新審查的工作。
 - **保留決策權：** AI 工作產生的提案要經人工檢視；本機交付也需要另行核准。
 
 ![概念圖：研究問題串連文獻、證據、分析、稿件提案與人工審查；輸入變動後，相關工作需要重新檢視。](docs/images/workspace-lifecycle.zh-TW.png)
@@ -26,6 +26,8 @@
 <a id="workspace-preview"></a>
 
 ### 在本機試用工作區
+
+建議先試用下方工作區；如果只想看已發布的舊版文獻儀表板，再看下面的選項。
 
 需要 Python 3.10+ 與 Git。以下從原始碼安裝工作區，並在**新建或空白的** `workspace-demo` 目錄建立示範資料。這條路徑與 PyPI 發布套件不同：套件版本號不保證包含目前原始碼的工作區功能。
 
@@ -58,11 +60,14 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
-開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)。 使用完畢後按 `Ctrl+C` 停止前景伺服器。示範不需要帳號；其中的小型數值加總與文獻回顧資料是教學輸入，不是研究發現。使用自己的檔案可參閱[工作區指南](docs/workspace-guide.zh-TW.md)；指南中的舊版固定預覽是歷史版本。
+開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)。示範包含兩個教學專案。開啟後可選 **繁體中文**，再在**專案**下拉選單中，選擇 `DEMO: three floating-point summation cases`（`summation-demo`，浮點加總範例）或 `DEMO: floating-point reading and review outline`（`review-demo`，文獻回顧範例），再開啟**文獻**看看文獻頁面。這些是教學輸入，不是研究發現，也不需要帳號。使用完畢後按 `Ctrl+C` 停止前景伺服器。
+
+使用自己的檔案，請直接前往[使用自己的專案](docs/workspace-guide.zh-TW.md#使用自己的專案)；指南中較早的安裝固定版本是歷史紀錄。
 
 <a id="published-dashboard"></a>
 
-### 已發布的文獻儀表板
+<details>
+<summary>選用：試用已發布的舊版文獻儀表板</summary>
 
 [PyPI 套件](https://pypi.org/project/research-hub-pipeline/)提供較早的文獻儀表板，不是較新的原始碼工作區。若要試用免帳號範例，以下獨立虛擬環境與空白根目錄的方式已在 Linux、Python 3.12 測試：
 
@@ -75,6 +80,8 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 請在 HOME 下使用新建或空白的 `research-hub-preview` 目錄：指令會在其中建立 `.research_hub` 與 `logs`。程式會印出產生的暫存 HTML 路徑；請在瀏覽器開啟該路徑。在乾淨 HOME 未設定根目錄時，直接執行 `dashboard --sample` 曾失敗；平台與瀏覽器的限制見[驗證紀錄](docs/readme-verification-history.md)。若要連接實際服務，請參閱[安裝指南](docs/setup.md)、[儀表板導覽](docs/dashboard-walkthrough.md)與[前十分鐘](docs/first-10-minutes.md)。
 
+</details>
+
 ## 在工作區做什麼
 
 ![歷史工作區介面截圖：本機示範資料中的專案導覽與研究紀錄。](docs/images/workspace-ui.zh-TW.png)
@@ -83,18 +90,18 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 | 頁面 | 使用範例 |
 |---|---|
-| 專案 | 記錄研究問題、目標與專案類型。 |
+| 研究總覽 | 檢視研究問題、目標與專案脈絡。 |
 | 文獻 | 收集來源，記錄納入或排除的理由。 |
 | 證據 | 將主張連到來源，檢視尚未確認的支持關係。 |
 | 設計與結果 | 記錄方法、結果、限制與佐證檔案。 |
-| 稿件 | 登錄 Word、LaTeX 或 Markdown，準備大綱與修訂。 |
-| 審查與交付 | 檢視提案、記錄決定，準備本機交付檔。 |
+| 論文 | 登錄 Word、LaTeX 或 Markdown，準備大綱與修訂。 |
+| 審閱與交付 | 檢視提案、記錄決定，準備本機交付檔。 |
 
 原始檔仍由你的編輯器修改；工作區登錄的是檔案路徑與雜湊。識別碼能解析不代表來源支持某項主張，請自行查核證據及科學判斷。
 
 ## 從文獻探索開始
 
-在能載入 research-hub skill、並具有搜尋與閱讀工具的 AI 主機中，可先提出具體需求，例如：
+在能載入 research-hub 技能、並有搜尋與閱讀工具的相容 AI 工具（AI 主機）中，可先提出具體需求，例如：
 
 > 幫我找 LLM 模擬人類決策的文獻，列出原文連結、相關性、版本與可取得的全文限制。
 

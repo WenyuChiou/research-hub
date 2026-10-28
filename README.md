@@ -2,7 +2,7 @@
 
 # research-hub
 
-A local workspace connecting literature, research artifacts, and manuscripts through traceable work.
+A workspace on your computer for researchers to organize papers, evidence, and drafts, with AI-assisted proposals you review.
 
 [繁體中文](README.zh-TW.md) · [Workspace guide](docs/workspace-guide.md) · [Setup guide](docs/setup.md) · [Developer architecture](docs/workspace-architecture.md)
 
@@ -13,7 +13,7 @@ A local workspace connecting literature, research artifacts, and manuscripts thr
 Research is spread across papers, notes, analysis, and manuscripts. A new paper can change a question; an updated file can make a conclusion or section worth revisiting. research-hub gives researchers and AI assistants a local workspace to record those connections, hand off tasks, and review proposals before accepting them.
 
 - **Keep context:** bring questions, sources, evidence, results, and manuscripts into one project rather than leaving them only in a conversation.
-- **Track changes:** register file paths and hashes, then inspect work that may need review when inputs change.
+- **Track changes:** register file paths and a file fingerprint (hash) to help detect changes, then inspect work that may need review when inputs change.
 - **Keep decisions human:** AI proposals require review; a local delivery requires separate approval.
 
 ![Concept diagram: research questions connect literature, evidence, analysis, manuscript proposals, and human review; changed inputs return work for review.](docs/images/workspace-lifecycle.en.png)
@@ -25,6 +25,8 @@ Research is spread across papers, notes, analysis, and manuscripts. A new paper 
 <a id="workspace-preview"></a>
 
 ### Try the local workspace
+
+Start with the workspace below. If you only want to try the older published literature dashboard, see the separate option below.
 
 You need Python 3.10+ and Git. These commands install a specific source revision and create teaching fixtures in a **new or empty** `workspace-demo` directory. The source workspace is separate from the PyPI release: a package version does not establish that the installed wheel contains current source features.
 
@@ -57,11 +59,14 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
-Open [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/). Stop the foreground server with `Ctrl+C` when finished. The demo needs no account; its numerical summation and literature-review fixtures are teaching inputs, not research findings. For your own files, see the [workspace guide](docs/workspace-guide.md); its older pinned preview is historical.
+Open [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/). The demo contains two teaching projects. In the **Projects** dropdown, choose `DEMO: three floating-point summation cases` (`summation-demo`) or `DEMO: floating-point reading and review outline` (`review-demo`), then open **Literature** to see the literature page. These are teaching inputs, not research findings, and need no account. Stop the foreground server with `Ctrl+C` when finished.
+
+For your own files, go directly to [bring your own project](docs/workspace-guide.md#bring-your-own-project); the guide’s earlier installation pin is historical.
 
 <a id="published-dashboard"></a>
 
-### Try the published literature dashboard
+<details>
+<summary>Optional: try the older published literature dashboard</summary>
 
 The [PyPI package](https://pypi.org/project/research-hub-pipeline/) provides the older literature dashboard, not the newer source workspace. For an account-free sample, this separate virtual environment and empty root were tested on Linux with Python 3.12:
 
@@ -74,6 +79,8 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 Use a new or empty `research-hub-preview` directory under HOME: the command creates `.research_hub` and `logs` there. It prints the generated temporary HTML path; open that path in your browser. The bare `dashboard --sample` failed in a fresh HOME without the root setting; see [verification notes](docs/readme-verification-history.md) for platform and browser limits. For real services, see [setup](docs/setup.md), the [dashboard tour](docs/dashboard-walkthrough.md), and [first 10 minutes](docs/first-10-minutes.md).
 
+</details>
+
 ## Work in the workspace
 
 ![Historical workspace UI capture showing local demo project navigation and research records.](docs/images/workspace-ui.en.png)
@@ -82,7 +89,7 @@ Use a new or empty `research-hub-preview` directory under HOME: the command crea
 
 | Page | Example work |
 |---|---|
-| Project | Record the research question, goal, and project type. |
+| Overview | Review the research question, goal, and project context. |
 | Literature | Collect sources and record reasons to include or exclude them. |
 | Evidence | Link claims to sources and inspect unresolved support. |
 | Design & results | Record methods, results, limitations, and supporting files. |
@@ -93,7 +100,7 @@ Your editor remains responsible for changes to original files; the workspace reg
 
 ## Discover literature
 
-In an AI host that can load the research-hub skill and has search and reading tools, start with a concrete request, for example:
+In a compatible AI tool (an AI host) that can load the research-hub skill and has search and reading tools, start with a concrete request, for example:
 
 > Find literature on LLMs simulating human decisions; include original links, relevance, versions, and limits on available full text.
 
