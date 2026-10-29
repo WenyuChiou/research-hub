@@ -158,6 +158,16 @@ marginal qualified yield when observable; and `continue`, `partial`, or
   remaining limits disclosed. Unresolved load-bearing needs/claims require
   `partial` or continuation; superficial zero-yield rounds cannot close them
 
+For a declared time or resource budget, reserve time for finalization inside
+the total budget. Before starting further work, consider the remaining budget
+and finalization; if insufficient, stop expanding and, where possible, give a
+brief partial result with covered and unresolved needs, actual reading scope,
+source versions, limitations and next steps. For a tiny or unknown budget, keep
+the result brief and do not assume a reserve is available. Before reusing
+evidence, verify source identity, version and actual reading scope; a state
+entry alone does not verify them. A hard host cutoff or stuck call can prevent
+any output; this is best effort, and no delivery or savings are guaranteed.
+
 If Hub's executable is missing, do available native-only research and report
 that the CLI route is unavailable in this executor. Inspect other supported
 interfaces before making an overall capability claim; an untested MCP/native
