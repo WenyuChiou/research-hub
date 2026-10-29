@@ -885,9 +885,14 @@ select option {
 }
 .record-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 12px;
   justify-content: space-between;
+}
+.record-title .badge {
+  flex: 0 0 auto;
+  overflow-wrap: normal;
 }
 .record-title h3 {
   overflow-wrap: anywhere;
@@ -986,6 +991,12 @@ select option {
 }
 .search-panel {
   margin-bottom: 24px;
+}
+.search-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  flex: 0 0 auto;
 }
 .search-panel > .record-form fieldset {
   display: flex;

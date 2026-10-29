@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
 import { ProjectPages, type RecoveredWork } from "./Pages";
-import { projectWarningLabel, translator, type MessageKey } from "./i18n";
+import { en, projectWarningLabel, translator, type MessageKey } from "./i18n";
 import type {
   Locale,
   Page,
@@ -698,17 +698,27 @@ export default function App() {
                   </>
                 ) : activeDetail ? (
                   <>
-                    {activeDetail.warnings?.length > 0 && (
+                    {activeDetail.warnings?.some((warning) =>
+                      page !== "literature" || warning !== en.writingAuthorityUnbound
+                    ) && (
                       <section className="notice warnings">
                         <strong>{t("warnings")}</strong>
                         <ul>
-                          {activeDetail.warnings.map((warning, index) => (
+                          {activeDetail.warnings.filter((warning) =>
+                            page !== "literature" || warning !== en.writingAuthorityUnbound
+                          ).map((warning, index) => (
                             <li key={index}>
                               {projectWarningLabel(warning, t)}
                             </li>
                           ))}
                         </ul>
                       </section>
+                    )}
+                    {page === "literature" && activeDetail.warnings?.includes(en.writingAuthorityUnbound) && (
+                      <details>
+                        <summary>{t("writingWarningSummary")}</summary>
+                        <p>{t("writingAuthorityUnbound")}</p>
+                      </details>
                     )}
                     <ProjectPages
                       key={projectId}
