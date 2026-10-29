@@ -37,6 +37,23 @@ implementation or publication instructions or valid authorization for other task
 - For packaging changes, compare the source tree with the corresponding
   `web`, wheel, and `skills_data` contents for the changed assets. A source-tree
   check alone does not prove the distributed package contains the same files.
+- For a bug fix, inspect representative tests for the failure and a safe
+  case. Where feasible, check sensitivity using a known faulty baseline or a
+  bounded negative case. Report missing case coverage separately from whether
+  failure against old behavior is unverified; a green test alone does not prove
+  the fix.
+- For changed file access and failure paths, check validation against the
+  applicable trusted-root or selected-input scope before reads or writes, and
+  redaction of sensitive content before errors or logs are emitted.
+- For changes to a best-effort budget or partial-result contract, check its
+  stop rule and disclosures of scope, unresolved needs, and next steps. Do not
+  promise delivery if a hard cutoff or stuck call prevents finalization.
+- For install or packaged-skill changes, compare source, version, packaged
+  payload, and cache identity where applicable and evidence is available. For
+  changed first-use paths, trace the documented steps, recovery and fallback;
+  flag unnecessary repeated work without removing necessary safeguards. Do not
+  infer installed-host behavior or user acceptance from fixtures or guidance.
+
 - Findings need a concrete path and line/symbol, trigger, consequence, and
   evidence. Separate confirmed defects, hypotheses, and verification gaps; omit
   style-only preferences and follow the platform's required finding format.
