@@ -24,6 +24,13 @@ def test_reuse_requires_verified_identity_version_and_reading_scope():
     assert "a state entry alone does not verify them" in text
 
 
+def test_insufficient_budget_stops_expansion_and_discloses_partial_scope():
+    text = _text()
+    assert "Before starting further work, consider the remaining budget and finalization" in text
+    assert "if insufficient, stop expanding and, where possible, give a brief partial result" in text
+    assert "covered and unresolved needs, actual reading scope, source versions, limitations and next steps" in text
+
+
 def test_hard_cutoff_may_prevent_any_output():
     text = _text()
     assert "A hard host cutoff or stuck call can prevent any output" in text
