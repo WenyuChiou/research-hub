@@ -127,14 +127,16 @@ full-text review. Preserve work/version and acquisition observations separately
 from storage dedup. Do not collapse arXiv v1/v2, corrections, or retractions into
 one current claim. Same DOI with conflicting title/year remains unresolved.
 
-For native `papers` handoff, use the existing `source_records` list for append-only
-observations: source/work/version IDs, acquisition and search references, actual
-level/status, compared metadata, decision/revision references, and affected
+For a selected `papers` handoff, use the existing `source_records` list for
+append-only observations: source/work/version IDs, acquisition and search
+references, actual level/status, compared metadata, decision/revision references, and affected
 claim IDs. Record corrections and include-to-exclude reversals with reason and
 prior decision reference; mark dependent claims stale and re-review them.
 Unknown versions remain unknown. Do not replace user notes or perform automatic
 Zotero merges. Existing provenance merging preserves distinct observations and
 exact replay; retained metadata does not establish independent verification.
+Native-only results can retain the same source, version, reading and claim
+boundaries in readable inline form without a structured handoff or Hub ingest.
 
 ## Bound completion honestly
 

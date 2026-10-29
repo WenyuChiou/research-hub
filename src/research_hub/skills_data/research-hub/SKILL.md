@@ -11,12 +11,15 @@ research-hub turns Zotero, Obsidian, and NotebookLM into an AI-operable research
 
 This skill pairs host capabilities with the `research-hub` runtime. A
 capable host can do multi-round search, browsing, citation chaining, and
-evidence reasoning with its native tools, then hand bibliographic records
-to the CLI. The CLI provides deterministic ingest/storage, vault and
-library maintenance, NotebookLM workflows, dashboard, and MCP/REST tools;
+evidence reasoning with its native tools. When a Hub ingest is selected, it
+can hand bibliographic records to the CLI. The CLI provides deterministic
+ingest/storage, vault and library maintenance, NotebookLM workflows,
+dashboard, and MCP/REST tools;
 scholarly search adapters are optional.
 
-Before running Hub CLI workflow commands from this skill, check that interface:
+For native-only research, skip Hub-specific describe, doctor and setup checks;
+inventory host-native capabilities and follow the shared research contract
+below. Before running a selected Hub CLI workflow, check that interface:
 
 ```bash
 research-hub describe --json
@@ -80,8 +83,10 @@ a narrower command:
 1. Inventory the actual host-native search, deep-research (if present), reading,
    citation and relevant skill capabilities using the Stage 1 procedure in
    `references/research-protocol.md`. Record used versus untested/unavailable
-   paths. Do not infer availability from the host name. For Hub operations,
-   check the available installed interface separately:
+   paths. Do not infer availability from the host name. For native-only
+   research, skip Hub-specific preflight and Hub-only steps 3–7 unless a Hub
+   operation is selected. For a selected Hub operation, check the available
+   installed interface separately:
 
    ```bash
    research-hub describe --json
@@ -92,9 +97,20 @@ a narrower command:
    discovery, use those tools for search, browsing, citation chaining,
    and evidence reasoning. Follow the shared needs-to-query map and record
    visible tool outcomes; planned queries and unavailable payloads do not
-   count as executed searches or zero results. Prepare bibliographic records in the JSON
-   `papers` shape documented in `docs/papers_input_schema.md`, with
-   optional `provenance` and `source_records`. Do not pass a
+   count as executed searches or zero results. For native-only research, default
+   to readable inline bibliographic records with title, authors and year when
+   known, source identity and locator, publication version or unknown, actual
+   reading level and access limits. Honor the user's explicitly requested output
+   format over this default; distinguish assessed claims from leads and
+   unverified claims. Preserve the
+   source and claim audit boundaries in `references/research-protocol.md` and
+   `references/source-claim-audit.md`; do not invent missing evidence or receipts.
+   Native-only research does not inherently require JSON or the Hub CLI.
+
+   Prepare `papers` JSON only for a selected Hub ingest or an explicit request
+   for that structured handoff, using the shape in `docs/papers_input_schema.md`
+   with optional `provenance` and `source_records`. The separate
+   `research-discovery-observations/1.0` export remains optional. Do not pass a
    `ResearchEvidencePacket` directly as papers input; it is a separate
    evidence-validation contract. This path needs neither a second agent
    nor a dedicated deep-search API.
