@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,108 @@ from tests.test_pipeline import _paper
 
 def audit_findings(packet, audit, root):
     return validate_evidence_packet(packet, source_audit=audit, artifact_root=root)
+
+
+def assert_fixture_quote_bound(passage, record):
+    start, end = record["start"], record["end"]
+    assert type(start) is int and type(end) is int
+    assert 0 <= start < end <= len(passage)
+    assert record["quote"] == passage[start:end]
+
+
+@pytest.mark.parametrize("field,value", [("end", 99999), ("start", True), ("end", True)])
+def test_unverifiable_fixture_rejects_invalid_quote_offsets(field, value):
+    root = Path(__file__).parent / "fixtures" / "source-claim-review"
+    cases = json.loads((root / "reviewer" / "cases.json").read_text(encoding="utf-8"))
+    records = json.loads((root / "evaluator" / "independent-review-1.json").read_text(encoding="utf-8"))
+    record = next(record for record in records if record["verdict"] == "unverifiable")
+    passage = next(case["passage"] for case in cases if case["id"] == record["case_id"])
+    assert_fixture_quote_bound(passage, record)
+    mutated = {**record, field: value}
+    with pytest.raises(AssertionError):
+        assert_fixture_quote_bound(passage, mutated)
+
+
+def test_blind_synthetic_reviews_bind_to_existing_source_audit(tmp_path, monkeypatch):
+    """Binding and label agreement do not establish semantic understanding."""
+    root = Path(__file__).parent / "fixtures" / "source-claim-review"
+    reviewer = root / "reviewer"
+    evaluator = root / "evaluator"
+    assert {path.name for path in reviewer.iterdir()} == {"cases.json", "instructions.md"}
+    assert all(path.is_file() and not path.is_symlink() for path in reviewer.iterdir())
+    cases_bytes = (reviewer / "cases.json").read_bytes()
+    cases = json.loads(cases_bytes)
+    rubric = json.loads((evaluator / "rubric.json").read_text(encoding="utf-8"))
+    records = json.loads((evaluator / "independent-review-1.json").read_text(encoding="utf-8"))
+    assert hashlib.sha256(cases_bytes).hexdigest() == rubric["cases_sha256"]
+    assert len(cases) == len(records) == 6
+    assert len({case["domain"] for case in cases}) >= 2
+    assert all(re.fullmatch(r"case_[0-9a-f]{4}", case["id"]) for case in cases)
+    by_id = {record["case_id"]: record for record in records}
+    assert len(by_id) == 6 and set(by_id) == set(rubric["expected"]) == {c["id"] for c in cases}
+
+    for case in cases:
+        record = by_id[case["id"]]
+        passage, claim = case["passage"], case["claim"]
+        digest = hashlib.sha256(passage.encode("utf-8")).hexdigest()
+        assert record["source_sha256"] == digest
+        assert record["claim_sha256"] == hashlib.sha256(claim.encode("utf-8")).hexdigest()
+        assert_fixture_quote_bound(passage, record)
+        assert record["locator"] == passage.split(": ", 1)[0]
+        assert record["explanation"].strip() and record["reviewer_id"].strip()
+        assert record["verdict"] == rubric["expected"][case["id"]]
+
+        case_root = tmp_path / case["id"]
+        case_root.mkdir()
+        packet, audit = build_fixture(case_root, "full-text", monkeypatch)
+        (case_root / "synthetic-source.txt").write_bytes(passage.encode("utf-8"))
+        observation = audit["observations"][0]
+        observation.update(source_fetch_result=None, raw_path="synthetic-source.txt",
+                           raw_sha256=digest, text_path="synthetic-source.txt",
+                           text_sha256=digest, source_version="sha256:" + digest,
+                           acquisition_ref="native:synthetic-fixture")
+        claim_row = packet["claims"][0]
+        verdict = record["verdict"]
+        claim_row["claim_text"] = claim
+        claim_row["uncertainty"] = "Synthetic passage and stated measurement conditions only."
+        claim_row["verification_status"] = {"supported": "supported", "contradicted": "contradicted",
+                                             "unverifiable": "unverified"}[verdict]
+        claim_row["supporting_source_ids"] = ["s1"] if verdict != "contradicted" else []
+        claim_row["opposing_source_ids"] = ["s1"] if verdict == "contradicted" else []
+        review_ref = "fixture:" + record["reviewer_id"] + ":" + case["id"]
+        claim_row["verification_records"] = [{"source_id": "s1", "verifier_output_ref": review_ref,
+            "status": {"supported": "supports", "contradicted": "does_not_support",
+                       "unverifiable": "unclear"}[verdict]}]
+        assessment = audit["assessments"][0]
+        assessment.update(judgment=verdict, quote=record["quote"], start=record["start"],
+                          end=record["end"], locator=record["locator"], verifier_output_ref=review_ref)
+        audit["packet_sha256"] = evidence_packet_sha256(packet)
+        assert audit_findings(packet, audit, case_root) == []
+
+        if verdict == "supported":
+            assessment["judgment"] = "unverifiable"
+            findings = audit_findings(packet, audit, case_root)
+            assert any("lacks source-bound supported assessment" in f["message"] for f in findings), findings
+            assessment["judgment"] = "partial"
+            findings = audit_findings(packet, audit, case_root)
+            assert any("lacks source-bound supported assessment" in f["message"] for f in findings), findings
+        elif verdict == "contradicted":
+            claim_row.update(verification_status="supported", supporting_source_ids=["s1"],
+                             opposing_source_ids=[])
+            claim_row["verification_records"][0]["status"] = "supports"
+            audit["packet_sha256"] = evidence_packet_sha256(packet)
+            findings = audit_findings(packet, audit, case_root)
+            assert any("lacks source-bound supported assessment" in f["message"] for f in findings), findings
+
+
+def test_source_binding_does_not_automatically_assess_semantic_support(tmp_path, monkeypatch):
+    packet, audit = build_fixture(tmp_path, "full-text", monkeypatch)
+    # The unchanged exact quote describes improvement; this contradictory claim
+    # intentionally carries a false "supports" judgment to expose the boundary.
+    packet["claims"][0]["claim_text"] = "Synthetic intervention made the observed sample worse."
+    audit["packet_sha256"] = evidence_packet_sha256(packet)
+    assert audit_findings(packet, audit, tmp_path) == []
+    # An empty binding finding list is not evidence that this claim is supported.
 
 
 def test_same_input_source_regressions_use_production_acquisition_and_validators(tmp_path, monkeypatch):

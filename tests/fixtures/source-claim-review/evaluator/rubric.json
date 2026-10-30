@@ -1,0 +1,11 @@
+{
+  "cases_sha256": "cc539e56bab14e6abcf55115ad00521788933d7ef4eaae7ed6abdc2672c6e374",
+  "expected": {
+    "case_7c21": "unverifiable",
+    "case_6e53": "contradicted",
+    "case_b405": "supported",
+    "case_d817": "unverifiable",
+    "case_92af": "supported",
+    "case_31d0": "contradicted"
+  }
+}
