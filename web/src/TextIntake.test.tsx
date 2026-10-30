@@ -302,6 +302,7 @@ it("rejects invalid UTF-8 before saving and leaves source markup inert", async (
   ).toBe(true);
 });
 it("shows unsupported capability without writes while metadata-only source entry remains available", async () => {
+  const user = userEvent.setup();
   const fetch = vi.fn(async (input: RequestInfo | URL) =>
     String(input).endsWith("/workspace")
       ? response({
@@ -323,6 +324,9 @@ it("shows unsupported capability without writes while metadata-only source entry
   expect(
     await screen.findByRole("button", { name: t("intakeAdd") }),
   ).toBeDisabled();
+  expect(screen.getByRole("button", { name: t("intakeAdd") })).toHaveAccessibleDescription(t("intakeUnavailable"));
+  expect(screen.getByText(t("intakeUnavailable"))).toBeVisible();
+  await user.click(screen.getByText(t("intakeDetails")));
   expect(screen.getByText(/Windows publication unsupported/)).toBeVisible();
   expect(screen.getByRole("button", { name: t("addSource") })).toBeEnabled();
   expect(

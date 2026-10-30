@@ -133,7 +133,6 @@ export function DiscoveryPanel({
   return (
     <Panel title={t("discoveryTitle")}>
       <div className="discovery-body">
-        <p>{t("discoveryIntro")}</p>
         <p className="small muted">{t("discoveryPlatform")}</p>
         {choices.length ? (
           <ul>
@@ -149,6 +148,10 @@ export function DiscoveryPanel({
         ) : (
           <p>{t("discoveryEmpty")}</p>
         )}
+        <details>
+          <summary>{t("discoveryHelp")}</summary>
+          <p>{t("discoveryIntro")}</p>
+        </details>
         {invalid && <p role="alert">{t("discoveryInvalidLink")}</p>}
         {failure != null && (
           <>

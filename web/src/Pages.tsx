@@ -28,7 +28,7 @@ import { ManuscriptTools } from "./ManuscriptTools";
 import { DeliveryPanel } from "./Delivery";
 import { ReturningWork } from "./ReturningWork";
 import { AbstractDraftComposer } from "./AbstractDraft";
-import { TextIntakeForm } from "./TextIntake";
+import { TextIntakeForm } from "./TextIntakeForm";
 import {
   TextIntakeRecoveryPanel,
   useTextIntakeRecovery,
@@ -210,7 +210,7 @@ export function ProjectPages({
           >
             {render(record)}
             <InspectJson
-              title={`${t("inspect")} · ${record.id}`}
+              title={`${t("inspect")} · ${page === "literature" ? record.id.slice(0, 8) : record.id}`}
               value={record}
             />
           </article>
@@ -413,48 +413,21 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
-        <DiscoveryPanel
-          projectId={detail.project.id}
-          artifacts={detail.artifacts}
-          selected={discoveryArtifact}
-          invalid={invalidDiscoveryLink}
-          active={page === "literature"}
-          t={t}
-        />
-        <div>
-          <button
-            className="button primary"
-            disabled={!intake.supported || intakeOpen}
-            onClick={() => {
-              setIntakeOpen(true);
-              setAbstractSourceId(null);
-            }}
-          >
-            {t("intakeAdd")}
-          </button>
-          {!intake.supported && (
-            <p role="status">
-              {t("intakeUnavailable")}{" "}
-              {workspace.capabilities.text_intake?.message}
-            </p>
-          )}
-        </div>
-        {intakeOpen && (
-          <TextIntakeForm
-            key={intakeIntent}
-            recovery={intake}
-            t={t}
-            onClose={() => setIntakeOpen(false)}
-            onOpen={openSavedText}
-          />
-        )}
-
-        <Panel title={t("search")} className="search-panel">
+        <Panel
+          title={t("search")}
+          className="search-panel"
+          meta={
+            <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true" focusable="false">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m15.5 15.5 4.5 4.5" />
+            </svg>
+          }
+        >
           <MutationForm
             t={t}
             submit={t("searchAction")}
             reset={false}
-            fields={[{ name: "query", label: t("searchQuery") }]}
+            fields={[{ name: "query", label: t("searchQuery"), hint: t("searchPrivacy") }]}
             onSubmit={async (data) => {
               const value = await api<{
                 ok: true;
@@ -506,6 +479,48 @@ export function ProjectPages({
             </section>
           )}
         </Panel>
+        <DiscoveryPanel
+          projectId={detail.project.id}
+          artifacts={detail.artifacts}
+          selected={discoveryArtifact}
+          invalid={invalidDiscoveryLink}
+          active={page === "literature"}
+          t={t}
+        />
+        <div>
+          <button
+            className="button secondary"
+            disabled={!intake.supported || intakeOpen}
+            aria-describedby={!intake.supported ? "text-intake-unavailable" : undefined}
+            onClick={() => {
+              setIntakeOpen(true);
+              setAbstractSourceId(null);
+            }}
+          >
+            {t("intakeAdd")}
+          </button>
+          {!intake.supported && (
+            <div>
+              <p id="text-intake-unavailable" role="status">{t("intakeUnavailable")}</p>
+              {workspace.capabilities.text_intake?.message && (
+                <details>
+                  <summary>{t("intakeDetails")}</summary>
+                  <p>{workspace.capabilities.text_intake.message}</p>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+        {intakeOpen && (
+          <TextIntakeForm
+            key={intakeIntent}
+            recovery={intake}
+            t={t}
+            onClose={() => setIntakeOpen(false)}
+            onOpen={openSavedText}
+          />
+        )}
+
         <div className="page-grid">
           <Panel
             title={t("sources")}
@@ -538,7 +553,6 @@ export function ProjectPages({
                     )}
                   </p>
                 )}
-                <code className="record-id">{record.id}</code>
                 <button
                   className="button secondary"
                   onClick={() => {
@@ -630,9 +644,6 @@ export function ProjectPages({
                       {statusLabel(textValue(record.data.decision), t)}
                     </span>
                   </div>
-                  <code className="record-id">
-                    {textValue(record.data.source_id)}
-                  </code>
                   {source && (
                     <>
                       <p>

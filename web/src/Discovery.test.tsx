@@ -9,6 +9,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import App from "./App";
+import { DiscoveryPanel } from "./Discovery";
+import { translator } from "./i18n";
 import generated from "./test-fixtures/discovery-view.json";
 
 const artifact = generated.view.artifact.id;
@@ -52,6 +54,27 @@ function route(hash: string) {
   });
 }
 afterEach(() => vi.unstubAllGlobals());
+
+it("explains the Crossref request and project record next to the search field", async () => {
+  window.history.replaceState({}, "", "#literature");
+  serve();
+  render(<App />);
+  const field = await screen.findByRole("textbox", { name: "Search question or keywords" });
+  expect(field).toHaveAccessibleDescription(translator("en")("searchPrivacy"));
+  expect(translator("zh-TW")("searchPrivacy")).toContain("Crossref");
+});
+
+it("keeps the Windows limitation visible and opens optional guidance", async () => {
+  const user = userEvent.setup();
+  render(<DiscoveryPanel projectId="p" artifacts={[]} selected={null} invalid={false} active={true} t={translator("en")} />);
+  expect(screen.getByText(/not yet available on Windows/)).toBeVisible();
+  expect(screen.getByText(/No saved research in this project/)).toBeVisible();
+  expect(screen.getByText(/Do not repeat research solely/)).not.toBeVisible();
+  await user.tab();
+  expect(screen.getByText("About saved research")).toHaveFocus();
+  await user.click(screen.getByText("About saved research"));
+  expect(screen.getByText(/Do not repeat research solely/)).toBeVisible();
+});
 
 it("one agent link opens exact saved native result with no integrations or writes, and setup interruption preserves it", async () => {
   window.history.replaceState({}, "", generated.view_path);

@@ -3,14 +3,13 @@ import type { Locale, Operation, ProjectDetail } from "./types";
 export const en = {
   discoveryAttemptBytes: "Captured observation-byte binding",
   discoveryMore: "Show the next 50 entries in each list",
-  discoveryTitle: "Stage 1 · saved native research",
-  discoveryIntro:
-    "Your native AI agent performs the research. Open its saved result here; no integration account or manual JSON entry is required to review a saved result.",
-  discoveryPlatform:
-    "This optional saved-file view currently requires a supported POSIX Hub. Windows file access is not yet supported; native research/export remains usable. This is not cross-platform completion.",
+  discoveryHelp: "About saved research",
+  writingWarningSummary: "Writing setup",
+  discoveryTitle: "Saved research",
+  discoveryIntro: "Your AI assistant does the research and can hand a saved result to this project. Reviewing it here needs no integration account or manual JSON entry. Do not repeat research solely to fill missing historical records.",
+  discoveryPlatform: "Opening saved results requires a supported system and is not yet available on Windows. You can still research and export results in your AI assistant.",
   discoveryOpen: "Open saved Stage 1 result",
-  discoveryEmpty:
-    "No Stage 1 snapshot is registered here. Ask your native agent to research and hand off its result to this selected project; do not repeat research solely to fill missing historical receipts.",
+  discoveryEmpty: "No saved research in this project. You can research with your AI assistant.",
   discoveryInvalidLink:
     "This Stage 1 link is incomplete or ambiguous. Open an exact saved result from this project.",
   discoveryRefresh: "Recheck saved evidence (read only)",
@@ -98,8 +97,8 @@ export const en = {
   intakeBytes: "bytes",
   intakeLocalPreview: "Selected file preview (not saved yet)",
   intakeSave: "Save Hub text copy",
-  intakeUnavailable:
-    "Saving new text copies is unavailable on this server/platform. Existing metadata-only sources and registered-text reading still work. This implementation does not support Windows text intake.",
+  intakeDetails: "Why is this unavailable?",
+  intakeUnavailable: "Adding text is unavailable on this system. Existing source records remain accessible.",
   intakeMetadataInvalid:
     "Enter a nonempty title and an optional locator, each at most 2,000 Unicode characters. Invalid Unicode cannot be saved.",
   intakeFileRequired: "Choose a valid text file before saving.",
@@ -442,6 +441,7 @@ export const en = {
     "No sources recorded. Search for literature or add a source you already use.",
   source: "Source",
   search: "Search literature",
+  searchPrivacy: "Keywords are sent to Crossref; the query and results are saved in this project. This does not run AI research.",
   searchQuery: "Search question or keywords",
   searchAction: "Find sources",
   searching: "Searching…",
@@ -615,14 +615,13 @@ export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
   discoveryAttemptBytes: "已擷取觀察的位元組綁定",
   discoveryMore: "各清單顯示接續的 50 筆",
-  discoveryTitle: "Stage 1 · 已儲存的原生研究",
-  discoveryIntro:
-    "研究由原生 AI agent 執行。在此開啟已儲存成果；檢視成果不需要整合帳號或手動輸入 JSON。",
-  discoveryPlatform:
-    "此選用檔案檢視目前需要支援的 POSIX Hub。Windows 檔案存取尚未支援；原生研究與匯出仍可使用。這不代表跨平台流程已完成。",
+  discoveryHelp: "如何使用已儲存的研究",
+  writingWarningSummary: "寫作設定",
+  discoveryTitle: "已儲存的研究",
+  discoveryIntro: "研究由 AI 助理執行，並可將已儲存的成果交給此專案。在此檢視不需要整合帳號或手動輸入 JSON。不需為補歷史紀錄而重做研究。",
+  discoveryPlatform: "開啟已儲存的成果需要支援的系統；Windows 目前尚不支援。你仍可在 AI 助理中研究與匯出。",
   discoveryOpen: "開啟已儲存的 Stage 1 成果",
-  discoveryEmpty:
-    "此專案尚無 Stage 1 快照。請原生 agent 研究並將成果交接到此選定專案；不要只為補歷史收據而重做研究。",
+  discoveryEmpty: "此專案還沒有已儲存的研究。你可以使用 AI 助理研究。",
   discoveryInvalidLink:
     "此 Stage 1 連結不完整或有歧義。請從此專案開啟確切的已儲存成果。",
   discoveryRefresh: "重新檢查已儲存證據（唯讀）",
@@ -708,8 +707,8 @@ export const zhTW: Record<MessageKey, string> = {
   intakeBytes: "位元組",
   intakeLocalPreview: "選取檔案預覽（尚未儲存）",
   intakeSave: "儲存 Hub 文字副本",
-  intakeUnavailable:
-    "此伺服器或平台目前不能儲存新文字副本；仍可使用僅含中繼資料的來源及已註冊文字閱讀。此實作尚不支援 Windows 文字加入。",
+  intakeDetails: "為什麼無法使用？",
+  intakeUnavailable: "此系統目前無法加入文字；仍可檢視既有來源紀錄。",
   intakeMetadataInvalid:
     "請填寫非空標題及選填來源位置，各最多 2,000 個 Unicode 字元，不接受無效 Unicode。",
   intakeFileRequired: "請先選擇有效的文字檔。",
@@ -1030,6 +1029,7 @@ export const zhTW: Record<MessageKey, string> = {
   noSources: "尚無來源。請搜尋文獻，或記錄您已使用的來源。",
   source: "來源",
   search: "搜尋文獻",
+  searchPrivacy: "關鍵字會傳送至 Crossref；查詢和結果會儲存在此專案。這不會執行 AI 研究。",
   searchQuery: "研究問題或關鍵字",
   searchAction: "尋找來源",
   searching: "搜尋中…",

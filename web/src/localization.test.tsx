@@ -55,6 +55,25 @@ const response = (value: unknown) => new Response(JSON.stringify(value));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("localized readiness and writing-authority warning", () => {
+  it("keeps unrelated warnings visible and moves only the writing warning on literature", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => response(url.endsWith("/workspace") ? workspace : detail)));
+    window.history.replaceState({}, "", "#literature");
+    render(<App />);
+    const summary = await screen.findByText("Writing setup");
+    expect(screen.getByText(unknownWarning)).toBeVisible();
+    expect(screen.getByText(`${writingWarning} Diagnostic detail.`)).toBeVisible();
+    expect(screen.getByText(writingWarning, { exact: true })).not.toBeVisible();
+    await user.click(summary);
+    expect(screen.getByText(writingWarning, { exact: true })).toBeVisible();
+    const sidebar = screen.getByText("EN", { selector: "button" }).closest("aside");
+    await user.click(within(sidebar!).getByRole("button", { name: "繁體中文" }));
+    expect(screen.getByText(translatedWarning, { exact: true })).toBeVisible();
+    expect(screen.getByText(unknownWarning)).toBeVisible();
+    await user.click(within(sidebar!).getByRole("link", { name: "研究總覽" }));
+    expect(screen.getByText(translatedWarning, { exact: true })).toBeVisible();
+    expect(screen.queryByText("寫作設定")).not.toBeInTheDocument();
+  });
   it("translates all three unavailable summaries without changing their diagnostic messages", () => {
     render(<Readiness workspace={workspace} t={translator("zh-TW")} />);
     expect(
