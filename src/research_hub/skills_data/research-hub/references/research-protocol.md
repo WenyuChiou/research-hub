@@ -59,6 +59,13 @@ not verification. A captured summary is not its cited original. Use the existing
 source-audit profile for local quote/range/byte checks when available, preserving
 its semantic and authenticity limits.
 
+If an important source is inaccessible at its first location, use available,
+authorized alternatives proportionately, such as a publisher record or a
+trustworthy open repository. Verify the work and version obtained; do not
+transfer support between versions without checking. Do not repeat work merely
+to fill a log or require the researcher to supply a file when a safe
+alternative is available.
+
 For feasibility, name the actual materials, needed fields (variables or
 observations), resolution/coverage, and reuse conditions. Unconfirmed availability,
 missing fields or unresolved permission cannot be called ready. Carry a bounded
