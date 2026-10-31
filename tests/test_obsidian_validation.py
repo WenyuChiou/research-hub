@@ -32,14 +32,18 @@ def test_validates_only_registry_and_does_not_read_notes_or_write(vault, monkeyp
     before = {str(path.relative_to(vault)): path.stat().st_mtime_ns for path in vault.rglob("*")}
     opened = []
     real_open = module.os.open
+    real_path_open = Path.open
     def registry_only(path, flags):
         assert Path(path) == vault / ".research_hub" / "clusters.yaml"
         assert flags & os.O_WRONLY == 0 and flags & os.O_RDWR == 0
         opened.append(path)
         return real_open(path, flags)
-    monkeypatch.setattr(module.os, "open", registry_only)
-    monkeypatch.setattr(Path, "open", lambda *a, **k: pytest.fail("No note/config Path.open permitted"))
-    result = ObsidianValidation(vault).validate(str(vault))
+    # os is shared with shutil; release spies before the vault fixture cleans up.
+    with monkeypatch.context() as checks:
+        checks.setattr(module.os, "open", registry_only)
+        checks.setattr(Path, "open", lambda *a, **k: pytest.fail("No note/config Path.open permitted"))
+        result = ObsidianValidation(vault).validate(str(vault))
+    assert module.os.open is real_open and Path.open is real_path_open
     assert result["status"] == "valid" and result["collection_count"] == 1
     assert result["saved"] is False and result["note_bodies_read"] is False
     assert len(opened) == 1 and note.stat().st_size == len(b"SYNTHETIC BODY MUST NOT BE READ\xff")
@@ -104,33 +108,42 @@ def test_reparse_component_is_rejected(vault, monkeypatch):
 @pytest.mark.parametrize("mode,links", [(stat.S_IFIFO,1),(stat.S_IFREG,2)])
 def test_special_registry_is_rejected_before_open(vault, monkeypatch, mode, links):
     original = module._metadata
+    real_open = module.os.open
     registry = vault / ".research_hub" / "clusters.yaml"
     def metadata(path):
         return SimpleNamespace(st_mode=mode, st_nlink=links, st_size=0) if path == registry else original(path)
-    monkeypatch.setattr(module, "_metadata", metadata)
-    monkeypatch.setattr(module.os, "open", lambda *a, **k: pytest.fail("Special registry opened"))
-    assert ObsidianValidation(vault).validate(str(vault))["status"] == "invalid_registry"
+    with monkeypatch.context() as checks:
+        checks.setattr(module, "_metadata", metadata)
+        checks.setattr(module.os, "open", lambda *a, **k: pytest.fail("Special registry opened"))
+        assert ObsidianValidation(vault).validate(str(vault))["status"] == "invalid_registry"
+    assert module.os.open is real_open and module._metadata is original
 
 
 def test_registry_identity_change_during_open_is_not_read(vault, monkeypatch):
     original = module.os.fstat
+    real_read = module.os.read
     def changed(fd):
         value = original(fd)
         return SimpleNamespace(st_mode=value.st_mode, st_nlink=1, st_dev=value.st_dev, st_ino=value.st_ino + 1,
                                st_size=value.st_size, st_mtime_ns=value.st_mtime_ns)
-    monkeypatch.setattr(module.os, "fstat", changed)
-    monkeypatch.setattr(module.os, "read", lambda *a, **k: pytest.fail("Changed registry read"))
-    assert ObsidianValidation(vault).validate(str(vault))["status"] == "invalid_registry"
+    with monkeypatch.context() as checks:
+        checks.setattr(module.os, "fstat", changed)
+        checks.setattr(module.os, "read", lambda *a, **k: pytest.fail("Changed registry read"))
+        assert ObsidianValidation(vault).validate(str(vault))["status"] == "invalid_registry"
+    assert module.os.fstat is original and module.os.read is real_read
 
 
 def test_hardlinked_registry_is_not_read(vault, tmp_path, monkeypatch):
     registry = vault / ".research_hub" / "clusters.yaml"
+    real_open = module.os.open
     try:
         os.link(registry, tmp_path / "registry-alias.yaml")
     except OSError:
         pytest.skip("Host does not permit synthetic hardlinks")
-    monkeypatch.setattr(module.os, "open", lambda *a, **k: pytest.fail("Hardlinked registry opened"))
-    assert ObsidianValidation(vault).validate(str(vault))["status"] == "invalid_registry"
+    with monkeypatch.context() as checks:
+        checks.setattr(module.os, "open", lambda *a, **k: pytest.fail("Hardlinked registry opened"))
+        assert ObsidianValidation(vault).validate(str(vault))["status"] == "invalid_registry"
+    assert module.os.open is real_open
 
 
 def test_workspace_cannot_initialize_storage_inside_readonly_vault(vault):
