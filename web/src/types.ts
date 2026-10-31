@@ -41,6 +41,13 @@ export interface Workspace {
   ok: true;
   projects: Project[];
   capabilities: {
+    obsidian_validation?: {
+      version: number;
+      status: string;
+      read_only: boolean;
+      scope: string;
+      authorized_vault?: string;
+    };
     text_intake?: Capability & {
       version: number;
       workspace_instance_id: string;

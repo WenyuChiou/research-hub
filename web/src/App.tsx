@@ -26,7 +26,7 @@ const pages: Page[] = [
 const glyphs = ["◫", "≡", "⌘", "⌁", "¶", "✓"];
 function currentPage(): Page {
   const page = window.location.hash.slice(1).split("?", 1)[0];
-  return pages.includes(page as Page) ? (page as Page) : "overview";
+  return pages.includes(page as Page) ? (page as Page) : "literature";
 }
 const aborted = (error: unknown) =>
   error instanceof Error && error.name === "AbortError";
@@ -423,6 +423,11 @@ export default function App() {
     setError(null);
     setRefreshCount((count) => count + 1);
   }
+  const navigationLinks = (items: Page[]) => (<>{items.map((item) => (
+      <a key={item} href={"#" + item} onClick={() => {navigationEpoch.current++;}} aria-current={page === item ? "page" : undefined}>
+        <span className="nav-symbol" aria-hidden="true">{glyphs[pages.indexOf(item)]}</span><span>{t(item)}</span>
+      </a>
+    ))}</>);
   const activeDetail = detail?.project.id === projectId ? detail : null;
   const showCreate = newProject || workspace?.projects.length === 0;
   return (
@@ -472,32 +477,22 @@ export default function App() {
               </option>
             ))}
           </select>
+          <p className="selected-project-title">{workspace?.projects.find((project) => project.id === projectId)?.title}</p>
           <button className="new-project" onClick={() => setNewProject(true)}>
             <span aria-hidden="true">＋</span>
             {t("newProject")}
           </button>
         </div>
         <nav aria-label={t("navigation")}>
-          {pages.map((item, index) => (
-            <a
-              key={item}
-              href={`#${item}`}
-              onClick={() => {
-                navigationEpoch.current++;
-              }}
-              aria-current={page === item ? "page" : undefined}
-            >
-              <span className="nav-symbol" aria-hidden="true">
-                {glyphs[index]}
-              </span>
-              <span>{t(item)}</span>
-              <span className="nav-number" aria-hidden="true">
-                0{index + 1}
-              </span>
-            </a>
-          ))}
+          <p className="nav-group-label">{t("catalogResearchNav")}</p>
+          {navigationLinks(pages.slice(0, 3))}
+          <details className="secondary-navigation" open={pages.slice(3).includes(page)}>
+            <summary>{t("catalogWritingNav")}</summary>
+            {navigationLinks(pages.slice(3))}
+          </details>
         </nav>
         <div className="sidebar-footer">
+          <p className="integration-services-label">{t("catalogIntegrationsHint")}</p>
           <IntegrationsSetup
             workspace={workspace}
             projectId={projectId}
@@ -551,7 +546,7 @@ export default function App() {
             <span>{t("refresh")}</span>
           </button>
         </header>
-        <div className="content-wrap">
+        <div className={`content-wrap workspace-${page}`}>
           <div className="page-heading">
             <div>
               <div className="eyebrow">
@@ -625,8 +620,8 @@ export default function App() {
           ) : (
             <>
               {showCreate && (
-                <section className="project-onboarding">
-                  <div className="onboarding-intro">
+                <section className={workspace.projects.length ? "project-onboarding compact-create" : "project-onboarding"}>
+                  {workspace.projects.length === 0 && <div className="onboarding-intro">
                     <SmallEyebrow text={t("startEyebrow")} />
                     <h2>{t("startTitle")}</h2>
                     <p>{t("startBody")}</p>
@@ -636,7 +631,7 @@ export default function App() {
                       <i />
                       <i />
                     </div>
-                  </div>
+                  </div>}
                   <div className="onboarding-form">
                     <div className="panel-heading">
                       <h2>{t("newProject")}</h2>

@@ -871,6 +871,9 @@ describe("transient refresh failure preserves source inputs and uncertainty", ()
       const user = userEvent.setup();
       render(<App />);
       await user.click(
+        await screen.findByText(t("catalogAdvanced"), { selector: "summary" }),
+      );
+      await user.click(
         await screen.findByRole("button", { name: t("abstractOpen") }),
       );
       selectPassage(await readPreview());

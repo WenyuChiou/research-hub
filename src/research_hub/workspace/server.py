@@ -15,13 +15,16 @@ import webbrowser
 from .core import WorkspaceError, encoded, safe_path
 from .service import WorkspaceService, call_workspace
 from .tasks import _LOCAL_HUMAN
+from .obsidian_validation import ObsidianValidation
 
 
 class WorkspaceServer(ThreadingHTTPServer):
     daemon_threads = True
     _service_type = WorkspaceService
 
-    def __init__(self, root, *, port=8765, human=False):
+    def __init__(self, root, *, port=8765, human=False, obsidian_vault=None):
+        self.obsidian_validation = ObsidianValidation(obsidian_vault)
+        self.obsidian_validation.assert_storage_outside(root)
         self.service = self._service_type(root)
         self.service.workspace.initialize_preparations()
         self.csrf = secrets.token_urlsafe(32)
@@ -74,7 +77,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         path = unquote(urlsplit(self.path).path)
         try:
             if path == "/api/v1/workspace":
-                return self._reply(200, self.server.service.capabilities(human=bool(self.server.human)))
+                result = self.server.service.capabilities(human=bool(self.server.human))
+                result["capabilities"]["obsidian_validation"] = self.server.obsidian_validation.capability()
+                return self._reply(200, result)
             segments = path.strip("/").split("/")
             if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "source-text"):
@@ -169,6 +174,12 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise WorkspaceError("Request must be an object")
             parts = unquote(urlsplit(self.path).path).strip("/").split("/")
+            if parts == ["api", "v1", "integrations", "obsidian", "validate"]:
+                if set(data) != {"vault_path"}:
+                    raise WorkspaceError("Only vault_path is accepted", "invalid_request")
+                result = self.server.obsidian_validation.validate(data["vault_path"])
+                status = 200 if result["ok"] else 403 if result["code"] == "vault_scope_denied" else 409
+                return self._reply(status, result)
             resource = operation = None
             proof = None
             if parts == ["api", "v1", "projects"]:
@@ -199,8 +210,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self._reply(400, {"ok": False, "error": str(exc), "code": "invalid_request"})
 
 
-def serve_workspace(root, *, port=8765, open_browser=True, human=False):
-    server = WorkspaceServer(root, port=port, human=human)
+def serve_workspace(root, *, port=8765, open_browser=True, human=False, obsidian_vault=None):
+    server = WorkspaceServer(root, port=port, human=human, obsidian_vault=obsidian_vault)
     url = f"http://127.0.0.1:{server.server_port}/app/"
     print(f"Research workspace: {url}")
     if open_browser:

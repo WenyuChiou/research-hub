@@ -2,8 +2,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Translate } from "./i18n";
 import type { Workspace } from "./types";
+import { ObsidianValidationForm } from "./ObsidianValidationForm";
 
-/** Guidance only: never reads credentials, starts setup, or probes a provider. */
+/** Historical guidance plus explicitly scoped Obsidian validation; no credentials or provider probes. */
 export function IntegrationsSetup({
   workspace,
   t,
@@ -128,6 +129,7 @@ export function IntegrationsSetup({
                         {t("integrationOfficial")} — {label}
                       </a>
                     </p>
+                    {key === "vault" && <ObsidianValidationForm capability={workspace?.capabilities?.obsidian_validation} t={t} />}
                   </li>
                 );
               })}

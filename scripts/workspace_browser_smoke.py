@@ -88,9 +88,17 @@ class WorkspacePage:
         expect(self.page.get_by_role("combobox", name="Choose a project")).to_be_visible()
 
     def navigate(self, label):
-        self.page.get_by_role("navigation").get_by_role("link", name=label, exact=True).click()
+        navigation = self.page.get_by_role("navigation")
+        target = navigation.get_by_role("link", name=label, exact=True)
+        if not target.is_visible():
+            navigation.locator("details.secondary-navigation > summary").click()
+        target.click()
         expect(self.page.get_by_role("heading", name=label, level=1, exact=True)).to_be_visible()
         expect(self.page.get_by_role("heading", level=1)).to_have_text(label)
+        if self.page.url.split("#", 1)[-1].split("?", 1)[0] == "literature":
+            advanced = self.page.locator("details.catalog-advanced")
+            if advanced.get_attribute("open") is None:
+                advanced.locator(":scope > summary").click()
 
     def choose(self, project):
         self.page.get_by_role("combobox", name="Choose a project").select_option(project)

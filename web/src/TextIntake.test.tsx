@@ -276,6 +276,9 @@ it("rejects invalid UTF-8 before saving and leaves source markup inert", async (
   window.history.replaceState({}, "", "#literature");
   render(<App />);
   const user = userEvent.setup();
+  await user.click(
+    await screen.findByText(t("catalogAdvanced"), { selector: "summary" }),
+  );
   await user.click(await screen.findByRole("button", { name: t("intakeAdd") }));
   await user.selectOptions(screen.getByLabelText(t("intakeInput")), "file");
   await user.type(screen.getByLabelText(t("intakeTitle")), "Public");
@@ -321,6 +324,9 @@ it("shows unsupported capability without writes while metadata-only source entry
   vi.stubGlobal("fetch", fetch);
   window.history.replaceState({}, "", "#literature");
   render(<App />);
+  await user.click(
+    await screen.findByText(t("catalogAdvanced"), { selector: "summary" }),
+  );
   expect(
     await screen.findByRole("button", { name: t("intakeAdd") }),
   ).toBeDisabled();
