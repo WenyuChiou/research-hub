@@ -137,9 +137,30 @@ def synthesize_evidence_packet(
     warnings: list[str] | None = None,
     human_decisions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """No-tool synthesis boundary: structure completed prose, then validate."""
+    """Structure evidence references, retaining coverage limits, then validate.
 
-    successful = filter_agent_results(researcher_results)
+    The returned ok flag describes packet validation, not research completion.
+    """
+
+    successful = [
+        (index, result) for index, result in enumerate(researcher_results)
+        if filter_agent_results([result])
+    ]
+    coverage_warnings = list(warnings or [])
+    for index, result in enumerate(researcher_results):
+        if not filter_agent_results([result]):
+            limit = "unavailable or failed"
+        elif result.get("status") == "partial":
+            limit = "partial"
+        elif result.get("status") == "completed" or (
+            result.get("status") is None and result.get("ok") is True
+        ):
+            continue
+        else:
+            limit = "completion unknown"
+        coverage_warnings.append(
+            f"Researcher result {index}: {limit}; coverage remains unresolved."
+        )
     packet = {
         "schema_version": "1.0",
         "query": query,
@@ -151,12 +172,12 @@ def synthesize_evidence_packet(
         "provenance": {
             "researcher_outputs": [
                 str(result.get("evidence_ref") or result.get("source") or f"result:{index}")
-                for index, result in enumerate(successful)
+                for index, result in successful
             ],
             "synthesizer": "no-tool",
             "validated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         },
-        "warnings": warnings or [],
+        "warnings": coverage_warnings,
         "human_decisions": human_decisions or [],
     }
     findings = validate_evidence_packet(packet)
