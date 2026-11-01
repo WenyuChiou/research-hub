@@ -74,7 +74,15 @@ def test_missing_and_oversized_snapshot_are_unknown(tmp_path,monkeypatch):
 def test_linked_snapshot_is_rejected_before_open(tmp_path,monkeypatch):
     path=tmp_path/"selected.json"; path.write_text(json.dumps(payload()),encoding="utf-8")
     original=path.read_bytes(); alias=tmp_path/"alias.json"; os.link(path,alias)
-    monkeypatch.setattr(module.os,"open",lambda *a,**k:pytest.fail("No linked read"))
+    original_open=module.os.open
+    def guarded_open(candidate,*args,**kwargs):
+        if candidate==alias or candidate==str(alias):
+            pytest.fail("No linked read")
+        return original_open(candidate,*args,**kwargs)
+    monkeypatch.setattr(module.os,"open",guarded_open)
+    # The observer must not break unrelated descriptor-based fixture cleanup.
+    control=tmp_path/"ordinary-control.txt";control.write_text("Synthetic",encoding="utf-8")
+    descriptor=os.open(control,os.O_RDONLY);os.close(descriptor)
     assert module.LibrarySnapshot(alias).read()["status"]=="unknown"
     assert path.read_bytes()==original
 
