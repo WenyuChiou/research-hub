@@ -18,7 +18,8 @@ import tempfile
 import yaml
 from research_hub.clusters import Cluster
 from research_hub.dashboard.source_evidence import note_source_identities
-from research_hub.workspace.obsidian_validation import _metadata, _registry
+from research_hub.workspace.library_snapshot import MAX_SNAPSHOT_BYTES, projection
+from research_hub.workspace.obsidian_validation import _lexical, _metadata, _registry
 
 MAX_FRONTMATTER = 128 * 1024
 MAX_NOTES = 1000
@@ -41,20 +42,50 @@ def unique_mapping(loader, node, deep=False):
 UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
 
 
-def beneath(root: Path, path: Path) -> Path:
-    resolved = path.resolve(strict=True)
-    if not resolved.is_relative_to(root) or path.is_symlink():
-        raise ValueError("Path outside selected research scope")
-    # Windows junctions/reparse points must not broaden a selected input.
-    for part in [path, *path.parents]:
-        if part == root:
-            break
-        info = part.lstat()
-        if (getattr(info, "st_file_attributes", 0) & 0x400 or
-                getattr(info, "st_reparse_tag", 0) or
-                getattr(part, "is_junction", lambda: False)()):
-            raise ValueError("Reparse point in selected input")
+def beneath(root: Path, path: Path, *, directory=False) -> Path:
+    path = path.absolute()
+    try:
+        before = _metadata(path)
+        resolved = path.resolve(strict=True)
+        after, target = _metadata(path), _metadata(resolved)
+    except ValueError:
+        raise ValueError("Reparse point or linked path in selected input") from None
+    identity = lambda info: (info.st_dev, info.st_ino, info.st_mode)
+    if (not resolved.is_relative_to(root) or identity(before) != identity(after)
+            or identity(before) != identity(target)):
+        raise ValueError("Path outside or changed within selected research scope")
+    if directory and not stat.S_ISDIR(before.st_mode):
+        raise ValueError("Selected collection must bind a directory")
     return resolved
+
+
+def canonical_vault(path: Path) -> Path:
+    selected = _lexical(path.absolute())
+    return beneath(Path(selected.anchor), selected, directory=True)
+
+
+def output_location(path: Path, vault: Path) -> Path:
+    # Preserve the same path spelling the startup reader will validate. Resolving
+    # aliases here would publish success for a path that reader must reject.
+    selected = _lexical(path.absolute())
+    if selected.is_relative_to(vault):
+        raise ValueError("Snapshot output must stay outside the vault")
+    try:
+        existing = _metadata(selected)
+    except FileNotFoundError:
+        existing = None
+    if existing is not None and not stat.S_ISREG(existing.st_mode):
+        raise ValueError("Snapshot output must be a regular file")
+    canonical = selected.resolve()
+    # Windows short names are physical aliases without reparse attributes.
+    # Check canonical containment too, while retaining the reader-valid spelling.
+    if canonical.is_relative_to(vault):
+        raise ValueError("Snapshot output must stay outside the vault")
+    try:
+        _metadata(selected)
+    except FileNotFoundError:
+        pass
+    return selected
 
 
 class UnsafeNoteError(ValueError):
@@ -147,8 +178,8 @@ def selected_registry(path: Path) -> dict[str, Cluster]:
 
 
 def snapshot(vault: Path, selections: list[str]) -> dict:
-    vault = vault.resolve(strict=True)
-    raw = beneath(vault, vault / "raw")
+    vault = canonical_vault(vault)
+    raw = beneath(vault, vault / "raw", directory=True)
     registry_file = beneath(vault, vault / ".research_hub" / "clusters.yaml")
     registry = selected_registry(registry_file)
     notes = []
@@ -160,7 +191,7 @@ def snapshot(vault: Path, selections: list[str]) -> dict:
         cluster = registry.get(slug)
         if cluster is None or cluster.status != "active":
             raise ValueError("Selected collection is not active in the registry")
-        folder = beneath(raw, raw / (cluster.obsidian_subfolder or cluster.slug))
+        folder = beneath(raw, raw / (cluster.obsidian_subfolder or cluster.slug), directory=True)
         if folder == raw:
             raise ValueError("Selected collection must bind a folder under raw")
         if folder in selected_folders:
@@ -213,18 +244,20 @@ def snapshot(vault: Path, selections: list[str]) -> dict:
 
 
 def export_selected(args):
-    vault = args.vault.resolve(strict=True)
-    output = args.output.resolve()
-    if output.is_relative_to(vault):
-        raise ValueError("Snapshot output must stay outside the vault")
+    vault = canonical_vault(args.vault)
+    output = output_location(args.output, vault)
     result = snapshot(vault, args.collection)
+    projection(result)  # Enforce the actual App consumer contract before publish.
     output.parent.mkdir(parents=True, exist_ok=True)
+    _metadata(output.parent)
     # Never truncate an existing inode: it may be hardlinked to a vault note.
     descriptor, temporary = tempfile.mkstemp(prefix=".library-snapshot-", suffix=".tmp", dir=output.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(result, stream, ensure_ascii=False, indent=2)
             stream.flush()
+            if os.fstat(stream.fileno()).st_size > MAX_SNAPSHOT_BYTES:
+                raise ValueError("Snapshot exceeds the workspace byte limit")
             os.fsync(stream.fileno())
         os.replace(temporary, output)
     finally:

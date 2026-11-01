@@ -1,5 +1,6 @@
 """Exporter privacy, selected-input scope and metadata fidelity; synthetic only."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import stat
@@ -200,3 +201,184 @@ def test_fifo_registry_rejects_before_any_open(vault, monkeypatch):
         changes.setattr(exporter.os, "open", no_open)
         with pytest.raises(ValueError):
             exporter.snapshot(vault, ["selected"])
+
+
+def test_intermediate_link_is_rejected_before_resolving_the_folder(vault, monkeypatch):
+    ancestor = vault / "raw/selected-parent"
+    folder = ancestor / "sub"
+    folder.mkdir(parents=True)
+    root = (vault / "raw").resolve()
+    original_lstat, original_resolve = Path.lstat, Path.resolve
+    def linked(path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        if path == ancestor:
+            values = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+            values["st_mode"] = stat.S_IFLNK | 0o777
+            return SimpleNamespace(**values)
+        return info
+    def no_resolve(path, *args, **kwargs):
+        if path == folder:
+            pytest.fail("Linked collection was resolved before ancestor validation")
+        return original_resolve(path, *args, **kwargs)
+    with monkeypatch.context() as changes:
+        changes.setattr(Path, "lstat", linked)
+        changes.setattr(Path, "resolve", no_resolve)
+        with pytest.raises(ValueError):
+            exporter.beneath(root, folder)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink scope fixture; no Windows privilege changes")
+def test_real_intermediate_symlink_cannot_relabel_unselected_notes(vault):
+    target = vault / "raw/unselected/sub"
+    target.mkdir(parents=True)
+    (target / "note.md").write_text("---\ntitle: Unselected synthetic note\n---\n", encoding="utf-8")
+    (vault / "raw/selected-parent").symlink_to(target.parent, target_is_directory=True)
+    (vault / ".research_hub/clusters.yaml").write_text("clusters:\n  selected:\n    name: Selected\n    obsidian_subfolder: selected-parent/sub\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        exporter.snapshot(vault, ["selected"])
+
+
+def test_collection_binding_cannot_treat_a_regular_file_as_an_empty_folder(vault):
+    (vault / "raw/not-a-folder").write_text("Synthetic file", encoding="utf-8")
+    (vault / ".research_hub/clusters.yaml").write_text("clusters:\n  selected:\n    name: Selected\n    obsidian_subfolder: not-a-folder\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="directory"):
+        exporter.snapshot(vault, ["selected"])
+
+
+def test_startup_vault_alias_is_checked_before_resolving(vault, monkeypatch):
+    original_metadata, original_resolve = exporter._metadata, Path.resolve
+    def linked(path):
+        if path == vault:
+            raise ValueError("Linked path")
+        return original_metadata(path)
+    def no_resolve(path, *args, **kwargs):
+        if path == vault:
+            pytest.fail("Vault alias resolved before metadata validation")
+        return original_resolve(path, *args, **kwargs)
+    with monkeypatch.context() as changes:
+        changes.setattr(exporter, "_metadata", linked)
+        changes.setattr(Path, "resolve", no_resolve)
+        with pytest.raises(ValueError):
+            exporter.snapshot(vault, ["selected"])
+
+
+@pytest.mark.parametrize("count", [128, 129])
+def test_published_selection_respects_consumer_collection_limit(vault, tmp_path, monkeypatch, count):
+    from research_hub.workspace.library_snapshot import LibrarySnapshot
+    registry = {f"collection-{i}": {"name": f"Synthetic {i}"} for i in range(count)}
+    for slug in registry:
+        (vault / "raw" / slug).mkdir()
+    import yaml
+    (vault / ".research_hub/clusters.yaml").write_text(yaml.safe_dump({"clusters": registry}), encoding="utf-8")
+    output = tmp_path / "snapshot.json"
+    original = b"previous synthetic snapshot"
+    output.write_bytes(original)
+    arguments = ["library_snapshot", "--vault", str(vault), "--output", str(output)]
+    for slug in registry:
+        arguments += ["--collection", slug]
+    monkeypatch.setattr(sys, "argv", arguments)
+    if count == 128:
+        assert exporter.main() == 0
+        assert len(LibrarySnapshot(output).read()["collections"]) == 128
+    else:
+        assert exporter.main() == 1
+        assert output.read_bytes() == original
+
+
+def test_utf8_serialized_limit_keeps_previous_usable_snapshot(vault, tmp_path, monkeypatch):
+    from research_hub.workspace.library_snapshot import LibrarySnapshot, MAX_SNAPSHOT_BYTES, projection
+    previous = exporter.snapshot(vault, ["selected"])
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    output = output_dir / "snapshot.json"
+    original = json.dumps(previous).encode("utf-8")
+    output.write_bytes(original)
+    oversized = {**previous, "notes": [{"id": f"obsidian:{i:024x}", "kind": "library-note", "data": {"origin": "obsidian", "read_only": True, "record_type": "markdown-note", "reading_level": "note-metadata", "identity_status": "unverified", "metadata_status": "available", "note_path": f"raw/selected/{i}.md", "abstract": "字" * 12000}} for i in range(500)]}
+    assert len(json.dumps(oversized, ensure_ascii=False).encode("utf-8")) > MAX_SNAPSHOT_BYTES
+    assert len(projection(oversized)["notes"]) == 500
+    monkeypatch.setattr(exporter, "snapshot", lambda *_: oversized)
+    monkeypatch.setattr(sys, "argv", ["library_snapshot", "--vault", str(vault), "--collection", "selected", "--output", str(output)])
+    assert exporter.main() == 1
+    assert output.read_bytes() == original
+    assert LibrarySnapshot(output).read() == previous
+    assert [p.name for p in output_dir.iterdir()] == ["snapshot.json"]
+
+
+def test_output_ancestor_alias_rejects_before_replacing_destination(vault, tmp_path, monkeypatch):
+    parent = tmp_path / "output"
+    parent.mkdir()
+    output = parent / "snapshot.json"
+    original = b"previous synthetic snapshot"
+    output.write_bytes(original)
+    original_lstat = Path.lstat
+    def linked(path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        if path == parent:
+            values = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+            values["st_mode"] = stat.S_IFLNK | 0o777
+            return SimpleNamespace(**values)
+        return info
+    monkeypatch.setattr(Path, "lstat", linked)
+    monkeypatch.setattr(sys, "argv", ["library_snapshot", "--vault", str(vault), "--collection", "selected", "--output", str(output)])
+    assert exporter.main() == 1
+    assert output.read_bytes() == original
+
+
+@pytest.mark.parametrize("entrypoint", ["snapshot", "cli"])
+def test_changed_vault_resolution_cannot_read_a_different_vault(vault, tmp_path, monkeypatch, entrypoint):
+    other = tmp_path / "other-vault"
+    (other / ".research_hub").mkdir(parents=True)
+    (other / "raw/selected").mkdir(parents=True)
+    (other / ".research_hub/clusters.yaml").write_text("clusters:\n  selected:\n    name: Other synthetic vault\n", encoding="utf-8")
+    original_resolve = Path.resolve
+    def changed(path, *args, **kwargs):
+        return original_resolve(other, *args, **kwargs) if path == vault else original_resolve(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "resolve", changed)
+    if entrypoint == "snapshot":
+        with pytest.raises(ValueError):
+            exporter.snapshot(vault, ["selected"])
+    else:
+        output = tmp_path / "snapshot.json"
+        original = b"previous synthetic snapshot"
+        output.write_bytes(original)
+        monkeypatch.setattr(sys, "argv", ["library_snapshot", "--vault", str(vault), "--collection", "selected", "--output", str(output)])
+        assert exporter.main() == 1
+        assert output.read_bytes() == original
+
+
+def test_canonical_output_containment_is_checked_before_publication(vault, tmp_path, monkeypatch):
+    output = tmp_path / "different-spelling.json"
+    original = b"previous synthetic snapshot"
+    output.write_bytes(original)
+    real_resolve = Path.resolve
+    def alternate_spelling(path, *args, **kwargs):
+        return vault / "inside-vault.json" if path == output else real_resolve(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "resolve", alternate_spelling)
+    monkeypatch.setattr(sys, "argv", ["library_snapshot", "--vault", str(vault), "--collection", "selected", "--output", str(output)])
+    assert exporter.main() == 1
+    assert output.read_bytes() == original
+    assert not (vault / "inside-vault.json").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows short-name spelling fixture")
+def test_native_short_name_output_cannot_write_inside_vault(vault, monkeypatch):
+    import ctypes
+    from ctypes import wintypes
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    function = api.GetShortPathNameW
+    function.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    function.restype = wintypes.DWORD
+    size = function(str(vault), None, 0)
+    if not size:
+        pytest.skip("Volume has no existing alternate short name")
+    buffer = ctypes.create_unicode_buffer(size + 1)
+    assert function(str(vault), buffer, len(buffer))
+    short = Path(buffer.value)
+    if short == vault:
+        pytest.skip("Volume returns only the original path spelling")
+    output = vault / "protected.json"
+    original = b"previous synthetic vault file"
+    output.write_bytes(original)
+    monkeypatch.setattr(sys, "argv", ["library_snapshot", "--vault", str(vault), "--collection", "selected", "--output", str(short / output.name)])
+    assert exporter.main() == 1
+    assert output.read_bytes() == original
