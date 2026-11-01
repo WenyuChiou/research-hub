@@ -46,7 +46,7 @@ export function LibraryCollection(props: {
     setLoading(true); setFailed(false);
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch("/app/assets/obsidian-library.json", {signal: controller.signal, headers: {Accept: "application/json"}});
+      const response = await fetch("/api/v1/library/snapshot", {signal: controller.signal, headers: {Accept: "application/json"}});
       if (!response.ok) throw new Error("Snapshot unavailable");
       const result = validateSnapshot(await response.json());
       if (controller.signal.aborted) return;

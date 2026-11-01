@@ -663,6 +663,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--workspace", action="store_true", help="Open the researcher workspace; no legacy vault config required")
     serve_parser.add_argument("--root", default=".", help="Workspace project directory (with --workspace)")
     serve_parser.add_argument("--obsidian-vault", default=None, help="Authorize metadata-only validation of this exact existing local vault (with --workspace); no configuration is saved")
+    serve_parser.add_argument("--library-snapshot", default=None, help="Read this exact existing local Library metadata JSON with --workspace; no vault scan or configuration save")
     serve_parser.add_argument("--human-approvals", action="store_true", help="Enable local UI decisions after an interactive operator confirmation")
     serve_parser.add_argument(
         "--allow-external",
@@ -2803,6 +2804,8 @@ def _main_dispatch(args, parser) -> int:
         return dispatch_workspace(args)
     if args.command == "serve" and args.obsidian_vault is not None and not args.workspace:
         parser.error("--obsidian-vault requires --workspace")
+    if args.command == "serve" and args.library_snapshot is not None and not args.workspace:
+        parser.error("--library-snapshot requires --workspace")
     if args.command == "serve" and getattr(args, "workspace", False):
         if args.allow_external or args.host != "127.0.0.1" or args.dashboard:
             parser.error("--workspace is loopback-only and separate from --dashboard")
@@ -2817,7 +2820,7 @@ def _main_dispatch(args, parser) -> int:
             human = True
         from research_hub.workspace.server import serve_workspace
         serve_workspace(args.root, port=args.port, open_browser=not args.no_browser, human=human,
-                        obsidian_vault=args.obsidian_vault)
+                        obsidian_vault=args.obsidian_vault, library_snapshot=args.library_snapshot)
         return 0
 
     # This explicit-input checker must not discover a vault or account config.
