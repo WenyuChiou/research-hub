@@ -36,6 +36,34 @@ research-hub serve --workspace --root ./workspace-demo
 
 ![使用本機示範紀錄的實際工作區介面。](images/workspace-ui.zh-TW.png)
 
+## 瀏覽已選 Obsidian 中繼資料快照
+
+在原始碼 checkout 中，只匯出 registry 選定的集合至 vault 外的 JSON 檔，
+再於啟動工作區時明確選定該檔案：
+
+```sh
+python scripts/library_snapshot.py --vault /absolute/research-vault --collection selected --output /absolute/task/library.json
+research-hub serve --workspace --root /absolute/task/workspace --library-snapshot /absolute/task/library.json
+```
+
+在文獻頁選擇「瀏覽已選 Obsidian Library」。同源的
+`GET /api/v1/library/snapshot` 僅讀取啟動時選定的本機 JSON，不接受瀏覽器傳入路徑，
+也不需要將檔案複製進 build assets。快照缺失、變更、具有連結、過大或格式無效時，
+狀態保持無法讀取；Workspace 來源與已載入的舊快照均不變。
+檔案上限為 16 MiB、128 個集合及 1,000 筆筆記。若多個已選集合綁定同一資料夾，
+匯出會拒絕此歧義；請只選其中一個集合，不重複列出相同筆記。
+筆記仍是唯讀中繼資料，顯示擷取時間及既有 abstract 欄位；
+不視為已驗證論文或即時同步。載入不讀取筆記內文、不尋找設定、不登入服務、
+也不儲存設定；停止伺服器即結束對該快照的存取。
+
+這修復了研究者瀏覽已選筆記的既有路徑：原按鈕要求 build assets 中的 JSON，
+但乾淨 build 會移除該檔。明確選定啟動檔案可取代手動複製 assets 的步驟。
+匯出仍是需明確執行的本機操作，介面重新載入僅會重讀該份匯出；
+需要較新中繼資料時，請重新產生匯出。未使用 Obsidian 的研究者仍可直接使用
+Workspace 來源，不需此選項。驗收涵蓋乾淨 build 後可讀取選定快照、
+無法讀取與重新載入恢復、唯讀來源忠實性，以及既有返回來源工具的導覽；
+合成測試成功與真實 vault 或人類驗收分開記錄。
+
 ## 六個頁面如何使用
 
 | 頁面 | 從這裡開始 | 仍需由你負責 |

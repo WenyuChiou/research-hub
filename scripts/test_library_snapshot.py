@@ -1,11 +1,12 @@
 import json
 import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
-from library_snapshot import frontmatter_only, snapshot
+from library_snapshot import frontmatter_only, snapshot, main
 
 
 class LibrarySnapshotTests(unittest.TestCase):
@@ -80,6 +81,54 @@ class LibrarySnapshotTests(unittest.TestCase):
             frontmatter_only(path)
         self.assertEqual(positions, [len(prefix)])
         opened.assert_called_once_with("rb", buffering=0)
+
+    def test_registry_folder_binding_is_used_instead_of_slug(self):
+        registry = self.root / ".research_hub" / "clusters.yaml"
+        registry.write_text("clusters:\n  selected:\n    name: Selected collection\n    obsidian_subfolder: bound-folder\n    status: active\n", encoding="utf-8")
+        bound = self.root / "raw" / "bound-folder"
+        bound.mkdir()
+        (bound / "right.md").write_text("---\ntitle: Bound note\n---\n", encoding="utf-8")
+        (self.folder / "wrong.md").write_text("---\ntitle: Unselected note\n---\n", encoding="utf-8")
+        notes = snapshot(self.root, ["selected"])["notes"]
+        self.assertEqual([note["data"]["title"] for note in notes], ["Bound note"])
+        self.assertEqual(notes[0]["data"]["note_path"], "raw/bound-folder/right.md")
+
+    def test_registry_binding_escape_rejects_before_note_read(self):
+        (self.root / "outside").mkdir()
+        registry = self.root / ".research_hub" / "clusters.yaml"
+        registry.write_text("clusters:\n  selected:\n    name: Selected collection\n    obsidian_subfolder: ../outside\n    status: active\n", encoding="utf-8")
+        with patch("library_snapshot.frontmatter_only", side_effect=AssertionError("No note read allowed")), self.assertRaises(ValueError):
+            snapshot(self.root, ["selected"])
+
+    def test_duplicate_selected_folder_bindings_reject_ambiguous_export(self):
+        registry = self.root / ".research_hub" / "clusters.yaml"
+        registry.write_text("clusters:\n  selected:\n    name: First\n    obsidian_subfolder: selected\n  alias:\n    name: Second\n    obsidian_subfolder: selected\n", encoding="utf-8")
+        (self.folder / "one.md").write_text("---\ntitle: Synthetic\n---\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "same folder"):
+            snapshot(self.root, ["selected", "alias"])
+
+    def test_hardlinked_output_replaces_link_without_changing_vault_note(self):
+        note = self.folder / "one.md"
+        original = b"---\ntitle: Synthetic preserved note\n---\nPRIVATE SYNTHETIC BODY\n"
+        note.write_bytes(original)
+        with tempfile.TemporaryDirectory() as destination:
+            output = Path(destination) / "snapshot.json"
+            os.link(note, output)
+            with patch("sys.argv", ["library_snapshot", "--vault", str(self.root), "--collection", "selected", "--output", str(output)]):
+                main()
+            self.assertEqual(note.read_bytes(), original)
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["notes"][0]["data"]["title"], "Synthetic preserved note")
+            self.assertNotEqual(note.stat().st_ino, output.stat().st_ino)
+
+    def test_failed_publication_keeps_destination_and_removes_owned_temp(self):
+        with tempfile.TemporaryDirectory() as destination:
+            output = Path(destination) / "snapshot.json"
+            original = b"previous synthetic snapshot"
+            output.write_bytes(original)
+            with patch("sys.argv", ["library_snapshot", "--vault", str(self.root), "--collection", "selected", "--output", str(output)]), patch("os.replace", side_effect=OSError("Synthetic publication failure")), self.assertRaises(OSError):
+                main()
+            self.assertEqual(output.read_bytes(), original)
+            self.assertEqual([p.name for p in Path(destination).iterdir()], ["snapshot.json"])
 
 
 if __name__ == "__main__":
