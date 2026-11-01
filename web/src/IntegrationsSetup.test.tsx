@@ -208,3 +208,105 @@ it("uses an explicit readable theme for the footer trigger instead of inherited 
   render(<IntegrationsSetup workspace={null} t={t}/>);
   expect(screen.getByRole("button",{name:t("integrationsSetup")})).toHaveClass("button", "secondary");
 });
+
+it("separates all current connection states from saved observations and explains the owner login boundary", async () => {
+  render(<IntegrationsSetup workspace={workspace(saved)} t={t} />);
+  const panel = await open();
+  expect(within(panel).getAllByText(t("integrationNotChecked"))).toHaveLength(3);
+  expect(within(panel).getAllByText(t("integrationSavedObservation"))).toHaveLength(3);
+  expect(within(panel).getByText(t("snapshotPassed"))).toBeVisible();
+  expect(within(panel).getByText(t("snapshotFailed"))).toBeVisible();
+  expect(within(panel).getByText(t("integrationNlmPrerequisites"))).toBeVisible();
+  expect(within(panel).getByText("python -m research_hub notebooklm login --auto-detect")).toBeVisible();
+  expect(within(panel).getByRole("form", { name: t("zoteroDraft") })).toBeVisible();
+  expect(within(panel).queryByRole("button", { name: /save|connect|login/i })).not.toBeInTheDocument();
+});
+
+it("discards the Zotero draft when closing or changing project without fetching or saving", async () => {
+  const { api } = await import("./api");
+  const { rerender } = render(<IntegrationsSetup workspace={null} projectId="one" t={t} />);
+  const before = vi.mocked(api).mock.calls.length;
+  await open();
+  await userEvent.type(screen.getByRole("textbox", { name: t("zoteroLibraryId") }), "123456");
+  await userEvent.selectOptions(screen.getByRole("combobox"), "user");
+  await userEvent.click(screen.getByRole("button", { name: t("zoteroCheckFormat") }));
+  expect(screen.getByText(t("zoteroFormatValid"))).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await open();
+  expect(screen.getByRole("textbox", { name: t("zoteroLibraryId") })).toHaveValue("");
+  expect(screen.getByRole("combobox")).toHaveValue("");
+  await userEvent.type(screen.getByRole("textbox", { name: t("zoteroLibraryId") }), "654321");
+  rerender(<IntegrationsSetup workspace={null} projectId="two" t={t} />);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await open();
+  expect(screen.getByRole("textbox", { name: t("zoteroLibraryId") })).toHaveValue("");
+  expect(vi.mocked(api).mock.calls.length).toBe(before);
+});
+
+it.each(["en", "zh-TW"] as const)("shows observation provenance, exact UTC time and historical age separately from destination and current connection in %s", async (locale) => {
+  const tr = translator(locale);
+  const { api } = await import("./api");
+  const calls = vi.mocked(api).mock.calls.length;
+  render(<IntegrationsSetup workspace={workspace({...saved,observed_at:"2026-10-25T00:00:00.123456Z"})} t={tr} />);
+  await userEvent.click(screen.getByRole("button", {name:tr("integrationsSetup")}));
+  const panel = within(screen.getByRole("dialog"));
+  expect(panel.getByText(tr("integrationSavedSetupSource"))).toBeVisible();
+  expect(panel.getByText("2026-10-25T00:00:00.123456Z")).toHaveAttribute("datetime", "2026-10-25T00:00:00.123456Z");
+  expect(panel.getByText(tr("integrationFreshSaved"))).toBeVisible();
+  expect(panel.getAllByText(tr("integrationNotChecked"))).toHaveLength(3);
+  expect(panel.getAllByText(tr("integrationDestinationUnknown"))).toHaveLength(2);
+  expect(panel.getByText(tr("integrationNoStartupVault"))).toBeVisible();
+  expect(vi.mocked(api).mock.calls.length).toBe(calls);
+});
+
+it.each([
+  ["missing", "integrationFreshMissing"], ["stale", "integrationFreshStale"],
+  ["invalid", "integrationFreshInvalid"], ["clock_skew", "integrationFreshClockSkew"],
+] as const)("labels %s observations without turning a saved pass into current connectivity", async (freshness, label) => {
+  render(<IntegrationsSetup workspace={workspace({...saved,freshness})} t={t} />);
+  const panel = await open();
+  expect(within(panel).getByText(t(label))).toBeVisible();
+  expect(within(panel).getAllByText(t("integrationNotChecked"))).toHaveLength(3);
+  expect(panel.textContent).not.toContain(t("snapshotPassed"));
+  expect(panel.textContent).not.toContain(t("snapshotFailed"));
+});
+
+it.each(["SECRET_TIME", "2026-10-25T00:00:00Z?token=SECRET", "2026-02-30T00:00:00Z", "2026-10-25T00:00:00"])(
+  "does not expose or trust malformed observation time %s", async (observed_at) => {
+    render(<IntegrationsSetup workspace={workspace({...saved,observed_at,source_path:"PRIVATE_PATH",token:"SECRET_TOKEN"})} t={t} />);
+    const panel = await open();
+    expect(panel.querySelector("time")).toBeNull();
+    expect(within(panel).getByText(t("integrationFreshInvalid"))).toBeVisible();
+    expect(panel.innerHTML).not.toMatch(/SECRET|PRIVATE/);
+    expect(panel.textContent).not.toContain(t("snapshotPassed"));
+  },
+);
+
+it("shows an exact startup-selected Obsidian destination without a probe or connection claim; Zotero draft checking remains unsaved", async () => {
+  const { api } = await import("./api");
+  const calls = vi.mocked(api).mock.calls.length;
+  const scoped: Workspace = {ok:true,projects:[],protection_scope:"synthetic",setup_snapshot:{...saved,current_status:"unknown",freshness:"stale"},capabilities:{codex:{status:"unavailable",message:"synthetic"},writing:{status:"unavailable",message:"synthetic"},approval:{status:"unavailable",message:"synthetic"},obsidian_validation:{version:1,status:"available",read_only:true,scope:"startup_selected_exact_vault",authorized_vault:"/synthetic/selected-vault"}}};
+  render(<IntegrationsSetup workspace={scoped} t={t} />);
+  const panel = await open();
+  expect(within(panel).getByText(t("integrationSelectedVault"))).toBeVisible();
+  expect(within(panel).getByRole("textbox", {name:t("obsidianVaultPath")})).toHaveValue("/synthetic/selected-vault");
+  await userEvent.type(within(panel).getByRole("textbox", {name:t("zoteroLibraryId")}), "123456");
+  await userEvent.selectOptions(within(panel).getByRole("combobox", {name:t("zoteroLibraryType")}), "group");
+  await userEvent.click(within(panel).getByRole("button", {name:t("zoteroCheckFormat")}));
+  expect(within(panel).getAllByText(t("integrationDestinationUnknown"))).toHaveLength(2);
+  expect(within(panel).getAllByText(t("integrationNotChecked"))).toHaveLength(3);
+  expect(within(panel).getByText(t("zoteroFormatValid"))).toBeVisible();
+  expect(vi.mocked(api).mock.calls.length).toBe(calls);
+});
+
+it.each([
+  {label:"null",value:null}, {label:"noncoercible object",value:{toString:null}},
+  {label:"array",value:["SECRET_FRESHNESS"]}, {label:"prototype name",value:"__proto__"},
+])("handles malformed freshness $label without a closed-panel render failure or raw-value leak", async ({value}) => {
+  render(<IntegrationsSetup workspace={workspace({...saved,freshness:value})} t={t} />);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const panel = await open();
+  expect(within(panel).getByText(t("integrationFreshInvalid"))).toBeVisible();
+  expect(panel.textContent).not.toContain(t("snapshotPassed"));
+  expect(panel.innerHTML).not.toContain("SECRET_FRESHNESS");
+});
