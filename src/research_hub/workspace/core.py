@@ -341,7 +341,8 @@ class Workspace:
 
     def save_source_batch(self, project_id: str, *, kind: str, data: list) -> dict:
         """Atomically create/reuse exact native batch keys; never update sources."""
-        from .source_handoff import prepare_source_batch_write, plan_stored_source_batch, parse_preview_data, SourceBatchConflict
+        from .source_handoff import (prepare_source_batch_write, plan_stored_source_batch,
+            parse_stored_source_data, SourceBatchConflict, MAX_SOURCE_SNAPSHOT_BYTES, MAX_PREVIEW_ITEMS)
         incoming = prepare_source_batch_write(project_id, kind=kind, data=data)
         self.project(project_id)  # Read-only precheck: an unknown root is not initialized.
         requested = {(item["batch_id"], item["id"]) for item in incoming}
@@ -350,15 +351,23 @@ class Workspace:
                 if not db.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
                     raise WorkspaceError("Unknown project", "not_found")
                 snapshot = []
+                snapshot_bytes = 2  # JSON array brackets; commas are counted below.
                 for row in db.execute("SELECT id,body FROM records WHERE project=? AND kind='source' ORDER BY rowid", (project_id,)):
                     try:
-                        stored = parse_preview_data(row[1])
+                        stored = parse_stored_source_data(row[1])
                     except (ValueError, TypeError) as exc:
                         raise WorkspaceError("Stored source metadata is unavailable", "conflict") from exc
                     key = (stored.get("batch_id"), stored.get("id"))
                     if not all(isinstance(value, str) for value in key) or key not in requested:
                         continue  # Legacy unbatched records are not guessed to be a match.
-                    snapshot.append({"id": row[0], "kind": "source", "project_id": project_id, "data": stored})
+                    record = {"id": row[0], "kind": "source", "project_id": project_id, "data": stored}
+                    try:
+                        snapshot_bytes += len(encoded(record).encode("utf-8")) + bool(snapshot)
+                    except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
+                        raise WorkspaceError("Stored source metadata is unavailable", "conflict") from exc
+                    if snapshot_bytes > MAX_SOURCE_SNAPSHOT_BYTES or len(snapshot) >= MAX_PREVIEW_ITEMS:
+                        raise WorkspaceError("Stored source snapshot exceeds its bounded budget", "conflict")
+                    snapshot.append(record)
                 plan = plan_stored_source_batch(project_id, incoming, snapshot)
                 if plan["preview"]["counts"]["conflict"]:
                     raise SourceBatchConflict(plan)

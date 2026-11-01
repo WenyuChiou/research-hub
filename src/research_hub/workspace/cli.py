@@ -129,9 +129,9 @@ def dispatch_workspace(args) -> int:
             values["action_hash"] = action_hash
             proof = _LOCAL_HUMAN
         if source_preview:
-            from .source_handoff import parse_preview_array, preview_source_batch, preview_source_handoff
+            from .source_handoff import parse_preview_snapshot, preview_source_batch, preview_source_handoff
             if batch:
-                snapshot = parse_preview_array(existing_records) if existing_records is not None else None
+                snapshot = parse_preview_snapshot(existing_records) if existing_records is not None else None
                 result = preview_source_batch(values.pop("project_id"), existing_records=snapshot, **values)
             else:
                 result = preview_source_handoff(values.pop("project_id"), **values)

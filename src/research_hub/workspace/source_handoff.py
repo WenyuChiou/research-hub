@@ -13,6 +13,15 @@ from .core import RECORD_FIELDS, WorkspaceError, encoded
 
 MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 MAX_PREVIEW_ITEMS = 10_000
+# Caller data keeps its original budget. Internal copies must also fit the
+# bounded fields added by core: identity default, longest UTC clock, UUID hex,
+# source kind and the maximum valid project ID. No source content is exempt.
+_IDENTITY_BYTES = len(encoded({"identity_status": "unverified"}).encode("utf-8")) - 1
+_CLOCK_BYTES = len(encoded({"recorded_at": "2000-01-01T00:00:00.000000Z"}).encode("utf-8")) - 1
+_WRAPPER_BYTES = len(encoded({"id": "f" * 32, "kind": "source", "project_id": "p" * 63, "data": {}}).encode("utf-8")) - 2
+MAX_SOURCE_RECORD_BYTES = MAX_PREVIEW_BYTES + _IDENTITY_BYTES + _CLOCK_BYTES
+MAX_SOURCE_BATCH_BYTES = MAX_PREVIEW_BYTES + MAX_PREVIEW_ITEMS * _IDENTITY_BYTES
+MAX_SOURCE_SNAPSHOT_BYTES = MAX_SOURCE_BATCH_BYTES + MAX_PREVIEW_ITEMS * (_CLOCK_BYTES + _WRAPPER_BYTES)
 _PAPER_FIELDS = (
     "id", "title", "year", "url", "relevance", "reading_level",
     "reading_level_note", "category",
@@ -47,7 +56,7 @@ def source_record_arguments(
     return {"kind": "source", "data": data}
 
 
-def _parse_preview_json(raw: str, expected):
+def _parse_preview_json(raw: str, expected, *, max_bytes=MAX_PREVIEW_BYTES):
     """Decode only the caller-supplied bounded JSON, with safe diagnostics."""
     def pairs(items):
         result = {}
@@ -58,7 +67,7 @@ def _parse_preview_json(raw: str, expected):
         return result
 
     try:
-        if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_PREVIEW_BYTES:
+        if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
             raise ValueError("Too large")
         data = json.loads(raw, object_pairs_hook=pairs,
                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Nonfinite")))
@@ -78,6 +87,14 @@ def parse_preview_data(raw: str) -> dict:
 
 def parse_preview_array(raw: str) -> list:
     return _parse_preview_json(raw, list)
+
+
+def parse_preview_snapshot(raw: str) -> list:
+    return _parse_preview_json(raw, list, max_bytes=MAX_SOURCE_SNAPSHOT_BYTES)
+
+
+def parse_stored_source_data(raw: str) -> dict:
+    return _parse_preview_json(raw, dict, max_bytes=MAX_SOURCE_RECORD_BYTES)
 
 
 def preview_source_record(project_id: str, *, kind: str, data: dict) -> dict:
@@ -185,9 +202,9 @@ def preview_source_handoff(project_id: str, *, kind: str, data: dict) -> dict:
     return result
 
 
-def _batch_copy(value) -> list:
+def _batch_copy(value, *, max_bytes=MAX_PREVIEW_BYTES) -> list:
     try:
-        return parse_preview_array(encoded(value))
+        return _parse_preview_json(encoded(value), list, max_bytes=max_bytes)
     except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
         raise WorkspaceError("Batch preview requires a bounded finite JSON array") from exc
 
@@ -212,7 +229,15 @@ def preview_source_batch(project_id: str, *, kind: str, data: list, existing_rec
         raise WorkspaceError("Batch preview requires source kind and a valid declared project")
     incoming = _batch_copy(data)
     supplied = existing_records is not None
-    snapshot = _batch_copy(existing_records) if supplied else []
+    snapshot = _batch_copy(existing_records, max_bytes=MAX_SOURCE_SNAPSHOT_BYTES) if supplied else []
+    return _plan_source_batch(project_id, incoming, snapshot, supplied=supplied)
+
+
+def _plan_source_batch(project_id, incoming, snapshot, *, supplied):
+    """Compare already bounded copies; neither public nor stored sizes are skipped."""
+    if not isinstance(project_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", project_id):
+        raise WorkspaceError("Batch preview requires source kind and a valid declared project")
+    kind = "source"
     incoming_by_key, existing_by_key, outer_ids = {}, {}, set()
     for index, proposal in enumerate(incoming):
         incoming_by_key.setdefault(_source_key(proposal), []).append(index)
@@ -290,7 +315,8 @@ def plan_stored_source_batch(project_id: str, incoming: list, records: list) -> 
     Only the core's recorded_at field is omitted from comparison. Invalid or
     missing storage clocks remain explicit conflicts, never inferred replays.
     """
-    snapshot = deepcopy(records)
+    incoming = _batch_copy(incoming, max_bytes=MAX_SOURCE_BATCH_BYTES)
+    snapshot = _batch_copy(records, max_bytes=MAX_SOURCE_SNAPSHOT_BYTES)
     bad = {}
     for index, record in enumerate(snapshot):
         data = record.get("data")
@@ -307,7 +333,7 @@ def plan_stored_source_batch(project_id: str, incoming: list, records: list) -> 
             valid = False
         if not valid:
             bad.setdefault(key, []).append(index)
-    result = preview_source_batch(project_id, kind="source", data=incoming, existing_records=snapshot)
+    result = _plan_source_batch(project_id, incoming, snapshot, supplied=True)
     view = result["preview"]
     for key, existing_indices in bad.items():
         matched = [p for p in view["plans"] if (p["key"]["batch_id"], p["key"]["source_id"]) == key]

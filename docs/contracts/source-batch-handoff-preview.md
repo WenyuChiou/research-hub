@@ -52,9 +52,15 @@ No saved field is ignored: extra recorded metadata or manual prose can therefore
 cause conservative conflicts instead of an inferred replay match.
 
 Input JSON rejects duplicate keys, nonfinite numbers, invalid Unicode and wrong
-shapes. Each supplied array is bounded to 4 MiB and 10,000 entries; these are
-processing limits, not literature or scientific sufficiency quotas. Errors use
-fixed diagnostics rather than echoing source text.
+shapes. Caller source data remains bounded to 4 MiB and 10,000 entries.
+Source snapshots have a separate finite budget: the same source capacity
+plus per-entry allowances calculated from core's identity default, maximum UTC
+timestamp, 32-character record ID and 63-character project ID. Stored rows have
+only the identity/timestamp allowance; item counts still cannot exceed 10,000.
+Thus a full-capacity save can be retried without counting core metadata against
+the caller's original budget. Snapshot collection rejects excess before adding
+more records. These are processing limits, not scientific sufficiency quotas;
+diagnostics remain fixed and never echo source text.
 
 The root/project and supplied snapshot remain unverified. No lookup, DB, config,
 caller-file read, UUID, model, provider, login or destination write occurs.
