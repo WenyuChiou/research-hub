@@ -24,6 +24,7 @@ from playwright.sync_api import expect, sync_playwright
 from workspace_browser_fixtures import prepare_abstract_fixtures, prepare_composer_fixtures
 from workspace_browser_sessions import check_composer_sessions
 from workspace_browser_discovery import prepare_discovery_fixture, check_discovery_journey
+from workspace_browser_library import check_library_journey
 
 from research_hub.workspace.demo import create_demo
 from research_hub.workspace.core import Workspace, digest, file_hash
@@ -537,7 +538,7 @@ def run(output: Path):
                 page.keyboard.press("Escape")
                 expect(setup).to_have_count(0)
                 expect(setup_button).to_be_focused()
-                page.set_viewport_size({"width": 720, "height": 500})  # 200% of desktop layout width.
+                page.set_viewport_size({"width": 720, "height": 500})  # Reduced layout viewport; native zoom is not verified.
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
                 page.get_by_role("button", name="EN", exact=True).click()
                 page.goto(screen.base + "/app/")
@@ -545,11 +546,12 @@ def run(output: Path):
                 expect(page.get_by_role("link", name="Skip to main content")).to_be_focused()
                 page.keyboard.press("Enter")
                 expect(page.get_by_role("main")).to_be_focused()
-                checks.append({"check": "200% equivalent layout and keyboard skip link", "status": "PASS"})
+                checks.append({"check": "720x500 layout viewport and keyboard skip link; native zoom not verified", "status": "PASS"})
                 check_revision_delivery(screen, tasks, revision_fixtures, checks, output)
                 check_abstract_journey(screen, tasks, abstract_fixtures, checks, output)
                 check_composer_sessions(screen, tasks, composer_fixtures, checks, output)
                 check_discovery_journey(screen, tasks, discovery_fixture, checks, output)
+                check_library_journey(screen, server.service.workspace, checks, output)
                 assert not errors, errors
                 report["status"] = "PASS"
             except Exception as exc:
