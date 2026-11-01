@@ -3,8 +3,17 @@ import { createPortal } from "react-dom";
 import type { Translate } from "./i18n";
 import type { Workspace } from "./types";
 import { ObsidianValidationForm } from "./ObsidianValidationForm";
+import { ZoteroLibraryForm } from "./ZoteroLibraryForm";
 
-/** Historical guidance plus explicitly scoped Obsidian validation; no credentials or provider probes. */
+function observationTime(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value)) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const normalized = date.toISOString();
+  return normalized.slice(0, 19) === value.slice(0, 19) ? value : null;
+}
+
+/** Local drafts and scoped Obsidian validation; no credentials or provider probes. */
 export function IntegrationsSetup({
   workspace,
   t,
@@ -40,6 +49,19 @@ export function IntegrationsSetup({
     previousProject.current = projectId;
   }, [projectId]);
   const snapshot = workspace?.setup_snapshot;
+  const knownSnapshot = snapshot?.schema_version === 1 && snapshot.source === "saved_local_setup_snapshot";
+  const freshnessLabels = {
+    saved: "integrationFreshSaved", stale: "integrationFreshStale", missing: "integrationFreshMissing",
+    invalid: "integrationFreshInvalid", clock_skew: "integrationFreshClockSkew",
+  } as const;
+  const observedAt = knownSnapshot && (snapshot.freshness === "saved" || snapshot.freshness === "stale")
+    ? observationTime(snapshot.observed_at) : null;
+  const freshness = knownSnapshot && typeof snapshot.freshness === "string" && Object.hasOwn(freshnessLabels, snapshot.freshness)
+    ? ((snapshot.freshness === "saved" || snapshot.freshness === "stale") && !observedAt ? "invalid" : snapshot.freshness)
+    : "invalid";
+  const vault = workspace?.capabilities?.obsidian_validation;
+  const selectedVault = vault?.version === 1 && vault.status === "available" && vault.read_only === true &&
+    vault.scope === "startup_selected_exact_vault" && typeof vault.authorized_vault === "string" && Boolean(vault.authorized_vault.trim());
   const statuses = {
     passed: "snapshotPassed",
     failed: "snapshotFailed",
@@ -106,34 +128,69 @@ export function IntegrationsSetup({
             </header>
             <p>{t("integrationsOptional")}</p>
             <p>{t("integrationsHistorical")}</p>
-            <ul>
+            <dl className="integration-status" aria-label={t("integrationObservationDetails")}>
+              <div><dt>{t("integrationObservationSource")}</dt><dd>{t(knownSnapshot ? "integrationSavedSetupSource" : "integrationObservationUnavailable")}</dd></div>
+              <div><dt>{t("integrationObservedAt")}</dt><dd>{observedAt ? <time dateTime={observedAt}>{observedAt}</time> : t("integrationObservationUnavailable")}</dd></div>
+              <div><dt>{t("integrationObservationFreshness")}</dt><dd>{t(snapshot ? freshnessLabels[freshness] : "integrationFreshMissing")}</dd></div>
+            </dl>
+            <ul className="integration-tools">
               {services.map(([key, label, href, guidance]) => {
                 const status =
-                  snapshot?.schema_version === 1 &&
-                  snapshot.source === "saved_local_setup_snapshot" &&
-                  snapshot.freshness === "saved"
+                  knownSnapshot && freshness === "saved"
                     ? snapshot.components?.[key]
                     : "unknown";
                 return (
-                  <li key={key}>
-                    <strong>{label}</strong>:{" "}
-                    {t(
-                      typeof status === "string" &&
-                        Object.hasOwn(statuses, status)
-                        ? statuses[status as keyof typeof statuses]
-                        : "snapshotUnknown",
-                    )}
+                  <li key={key} className="integration-tool">
+                    <h3>{label}</h3>
+                    <dl className="integration-status">
+                      <div><dt>{t("integrationSelectedDestination")}</dt><dd>{t(key === "vault" ? selectedVault ? "integrationSelectedVault" : "integrationNoStartupVault" : "integrationDestinationUnknown")}</dd></div>
+                      <div>
+                        <dt>{t("integrationCurrentConnection")}</dt>
+                        <dd>{t("integrationNotChecked")}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("integrationSavedObservation")}</dt>
+                        <dd>
+                          {t(
+                            typeof status === "string" &&
+                              Object.hasOwn(statuses, status)
+                              ? statuses[status as keyof typeof statuses]
+                              : "snapshotUnknown",
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
                     <p>
                       {t(guidance)}{" "}
                       <a href={href} target="_blank" rel="noopener noreferrer">
                         {t("integrationOfficial")} — {label}
                       </a>
                     </p>
-                    {key === "vault" && <ObsidianValidationForm capability={workspace?.capabilities?.obsidian_validation} t={t} />}
+                    {key === "vault" && (
+                      <ObsidianValidationForm
+                        capability={
+                          workspace?.capabilities?.obsidian_validation
+                        }
+                        t={t}
+                      />
+                    )}
+                    {key === "zotero" && <ZoteroLibraryForm t={t} />}
+                    {key === "notebooklm_auth" && (
+                      <>
+                        <p>{t("integrationNlmPrerequisites")}</p>
+                        <p>
+                          {t("integrationNlmReconnect")}{" "}
+                          <code>
+                            {"python -m research_hub notebooklm login --auto-detect"}
+                          </code>
+                        </p>
+                      </>
+                    )}
                   </li>
                 );
               })}
             </ul>
+            <h3>{t("integrationAdvancedSetup")}</h3>
             <ol>
               <li>
                 {t("integrationSetupStep")}{" "}
@@ -145,10 +202,6 @@ export function IntegrationsSetup({
                 <code>python -m research_hub doctor</code>
               </li>
             </ol>
-            <p>
-              {t("integrationNlmReconnect")}{" "}
-              <code>python -m research_hub notebooklm login --auto-detect</code>
-            </p>
             <p>{t("integrationPrivacy")}</p>
             <a
               href="https://github.com/WenyuChiou/research-hub/blob/fix/nlm-085-integrations-guidance/docs/setup.md"

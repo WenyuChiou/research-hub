@@ -141,6 +141,69 @@ def test_capabilities_read_is_local_read_only_and_preserves_existing_capabilitie
     assert list(tmp_path.iterdir()) == []
 
 
+def test_workspace_get_projection_never_opens_provider_config_credentials_or_sessions(tmp_path, monkeypatch):
+    """Exercise the real GET dispatcher in-process, without a socket or account."""
+    import builtins
+    from email.message import Message
+    from pathlib import Path
+    import socket
+    from research_hub.workspace.server import WorkspaceHandler
+    from research_hub.workspace.service import WorkspaceService
+    from research_hub.workspace.obsidian_validation import ObsidianValidation
+    import research_hub.workspace.executor as executor
+    import research_hub.workspace.writing as writing
+
+    path = write(tmp_path, payload())
+    before = path.read_bytes(), path.stat().st_mtime_ns
+    original_read = snapshots.read_setup_snapshot
+    monkeypatch.setattr(snapshots, "read_setup_snapshot", lambda root: original_read(root, observed_now=NOW))
+    monkeypatch.setattr(executor, "codex_capability", lambda: {"status": "unavailable", "message": "synthetic"})
+    monkeypatch.setattr(writing, "writing_capability", lambda: {"status": "unavailable", "message": "synthetic"})
+    handler = object.__new__(WorkspaceHandler)
+    handler.headers = Message()
+    handler.headers["Host"] = "127.0.0.1:53410"  # Synthetic unit input; no HTTP request is sent.
+    handler.path = "/api/v1/workspace"
+    captured = []
+    handler._reply = lambda status, body, *args: captured.append((status, body))
+    original_import = builtins.__import__
+
+    def local_import(name, globals=None, locals=None, fromlist=(), level=0):
+        forbidden = ("research_hub.config", "research_hub.zotero", "research_hub.notebooklm", "research_hub.security")
+        assert not any(name == prefix or name.startswith(prefix + ".") for prefix in forbidden), "Provider or secret module used during GET"
+        assert not (name == "research_hub" and set(fromlist or ()) & {"config", "zotero", "notebooklm", "security"}), "Provider or secret module used during GET"
+        return original_import(name, globals, locals, fromlist, level)
+
+    def denied(*args, **kwargs):
+        pytest.fail("Provider/config/session/network/write operation during synthetic GET")
+
+    original_open = os.open
+
+    def snapshot_only(target, flags, *args, **kwargs):
+        assert Path(target) == path, "Only the selected synthetic snapshot may be opened"
+        assert flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC) == 0
+        return original_open(target, flags, *args, **kwargs)
+
+    with monkeypatch.context() as checks:
+        checks.setattr(builtins, "__import__", local_import)
+        checks.setattr(builtins, "open", denied)
+        checks.setattr(Path, "open", denied)
+        checks.setattr(socket.socket, "connect", denied)
+        checks.setattr(socket, "create_connection", denied)
+        checks.setattr(snapshots, "atomic_json", denied)
+        checks.setattr(os, "open", snapshot_only)
+        handler.server = SimpleNamespace(server_port=53410, human=None, service=WorkspaceService(tmp_path),
+                                        obsidian_validation=ObsidianValidation(None))
+        handler.do_GET()
+
+    assert len(captured) == 1 and captured[0][0] == 200
+    result = captured[0][1]
+    assert result["setup_snapshot"]["freshness"] == "saved"
+    assert result["setup_snapshot"]["current_status"] == "unknown"
+    assert result["capabilities"]["obsidian_validation"]["status"] == "unavailable"
+    assert "SYNTHETIC_SECRET" not in json.dumps(result) and "private" not in json.dumps(result)
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
 def test_setup_saves_only_when_explicit_and_invalid_flag_does_not_probe(tmp_path, monkeypatch, capsys):
     from research_hub import setup_command
     monkeypatch.setattr(setup_command, "run_autonomous", lambda **kw: report())
