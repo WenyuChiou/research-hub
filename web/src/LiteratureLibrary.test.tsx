@@ -139,6 +139,7 @@ describe("organizing saved material", () => {
     const tr = translator(locale);
     render(<LiteratureLibrary {...organizationProps(tr)} />);
     expect(screen.getByRole("combobox", {name:tr("catalogCategory")})).toBeVisible();
+    expect(screen.getByRole("combobox", {name:tr("catalogCategory")})).toHaveAttribute("aria-label", tr("catalogCategory"));
     expect(screen.getByRole("searchbox", {name:tr("catalogSearch")})).toBeVisible();
     screen.getByRole("button", {name:`${tr("catalogNeedsCategory")} (1)`}).focus();
     await user.keyboard("{Enter}");

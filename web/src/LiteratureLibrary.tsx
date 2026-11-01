@@ -98,7 +98,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("catalogSearchHint")} />
         </label>
         <label>{t("catalogCategory")}
-          <select value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
+          <select aria-label={t("catalogCategory")} value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
             <option value="">{t("catalogAllCategories")}</option>
             {categories.map((value) => <option key={value} value={value}>{categoryName(value, t)} ({sources.filter((record) => category(record) === value).length})</option>)}
           </select>
