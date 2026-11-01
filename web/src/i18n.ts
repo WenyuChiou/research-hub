@@ -1,6 +1,8 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  observationPreviewLoading: "Reading this source's registered report preview…",
+  observationPreviewError: "The registered report preview is unavailable or changed. Its body remains unknown; no data was changed.",
   observationHistory: "Summary observations and reading history",
   observationHelp: "Saved summary and reading declarations stay unchanged. Generated prose is a separate draft, not a publisher capture or human acceptance. Role suggestions do not classify this source.",
   observationUnknown: "Unknown / not verified",
@@ -776,6 +778,8 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  observationPreviewLoading: "正在讀取此文獻已註冊的報告預覽…",
+  observationPreviewError: "已註冊的報告預覽不可用或已變更，正文維持未知；未修改資料。",
   observationHistory: "摘要觀察與閱讀歷史",
   observationHelp: "已存摘要與原閱讀聲明保持不變。生成文字另列為草稿，不是出版者原始擷取，也不代表人工接受。角色建議不會替文獻分類。",
   observationUnknown: "未知／尚未核實",

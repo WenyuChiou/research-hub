@@ -423,6 +423,7 @@ export function ProjectPages({
 
       <div hidden={page !== "literature"} className="page-content">
         <LibraryCollection sources={sources} screenings={records("screening")} t={t}
+          observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature"}}
           onScreen={(sourceId, decision, rationale) => saveRecord("screening", {source_id:sourceId, decision, rationale})}
           onPrepare={(record) => {
             setCatalogToolsOpen(true);

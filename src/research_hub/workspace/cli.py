@@ -38,6 +38,7 @@ def add_workspace_parsers(subparsers):
             if resource == "project" and operation == "register":
                 parser.add_argument("--path", required=True)
                 parser.add_argument("--role", required=True)
+                parser.add_argument("--source-record-id", help="Explicit existing project source owning this evidence reference")
             if resource == "project" and operation == "record":
                 parser.add_argument("--kind", required=True)
                 parser.add_argument("--data", required=True, help="Record JSON object")
@@ -71,7 +72,7 @@ def add_workspace_parsers(subparsers):
 def dispatch_workspace(args) -> int:
     resource, operation = args.command, args.workspace_operation
     values = {key: value for key, value in vars(args).items() if key in {
-        "artifact_id", "id", "title", "archetype", "goal", "path", "role", "kind", "query", "limit", "operation", "mode", "instructions", "task_id", "task_ids", "action_id", "outcome", "actor", "rationale", "candidate"}}
+        "artifact_id", "id", "title", "archetype", "goal", "path", "role", "kind", "query", "limit", "operation", "mode", "instructions", "task_id", "task_ids", "action_id", "outcome", "actor", "rationale", "candidate", "source_record_id"}}
     proof = None
     try:
         if getattr(args, "project", None):
