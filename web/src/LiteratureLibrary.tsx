@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { MutationForm, ReadText, SourceLink } from "./components";
 import { statusLabel, type Translate } from "./i18n";
 import type { ResearchRecord } from "./types";
+import { SourceObservations } from "./ObservationHistory";
+import type { ObservationTextContext } from "./sourceObservations";
 
 const text = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
 const category = (record: ResearchRecord) => text(record.data.category).trim() || text(record.data.sub_category).trim();
@@ -27,13 +29,14 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches }: {
+export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   t: Translate;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onPrepare: (record: ResearchRecord) => void;
   matches?: Map<string, ResearchRecord[]>;
+  observationText?: ObservationTextContext;
 }) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -143,6 +146,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
             <section><h4>{t("catalogCoverage")}</h4><p>{readingScope(selected, t)}</p><p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p></section>
             <section><h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>{summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t("catalogNoSummary")}</p>}</section>
+            {!note && <SourceObservations record={selected} context={observationText} t={t} />}
             <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="muted">{t("catalogNoRelevance")}</p>}</section>
             <section><h4>{t("catalogSource")}</h4>
               {selected.data.locator_kind === "local-copy" ? <p>{t("intakeLocalLocator")}</p> : <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}

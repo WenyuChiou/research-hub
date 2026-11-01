@@ -85,6 +85,10 @@
 .catalog-missing { padding: 12px; background: #f3f5f9; border-radius: 5px; color: #606c7d; font-size: .875rem; }
 .catalog-provenance { font-size: .875rem; color: var(--muted); margin: 12px 0; }
 .catalog-provenance p { padding-top: 8px; }
+.source-observations details { margin: 12px 0; }
+.source-observations summary { cursor: pointer; padding: 8px 0; line-height: 1.6; }
+.source-observations dt { margin-top: 10px; font-size: .875rem; color: var(--muted); }
+.source-observations dd { margin: 3px 0 0; line-height: 1.7; overflow-wrap: anywhere; }
 .catalog-screening { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 16px; }
 .catalog-screening summary { font-size: 1rem; font-weight: 600; }
 .catalog-screening > p { margin-top: 12px; }
