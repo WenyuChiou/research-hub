@@ -87,7 +87,7 @@ def test_missing_file_and_nonvault_are_distinct(tmp_path):
     ("clusters: []\n" + "x" * 140000, "invalid_registry"),
     ("clusters:\n  missing:\n    status: active", "registry_mismatch"),
     ("clusters:\n  selected:\n    obsidian_subfolder: ../unselected", "registry_mismatch"),
-])
+], ids=["unsupported-schema", "duplicate-key", "malformed-yaml", "oversized-registry", "missing-folder", "escaping-binding"])
 def test_registry_failures_do_not_expose_contents(vault, payload, expected):
     (vault / ".research_hub" / "clusters.yaml").write_text(payload, encoding="utf-8")
     result = ObsidianValidation(vault).validate(str(vault))

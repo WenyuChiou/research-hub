@@ -16,13 +16,15 @@ from .core import WorkspaceError, encoded, safe_path
 from .service import WorkspaceService, call_workspace
 from .tasks import _LOCAL_HUMAN
 from .obsidian_validation import ObsidianValidation
+from .library_snapshot import LibrarySnapshot
 
 
 class WorkspaceServer(ThreadingHTTPServer):
     daemon_threads = True
     _service_type = WorkspaceService
 
-    def __init__(self, root, *, port=8765, human=False, obsidian_vault=None):
+    def __init__(self, root, *, port=8765, human=False, obsidian_vault=None, library_snapshot=None):
+        self.library_snapshot = LibrarySnapshot(library_snapshot)
         self.obsidian_validation = ObsidianValidation(obsidian_vault)
         self.obsidian_validation.assert_storage_outside(root)
         self.service = self._service_type(root)
@@ -80,6 +82,11 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = self.server.service.capabilities(human=bool(self.server.human))
                 result["capabilities"]["obsidian_validation"] = self.server.obsidian_validation.capability()
                 return self._reply(200, result)
+            if path == "/api/v1/library/snapshot":
+                if urlsplit(self.path).query:
+                    return self._reply(400, {"ok": False, "code": "invalid_request", "error": "Snapshot requests accept no path parameters."})
+                result = self.server.library_snapshot.read()
+                return self._reply(404 if result.get("ok") is False else 200, result)
             segments = path.strip("/").split("/")
             if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "source-text"):
@@ -210,8 +217,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self._reply(400, {"ok": False, "error": str(exc), "code": "invalid_request"})
 
 
-def serve_workspace(root, *, port=8765, open_browser=True, human=False, obsidian_vault=None):
-    server = WorkspaceServer(root, port=port, human=human, obsidian_vault=obsidian_vault)
+def serve_workspace(root, *, port=8765, open_browser=True, human=False, obsidian_vault=None, library_snapshot=None):
+    server = WorkspaceServer(root, port=port, human=human, obsidian_vault=obsidian_vault, library_snapshot=library_snapshot)
     url = f"http://127.0.0.1:{server.server_port}/app/"
     print(f"Research workspace: {url}")
     if open_browser:

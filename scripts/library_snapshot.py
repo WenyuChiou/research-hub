@@ -8,8 +8,10 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import tempfile
 
 import yaml
 from research_hub.clusters import ClusterRegistry
@@ -96,13 +98,19 @@ def snapshot(vault: Path, selections: list[str]) -> dict:
     registry = {item.slug: item for item in ClusterRegistry(registry_file).list()}
     notes = []
     collections = []
+    selected_folders = set()
     for slug in dict.fromkeys(selections):
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", slug):
             raise ValueError("Invalid selected collection")
         cluster = registry.get(slug)
         if cluster is None or cluster.status != "active":
             raise ValueError("Selected collection is not active in the registry")
-        folder = beneath(raw, raw / slug)
+        folder = beneath(raw, raw / (cluster.obsidian_subfolder or cluster.slug))
+        if folder == raw:
+            raise ValueError("Selected collection must bind a folder under raw")
+        if folder in selected_folders:
+            raise ValueError("Selected collections bind the same folder; select one unambiguous collection")
+        selected_folders.add(folder)
         paths = sorted(folder.glob("*.md"))
         if len(notes) + len(paths) > MAX_NOTES:
             raise ValueError("Selected Library exceeds snapshot item limit")
@@ -156,7 +164,16 @@ def main():
         raise ValueError("Snapshot output must stay outside the vault")
     result = snapshot(vault, args.collection)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Never truncate an existing inode: it may be hardlinked to a vault note.
+    descriptor, temporary = tempfile.mkstemp(prefix=".library-snapshot-", suffix=".tmp", dir=output.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(result, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, output)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     print(json.dumps({"collections": len(result["collections"]), "markdown_notes": len(result["notes"]),
                       "available_metadata": sum(n["data"]["metadata_status"] == "available" for n in result["notes"]),
                       "body_read": False, "vault_written": False}))
