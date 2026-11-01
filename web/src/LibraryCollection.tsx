@@ -3,6 +3,7 @@ import { LiteratureLibrary } from "./LiteratureLibrary";
 import { identityMatches } from "./libraryIdentity";
 import type { Translate } from "./i18n";
 import type { ResearchRecord } from "./types";
+import type { ObservationReadScope } from "./ObservationPreview";
 
 export interface LibrarySnapshot {
   schema_version: 1;
@@ -29,6 +30,7 @@ export function LibraryCollection(props: {
   sources: ResearchRecord[]; screenings: ResearchRecord[]; t: Translate;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onPrepare: (record: ResearchRecord) => void;
+  observationRead?: ObservationReadScope;
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);

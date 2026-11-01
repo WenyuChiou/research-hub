@@ -730,6 +730,7 @@ export default function App() {
                       detail={activeDetail}
                       workspace={workspace}
                       page={page}
+                      observationRevision={refreshCount}
                       t={t}
                       onSaved={onSaved}
                       navigate={navigate}

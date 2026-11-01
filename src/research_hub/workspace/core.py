@@ -213,10 +213,20 @@ class Workspace:
                 item["current"] = False
         return items
 
-    def register_artifact(self, project_id: str, *, path: str, role: str, expected_sha256: str | None = None) -> dict:
+    def register_artifact(self, project_id: str, *, path: str, role: str, expected_sha256: str | None = None,
+                          source_record_id: str | None = None) -> dict:
         self.project(project_id)
         if role not in ROLES:
             raise WorkspaceError("Unsupported artifact role")
+        if source_record_id is not None:
+            if not isinstance(source_record_id, str) or not source_record_id or role != "evidence":
+                raise WorkspaceError("Select an existing project source for evidence", "invalid_source")
+            # Check selected identity before probing any caller path.
+            with self.db() as db:
+                source = db.execute("SELECT kind FROM records WHERE project=? AND id=?",
+                                    (project_id, source_record_id)).fetchone()
+            if not source or source[0] != "source":
+                raise WorkspaceError("Evidence references an unknown project source", "invalid_source")
         target = safe_path(self.root, path, exists=True)
         if target.suffix.lower() not in {".md", ".tex", ".docx", ".pdf", ".csv", ".json", ".txt", ".png", ".svg", ".jpg", ".xlsx", ".bib", ".py", ".r"}:
             raise WorkspaceError("Unsupported research artifact format")
@@ -225,6 +235,17 @@ class Workspace:
         relative = target.relative_to(self.root).as_posix()
         if relative.startswith(".research/"):
             raise WorkspaceError("Internal state cannot be registered as research evidence")
+        path_owner = None
+        with self.db() as db:
+            for row in db.execute("SELECT body FROM artifacts WHERE project=?", (project_id,)):
+                previous = json.loads(row[0])
+                owner = previous.get("source_record_id")
+                if previous.get("path") == relative and owner is not None:
+                    if not isinstance(owner, str) or not owner:
+                        raise WorkspaceError("Existing evidence ownership is invalid", "invalid_source")
+                    if path_owner not in {None, owner} or source_record_id not in {None, owner}:
+                        raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
+                    path_owner = owner
         if expected_sha256 is not None:
             # Only the opt-in captured-profile path needs bounded pinned reads;
             # generic existing artifact registration retains its old contract.
@@ -240,16 +261,44 @@ class Workspace:
         else:
             observed_hash = file_hash(target)
         item = {"id": uuid.uuid4().hex, "path": relative, "role": role, "sha256": observed_hash, "registered_at": now()}
+        selected_owner = source_record_id if source_record_id is not None else path_owner
+        if selected_owner is not None:
+            item.update(project_id=project_id, source_record_id=selected_owner)
         if expected_sha256 is not None and item["sha256"] != expected_sha256:
             raise WorkspaceError("Artifact differs from the captured input", "stale_input")
         with self.db(write=True) as db:
-            for row in db.execute("SELECT id,body FROM artifacts WHERE project=?", (project_id,)):
-                previous = json.loads(row[1])
+            # Hashing occurs outside the write lock. Recheck every historical
+            # owner after BEGIN IMMEDIATE, including rows superseded meanwhile.
+            rows = [(row[0], json.loads(row[1])) for row in db.execute("SELECT id,body FROM artifacts WHERE project=?", (project_id,))]
+            for _, previous in rows:
+                owner = previous.get("source_record_id")
+                if previous.get("path") == relative and owner is not None:
+                    if not isinstance(owner, str) or not owner:
+                        raise WorkspaceError("Existing evidence ownership is invalid", "invalid_source")
+                    if item.get("source_record_id") not in {None, owner}:
+                        raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
+                    item.update(project_id=project_id, source_record_id=owner)
+            for artifact_id, previous in rows:
                 if not previous.get("superseded_by") and (previous.get("path") == relative or (role == "main_manuscript" and previous["role"] == role)):
+                    # A legacy generic replacement must not erase path ownership,
+                    # including when the file bytes or artifact role changed.
+                    if previous.get("path") == relative and previous.get("source_record_id") is not None:
+                        owner = previous["source_record_id"]
+                        if not isinstance(owner, str) or not owner:
+                            raise WorkspaceError("Existing evidence ownership is invalid", "invalid_source")
+                        if item.get("source_record_id") not in {None, owner}:
+                            raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
+                        if source_record_id is None:
+                            item.update(project_id=project_id, source_record_id=owner)
+                    if source_record_id is not None and previous.get("source_record_id") not in {None, source_record_id}:
+                        raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
                     if previous.get("path") == relative and previous["sha256"] == item["sha256"] and previous["role"] == role:
+                        if item.get("source_record_id") is not None and previous.get("source_record_id") is None:
+                            previous.update(project_id=project_id, source_record_id=item["source_record_id"])
+                            db.execute("UPDATE artifacts SET body=? WHERE id=?", (encoded(previous), artifact_id))
                         return {**previous, "current": True}
                     previous["superseded_by"] = item["id"]
-                    db.execute("UPDATE artifacts SET body=? WHERE id=?", (encoded(previous), row[0]))
+                    db.execute("UPDATE artifacts SET body=? WHERE id=?", (encoded(previous), artifact_id))
             db.execute("INSERT INTO artifacts VALUES (?,?,?)", (item["id"], project_id, encoded(item)))
         return {**item, "current": True}
 

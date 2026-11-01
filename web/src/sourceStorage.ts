@@ -40,7 +40,9 @@ export function readableArtifact(
     a.role === "evidence" &&
     typeof a.path === "string" &&
     /\.(md|txt)$/i.test(a.path) &&
-    (!a.project_id || a.project_id === project)
+    (!a.project_id || a.project_id === project) &&
+    (!("source_record_id" in a) ||
+      (typeof a.source_record_id === "string" && !!a.source_record_id && a.source_record_id === source))
   );
 }
 export function artifactReference(a: Artifact): string {

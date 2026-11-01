@@ -78,11 +78,20 @@ def selected_artifact(workspace, project_id: str, artifact_id: str) -> dict:
     return artifact
 
 
-def read_selected_text(workspace, project_id: str, artifact_id: str) -> dict:
+def read_selected_text(workspace, project_id: str, artifact_id: str, *, source_record_id: str | None = None) -> dict:
     """Read-only preview and preparation share one strict source-byte reader."""
     if not isinstance(project_id, str) or not isinstance(artifact_id, str) or not project_id or not artifact_id:
         raise WorkspaceError("Select a registered project evidence artifact", "invalid_source")
     artifact = selected_artifact(workspace, project_id, artifact_id)
+    if source_record_id is not None:
+        if not isinstance(source_record_id, str) or not source_record_id:
+            raise WorkspaceError("Select a source record from this project", "invalid_source")
+        # Check the same registration used for the byte read. Only an absent
+        # owner is legacy-unbound; malformed ownership must never bypass it.
+        if "source_record_id" in artifact:
+            owner = artifact["source_record_id"]
+            if not isinstance(owner, str) or not owner or owner != source_record_id:
+                raise WorkspaceError("Selected evidence belongs to a different source record", "invalid_source")
     from ._source_storage import is_blob, read_blob, reference
     if is_blob(artifact):
         raw = read_blob(workspace, artifact)
@@ -122,7 +131,7 @@ def read_selection(workspace, project_id: str, selection: dict) -> dict:
     if row is None:
         raise WorkspaceError("Select a source record from this project", "invalid_source")
     record = {"id": selection["source_record_id"], "data": json.loads(row[0])}
-    preview = read_selected_text(workspace, project_id, selection["artifact_id"])
+    preview = read_selected_text(workspace, project_id, selection["artifact_id"], source_record_id=record["id"])
     if "storage" in preview and preview["reference"] != "hub-source:" + record["id"]:
         raise WorkspaceError("Saved-text selection belongs to a different source record", "invalid_source")
     text = preview["text"]

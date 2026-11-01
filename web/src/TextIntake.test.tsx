@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
@@ -657,7 +658,11 @@ it("newer source choice on the same page is not replaced by a late text save", a
     );
   });
   await screen.findByRole("button", { name: t("intakeOpenSaved") });
-  expect(screen.getByLabelText(t("abstractChooseFile"))).toHaveValue("");
+  const composer = screen.getByRole("heading", { name: t("paper-abstract-draft") }).closest("section")!;
+  expect(within(composer).getByRole("heading", { name: existing.data.title })).toBeInTheDocument();
+  expect(within(composer).getByText(t("abstractNoText"))).toBeInTheDocument();
+  expect(screen.queryByLabelText(t("abstractChooseFile"))).not.toBeInTheDocument();
+  expect(fetch.mock.calls.filter(call => String(call[0]).includes("/artifacts/"))).toHaveLength(0);
   expect(screen.queryByLabelText(t("abstractText"))).not.toBeInTheDocument();
   expect(location.hash).toBe("#literature");
 });
