@@ -16,9 +16,9 @@ import sys
 import tempfile
 
 import yaml
-from research_hub.clusters import ClusterRegistry
+from research_hub.clusters import Cluster
 from research_hub.dashboard.source_evidence import note_source_identities
-from research_hub.workspace.obsidian_validation import _metadata
+from research_hub.workspace.obsidian_validation import _metadata, _registry
 
 MAX_FRONTMATTER = 128 * 1024
 MAX_NOTES = 1000
@@ -123,11 +123,34 @@ def terms(value):
     return [part.strip()[:200] for part in value.split(";")[:100] if part.strip()] if isinstance(value, str) else []
 
 
+def selected_registry(path: Path) -> dict[str, Cluster]:
+    # Reuse the bounded, nonblocking, descriptor-validated reader. Construct only
+    # the fields this read-only export consumes; never reopen through a writer.
+    raw = _registry(path).get("clusters") or {}
+    if isinstance(raw, list):
+        entries = [(str(item.get("slug", "") or "").strip().lower(), item)
+                   for item in raw if isinstance(item, dict)]
+        if len(entries) != len(raw):
+            raise ValueError("Invalid registry collection")
+    elif isinstance(raw, dict):
+        entries = list(raw.items())
+    else:
+        raise ValueError("Invalid registry collections")
+    result = {}
+    for slug, item in entries:
+        if not isinstance(slug, str) or not slug or slug in result or not isinstance(item, dict):
+            raise ValueError("Invalid or ambiguous registry collection")
+        result[slug] = Cluster(slug=slug, name=item["name"],
+                               status=item.get("status", "active"),
+                               obsidian_subfolder=item.get("obsidian_subfolder", ""))
+    return result
+
+
 def snapshot(vault: Path, selections: list[str]) -> dict:
     vault = vault.resolve(strict=True)
     raw = beneath(vault, vault / "raw")
     registry_file = beneath(vault, vault / ".research_hub" / "clusters.yaml")
-    registry = {item.slug: item for item in ClusterRegistry(registry_file).list()}
+    registry = selected_registry(registry_file)
     notes = []
     collections = []
     selected_folders = set()
