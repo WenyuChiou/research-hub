@@ -62,6 +62,16 @@ the caller's original budget. Snapshot collection rejects excess before adding
 more records. These are processing limits, not scientific sufficiency quotas;
 diagnostics remain fixed and never echo source text.
 
+Ordinary source records can exceed these batch budgets. An oversized existing
+row is strictly decoded only to establish its exact top-level batch/source
+identity. Provably unbatched or disjoint rows are left unchanged and excluded;
+matching bodies still face the stored-row budget. Malformed JSON, duplicate keys
+and incomplete declared batch identities fail closed. This identity inspection
+may read a large legacy row already in the selected project; it does not admit
+that body to the batch or remove caller/snapshot bounds. It uses the same Python
+JSON decoder, preserving escaped keys and embedded NULs without a new SQLite
+JSON feature requirement.
+
 The root/project and supplied snapshot remain unverified. No lookup, DB, config,
 caller-file read, UUID, model, provider, login or destination write occurs.
 `persisted`, `execution_authorized` and `atomic_reservation` remain false;

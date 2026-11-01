@@ -342,7 +342,8 @@ class Workspace:
     def save_source_batch(self, project_id: str, *, kind: str, data: list) -> dict:
         """Atomically create/reuse exact native batch keys; never update sources."""
         from .source_handoff import (prepare_source_batch_write, plan_stored_source_batch,
-            parse_stored_source_data, SourceBatchConflict, MAX_SOURCE_SNAPSHOT_BYTES, MAX_PREVIEW_ITEMS)
+            parse_stored_source_data, stored_source_identity, SourceBatchConflict,
+            MAX_SOURCE_RECORD_BYTES, MAX_SOURCE_SNAPSHOT_BYTES, MAX_PREVIEW_ITEMS)
         incoming = prepare_source_batch_write(project_id, kind=kind, data=data)
         self.project(project_id)  # Read-only precheck: an unknown root is not initialized.
         requested = {(item["batch_id"], item["id"]) for item in incoming}
@@ -354,6 +355,10 @@ class Workspace:
                 snapshot_bytes = 2  # JSON array brackets; commas are counted below.
                 for row in db.execute("SELECT id,body FROM records WHERE project=? AND kind='source' ORDER BY rowid", (project_id,)):
                     try:
+                        if isinstance(row[1], str) and len(row[1].encode("utf-8")) > MAX_SOURCE_RECORD_BYTES:
+                            identity = stored_source_identity(row[1])
+                            if identity is None or identity not in requested:
+                                continue
                         stored = parse_stored_source_data(row[1])
                     except (ValueError, TypeError) as exc:
                         raise WorkspaceError("Stored source metadata is unavailable", "conflict") from exc

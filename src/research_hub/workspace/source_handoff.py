@@ -56,8 +56,8 @@ def source_record_arguments(
     return {"kind": "source", "data": data}
 
 
-def _parse_preview_json(raw: str, expected, *, max_bytes=MAX_PREVIEW_BYTES):
-    """Decode only the caller-supplied bounded JSON, with safe diagnostics."""
+def _decode_source_json(raw: str, expected):
+    """Shared strict decoder; caller and selected-payload entrypoints bound bytes."""
     def pairs(items):
         result = {}
         for key, value in items:
@@ -67,8 +67,8 @@ def _parse_preview_json(raw: str, expected, *, max_bytes=MAX_PREVIEW_BYTES):
         return result
 
     try:
-        if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
-            raise ValueError("Too large")
+        if not isinstance(raw, str):
+            raise ValueError("Wrong JSON type")
         data = json.loads(raw, object_pairs_hook=pairs,
                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Nonfinite")))
         if not isinstance(data, expected):
@@ -79,6 +79,32 @@ def _parse_preview_json(raw: str, expected, *, max_bytes=MAX_PREVIEW_BYTES):
     except (ValueError, UnicodeError, RecursionError) as exc:
         raise WorkspaceError("Source preview requires bounded valid JSON with the requested shape") from exc
     return data
+
+
+def _parse_preview_json(raw: str, expected, *, max_bytes=MAX_PREVIEW_BYTES):
+    try:
+        if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
+            raise ValueError("Too large")
+    except (ValueError, UnicodeError) as exc:
+        raise WorkspaceError("Source preview requires bounded valid JSON with the requested shape") from exc
+    return _decode_source_json(raw, expected)
+
+
+def stored_source_identity(raw: str) -> tuple[str, str] | None:
+    """Inspect existing ordinary metadata, not a new batch payload.
+
+    Ordinary add_record has no batch byte budget. Oversized rows are decoded
+    strictly only to establish exact top-level identity, then discarded. This
+    never admits their body to the bounded batch or snapshot. Use Python's same
+    decoder rather than lossy SQLite JSON paths for NUL/escaped identities.
+    """
+    data = _decode_source_json(raw, dict)
+    if "batch_id" not in data:
+        return None  # Unbatched ordinary sources may still have a legacy id.
+    for name in ("batch_id", "id"):
+        if not isinstance(data.get(name), str) or not data[name].strip():
+            raise WorkspaceError("Stored batch source identity is unavailable", "conflict")
+    return data["batch_id"], data["id"]
 
 
 def parse_preview_data(raw: str) -> dict:
