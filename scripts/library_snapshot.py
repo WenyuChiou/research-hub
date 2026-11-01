@@ -11,11 +11,14 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
+import sys
 import tempfile
 
 import yaml
 from research_hub.clusters import ClusterRegistry
 from research_hub.dashboard.source_evidence import note_source_identities
+from research_hub.workspace.obsidian_validation import _metadata
 
 MAX_FRONTMATTER = 128 * 1024
 MAX_NOTES = 1000
@@ -54,26 +57,55 @@ def beneath(root: Path, path: Path) -> Path:
     return resolved
 
 
+class UnsafeNoteError(ValueError):
+    """An input cannot be read within the selected note boundary."""
+
+
+def note_info(path: Path):
+    try:
+        info = _metadata(path)
+    except ValueError:
+        raise UnsafeNoteError("Unsupported selected note input") from None
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise UnsafeNoteError("Selected notes must be regular files without hard links")
+    return info
+
+
+def note_identity(info):
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink
+
+
 def frontmatter_only(path: Path) -> tuple[str, dict]:
-    before = path.stat()
+    path = path.absolute()
+    before = note_info(path)
     lines = []
     total = 0
-    with path.open("rb", buffering=0) as stream:
-        first = stream.readline(256)
-        if first.decode("utf-8-sig").strip() != "---":
-            raise ValueError("No frontmatter")
-        while True:
-            raw = stream.readline(MAX_FRONTMATTER - total + 1)
-            total += len(raw)
-            if not raw or total > MAX_FRONTMATTER:
-                raise ValueError("Unterminated or oversized frontmatter")
-            line = raw.decode("utf-8")
-            if line.strip() in {"---", "..."}:
-                break
-            lines.append(line)
-    after = path.stat()
-    if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size):
-        raise ValueError("Note changed during metadata read")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1 or
+                note_identity(before) != note_identity(opened) or
+                note_identity(note_info(path)) != note_identity(opened)):
+            raise UnsafeNoteError("Note changed before metadata read")
+        with os.fdopen(descriptor, "rb", buffering=0, closefd=False) as stream:
+            first = stream.readline(256)
+            if first.decode("utf-8-sig").rstrip("\r\n \t") != "---":
+                raise ValueError("No frontmatter")
+            while True:
+                raw = stream.readline(MAX_FRONTMATTER - total + 1)
+                total += len(raw)
+                if not raw or total > MAX_FRONTMATTER:
+                    raise ValueError("Unterminated or oversized frontmatter")
+                line = raw.decode("utf-8")
+                if line.rstrip("\r\n \t") in {"---", "..."}:
+                    break
+                lines.append(line)
+        if (note_identity(os.fstat(descriptor)) != note_identity(opened) or
+                note_identity(note_info(path)) != note_identity(opened)):
+            raise UnsafeNoteError("Note changed during metadata read")
+    finally:
+        os.close(descriptor)
     text = "".join(lines)
     metadata = yaml.load(text, Loader=UniqueLoader) or {}
     if not isinstance(metadata, dict):
@@ -117,6 +149,7 @@ def snapshot(vault: Path, selections: list[str]) -> dict:
         collections.append({"id": slug, "name": cluster.name, "note_count": len(paths)})
         for path in paths:
             beneath(folder, path)
+            before_note = note_info(path)
             relative = path.relative_to(vault).as_posix()
             data = {
                 "title": path.stem, "origin": "obsidian", "read_only": True,
@@ -124,8 +157,8 @@ def snapshot(vault: Path, selections: list[str]) -> dict:
                 "category": cluster.name, "collection_id": slug,
                 "collection_name": cluster.name, "reading_level": "note-metadata",
                 "identity_status": "unverified", "metadata_status": "unavailable",
-                "note_modified_ns": str(path.stat().st_mtime_ns),
-                "note_size_bytes": path.stat().st_size,
+                "note_modified_ns": str(before_note.st_mtime_ns),
+                "note_size_bytes": before_note.st_size,
             }
             try:
                 fm, meta = frontmatter_only(path)
@@ -143,21 +176,20 @@ def snapshot(vault: Path, selections: list[str]) -> dict:
                 })
                 if not data["locator"] and data["doi"]:
                     data["locator"] = "https://doi.org/" + str(data["doi"])
+            except UnsafeNoteError:
+                raise
             except (ValueError, UnicodeError, yaml.YAMLError):
                 # A note remains a traceable file row; failure never means empty/full-text content.
                 pass
+            if note_identity(before_note) != note_identity(note_info(path)):
+                raise UnsafeNoteError("Note changed during export")
             notes.append({"id": "obsidian:" + hashlib.sha256(relative.encode("utf-8")).hexdigest()[:24], "kind": "library-note", "data": data})
     return {"schema_version": 1, "captured_at": datetime.now(timezone.utc).isoformat(),
             "vault_label": vault.name, "read_only": True, "body_read": False,
             "collections": collections, "notes": notes}
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--vault", type=Path, required=True)
-    parser.add_argument("--collection", action="append", required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
+def export_selected(args):
     vault = args.vault.resolve(strict=True)
     output = args.output.resolve()
     if output.is_relative_to(vault):
@@ -174,10 +206,27 @@ def main():
         os.replace(temporary, output)
     finally:
         Path(temporary).unlink(missing_ok=True)
-    print(json.dumps({"collections": len(result["collections"]), "markdown_notes": len(result["notes"]),
-                      "available_metadata": sum(n["data"]["metadata_status"] == "available" for n in result["notes"]),
-                      "body_read": False, "vault_written": False}))
+    return {"collections": len(result["collections"]), "markdown_notes": len(result["notes"]),
+            "available_metadata": sum(n["data"]["metadata_status"] == "available" for n in result["notes"]),
+            "body_read": False, "vault_written": False}
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--vault", type=Path, required=True)
+    parser.add_argument("--collection", action="append", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        result = export_selected(args)
+    except Exception:
+        # A CLI privacy boundary: never render parser source lines, paths or the
+        # original exception, including registry data outside selected collections.
+        print("Library export failed. Check the selected vault, registry and output destination locally.", file=sys.stderr)
+        return 1
+    print(json.dumps(result))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
