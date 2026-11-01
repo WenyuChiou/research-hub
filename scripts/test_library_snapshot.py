@@ -77,10 +77,14 @@ class LibrarySnapshotTests(unittest.TestCase):
                 positions.append(self.tell())
                 return super().__exit__(*args)
         stream = RecordingStream(path.read_bytes())
-        with patch.object(Path, "open", return_value=stream) as opened:
+        with patch("library_snapshot.os.fdopen", return_value=stream) as opened:
             frontmatter_only(path)
         self.assertEqual(positions, [len(prefix)])
-        opened.assert_called_once_with("rb", buffering=0)
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual(opened.call_args.args[1:], ("rb",))
+        self.assertEqual(opened.call_args.kwargs, {"buffering": 0, "closefd": False})
+        with self.assertRaises(OSError):
+            os.fstat(opened.call_args.args[0])
 
     def test_registry_folder_binding_is_used_instead_of_slug(self):
         registry = self.root / ".research_hub" / "clusters.yaml"
@@ -108,25 +112,41 @@ class LibrarySnapshotTests(unittest.TestCase):
             snapshot(self.root, ["selected", "alias"])
 
     def test_hardlinked_output_replaces_link_without_changing_vault_note(self):
-        note = self.folder / "one.md"
+        (self.folder / "one.md").write_text("---\ntitle: Synthetic selected note\n---\n", encoding="utf-8")
+        unselected = self.root / "raw" / "unselected"
+        unselected.mkdir()
+        note = unselected / "one.md"
         original = b"---\ntitle: Synthetic preserved note\n---\nPRIVATE SYNTHETIC BODY\n"
         note.write_bytes(original)
         with tempfile.TemporaryDirectory() as destination:
             output = Path(destination) / "snapshot.json"
             os.link(note, output)
             with patch("sys.argv", ["library_snapshot", "--vault", str(self.root), "--collection", "selected", "--output", str(output)]):
-                main()
+                self.assertEqual(main(), 0)
             self.assertEqual(note.read_bytes(), original)
-            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["notes"][0]["data"]["title"], "Synthetic preserved note")
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["notes"][0]["data"]["title"], "Synthetic selected note")
             self.assertNotEqual(note.stat().st_ino, output.stat().st_ino)
+
+    def test_output_aliasing_selected_note_rejects_without_changing_either_link(self):
+        note = self.folder / "one.md"
+        original = b"---\ntitle: Synthetic preserved note\n---\n"
+        note.write_bytes(original)
+        with tempfile.TemporaryDirectory() as destination:
+            output = Path(destination) / "snapshot.json"
+            os.link(note, output)
+            with patch("sys.argv", ["library_snapshot", "--vault", str(self.root), "--collection", "selected", "--output", str(output)]):
+                self.assertEqual(main(), 1)
+            self.assertEqual(note.read_bytes(), original)
+            self.assertEqual(output.read_bytes(), original)
+            self.assertEqual(note.stat().st_ino, output.stat().st_ino)
 
     def test_failed_publication_keeps_destination_and_removes_owned_temp(self):
         with tempfile.TemporaryDirectory() as destination:
             output = Path(destination) / "snapshot.json"
             original = b"previous synthetic snapshot"
             output.write_bytes(original)
-            with patch("sys.argv", ["library_snapshot", "--vault", str(self.root), "--collection", "selected", "--output", str(output)]), patch("os.replace", side_effect=OSError("Synthetic publication failure")), self.assertRaises(OSError):
-                main()
+            with patch("sys.argv", ["library_snapshot", "--vault", str(self.root), "--collection", "selected", "--output", str(output)]), patch("os.replace", side_effect=OSError("Synthetic publication failure")):
+                self.assertEqual(main(), 1)
             self.assertEqual(output.read_bytes(), original)
             self.assertEqual([p.name for p in Path(destination).iterdir()], ["snapshot.json"])
 
