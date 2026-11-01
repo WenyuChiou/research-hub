@@ -925,6 +925,7 @@ export function ProjectPages({
                           workspace.capabilities.codex.status === "available"
                         }
                         onReturnToSource={(sourceId) => {
+                          setCatalogToolsOpen(true);
                           setAbstractSourceId(sourceId);
                           navigate("literature", `record-${sourceId}`);
                         }}

@@ -21,6 +21,7 @@ it("loads only on request, keeps original collections and hides writes for vault
   render(<LibraryCollection {...callbacks} />);
   expect(fetch).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button",{name:t("libraryLoad")}));
+  expect(fetch.mock.calls[0][0]).toBe("/api/v1/library/snapshot");
   expect(await screen.findByRole("heading",{name:"Saved Obsidian note"})).toBeVisible();
   expect(screen.getByText(t("libraryReadOnly"))).toBeVisible();
   expect(screen.getByText("raw/selected/note.md")).toBeVisible();
