@@ -113,6 +113,7 @@ describe("final workspace regressions", () => {
     );
     render(<App />);
     await screen.findByText("Investigate evidence.");
+    await user.click(screen.getByRole("link", { name: "Overview" }));
     const questionSection = screen.getByText("Record question", {
       selector: "summary",
     });

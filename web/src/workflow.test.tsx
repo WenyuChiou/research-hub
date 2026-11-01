@@ -168,9 +168,15 @@ describe("researcher interactions", () => {
     expect(
       await screen.findByText("Understand adaptation choices."),
     ).toBeInTheDocument();
+    await user.click(
+      screen.getByText(t("catalogWritingNav"), { selector: "summary" }),
+    );
     expect(
       within(screen.getByRole("navigation")).getAllByRole("link"),
     ).toHaveLength(6);
+    for (const link of within(screen.getByRole("navigation")).getAllByRole("link"))
+      expect(link).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "Overview" }));
     const questionSection = screen.getByText("Record question", {
       selector: "summary",
     });

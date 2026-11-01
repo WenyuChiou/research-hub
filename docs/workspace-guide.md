@@ -36,6 +36,46 @@ Each project's files are under its matching directory inside `workspace-demo`. F
 
 ![Actual workspace UI using local demonstration records.](images/workspace-ui.en.png)
 
+## Browse a selected Obsidian metadata snapshot
+
+From a source checkout, export only registry-selected collections to a JSON file
+outside the vault, then explicitly select that file when starting the workspace:
+
+```sh
+python scripts/library_snapshot.py --vault /absolute/research-vault --collection selected --output /absolute/task/library.json
+research-hub serve --workspace --root /absolute/task/workspace --library-snapshot /absolute/task/library.json
+```
+
+In Literature, choose **Browse selected Obsidian Library**. The same-origin
+`GET /api/v1/library/snapshot` reads only the startup-selected local JSON; it
+accepts no browser-supplied path. No copying into build assets is required.
+Missing, changed, linked, oversized or invalid snapshots remain unavailable;
+Workspace sources and any previously loaded dated snapshot remain unchanged.
+The file is bounded to 16 MiB, 128 collections and 1,000 note rows. Exporting
+multiple selected collections bound to the same folder is rejected as ambiguous;
+select one collection instead of duplicating the same notes. Notes remain read-only
+metadata, with their capture time and saved abstract when available. They are
+not counted as verified papers or live sync. Loading does not read note bodies,
+discover configuration, authenticate providers, or save settings. Stop the
+server to end access to the selected snapshot.
+
+Selected note inputs must be regular files with one hard link; special files,
+linked inputs and an output aliasing a selected note are rejected before reading
+metadata. An existing output linked to an unselected note is replaced atomically
+without changing that note. Export errors use a generic local diagnostic and do
+not print registry contents or filesystem paths. YAML block-scalar indentation
+is preserved, including indented `---` or `...` inside saved abstracts.
+
+This repairs the existing path for researchers browsing selected notes: the old
+button requested a JSON file from build assets, where a clean build removes it.
+The explicit startup file replaces that manual asset-copy step. Export remains
+an explicit local operation and refreshing the UI only rereads that export;
+regenerate it when newer metadata is needed. Researchers without Obsidian can
+continue using Workspace sources without this option. Acceptance checks cover
+the selected export appearing after a clean build, unavailable/reload recovery,
+read-only source fidelity, and existing source-tool return navigation; synthetic
+test success is separate from real-vault or human acceptance.
+
 ## Navigate the six pages
 
 | Page | Start here | What remains your responsibility |

@@ -58,6 +58,14 @@ afterEach(() => {
   vi.restoreAllMocks();
   window.localStorage.clear();
 });
+async function openCatalogTools(user: ReturnType<typeof userEvent.setup>) {
+  const summary = await screen.findByText(t("catalogAdvanced"), {
+    selector: "summary",
+  });
+  expect(summary).toBeVisible();
+  if (!summary.closest("details")!.open) await user.click(summary);
+  expect(summary.closest("details")).toHaveAttribute("open");
+}
 async function setup(mode: string) {
   window.history.replaceState({}, "", "/#literature");
   const fetch = vi.fn(
@@ -125,6 +133,7 @@ async function setup(mode: string) {
   const user = userEvent.setup();
   render(<App />);
   await screen.findByRole("heading", { name: "Screening decisions" });
+  await openCatalogTools(user);
   await user.click(
     within(document.getElementById("record-source-a")!).getByRole("button", {
       name: t("abstractOpen"),
@@ -273,6 +282,7 @@ it.each(["unsent", "legacy-unknown", "durable-unknown"])(
       screen.getByRole("combobox", { name: t("chooseProject") }),
       "other",
     );
+    await openCatalogTools(user);
     await waitFor(() =>
       expect(
         screen.getByRole("combobox", { name: t("chooseProject") }),
@@ -292,6 +302,7 @@ it.each(["unsent", "legacy-unknown", "durable-unknown"])(
       "selected",
     );
     await screen.findByRole("heading", { name: "Screening decisions" });
+    await openCatalogTools(user);
     await user.click(
       within(document.getElementById("record-source-a")!).getByRole("button", {
         name: t("abstractOpen"),
@@ -572,6 +583,7 @@ it.each(["successful", "failed"])(
       "selected",
     );
     await screen.findByRole("heading", { name: "Screening decisions" });
+    await openCatalogTools(user);
     await user.click(
       within(document.getElementById("record-source-a")!).getByRole("button", {
         name: t("abstractOpen"),

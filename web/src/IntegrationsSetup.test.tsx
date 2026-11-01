@@ -123,7 +123,8 @@ it("exposes exact official links but no secret inputs or raw snapshot values", a
   const panel = await open();
   expect(panel.textContent).not.toMatch(/SECRET|PRIVATE/);
   expect(panel.textContent).toContain(t("snapshotPassed"));
-  expect(panel.querySelector("input,textarea")).toBeNull();
+  expect(panel.querySelector('input[type="password"],textarea')).toBeNull();
+  expect(within(panel).getByRole("textbox", {name:t("obsidianVaultPath")})).toBeDisabled();
   expect(Array.from(panel.querySelectorAll("a")).map((a) => a.href)).toEqual(
     expect.arrayContaining([
       "https://www.zotero.org/settings/keys",
