@@ -84,7 +84,7 @@ def check_library_journey(screen, workspace, checks, output):
         checks.append({"check": "Real library organization counts and views: all4/unclassified1/missing2/awaiting3", "status": "PASS"})
 
         filters.get_by_role("button", name="Missing summary (2)", exact=True).click()
-        category = catalog.get_by_label("Category", exact=True)
+        category = catalog.get_by_role("combobox", name="Category", exact=True)
         search = catalog.get_by_role("searchbox", name="Search this collection", exact=True)
         category.select_option("llm")
         search.fill("model")

@@ -138,6 +138,8 @@ describe("organizing saved material", () => {
     const user = userEvent.setup();
     const tr = translator(locale);
     render(<LiteratureLibrary {...organizationProps(tr)} />);
+    expect(screen.getByRole("combobox", {name:tr("catalogCategory")})).toBeVisible();
+    expect(screen.getByRole("searchbox", {name:tr("catalogSearch")})).toBeVisible();
     screen.getByRole("button", {name:`${tr("catalogNeedsCategory")} (1)`}).focus();
     await user.keyboard("{Enter}");
     expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(1);
