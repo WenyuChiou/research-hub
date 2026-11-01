@@ -59,6 +59,13 @@ not counted as verified papers or live sync. Loading does not read note bodies,
 discover configuration, authenticate providers, or save settings. Stop the
 server to end access to the selected snapshot.
 
+Selected note inputs must be regular files with one hard link; special files,
+linked inputs and an output aliasing a selected note are rejected before reading
+metadata. An existing output linked to an unselected note is replaced atomically
+without changing that note. Export errors use a generic local diagnostic and do
+not print registry contents or filesystem paths. YAML block-scalar indentation
+is preserved, including indented `---` or `...` inside saved abstracts.
+
 This repairs the existing path for researchers browsing selected notes: the old
 button requested a JSON file from build assets, where a clean build removes it.
 The explicit startup file replaces that manual asset-copy step. Export remains
