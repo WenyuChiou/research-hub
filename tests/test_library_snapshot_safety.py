@@ -144,3 +144,59 @@ def test_cli_errors_do_not_expose_unselected_content_or_private_paths(vault, tmp
         assert output.read_bytes() == b"previous synthetic output"
     else:
         assert output.parent.read_bytes() == b"unchanged synthetic blocker"
+
+
+@pytest.mark.parametrize("mode,links,size", [(stat.S_IFIFO, 1, 0), (stat.S_IFREG, 2, 40), (stat.S_IFREG, 1, 128 * 1024 + 1)], ids=["special-type", "hardlink", "oversized"])
+def test_registry_input_is_validated_before_byte_read(vault, monkeypatch, mode, links, size):
+    registry = vault / ".research_hub/clusters.yaml"
+    original_lstat, original_stat, original_read = Path.lstat, Path.stat, Path.read_text
+    def altered(path, original, *args, **kwargs):
+        info = original(path, *args, **kwargs)
+        if path == registry:
+            values = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+            values.update(st_mode=mode | 0o600, st_nlink=links, st_size=size)
+            return SimpleNamespace(**values)
+        return info
+    def no_registry_read(path, *args, **kwargs):
+        if path == registry:
+            pytest.fail("Unsafe registry reached an unbounded byte read")
+        return original_read(path, *args, **kwargs)
+    with monkeypatch.context() as changes:
+        changes.setattr(Path, "lstat", lambda p, *a, **k: altered(p, original_lstat, *a, **k))
+        changes.setattr(Path, "stat", lambda p, *a, **k: altered(p, original_stat, *a, **k))
+        changes.setattr(Path, "read_text", no_registry_read)
+        with pytest.raises(ValueError):
+            exporter.snapshot(vault, ["selected"])
+
+
+def test_list_registry_keeps_selected_folder_name_and_active_default(vault):
+    (vault / ".research_hub/clusters.yaml").write_text("schema_version: '1.0'\nclusters:\n  - slug: selected\n    name: Selected list collection\n    obsidian_subfolder: bound\n  - slug: retired\n    name: Retired\n    status: merged\n", encoding="utf-8")
+    folder = vault / "raw/bound"
+    folder.mkdir()
+    (folder / "one.md").write_text("---\ntitle: List selected note\n---\n", encoding="utf-8")
+    result = exporter.snapshot(vault, ["selected"])
+    assert result["collections"] == [{"id": "selected", "name": "Selected list collection", "note_count": 1}]
+    assert result["notes"][0]["data"]["note_path"] == "raw/bound/one.md"
+    with pytest.raises(ValueError):
+        exporter.snapshot(vault, ["retired"])
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX named-pipe registry fixture")
+def test_fifo_registry_rejects_before_any_open(vault, monkeypatch):
+    registry = vault / ".research_hub/clusters.yaml"
+    registry.unlink()
+    os.mkfifo(registry)
+    original_read, original_open = Path.read_text, os.open
+    def no_read(path, *args, **kwargs):
+        if path == registry:
+            pytest.fail("FIFO registry reached blocking read")
+        return original_read(path, *args, **kwargs)
+    def no_open(path, *args, **kwargs):
+        if path == registry:
+            pytest.fail("FIFO registry should reject before open")
+        return original_open(path, *args, **kwargs)
+    with monkeypatch.context() as changes:
+        changes.setattr(Path, "read_text", no_read)
+        changes.setattr(exporter.os, "open", no_open)
+        with pytest.raises(ValueError):
+            exporter.snapshot(vault, ["selected"])
