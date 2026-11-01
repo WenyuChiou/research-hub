@@ -42,6 +42,11 @@ def add_workspace_parsers(subparsers):
             if resource == "project" and operation == "record":
                 parser.add_argument("--kind", required=True)
                 parser.add_argument("--data", required=True, help="Record JSON object")
+                mode = parser.add_mutually_exclusive_group()
+                mode.add_argument("--dry-run", action="store_true", help="Preview source metadata without opening the declared workspace")
+                mode.add_argument("--apply", action="store_true", help="With --batch only: atomically save source metadata in the selected project")
+                parser.add_argument("--batch", action="store_true", help="With --dry-run or --apply: an array of source data objects")
+                parser.add_argument("--existing-records", help="With --dry-run --batch only: caller-supplied project-bound source snapshot JSON")
             if resource == "project" and operation == "search":
                 parser.add_argument("--query", required=True)
                 parser.add_argument("--limit", type=int, default=5)
@@ -71,16 +76,33 @@ def add_workspace_parsers(subparsers):
 
 def dispatch_workspace(args) -> int:
     resource, operation = args.command, args.workspace_operation
+    record_route = resource == "project" and operation == "record"
+    source_preview = record_route and getattr(args, "dry_run", False)
+    source_apply = record_route and getattr(args, "apply", False)
+    batch = getattr(args, "batch", False)
+    existing_records = getattr(args, "existing_records", None)
     values = {key: value for key, value in vars(args).items() if key in {
         "artifact_id", "id", "title", "archetype", "goal", "path", "role", "kind", "query", "limit", "operation", "mode", "instructions", "task_id", "task_ids", "action_id", "outcome", "actor", "rationale", "candidate", "source_record_id"}}
     proof = None
     try:
+        if batch and not (source_preview or source_apply):
+            raise WorkspaceError("Batch requires an explicit dry-run or apply mode")
+        if source_apply and (not batch or getattr(args, "kind", None) != "source"):
+            raise WorkspaceError("Apply requires project record --kind source --batch")
+        if existing_records is not None and not (source_preview and batch):
+            raise WorkspaceError("Existing-records is only for batch dry-run; apply reads live selected storage")
+        if (source_preview or source_apply) and (not getattr(args, "project", None) or not getattr(args, "data", None)):
+            raise WorkspaceError("Source preview requires a declared project and JSON data")
         if getattr(args, "project", None):
             values["project_id"] = args.project
         if getattr(args, "source_selection", None):
             values["source_selection"] = json.loads(args.source_selection)
         if getattr(args, "data", None):
-            values["data"] = json.loads(args.data)
+            if source_preview or source_apply:
+                from .source_handoff import parse_preview_data, parse_preview_array
+                values["data"] = parse_preview_array(args.data) if batch else parse_preview_data(args.data)
+            else:
+                values["data"] = json.loads(args.data)
         if getattr(args, "file", None):
             raw = Path(args.file).read_text(encoding="utf-8")
             if len(raw) > 2_100_000:
@@ -106,7 +128,17 @@ def dispatch_workspace(args) -> int:
                 raise WorkspaceError("Decision not confirmed; task remains pending", "human_required")
             values["action_hash"] = action_hash
             proof = _LOCAL_HUMAN
-        result = call_workspace(args.root, resource, operation, values, proof=proof)
+        if source_preview:
+            from .source_handoff import parse_preview_array, preview_source_batch, preview_source_handoff
+            if batch:
+                snapshot = parse_preview_array(existing_records) if existing_records is not None else None
+                result = preview_source_batch(values.pop("project_id"), existing_records=snapshot, **values)
+            else:
+                result = preview_source_handoff(values.pop("project_id"), **values)
+        elif source_apply:
+            result = call_workspace(args.root, "project", "record-batch", values, proof=proof)
+        else:
+            result = call_workspace(args.root, resource, operation, values, proof=proof)
     except (ValueError, OSError, EOFError) as exc:
         result = {"ok": False, "error": str(exc), "code": getattr(exc, "code", "invalid_request")}
     print(json.dumps(result, ensure_ascii=False, indent=2))
