@@ -6,7 +6,7 @@ import { SourceObservations } from "./ObservationHistory";
 import { readableArtifact, previewMatchesArtifact } from "./sourceStorage";
 import type { Artifact, ResearchRecord } from "./types";
 
-export interface ObservationReadScope { projectId: string; artifacts: Artifact[]; active: boolean }
+export interface ObservationReadScope { projectId: string; artifacts: Artifact[]; active: boolean; revision?: number }
 
 /** Exact registered references only; this function does not probe caller paths. */
 export function observationArtifacts(record: ResearchRecord, scope?: ObservationReadScope): Artifact[] {
@@ -29,7 +29,7 @@ export function observationArtifacts(record: ResearchRecord, scope?: Observation
 
 export function ObservationPreview({ record, scope, t }: {record: ResearchRecord; scope?: ObservationReadScope; t: Translate}) {
   const artifacts = observationArtifacts(record, scope);
-  const key = JSON.stringify([scope?.active, scope?.projectId, record.id, artifacts.map(a => [a.id, a.sha256, a.path, a.project_id, a.source_record_id, a.current])]);
+  const key = JSON.stringify([scope?.active, scope?.projectId, scope?.revision ?? 0, record.id, artifacts.map(a => [a.id, a.sha256, a.path, a.project_id, a.source_record_id, a.current])]);
   const [state, setState] = useState<{key: string; previews: TextPreview[]; status: "loading" | "ready" | "error"}>();
   useEffect(() => {
     if (!scope?.active || !artifacts.length) return;
@@ -49,7 +49,8 @@ export function ObservationPreview({ record, scope, t }: {record: ResearchRecord
       if (!controller.signal.aborted) setState({key, previews, status: failed ? "error" : "ready"});
     })();
     return () => controller.abort();
-    // key contains the exact project/source/artifact identities; no unscoped refresh.
+    // Only an explicit App refresh revision or selected identity change retries;
+    // unrelated detail/poll renders do not start another read.
   }, [key]);
   const current = state?.key === key ? state : undefined;
   return <>

@@ -19,6 +19,25 @@ function fixture(id = "one") {
 const response = (preview:unknown) => new Response(JSON.stringify({ok:true,preview}), {status:200,headers:{"Content-Type":"application/json"}});
 
 describe("scoped observation preview reader", () => {
+  it("retries an unavailable preview on an explicit refresh revision with unchanged metadata", async () => {
+    const f=fixture();
+    const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({ok:false,error:"Transient",code:"source_unavailable"}),{status:503})).mockResolvedValueOnce(response(f.preview));
+    const {rerender}=render(<ObservationPreview record={f.record} scope={{...f.scope,revision:0}} t={t} />);
+    expect(await screen.findByText(t("observationPreviewError"))).toBeVisible();
+    rerender(<ObservationPreview record={f.record} scope={{...f.scope,artifacts:[{...f.artifact}],revision:0}} t={t} />);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    rerender(<ObservationPreview record={f.record} scope={{...f.scope,revision:1}} t={t} />);
+    expect(await screen.findByText("Synthetic one draft.")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls.every(c => c[1]?.method === "GET")).toBe(true);
+  });
+  it("does not fetch an inactive reader when the explicit refresh revision changes", () => {
+    const f=fixture();
+    const fetch=vi.spyOn(globalThis,"fetch");
+    const {rerender}=render(<ObservationPreview record={f.record} scope={{...f.scope,active:false,revision:0}} t={t} />);
+    rerender(<ObservationPreview record={f.record} scope={{...f.scope,active:false,revision:1}} t={t} />);
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("uses the existing read API and leaves source metadata unchanged", async () => {
     const f = fixture(); const before = JSON.stringify(f.record);
     const fetch = vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.preview));
