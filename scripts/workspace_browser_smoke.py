@@ -25,6 +25,7 @@ from workspace_browser_fixtures import prepare_abstract_fixtures, prepare_compos
 from workspace_browser_sessions import check_composer_sessions
 from workspace_browser_discovery import prepare_discovery_fixture, check_discovery_journey
 from workspace_browser_library import check_library_journey
+from workspace_browser_observations import run as run_observation_component
 
 from research_hub.workspace.demo import create_demo
 from research_hub.workspace.core import Workspace, digest, file_hash
@@ -566,6 +567,23 @@ def run(output: Path):
                 server.server_close()
                 thread.join(timeout=5)
                 (output / "browser-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    # A separate actual-component fixture; it does not exercise App/API binding.
+    # Run only after the original service/browser have closed successfully.
+    try:
+        component = run_observation_component(output / "source-observations")
+        report["observation_component"] = {
+            "kind": "component-browser-fixture", "production_API_or_DB_exercised": False,
+            "report": "source-observations/browser-report.json", "status": component["status"],
+            "checks": len(component["checks"]),
+        }
+        checks.extend({**check, "fixture_kind": "component-browser-fixture",
+                       "production_API_or_DB_exercised": False} for check in component["checks"])
+    except Exception as exc:
+        report.update(status="FAIL", error=f"Observation component: {type(exc).__name__}: {exc}")
+        raise
+    finally:
+        report["duration_seconds"] = round(time.monotonic() - started, 3)
+        (output / "browser-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
 
