@@ -1,5 +1,13 @@
-"""Documentation contracts, not host/model execution or token measurements."""
+"""Guidance and offline CLI-preview contracts, not research or destination E2E."""
+import argparse
+from contextlib import redirect_stdout
+from copy import deepcopy
+import io
+import json
 from pathlib import Path
+import re
+import shlex
+from unittest.mock import patch
 
 import pytest
 
@@ -75,3 +83,111 @@ def test_contract_detects_lost_protocol_boundary(missing):
 @pytest.mark.parametrize("path", ["SKILL.md", "references/research-protocol.md"])
 def test_source_and_packaged_guidance_match(path):
     assert (SOURCE / path).read_bytes() == (MIRROR / path).read_bytes()
+
+
+ROUTES = (
+    "**Native-only research**",
+    "**Hub-only metadata save**",
+    "**Optional external destinations**",
+)
+HUB_SAVE_CLAUSES = (
+    "The agent prepares and safely quotes SOURCE_BATCH_JSON; never ask the researcher to handwrite JSON",
+    "array of source data objects",
+    "Only run --apply after the user has authorized this selected local metadata write",
+    "Do not promote abstract-snippet to abstract or full text",
+    "metadata save does not verify the paper, summary, source version or actual reading",
+    "Zotero, Obsidian and NotebookLM remain `not-performed`",
+)
+
+
+def _route(entry, label):
+    section = entry.split("3. Before any real ingest", 1)[1].split("4. Use CLI-managed", 1)[0]
+    assert label in section, f"missing Stage1 destination route: {label}"
+    route = section.split(label, 1)[1]
+    for other in ROUTES:
+        if other in route:
+            route = route.split(other, 1)[0]
+    return route
+
+
+def _batch_examples(entry, payload):
+    from research_hub.workspace.cli import add_workspace_parsers
+
+    parser = argparse.ArgumentParser()
+    add_workspace_parsers(parser.add_subparsers(dest="command", required=True))
+    blocks = re.findall(r"```bash\s*(.*?)```", _route(entry, ROUTES[1]), re.S)
+    commands = [shlex.split(line.strip()) for block in blocks for line in block.splitlines()
+                if line.strip().startswith("research-hub ")]
+    assert len(commands) == 2, "Hub metadata route needs explicit preview and apply examples"
+    parsed = []
+    for command in commands:
+        assert command[:3] == ["research-hub", "project", "record"]
+        assert command.count("SOURCE_BATCH_JSON") == 1
+        args = parser.parse_args([json.dumps(payload) if value == "SOURCE_BATCH_JSON" else value
+                                  for value in command[1:]])
+        assert args.kind == "source" and args.batch, "Hub save must use the source batch contract"
+        assert args.root == "SELECTED_ROOT" and args.project == "selected-project"
+        assert args.dry_run != args.apply, "Hub batch mode must be explicit"
+        assert args.existing_records is None
+        assert json.loads(args.data) == payload
+        parsed.append(args)
+    assert [(args.dry_run, args.apply) for args in parsed] == [(True, False), (False, True)]
+    return parsed
+
+
+@pytest.mark.parametrize("tree", [SOURCE, MIRROR], ids=["source", "packaged"])
+def test_three_stage1_destinations_have_separate_requirements(tree):
+    entry = (tree / "SKILL.md").read_text(encoding="utf-8")
+    native = _route(entry, ROUTES[0])
+    hub = _route(entry, ROUTES[1])
+    external = _route(entry, ROUTES[2])
+    _require(native, ("no Hub installation, JSON, integration account or destination write",))
+    _require(hub, HUB_SAVE_CLAUSES)
+    _require(hub, (
+        "Do not run doctor or setup for a Hub-only metadata save",
+        "batch_id", "upstream id", "locator", "identity_status=unverified", "human_acceptance=pending",
+        "A dry-run does not open the root or check live storage",
+        "An exact replay can reuse existing Hub IDs; a conflict rolls the entire batch back",
+    ))
+    _require(external, ("separate authorization and receipts for each selected destination",))
+
+
+@pytest.mark.parametrize("tree", [SOURCE, MIRROR], ids=["source", "packaged"])
+def test_documented_hub_batch_commands_preview_without_storage_or_providers(tree, tmp_path):
+    from research_hub.workspace.cli import dispatch_workspace
+
+    payload = [{"batch_id": "native-run", "id": "source-1", "title": "Synthetic source",
+                "locator": "https://example.invalid/source", "reading_level": "abstract-snippet",
+                "reading_scope": "abstract-snippet", "version": None, "identity_status": "unverified",
+                "human_acceptance": "pending", "relevance": "Relevance is not a summary",
+                "prior_batch_matches": [{"batch_id": "prior", "id": "old-source"}]}]
+    before = deepcopy(payload)
+    preview_args, _apply_args = _batch_examples((tree / "SKILL.md").read_text(encoding="utf-8"), payload)
+    root = tmp_path / "must-not-be-opened"
+    preview_args.root = str(root)
+    output = io.StringIO()
+    with (
+        patch("research_hub.workspace.cli.call_workspace", side_effect=AssertionError("Storage dispatch forbidden")),
+        patch("research_hub.workspace.cli.WorkspaceService", side_effect=AssertionError("Service forbidden")),
+        patch("research_hub.workspace.core.sqlite3.connect", side_effect=AssertionError("SQLite forbidden")),
+        patch("research_hub.config.get_config", side_effect=AssertionError("Config forbidden")),
+        patch("socket.socket.connect", side_effect=AssertionError("Network forbidden")),
+        patch("socket.create_connection", side_effect=AssertionError("Network forbidden")),
+        redirect_stdout(output),
+    ):
+        assert dispatch_workspace(preview_args) == 0
+    result = json.loads(output.getvalue())["preview"]
+    assert result["persisted"] is result["execution_authorized"] is result["project_verified"] is False
+    assert set(result["destination_writes"].values()) == {"not-performed"}
+    assert result["plans"][0]["record_id"] is None
+    assert result["plans"][0]["data"] == before[0]
+    assert "summary" not in result["plans"][0]["data"]
+    assert payload == before and not root.exists()
+    # The apply example is parser-checked above, never dispatched by this test.
+
+
+def test_guidance_contract_rejects_a_lost_batch_switch():
+    entry = (SOURCE / "SKILL.md").read_text(encoding="utf-8")
+    _batch_examples(entry, [])
+    with pytest.raises(AssertionError, match="source batch contract"):
+        _batch_examples(entry.replace("--kind source --batch --dry-run", "--kind source --dry-run"), [])
