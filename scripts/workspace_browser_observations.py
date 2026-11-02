@@ -276,6 +276,8 @@ def run(output: Path, *, port: int = 0):
         expect(library.get_by_text("Original saved abstract.", exact=True)).to_be_visible()
         expect(library.get_by_role("region", name="Summary observations and reading history", exact=True)).to_have_count(0)
         check("Legacy abstract fallback has no added observation panel")
+        library.get_by_role("button", name="Back to selected item in list", exact=True).click()
+        expect(library.get_by_role("button", name="Saved abstract only", exact=True)).to_be_focused()
         select("Uncertain observation time")
         open_observation("invalid-time")
         open_provenance("invalid-time")
