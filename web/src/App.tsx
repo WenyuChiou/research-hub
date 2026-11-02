@@ -1,6 +1,7 @@
 import { discoveryRoute } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { IntegrationsSetup } from "./IntegrationsSetup";
+import { useCompactReadingLayout } from "./readingLayout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
@@ -57,6 +58,17 @@ export default function App() {
     error?: boolean;
   } | null>(null);
   const [newProject, setNewProject] = useState(false);
+  const [categoryHost, setCategoryHost] = useState<HTMLDivElement | null>(null);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const navigationToggle = useRef<HTMLButtonElement>(null);
+  const lastReadingFocus = useRef<Element | null>(null);
+  const sidebar = useRef<HTMLElement>(null);
+  const compact = useCompactReadingLayout(next => {
+    // Native CSS can hide a control before the matchMedia event is dispatched.
+    const focused = document.activeElement === document.body ? lastReadingFocus.current : document.activeElement;
+    if (page === "literature" && !next && navigationToggle.current && navigationToggle.current === focused) sidebar.current?.querySelector<HTMLAnchorElement>(".brand")?.focus();
+    if (next && page === "literature" && sidebar.current?.contains(document.activeElement)) setNavigationOpen(true);
+  });
   const [refreshCount, setRefreshCount] = useState(0);
   const selectedRef = useRef(projectId);
   selectedRef.current = projectId;
@@ -431,11 +443,16 @@ export default function App() {
   const activeDetail = detail?.project.id === projectId ? detail : null;
   const showCreate = newProject || workspace?.projects.length === 0;
   return (
-    <div className="app-shell">
+    <div className={`app-shell${page === "literature" ? " reading-desk-shell" : ""}${navigationOpen ? " navigation-open" : ""}`}
+      onFocusCapture={event => { lastReadingFocus.current = event.target as Element; }}>
       <a className="skip-link" href="#main-content" onClick={focusMain}>
         {t("skip")}
       </a>
-      <aside className="sidebar">
+      <aside className="sidebar" ref={sidebar} onKeyDown={event => {
+        if (compact && navigationOpen && event.key === "Escape" && !(event.target as Element).closest('[role="dialog"]')) {
+          setNavigationOpen(false); navigationToggle.current?.focus();
+        }
+      }}>
         <a className="brand" href="#overview">
           <span className="brand-symbol" aria-hidden="true">
             r<span>h</span>
@@ -446,6 +463,9 @@ export default function App() {
             <small>{t("workspace")}</small>
           </span>
         </a>
+        {page === "literature" && <button type="button" ref={navigationToggle} className="button secondary reading-navigation-toggle"
+          aria-expanded={navigationOpen} aria-controls="workspace-navigation"
+          onClick={() => setNavigationOpen(open => !open)}>{t("readingNavigation")}</button>}
         <div className="project-control">
           <label htmlFor="project-switcher">{t("projects")}</label>
           <select
@@ -483,13 +503,14 @@ export default function App() {
             {t("newProject")}
           </button>
         </div>
-        <nav aria-label={t("navigation")}>
+        <nav id="workspace-navigation" aria-label={t("navigation")} hidden={page === "literature" && compact && !navigationOpen}>
           <p className="nav-group-label">{t("catalogResearchNav")}</p>
           {navigationLinks(pages.slice(0, 3))}
           <details className="secondary-navigation" open={pages.slice(3).includes(page)}>
             <summary>{t("catalogWritingNav")}</summary>
             {navigationLinks(pages.slice(3))}
           </details>
+          <div ref={setCategoryHost} hidden={page !== "literature"} />
         </nav>
         <div className="sidebar-footer">
           <p className="integration-services-label">{t("catalogIntegrationsHint")}</p>
@@ -731,6 +752,7 @@ export default function App() {
                       workspace={workspace}
                       page={page}
                       observationRevision={refreshCount}
+                      categoryHost={categoryHost}
                       t={t}
                       onSaved={onSaved}
                       navigate={navigate}

@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { sourceObservations, type ObservationTextContext } from "./sourceObservations";
 import { SourceObservations } from "./ObservationHistory";
@@ -153,6 +154,26 @@ describe("read-only summary observation projection", () => {
 
 describe.each(["en", "zh-TW"] as const)("observation detail %s", locale => {
   const t = translator(locale);
+  it("reads the draft before optional provenance without hiding version uncertainty or changing saved data", async () => {
+    const user = userEvent.setup();
+    const value = record();
+    const before = JSON.stringify(value);
+    const { container } = render(<SourceObservations record={value} context={context()} t={t} />);
+    expect(screen.getByText(t("observationVersionPending"))).toBeVisible();
+    const entry = container.querySelector(".source-observation")!;
+    await user.click(entry.querySelector(":scope > summary")!);
+    const prose = screen.getByText(/Synthetic generated prose/);
+    expect(prose).toBeVisible();
+    const metadata = entry.querySelector(".observation-provenance")!;
+    expect(metadata).not.toHaveAttribute("open");
+    expect(prose.compareDocumentPosition(metadata) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(t("observationReportedReading"))).not.toBeVisible();
+    await user.click(within(entry as HTMLElement).getByText(t("observationDetails")));
+    expect(screen.getByText(t("observationReportedReading"))).toBeVisible();
+    expect(screen.getByText("abstract-snippet")).toBeVisible();
+    expect(screen.getByText(t("observationReferencePresent"))).toBeVisible();
+    expect(JSON.stringify(value)).toBe(before);
+  });
   it("renders read-only declared history with unknown body and no request", () => {
     const fetch = vi.spyOn(globalThis, "fetch");
     render(<SourceObservations record={record()} t={t} />);

@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useCompactReadingLayout } from "./readingLayout";
 import { MutationForm, ReadText, SourceLink } from "./components";
 import { statusLabel, type Translate } from "./i18n";
 import type { ResearchRecord } from "./types";
 import { SourceObservations } from "./ObservationHistory";
 import type { ObservationTextContext } from "./sourceObservations";
-import { ObservationPreview, type ObservationReadScope } from "./ObservationPreview";
+import { ObservationPreview, observationArtifacts, type ObservationReadScope } from "./ObservationPreview";
 
 const text = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
 const category = (record: ResearchRecord) => text(record.data.category).trim() || text(record.data.sub_category).trim();
@@ -30,7 +32,7 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead }: {
+export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, categoryHost }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   t: Translate;
@@ -39,21 +41,51 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   matches?: Map<string, ResearchRecord[]>;
   observationText?: ObservationTextContext;
   observationRead?: ObservationReadScope;
+  categoryHost?: HTMLElement | null;
 }) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [organization, setOrganization] = useState<Organization>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [readerOpen, setReaderOpen] = useState(false);
+  const [selectionMissing, setSelectionMissing] = useState(false);
   const detailId = useId();
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const selectedButton = useRef<HTMLButtonElement>(null);
+  const observationReader = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const categorySelect = useRef<HTMLSelectElement>(null);
+  const categoryControls = useRef<HTMLDivElement>(null);
+  const reader = useRef<HTMLElement>(null);
+  const lastReadingFocus = useRef<Element | null>(null);
+  const moveFilterFocus = useRef<"select" | "buttons" | null>(null);
+  const compact = useCompactReadingLayout(next => {
+    if (!active) return;
+    const focused = document.activeElement === document.body ? lastReadingFocus.current : document.activeElement;
+    if (next && active) {
+      if (reader.current?.contains(focused) && selected) {
+        setSelectedId(selected.id); setReaderOpen(true);
+      } else if (list.current?.contains(focused) ||
+        searchInput.current === focused || categoryControls.current?.contains(focused)) {
+        setReaderOpen(false);
+      }
+    }
+    if (next && categoryControls.current?.contains(focused)) moveFilterFocus.current = "select";
+    else if (!next && categorySelect.current === focused) moveFilterFocus.current = "buttons";
+  });
+  const returnRequested = useRef(false);
+  const openDraftRequested = useRef(false);
+  const returnPosition = useRef({page: 0, list: 0});
+  const active = observationRead?.active !== false;
   const focusRequested = useRef(false);
   useEffect(() => {
     if (focusRequested.current) {
       focusRequested.current = false;
       detailHeading.current?.focus();
+      if (openDraftRequested.current) { openDraftRequested.current = false; openDrafts(false); }
     }
-  }, [selectedId]);
+  }, [selectedId, readerOpen]);
   const latestScreenings = new Map<string, ResearchRecord>();
   for (const screening of screenings) {
     if (screening.kind === "screening" && typeof screening.data.source_id === "string") {
@@ -80,13 +112,62 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
     (!search || [record.data.title, record.data.year, record.data.relevance, category(record), ...strings(record.data.tags), ...strings(record.data.labels)]
       .map(text).join(" ").toLocaleLowerCase().includes(search)),
   );
-  const selected = visible.find((record) => record.id === selectedId) ?? visible[0];
+  const exactSelected = visible.find((record) => record.id === selectedId);
+  const selected = compact && readerOpen ? exactSelected : exactSelected ?? visible[0];
+  useEffect(() => {
+    if (compact && readerOpen && !exactSelected) {
+      setSelectionMissing(true); returnRequested.current = true; setReaderOpen(false);
+    }
+  }, [compact, readerOpen, exactSelected]);
+  useEffect(() => {
+    if (!active) return;
+    if (moveFilterFocus.current === "select" && compact) categorySelect.current?.focus();
+    if (moveFilterFocus.current === "buttons" && !compact) categoryControls.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+    moveFilterFocus.current = null;
+    if (!readerOpen && returnRequested.current) {
+      returnRequested.current = false;
+      if (exactSelected) {
+        selectedButton.current?.focus({preventScroll: true});
+        if (list.current) list.current.scrollTop = returnPosition.current.list;
+        window.scrollTo({top: returnPosition.current.page, behavior: "instant"});
+      } else searchInput.current?.focus();
+    }
+  }, [readerOpen, compact, active, exactSelected]);
   const latest = selected ? latestScreenings.get(selected.id) : undefined;
   const summary = selected && savedSummary(selected);
   const note = selected?.kind === "library-note";
+  // Registered references are discoverable without fetching every row. They do
+  // not assert that the report body is readable or that a summary was accepted.
+  const draftScope = observationRead ?? (observationText ? {
+    projectId: observationText.projectId, artifacts: observationText.artifacts, active: true,
+  } : undefined);
+  const registeredDrafts = new Set(sources.filter(record => observationArtifacts(record, draftScope).length > 0).map(record => record.id));
+  function openDrafts(focus = true) {
+    const entries = observationReader.current?.querySelectorAll<HTMLDetailsElement>('.source-observation[data-generated="true"]');
+    entries?.forEach(entry => { entry.open = true; });
+    // Retain every declared version. Focus follows saved order, not a newest-
+    // version selection or a preference for one observation's claims.
+    if (focus) entries?.[0]?.querySelector<HTMLElement>(":scope > summary")?.focus();
+  }
+  const categoryFilters = <div ref={categoryControls} className="catalog-categories" role="group" aria-label={t("catalogCategories")} hidden={compact}>
+    <h3>{t("catalogCategories")}</h3>
+    <button type="button" aria-pressed={!selectedCategory} onClick={() => setSelectedCategory("")}>{t("catalogAllCategories")} <span>{sources.length}</span></button>
+    {categories.map(value => <button type="button" key={value} aria-pressed={selectedCategory === value} onClick={() => setSelectedCategory(value)}>{categoryName(value,t)} <span>{sources.filter(record => category(record) === value).length}</span></button>)}
+  </div>;
 
   return (
-    <section className="literature-library" aria-label={t("catalogTitle")}>
+    <section className={`literature-library${compact && readerOpen ? " is-reading" : ""}`} aria-label={t("catalogTitle")}
+      onFocusCapture={event => { lastReadingFocus.current = event.target as Element; }}
+      onBlurCapture={event => {
+        const next = event.relatedTarget;
+        // Keep the pre-CSS target only until focus actually leaves this desk.
+        // Category controls may live in the sidebar portal, outside this DOM node.
+        if (next instanceof Node && !event.currentTarget.contains(next) && !categoryControls.current?.contains(next)) {
+          lastReadingFocus.current = null;
+        }
+      }}>
+      {categoryHost && active && !compact && createPortal(categoryFilters, categoryHost)}
+      <div className="catalog-browse-controls" hidden={compact && readerOpen}>
       <div className="catalog-heading">
         <div><h2>{t("catalogTitle")}</h2><p>{t("catalogIntro")}</p></div>
         <span className="catalog-total">{sources.length} {t("catalogItems")}</span>
@@ -100,10 +181,10 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       <p className="catalog-organization-help">{t("catalogOrganizationHelp")}</p>
       <div className="catalog-toolbar">
         <label className="catalog-search">{t("catalogSearch")}
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("catalogSearchHint")} />
+          <input ref={searchInput} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("catalogSearchHint")} />
         </label>
-        <label>{t("catalogCategory")}
-          <select aria-label={t("catalogCategory")} value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
+        <label className="catalog-category-select">{t("catalogCategory")}
+          <select ref={categorySelect} aria-label={t("catalogCategory")} value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
             <option value="">{t("catalogAllCategories")}</option>
             {categories.map((value) => <option key={value} value={value}>{categoryName(value, t)} ({sources.filter((record) => category(record) === value).length})</option>)}
           </select>
@@ -112,17 +193,23 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
         {(query || selectedCategory || organization !== "all") && <button type="button" className="button text-button"
           onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all");}}>{t("catalogClearFilters")}</button>}
       </div>
+      {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
+      </div>
       <div className="catalog-workspace">
-        <div className="catalog-list">
+        {!categoryHost && categoryFilters}
+        <div className="catalog-list" ref={list} hidden={compact && readerOpen}>
           {visible.length ? (
             <table>
               <thead><tr><th scope="col">{t("title")}</th><th scope="col">{t("catalogYear")}</th><th scope="col">{t("catalogCategory")}</th><th scope="col">{t("catalogCoverage")}</th></tr></thead>
-              <tbody>{visible.map((record) => (
+              <tbody>{visible.map((record, index) => (
                 <tr key={record.id} className={selected?.id === record.id ? "is-selected" : undefined}>
-                  <td><button ref={selected?.id === record.id ? selectedButton : undefined} className="catalog-title" aria-controls={detailId} aria-pressed={selected?.id === record.id} onClick={() => {
-                    if (selectedId === record.id) detailHeading.current?.focus();
+                  <td><button ref={selected?.id === record.id ? selectedButton : undefined} className="catalog-title" aria-controls={detailId} aria-describedby={registeredDrafts.has(record.id) ? `${detailId}-draft-${index}` : undefined} aria-pressed={selected?.id === record.id} onClick={() => {
+                    returnPosition.current = {page: window.scrollY, list: list.current?.scrollTop ?? 0};
+                    setSelectionMissing(false); setReaderOpen(true); openDraftRequested.current = true;
+                    if (selectedId === record.id && readerOpen) { detailHeading.current?.focus(); openDrafts(false); openDraftRequested.current = false; }
                     else { focusRequested.current = true; setSelectedId(record.id); }
-                  }}>{text(record.data.title)}</button><span className="catalog-origin">{record.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}{Boolean(matches?.get(record.id)?.length) && <> · {t("libraryIdentityMatch")}</>}</span></td>
+                  }}>{text(record.data.title)}</button><span className="catalog-origin">{record.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}{Boolean(matches?.get(record.id)?.length) && <> · {t("libraryIdentityMatch")}</>}</span>
+                    {registeredDrafts.has(record.id) && <span id={`${detailId}-draft-${index}`} className="catalog-draft-tag">{t("catalogDraftRegistered")}</span>}</td>
                   <td>{text(record.data.year) || "—"}</td>
                   <td><span className="catalog-category">{categoryName(category(record), t)}</span></td>
                   <td>{readingScope(record, t)}
@@ -134,25 +221,36 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             </table>
           ) : <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>}
         </div>
-        <aside id={detailId} className="catalog-detail" aria-label={t("catalogDetail")}>
+        <aside id={detailId} ref={reader} className="catalog-detail" aria-label={t("catalogDetail")} hidden={compact && !readerOpen}
+          onKeyDown={event => {
+            if (compact && event.key === "Escape" && !(event.target as Element).closest('[role="dialog"]')) {
+              event.stopPropagation(); returnRequested.current = true; setReaderOpen(false);
+            }
+          }}>
           {selected ? <>
             <p className="catalog-detail-label">{t("catalogDetail")}</p>
             <h3 ref={detailHeading} tabIndex={-1}>{text(selected.data.title)}</h3>
-            <button type="button" className="button text-button catalog-back" onClick={() => selectedButton.current?.focus()}>{t("catalogBackToList")}</button>
-            <div className="catalog-meta"><span>{text(selected.data.year) || "—"}</span><span>{categoryName(category(selected), t)}</span><span>{statusLabel(text(selected.data.identity_status) || "unverified", t)}</span></div>
+            <button type="button" className="button text-button catalog-back" onClick={() => {
+              if (compact) { returnRequested.current = true; setReaderOpen(false); }
+              else { setReaderOpen(false); selectedButton.current?.focus(); }
+            }}>{t("catalogBackToList")}</button>
+            <div className="catalog-meta"><span>{text(selected.data.year) || "—"}</span><span>{categoryName(category(selected), t)}</span><span>{statusLabel(text(selected.data.identity_status) || "unverified", t)}</span><span>{readingScope(selected,t)}</span></div>
+            {selected.data.locator_kind !== "local-copy" && <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
+            {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
+            <section><h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>{summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t("catalogNoSummary")}</p>}</section>
+            {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
+              <button type="button" className="button secondary" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
+            {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
+              <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && (!compact || readerOpen)} : undefined} t={t} />}</div>}
             <section aria-label={t("catalogOrganizationState")}><h4>{t("catalogOrganizationState")}</h4><ul>
               {!category(selected) && <li>{t("catalogNeedsCategory")}</li>}
               {!summary && <li>{t("catalogNeedsSummary")}</li>}
               <li>{note ? t("catalogReadOnlyItem") : screened(selected) ? t("catalogScreeningRecorded") : t("catalogNeedsScreening")}</li>
             </ul></section>
-            {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
-            <section><h4>{t("catalogCoverage")}</h4><p>{readingScope(selected, t)}</p><p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p></section>
-            <section><h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>{summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t("catalogNoSummary")}</p>}</section>
-            {!note && (observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
-              <ObservationPreview record={selected} scope={observationRead} t={t} />)}
+            <section><h4>{t("catalogCoverage")}</h4><p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p></section>
             <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="muted">{t("catalogNoRelevance")}</p>}</section>
             <section><h4>{t("catalogSource")}</h4>
-              {selected.data.locator_kind === "local-copy" ? <p>{t("intakeLocalLocator")}</p> : <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
+              {selected.data.locator_kind === "local-copy" && <p>{t("intakeLocalLocator")}</p>}
               {text(selected.data.doi) && <p className="small">DOI: {text(selected.data.doi)}</p>}
               {note && <><p className="small">{t("libraryNotePath")}: <code>{text(selected.data.note_path)}</code></p><p className="small">{t("libraryMetadataStatus")}: {selected.data.metadata_status === "available" ? t("libraryAvailable") : t("libraryUnavailableMetadata")}</p>{text(selected.data.saved_reading_status) && <p className="small">{t("librarySavedStatus")}: {text(selected.data.saved_reading_status)}</p>}</>}
               {Boolean(matches?.get(selected.id)?.length) && <div className="catalog-missing"><strong>{t("libraryIdentityMatch")}</strong><p>{t("libraryMatchHelp")}</p><ul>{matches!.get(selected.id)!.map((other) => <li key={other.id}>{text(other.data.title)} · {other.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}<br /><code>{other.kind === "library-note" ? text(other.data.note_path) : other.id}</code></li>)}</ul></div>}
