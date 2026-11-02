@@ -5,7 +5,7 @@ description: Operate research-hub workflows for local source metadata, literatur
 
 # research-hub
 
-research-hub provides a local research workspace with optional Zotero, Obsidian,
+research-hub provides an AI-operable local research workspace with optional Zotero, Obsidian,
 and NotebookLM integrations. Host-native research remains useful without Hub or
 any integration account; choose a destination before its setup or write steps.
 
