@@ -1,18 +1,21 @@
 ---
 name: research-hub
-description: Operate research-hub workflows for literature discovery, source ingest into Zotero/Obsidian/NotebookLM, dashboard inspection, and vault maintenance. Use when the user asks to find papers and organize them, build a knowledge base, ingest a folder of PDFs, upload to NotebookLM, generate research briefs, inspect clusters, or maintain a research vault. NOT for auditing or cleaning up an existing Zotero library — that's `zotero-library-curator` (read-only audit) plus `zotero-skills` (for CRUD).
+description: Operate research-hub workflows for local source metadata, literature discovery, optional Zotero/Obsidian/NotebookLM ingest, dashboard inspection, and vault maintenance. Use when the user asks to find papers and organize them, save native research to Hub, build a knowledge base, ingest a folder of PDFs, upload to NotebookLM, generate research briefs, inspect clusters, or maintain a research vault. NOT for auditing or cleaning up an existing Zotero library — that's `zotero-library-curator` (read-only audit) plus `zotero-skills` (for CRUD).
 ---
 
 # research-hub
 
-research-hub turns Zotero, Obsidian, and NotebookLM into an AI-operable research workspace. It works best with any two of the three tools, and unlocks the full loop when all three are connected.
+research-hub provides a local research workspace with optional Zotero, Obsidian,
+and NotebookLM integrations. Host-native research remains useful without Hub or
+any integration account; choose a destination before its setup or write steps.
 
 ## Runtime contract (do this first)
 
 This skill pairs host capabilities with the `research-hub` runtime. A
 capable host can do multi-round search, browsing, citation chaining, and
-evidence reasoning with its native tools. When a Hub ingest is selected, it
-can hand bibliographic records to the CLI. The CLI provides deterministic
+evidence reasoning with its native tools. When Hub is selected, it can save
+source metadata locally or hand bibliographic records to the separate ingest
+pipeline. The CLI provides deterministic
 ingest/storage, vault and library maintenance, NotebookLM workflows,
 dashboard, and MCP/REST tools;
 scholarly search adapters are optional.
@@ -23,8 +26,12 @@ below. Before running a selected Hub CLI workflow, check that interface:
 
 ```bash
 research-hub describe --json
-research-hub doctor
 ```
+
+For Hub-only metadata, inspect `research-hub project record --help` for the
+installed batch interface. Use `research-hub doctor` only when setup is relevant
+and uncertain for a selected integration/vault workflow; missing integration
+credentials do not block the local metadata route in step 3.
 
 If `research-hub` is **not found**, this executor cannot invoke that CLI route.
 This can happen after a skill-only install or with a different environment/PATH;
@@ -43,9 +50,10 @@ research-hub setup --persona researcher   # or analyst | humanities | internal
 Do not invent CLI output or report an ingest. A missing CLI route does not block
 native-only research, comparison, topic vetting, or project/paper memory work.
 
-If `doctor` runs but reports missing Zotero credentials, missing
-NotebookLM auth, or no supported LLM CLI, adapt instead of pretending
-the full path is ready:
+For a selected integration workflow, act only on missing capabilities needed
+for that selected destination. If `doctor` reports relevant missing Zotero
+credentials, NotebookLM auth, or a supported LLM CLI, adapt instead of
+pretending the full path is ready:
 
 - Missing Zotero: use `import-folder`, sample/dashboard mode, or ask
   the user to set `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID`.
@@ -90,8 +98,10 @@ a narrower command:
 
    ```bash
    research-hub describe --json
-   research-hub doctor
    ```
+
+   Inspect `research-hub project record --help` for a Hub-only metadata save;
+   reserve doctor/setup and credential checks for selected integration workflows.
 
 2. If the host has native research tools and the user wants multi-round
    discovery, use those tools for search, browsing, citation chaining,
@@ -115,10 +125,56 @@ a narrower command:
    evidence-validation contract. This path needs neither a second agent
    nor a dedicated deep-search API.
 
-3. Before any real ingest, inspect `research-hub doctor` and
-   `research-hub describe --json` for the configured vault and Zotero
-   destination/collection. A preview can validate a local handoff without
-   external calls or persistent changes:
+   That `papers` shape is for the optional ingest pipeline, not the local source
+   batch route below. The agent prepares structured handoffs; the researcher
+   should not have to author JSON to use either route.
+
+3. Before any real ingest or metadata save, choose the requested destination:
+
+   **Native-only research**: deliver the requested readable research result;
+   this needs no Hub installation, JSON, integration account or destination write.
+   Do not turn search or summarization into a Hub setup prerequisite.
+
+   **Hub-only metadata save**: use the existing, explicitly selected root and
+   project. The agent prepares and safely quotes SOURCE_BATCH_JSON; never ask
+   the researcher to handwrite JSON. It is an array of source data objects, not
+   a `papers` wrapper or ResearchEvidencePacket. Each needs a stable batch_id,
+   upstream id, title and locator; Hub owns the separate outer record ID.
+   Do not run doctor or setup for a Hub-only metadata save. Inspect the installed
+   batch flags before using these examples; placeholders are filled by the agent.
+
+   ```bash
+   research-hub project record --root SELECTED_ROOT --project selected-project --kind source --batch --dry-run --data SOURCE_BATCH_JSON
+   research-hub project record --root SELECTED_ROOT --project selected-project --kind source --batch --apply --data SOURCE_BATCH_JSON
+   ```
+
+   First preview, inspect the plan, and retain the same batch/source IDs and data.
+   A dry-run does not open the root or check live storage; an optional explicitly
+   project-bound `--existing-records` snapshot is still not live storage evidence.
+   Only run --apply after the user has authorized this selected local metadata
+   write. Apply reads current storage and requires an already existing project.
+   An exact replay can reuse existing Hub IDs; a conflict rolls the entire batch
+   back. For an uncertain Hub result, use only the identical authorized batch,
+   not per-row legacy writes or newly invented IDs. This is not cross-batch
+   bibliographic deduplication or a transaction across providers.
+
+   Preserve reading_level/reading_scope, unknown versions, missing receipts and
+   prior-batch matches. Do not promote abstract-snippet to abstract or full text.
+   Keep identity_status=unverified and human_acceptance=pending; role candidates
+   are not confirmed classifications. Do not turn relevance into a summary or
+   generated prose into an original abstract. A metadata save does not verify
+   the paper, summary, source version or actual reading; report registration and
+   source-bound summary display remain separate existing operations. Report
+   created/reused/conflict results honestly; Zotero, Obsidian and NotebookLM
+   remain `not-performed`. See `docs/contracts/source-batch-handoff-preview.md`.
+
+   **Optional external destinations**: use separate authorization and receipts
+   for each selected destination. A Hub receipt is not a Zotero, Obsidian or
+   NotebookLM receipt. Unattempted external writes stay `not-performed`;
+   uncertain outcomes stay unknown and require reconciliation before retry.
+   For a selected bibliographic ingest, inspect the configured vault and Zotero
+   destination/collection with `research-hub doctor` only when relevant and
+   uncertain. Its separate preview is:
 
    ```bash
    research-hub ingest --input ./handoff.json --cluster project-topic --dry-run
@@ -145,7 +201,9 @@ a narrower command:
    research-hub auto "TOPIC" --max-papers 3 --no-nlm --llm-cli gemini
    ```
 
-6. Add NotebookLM only after the local Zotero/Obsidian path works:
+6. If NotebookLM is selected, use its existing workflow after the selected input
+   is ready. It is not a requirement to connect all three tools. Login, upload
+   and destination writes need their own authorization and observed receipts:
 
    ```bash
    research-hub notebooklm login --auto-detect
@@ -166,6 +224,8 @@ and add browser-dependent NotebookLM work last.
 
 | User setup | Recommended path |
 |---|---|
+| Read-only native research | Host-native search/reading and readable results; no Hub, JSON or account required |
+| Hub only, no integration accounts | Agent-prepared source batch in step 3: preview first, then an authorized selected-project metadata save |
 | Zotero + Obsidian + NotebookLM | `research-hub auto "topic"` |
 | Zotero + Obsidian only | `research-hub auto "topic" --no-nlm`, `zotero backfill`, Obsidian dashboard output |
 | Obsidian + NotebookLM only | `research-hub import-folder <folder> --cluster <slug>`, then NotebookLM bundle/upload |
