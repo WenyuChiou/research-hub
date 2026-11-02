@@ -12,8 +12,16 @@ export function SourceObservations({ record, context, t }: { record: ResearchRec
     <p className="small muted">{t("observationHelp")}</p>
     {view.versionPending && <p className="catalog-missing">{t("observationVersionPending")}</p>}
     {view.hasSavedProvenance && <p className="small">{t("observationProvenance")}</p>}
-    {view.observations.map((obs, index) => <details key={index}>
+    {view.observations.map((obs, index) => <details className="source-observation" data-generated={obs.generated ? "true" : undefined} key={index}>
       <summary>{obs.generated ? t("observationGenerated") : t("observationOther")} · {obs.id ?? unknown}</summary>
+      {obs.generated && <div className="observation-reading">
+        <p className="small muted">{t(obs.binding === "bound-report" ? "observationBound" : "observationUnbound")}</p>
+        {obs.body ? <ReadText value={obs.body} /> : <p className="catalog-missing">{t("observationBodyUnknown")}</p>}
+        <p className="small">{t("observationSources")}</p>
+        {obs.reportedSources.length > 0 ? <ul>{obs.reportedSources.map((url, i) => <li key={i}><SourceLink locator={url} /></li>)}</ul> : <p>{unknown}</p>}
+      </div>}
+      <details className="observation-provenance">
+      <summary>{t("observationDetails")}</summary>
       <dl>
         <dt>{t("observationLevel")}</dt><dd>{obs.evidenceLevel ?? unknown}</dd>
         <dt>{t("observationOriginalReading")}</dt><dd>{view.originalReading ?? unknown}</dd>
@@ -22,16 +30,13 @@ export function SourceObservations({ record, context, t }: { record: ResearchRec
         <dt>{t("observationTextHash")}</dt><dd>{obs.textHash ? <code>{obs.textHash}</code> : unknown}</dd>
       </dl>
       {obs.generated && <>
-        <p>{t(obs.binding === "bound-report" ? "observationBound" : "observationUnbound")}</p>
         <dl>
           <dt>{t("observationReportedTime")}</dt><dd>{obs.reportedAt ?? unknown}</dd>
           <dt>{t("observationReportedReading")}</dt><dd>{obs.reportedReading ?? unknown}</dd>
           <dt>{t("observationRole")}</dt><dd>{obs.roleSuggestion ?? unknown}</dd>
         </dl>
-        {obs.body ? <ReadText value={obs.body} /> : <p className="catalog-missing">{t("observationBodyUnknown")}</p>}
-        <p className="small">{t("observationSources")}</p>
-        {obs.reportedSources.length > 0 ? <ul>{obs.reportedSources.map((url, i) => <li key={i}><SourceLink locator={url} /></li>)}</ul> : <p>{unknown}</p>}
       </>}
+      </details>
     </details>)}
   </section>;
 }

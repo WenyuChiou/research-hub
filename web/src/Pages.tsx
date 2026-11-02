@@ -69,6 +69,7 @@ export interface PagesProps {
   workspace: Workspace;
   page: Page;
   observationRevision?: number;
+  categoryHost?: HTMLElement | null;
   t: Translate;
   onSaved: (message: string, recovered?: RecoveredWork) => Promise<void>;
   navigate: (page: Page, focusId?: string) => void;
@@ -84,6 +85,7 @@ export function ProjectPages({
   workspace,
   page,
   observationRevision = 0,
+  categoryHost = null,
   t,
   onSaved,
   navigate: parentNavigate,
@@ -424,7 +426,7 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
-        <LibraryCollection sources={sources} screenings={records("screening")} t={t}
+        <LibraryCollection sources={sources} screenings={records("screening")} t={t} categoryHost={categoryHost}
           observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}
           onScreen={(sourceId, decision, rationale) => saveRecord("screening", {source_id:sourceId, decision, rationale})}
           onPrepare={(record) => {

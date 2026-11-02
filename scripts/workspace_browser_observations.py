@@ -218,12 +218,23 @@ def run(output: Path, *, port: int = 0):
             if summary.locator("..").get_attribute("open") is None:
                 summary.click()
 
+        def open_provenance(identifier):
+            entry = library.get_by_text("Generated summary draft · " + identifier, exact=True).locator("..")
+            provenance = entry.locator(":scope > .observation-provenance")
+            if provenance.get_attribute("open") is None:
+                provenance.locator(":scope > summary").click()
+
         expect(library.get_by_text("Human preserved wording.", exact=True)).to_be_visible()
         expect(library.get_by_text("Abstract must not replace summary.", exact=True)).to_have_count(0)
         open_observation("manual-generated")
         expect(library.get_by_text("Separate generated draft; never overwrites saved prose.", exact=True)).to_be_visible()
         expect(library.get_by_text("Human preserved wording.", exact=True)).to_be_visible()
         check("Saved summary remains primary; generated draft is separate")
+        entry = library.get_by_text("Generated summary draft · manual-generated", exact=True).locator("..")
+        assert entry.locator(".observation-provenance").get_attribute("open") is None
+        expect(library.get_by_text("direct_proceedings_full_abstract", exact=True)).not_to_be_visible()
+        check("Generated body is readable while detailed provenance is still closed")
+        open_provenance("manual-generated")
         library.get_by_text("Saved observation · stored-snippet", exact=True).click()
         expect(library.get_by_text("direct_proceedings_full_abstract", exact=True)).to_be_visible()
         assert library.get_by_text("abstract-snippet", exact=True).count() == 2
@@ -248,6 +259,8 @@ def run(output: Path, *, port: int = 0):
         expect(library.get_by_text("Version A remains separate.", exact=True)).to_be_visible()
         expect(library.get_by_text("Version B remains separate.", exact=True)).to_be_visible()
         expect(library.get_by_text("Version comparison pending; no latest version selected", exact=True)).to_have_count(1)
+        open_provenance("version-a")
+        open_provenance("version-b")
         expect(library.get_by_text("2023 · Version comparison pending; no latest version selected", exact=True)).to_be_visible()
         expect(library.get_by_text("2026 · Version comparison pending; no latest version selected", exact=True)).to_be_visible()
         check("Conflicting versions retained; current flag/date does not select a winner")
@@ -263,8 +276,11 @@ def run(output: Path, *, port: int = 0):
         expect(library.get_by_text("Original saved abstract.", exact=True)).to_be_visible()
         expect(library.get_by_role("region", name="Summary observations and reading history", exact=True)).to_have_count(0)
         check("Legacy abstract fallback has no added observation panel")
+        library.get_by_role("button", name="Back to selected item in list", exact=True).click()
+        expect(library.get_by_role("button", name="Saved abstract only", exact=True)).to_be_focused()
         select("Uncertain observation time")
         open_observation("invalid-time")
+        open_provenance("invalid-time")
         observed = page.get_by_role("region", name="Summary observations and reading history", exact=True).evaluate("el => Object.fromEntries([...el.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]))")
         assert observed["Reported observation time (not generation or import time)"] == "Unknown / not verified"
         check("Malformed timestamp stays unknown rather than import/generation time")

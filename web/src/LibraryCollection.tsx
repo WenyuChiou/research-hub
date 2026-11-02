@@ -31,6 +31,7 @@ export function LibraryCollection(props: {
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onPrepare: (record: ResearchRecord) => void;
   observationRead?: ObservationReadScope;
+  categoryHost?: HTMLElement | null;
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);
