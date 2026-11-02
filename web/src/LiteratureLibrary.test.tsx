@@ -147,6 +147,7 @@ describe("organizing saved material", () => {
     screen.getByRole("button", {name:tr("catalogClearFilters")}).focus();
     await user.keyboard("{Enter}");
     expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(4);
+    expect(screen.getByRole("searchbox", {name:tr("catalogSearch")})).toHaveFocus();
   });
 });
 

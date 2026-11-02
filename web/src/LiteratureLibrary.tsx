@@ -191,7 +191,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
         </label>
         <p className="catalog-match" role="status">{visible.length} / {sources.length} {t("catalogItems")}</p>
         {(query || selectedCategory || organization !== "all") && <button type="button" className="button text-button"
-          onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all");}}>{t("catalogClearFilters")}</button>}
+          onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all"); searchInput.current?.focus();}}>{t("catalogClearFilters")}</button>}
       </div>
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
       </div>

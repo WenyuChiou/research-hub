@@ -44,6 +44,23 @@ describe("reading desk",()=>{
   expect(screen.getByRole("searchbox")).toHaveValue("study");expect(screen.getByRole("table")).toBeVisible();
   expect(JSON.stringify(sources)).toBe(before);
  });
+ it("keeps keyboard recovery in the compact search after clearing an empty result",async()=>{
+  media(true);const user=userEvent.setup();const p=props();const before=JSON.stringify(sources);
+  render(<LiteratureLibrary {...p}/>);
+  const search=screen.getByRole("searchbox",{name:t("catalogSearch")});
+  await user.type(search,"no-match");
+  expect(screen.getByText(t("catalogNoMatches"))).toBeVisible();
+  await user.tab();expect(screen.getByRole("combobox",{name:t("catalogCategory")})).toHaveFocus();
+  await user.tab();expect(screen.getByRole("button",{name:t("catalogClearFilters")})).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(search).toHaveFocus();expect(search).toHaveValue("");
+  expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(2);
+  await user.keyboard("study");
+  expect(search).toHaveValue("study");
+  expect(within(screen.getByRole("table")).getByRole("button",{name:"Synthetic study"})).toBeVisible();
+  expect(within(screen.getByRole("table")).queryByRole("button",{name:"Synthetic model"})).not.toBeInTheDocument();
+  expect(JSON.stringify(sources)).toBe(before);expect(p.onScreen).not.toHaveBeenCalled();expect(p.onPrepare).not.toHaveBeenCalled();
+ });
  it("returns to list if a refresh removes the selected compact paper",async()=>{
   media(true);vi.stubGlobal("scrollTo",vi.fn());const user=userEvent.setup();const p=props();
   const {rerender}=render(<LiteratureLibrary {...p}/>);
