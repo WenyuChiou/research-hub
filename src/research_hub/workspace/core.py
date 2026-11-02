@@ -339,6 +339,65 @@ class Workspace:
             db.execute("INSERT INTO records VALUES (?,?,?,?)", (record_id, project_id, kind, encoded(data)))
         return {"id": record_id, "kind": kind, "data": data}
 
+    def save_source_batch(self, project_id: str, *, kind: str, data: list) -> dict:
+        """Atomically create/reuse exact native batch keys; never update sources."""
+        from .source_handoff import (prepare_source_batch_write, plan_stored_source_batch,
+            parse_stored_source_data, stored_source_identity, SourceBatchConflict,
+            MAX_SOURCE_RECORD_BYTES, MAX_SOURCE_SNAPSHOT_BYTES, MAX_PREVIEW_ITEMS)
+        incoming = prepare_source_batch_write(project_id, kind=kind, data=data)
+        self.project(project_id)  # Read-only precheck: an unknown root is not initialized.
+        requested = {(item["batch_id"], item["id"]) for item in incoming}
+        try:
+            with self.db(write=True) as db:
+                if not db.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
+                    raise WorkspaceError("Unknown project", "not_found")
+                snapshot = []
+                snapshot_bytes = 2  # JSON array brackets; commas are counted below.
+                for row in db.execute("SELECT id,body FROM records WHERE project=? AND kind='source' ORDER BY rowid", (project_id,)):
+                    try:
+                        if isinstance(row[1], str) and len(row[1].encode("utf-8")) > MAX_SOURCE_RECORD_BYTES:
+                            identity = stored_source_identity(row[1])
+                            if identity is None or identity not in requested:
+                                continue
+                        stored = parse_stored_source_data(row[1])
+                    except (ValueError, TypeError) as exc:
+                        raise WorkspaceError("Stored source metadata is unavailable", "conflict") from exc
+                    key = (stored.get("batch_id"), stored.get("id"))
+                    if not all(isinstance(value, str) for value in key) or key not in requested:
+                        continue  # Legacy unbatched records are not guessed to be a match.
+                    record = {"id": row[0], "kind": "source", "project_id": project_id, "data": stored}
+                    try:
+                        snapshot_bytes += len(encoded(record).encode("utf-8")) + bool(snapshot)
+                    except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
+                        raise WorkspaceError("Stored source metadata is unavailable", "conflict") from exc
+                    if snapshot_bytes > MAX_SOURCE_SNAPSHOT_BYTES or len(snapshot) >= MAX_PREVIEW_ITEMS:
+                        raise WorkspaceError("Stored source snapshot exceeds its bounded budget", "conflict")
+                    snapshot.append(record)
+                plan = plan_stored_source_batch(project_id, incoming, snapshot)
+                if plan["preview"]["counts"]["conflict"]:
+                    raise SourceBatchConflict(plan)
+                existing = {record["id"]: record for record in snapshot}
+                records, created = [], 0
+                for item in plan["preview"]["plans"]:
+                    if item["disposition"] == "exact-reuse":
+                        previous = existing[item["record_id"]]
+                        records.append({key: previous[key] for key in ("id", "kind", "data")})
+                    else:
+                        saved = {**item["data"], "recorded_at": now()}
+                        record_id = uuid.uuid4().hex
+                        db.execute("INSERT INTO records VALUES (?,?,?,?)", (record_id, project_id, "source", encoded(saved)))
+                        records.append({"id": record_id, "kind": "source", "data": saved})
+                        created += 1
+        except SourceBatchConflict as exc:
+            return {"ok": False, "code": "conflict", "error": str(exc), "batch": {
+                "persisted": False, "counts": {"created": 0, "reused": 0,
+                    "conflicts": exc.plan["preview"]["counts"]["conflict"]}, "plan": exc.plan["preview"]}}
+        return {"ok": True, "batch": {"project_id": project_id, "persisted": True,
+            "counts": {"created": created, "reused": len(records) - created, "conflicts": 0},
+            "records": records, "identity_or_scientific_verification": "not-performed",
+            "destination_writes": {"research-hub": "committed", "zotero": "not-performed",
+                                   "obsidian": "not-performed", "notebooklm": "not-performed"}}}
+
     def snapshot(self, project_id: str) -> dict:
         from .tasks import TaskService
         project = self.project(project_id)

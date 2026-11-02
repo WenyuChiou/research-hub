@@ -125,6 +125,8 @@ class WorkspaceService:
                 return {"ok": True, "artifact": self.workspace.register_artifact(project_id, **values)}
             if operation == "record":
                 return {"ok": True, "record": self.workspace.add_record(project_id, **values)}
+            if operation == "record-batch":
+                return self.workspace.save_source_batch(project_id, **values)
             if operation == "search":
                 return self.search(project_id, **values)
         elif resource == "task":
