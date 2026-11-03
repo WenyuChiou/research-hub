@@ -1634,9 +1634,16 @@ def summarize_cluster(
     Use when: user says "summarize this cluster's papers", "fill the TODO
     Findings", or after `auto` ingest before scanning the vault.
 
-    No LLM CLI on PATH: prompt is saved to artifacts/<slug>/summarize-prompt.md;
-    user can pipe it through their LLM and re-run with --apply (CLI) or pass
-    the parsed payload to the apply_cluster_summaries MCP tool below.
+    No LLM CLI on PATH: prompt-only success; the prompt is saved to
+    artifacts/<slug>/summarize-prompt.md. No summaries were generated or applied,
+    even with apply=True. Re-running --apply does not import external summaries.
+    If the native host agent has available, authorized tools, it can read the
+    saved prompt and return readable abstract-based summaries, not full-text
+    validation. Saving them requires a selected, separately authorized supported
+    destination operation. apply_cluster_summaries defaults to writing both
+    Obsidian and Zotero; it is not an automatically authorized fallback.
+    If that route is unavailable, preserve the readable result and report saving
+    as pending; do not ask the researcher to author JSON.
 
     Returns ``{cluster_slug, ok, error, cli_used, prompt_path, apply_result}``.
     """

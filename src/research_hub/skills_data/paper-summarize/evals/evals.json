@@ -11,7 +11,7 @@
     },
     {
       "prompt": "Fill the TODO Key Findings for cluster X.",
-      "expected_behavior": "Same flow. If LLM CLI is not on PATH, surface the saved prompt path and offer to pipe through user's LLM.",
+      "expected_behavior": "If no LLM CLI is available, report prompt-only status: no summaries generated or applied, even with --apply. An available authorized native host agent may read the saved prompt and return readable abstract-based summaries, not full-text validation. Persist only through a selected, separately authorized supported destination operation; apply_cluster_summaries defaults to both Obsidian and Zotero and is not an automatically authorized fallback. Otherwise preserve the readable result and report saving as pending. Do not ask the researcher to author JSON or claim a later --apply imports external summaries.",
       "must_not_touch": [
         ".research/",
         ".paper/"

@@ -601,7 +601,9 @@ def summarize_cluster(
     `llm_cli` overrides auto-detection. None = use the first supported LLM CLI
     on PATH. If no CLI is available, the prompt is saved to
     `<cfg.research_hub_dir>/artifacts/<slug>/summarize-prompt.md` and
-    `report.ok=True` (best-effort, never raises).
+    `report.ok=True` means prompt-only success: no summaries were generated
+    or applied, even with `apply=True`. This command does not import externally
+    generated summaries on a later `--apply` run.
     """
     from research_hub.llm_cli import (
         _extract_first_json,
@@ -630,7 +632,7 @@ def summarize_cluster(
 
     cli = llm_cli or detect_llm_cli()
     if not cli:
-        # Save prompt for the user to pipe through their LLM manually
+        # Prompt-only fallback: no model invocation or destination apply.
         prompt_dir = Path(cfg.research_hub_dir) / "artifacts" / cluster_slug
         prompt_dir.mkdir(parents=True, exist_ok=True)
         prompt_path = prompt_dir / "summarize-prompt.md"
