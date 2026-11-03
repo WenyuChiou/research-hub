@@ -51,7 +51,7 @@ Both writes must be confirmed for a paper to count as "applied". If the remote o
 
 ## Failure modes
 
-- **No LLM CLI on PATH**: prompt is saved to `<vault>/.research_hub/artifacts/<cluster>/summarize-prompt.md`. The user pipes it through their LLM manually and re-runs with `--apply`, or calls the `apply_cluster_summaries` MCP tool with the parsed payload. Exit code 0; ok=True.
+- **No LLM CLI on PATH**: prompt is saved to `<vault>/.research_hub/artifacts/<cluster>/summarize-prompt.md`. This is **prompt-only** success (exit code 0; `ok=True`): no summaries were generated or applied, even with `--apply`. Re-running `--apply` does not import externally generated summaries. If the native host agent has available, authorized tools, it can read this prompt and return readable abstract-based summaries. These are not full-text validation. Persisting them requires a selected, separately authorized supported destination operation. The `apply_cluster_summaries` MCP tool defaults to writing both Obsidian and Zotero; it is not an automatically authorized fallback. If a supported authorized persistence route is unavailable, preserve the readable result and clearly report saving as pending; do not ask the researcher to author JSON.
 - **LLM returns malformed JSON**: report is `ok=False` with `error="LLM response had no parseable JSON object"`. No writes.
 - **Paper slug in payload not in cluster**: that entry is skipped with reason logged; other entries still applied.
 - **Empty key_findings / methodology / relevance**: entry skipped.
