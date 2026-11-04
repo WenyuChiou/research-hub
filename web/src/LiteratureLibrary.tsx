@@ -7,6 +7,7 @@ import type { ResearchRecord } from "./types";
 import { SourceObservations } from "./ObservationHistory";
 import type { ObservationTextContext } from "./sourceObservations";
 import { ObservationPreview, observationArtifacts, type ObservationReadScope } from "./ObservationPreview";
+import { SavedWorkingSummary, WorkingSummaryEditor, workingSummary } from "./WorkingSummaryEditor";
 
 const text = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
 const category = (record: ResearchRecord) => text(record.data.category).trim() || text(record.data.sub_category).trim();
@@ -32,7 +33,7 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, categoryHost }: {
+export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, categoryHost, onWorkingSummarySaved }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   t: Translate;
@@ -42,6 +43,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   observationText?: ObservationTextContext;
   observationRead?: ObservationReadScope;
   categoryHost?: HTMLElement | null;
+  onWorkingSummarySaved?: () => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -98,7 +100,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   };
   const matchesOrganization = (record: ResearchRecord, value: Organization) =>
     value === "unclassified" ? !category(record)
-      : value === "missing-summary" ? !savedSummary(record)
+      : value === "missing-summary" ? !savedSummary(record) && !workingSummary(record)
         : value === "unscreened" ? record.kind === "source" && !screened(record) : true;
   const organizationViews = [
     ["all", "catalogAllMaterial"], ["unclassified", "catalogNeedsCategory"],
@@ -213,7 +215,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                   <td>{text(record.data.year) || "—"}</td>
                   <td><span className="catalog-category">{categoryName(category(record), t)}</span></td>
                   <td>{readingScope(record, t)}
-                    {!savedSummary(record) && <span className="catalog-item-state">{t("catalogNeedsSummary")}</span>}
+                    {!savedSummary(record) && !workingSummary(record) && <span className="catalog-item-state">{t("catalogNeedsSummary")}</span>}
                     {record.kind === "source" && !screened(record) && <span className="catalog-item-state">{t("catalogNeedsScreening")}</span>}
                   </td>
                 </tr>
@@ -238,13 +240,16 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             {selected.data.locator_kind !== "local-copy" && <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
             {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
             <section><h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>{summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t("catalogNoSummary")}</p>}</section>
+            <SavedWorkingSummary record={selected} t={t}/>
             {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
               <button type="button" className="button secondary" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
             {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
               <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && (!compact || readerOpen)} : undefined} t={t} />}</div>}
+            {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && (!compact || readerOpen)} : undefined}
+              t={t} onSaved={onWorkingSummarySaved}/>}
             <section aria-label={t("catalogOrganizationState")}><h4>{t("catalogOrganizationState")}</h4><ul>
               {!category(selected) && <li>{t("catalogNeedsCategory")}</li>}
-              {!summary && <li>{t("catalogNeedsSummary")}</li>}
+              {!summary && !workingSummary(selected) && <li>{t("catalogNeedsSummary")}</li>}
               <li>{note ? t("catalogReadOnlyItem") : screened(selected) ? t("catalogScreeningRecorded") : t("catalogNeedsScreening")}</li>
             </ul></section>
             <section><h4>{t("catalogCoverage")}</h4><p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p></section>
