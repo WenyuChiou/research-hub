@@ -739,6 +739,27 @@ textarea {
   resize: vertical;
   line-height: var(--leading-help);
 }
+
+.working-summary-choices,
+.working-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.working-summary-session {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.working-summary-session textarea {
+  width: 100%;
+  min-height: 12rem;
+  resize: vertical;
+}
+.working-summary-editor code {
+  overflow-wrap: anywhere;
+}
 select[multiple] {
   min-height: 105px;
 }

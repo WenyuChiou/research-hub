@@ -32,6 +32,7 @@ export function LibraryCollection(props: {
   onPrepare: (record: ResearchRecord) => void;
   observationRead?: ObservationReadScope;
   categoryHost?: HTMLElement | null;
+  onWorkingSummarySaved?: () => Promise<void>;
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);

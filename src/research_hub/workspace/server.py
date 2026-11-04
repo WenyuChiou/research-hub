@@ -88,6 +88,14 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = self.server.library_snapshot.read()
                 return self._reply(404 if result.get("ok") is False else 200, result)
             segments = path.strip("/").split("/")
+            if (len(segments) == 5 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "working-summary"):
+                from urllib.parse import parse_qs
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) != {"source_record_id", "artifact_id"} or any(len(v) != 1 or not v[0] for v in query.values()):
+                    raise WorkspaceError("Select one source and generated draft", "invalid_request")
+                return self._result(self.server._call("project", "working-summary-context",
+                    {"project_id": segments[3], **{k: v[0] for k, v in query.items()}}))
             if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "source-text"):
                 return self._result(self.server._call("project", "source_text_lookup",
@@ -196,7 +204,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             elif len(parts) == 5 and parts[:2] == ["api", "v1"]:
                 if parts[2] == "projects":
                     data["project_id"] = parts[3]
-                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare", "source-text": "source_text"}.get(parts[4])
+                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare", "source-text": "source_text", "working-summary": "working-summary-save"}.get(parts[4])
                     resource = "task" if parts[4] == "tasks" else "action" if parts[4] == "delivery" else "manuscript" if parts[4] in {"bind", "audit", "impact"} else "project"
                 elif parts[2] == "tasks":
                     resource = "task"

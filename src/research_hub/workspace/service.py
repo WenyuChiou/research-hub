@@ -118,6 +118,10 @@ class WorkspaceService:
                 return self.workspace.snapshot(project_id)
             if operation == "preview_text":
                 return self.preview_text(project_id, **values)
+            if operation in {"working-summary-context", "working-summary-save"}:
+                from .working_summary import WorkingSummary
+                summaries = WorkingSummary(self.workspace)
+                return (summaries.context if operation == "working-summary-context" else summaries.save)(project_id, **values)
             if operation in {"source_text", "source_text_lookup"}:
                 intake = self._text_intake()
                 return (intake.save if operation == "source_text" else intake.lookup)(project_id, **values)
