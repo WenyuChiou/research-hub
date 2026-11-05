@@ -8,12 +8,15 @@ or a generic exposed CLI/MCP tool; adapter acknowledgements are caller reports.
 from contextlib import contextmanager
 import hashlib
 import json
+import ntpath
 import os
 from pathlib import Path, PureWindowsPath
 import re
 import sqlite3
 import stat
+import threading
 import uuid
+import weakref
 
 from .workspace.core import WorkspaceError, encoded, safe_path
 
@@ -26,6 +29,9 @@ SCHEMA_VERSION = '2'
 _AUTH_KINDS = {'legacy_cli_explicit_apply', 'legacy_mcp_apply_invocation', 'legacy_parent_apply_invocation'}
 _OBSERVATIONS = {'not_observed', 'matching_content', 'changed', 'read_denied', 'unavailable', 'ambiguous', 'restored', 'preserved_newer', 'compensation_unknown'}
 _TERMINAL = {'confirmed', 'rejected'}
+_JOURNAL_LOCKS = weakref.WeakValueDictionary()
+_JOURNAL_LOCKS_GUARD = threading.Lock()
+_JOURNAL_LOCK_TIMEOUT = 5
 
 
 class JournalError(ValueError):
@@ -101,6 +107,25 @@ def _validation_path(path):
     raise JournalError('Unsupported Windows path namespace', 'unsafe_path')
 
 
+def _journal_lock(path):
+    # Identity normalization only: do not move the existing path rejection
+    # ahead of the guarded journal call (the apply constructor is outside try).
+    key = str(path)
+    if isinstance(path, PureWindowsPath):
+        key = ntpath.normcase(key)
+        prefix = "\\\\?\\"
+        if key.startswith(prefix + 'unc\\'):
+            key = '\\\\' + key[len(prefix + 'unc\\'):]
+        elif key.startswith(prefix) and re.match(r'^[a-z]:\\', key[len(prefix):]):
+            key = key[len(prefix):]
+    with _JOURNAL_LOCKS_GUARD:
+        lock = _JOURNAL_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _JOURNAL_LOCKS[key] = lock
+        return lock
+
+
 class SummaryJournal:
     def __init__(self, root):
         original = Path(root).expanduser().absolute()
@@ -108,6 +133,7 @@ class SummaryJournal:
             raise JournalError('Linked journal root is not allowed', 'unsafe_path')
         self.root = original.resolve()
         self.path = self.root / '.research_hub' / 'summary-operations.sqlite3'
+        self._lock = _journal_lock(self.path)
 
     def _check_path(self):
         try:
@@ -152,7 +178,25 @@ class SummaryJournal:
         db.commit()
 
     @contextmanager
+    def _serialized(self):
+        # SQLite serializes writers only after BEGIN. Cover the earlier guard
+        # and the entire connection lifetime, including commit/rollback close,
+        # against other instances in this process. No destination I/O runs here.
+        if not self._lock.acquire(timeout=_JOURNAL_LOCK_TIMEOUT):
+            raise JournalError('Journal storage busy; no dispatch authorized', 'storage_unavailable')
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+    @contextmanager
     def _db(self, *, write=False, initialize=False):
+        with self._serialized():
+            with self._db_locked(write=write, initialize=initialize) as db:
+                yield db
+
+    @contextmanager
+    def _db_locked(self, *, write=False, initialize=False):
         self._check_path()
         if not self.path.exists() and not initialize:
             raise JournalError('No recorded summary operations', 'not_initialized')
@@ -264,11 +308,12 @@ class SummaryJournal:
     def list(self, *, after='', limit=50):
         if type(limit) is not int or not 1 <= limit <= 50 or not isinstance(after, str):
             raise JournalError('Invalid bounded page', 'invalid_input')
-        self._check_path()
-        if not self.path.exists():
-            return []
-        with self._db() as db:
-            return [self._get(db, r[0]) for r in db.execute('SELECT id FROM operations WHERE id>? ORDER BY id LIMIT ?', (after, limit))]
+        with self._serialized():
+            self._check_path()
+            if not self.path.exists():
+                return []
+            with self._db() as db:
+                return [self._get(db, r[0]) for r in db.execute('SELECT id FROM operations WHERE id>? ORDER BY id LIMIT ?', (after, limit))]
 
     def stage(self, operation_id, candidate, *, before=None, after=None):
         materials = {'candidate': candidate}
@@ -408,20 +453,21 @@ class SummaryJournal:
 
     def conflicts(self, targets):
         """Exact logical-target lookup; no scans or provider calls."""
-        self._check_path()
-        if not self.path.exists():
-            return []
-        if not isinstance(targets, dict) or not targets or not set(targets) <= {'local', 'zotero'} or not all(_text(t) for t in targets.values()):
-            raise JournalError('Invalid targets', 'invalid_input')
-        with self._db() as db:
-            found = set()
-            for sink, target in targets.items():
-                key = _hash(encoded([sink, target]).encode())
-                row = db.execute('SELECT operation_id FROM target_claims WHERE target=?', (key,)).fetchone()
-                if row:
-                    self._get(db, row[0])
-                    found.add(row[0])
-            return sorted(found)
+        with self._serialized():
+            self._check_path()
+            if not self.path.exists():
+                return []
+            if not isinstance(targets, dict) or not targets or not set(targets) <= {'local', 'zotero'} or not all(_text(t) for t in targets.values()):
+                raise JournalError('Invalid targets', 'invalid_input')
+            with self._db() as db:
+                found = set()
+                for sink, target in targets.items():
+                    key = _hash(encoded([sink, target]).encode())
+                    row = db.execute('SELECT operation_id FROM target_claims WHERE target=?', (key,)).fetchone()
+                    if row:
+                        self._get(db, row[0])
+                        found.add(row[0])
+                return sorted(found)
 
     def reject_unsent(self, operation_id, sink):
         """Trusted caller stopped before dispatch; not a not-found observation."""
