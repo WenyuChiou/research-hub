@@ -116,3 +116,26 @@ This bounded re-observation does not eliminate TOCTOU or make this filesystem
 boundary resistant to a malicious concurrent writer. The matching Linux stress
 failure is consistent with the observed unlink race, but its actual cause was
 not proven by this change or by synthetic tests.
+
+
+Cooperating `SummaryJournal` instances in one process now share a reentrant lock
+for each canonical database path. Windows namespace/case normalization is only
+for lock identity; it adds no constructor rejection or filesystem permission.
+The lock spans existing path checks through SQLite connection close, including
+schema initialization, commit and rollback. Public list/conflict preflights use
+the same lock and still never initialize an absent database. Different roots
+remain independent, and provider/destination-file I/O is outside this scope.
+Each lock acquisition waits at most five seconds, then fails with
+`storage_unavailable` without authorizing dispatch. This is not a total request
+timeout: SQLite retains its separate five-second busy timeout, and an ongoing
+filesystem call is not interrupted. Locks are retained by live journal instances
+and removed from the weak registry once no longer referenced.
+
+This synchronization prevents this module's cooperating threads from observing
+each other's in-progress connection/sidecar lifecycle. It does not coordinate
+other processes, direct SQLite users, or malicious filesystem replacement.
+All existing containment, regular-file, link-count, reparse and I/O rejection
+rules remain unchanged, including non-POSIX zero-link refusal. Recovery,
+operation identity, unresolved claims, unknown outcomes and no-resend rules
+are unchanged. Deterministic scheduling models are not native Windows
+acceptance or evidence that any real destination data was lost.
