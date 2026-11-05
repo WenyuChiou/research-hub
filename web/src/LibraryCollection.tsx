@@ -31,6 +31,7 @@ export function LibraryCollection(props: {
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onPrepare: (record: ResearchRecord) => void;
   observationRead?: ObservationReadScope;
+  pageSuspended?: boolean;
   categoryHost?: HTMLElement | null;
   onWorkingSummarySaved?: () => Promise<void>;
 }) {

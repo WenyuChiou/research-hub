@@ -427,6 +427,7 @@ export function ProjectPages({
 
       <div hidden={page !== "literature"} className="page-content">
         <LibraryCollection sources={sources} screenings={records("screening")} t={t} categoryHost={categoryHost}
+          pageSuspended={page !== "literature"}
           onWorkingSummarySaved={() => onSaved(t("workingSummarySaved"))}
           observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}
           onScreen={(sourceId, decision, rationale) => saveRecord("screening", {source_id:sourceId, decision, rationale})}

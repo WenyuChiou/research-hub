@@ -33,7 +33,7 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, categoryHost, onWorkingSummarySaved }: {
+export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   t: Translate;
@@ -42,6 +42,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   matches?: Map<string, ResearchRecord[]>;
   observationText?: ObservationTextContext;
   observationRead?: ObservationReadScope;
+  pageSuspended?: boolean;
   categoryHost?: HTMLElement | null;
   onWorkingSummarySaved?: () => Promise<void>;
 }) {
@@ -234,7 +235,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             <h3 ref={detailHeading} tabIndex={-1}>{text(selected.data.title)}</h3>
             <button type="button" className="button text-button catalog-back" onClick={() => {
               if (compact) { returnRequested.current = true; setReaderOpen(false); }
-              else { setReaderOpen(false); selectedButton.current?.focus(); }
+              else { selectedButton.current?.focus(); }
             }}>{t("catalogBackToList")}</button>
             <div className="catalog-meta"><span>{text(selected.data.year) || "—"}</span><span>{categoryName(category(selected), t)}</span><span>{statusLabel(text(selected.data.identity_status) || "unverified", t)}</span><span>{readingScope(selected,t)}</span></div>
             {selected.data.locator_kind !== "local-copy" && <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
@@ -246,6 +247,8 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
               <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && (!compact || readerOpen)} : undefined} t={t} />}</div>}
             {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && (!compact || readerOpen)} : undefined}
+              suspended={Boolean(pageSuspended && draftScope?.active === false && (!compact || readerOpen))}
+              onOpen={() => {setSelectedId(selected.id); setReaderOpen(true);}}
               t={t} onSaved={onWorkingSummarySaved}/>}
             <section aria-label={t("catalogOrganizationState")}><h4>{t("catalogOrganizationState")}</h4><ul>
               {!category(selected) && <li>{t("catalogNeedsCategory")}</li>}

@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ReadText } from "./components";
 import type { Translate } from "./i18n";
-import { observationArtifacts, type ObservationReadScope } from "./ObservationPreview";
+import { registeredObservationArtifacts, type ObservationReadScope } from "./ObservationPreview";
 import type { Artifact, ResearchRecord } from "./types";
 
 export interface WorkingSummary {
@@ -41,40 +41,48 @@ export function SavedWorkingSummary({record, t}: {record: ResearchRecord; t: Tra
 interface Props {
   record: ResearchRecord;
   scope?: ObservationReadScope;
+  /** Only a page navigation may suspend an otherwise-open reader session. */
+  suspended?: boolean;
   t: Translate;
+  onOpen?: () => void;
   onSaved?: () => Promise<void>;
 }
 
 /** Selection is always explicit, including when a source has several reports. */
 export function WorkingSummaryEditor(props: Props) {
-  const artifacts = observationArtifacts(props.record, props.scope);
-  const identity = JSON.stringify([props.scope?.projectId, props.scope?.active, props.scope?.revision ?? 0,
+  const artifacts = props.scope?.active || props.suspended ? registeredObservationArtifacts(props.record, props.scope) : [];
+  // Refresh and temporarily hiding this reader are not selection changes or Cancel.
+  // Validate binding even while hidden; active still gates requests and side effects.
+  const identity = JSON.stringify([props.scope?.projectId,
     props.record.id, artifacts.map(a => [a.id, a.sha256, a.path, a.current])]);
   return <SummarySelection key={identity} {...props} artifacts={artifacts}/>;
 }
-function SummarySelection({record, scope, t, onSaved, artifacts}: Props & {artifacts: Artifact[]}) {
+function SummarySelection({record, scope, t, onOpen, onSaved, artifacts}: Props & {artifacts: Artifact[]}) {
   const [selected, setSelected] = useState<Artifact>();
   const opener = useRef<HTMLButtonElement | null>(null);
-  if (!scope?.active || !artifacts.length) return null;
-  return <section className="working-summary-editor" aria-label={t("workingSummaryReview")}>
+  const active = useRef(Boolean(scope?.active));
+  active.current = Boolean(scope?.active);
+  if (!scope || !artifacts.length) return null;
+  return <section className="working-summary-editor" hidden={!scope.active} aria-label={t("workingSummaryReview")}>
     <p className="small muted">{t("workingSummaryReviewHelp")}</p>
     <div className="working-summary-choices">{artifacts.map(artifact => <button key={artifact.id} type="button"
-      className="button secondary" disabled={Boolean(selected)}
+      className="button secondary" disabled={!scope.active || Boolean(selected)}
       aria-label={`${t("workingSummaryReview")} ${artifact.id}`}
-      onClick={event => {opener.current = event.currentTarget; setSelected(artifact);}}>
+      onClick={event => {if (active.current) {opener.current = event.currentTarget; setSelected(artifact); onOpen?.();}}}>
       {t("workingSummaryReview")} <code>{artifact.id}</code>
     </button>)}</div>
     {selected && <SummarySession key={`${selected.id}:${selected.sha256}`} record={record} artifact={selected}
-      projectId={scope.projectId} t={t} onSaved={onSaved} onClose={() => {
+      projectId={scope.projectId} active={scope.active} t={t} onSaved={onSaved} onClose={() => {
+        if (!active.current) return;
         setSelected(undefined);
         // React enables the opener before the queued focus restoration.
-        queueMicrotask(() => opener.current?.focus());
+        queueMicrotask(() => {if (active.current && opener.current?.isConnected) opener.current.focus();});
       }}/>}
   </section>;
 }
 type Phase = "loading" | "ready" | "saving" | "checking" | "blocked" | "saved";
-function SummarySession({record, artifact, projectId, t, onClose, onSaved}: {
-  record: ResearchRecord; artifact: Artifact; projectId: string; t: Translate;
+function SummarySession({record, artifact, projectId, active, t, onClose, onSaved}: {
+  record: ResearchRecord; artifact: Artifact; projectId: string; active: boolean; t: Translate;
   onClose: () => void; onSaved?: () => Promise<void>;
 }) {
   const [context, setContext] = useState<SummaryContext>();
@@ -82,6 +90,9 @@ function SummarySession({record, artifact, projectId, t, onClose, onSaved}: {
   const [phase, setPhase] = useState<Phase>("loading");
   const [message, setMessage] = useState<Parameters<Translate>[0]>();
   const alive = useRef(true);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const pendingRefresh = useRef(false);
   const busy = useRef(false);
   const latestDraft = useRef("");
   const attempted = useRef<{text: string; revision: string; draft: string} | null>(null);
@@ -108,6 +119,7 @@ function SummarySession({record, artifact, projectId, t, onClose, onSaved}: {
   useEffect(() => {
     alive.current = true;
     const controller = new AbortController();
+    if (!activeRef.current) return () => {alive.current = false;};
     heading.current?.focus();
     void read(controller.signal).then(item => {
       if (!alive.current || controller.signal.aborted) return;
@@ -119,15 +131,25 @@ function SummarySession({record, artifact, projectId, t, onClose, onSaved}: {
     return () => {alive.current = false; controller.abort();};
   }, []);
   useEffect(() => {
+    if (!activeRef.current) return;
     if (phase === "ready" && !message) input.current?.focus();
     if (phase === "saved") heading.current?.focus();
   }, [phase]);
+  useEffect(() => {
+    if (!active || !pendingRefresh.current) return;
+    // Consume before invoking a callback which may rerender this same session.
+    // Selection changes/Cancel unmount this ref rather than transferring it.
+    pendingRefresh.current = false;
+    void (async () => {
+      try {await onSaved?.();} catch {if (alive.current) setMessage("workingSummarySavedRefreshFailed");}
+    })();
+  }, [active, phase, onSaved]);
   async function announceSaved() {
+    pendingRefresh.current = true;
     setPhase("saved"); setMessage("workingSummarySaved");
-    try {await onSaved?.();} catch {if (alive.current) setMessage("workingSummarySavedRefreshFailed");}
   }
   async function save() {
-    if (busy.current || phase !== "ready" || !context || !submittedText || tooLong) return;
+    if (!activeRef.current || busy.current || phase !== "ready" || !context || !submittedText || tooLong) return;
     busy.current = true; setPhase("saving"); setMessage(undefined);
     attempted.current = {text:submittedText, revision:context.revision, draft:latestDraft.current};
     try {
@@ -147,7 +169,7 @@ function SummarySession({record, artifact, projectId, t, onClose, onSaved}: {
     } finally {busy.current = false;}
   }
   async function check() {
-    if (busy.current) return;
+    if (!activeRef.current || busy.current) return;
     busy.current = true; setPhase("checking");
     try {
       const item = await read();
@@ -170,21 +192,21 @@ function SummarySession({record, artifact, projectId, t, onClose, onSaved}: {
   }
   return <div role="dialog" aria-labelledby={`${id}-heading`} aria-describedby={`${id}-help`}
     className="working-summary-session" onKeyDown={event => {
-      if (event.key === "Escape") {event.stopPropagation(); if (phase !== "saving") onClose();}
+      if (activeRef.current && event.key === "Escape") {event.stopPropagation(); if (phase !== "saving") onClose();}
     }}>
     <h4 id={`${id}-heading`} ref={heading} tabIndex={-1}>{t("workingSummaryReview")} <code>{artifact.id}</code></h4>
     <p id={`${id}-help`} className="small muted">{t("workingSummaryHelp")}</p>
     {phase === "loading" && <p role="status">{t("workingSummaryLoading")}</p>}
     {context && <label className="field field-wide">{t("workingSummaryText")}<textarea ref={input} rows={10}
-      value={draft} disabled={phase === "saving" || phase === "saved"} onChange={event => updateDraft(event.target.value)}/></label>}
+      value={draft} disabled={!active || phase === "saving" || phase === "saved"} onChange={event => {if (activeRef.current) updateDraft(event.target.value);}}/></label>}
     {message && <p role={phase === "blocked" ? "alert" : "status"}>{t(message)}</p>}
     {tooLong && <p role="alert">{t("workingSummaryTooLong")}</p>}
     <div className="working-summary-actions">
-      <button type="button" className="button" disabled={phase !== "ready" || !submittedText || tooLong} onClick={() => void save()}>
+      <button type="button" className="button" disabled={!active || phase !== "ready" || !submittedText || tooLong} onClick={() => void save()}>
         {t(phase === "saving" ? "workingSummarySaving" : "workingSummarySave")}</button>
       {(phase === "blocked" || phase === "checking") && <button type="button" className="button secondary"
-        disabled={phase === "checking"} onClick={() => void check()}>{t(phase === "checking" ? "workingSummaryChecking" : "workingSummaryCheck")}</button>}
-      <button type="button" className="button secondary" disabled={phase === "saving"} onClick={onClose}>{t(phase === "saved" ? "workingSummaryClose" : "cancel")}</button>
+        disabled={!active || phase === "checking"} onClick={() => void check()}>{t(phase === "checking" ? "workingSummaryChecking" : "workingSummaryCheck")}</button>}
+      <button type="button" className="button secondary" disabled={!active || phase === "saving"} onClick={onClose}>{t(phase === "saved" ? "workingSummaryClose" : "cancel")}</button>
     </div>
   </div>;
 }
