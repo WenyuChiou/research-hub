@@ -56,6 +56,58 @@ def open_fresh_discovery(page, base, view_path):
     assert 'text_intake' in workspace_reply['capabilities'], 'Must not inherit legacy capability fixture'
 
 
+def check_need_disclosure_keyboard(page, base, result):
+    from playwright.sync_api import expect
+    about = page.locator('summary').filter(has_text='About saved research')
+    summary = result.locator('summary').filter(
+        has_text='Linked attempts / sources: 1 / 2 · Attempts to inspect: 1')
+    details = summary.locator('..')
+    linked = [
+        details.get_by_text(text, exact=True) for text in (
+            'Linked attempts shown / recorded (1 / 1)',
+            'a1 · search · Synthetic query',
+            'observed / partial · Caller-declared result count: 2',
+            'Linked sources shown / recorded (2 / 2)',
+            's1 · Same synthetic title · abstract · Unknown',
+            's2 · Same synthetic title · abstract · Unknown',
+        )
+    ]
+    expect(summary).to_be_visible()
+    expect(details).not_to_have_attribute('open', '')
+    for content in linked:
+        expect(content).to_be_hidden()
+    requests = []
+    def observe(request):
+        if request.url.startswith(base + '/api/v1/'):
+            requests.append(request.method + ' ' + request.url)
+    # Observe only this ready disclosure interaction, not load or evidence recheck.
+    page.on('request', observe)
+    try:
+        about.focus()
+        expect(about).to_be_focused()
+        page.keyboard.press('Tab')
+        expect(summary).to_be_focused()
+        page.keyboard.press('Enter')
+        expect(details).to_have_attribute('open', '')
+        for content in linked:
+            expect(content).to_be_visible()
+        expect(summary).to_be_focused()
+        page.keyboard.press('Space')
+        expect(details).not_to_have_attribute('open', '')
+        for content in linked:
+            expect(content).to_be_hidden()
+        expect(summary).to_be_focused()
+        page.keyboard.press('Shift+Tab')
+        expect(about).to_be_focused()
+        assert not requests, requests
+    finally:
+        page.remove_listener('request', observe)
+    return {'status': 'PASS', 'keys': ['Tab', 'Enter', 'Space', 'Shift+Tab'],
+            'viewport': page.viewport_size,
+            'linked_attempt_ids': ['a1'], 'linked_source_ids': ['s1', 's2'],
+            'api_requests_during_interaction': len(requests)}
+
+
 def check_discovery_journey(screen, service, fixture, checks, output):
     from playwright.sync_api import expect
     page = screen.page
@@ -75,6 +127,7 @@ def check_discovery_journey(screen, service, fixture, checks, output):
         expect(result.get_by_text('s2', exact=True)).to_be_visible()
         expect(result.get_by_text('Sources without original material bytes: s1, s2', exact=True)).to_be_visible()
         expect(result.get_by_text('Referenced bytes at last check: current', exact=True)).to_be_visible()
+        need_keyboard = check_need_disclosure_keyboard(page, screen.base, result)
         entry = page.get_by_role('button', name='Integrations & setup', exact=True)
         entry.focus()
         page.keyboard.press('Enter')
@@ -118,6 +171,7 @@ def check_discovery_journey(screen, service, fixture, checks, output):
                        'semantic_assessment': 'not_performed', 'native_host_acceptance': 'not_tested',
                        'screenshots': ['workspace-native-discovery.png', 'workspace-native-discovery.390px.png', 'workspace-native-discovery.390px.viewport.png'],
                        'fresh_document': True, 'skip_link_geometry': skip_geometry,
+                       'need_disclosure_keyboard': need_keyboard,
                        'viewport': {'width': 390, 'height': 844}, 'native_zoom': 'not_tested'})
     finally:
         page.unroute(pattern, observed)
