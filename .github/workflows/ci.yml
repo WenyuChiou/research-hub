@@ -136,9 +136,13 @@ jobs:
       - name: Dependency CVE scan (pip-audit)
         # v0.95.0 W9 (G5 #19): supply-chain scan. Non-blocking for now;
         # promotes to blocking once dependency set is known-clean.
+        env:
+          # Redirected Windows output may default to cp1252; descriptions are Unicode.
+          PYTHONIOENCODING: utf-8
         run: |
-          pip install pip-audit
-          pip-audit --strict --desc || true
+          # Update runner tooling only; keep project requirements unchanged.
+          python -m pip install pip-audit "setuptools>=84.1.0"
+          python -m pip_audit --strict --desc || true
         continue-on-error: true
 
       - name: Run tests
@@ -202,9 +206,12 @@ jobs:
         continue-on-error: true
 
       - name: Dependency CVE scan (pip-audit)
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
-          pip install pip-audit
-          pip-audit --strict --desc || true
+          # Update runner tooling only; keep project requirements unchanged.
+          python -m pip install pip-audit "setuptools>=84.1.0"
+          python -m pip_audit --strict --desc || true
         continue-on-error: true
 
       - name: Run tests (shard ${{ matrix.split_index }}/4)
