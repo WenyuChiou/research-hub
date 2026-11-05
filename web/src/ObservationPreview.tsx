@@ -10,7 +10,12 @@ export interface ObservationReadScope { projectId: string; artifacts: Artifact[]
 
 /** Exact registered references only; this function does not probe caller paths. */
 export function observationArtifacts(record: ResearchRecord, scope?: ObservationReadScope): Artifact[] {
-  if (!scope?.active || !scope.projectId || !record.id || record.kind !== "source" || typeof record.data.id !== "string" || !record.data.id.trim()) return [];
+  return scope?.active ? registeredObservationArtifacts(record, scope) : [];
+}
+
+/** Pure metadata binding for retained sessions; this never authorizes a read. */
+export function registeredObservationArtifacts(record: ResearchRecord, scope?: Pick<ObservationReadScope, "projectId" | "artifacts">): Artifact[] {
+  if (!scope?.projectId || !record.id || record.kind !== "source" || typeof record.data.id !== "string" || !record.data.id.trim()) return [];
   const rows = Array.isArray(record.data.source_records) ? record.data.source_records : [];
   const ids = rows.map(o => o && typeof o === "object" ? o.observation_id : undefined);
   const selected: Artifact[] = [];

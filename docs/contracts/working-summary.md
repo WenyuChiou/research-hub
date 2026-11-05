@@ -26,6 +26,22 @@ Sources without a selected generated report retain their existing reader.
   appending history. A changed source or artifact prevents reuse.
 - Text is nonempty UTF-8, at most 40,000 characters. Unknown or malformed prior
   working-summary metadata is not silently overwritten. Cancel performs no POST.
+- An App Refresh with the same active project, source and report identity
+  preserves an open editor, exact unsaved text and pending/unknown save state.
+  Refresh is not Cancel and does not resubmit a save or replace the reviewed
+  source revision. A changed server revision still requires stale-save rejection
+  and explicit saved-state readback before retry.
+- Leaving Literature and returning to the same selected project/source/report
+  preserves the otherwise-open editor and its exact unsaved draft in page memory
+  only. This page suspension does not change invalidation when explicitly closing
+  the compact reader or otherwise deactivating a session. Suspended sessions cannot
+  start reads or writes, take focus, or
+  refresh the parent. Previously requested responses may settle into that
+  session's memory; a confirmed save refreshes once after it becomes active
+  again. Returning alone does not move focus or resubmit a save. Changing
+  project, source or registered report binding (including hash), removing that
+  binding, and explicit Cancel still discard the session and fence late results.
+  There is no browser-storage or automatic server draft persistence.
 - A working summary is saved prose, not a publisher abstract, verified science,
   a new reading event, confirmed classification or human acceptance. Those fields
   and the `task decide` human-session gate remain unchanged. No provider is called.
