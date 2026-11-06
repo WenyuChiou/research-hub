@@ -1,6 +1,12 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  taskWorkingSummaryRecovery: "Recovered working-summary edits",
+  taskWorkingSummaryRecoveryHelp: "The task or source binding changed. These edits belong to the original binding below and cannot be saved here. Review the current source and any earlier save before reusing them.",
+  taskWorkingSummaryRecoveryLifetime: "This copy is kept only while this task remains loaded. Copy it before leaving this task or reloading the page.",
+  taskWorkingSummaryRetainedText: "Retained text (read-only)",
+  taskWorkingSummaryOriginalBinding: "Original task binding and summary revision",
+  taskWorkingSummaryDiscardRecovery: "Discard retained text",
   taskWorkingSummarySavingFirst: "A working-summary save is still pending. Wait for it to finish before changing this task.",
   taskWorkingSummaryFinishFirst: "Save and close the working summary, or cancel its editor, before cancelling this task or recording a decision.",
   taskWorkingSummaryOpen: "Edit this draft as a working summary",
@@ -825,6 +831,12 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  taskWorkingSummaryRecovery: "已保留的工作摘要編輯",
+  taskWorkingSummaryRecoveryHelp: "任務或來源綁定已變更。這些編輯屬於下方的原始綁定，無法在此儲存。重新使用前，請確認目前來源及先前的儲存結果。",
+  taskWorkingSummaryRecoveryLifetime: "此副本僅在任務仍載入時保留。離開此任務或重新載入頁面前，請先複製文字。",
+  taskWorkingSummaryRetainedText: "保留文字（唯讀）",
+  taskWorkingSummaryOriginalBinding: "原始任務綁定與摘要修訂",
+  taskWorkingSummaryDiscardRecovery: "捨棄保留文字",
   taskWorkingSummarySavingFirst: "工作摘要仍在儲存中，請等待請求結束後再變更此任務。",
   taskWorkingSummaryFinishFirst: "請先儲存並關閉工作摘要，或取消摘要編輯，再取消任務或記錄審查決定。",
   taskWorkingSummaryOpen: "將此草稿編輯為工作摘要",

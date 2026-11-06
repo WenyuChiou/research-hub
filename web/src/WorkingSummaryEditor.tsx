@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ReadText } from "./components";
 import type { Translate } from "./i18n";
@@ -93,11 +93,15 @@ function SummarySelection({record, scope, t, onOpen, onSaved, artifacts}: Props 
       }}/>}
   </section>;
 }
+interface RecoveryDraft {
+  id: string; provenance: TaskProvenance; revision: string; text: string; invalidated: boolean;
+}
+type RecoveryUpdate = {kind:"capture"; draft:RecoveryDraft} | {kind:"invalidate" | "discard"; id:string};
 type Phase = "loading" | "ready" | "saving" | "checking" | "blocked" | "saved";
 type Selection = {kind:"observation"; artifact:Artifact} | {kind:"task"; provenance:TaskProvenance};
-function SummarySession({sourceId, selection, projectId, active, t, onClose, onSaved, onSavePendingChange}: {
+function SummarySession({sourceId, selection, projectId, active, t, onClose, onSaved, onSavePendingChange, onRecoveryChange}: {
   sourceId: string; selection: Selection; projectId: string; active: boolean; t: Translate;
-  onClose: () => void; onSaved?: () => Promise<void>; onSavePendingChange?:(pending:boolean)=>void;
+  onClose: () => void; onSaved?: () => Promise<void>; onSavePendingChange?:(pending:boolean)=>void; onRecoveryChange?:(update:RecoveryUpdate)=>void;
 }) {
   const artifact = selection.kind === "observation" ? selection.artifact : undefined;
   const provenance = selection.kind === "task" ? selection.provenance : undefined;
@@ -112,6 +116,7 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
   const pendingRefresh = useRef(false);
   const busy = useRef(false);
   const latestDraft = useRef("");
+  const initialDraft = useRef("");
   const attempted = useRef<{text: string; revision: string; draft: string} | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -123,6 +128,20 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
   function updateDraft(value: string) {
     latestDraft.current = value;
     setDraft(value);
+  }
+  function editDraft(value: string) {
+    updateDraft(value);
+    // Capture raw user edits synchronously, before a parent refresh can unmount
+    // this session. Recovery is never an input to context validation or saving.
+    // After any save attempt, even a reversion to the initial text can be a
+    // newer unsaved edit relative to a write with an unknown/earlier receipt.
+    if (provenance && context) onRecoveryChange?.(value === initialDraft.current && !attempted.current
+      ? {kind:"discard", id}
+      : {kind:"capture", draft:{id, provenance, revision:context.revision, text:value, invalidated:false}});
+  }
+  function close() {
+    onRecoveryChange?.({kind:"discard", id});
+    onClose();
   }
   async function read(signal?: AbortSignal) {
     const result = await api<{ok: true; context: SummaryContext}>(`${path}?source_record_id=${segment(sourceId)}&${artifact ? `artifact_id=${segment(artifact.id)}` : `task_id=${segment(provenance!.task_id)}`}`, undefined, signal);
@@ -140,12 +159,18 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
     heading.current?.focus();
     void read(controller.signal).then(item => {
       if (!alive.current || controller.signal.aborted) return;
-      setContext(item); updateDraft(bound(item.working_summary) ? item.working_summary!.text : item.draft_text); setPhase("ready");
+      initialDraft.current = bound(item.working_summary) ? item.working_summary!.text : item.draft_text;
+      setContext(item); updateDraft(initialDraft.current); setPhase("ready");
     }).catch(failure => {
       if (!alive.current || controller.signal.aborted) return;
       setPhase("blocked"); setMessage(isForbiddenRequest(failure) ? "workingSummaryForbidden" : "workingSummaryLoadFailed");
     });
-    return () => {alive.current = false; controller.abort();};
+    return () => {
+      alive.current = false; controller.abort();
+      // Only reveal an already captured edit. Explicit dismissal and confirmed
+      // saves remove it first; StrictMode's initial cleanup has nothing to retain.
+      onRecoveryChange?.({kind:"invalidate", id});
+    };
   }, []);
   useEffect(() => {
     if (!activeRef.current) return;
@@ -162,6 +187,7 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
     })();
   }, [active, phase, onSaved]);
   async function announceSaved() {
+    onRecoveryChange?.({kind:"discard", id});
     pendingRefresh.current = true;
     setPhase("saved"); setMessage("workingSummarySaved");
   }
@@ -201,7 +227,10 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
         else {setPhase("ready");setMessage("workingSummaryEarlierSaved");}
       } else {
         // An existing edit is retained even when its original context was stale.
-        if (!context) updateDraft(bound(item.working_summary) ? item.working_summary!.text : item.draft_text);
+        if (!context) {
+          initialDraft.current = bound(item.working_summary) ? item.working_summary!.text : item.draft_text;
+          updateDraft(initialDraft.current);
+        }
         setPhase("ready");setMessage("workingSummaryChecked");
       }
     } catch (failure) {if (alive.current) {setPhase("blocked"); setMessage(isForbiddenRequest(failure) ? "workingSummaryForbidden" : "workingSummaryCheckFailed");}}
@@ -209,13 +238,13 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
   }
   return <div role="dialog" aria-labelledby={`${id}-heading`} aria-describedby={`${id}-help`}
     className="working-summary-session" onKeyDown={event => {
-      if (activeRef.current && event.key === "Escape") {event.stopPropagation(); if (phase !== "saving") onClose();}
+      if (activeRef.current && event.key === "Escape") {event.stopPropagation(); if (phase !== "saving") close();}
     }}>
     <h4 id={`${id}-heading`} ref={heading} tabIndex={-1}>{t(provenance ? "taskWorkingSummaryOpen" : "workingSummaryReview")} <code>{selectionId}</code></h4>
     <p id={`${id}-help`} className="small muted">{t("workingSummaryHelp")}{provenance && <> {t("taskWorkingSummaryPending")}</>}</p>
     {phase === "loading" && <p role="status">{t("workingSummaryLoading")}</p>}
     {context && <label className="field field-wide">{t("workingSummaryText")}<textarea ref={input} rows={10}
-      value={draft} disabled={!active || phase === "saving" || phase === "saved"} onChange={event => {if (activeRef.current) updateDraft(event.target.value);}}/></label>}
+      value={draft} disabled={!active || phase === "saving" || phase === "saved"} onChange={event => {if (activeRef.current) editDraft(event.target.value);}}/></label>}
     {message && <p role={phase === "blocked" ? "alert" : "status"}>{t(message)}</p>}
     {tooLong && <p role="alert">{t("workingSummaryTooLong")}</p>}
     <div className="working-summary-actions">
@@ -223,24 +252,46 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
         {t(phase === "saving" ? "workingSummarySaving" : "workingSummarySave")}</button>
       {(phase === "blocked" || phase === "checking") && <button type="button" className="button secondary"
         disabled={!active || phase === "checking"} onClick={() => void check()}>{t(phase === "checking" ? "workingSummaryChecking" : "workingSummaryCheck")}</button>}
-      <button type="button" className="button secondary" disabled={!active || phase === "saving"} onClick={onClose}>{t(phase === "saved" ? "workingSummaryClose" : "cancel")}</button>
+      <button type="button" className="button secondary" disabled={!active || phase === "saving"} onClick={close}>{t(phase === "saved" ? "workingSummaryClose" : "cancel")}</button>
     </div>
   </div>;
 }
 
 /** Task candidates retain their own provenance; they are never registered observations. */
 export function TaskWorkingSummaryEditor({task, t, onSaved, active = true, onSessionChange, onSavePendingChange}: {task:Task; t:Translate; onSaved:()=>Promise<void>; active?:boolean; onSessionChange?:(open:boolean)=>void; onSavePendingChange?:(pending:boolean)=>void}) {
+  const [recoveries, setRecoveries] = useState<RecoveryDraft[]>([]);
+  const recoveryChange = useCallback((update: RecoveryUpdate) => {
+    setRecoveries(previous => {
+      if (update.kind === "capture") return [...previous.filter(item => item.id !== update.draft.id), update.draft];
+      if (update.kind === "discard") return previous.filter(item => item.id !== update.id);
+      return previous.map(item => item.id === update.id ? {...item, invalidated:true} : item);
+    });
+  }, []);
   const result = task.result as {status?:string; semantic_acceptance?:string; input_hash?:string; artifacts?:{path?:string;sha256?:string}[]} | undefined;
   const sourceId = task.request?.research_draft?.source_pack?.source_record_id;
   const files = Array.isArray(result?.artifacts) ? result.artifacts.filter(a => a && typeof a.path === "string" && /^proposals\/[^/]+\/draft\.md$/.test(a.path)) : [];
-  if (task.operation !== "paper-abstract-draft" || task.status !== "awaiting_human" || result?.status !== "completed" ||
-      result.semantic_acceptance !== "pending" || !task.project_id || !sourceId || !hash(task.action_hash) || !hash(result.input_hash) ||
-      files.length !== 1 || !hash(files[0].sha256)) return null;
-  const provenance:TaskProvenance = {kind:"abstract-task",version:1,project_id:task.project_id,source_record_id:sourceId,
-    task_id:task.id,input_hash:result.input_hash,action_hash:task.action_hash,draft_sha256:files[0].sha256};
-  return <TaskSummaryChoice key={JSON.stringify(provenance)} provenance={provenance} t={t} onSaved={onSaved} active={active} onSessionChange={onSessionChange} onSavePendingChange={onSavePendingChange}/>;
+  const provenance:TaskProvenance | undefined = task.operation === "paper-abstract-draft" && task.status === "awaiting_human" && result?.status === "completed" &&
+      result.semantic_acceptance === "pending" && task.project_id && sourceId && hash(task.action_hash) && hash(result.input_hash) &&
+      files.length === 1 && hash(files[0].sha256)
+    ? {kind:"abstract-task",version:1,project_id:task.project_id,source_record_id:sourceId,
+      task_id:task.id,input_hash:result.input_hash,action_hash:task.action_hash,draft_sha256:files[0].sha256} : undefined;
+  return <>
+    {provenance && <TaskSummaryChoice key={JSON.stringify(provenance)} provenance={provenance} t={t} onSaved={onSaved} active={active} onSessionChange={onSessionChange} onSavePendingChange={onSavePendingChange} onRecoveryChange={recoveryChange}/>}
+    {recoveries.filter(item => item.invalidated && item.provenance.task_id === task.id && item.provenance.project_id === task.project_id).map(item =>
+      <section key={item.id} className="working-summary-session" aria-label={t("taskWorkingSummaryRecovery")}>
+        <h4>{t("taskWorkingSummaryRecovery")}</h4>
+        <p role="status">{t("taskWorkingSummaryRecoveryHelp")}</p>
+        <p className="small muted">{t("taskWorkingSummaryRecoveryLifetime")}</p>
+        <p className="small">{t("sourceId")}: <code>{item.provenance.source_record_id}</code></p>
+        <label className="field field-wide">{t("taskWorkingSummaryRetainedText")}<textarea rows={10} readOnly value={item.text}/></label>
+        <details><summary>{t("taskWorkingSummaryOriginalBinding")}</summary>
+          <ReadText value={JSON.stringify(item.provenance, null, 2)}/><code>{item.revision}</code>
+        </details>
+        <button type="button" className="button secondary" disabled={!active} onClick={() => {if(active)recoveryChange({kind:"discard",id:item.id});}}>{t("taskWorkingSummaryDiscardRecovery")}</button>
+      </section>)}
+  </>;
 }
-function TaskSummaryChoice({provenance,t,onSaved,active,onSessionChange,onSavePendingChange}:{provenance:TaskProvenance;t:Translate;onSaved:()=>Promise<void>;active:boolean;onSessionChange?:(open:boolean)=>void; onSavePendingChange?:(pending:boolean)=>void}) {
+function TaskSummaryChoice({provenance,t,onSaved,active,onSessionChange,onSavePendingChange,onRecoveryChange}:{provenance:TaskProvenance;t:Translate;onSaved:()=>Promise<void>;active:boolean;onSessionChange?:(open:boolean)=>void; onSavePendingChange?:(pending:boolean)=>void; onRecoveryChange:(update:RecoveryUpdate)=>void}) {
   const [open,setOpen] = useState(false);
   useEffect(() => {
     onSessionChange?.(open);
@@ -252,7 +303,7 @@ function TaskSummaryChoice({provenance,t,onSaved,active,onSessionChange,onSavePe
     <p className="small muted">{t("taskWorkingSummaryPending")}</p>
     <button type="button" ref={opener} className="button secondary" disabled={!active || open} onClick={()=>{if(activeRef.current)setOpen(true);}}>{t("taskWorkingSummaryOpen")}</button>
     {open && <SummarySession sourceId={provenance.source_record_id} projectId={provenance.project_id}
-      selection={{kind:"task",provenance}} active={active} t={t} onSaved={onSaved} onSavePendingChange={onSavePendingChange} onClose={()=>{
+      selection={{kind:"task",provenance}} active={active} t={t} onSaved={onSaved} onSavePendingChange={onSavePendingChange} onRecoveryChange={onRecoveryChange} onClose={()=>{
         if(!activeRef.current)return;
         setOpen(false); queueMicrotask(()=>{if(activeRef.current && opener.current?.isConnected)opener.current.focus();});
       }}/>}
