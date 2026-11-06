@@ -1,6 +1,8 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  taskWorkingSummaryOpen: "Edit this draft as a working summary",
+  taskWorkingSummaryPending: "Human review remains pending. Opening or saving working prose does not accept this candidate or change the source.",
   workingSummaryTitle: "Working summary",
   workingSummaryClose: "Close review",
   workingSummaryReview: "Review generated draft",
@@ -821,6 +823,8 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  taskWorkingSummaryOpen: "將此草稿編輯為工作摘要",
+  taskWorkingSummaryPending: "仍待人工審查。開啟或儲存工作文字不會驗收此候選草稿，也不會更動原始來源。",
   workingSummaryTitle: "工作摘要",
   workingSummaryClose: "關閉檢視",
   workingSummaryReview: "檢視生成草稿",

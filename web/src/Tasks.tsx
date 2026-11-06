@@ -11,6 +11,7 @@ import {
 import { operationLabel, type Translate } from "./i18n";
 import { AbstractDraftReview, uncertainMutation } from "./AbstractDraft";
 import type { Operation, Task } from "./types";
+import { TaskWorkingSummaryEditor } from "./WorkingSummaryEditor";
 import { taskFreshnessStatus } from "./taskFreshness";
 
 export interface TaskComposerProps {
@@ -89,6 +90,7 @@ export function parseOutputArtifacts(
 }
 
 export interface TaskCardProps {
+  active?: boolean;
   task: Task;
   runnerAvailable?: boolean;
   onReturnToSource?: (sourceId: string) => void;
@@ -98,6 +100,7 @@ export interface TaskCardProps {
 }
 export function TaskCard({
   task,
+  active = true,
   approvalMessage,
   t,
   onSaved,
@@ -273,6 +276,7 @@ export function TaskCard({
           {!runnerAvailable && (
             <p role="status">{t("abstractRunnerUnavailable")}</p>
           )}
+          <TaskWorkingSummaryEditor active={active} task={task} t={t} onSaved={() => onSaved(t("workingSummarySaved"))}/>
           <AbstractDraftReview
             task={task}
             t={t}

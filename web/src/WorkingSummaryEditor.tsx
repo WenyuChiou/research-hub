@@ -3,36 +3,48 @@ import { api, ApiError, segment } from "./api";
 import { ReadText } from "./components";
 import type { Translate } from "./i18n";
 import { registeredObservationArtifacts, type ObservationReadScope } from "./ObservationPreview";
-import type { Artifact, ResearchRecord } from "./types";
+import type { Artifact, ResearchRecord, Task } from "./types";
 import { normalizeWorkingSummaryText } from "./workingSummaryText";
 
-export interface WorkingSummary {
-  text: string;
-  artifact_id: string;
-  artifact_sha256: string;
-  source_revision: string;
-  previous_revision: string;
-  saved_at: string;
+export interface TaskProvenance {
+  kind: "abstract-task"; version: 1; project_id: string; source_record_id: string;
+  task_id: string; input_hash: string; action_hash: string; draft_sha256: string;
 }
+interface SummaryBase {
+  text: string; source_revision: string; previous_revision: string; saved_at: string;
+}
+export type WorkingSummary = SummaryBase & ({artifact_id: string; artifact_sha256: string; provenance?: never} | {provenance: TaskProvenance; artifact_id?: never; artifact_sha256?: never});
 interface SummaryContext {
   source_record_id: string;
-  artifact_id: string;
-  artifact_sha256: string;
+  artifact_id?: string;
+  artifact_sha256?: string;
+  provenance?: TaskProvenance;
   revision: string;
   draft_text: string;
   working_summary: WorkingSummary | null;
 }
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const isForbiddenRequest = (failure: unknown) => failure instanceof ApiError && failure.status === 403 && failure.code === "forbidden";
+const provenanceKeys = ["kind", "version", "project_id", "source_record_id", "task_id", "input_hash", "action_hash", "draft_sha256"];
+function validProvenance(value: unknown): value is TaskProvenance {
+  const p = value as TaskProvenance | undefined;
+  return Boolean(p && Object.keys(p).length === provenanceKeys.length && provenanceKeys.every(k => Object.hasOwn(p, k)) &&
+    p.kind === "abstract-task" && p.version === 1 && [p.project_id,p.source_record_id,p.task_id].every(v => typeof v === "string" && v.length > 0) &&
+    [p.input_hash,p.action_hash,p.draft_sha256].every(hash));
+}
+function sameProvenance(a: unknown, b: TaskProvenance): boolean {
+  return validProvenance(a) && provenanceKeys.every(k => a[k as keyof TaskProvenance] === b[k as keyof TaskProvenance]);
+}
 function validSummary(value: unknown): value is WorkingSummary {
   const item = value as WorkingSummary | undefined;
   return Boolean(item && typeof item.text === "string" && normalizeWorkingSummaryText(item.text) &&
-    typeof item.artifact_id === "string" && item.artifact_id && hash(item.artifact_sha256) &&
+    (item.provenance ? validProvenance(item.provenance) && Object.keys(item).length === 5 :
+      typeof item.artifact_id === "string" && item.artifact_id && hash(item.artifact_sha256)) &&
     hash(item.source_revision) && hash(item.previous_revision) &&
     typeof item.saved_at === "string" && Number.isFinite(Date.parse(item.saved_at)));
 }
 export function workingSummary(record: ResearchRecord): WorkingSummary | undefined {
-  return record.kind === "source" && validSummary(record.data.working_summary) ? record.data.working_summary : undefined;
+  return record.kind === "source" && validSummary(record.data.working_summary) && (!record.data.working_summary.provenance || record.data.working_summary.provenance.source_record_id === record.id) ? record.data.working_summary : undefined;
 }
 export function SavedWorkingSummary({record, t}: {record: ResearchRecord; t: Translate}) {
   const saved = workingSummary(record);
@@ -72,7 +84,7 @@ function SummarySelection({record, scope, t, onOpen, onSaved, artifacts}: Props 
       onClick={event => {if (active.current) {opener.current = event.currentTarget; setSelected(artifact); onOpen?.();}}}>
       {t("workingSummaryReview")} <code>{artifact.id}</code>
     </button>)}</div>
-    {selected && <SummarySession key={`${selected.id}:${selected.sha256}`} record={record} artifact={selected}
+    {selected && <SummarySession key={`${selected.id}:${selected.sha256}`} sourceId={record.id} selection={{kind:"observation", artifact:selected}}
       projectId={scope.projectId} active={scope.active} t={t} onSaved={onSaved} onClose={() => {
         if (!active.current) return;
         setSelected(undefined);
@@ -82,10 +94,14 @@ function SummarySelection({record, scope, t, onOpen, onSaved, artifacts}: Props 
   </section>;
 }
 type Phase = "loading" | "ready" | "saving" | "checking" | "blocked" | "saved";
-function SummarySession({record, artifact, projectId, active, t, onClose, onSaved}: {
-  record: ResearchRecord; artifact: Artifact; projectId: string; active: boolean; t: Translate;
+type Selection = {kind:"observation"; artifact:Artifact} | {kind:"task"; provenance:TaskProvenance};
+function SummarySession({sourceId, selection, projectId, active, t, onClose, onSaved}: {
+  sourceId: string; selection: Selection; projectId: string; active: boolean; t: Translate;
   onClose: () => void; onSaved?: () => Promise<void>;
 }) {
+  const artifact = selection.kind === "observation" ? selection.artifact : undefined;
+  const provenance = selection.kind === "task" ? selection.provenance : undefined;
+  const selectionId = artifact?.id ?? provenance!.task_id;
   const [context, setContext] = useState<SummaryContext>();
   const [draft, setDraft] = useState("");
   const [phase, setPhase] = useState<Phase>("loading");
@@ -109,14 +125,14 @@ function SummarySession({record, artifact, projectId, active, t, onClose, onSave
     setDraft(value);
   }
   async function read(signal?: AbortSignal) {
-    const result = await api<{ok: true; context: SummaryContext}>(`${path}?source_record_id=${segment(record.id)}&artifact_id=${segment(artifact.id)}`, undefined, signal);
+    const result = await api<{ok: true; context: SummaryContext}>(`${path}?source_record_id=${segment(sourceId)}&${artifact ? `artifact_id=${segment(artifact.id)}` : `task_id=${segment(provenance!.task_id)}`}`, undefined, signal);
     const item = result.context;
-    if (!item || item.source_record_id !== record.id || item.artifact_id !== artifact.id ||
-      item.artifact_sha256 !== artifact.sha256 || !hash(item.revision) || typeof item.draft_text !== "string" ||
+    if (!item || item.source_record_id !== sourceId ||
+      (artifact ? item.artifact_id !== artifact.id || item.artifact_sha256 !== artifact.sha256 || item.provenance !== undefined : !sameProvenance(item.provenance, provenance!) || item.artifact_id !== undefined || item.artifact_sha256 !== undefined) || !hash(item.revision) || typeof item.draft_text !== "string" ||
       (item.working_summary !== null && !validSummary(item.working_summary))) throw new Error("Invalid summary context");
     return item;
   }
-  const bound = (saved: WorkingSummary | null) => saved?.artifact_id === artifact.id && saved.artifact_sha256 === artifact.sha256;
+  const bound = (saved: WorkingSummary | null) => Boolean(saved && (artifact ? saved.artifact_id === artifact.id && saved.artifact_sha256 === artifact.sha256 : sameProvenance(saved.provenance, provenance!)));
   useEffect(() => {
     alive.current = true;
     const controller = new AbortController();
@@ -155,11 +171,11 @@ function SummarySession({record, artifact, projectId, active, t, onClose, onSave
     attempted.current = {text:submittedText, revision:context.revision, draft:latestDraft.current};
     try {
       const result = await api<{ok:true; record:ResearchRecord; reused:boolean}>(path, {
-        source_record_id:record.id, artifact_id:artifact.id, artifact_sha256:artifact.sha256,
+        source_record_id:sourceId, ...(artifact ? {artifact_id:artifact.id, artifact_sha256:artifact.sha256} : {task_id:provenance!.task_id, provenance}),
         expected_revision:context.revision, text:submittedText,
       });
       const saved = workingSummary(result.record);
-      if (result.record.id !== record.id || !saved || !bound(saved) || saved.text !== submittedText || saved.previous_revision !== context.revision)
+      if (result.record.id !== sourceId || !saved || !bound(saved) || saved.text !== submittedText || saved.previous_revision !== context.revision)
         throw new Error("Unconfirmed working summary write");
       if (alive.current) await announceSaved();
     } catch (failure) {
@@ -195,8 +211,8 @@ function SummarySession({record, artifact, projectId, active, t, onClose, onSave
     className="working-summary-session" onKeyDown={event => {
       if (activeRef.current && event.key === "Escape") {event.stopPropagation(); if (phase !== "saving") onClose();}
     }}>
-    <h4 id={`${id}-heading`} ref={heading} tabIndex={-1}>{t("workingSummaryReview")} <code>{artifact.id}</code></h4>
-    <p id={`${id}-help`} className="small muted">{t("workingSummaryHelp")}</p>
+    <h4 id={`${id}-heading`} ref={heading} tabIndex={-1}>{t(provenance ? "taskWorkingSummaryOpen" : "workingSummaryReview")} <code>{selectionId}</code></h4>
+    <p id={`${id}-help`} className="small muted">{t("workingSummaryHelp")}{provenance && <> {t("taskWorkingSummaryPending")}</>}</p>
     {phase === "loading" && <p role="status">{t("workingSummaryLoading")}</p>}
     {context && <label className="field field-wide">{t("workingSummaryText")}<textarea ref={input} rows={10}
       value={draft} disabled={!active || phase === "saving" || phase === "saved"} onChange={event => {if (activeRef.current) updateDraft(event.target.value);}}/></label>}
@@ -210,4 +226,31 @@ function SummarySession({record, artifact, projectId, active, t, onClose, onSave
       <button type="button" className="button secondary" disabled={!active || phase === "saving"} onClick={onClose}>{t(phase === "saved" ? "workingSummaryClose" : "cancel")}</button>
     </div>
   </div>;
+}
+
+/** Task candidates retain their own provenance; they are never registered observations. */
+export function TaskWorkingSummaryEditor({task, t, onSaved, active = true}: {task:Task; t:Translate; onSaved:()=>Promise<void>; active?:boolean}) {
+  const result = task.result as {status?:string; semantic_acceptance?:string; input_hash?:string; artifacts?:{path?:string;sha256?:string}[]} | undefined;
+  const sourceId = task.request?.research_draft?.source_pack?.source_record_id;
+  const files = Array.isArray(result?.artifacts) ? result.artifacts.filter(a => a && typeof a.path === "string" && /^proposals\/[^/]+\/draft\.md$/.test(a.path)) : [];
+  if (task.operation !== "paper-abstract-draft" || task.status !== "awaiting_human" || result?.status !== "completed" ||
+      result.semantic_acceptance !== "pending" || !task.project_id || !sourceId || !hash(task.action_hash) || !hash(result.input_hash) ||
+      files.length !== 1 || !hash(files[0].sha256)) return null;
+  const provenance:TaskProvenance = {kind:"abstract-task",version:1,project_id:task.project_id,source_record_id:sourceId,
+    task_id:task.id,input_hash:result.input_hash,action_hash:task.action_hash,draft_sha256:files[0].sha256};
+  return <TaskSummaryChoice key={JSON.stringify(provenance)} provenance={provenance} t={t} onSaved={onSaved} active={active}/>;
+}
+function TaskSummaryChoice({provenance,t,onSaved,active}:{provenance:TaskProvenance;t:Translate;onSaved:()=>Promise<void>;active:boolean}) {
+  const [open,setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  const activeRef = useRef(active); activeRef.current = active;
+  return <section className="working-summary-editor" aria-label={t("taskWorkingSummaryOpen")}>
+    <p className="small muted">{t("taskWorkingSummaryPending")}</p>
+    <button type="button" ref={opener} className="button secondary" disabled={!active || open} onClick={()=>{if(activeRef.current)setOpen(true);}}>{t("taskWorkingSummaryOpen")}</button>
+    {open && <SummarySession sourceId={provenance.source_record_id} projectId={provenance.project_id}
+      selection={{kind:"task",provenance}} active={active} t={t} onSaved={onSaved} onClose={()=>{
+        if(!activeRef.current)return;
+        setOpen(false); queueMicrotask(()=>{if(activeRef.current && opener.current?.isConnected)opener.current.focus();});
+      }}/>}
+  </section>;
 }
