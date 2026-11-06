@@ -1,6 +1,8 @@
 import type { Locale, Operation, ProjectDetail } from "./types";
 
 export const en = {
+  taskWorkingSummarySavingFirst: "A working-summary save is still pending. Wait for it to finish before changing this task.",
+  taskWorkingSummaryFinishFirst: "Save and close the working summary, or cancel its editor, before cancelling this task or recording a decision.",
   taskWorkingSummaryOpen: "Edit this draft as a working summary",
   taskWorkingSummaryPending: "Human review remains pending. Opening or saving working prose does not accept this candidate or change the source.",
   workingSummaryTitle: "Working summary",
@@ -823,6 +825,8 @@ export const en = {
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
+  taskWorkingSummarySavingFirst: "工作摘要仍在儲存中，請等待請求結束後再變更此任務。",
+  taskWorkingSummaryFinishFirst: "請先儲存並關閉工作摘要，或取消摘要編輯，再取消任務或記錄審查決定。",
   taskWorkingSummaryOpen: "將此草稿編輯為工作摘要",
   taskWorkingSummaryPending: "仍待人工審查。開啟或儲存工作文字不會驗收此候選草稿，也不會更動原始來源。",
   workingSummaryTitle: "工作摘要",

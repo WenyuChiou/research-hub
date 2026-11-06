@@ -95,9 +95,9 @@ function SummarySelection({record, scope, t, onOpen, onSaved, artifacts}: Props 
 }
 type Phase = "loading" | "ready" | "saving" | "checking" | "blocked" | "saved";
 type Selection = {kind:"observation"; artifact:Artifact} | {kind:"task"; provenance:TaskProvenance};
-function SummarySession({sourceId, selection, projectId, active, t, onClose, onSaved}: {
+function SummarySession({sourceId, selection, projectId, active, t, onClose, onSaved, onSavePendingChange}: {
   sourceId: string; selection: Selection; projectId: string; active: boolean; t: Translate;
-  onClose: () => void; onSaved?: () => Promise<void>;
+  onClose: () => void; onSaved?: () => Promise<void>; onSavePendingChange?:(pending:boolean)=>void;
 }) {
   const artifact = selection.kind === "observation" ? selection.artifact : undefined;
   const provenance = selection.kind === "task" ? selection.provenance : undefined;
@@ -167,7 +167,7 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
   }
   async function save() {
     if (!activeRef.current || busy.current || phase !== "ready" || !context || !submittedText || tooLong) return;
-    busy.current = true; setPhase("saving"); setMessage(undefined);
+    busy.current = true; onSavePendingChange?.(true); setPhase("saving"); setMessage(undefined);
     attempted.current = {text:submittedText, revision:context.revision, draft:latestDraft.current};
     try {
       const result = await api<{ok:true; record:ResearchRecord; reused:boolean}>(path, {
@@ -183,7 +183,7 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
         setPhase("blocked");
         setMessage(isForbiddenRequest(failure) ? "workingSummaryForbidden" : failure instanceof ApiError && failure.code === "stale_input" ? "workingSummaryStale" : "workingSummaryUnknown");
       }
-    } finally {busy.current = false;}
+    } finally {busy.current = false; onSavePendingChange?.(false);}
   }
   async function check() {
     if (!activeRef.current || busy.current) return;
@@ -229,7 +229,7 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
 }
 
 /** Task candidates retain their own provenance; they are never registered observations. */
-export function TaskWorkingSummaryEditor({task, t, onSaved, active = true}: {task:Task; t:Translate; onSaved:()=>Promise<void>; active?:boolean}) {
+export function TaskWorkingSummaryEditor({task, t, onSaved, active = true, onSessionChange, onSavePendingChange}: {task:Task; t:Translate; onSaved:()=>Promise<void>; active?:boolean; onSessionChange?:(open:boolean)=>void; onSavePendingChange?:(pending:boolean)=>void}) {
   const result = task.result as {status?:string; semantic_acceptance?:string; input_hash?:string; artifacts?:{path?:string;sha256?:string}[]} | undefined;
   const sourceId = task.request?.research_draft?.source_pack?.source_record_id;
   const files = Array.isArray(result?.artifacts) ? result.artifacts.filter(a => a && typeof a.path === "string" && /^proposals\/[^/]+\/draft\.md$/.test(a.path)) : [];
@@ -238,17 +238,21 @@ export function TaskWorkingSummaryEditor({task, t, onSaved, active = true}: {tas
       files.length !== 1 || !hash(files[0].sha256)) return null;
   const provenance:TaskProvenance = {kind:"abstract-task",version:1,project_id:task.project_id,source_record_id:sourceId,
     task_id:task.id,input_hash:result.input_hash,action_hash:task.action_hash,draft_sha256:files[0].sha256};
-  return <TaskSummaryChoice key={JSON.stringify(provenance)} provenance={provenance} t={t} onSaved={onSaved} active={active}/>;
+  return <TaskSummaryChoice key={JSON.stringify(provenance)} provenance={provenance} t={t} onSaved={onSaved} active={active} onSessionChange={onSessionChange} onSavePendingChange={onSavePendingChange}/>;
 }
-function TaskSummaryChoice({provenance,t,onSaved,active}:{provenance:TaskProvenance;t:Translate;onSaved:()=>Promise<void>;active:boolean}) {
+function TaskSummaryChoice({provenance,t,onSaved,active,onSessionChange,onSavePendingChange}:{provenance:TaskProvenance;t:Translate;onSaved:()=>Promise<void>;active:boolean;onSessionChange?:(open:boolean)=>void; onSavePendingChange?:(pending:boolean)=>void}) {
   const [open,setOpen] = useState(false);
+  useEffect(() => {
+    onSessionChange?.(open);
+    return () => onSessionChange?.(false);
+  }, [open, onSessionChange]);
   const opener = useRef<HTMLButtonElement>(null);
   const activeRef = useRef(active); activeRef.current = active;
   return <section className="working-summary-editor" aria-label={t("taskWorkingSummaryOpen")}>
     <p className="small muted">{t("taskWorkingSummaryPending")}</p>
     <button type="button" ref={opener} className="button secondary" disabled={!active || open} onClick={()=>{if(activeRef.current)setOpen(true);}}>{t("taskWorkingSummaryOpen")}</button>
     {open && <SummarySession sourceId={provenance.source_record_id} projectId={provenance.project_id}
-      selection={{kind:"task",provenance}} active={active} t={t} onSaved={onSaved} onClose={()=>{
+      selection={{kind:"task",provenance}} active={active} t={t} onSaved={onSaved} onSavePendingChange={onSavePendingChange} onClose={()=>{
         if(!activeRef.current)return;
         setOpen(false); queueMicrotask(()=>{if(activeRef.current && opener.current?.isConnected)opener.current.focus();});
       }}/>}
