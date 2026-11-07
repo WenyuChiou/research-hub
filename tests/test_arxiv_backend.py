@@ -108,12 +108,12 @@ def test_arxiv_year_filter_applied_client_side(mock_get, _mock_sleep):
 
 @patch("research_hub.search.arxiv_backend.time.sleep")
 @patch("research_hub.search.arxiv_backend.requests.get")
-def test_arxiv_pdf_url_built_from_arxiv_id(mock_get, _mock_sleep):
+def test_arxiv_pdf_url_built_from_observed_version(mock_get, _mock_sleep):
     mock_get.return_value = _Response(_feed(_entry("2411.12345", 2024)))
 
     result = ArxivBackend().search("llm")
 
-    assert result[0].pdf_url == "https://arxiv.org/pdf/2411.12345.pdf"
+    assert result[0].pdf_url == "https://arxiv.org/pdf/2411.12345v2.pdf"
 
 
 def test_build_arxiv_query_splits_into_and_terms():
