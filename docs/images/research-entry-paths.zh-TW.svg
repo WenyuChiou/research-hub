@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="480" viewBox="0 0 320 480" role="img" aria-labelledby="title description" lang="zh-TW">
+  <title id="title">兩種開始方式</title>
+  <desc id="description">可在 AI 主機中研究，不必安裝 Hub；或安裝 Hub，檢視已保存來源與提案。任務交接是選用步驟，由人檢視證據。保存不等於閱讀或核准，也不會自動發布。</desc>
+  <rect width="320" height="480" rx="12" fill="#ffffff" stroke="#64748b"/>
+  <g font-family="sans-serif" fill="#172b4d">
+    <text id="heading" x="16" y="34" font-size="20" font-weight="700">選擇你的起點</text>
+    <text id="subheading" x="16" y="59" font-size="16" font-weight="400">可選其中一條，或兩者並用。</text>
+    <g id="host">
+      <rect x="10" y="78" width="300" height="120" rx="8" fill="#eff6ff" stroke="#1d4ed8"/>
+      <text id="host-title" x="20" y="105" font-size="19" font-weight="700">A · 你的 AI 主機</text>
+      <text id="host-1" x="20" y="130" font-size="16" font-weight="400">使用可用的研究工具。</text>
+      <text id="host-2" x="20" y="154" font-size="16" font-weight="400">檢查來源與讀取限制。</text>
+      <text id="host-3" x="20" y="178" font-size="16" font-weight="400">不需要 Hub 或整合帳號。</text>
+    </g>
+    <g id="hub">
+      <rect x="10" y="214" width="300" height="120" rx="8" fill="#f0fdfa" stroke="#0f766e"/>
+      <text id="hub-title" x="20" y="241" font-size="19" font-weight="700">B · Hub 工作區</text>
+      <text id="hub-1" x="20" y="266" font-size="16" font-weight="400">安裝並啟動 Hub。</text>
+      <text id="hub-2" x="20" y="290" font-size="16" font-weight="400">檢視已保存的來源與提案。</text>
+      <text id="hub-3" x="20" y="314" font-size="16" font-weight="400">選用：交接 AI 任務。</text>
+    </g>
+    <g id="review">
+      <rect x="10" y="350" width="300" height="120" rx="8" fill="#f8fafc" stroke="#64748b"/>
+      <text id="review-title" x="20" y="377" font-size="19" font-weight="700">由你檢視並決定</text>
+      <text id="review-1" x="20" y="402" font-size="16" font-weight="400">檢查證據與提案。</text>
+      <text id="review-2" x="20" y="426" font-size="16" font-weight="400">保存不等於閱讀或核准。</text>
+      <text id="review-3" x="20" y="450" font-size="16" font-weight="400">不會自動發布。</text>
+    </g>
+  </g>
+</svg>
