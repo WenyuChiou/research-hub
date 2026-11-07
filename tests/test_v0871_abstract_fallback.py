@@ -47,6 +47,7 @@ def test_is_substantive_rejects_empty_and_whitespace() -> None:
 def test_openalex_reconstructs_inverted_index() -> None:
     """OpenAlex stores `abstract_inverted_index: {word: [positions]}`."""
     fake_payload = {
+        "doi": "10.test/abc",
         "abstract_inverted_index": {
             "This": [0],
             "is": [1],

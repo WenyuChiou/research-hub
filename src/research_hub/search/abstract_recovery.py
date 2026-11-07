@@ -12,6 +12,7 @@ import requests
 from research_hub.audit import http_request, read_json
 
 from research_hub._useragent import user_agent
+from research_hub.utils.doi import normalize_doi
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,12 @@ class RecoveredAbstract:
     oa_url: str = ""
 
 
+def _matches_requested_doi(requested: str, observed: object) -> bool:
+    """Require an explicit matching provider DOI; absent identity is unknown."""
+    expected = normalize_doi(requested)
+    return bool(expected) and isinstance(observed, str) and normalize_doi(observed) == expected
+
+
 def _recover_from_crossref(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
     try:
         from research_hub.search.crossref import _extract_crossref_abstract
@@ -38,6 +45,8 @@ def _recover_from_crossref(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
         )
         if response.status_code == 200:
             work = (read_json(response).get("message") or {})
+            if not _matches_requested_doi(doi, work.get("DOI")):
+                return RecoveredAbstract(text="", source="")
             abstract = _extract_crossref_abstract(work)
             if abstract:
                 logger.info("abstract recovery: doi=%s source=crossref", doi)
@@ -57,6 +66,8 @@ def _recover_from_unpaywall(doi: str, *, timeout: int = 10) -> RecoveredAbstract
         )
         if response.status_code == 200:
             data = read_json(response) or {}
+            if not _matches_requested_doi(doi, data.get("doi")):
+                return RecoveredAbstract(text="", source="")
             best_oa = (data.get("best_oa_location") or {})
             oa_url = best_oa.get("url", "") or ""
             if oa_url:
@@ -71,13 +82,17 @@ def _recover_from_semantic_scholar(doi: str, *, timeout: int = 10) -> RecoveredA
     try:
         response = http_request("get",
             f"https://api.semanticscholar.org/graph/v1/paper/DOI:{quote(doi.strip(), safe='')}",
-            params={"fields": "abstract,tldr"},
+            params={"fields": "abstract,tldr,externalIds"},
             timeout=timeout,
             headers={"User-Agent": _USER_AGENT},
         )
         if response.status_code != 200:
             return RecoveredAbstract(text="", source="")
         data = read_json(response) or {}
+        external_ids = data.get("externalIds")
+        observed_doi = external_ids.get("DOI") if isinstance(external_ids, dict) else None
+        if not _matches_requested_doi(doi, observed_doi):
+            return RecoveredAbstract(text="", source="")
         abstract = str(data.get("abstract", "") or "").strip()
         if abstract:
             logger.info("abstract recovery: doi=%s source=s2", doi)
@@ -141,6 +156,8 @@ def _recover_from_openalex(doi: str, *, timeout: int = 10) -> RecoveredAbstract:
         if response.status_code != 200:
             return RecoveredAbstract(text="", source="")
         data = read_json(response) or {}
+        if not _matches_requested_doi(doi, data.get("doi")):
+            return RecoveredAbstract(text="", source="")
         inverted = data.get("abstract_inverted_index")
         if not isinstance(inverted, dict) or not inverted:
             return RecoveredAbstract(text="", source="")
@@ -273,6 +290,7 @@ def recover_abstract(doi: str, *, timeout: int = 10, pdf_path: Path | None = Non
     the PDF text as a last resort. Fail-safe: returns nothing rather
     than write garbage. Pass pdf_path=None (the default) to disable.
     """
+    doi = normalize_doi(doi)
     if not doi:
         return RecoveredAbstract(text="", source="")
 
