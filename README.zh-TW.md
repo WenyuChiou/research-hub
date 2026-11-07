@@ -18,6 +18,16 @@
 
 ![概念圖：研究問題串連文獻、證據、分析、稿件提案與人工審查；輸入變動後，相關工作需要重新檢視。](docs/images/workspace-lifecycle.zh-TW.png)
 
+## 選擇你的起點
+
+![兩個起點：在工具可用的相容 AI 主機中研究，不必安裝 Hub；或安裝 Hub，檢視已保存來源與提案。任務交接是選用步驟。由人檢視來源與證據；保存不等於閱讀或核准，也不會自動發布。](docs/images/research-entry-paths.zh-TW.svg)
+
+**使用現有 AI 主機：** 需要可用的搜尋與閱讀工具，以及[可攜式技能與參考檔案](skills/research-hub/)。不需要安裝 Hub，也不需要 Zotero、Obsidian 或 NotebookLM。請見[技能載入方式](docs/setup.md#installed-skill-files)與[主機支援表](docs/ai-host-support.md)；Codex MCP 尚未通過版本發布驗證。
+
+**第一個請求：**「幫我找 LLM 模擬人類決策的文獻，列出來源連結、相關性、版本及實際讀取範圍。」預期在主機中取得來源清單，明列未知資訊與不可用的工具或來源，不代表自動全文閱讀或保存到 Hub。
+
+**使用 Hub 工作區：** 需要 Python 3.10+、Git 及本機瀏覽器。[依下方已測試的示範安裝並啟動](#workspace-preview)，檢視兩筆種子書目及其讀取限制。選用的[成果保存](docs/contracts/native-discovery-view.md)與[任務交接](docs/workspace-guide.zh-TW.md#writing-adapter-preview)需要選定目的地與授權。
+
 <a id="start-here"></a>
 <a id="first-run-checklist"></a>
 
@@ -27,7 +37,7 @@
 
 ### 在本機試用工作區
 
-建議先試用下方工作區；如果只想看已發布的舊版文獻儀表板，再看下面的選項。
+想使用 Hub 工作區，請選這條路徑；如果只想看已發布的舊版文獻儀表板，再看下面的選項。
 
 需要 Python 3.10+ 與 Git。以下從原始碼安裝工作區，並在**新建或空白的** `workspace-demo` 目錄建立示範資料。這條路徑與 PyPI 發布套件不同：套件版本號不保證包含目前原始碼的工作區功能。
 
