@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 ARXIV_BASE = "http://export.arxiv.org/api/query"
 _USER_AGENT = user_agent()
-_ARXIV_ID_RE = re.compile(r"/abs/(\d{4}\.\d{4,5})(?:v\d+)?$")
+_ARXIV_ID_RE = re.compile(r"^https?://(?:export\.)?arxiv\.org/abs/(\d{4}\.\d{4,5})(v\d+)?$")
 _DOI_RE = re.compile(r"^10\.\d{4,}/\S+$", re.IGNORECASE)
 _ARXIV_RE = re.compile(r"^\d{4}\.\d{4,5}(?:v\d+)?$")
 _NS = {
@@ -112,6 +112,8 @@ class ArxivBackend:
         if not match:
             return None
         arxiv_id = match.group(1)
+        observed_id = arxiv_id + (match.group(2) or "")
+        abstract = _collapse_whitespace(entry.findtext("atom:summary", default="", namespaces=_NS))
         published = entry.findtext("atom:published", default="", namespaces=_NS)
         year = int(published[:4]) if len(published) >= 4 and published[:4].isdigit() else None
         doi = entry.findtext("arxiv:doi", default="", namespaces=_NS) or ""
@@ -131,7 +133,8 @@ class ArxivBackend:
             title=_collapse_whitespace(entry.findtext("atom:title", default="", namespaces=_NS)),
             doi=doi,
             arxiv_id=arxiv_id,
-            abstract=_collapse_whitespace(entry.findtext("atom:summary", default="", namespaces=_NS)),
+            abstract=abstract,
+            abstract_source=self.name if abstract else "",
             year=year,
             authors=[
                 name
@@ -145,7 +148,7 @@ class ArxivBackend:
             doc_type="preprint",
             url=paper_url or "",
             citation_count=0,
-            pdf_url=f"https://arxiv.org/pdf/{arxiv_id}.pdf",
+            pdf_url=f"https://arxiv.org/pdf/{observed_id}.pdf",
             source=self.name,
             categories=_extract_categories(entry),
             pages=pages,
@@ -214,7 +217,8 @@ class ArxivBackend:
                 "sortOrder": "descending",
             }
         elif _ARXIV_RE.match(cleaned):
-            params = {"id_list": cleaned.split("v", 1)[0]}
+            # A requested revision must not silently become the latest one.
+            params = {"id_list": cleaned}
         else:
             return None
 
@@ -227,4 +231,13 @@ class ArxivBackend:
             logger.debug("arXiv lookup failed: %s", exc)
             return None
         results = self._parse_feed(response.text)
+        if _ARXIV_RE.match(cleaned):
+            for result in results:
+                observed = _ARXIV_ID_RE.fullmatch(result.url)
+                if observed is None or observed.group(1) != cleaned.split("v", 1)[0]:
+                    continue
+                if "v" in cleaned and observed.group(1) + (observed.group(2) or "") != cleaned:
+                    continue
+                return result
+            return None
         return results[0] if results else None
