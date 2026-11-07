@@ -326,7 +326,21 @@ def store_result(workspace, task, response):
 
 
 def parse_response(raw: str) -> dict:
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > 100_000:
+    return _parse_response(raw, max_bytes=100_000)
+
+
+def parse_resolved_response(raw: str) -> dict:
+    """Decode stored output whose derived offsets can exceed the raw-input cap.
+
+    The candidate reader bounds the stored bytes at 200000, then compares this
+    envelope with the freshly resolved, schema-validated original response.
+    This parser must not be used for incoming or stored raw responses.
+    """
+    return _parse_response(raw, max_bytes=200_000)
+
+
+def _parse_response(raw: str, *, max_bytes: int) -> dict:
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise WorkspaceError("Restricted draft response is oversized", "invalid_output")
     def unique(pairs):
         result = {}

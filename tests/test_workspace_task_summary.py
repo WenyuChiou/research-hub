@@ -56,6 +56,128 @@ def reseal(task):
     task['action_hash'] = digest({'request': task['request'], 'result': task['result']})
 
 
+@pytest.fixture(params=['file', 'blob'])
+def near_limit_candidate(tmp_path, request):
+    from research_hub.workspace.research_draft import parse_response
+    service = WorkspaceService(tmp_path)
+    w = service.workspace
+    w.create_project(id='study', title='Synthetic study', archetype='review', goal='Local test')
+    # The entire 4000-character source is one uniquely occurring quote. Six,
+    # six and four statements stay inside the section and total-count limits.
+    text = 'q' * 4000
+    if request.param == 'blob':
+        import base64
+        from research_hub.workspace._sqlite_text_intake import SQLiteTextIntake
+        w.initialize_preparations()
+        result = SQLiteTextIntake(w).save('study', intake_request={
+            'version': 1, 'workspace_instance_id': w.preparation_namespace(), 'key': str(uuid.uuid4())},
+            title='Synthetic source', reading_scope='abstract', input_kind='paste', format='txt',
+            content_base64=base64.b64encode(text.encode()).decode())
+        source, artifact = result['record'], result['artifact']
+    else:
+        (tmp_path / 'source.txt').write_text(text, encoding='utf-8')
+        source = w.add_record('study', kind='source', data={
+            'title': 'Synthetic source', 'locator': 'https://example.invalid/limit', 'human_acceptance': 'pending'})
+        artifact = w.register_artifact('study', path='source.txt', role='evidence', source_record_id=source['id'])
+    task = service.tasks.create('study', operation='paper-abstract-draft', mode='handoff', source_selection={
+        'source_record_id': source['id'], 'artifact_id': artifact['id'], 'start': 0, 'end': len(text)})
+    response = {section: [{'text': 's' * 2210, 'quote': text} for _ in range(count)]
+                for section, count in [('summary', 6), ('findings', 6), ('methodology', 4), ('limitations', 0)]}
+    raw = encoded(response)
+    assert len(raw.encode('utf-8')) == 99_787
+    task = service.tasks.import_result(task['id'], draft_response=parse_response(raw), input_hash=digest(task['request']))
+    resolved = next(a for a in task['result']['artifacts'] if a['path'].endswith('/draft-response.json'))
+    assert (w.root / resolved['path']).stat().st_size == 100_123
+    return service, source, artifact, task
+
+
+def test_near_limit_quote_response_can_read_and_save_working_summary(near_limit_candidate):
+    service, source, artifact, task = near_limit_candidate
+    w = service.workspace
+    before = w.db_path.read_bytes()
+    files = {a['path']: (w.root / a['path']).read_bytes() for a in task['result']['artifacts']}
+    args = request(near_limit_candidate)
+    assert context(near_limit_candidate)['draft_text'] == task['result']['prose']
+    assert w.db_path.read_bytes() == before
+    result = save(near_limit_candidate, args)
+    saved = result['record']['data']['working_summary']
+    assert saved['text'] == args['text'] and saved['provenance'] == args['provenance']
+    assert {k: v for k, v in result['record']['data'].items() if k != 'working_summary'} == source['data']
+    assert save(near_limit_candidate, args)['reused'] is True
+    fresh = WorkspaceService(w.root)
+    assert context((fresh, source, artifact, task))['working_summary'] == saved
+    assert fresh.tasks.get(task['id']) == service.tasks.get(task['id'])
+    assert task['status'] == 'awaiting_human'
+    assert all((w.root / path).read_bytes() == raw for path, raw in files.items())
+    assert w.artifacts('study')[0] == artifact
+    with w.db() as db:
+        assert json.loads(db.execute('SELECT body FROM tasks WHERE id=?', (task['id'],)).fetchone()[0]) == task
+        assert db.execute('SELECT COUNT(*) FROM decisions').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('change, code', [
+    ('over-bound', 'context_limit'), ('malformed', 'invalid_output'),
+    ('duplicate-key', 'invalid_output'), ('mismatch', 'invalid_source'),
+    ('raw-over-bound', 'invalid_output'), ('binding-over-bound', 'invalid_output'),
+    ('raw-field-over-bound', 'invalid_output'), ('raw-count-over-bound', 'invalid_output'),
+])
+def test_near_limit_candidate_still_rejects_invalid_envelopes(near_limit_candidate, change, code):
+    service, _, _, original = near_limit_candidate
+    args = request(near_limit_candidate)
+    task = deepcopy(original)
+    name = ('raw-draft-response.json' if change.startswith('raw-') else
+            'binding-check.json' if change == 'binding-over-bound' else 'draft-response.json')
+    item = next(a for a in task['result']['artifacts'] if a['path'].endswith('/' + name))
+    path = service.workspace.root / item['path']
+    raw = path.read_text(encoding='utf-8')
+    if change in {'over-bound', 'raw-over-bound', 'binding-over-bound'}:
+        limit = 200_000 if change == 'over-bound' else 100_000
+        raw += ' ' * (limit + 1 - len(raw.encode('utf-8')))
+    elif change == 'malformed':
+        raw = '{' + ' ' * 100_000
+    elif change == 'duplicate-key':
+        raw = '{"summary":[],' + raw[1:]
+    else:
+        value = json.loads(raw)
+        if change == 'raw-field-over-bound':
+            # Stay below the raw byte cap so the original per-field validator
+            # must reject this candidate, rather than the envelope-size check.
+            value = {k: [] for k in value}
+            value['summary'] = [{'text': 's' * 4001, 'quote': 'q' * 4000}]
+        elif change == 'raw-count-over-bound':
+            value = {k: [{'text': 's', 'quote': 'q' * 4000} for _ in range(n)]
+                     for k, n in [('summary', 6), ('findings', 6), ('methodology', 5), ('limitations', 0)]}
+        else:
+            value['summary'][0]['text'] = 't' * 2210
+        raw = encoded(value)
+    path.write_text(raw, encoding='utf-8')
+    # Re-sealing the registry must not make malformed or nonmatching stored
+    # content valid. Ordinary unsealed tampering is covered separately below.
+    item['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    reseal(task)
+    replace_task(near_limit_candidate, task)
+    before = service.workspace.db_path.read_bytes()
+    for operation in (lambda: context(near_limit_candidate), lambda: save(near_limit_candidate, args)):
+        with pytest.raises(WorkspaceError) as error:
+            operation()
+        assert error.value.code == code
+        assert service.workspace.db_path.read_bytes() == before
+
+
+def test_raw_and_resolved_parsers_keep_separate_utf8_byte_limits():
+    from research_hub.workspace.research_draft import parse_response, parse_resolved_response
+    for parser, limit in [(parse_response, 100_000), (parse_resolved_response, 200_000)]:
+        raw = '{"value":"' + 'é' * ((limit - 12) // 2) + '"}'
+        assert len(raw.encode('utf-8')) == limit
+        assert parser(raw) == json.loads(raw)
+        with pytest.raises(WorkspaceError, match='oversized'):
+            parser(raw + ' ')
+        with pytest.raises(WorkspaceError, match='JSON envelope'):
+            parser('{"value":{"text":"first","text":"second"}}')
+    with pytest.raises(WorkspaceError, match='oversized'):
+        parse_response('{"value":"' + 'é' * 50_000 + '"}')
+
+
 def test_read_save_retry_restart_and_history_preserve_all_authority(candidate):
     service, source, artifact, task = candidate
     w = service.workspace

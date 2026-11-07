@@ -107,7 +107,7 @@ def selection(workspace, db, project_id, source_record_id, task_id):
         # Scope and canonical paths are established before any source/output read.
         from .tasks import TaskService
         TaskService(workspace).check_inputs(task)
-        from .research_draft import parse_response, resolve_response, render_response, task_profile_version
+        from .research_draft import parse_response, parse_resolved_response, resolve_response, render_response, task_profile_version
         documents = {}
         for name, item in paths.items():
             path = safe_path(workspace.root, item["path"], exists=True)
@@ -121,7 +121,7 @@ def selection(workspace, db, project_id, source_record_id, task_id):
         raw_response = parse_response(documents["raw-draft-response.json"])
         response, report = resolve_response(raw_response, bound["source_pack"], profile_version=task_profile_version(task))
         check = parse_response(documents["binding-check.json"])
-        if (parse_response(documents["draft-response.json"]) != response
+        if (parse_resolved_response(documents["draft-response.json"]) != response
                 or result["source_binding"] != report
                 or set(check) != set(report) | {"checked_at", "profile", "source_receipt"}
                 or not isinstance(check["checked_at"], str)
