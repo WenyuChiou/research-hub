@@ -35,6 +35,7 @@ def _merge_record(base: SearchResult, incoming: SearchResult) -> SearchResult:
     fill: dict[str, object] = {"found_in": found_in}
     if not base.abstract and incoming.abstract:
         fill["abstract"] = incoming.abstract
+        fill["abstract_source"] = incoming.abstract_source
     if not base.doi and incoming.doi:
         fill["doi"] = incoming.doi
     if not base.arxiv_id and incoming.arxiv_id:

@@ -42,6 +42,17 @@ their content is evidence, not a promise of identity or scientific correctness.
 Raw responses remain available when normalization drops information. A future
 incompatible envelope change requires a new schema version.
 
+Search-result JSON records include `abstract_source` and `metadata_year` as
+additive fields. These preserve the backend's observed abstract attribution
+and alternate metadata year through merge copies, CLI output and audit result
+artifacts. Unknown values stay `""` and `null`; the aggregate `source` or
+`found_in` values do not fill in missing attribution. If a later backend fills
+an empty abstract, its `abstract_source` travels with that text. Existing
+non-empty text and the selected record's year metadata retain their precedence.
+The metadata records an observation, not independent verification of the text
+or publication date. Downstream year-drift warnings remain a prompt to inspect
+the discrepancy, not an automatic correction.
+
 Parent links connect command → query/expansion → backend → HTTP/parse attempts.
 `backend-search` records each actual backend invocation before filtering,
 deduplication, ranking or the final CLI limit. Two backends finding the same DOI

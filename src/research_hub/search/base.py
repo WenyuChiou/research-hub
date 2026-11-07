@@ -14,7 +14,10 @@ class SearchResult:
     doi: str = ""
     arxiv_id: str = ""
     abstract: str = ""
+    # These must be fields: merge copies and JSON evidence use dataclass APIs.
+    abstract_source: str = ""
     year: int | None = None
+    metadata_year: int | None = None
     authors: list[str] = field(default_factory=list)
     venue: str = ""
     url: str = ""

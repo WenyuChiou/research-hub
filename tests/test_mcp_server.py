@@ -471,7 +471,9 @@ def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
             "doi": "10.1/a",
             "arxiv_id": "",
             "abstract": "",
+            "abstract_source": "",
             "year": None,
+            "metadata_year": None,
             "authors": [],
             "venue": "",
             "url": "",
@@ -489,6 +491,24 @@ def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
             "pages": "",
         }
     ]
+
+
+
+def test_mcp_enrich_candidates_preserves_observed_source_metadata(monkeypatch):
+    monkeypatch.setattr(
+        "research_hub.search.enrich_candidates",
+        lambda *args, **kwargs: [SearchResult(
+            title="Synthetic paper", doi="10.1234/provenance-fixture",
+            abstract="Observed test text", abstract_source="crossref",
+            source="openalex", year=2026, metadata_year=2025,
+        )],
+    )
+    row = enrich_candidates(["10.1234/provenance-fixture"])[0]
+    assert row["abstract"] == "Observed test text"
+    assert row["abstract_source"] == "crossref"
+    assert row["source"] == "openalex"
+    assert row["metadata_year"] == 2025
+    assert row["year"] == 2026
 
 
 def test_mcp_enrich_candidates_drops_unresolvable(monkeypatch):
