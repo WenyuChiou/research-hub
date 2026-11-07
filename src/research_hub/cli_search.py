@@ -67,10 +67,11 @@ def _search(
             backend_trace=backend_trace,
         )
         print(
-            f"[recall] {recall.queries_run} query phrasings searched -> "
-            f"{recall.total_unique} unique papers; "
-            f"confidence={recall.confidence}"
-            f"{' (saturated)' if recall.saturated else ''}",
+            f"[recall] {recall.queries_run} query phrasings attempted -> "
+            f"{recall.total_unique} unique returned papers; "
+            f"new_per_query={recall.new_per_query}; "
+            f"confidence={recall.confidence} "
+            "(counts only; literature coverage not verified)",
             file=sys.stderr,
         )
     else:

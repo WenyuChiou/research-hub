@@ -85,6 +85,27 @@ configuration and cached verification without a fresh response can be
 `unknown`; they are never promoted to `success_empty`. Audit does not add API
 keys or install optional search dependencies.
 
+## Adversarial search and recall
+
+`search --adversarial` reports query phrasings **attempted**, unique returned
+papers and per-query additions. These counts describe the observed result
+union before the final output limit. They do not measure relevant literature
+recall. A failed backend, a successful empty response and overlapping top-N
+results can all contribute zero new papers.
+
+The Python `RecallReport` keeps its existing fields, but `confidence` now
+returns `unassessed` instead of the old count-derived high/medium/low bands,
+and `saturated` remains false (saturation has **not been established**). Consumers
+must accept the new value rather than treat it as a low confidence estimate.
+CLI result JSON stays unchanged; the evidence qualification is on stderr.
+This applies with or without `--audit-output`, even when all recorded requests
+succeed. Audit success is execution evidence, not proof of literature coverage.
+
+Use the saved variants, backend outcomes and returned records to assess search
+limits and compare closest and contrary work. Missing, truncated or failed
+searches remain unresolved; no gap is declared open from a flat result count.
+No external requests or additional user steps are added by this report change.
+
 ## Failure, concurrency and evidence boundaries
 
 - Attempts and artifacts are never overwritten. A reused output directory

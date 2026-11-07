@@ -231,48 +231,25 @@ def search_papers(
 
 @dataclass
 class RecallReport:
-    """Recall-confidence summary for an adversarial (multi-query) search.
+    """Observed yield from an adversarial (multi-query) search.
 
-    `confidence` answers: how likely is it that the union of results is the
-    near-complete set of relevant papers? It is derived from saturation —
-    whether later query phrasings stopped contributing new papers.
+    ``new_per_query`` counts additions to the union of returned results, not
+    relevant papers in the literature. Ranked/limited responses and swallowed
+    backend failures can both produce zero additions. Even successful,
+    overlapping responses do not establish relevant-work coverage.
+
+    The legacy ``confidence`` and ``saturated`` fields are retained, but this
+    counts-only report leaves recall unassessed and never asserts saturation.
+    Execution evidence in an optional audit is separate from a researcher's
+    assessment of closest/contrary work and search coverage.
     """
 
-    queries_run: int
+    queries_run: int  # query phrasings attempted, not verified successful searches
     variants: list[str]
-    new_per_query: list[int]  # unique papers each successive variant added
-    total_unique: int
-    saturated: bool
-    confidence: str  # "high" | "medium" | "low"
-
-
-# Recall-confidence bands: the share of total unique papers the LAST query
-# variant still contributed. A small share => the corpus is saturated.
-# Magic numbers by design — expect to recalibrate after real-world runs.
-_RECALL_HIGH_THRESHOLD = 0.05
-_RECALL_MED_THRESHOLD = 0.20
-
-
-def _recall_confidence(new_per_query: list[int]) -> tuple[str, bool]:
-    """Estimate recall confidence from the per-variant new-paper counts.
-
-    Saturation: the last variant added (almost) nothing new -> the corpus is
-    likely exhausted -> high confidence. If every variant keeps adding a
-    meaningful share, the corpus is not exhausted -> low confidence. Fewer
-    than two variants, or zero papers found at all, give no saturation
-    signal -> low confidence (zero results is "found nothing", not "thorough").
-    """
-    if len(new_per_query) < 2:
-        return "low", False
-    total = sum(new_per_query)
-    if total == 0:
-        return "low", False
-    last_share = new_per_query[-1] / total
-    if last_share <= _RECALL_HIGH_THRESHOLD:
-        return "high", True
-    if last_share <= _RECALL_MED_THRESHOLD:
-        return "medium", False
-    return "low", False
+    new_per_query: list[int]  # unique returned papers each successive variant added
+    total_unique: int  # union before the final output limit
+    saturated: bool  # False means saturation has not been established
+    confidence: str  # "unassessed": no recall estimate follows from these counts
 
 
 @audited("adversarial-search")
@@ -285,8 +262,10 @@ def adversarial_search(
     per_query_limit: int | None = None,
     **search_kwargs,
 ) -> tuple[list[SearchResult], RecallReport]:
-    """Search under several query phrasings, union the results, and report
-    how confident we can be that recall is complete.
+    """Search under several query phrasings and report observed result yield.
+
+    This expands discovery, but does not estimate literature recall or prove
+    saturation from result counts.
 
     A single query phrasing systematically misses papers that use other
     vocabulary — and a missed paper makes a research gap look open when it is
@@ -302,14 +281,14 @@ def adversarial_search(
 
     variants = audit_call("query-expansion", expand_query, query, max_variants=max_variants, llm_cli=llm_cli)
     if not variants:
-        return [], RecallReport(0, [], [], 0, False, "low")
+        return [], RecallReport(0, [], [], 0, False, "unassessed")
     if per_query_limit is None:
         per_query_limit = max(limit * 3, 30)
 
     rank_by = search_kwargs.pop("rank_by", "smart")
     logger.info(
         "adversarial_search: %d query phrasings (per_query_limit=%d) — "
-        "favours completeness over speed",
+        "expands discovery without establishing recall",
         len(variants),
         per_query_limit,
     )
@@ -322,14 +301,13 @@ def adversarial_search(
             seen.setdefault(result.dedup_key, result)
         new_per_query.append(len(seen) - before)
 
-    confidence, saturated = _recall_confidence(new_per_query)
     report = RecallReport(
         queries_run=len(variants),
         variants=variants,
         new_per_query=new_per_query,
         total_unique=len(seen),
-        saturated=saturated,
-        confidence=confidence,
+        saturated=False,
+        confidence="unassessed",
     )
     ranked = rank(list(seen.values()), rank_by=rank_by, relevance_query=query)
     return ranked[:limit], report

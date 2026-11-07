@@ -32,7 +32,7 @@
         ".research/topic_dossier.bib",
         ".research/topic_dossier.gaps.yml"
       ],
-      "expected_behavior": "Treat as Gate 1 (Open?). Run adversarial-recall search, report a recall-confidence verdict as a headline, and never declare a gap 'open' from corpus-absence alone.",
+      "expected_behavior": "Treat as Gate 1 (Open?). Run adversarial-recall search and report observed yield and unassessed recall as a headline. Do not infer saturation from failed, empty or overlapping limited results; compare closest and contrary work, and never declare a gap 'open' from corpus-absence alone.",
       "must_not_touch": [
         ".paper/"
       ]
