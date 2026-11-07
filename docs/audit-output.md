@@ -62,6 +62,21 @@ expansion records its prompt, returned text and failures before fallback.
 Enrichment records each resolver and abstract-recovery operation. Unknown
 backend names produce explicit `unknown_backend` events.
 
+An explicit modern arXiv revision such as `2411.12345v1` is resolved only by
+the arXiv backend, with that revision retained in the request and checked
+against the returned Atom identity. If arXiv is disabled, unavailable, or
+returns a different/unversioned identity, the candidate stays unresolved;
+work-level OpenAlex/Semantic Scholar metadata does not substitute for it.
+An empty abstract on a pinned revision is not filled from its journal DOI.
+The Python result retains `None` for an unresolved candidate; CLI/MCP output
+omits that candidate as before. Check audit results as well as the exit code.
+
+arXiv results keep their versionless `arxiv_id` for work-level deduplication,
+while their `url` and generated `pdf_url` retain the observed revision when
+present. An absent revision is not invented. These checks bind returned
+metadata and links, not downloaded PDF bytes or scientific claims. They do
+not add revision-aware deduplication or change other resolver contracts.
+
 ## Outcomes
 
 | Outcome | Interpretation |
