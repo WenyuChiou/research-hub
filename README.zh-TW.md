@@ -34,8 +34,8 @@
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
-git checkout --detach c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
+git fetch origin 1f0726a7e92a1231e633963f17236a2f5c1eab8f
+git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f
 ```
 
 依作業系統選一組指令。這裡直接呼叫虛擬環境的 Python，不需要啟用腳本或變更 PowerShell 執行原則。安裝相依套件需要網路。
@@ -60,7 +60,17 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
-開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)。示範包含兩個教學專案。開啟後可選 **繁體中文**，再在**專案**下拉選單中，選擇 `DEMO: three floating-point summation cases`（`summation-demo`，浮點加總範例）或 `DEMO: floating-point reading and review outline`（`review-demo`，文獻回顧範例），再開啟**文獻**看看文獻頁面。這些是教學輸入，不是研究發現，也不需要帳號。使用完畢後按 `Ctrl+C` 停止前景伺服器。
+**第一個任務：檢視已保存的來源及其讀取限制。**
+
+1. 開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)，選 **繁體中文**，再在**專案**選擇 `DEMO: floating-point reading and review outline`（`review-demo`）。
+2. 開啟**文獻**，選取 **What Every Computer Scientist Should Know About Floating-Point Arithmetic**。
+3. 清單應有兩筆種子書目。所選來源會顯示 DOI `10.1145/103162.103163`、**尚未驗證**、**範圍未知**及**尚未保存摘要**。這是預期的示範狀態：沒有下載或摘要來源全文，附帶的篩選決定只是範例，不是你的審查結果。
+
+另一個專案 `DEMO: three floating-point summation cases`（`summation-demo`）包含數值範例與稿件骨架；它的文獻清單是空的。兩個專案都不需要帳號，內容是教學輸入，不是已接受的研究。
+
+使用工作區時請保持終端機執行；按 `Ctrl+C` 停止。下次只需重跑上方 `serve --workspace --root ./workspace-demo` 指令，不要在已保存的工作上重建示範。若建立過程中斷，請檢查保留下來的部分檔案，再選另一個新建或空白的根目錄，並在建立與啟動時使用同一路徑。
+
+本次於 Linux、Python 3.12.14，以原始碼版本 `1f0726a7` 檢查示範建立、啟動及上述雙語任務；不代表已驗證 Windows、macOS 或全新相依套件安裝。詳見[確切驗證範圍](docs/readme-verification-history.md#source-demo-first-task-2026-11-07)。
 
 使用自己的檔案，請直接前往[使用自己的專案](docs/workspace-guide.zh-TW.md#使用自己的專案)；指南中較早的安裝固定版本是歷史紀錄。
 
