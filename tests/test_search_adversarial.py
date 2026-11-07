@@ -1,7 +1,7 @@
 """Adversarial-recall search — query expansion + recall report.
 
 Covers `research_hub.search.query_expansion.expand_query` and the
-`adversarial_search` / `_recall_confidence` additions to `fallback.py`.
+`adversarial_search` observed-yield report in `fallback.py`.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ from research_hub.search import fallback
 from research_hub.search.base import SearchResult
 from research_hub.search.fallback import (
     RecallReport,
-    _recall_confidence,
     adversarial_search,
 )
 from research_hub.search.query_expansion import _deterministic_variants, expand_query
@@ -82,33 +81,6 @@ def test_deterministic_variants_narrow_and_broaden():
     assert "based flood model" in variants                   # broadened (drop first)
 
 
-# --- _recall_confidence -----------------------------------------------------
-
-def test_recall_confidence_single_query_is_low():
-    confidence, saturated = _recall_confidence([40])
-    assert confidence == "low"
-    assert saturated is False
-
-
-def test_recall_confidence_saturated_is_high():
-    confidence, saturated = _recall_confidence([40, 8, 3, 0])
-    assert confidence == "high"
-    assert saturated is True
-
-
-def test_recall_confidence_medium_band():
-    # last variant still adds ~12% -> medium
-    confidence, saturated = _recall_confidence([40, 20, 15, 10])
-    assert confidence == "medium"
-    assert saturated is False
-
-
-def test_recall_confidence_unsaturated_is_low():
-    confidence, saturated = _recall_confidence([40, 38, 35, 33])
-    assert confidence == "low"
-    assert saturated is False
-
-
 # --- adversarial_search -----------------------------------------------------
 
 def _result(doi: str, title: str = "paper") -> SearchResult:
@@ -160,7 +132,8 @@ def test_adversarial_search_empty_expansion_is_safe(monkeypatch):
     results, report = adversarial_search("", limit=10)
     assert results == []
     assert report.queries_run == 0
-    assert report.confidence == "low"
+    assert report.confidence == "unassessed"
+    assert report.saturated is False
 
 
 # --- regression tests (2026-05-21 code review) ------------------------------
@@ -193,16 +166,8 @@ def test_expand_query_still_strips_numbered_list_markers():
     assert not any(v.startswith(("1.", "2)")) for v in out)
 
 
-def test_recall_confidence_zero_results_is_low():
-    """Regression: every variant returning zero papers is 'found nothing',
-    not 'thorough search' — must be low confidence, not high."""
-    confidence, saturated = _recall_confidence([0, 0, 0])
-    assert confidence == "low"
-    assert saturated is False
-
-
-def test_adversarial_search_all_empty_is_low_confidence(monkeypatch):
-    """Variants expand fine but every search returns nothing -> low."""
+def test_adversarial_search_all_empty_leaves_recall_unassessed(monkeypatch):
+    """Finding nothing does not measure recall, even as low confidence."""
     monkeypatch.setattr(
         "research_hub.search.query_expansion.expand_query",
         lambda query, **kwargs: ["q1", "q2", "q3"],
@@ -212,4 +177,5 @@ def test_adversarial_search_all_empty_is_low_confidence(monkeypatch):
     results, report = adversarial_search("q1", limit=10)
     assert results == []
     assert report.total_unique == 0
-    assert report.confidence == "low"
+    assert report.confidence == "unassessed"
+    assert report.saturated is False

@@ -132,7 +132,8 @@ def test_screen_composes_with_adversarial(monkeypatch, wired, capsys):
     class _Recall:
         queries_run = 3
         total_unique = len(_BATCH)
-        confidence = "high"
+        confidence = "unassessed"
+        new_per_query = [len(_BATCH), 0, 0]
         saturated = False
 
     monkeypatch.setattr(

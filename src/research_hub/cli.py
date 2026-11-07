@@ -1398,8 +1398,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--adversarial",
         action="store_true",
         help="Adversarial recall: search several LLM-generated query phrasings, "
-        "union the results, and print a recall-confidence verdict to stderr. "
-        "Trades speed for completeness — use when a missed paper is costly.",
+        "union the results, and print returned-yield counts to stderr. "
+        "Recall stays unassessed: counts do not verify literature coverage.",
     )
     search_parser.add_argument(
         "--max-variants",

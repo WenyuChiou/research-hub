@@ -146,8 +146,10 @@ look open when it is not. So this gate is **adversarial**:
 1. Map every material information need to a distinct search family and record
    planned vs executed status. Use available native tools or, when appropriate,
    run `research-hub search --adversarial --screen --json` on the gap. It
-   searches several query phrasings, reports a recall-confidence verdict,
-   and applies the fit-check BM25 relevance gate. With `--screen --json` the
+   searches several query phrasings, reports observed result counts with
+   recall explicitly `unassessed`, and applies the fit-check BM25 relevance gate.
+   Zero new papers can reflect backend failure, a successful empty response or
+   overlapping top-N results; these counts do not establish saturation. With `--screen --json` the
    output is an object `{screening_summary, results}`: `results` is the
    per-paper list (title, DOI / arXiv ID, year, authors, venue, plus a
    `relevance` field — `score` / `kept` / `tier` / `reason`), and
@@ -155,7 +157,7 @@ look open when it is not. So this gate is **adversarial**:
    gives the retrieved / kept / screened-out counts. `--screen` never drops
    a paper — it tags relevance, so recall stays auditable. If `--adversarial`
    or `--screen` is unavailable (older CLI), run several query phrasings by
-   hand and record the reduced recall confidence in the dossier.
+   hand and record the missing execution evidence and search limits in the dossier.
 2. Screen candidates against the preserved scope. In CLI mode, inspect
    `results` and the relevance gate's `kept`/`reason`; in native mode, record
    actual inclusion/exclusion decisions and reasons without inventing CLI
