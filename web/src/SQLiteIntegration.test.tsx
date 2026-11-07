@@ -200,8 +200,11 @@ it.each(["failed", "pending"])(
     );
     vi.stubGlobal("fetch", fetch);
     render(<App />);
+    // Await the recovery result before the full accessible-role scan. Repeated
+    // scans of the loading app can consume the default async observation window.
+    await screen.findByText(t("intakeFound"));
     fireEvent.click(
-      await screen.findByRole("button", { name: t("intakeOpenSaved") }),
+      screen.getByRole("button", { name: t("intakeOpenSaved") }),
     );
     expect(await screen.findByLabelText(t("abstractText"))).toHaveValue(
       saved.preview.text.replace(/\r\n/g, "\n"),

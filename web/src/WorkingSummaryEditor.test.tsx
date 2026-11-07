@@ -18,6 +18,60 @@ function fixture() {
 const props = (f: ReturnType<typeof fixture>) => ({record:f.record,scope:f.scope,t,onSaved:f.onSaved});
 const review = () => screen.getByRole("button",{name:`${t("workingSummaryReview")} report-one`});
 
+describe.each(["en", "zh-TW"] as const)("server whitespace normalization %s", locale => {
+  it("preserves U+FEFF prose instead of trimming bytes the server preserves", async () => {
+    const f = fixture(), tr = translator(locale), user = userEvent.setup();
+    const raw = "\ufeff" + f.saved.text + "\ufeff", saved = {...f.saved, text: raw};
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(response({ok: true, context: f.context}))
+      .mockResolvedValueOnce(response({ok: true, record: {...f.record, data: {...f.record.data, working_summary: saved}}, reused: false}));
+    render(<WorkingSummaryEditor {...props(f)} t={tr}/>);
+    await user.click(screen.getByRole("button", {name: `${tr("workingSummaryReview")} report-one`}));
+    fireEvent.change(await screen.findByRole("textbox", {name: tr("workingSummaryText")}), {target: {value: raw}});
+    await user.click(screen.getByRole("button", {name: tr("workingSummarySave")}));
+    await screen.findByText(tr("workingSummarySaved"));
+    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body)).text).toBe(raw);
+    expect(f.onSaved).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an existing U+FEFF-only summary allowed by the backend", async () => {
+    const f = fixture(), tr = translator(locale), user = userEvent.setup();
+    f.context.working_summary = {...f.saved, text: "\ufeff"};
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response({ok: true, context: f.context}));
+    render(<WorkingSummaryEditor {...props(f)} t={tr}/>);
+    await user.click(screen.getByRole("button", {name: `${tr("workingSummaryReview")} report-one`}));
+    expect(await screen.findByRole("textbox", {name: tr("workingSummaryText")})).toHaveValue("\ufeff");
+  });
+
+  it.each(["\u0085", "\u001c", "\u001d", "\u001e", "\u001f"])("confirms saved prose after stripping Python whitespace %j", async whitespace => {
+    const f = fixture(), tr = translator(locale), user = userEvent.setup();
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(response({ok: true, context: f.context}))
+      .mockResolvedValueOnce(response({ok: true, record: {...f.record, data: {...f.record.data, working_summary: f.saved}}, reused: false}));
+    render(<WorkingSummaryEditor {...props(f)} t={tr}/>);
+    await user.click(screen.getByRole("button", {name: `${tr("workingSummaryReview")} report-one`}));
+    const input = await screen.findByRole("textbox", {name: tr("workingSummaryText")});
+    const raw = whitespace + f.saved.text + whitespace;
+    fireEvent.change(input, {target: {value: raw}});
+    await user.click(screen.getByRole("button", {name: tr("workingSummarySave")}));
+    await screen.findByText(tr("workingSummarySaved"));
+    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body)).text).toBe(f.saved.text);
+    expect(input).toHaveValue(raw);
+    expect(f.onSaved).toHaveBeenCalledOnce();
+  });
+
+  it("does not submit Python-whitespace-only prose", async () => {
+    const f = fixture(), tr = translator(locale), user = userEvent.setup();
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(response({ok: true, context: f.context}));
+    render(<WorkingSummaryEditor {...props(f)} t={tr}/>);
+    await user.click(screen.getByRole("button", {name: `${tr("workingSummaryReview")} report-one`}));
+    const input = await screen.findByRole("textbox", {name: tr("workingSummaryText")});
+    fireEvent.change(input, {target: {value: "\u0085\u001c\u001d\u001e\u001f"}});
+    expect(screen.getByRole("button", {name: tr("workingSummarySave")})).toBeDisabled();
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
 describe.each(["en","zh-TW"] as const)("working summary review %s",locale => {
   it("loads only explicitly selected artifact, edits and saves the exact bound context", async () => {
     const f=fixture(), tr=translator(locale), user=userEvent.setup(), before=JSON.stringify(f.record);

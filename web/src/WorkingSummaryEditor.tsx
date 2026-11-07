@@ -4,6 +4,7 @@ import { ReadText } from "./components";
 import type { Translate } from "./i18n";
 import { registeredObservationArtifacts, type ObservationReadScope } from "./ObservationPreview";
 import type { Artifact, ResearchRecord } from "./types";
+import { normalizeWorkingSummaryText } from "./workingSummaryText";
 
 export interface WorkingSummary {
   text: string;
@@ -25,7 +26,7 @@ const hash = (value: unknown): value is string => typeof value === "string" && /
 const isForbiddenRequest = (failure: unknown) => failure instanceof ApiError && failure.status === 403 && failure.code === "forbidden";
 function validSummary(value: unknown): value is WorkingSummary {
   const item = value as WorkingSummary | undefined;
-  return Boolean(item && typeof item.text === "string" && item.text.trim() &&
+  return Boolean(item && typeof item.text === "string" && normalizeWorkingSummaryText(item.text) &&
     typeof item.artifact_id === "string" && item.artifact_id && hash(item.artifact_sha256) &&
     hash(item.source_revision) && hash(item.previous_revision) &&
     typeof item.saved_at === "string" && Number.isFinite(Date.parse(item.saved_at)));
@@ -101,7 +102,7 @@ function SummarySession({record, artifact, projectId, active, t, onClose, onSave
   const id = useId();
   const path = `/projects/${segment(projectId)}/working-summary`;
   // Match the server's prose normalization without replacing an unsaved edit.
-  const submittedText = draft.replace(/\r\n/g, "\n").trim();
+  const submittedText = normalizeWorkingSummaryText(draft);
   const tooLong = Array.from(submittedText).length > 40000;
   function updateDraft(value: string) {
     latestDraft.current = value;
