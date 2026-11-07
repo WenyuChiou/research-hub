@@ -18,6 +18,16 @@ Research is spread across papers, notes, analysis, and manuscripts. A new paper 
 
 ![Concept diagram: research questions connect literature, evidence, analysis, manuscript proposals, and human review; changed inputs return work for review.](docs/images/workspace-lifecycle.en.png)
 
+## Choose your starting path
+
+![Two starting paths: research with an available compatible AI host without Hub, or install Hub to view saved sources and proposals. Task handoff is optional. People review sources and evidence; saving is not reading or approval, and nothing is automatically published.](docs/images/research-entry-paths.en.svg)
+
+**Use your existing AI host:** You need working search/reading tools and the [portable skill with its references](skills/research-hub/). No Hub installation, Zotero, Obsidian, or NotebookLM is required. See [skill loading](docs/setup.md#installed-skill-files) and [host support](docs/ai-host-support.md); Codex MCP is not release-verified.
+
+**First request:** “Find papers on LLMs simulating human decisions. Include source links, relevance, versions, and actual reading limits.” Expect a source list in your host, with unknowns and unavailable tools/sources stated, not automatic full-text reading or a Hub save.
+
+**Use the Hub workspace:** You need Python 3.10+, Git, and a local browser. [Install and launch the tested demo below](#workspace-preview) to inspect two seed references and their reading limits. Optional [result saving](docs/contracts/native-discovery-view.md) and [task handoff](docs/workspace-guide.md#writing-adapter-preview) require a selected destination and authorization.
+
 ## Install and get started
 
 <a id="start-here"></a>
@@ -26,7 +36,7 @@ Research is spread across papers, notes, analysis, and manuscripts. A new paper 
 
 ### Try the local workspace
 
-Start with the workspace below. If you only want to try the older published literature dashboard, see the separate option below.
+Choose this path for the Hub workspace. If you only want to try the older published literature dashboard, see the separate option below.
 
 You need Python 3.10+ and Git. These commands install a specific source revision and create teaching fixtures in a **new or empty** `workspace-demo` directory. The source workspace is separate from the PyPI release: a package version does not establish that the installed wheel contains current source features.
 
