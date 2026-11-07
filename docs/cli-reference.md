@@ -150,11 +150,20 @@ reused. See [the audit file contract](audit-output.md); a successful empty
 response is different from HTTP 404, HTTP 429, timeout or parse failure.
 
 ### `search`
-Query Semantic Scholar.
+Query the configured academic search backends.
 
 ```bash
 research-hub search "QUERY" [--limit N] [--verify]
+research-hub search "QUERY" --backend crossref --exclude-type posted-content --json
 ```
+
+Crossref queries are not implicitly limited to journal articles. They can
+return conference proceedings and other publication types; requested year
+bounds, result limits and explicit type exclusions still apply. The existing
+`--peer-reviewed` preset remains a metadata filter, not independent proof of
+peer review. Inspect the returned `doc_type` and source before deciding what
+belongs in the research set. Removing a hidden type filter does not establish
+complete search coverage or improved scientific recall.
 
 ### `verify`
 Check paper exists via DOI / arXiv ID / fuzzy title match.
