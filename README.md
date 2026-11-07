@@ -33,8 +33,8 @@ You need Python 3.10+ and Git. These commands install a specific source revision
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
-git fetch origin c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
-git checkout --detach c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a
+git fetch origin 1f0726a7e92a1231e633963f17236a2f5c1eab8f
+git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f
 ```
 
 Choose the block for your system. They call the virtual environment's Python directly, without activation or changing PowerShell execution policy. Dependency installation needs network access.
@@ -59,7 +59,17 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m research_hub serve --workspace --root ./workspace-demo
 ```
 
-Open [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/). The demo contains two teaching projects. In the **Projects** dropdown, choose `DEMO: three floating-point summation cases` (`summation-demo`) or `DEMO: floating-point reading and review outline` (`review-demo`), then open **Literature** to see the literature page. These are teaching inputs, not research findings, and need no account. Stop the foreground server with `Ctrl+C` when finished.
+**First task: inspect a saved source and its reading limits.**
+
+1. Open [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/) and, in **Projects**, choose `DEMO: floating-point reading and review outline` (`review-demo`).
+2. Open **Literature**, then select **What Every Computer Scientist Should Know About Floating-Point Arithmetic**.
+3. Expect two seed references in the list. The selected source shows DOI `10.1145/103162.103163`, **Unverified**, **Coverage unknown**, and **No summary saved**. These are expected demo states: no source text was downloaded or summarized, and the supplied screening decisions are examples, not your review.
+
+The other project, `DEMO: three floating-point summation cases` (`summation-demo`), contains numerical examples and a manuscript scaffold; its Literature list is empty. Both projects are account-free teaching inputs, not accepted research.
+
+Keep the terminal running while using the workspace; stop it with `Ctrl+C`. To return later, run only the `serve --workspace --root ./workspace-demo` command above. Do not recreate the demo over saved work. If creation was interrupted, inspect the preserved partial directory and use another new or empty root for both creation and serving.
+
+Demo creation, launch, and this bilingual first task were checked on Linux with Python 3.12.14 at source revision `1f0726a7`; this does not verify Windows, macOS, or a fresh dependency installation. See [the exact verification scope](docs/readme-verification-history.md#source-demo-first-task-2026-11-07).
 
 For your own files, go directly to [bring your own project](docs/workspace-guide.md#bring-your-own-project); the guide’s earlier installation pin is historical.
 

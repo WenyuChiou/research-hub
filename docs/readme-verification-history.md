@@ -2,9 +2,53 @@
 
 This page preserves the bounded rehearsal and installation context previously displayed on the README. It is evidence for the dated runs described below, not a statement that every current installation or scientific workflow has been accepted.
 
-## Current source and environment notes (2026-10-28)
+## Source demo first task (2026-11-07)
 
-The README source commands identify `c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a`. On Linux with Python 3.12.14, an initially clean isolated virtual environment completed `pip install -e .` after an interrupted installation was retried, passed `pip check`, and imported the module from a source tree matching that commit. CLI help ran, the demo created two teaching projects, and server and HTTP client subprocesses within one shell invocation returned HTTP 200 for `/app/`. This was not browser visual acceptance, Windows or macOS installation, or a provider/scientific workflow validation. An independent clean Linux Python 3.12.14 virtual environment installed the earlier `fe8a6b833febd5d6bb397f9924c2e379863bacee` source revision with `pip install -e .`, passed `pip check`, created the two demo projects, and returned HTTP 200 for `/app/`. This was not browser visual acceptance, a macOS or Windows installation, or a provider/scientific workflow validation. At the earlier source revision `14ddc07024f866a5a4f535f5e73185cc7ce69ea1`, a Linux Python 3.14 synthetic demo and same-process HTTP 200 were exercised with test guards and an older, unused NotebookLM dependency; this was not a clean installation or visual verification. At that same earlier revision, on one Windows Python 3.14 environment the source was fetched, CLI help and Chrome HTTPS worked, but demo creation encountered `os.link` / `WinError 5`. Its NTFS cause is unknown; this is not a claim that Windows is universally unsupported.
+The README now pins merged source `1f0726a7e92a1231e633963f17236a2f5c1eab8f`
+(tree `27febee56d7b32588e961cb70b6947ed1a9167ad`). This includes the launcher,
+Unicode input, and task-bound working-summary fixes merged in PRs
+[#250](https://github.com/WenyuChiou/research-hub/pull/250),
+[#251](https://github.com/WenyuChiou/research-hub/pull/251), and
+[#252](https://github.com/WenyuChiou/research-hub/pull/252). The previous README
+pin predates those fixes. The historical guide and producer manifest retain
+their own dated revisions.
+
+On Linux with Python 3.12.14:
+
+- The normal `python -m research_hub project demo --root PATH --json` command
+  created two projects in separate new roots from the exact source checkout
+  and from an already installed wheel. Existing dependency environments were
+  reused; a clean dependency installation was **not** repeated.
+- All 294 packaged files under `research_hub/` matched the pinned source and
+  installed files byte for byte. The locally built wheel SHA-256 was
+  `4ab2b123736404397077d45f5372f11d3895a1ef579686ae7f9d09637d3aad15`.
+  This is a source-built wheel, **not** evidence about the published PyPI 1.2.0
+  package or a new release.
+- The unchanged installed CLI served a fresh teaching demo at
+  `http://127.0.0.1:8765/app/` using `serve --workspace --root PATH --no-browser`.
+  Actual Chromium interaction selected `review-demo`, opened Literature, and
+  inspected the Goldberg source in English and Traditional Chinese. Both
+  locales showed two seed references, DOI `10.1145/103162.103163`, unverified
+  identity, unknown coverage, and no saved summary. Project switching and
+  page reload returned to the same source data. The server was stopped with
+  `Ctrl+C` after inspection.
+- `summation-demo` has no source records, so its Literature list is empty. The
+  first task now names `review-demo` rather than offering either project for
+  the literature walkthrough. Neither demo supplies source text or summaries;
+  example screening records do not mean a human has read or verified a source.
+
+This is bounded first-run engineering verification, not a Windows/macOS
+installation test, live provider run, full-text/scientific validation, or human
+acceptance. No original-source links were opened and no research-provider
+services were used. The historical README screenshots below the setup section remain dated;
+this change does not claim the full visual redesign in issue
+[#231](https://github.com/WenyuChiou/research-hub/issues/231) is complete.
+
+<a id="current-source-and-environment-notes-2026-10-28"></a>
+
+## Historical source and environment notes (2026-10-28)
+
+The README source commands at that date identified `c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a`. On Linux with Python 3.12.14, an initially clean isolated virtual environment completed `pip install -e .` after an interrupted installation was retried, passed `pip check`, and imported the module from a source tree matching that commit. CLI help ran, the demo created two teaching projects, and server and HTTP client subprocesses within one shell invocation returned HTTP 200 for `/app/`. This was not browser visual acceptance, Windows or macOS installation, or a provider/scientific workflow validation. An independent clean Linux Python 3.12.14 virtual environment installed the earlier `fe8a6b833febd5d6bb397f9924c2e379863bacee` source revision with `pip install -e .`, passed `pip check`, created the two demo projects, and returned HTTP 200 for `/app/`. This was not browser visual acceptance, a macOS or Windows installation, or a provider/scientific workflow validation. At the earlier source revision `14ddc07024f866a5a4f535f5e73185cc7ce69ea1`, a Linux Python 3.14 synthetic demo and same-process HTTP 200 were exercised with test guards and an older, unused NotebookLM dependency; this was not a clean installation or visual verification. At that same earlier revision, on one Windows Python 3.14 environment the source was fetched, CLI help and Chrome HTTPS worked, but demo creation encountered `os.link` / `WinError 5`. Its NTFS cause is unknown; this is not a claim that Windows is universally unsupported.
 
 In a clean Linux Python 3.12 environment, the published PyPI 1.2.0 wheel installed and `pip check` passed, but `research-hub dashboard --sample` in a fresh HOME exited with `research-hub is not initialized`. Setting `RESEARCH_HUB_ROOT` to an existing directory under HOME allowed the sample to generate HTML; it did not open a browser without `--open`. The wheel did not expose the newer `project` command.
 

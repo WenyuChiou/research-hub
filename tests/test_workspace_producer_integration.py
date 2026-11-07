@@ -25,7 +25,7 @@ def test_bilingual_installation_uses_immutable_sources():
     for name, guide in (("README.md", "docs/workspace-guide.md"),
                         ("README.zh-TW.md", "docs/workspace-guide.zh-TW.md")):
         text = (ROOT / name).read_text(encoding="utf-8")
-        assert "git checkout --detach c1ab382e1bc4bfdb1d5df6a230d1ab4509a50d2a" in text
+        assert "git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f" in text
         assert f"{guide}#writing-adapter-preview" in text
         assert "git clone -b codex/" not in text
         assert "-b codex/writing-workspace-adapter" not in text
