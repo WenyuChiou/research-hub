@@ -93,7 +93,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                     and segments[4] == "working-summary"):
                 from urllib.parse import parse_qs
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
-                if set(query) != {"source_record_id", "artifact_id"} or any(len(v) != 1 or not v[0] for v in query.values()):
+                if set(query) not in ({"source_record_id", "artifact_id"}, {"source_record_id", "task_id"}) or any(len(v) != 1 or not v[0] for v in query.values()):
                     raise WorkspaceError("Select one source and generated draft", "invalid_request")
                 return self._result(self.server._call("project", "working-summary-context",
                     {"project_id": segments[3], **{k: v[0] for k, v in query.items()}}))

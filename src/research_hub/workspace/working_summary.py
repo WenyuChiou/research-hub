@@ -24,11 +24,18 @@ def _text(value):
 
 def _saved(data):
     value = data.get("working_summary")
-    if value is not None and (not isinstance(value, dict) or set(value) != _FIELDS
-            or not isinstance(value.get("text"), str) or not value["text"].strip()
-            or not isinstance(value.get("artifact_id"), str) or not value["artifact_id"]
+    if value is None:
+        return None
+    from .task_summary import valid_provenance
+    common = {"text", "source_revision", "previous_revision", "saved_at"}
+    legacy = (isinstance(value, dict) and set(value) == _FIELDS
+              and isinstance(value.get("artifact_id"), str) and bool(value["artifact_id"])
+              and isinstance(value.get("artifact_sha256"), str) and _SHA.fullmatch(value["artifact_sha256"]))
+    task = (isinstance(value, dict) and set(value) == common | {"provenance"}
+            and valid_provenance(value.get("provenance")))
+    if (not (legacy or task) or not isinstance(value.get("text"), str) or not value["text"].strip()
             or not all(isinstance(value.get(k), str) and _SHA.fullmatch(value[k])
-                       for k in ("artifact_sha256", "source_revision", "previous_revision"))
+                       for k in ("source_revision", "previous_revision"))
             or not isinstance(value.get("saved_at"), str)):
         raise WorkspaceError("Existing working summary requires review; it was not overwritten", "invalid_source")
     return value
@@ -88,26 +95,46 @@ class WorkingSummary:
     def __init__(self, workspace):
         self.workspace = workspace
 
-    def context(self, project_id, *, source_record_id, artifact_id):
-        with self.workspace.db() as db:
-            record, artifact, prose = _selection(self.workspace, db, project_id, source_record_id, artifact_id)
-        return {"ok": True, "context": {"source_record_id": record["id"], "artifact_id": artifact["id"],
-                "artifact_sha256": artifact["sha256"], "revision": digest(record), "draft_text": prose,
-                "working_summary": _saved(record["data"])}}
+    def _select(self, db, project_id, source_record_id, artifact_id, task_id, expected_sha=None):
+        if task_id is not None:
+            if artifact_id is not None:
+                raise WorkspaceError("Select exactly one draft provenance", "invalid_source")
+            from .task_summary import selection
+            record, provenance, prose = selection(self.workspace, db, project_id, source_record_id, task_id)
+            _saved(record["data"])
+            return record, {"provenance": provenance}, prose
+        record, artifact, prose = _selection(self.workspace, db, project_id, source_record_id, artifact_id, expected_sha)
+        return record, {"artifact_id": artifact["id"], "artifact_sha256": artifact["sha256"]}, prose
 
-    def save(self, project_id, *, source_record_id, artifact_id, artifact_sha256, expected_revision, text):
+    def context(self, project_id, *, source_record_id, artifact_id=None, task_id=None):
+        with self.workspace.db() as db:
+            record, binding, prose = self._select(db, project_id, source_record_id, artifact_id, task_id)
+        return {"ok": True, "context": {"source_record_id": record["id"], **binding,
+                "revision": digest(record), "draft_text": prose, "working_summary": _saved(record["data"])}}
+
+    def save(self, project_id, *, source_record_id, expected_revision, text,
+             artifact_id=None, artifact_sha256=None, task_id=None, provenance=None):
         text = _text(text)
-        if not all(isinstance(v, str) and _SHA.fullmatch(v) for v in (artifact_sha256, expected_revision)):
+        if not isinstance(expected_revision, str) or not _SHA.fullmatch(expected_revision):
             raise WorkspaceError("Select the exact reviewed draft and source revision")
-        # Existing BEGIN IMMEDIATE serializes the source compare-and-save. No new
-        # file, provider, task decision or schema authority is introduced.
+        if task_id is None:
+            if provenance is not None or not isinstance(artifact_sha256, str) or not _SHA.fullmatch(artifact_sha256):
+                raise WorkspaceError("Select the exact reviewed draft and source revision")
+        else:
+            from .task_summary import valid_provenance
+            if artifact_sha256 is not None or not valid_provenance(provenance):
+                raise WorkspaceError("Select the exact task draft provenance")
+        # Source compare-and-save and task ledger reads share BEGIN IMMEDIATE.
+        # The source is the only write; task/candidate/human decisions are untouched.
         with self.workspace.db(write=True) as db:
-            record, artifact, _ = _selection(self.workspace, db, project_id, source_record_id, artifact_id, artifact_sha256)
+            record, binding, _ = self._select(db, project_id, source_record_id, artifact_id, task_id, artifact_sha256)
+            if task_id is not None and binding["provenance"] != provenance:
+                raise WorkspaceError("Task candidate changed; reload before saving", "stale_input")
             data = record["data"]
             previous = _saved(data)
             if (previous and previous["previous_revision"] == expected_revision
                     and previous["source_revision"] == _base(record) and previous["text"] == text
-                    and previous["artifact_id"] == artifact_id and previous["artifact_sha256"] == artifact_sha256):
+                    and all(previous.get(k) == v for k, v in binding.items())):
                 return {"ok": True, "record": record, "reused": True}
             if digest(record) != expected_revision:
                 raise WorkspaceError("Source or working summary changed; reload before saving", "stale_input")
@@ -116,10 +143,8 @@ class WorkingSummary:
                 if not isinstance(history, list):
                     raise WorkspaceError("Existing working summary history was not overwritten", "invalid_source")
                 data["working_summary_history"] = [*history, previous]
-            # Preserve every original field, including saved/publisher prose,
-            # source observations, reading/version and acceptance flags.
-            data["working_summary"] = {"text": text, "artifact_id": artifact_id, "artifact_sha256": artifact_sha256,
-                    "source_revision": _base(record), "previous_revision": expected_revision, "saved_at": now()}
+            data["working_summary"] = {"text": text, **binding, "source_revision": _base(record),
+                                       "previous_revision": expected_revision, "saved_at": now()}
             db.execute("UPDATE records SET body=? WHERE project=? AND id=? AND kind='source'",
                        (encoded(data), project_id, source_record_id))
         return {"ok": True, "record": record, "reused": False}

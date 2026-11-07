@@ -284,12 +284,8 @@ def validate_response(response, source: dict, *, profile_version=PROFILE_VERSION
     return resolve_response(response, source, profile_version=profile_version)[1]
 
 
-def store_result(workspace, task, response):
-    """Validate first, then create owned candidate artifacts; never edit sources."""
-    check(workspace, task)
-    bound = task["request"]["research_draft"]
-    raw_response = response
-    response, report = resolve_response(response, bound["source_pack"], profile_version=task_profile_version(task))
+def render_response(response):
+    """Render the resolved envelope without creating or accepting artifacts."""
     lines = ["# Abstract-only draft", "", "Unverified candidate — source-aware human review required.",
              "Publication identity unverified; publication version unknown.", ""]
     for section in SECTIONS:
@@ -301,7 +297,16 @@ def store_result(workspace, task, response):
         if not response[section]:
             lines.append("Unknown / not reported in this draft.")
         lines.append("")
-    prose = "\n".join(lines)
+    return "\n".join(lines)
+
+
+def store_result(workspace, task, response):
+    """Validate first, then create owned candidate artifacts; never edit sources."""
+    check(workspace, task)
+    bound = task["request"]["research_draft"]
+    raw_response = response
+    response, report = resolve_response(response, bound["source_pack"], profile_version=task_profile_version(task))
+    prose = render_response(response)
     root = safe_path(workspace.root, f"proposals/{task['id']}-{uuid.uuid4().hex}")
     root.mkdir(parents=True, exist_ok=False)
     documents = {"draft.md": prose, "draft-response.json": encoded(response),
@@ -321,7 +326,21 @@ def store_result(workspace, task, response):
 
 
 def parse_response(raw: str) -> dict:
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > 100_000:
+    return _parse_response(raw, max_bytes=100_000)
+
+
+def parse_resolved_response(raw: str) -> dict:
+    """Decode stored output whose derived offsets can exceed the raw-input cap.
+
+    The candidate reader bounds the stored bytes at 200000, then compares this
+    envelope with the freshly resolved, schema-validated original response.
+    This parser must not be used for incoming or stored raw responses.
+    """
+    return _parse_response(raw, max_bytes=200_000)
+
+
+def _parse_response(raw: str, *, max_bytes: int) -> dict:
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise WorkspaceError("Restricted draft response is oversized", "invalid_output")
     def unique(pairs):
         result = {}

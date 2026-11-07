@@ -928,6 +928,7 @@ export function ProjectPages({
                       tabIndex={-1}
                     >
                       <TaskCard
+                        active={page === "review"}
                         runnerAvailable={
                           workspace.capabilities.codex.status === "available"
                         }
