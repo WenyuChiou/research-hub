@@ -8,6 +8,7 @@ import json
 import mimetypes
 from pathlib import Path
 import secrets
+import sys
 import time
 from urllib.parse import unquote, urlsplit
 import webbrowser
@@ -227,11 +228,16 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
 
 def serve_workspace(root, *, port=8765, open_browser=True, human=False, obsidian_vault=None, library_snapshot=None):
     server = WorkspaceServer(root, port=port, human=human, obsidian_vault=obsidian_vault, library_snapshot=library_snapshot)
-    url = f"http://127.0.0.1:{server.server_port}/app/"
-    print(f"Research workspace: {url}")
-    if open_browser:
-        webbrowser.open(url)
     try:
+        url = f"http://127.0.0.1:{server.server_port}/app/"
+        print(f"Research workspace: {url}", flush=True)
+        if open_browser:
+            try:
+                opened = webbrowser.open(url)
+            except (webbrowser.Error, OSError):
+                opened = False
+            if not opened:
+                print("Could not open a browser automatically. Open the workspace URL above in your browser.", file=sys.stderr)
         server.serve_forever()
     finally:
         server.server_close()
