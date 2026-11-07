@@ -60,10 +60,15 @@ def enrich_candidates(
     out: list[SearchResult | None] = []
     for cand in candidates:
         kind = classify_candidate(cand)
+        version_pinned = kind == "arxiv" and "v" in cand.strip()
         resolved: SearchResult | None = None
 
         if kind in ("doi", "arxiv"):
             for name, backend in instances.items():
+                # Other lookup backends resolve work-level metadata, not a
+                # specific arXiv revision. Do not report those as a pinned hit.
+                if version_pinned and name != "arxiv":
+                    continue
                 try:
                     identifier = cand
                     if kind == "arxiv" and name == "semantic-scholar":
@@ -93,7 +98,7 @@ def enrich_candidates(
                     resolved = best
                     break
 
-        if resolved is not None and not resolved.abstract and resolved.doi:
+        if resolved is not None and not resolved.abstract and resolved.doi and not version_pinned:
             try:
                 # pdf_path not supplied: search enrichment resolves candidates by
                 # identifier and has no access to a local PDF directory — PDF fallback
