@@ -102,8 +102,9 @@ def test_paywall_url_with_abstract_becomes_text(tmp_path):
 def test_good_url_still_preferred_over_abstract(tmp_path):
     rep = _bundle(tmp_path,
                   url="https://doi.org/10.1016/j.est.1",
-                  abstract="A long real abstract that should NOT be used "
-                           "because the URL probed OK (full content).",
+                  abstract="We measured solid-state electrolyte interface resistance "
+                           "using impedance spectroscopy before and after thermal "
+                           "cycling, and observed stable charge transport over 100 cycles.",
                   probe_quality="ok")
     e = rep.entries[0]
     assert e.action == "url"          # good url beats abstract (full text)

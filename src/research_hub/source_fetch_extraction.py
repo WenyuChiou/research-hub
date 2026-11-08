@@ -360,6 +360,16 @@ def _has_abstract_marker(values: dict) -> bool:
     )
 
 
+# https://html.spec.whatwg.org/multipage/grouping-content.html#the-p-element
+_P_IMPLICIT_END_START_TAGS = frozenset(
+    (
+        "address article aside blockquote details dialog div dl fieldset figcaption "
+        "figure footer form h1 h2 h3 h4 h5 h6 header hgroup hr main menu nav ol p "
+        "pre search section table ul"
+    ).split()
+)
+
+
 class _HtmlAbstractParser(HTMLParser):
     """Read an explicitly marked abstract container, excluding page chrome."""
 
@@ -389,6 +399,14 @@ class _HtmlAbstractParser(HTMLParser):
         self.abstracts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
+        restricted = {"script", "style", "noscript", "template", "form", "nav"}
+        if (
+            self.root_depth is not None
+            and self.stack[self.root_depth] == "p"
+            and tag in _P_IMPLICIT_END_START_TAGS
+            and not restricted.intersection(self.stack)
+        ):
+            self.handle_endtag("p")
         if tag in self._VOID:
             return
         values = dict(attrs)
@@ -404,7 +422,6 @@ class _HtmlAbstractParser(HTMLParser):
                 )
             )
         )
-        restricted = {"script", "style", "noscript", "template", "form", "nav"}
         if (
             self.root_depth is None
             and tag in {"div", "section", "p", "span"}
@@ -474,16 +491,27 @@ class _HtmlMetadataParser(HTMLParser):
         self._legacy_body_count = 0
         self._legacy_ignore_tag: str | None = None
         self._legacy_ignore_depth = 0
+        self._ignored_p_suppressed_depth = 0
 
     def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
         values = {str(key).lower(): str(value or "") for key, value in attrs}
+        if self._legacy_ignore_tag == "p":
+            if tag in {"script", "style", "noscript", "template"}:
+                self._ignored_p_suppressed_depth += 1
+                return
+            if self._ignored_p_suppressed_depth:
+                return
+            if tag in _P_IMPLICIT_END_START_TAGS:
+                self._legacy_ignore_tag = None
+                self._legacy_ignore_depth = 0
         if self._legacy_ignore_tag:
             if tag == self._legacy_ignore_tag:
                 self._legacy_ignore_depth += 1
             return
-        if self.legacy_body and (
-            tag in {"nav", "footer", "aside", "header"}
+        # Marked abstracts cannot supply body evidence inside article/main either.
+        if (
+            (self.legacy_body and tag in {"nav", "footer", "aside", "header"})
             or (tag in {"div", "section", "p", "span"} and _has_abstract_marker(values))
         ):
             self._legacy_ignore_tag = tag
@@ -516,6 +544,14 @@ class _HtmlMetadataParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
+        if self._legacy_ignore_tag == "p":
+            if self._ignored_p_suppressed_depth:
+                if tag in {"script", "style", "noscript", "template"}:
+                    self._ignored_p_suppressed_depth -= 1
+                return
+            if tag in {"article", "main", "body"}:
+                self._legacy_ignore_tag = None
+                self._legacy_ignore_depth = 0
         if self._legacy_ignore_tag:
             if tag == self._legacy_ignore_tag:
                 self._legacy_ignore_depth -= 1

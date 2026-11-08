@@ -768,7 +768,9 @@ def _render_obsidian_note(
         methodology=pp["methodology"],
         relevance=pp["relevance"],
     )
-    return content
+    from research_hub.paper_summarize import mark_summary_content_done
+
+    return mark_summary_content_done(content)
 
 
 def _load_fit_check_rejections(cfg, cluster_slug: str | None) -> tuple[dict[str, dict], dict[str, dict]]:

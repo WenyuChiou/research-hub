@@ -24,7 +24,7 @@ def test_recover_abstract_uses_crossref_first(monkeypatch):
     crossref_response = MagicMock()
     crossref_response.status_code = 200
     crossref_response.json.return_value = {
-        "message": {"abstract": "<jats:p>Recovered abstract</jats:p>"}
+        "message": {"DOI": "10.1/example", "abstract": "<jats:p>Recovered abstract</jats:p>"}
     }
 
     def fake_get(url, **kwargs):
@@ -48,6 +48,7 @@ def test_recover_abstract_falls_back_to_unpaywall_oa_url_when_crossref_empty(mon
     unpaywall_response = MagicMock()
     unpaywall_response.status_code = 200
     unpaywall_response.json.return_value = {
+        "doi": "10.1/example",
         "best_oa_location": {"url": "https://example.org/paper.pdf"}
     }
 

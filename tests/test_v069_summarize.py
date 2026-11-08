@@ -330,7 +330,7 @@ x
 def test_summarize_cluster_saves_prompt_when_no_llm_cli(cfg, monkeypatch):
     """When detect_llm_cli returns None, the prompt is saved to artifacts/
     and the report has prompt_path set (best-effort fallback, ok=True)."""
-    monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: None)
+    monkeypatch.setattr("research_hub.llm_cli.detect_llm_cli", lambda: None)
     report = summarize_cluster(cfg, "test-cluster")
     assert report.ok is True
     assert report.prompt_path is not None
@@ -340,9 +340,9 @@ def test_summarize_cluster_saves_prompt_when_no_llm_cli(cfg, monkeypatch):
 
 
 def test_summarize_cluster_uses_detected_cli_when_no_override(cfg, monkeypatch):
-    monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: "claude")
+    monkeypatch.setattr("research_hub.llm_cli.detect_llm_cli", lambda: "claude")
     monkeypatch.setattr(
-        "research_hub.auto._invoke_llm_cli",
+        "research_hub.llm_cli.invoke_llm_cli",
         lambda cli, prompt: '{"summaries": []}',
     )
     report = summarize_cluster(cfg, "test-cluster", apply=False)
@@ -354,9 +354,9 @@ def test_summarize_cluster_uses_detected_cli_when_no_override(cfg, monkeypatch):
 
 def test_summarize_cluster_explicit_cli_override(cfg, monkeypatch):
     """Passing llm_cli should bypass detect_llm_cli."""
-    monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: None)  # would skip
+    monkeypatch.setattr("research_hub.llm_cli.detect_llm_cli", lambda: None)  # would skip
     monkeypatch.setattr(
-        "research_hub.auto._invoke_llm_cli",
+        "research_hub.llm_cli.invoke_llm_cli",
         lambda cli, prompt: '{"summaries": []}',
     )
     report = summarize_cluster(cfg, "test-cluster", llm_cli="codex")
@@ -365,9 +365,9 @@ def test_summarize_cluster_explicit_cli_override(cfg, monkeypatch):
 
 
 def test_summarize_cluster_reports_error_on_unparseable_json(cfg, monkeypatch):
-    monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: "claude")
+    monkeypatch.setattr("research_hub.llm_cli.detect_llm_cli", lambda: "claude")
     monkeypatch.setattr(
-        "research_hub.auto._invoke_llm_cli",
+        "research_hub.llm_cli.invoke_llm_cli",
         lambda cli, prompt: "this is not JSON at all",
     )
     report = summarize_cluster(cfg, "test-cluster", apply=False)

@@ -739,6 +739,27 @@ textarea {
   resize: vertical;
   line-height: var(--leading-help);
 }
+
+.working-summary-choices,
+.working-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.working-summary-session {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.working-summary-session textarea {
+  width: 100%;
+  min-height: 12rem;
+  resize: vertical;
+}
+.working-summary-editor code {
+  overflow-wrap: anywhere;
+}
 select[multiple] {
   min-height: 105px;
 }
@@ -885,9 +906,14 @@ select option {
 }
 .record-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 12px;
   justify-content: space-between;
+}
+.record-title .badge {
+  flex: 0 0 auto;
+  overflow-wrap: normal;
 }
 .record-title h3 {
   overflow-wrap: anywhere;
@@ -986,6 +1012,12 @@ select option {
 }
 .search-panel {
   margin-bottom: 24px;
+}
+.search-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  flex: 0 0 auto;
 }
 .search-panel > .record-form fieldset {
   display: flex;
@@ -1628,4 +1660,34 @@ select option {
 }
 .integrations-panel code {
   white-space: normal;
+}
+
+/* Saved Stage1 results follow the same inset rhythm as other panel bodies. */
+.discovery-body {
+  padding: 1.25rem 1.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.discovery-source {
+  border-top: 1px solid var(--line);
+  padding-block: 1rem;
+}
+.discovery-source h5 {
+  font-size: var(--text-body);
+  margin: 0 0 0.5rem;
+}
+.discovery-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+}
+.discovery-source-meta > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .discovery-body {
+    padding: 1rem;
+  }
 }

@@ -213,10 +213,20 @@ class Workspace:
                 item["current"] = False
         return items
 
-    def register_artifact(self, project_id: str, *, path: str, role: str) -> dict:
+    def register_artifact(self, project_id: str, *, path: str, role: str, expected_sha256: str | None = None,
+                          source_record_id: str | None = None) -> dict:
         self.project(project_id)
         if role not in ROLES:
             raise WorkspaceError("Unsupported artifact role")
+        if source_record_id is not None:
+            if not isinstance(source_record_id, str) or not source_record_id or role != "evidence":
+                raise WorkspaceError("Select an existing project source for evidence", "invalid_source")
+            # Check selected identity before probing any caller path.
+            with self.db() as db:
+                source = db.execute("SELECT kind FROM records WHERE project=? AND id=?",
+                                    (project_id, source_record_id)).fetchone()
+            if not source or source[0] != "source":
+                raise WorkspaceError("Evidence references an unknown project source", "invalid_source")
         target = safe_path(self.root, path, exists=True)
         if target.suffix.lower() not in {".md", ".tex", ".docx", ".pdf", ".csv", ".json", ".txt", ".png", ".svg", ".jpg", ".xlsx", ".bib", ".py", ".r"}:
             raise WorkspaceError("Unsupported research artifact format")
@@ -225,15 +235,70 @@ class Workspace:
         relative = target.relative_to(self.root).as_posix()
         if relative.startswith(".research/"):
             raise WorkspaceError("Internal state cannot be registered as research evidence")
-        item = {"id": uuid.uuid4().hex, "path": relative, "role": role, "sha256": file_hash(target), "registered_at": now()}
+        path_owner = None
+        with self.db() as db:
+            for row in db.execute("SELECT body FROM artifacts WHERE project=?", (project_id,)):
+                previous = json.loads(row[0])
+                owner = previous.get("source_record_id")
+                if previous.get("path") == relative and owner is not None:
+                    if not isinstance(owner, str) or not owner:
+                        raise WorkspaceError("Existing evidence ownership is invalid", "invalid_source")
+                    if path_owner not in {None, owner} or source_record_id not in {None, owner}:
+                        raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
+                    path_owner = owner
+        if expected_sha256 is not None:
+            # Only the opt-in captured-profile path needs bounded pinned reads;
+            # generic existing artifact registration retains its old contract.
+            from . import text_intake as local_files
+            if not local_files.publication_supported():
+                raise WorkspaceError("Safe captured-artifact registration unavailable", "unsupported_capability")
+            with local_files._directory(self.root, Path(relative).parts[:-1], create=False, private=False) as directory:
+                captured = local_files._read_file(directory, Path(relative).name, limit=4 * 1024 * 1024)
+                if len(captured) > 4 * 1024 * 1024:
+                    raise WorkspaceError("Captured artifact exceeds byte limit", "invalid_request")
+                local_files._verify_location(self, Path(relative).parts[:-1], directory, private=False)
+            observed_hash = hashlib.sha256(captured).hexdigest()
+        else:
+            observed_hash = file_hash(target)
+        item = {"id": uuid.uuid4().hex, "path": relative, "role": role, "sha256": observed_hash, "registered_at": now()}
+        selected_owner = source_record_id if source_record_id is not None else path_owner
+        if selected_owner is not None:
+            item.update(project_id=project_id, source_record_id=selected_owner)
+        if expected_sha256 is not None and item["sha256"] != expected_sha256:
+            raise WorkspaceError("Artifact differs from the captured input", "stale_input")
         with self.db(write=True) as db:
-            for row in db.execute("SELECT id,body FROM artifacts WHERE project=?", (project_id,)):
-                previous = json.loads(row[1])
+            # Hashing occurs outside the write lock. Recheck every historical
+            # owner after BEGIN IMMEDIATE, including rows superseded meanwhile.
+            rows = [(row[0], json.loads(row[1])) for row in db.execute("SELECT id,body FROM artifacts WHERE project=?", (project_id,))]
+            for _, previous in rows:
+                owner = previous.get("source_record_id")
+                if previous.get("path") == relative and owner is not None:
+                    if not isinstance(owner, str) or not owner:
+                        raise WorkspaceError("Existing evidence ownership is invalid", "invalid_source")
+                    if item.get("source_record_id") not in {None, owner}:
+                        raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
+                    item.update(project_id=project_id, source_record_id=owner)
+            for artifact_id, previous in rows:
                 if not previous.get("superseded_by") and (previous.get("path") == relative or (role == "main_manuscript" and previous["role"] == role)):
+                    # A legacy generic replacement must not erase path ownership,
+                    # including when the file bytes or artifact role changed.
+                    if previous.get("path") == relative and previous.get("source_record_id") is not None:
+                        owner = previous["source_record_id"]
+                        if not isinstance(owner, str) or not owner:
+                            raise WorkspaceError("Existing evidence ownership is invalid", "invalid_source")
+                        if item.get("source_record_id") not in {None, owner}:
+                            raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
+                        if source_record_id is None:
+                            item.update(project_id=project_id, source_record_id=owner)
+                    if source_record_id is not None and previous.get("source_record_id") not in {None, source_record_id}:
+                        raise WorkspaceError("Evidence is already bound to another source", "conflicting_source")
                     if previous.get("path") == relative and previous["sha256"] == item["sha256"] and previous["role"] == role:
+                        if item.get("source_record_id") is not None and previous.get("source_record_id") is None:
+                            previous.update(project_id=project_id, source_record_id=item["source_record_id"])
+                            db.execute("UPDATE artifacts SET body=? WHERE id=?", (encoded(previous), artifact_id))
                         return {**previous, "current": True}
                     previous["superseded_by"] = item["id"]
-                    db.execute("UPDATE artifacts SET body=? WHERE id=?", (encoded(previous), row[0]))
+                    db.execute("UPDATE artifacts SET body=? WHERE id=?", (encoded(previous), artifact_id))
             db.execute("INSERT INTO artifacts VALUES (?,?,?)", (item["id"], project_id, encoded(item)))
         return {**item, "current": True}
 
@@ -273,6 +338,65 @@ class Workspace:
         with self.db(write=True) as db:
             db.execute("INSERT INTO records VALUES (?,?,?,?)", (record_id, project_id, kind, encoded(data)))
         return {"id": record_id, "kind": kind, "data": data}
+
+    def save_source_batch(self, project_id: str, *, kind: str, data: list) -> dict:
+        """Atomically create/reuse exact native batch keys; never update sources."""
+        from .source_handoff import (prepare_source_batch_write, plan_stored_source_batch,
+            parse_stored_source_data, stored_source_identity, SourceBatchConflict,
+            MAX_SOURCE_RECORD_BYTES, MAX_SOURCE_SNAPSHOT_BYTES, MAX_PREVIEW_ITEMS)
+        incoming = prepare_source_batch_write(project_id, kind=kind, data=data)
+        self.project(project_id)  # Read-only precheck: an unknown root is not initialized.
+        requested = {(item["batch_id"], item["id"]) for item in incoming}
+        try:
+            with self.db(write=True) as db:
+                if not db.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
+                    raise WorkspaceError("Unknown project", "not_found")
+                snapshot = []
+                snapshot_bytes = 2  # JSON array brackets; commas are counted below.
+                for row in db.execute("SELECT id,body FROM records WHERE project=? AND kind='source' ORDER BY rowid", (project_id,)):
+                    try:
+                        if isinstance(row[1], str) and len(row[1].encode("utf-8")) > MAX_SOURCE_RECORD_BYTES:
+                            identity = stored_source_identity(row[1])
+                            if identity is None or identity not in requested:
+                                continue
+                        stored = parse_stored_source_data(row[1])
+                    except (ValueError, TypeError) as exc:
+                        raise WorkspaceError("Stored source metadata is unavailable", "conflict") from exc
+                    key = (stored.get("batch_id"), stored.get("id"))
+                    if not all(isinstance(value, str) for value in key) or key not in requested:
+                        continue  # Legacy unbatched records are not guessed to be a match.
+                    record = {"id": row[0], "kind": "source", "project_id": project_id, "data": stored}
+                    try:
+                        snapshot_bytes += len(encoded(record).encode("utf-8")) + bool(snapshot)
+                    except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
+                        raise WorkspaceError("Stored source metadata is unavailable", "conflict") from exc
+                    if snapshot_bytes > MAX_SOURCE_SNAPSHOT_BYTES or len(snapshot) >= MAX_PREVIEW_ITEMS:
+                        raise WorkspaceError("Stored source snapshot exceeds its bounded budget", "conflict")
+                    snapshot.append(record)
+                plan = plan_stored_source_batch(project_id, incoming, snapshot)
+                if plan["preview"]["counts"]["conflict"]:
+                    raise SourceBatchConflict(plan)
+                existing = {record["id"]: record for record in snapshot}
+                records, created = [], 0
+                for item in plan["preview"]["plans"]:
+                    if item["disposition"] == "exact-reuse":
+                        previous = existing[item["record_id"]]
+                        records.append({key: previous[key] for key in ("id", "kind", "data")})
+                    else:
+                        saved = {**item["data"], "recorded_at": now()}
+                        record_id = uuid.uuid4().hex
+                        db.execute("INSERT INTO records VALUES (?,?,?,?)", (record_id, project_id, "source", encoded(saved)))
+                        records.append({"id": record_id, "kind": "source", "data": saved})
+                        created += 1
+        except SourceBatchConflict as exc:
+            return {"ok": False, "code": "conflict", "error": str(exc), "batch": {
+                "persisted": False, "counts": {"created": 0, "reused": 0,
+                    "conflicts": exc.plan["preview"]["counts"]["conflict"]}, "plan": exc.plan["preview"]}}
+        return {"ok": True, "batch": {"project_id": project_id, "persisted": True,
+            "counts": {"created": created, "reused": len(records) - created, "conflicts": 0},
+            "records": records, "identity_or_scientific_verification": "not-performed",
+            "destination_writes": {"research-hub": "committed", "zotero": "not-performed",
+                                   "obsidian": "not-performed", "notebooklm": "not-performed"}}}
 
     def snapshot(self, project_id: str) -> dict:
         from .tasks import TaskService

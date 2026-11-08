@@ -154,6 +154,26 @@ evidence level, gaps, and pending checks honestly. Existing authenticity,
 integrity, and human semantic gates still apply. Host research alone does not
 authorize library/vault writes or publication.
 
+New bibliographic notes and applied summaries use the existing
+`summarize_status: done` when Key Findings, Methodology, and Relevance contain
+substantive content, following the existing migration's three-section contract.
+This heuristic establishes content presence only; it does not attest Hub/model
+generation, full-paper reading, correctness, bibliographic verification, human
+review, or remote synchronization. Native origin, source/version records, and
+pending checks remain intact. Empty and placeholder sections remain pending
+(or `failed_no_abstract` without a usable abstract). Default cluster summaries
+and the pending queue preserve substantive supplied sections even with a stale
+pending status; explicit `skip_existing=False` regeneration and the existing
+`paper resummarize` TODO workflow remain available. Existing note statuses are
+not migrated merely by reading them.
+
+NotebookLM URL classification examines the saved Abstract separately from
+summary completion. Without a usable abstract, `done` cannot clear the existing
+conservative publisher-URL guard merely because an HTTP probe returns 200.
+This observation is not proof of full-text access. Legacy access priors and
+explicit upload options remain in force; existing notes and bundle manifests
+are not rewritten on read.
+
 ## Version-aware observation convention
 
 For substantive reviews, put work/version and decision observations in the

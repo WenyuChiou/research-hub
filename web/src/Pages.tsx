@@ -1,3 +1,5 @@
+import { LibraryCollection } from "./LibraryCollection";
+import { DiscoveryPanel } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { artifactReference } from "./sourceStorage";
 import { linkedSourceArtifact, sourceArtifactLabels } from "./sourceArtifact";
@@ -27,7 +29,7 @@ import { ManuscriptTools } from "./ManuscriptTools";
 import { DeliveryPanel } from "./Delivery";
 import { ReturningWork } from "./ReturningWork";
 import { AbstractDraftComposer } from "./AbstractDraft";
-import { TextIntakeForm } from "./TextIntake";
+import { TextIntakeForm } from "./TextIntakeForm";
 import {
   TextIntakeRecoveryPanel,
   useTextIntakeRecovery,
@@ -59,11 +61,15 @@ export interface RecoveredText {
 export type RecoveredWork = RecoveredPreparation | RecoveredText;
 
 export interface PagesProps {
+  discoveryArtifact?: string | null;
+  invalidDiscoveryLink?: boolean;
   composerSessions?: ComposerSessions;
   navigationEpoch?: { current: number };
   detail: ProjectDetail;
   workspace: Workspace;
   page: Page;
+  observationRevision?: number;
+  categoryHost?: HTMLElement | null;
   t: Translate;
   onSaved: (message: string, recovered?: RecoveredWork) => Promise<void>;
   navigate: (page: Page, focusId?: string) => void;
@@ -71,11 +77,15 @@ export interface PagesProps {
 const textValue = (value: unknown) => String(value ?? "");
 
 export function ProjectPages({
+  discoveryArtifact = null,
+  invalidDiscoveryLink = false,
   composerSessions: providedSessions,
   navigationEpoch: providedEpoch,
   detail,
   workspace,
   page,
+  observationRevision = 0,
+  categoryHost = null,
   t,
   onSaved,
   navigate: parentNavigate,
@@ -121,11 +131,13 @@ export function ProjectPages({
       });
     },
   );
+  const [catalogToolsOpen, setCatalogToolsOpen] = useState(false);
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [intakeIntent, setIntakeIntent] = useState(0);
   const [prepareIntent, setPrepareIntent] = useState(0);
   const [sourceOpenVersion, setSourceOpenVersion] = useState(0);
   function openSavedText(saved: SavedText) {
+    setCatalogToolsOpen(true);
     setSourceOpenVersion((value) => value + 1);
     setIntakeOpen(false);
     setAbstractSourceId(saved.record.id);
@@ -205,7 +217,7 @@ export function ProjectPages({
           >
             {render(record)}
             <InspectJson
-              title={`${t("inspect")} · ${record.id}`}
+              title={`${t("inspect")} · ${page === "literature" ? record.id.slice(0, 8) : record.id}`}
               value={record}
             />
           </article>
@@ -277,6 +289,10 @@ export function ProjectPages({
     </Panel>
   );
 
+  const selectedDiscovery = Boolean(discoveryArtifact || invalidDiscoveryLink);
+  const discoveryPanel = <DiscoveryPanel projectId={detail.project.id}
+    artifacts={detail.artifacts} selected={discoveryArtifact}
+    invalid={invalidDiscoveryLink} active={page === "literature"} t={t} />;
   return (
     <>
       <TextIntakeRecoveryPanel
@@ -285,6 +301,7 @@ export function ProjectPages({
         onOpen={openSavedText}
         onSeparate={() => {
           if (intake.blocked) return;
+          setCatalogToolsOpen(true);
           setIntakeIntent((v) => v + 1);
           setIntakeOpen(true);
           navigate("literature");
@@ -294,6 +311,7 @@ export function ProjectPages({
         recovery={recovery}
         onSeparate={() => {
           if (recovery.blocked) return;
+          setCatalogToolsOpen(true);
           setPrepareIntent((v) => v + 1);
           navigate("literature");
         }}
@@ -408,40 +426,37 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
-        <div>
-          <button
-            className="button primary"
-            disabled={!intake.supported || intakeOpen}
-            onClick={() => {
-              setIntakeOpen(true);
-              setAbstractSourceId(null);
-            }}
-          >
-            {t("intakeAdd")}
-          </button>
-          {!intake.supported && (
-            <p role="status">
-              {t("intakeUnavailable")}{" "}
-              {workspace.capabilities.text_intake?.message}
-            </p>
-          )}
-        </div>
-        {intakeOpen && (
-          <TextIntakeForm
-            key={intakeIntent}
-            recovery={intake}
-            t={t}
-            onClose={() => setIntakeOpen(false)}
-            onOpen={openSavedText}
-          />
-        )}
+        <LibraryCollection sources={sources} screenings={records("screening")} t={t} categoryHost={categoryHost}
+          pageSuspended={page !== "literature"}
+          onWorkingSummarySaved={() => onSaved(t("workingSummarySaved"))}
+          observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}
+          onScreen={(sourceId, decision, rationale) => saveRecord("screening", {source_id:sourceId, decision, rationale})}
+          onPrepare={(record) => {
+            setCatalogToolsOpen(true);
+            setIntakeOpen(false);
+            setSourceOpenVersion((value) => value + 1);
+            setAbstractSourceId(record.id);
+            navigate("literature", "record-" + record.id);
+          }} />
+        {selectedDiscovery && discoveryPanel}
+        <details className="catalog-advanced" open={catalogToolsOpen} onToggle={(event) => setCatalogToolsOpen(event.currentTarget.open)}>
+          <summary>{t("catalogAdvanced")}</summary>
 
-        <Panel title={t("search")} className="search-panel">
+        <Panel
+          title={t("search")}
+          className="search-panel"
+          meta={
+            <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true" focusable="false">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m15.5 15.5 4.5 4.5" />
+            </svg>
+          }
+        >
           <MutationForm
             t={t}
             submit={t("searchAction")}
             reset={false}
-            fields={[{ name: "query", label: t("searchQuery") }]}
+            fields={[{ name: "query", label: t("searchQuery"), hint: t("searchPrivacy") }]}
             onSubmit={async (data) => {
               const value = await api<{
                 ok: true;
@@ -493,6 +508,41 @@ export function ProjectPages({
             </section>
           )}
         </Panel>
+        {!selectedDiscovery && discoveryPanel}
+        <div>
+          <button
+            className="button secondary"
+            disabled={!intake.supported || intakeOpen}
+            aria-describedby={!intake.supported ? "text-intake-unavailable" : undefined}
+            onClick={() => {
+              setIntakeOpen(true);
+              setAbstractSourceId(null);
+            }}
+          >
+            {t("intakeAdd")}
+          </button>
+          {!intake.supported && (
+            <div>
+              <p id="text-intake-unavailable" role="status">{t("intakeUnavailable")}</p>
+              {workspace.capabilities.text_intake?.message && (
+                <details>
+                  <summary>{t("intakeDetails")}</summary>
+                  <p>{workspace.capabilities.text_intake.message}</p>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+        {intakeOpen && (
+          <TextIntakeForm
+            key={intakeIntent}
+            recovery={intake}
+            t={t}
+            onClose={() => setIntakeOpen(false)}
+            onOpen={openSavedText}
+          />
+        )}
+
         <div className="page-grid">
           <Panel
             title={t("sources")}
@@ -525,7 +575,6 @@ export function ProjectPages({
                     )}
                   </p>
                 )}
-                <code className="record-id">{record.id}</code>
                 <button
                   className="button secondary"
                   onClick={() => {
@@ -597,7 +646,9 @@ export function ProjectPages({
               )}
             </Disclosure>
           </Panel>
-          <Panel title={t("screening")}>
+        </div>
+        </details>
+        <Panel title={t("screening")}>
             {recordList(records("screening"), "noScreening", (record) => {
               const source = sources.find(
                 (item) => item.id === record.data.source_id,
@@ -617,9 +668,6 @@ export function ProjectPages({
                       {statusLabel(textValue(record.data.decision), t)}
                     </span>
                   </div>
-                  <code className="record-id">
-                    {textValue(record.data.source_id)}
-                  </code>
                   {source && (
                     <>
                       <p>
@@ -632,9 +680,10 @@ export function ProjectPages({
                       </p>
                       <button
                         className="button secondary"
-                        onClick={() =>
-                          navigate("literature", `record-${source.id}`)
-                        }
+                        onClick={() => {
+                          setCatalogToolsOpen(true);
+                          navigate("literature", `record-${source.id}`);
+                        }}
                       >
                         {t("abstractReturnSource")}
                       </button>
@@ -671,8 +720,7 @@ export function ProjectPages({
                 }
               />
             </Disclosure>
-          </Panel>
-        </div>
+        </Panel>
       </div>
 
       <div hidden={page !== "evidence"} className="page-content">
@@ -880,10 +928,12 @@ export function ProjectPages({
                       tabIndex={-1}
                     >
                       <TaskCard
+                        active={page === "review"}
                         runnerAvailable={
                           workspace.capabilities.codex.status === "available"
                         }
                         onReturnToSource={(sourceId) => {
+                          setCatalogToolsOpen(true);
                           setAbstractSourceId(sourceId);
                           navigate("literature", `record-${sourceId}`);
                         }}

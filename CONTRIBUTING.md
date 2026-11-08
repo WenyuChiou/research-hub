@@ -36,7 +36,7 @@ To run with coverage:
 pytest --cov=research_hub --cov-report=term-missing
 ```
 
-The CI workflow on GitHub Actions runs the suite on Python 3.10, 3.11, and 3.12 against every push.
+The CI workflow runs regular push checks on `master` and `verify/**`, and full PR checks against any base branch. Other feature-branch pushes need a PR. The `verify/**` route provides deliberate exact-commit push diagnostics; it does not replace PR merge, stress, or skill-version acceptance. See [CI routing and checkout identity](docs/ci-routing.md) for the matrix, cancellation policy, and verification boundary.
 
 ---
 
@@ -84,8 +84,36 @@ Fixes #42
 - Target `master`
 - Ensure CI is green (all three Python versions)
 - Ensure tests still pass with `pytest -q`
-- One reviewer approval (currently @WenyuChiou)
+- A passing independent subagent review of the latest PR revision, as described below
 - Squash-merge unless you have a specific reason to keep individual commits
+
+### Independent review gate
+
+The author may arrange the review, but the reviewing subagent must be separate
+from the agent that implemented the change. Author self-checks alone do not
+satisfy this gate. The independent reviewer inspects the actual base-to-head
+diff and affected contracts, following [the code review rules](AGENTS.md#code-review-rules).
+
+Record the review evidence in the PR description or a linked review record:
+
+- The reviewed base and head commit SHAs. If local review used a tree snapshot,
+  include its tree SHA and verify that it matches the published head tree.
+- The reviewer's independent role, scope, result, and any findings or gaps.
+- Checks actually run and their results, clearly separated from checks not run.
+- Resolution of blocking findings and a passing review of the final revision.
+
+Any later head change requires independent review of the new revision. Before
+merging, verify the current base/head integration and applicable tests and CI
+under [CI routing and checkout identity](docs/ci-routing.md). A review pass does
+not replace those checks or waive unresolved blocking findings.
+
+A formal GitHub `APPROVED` review is not required by this project's review gate;
+the documented independent subagent pass is sufficient for the review component.
+Do not submit an `APPROVE` event on the author's behalf to manufacture that state.
+This policy does not change GitHub branch protection or rulesets, authorize
+bypassing an enforced rule, or grant permission to merge, deploy, or release.
+If GitHub enforces an additional approval requirement, stop and resolve that
+requirement through the separately authorized repository-settings process.
 
 ---
 

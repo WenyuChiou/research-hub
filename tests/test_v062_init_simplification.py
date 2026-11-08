@@ -22,13 +22,14 @@ def test_completion_banner_includes_install_step(monkeypatch, capsys, tmp_path):
     assert "research-hub install --platform codex" in output
 
 
-def test_mandatory_nlm_login_when_chrome_ok_and_researcher_persona(tmp_path, monkeypatch):
+def test_optional_nlm_login_when_explicitly_selected(tmp_path, monkeypatch):
     from research_hub import init_wizard
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     calls: list[str] = []
     monkeypatch.setattr(init_wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
     monkeypatch.setattr(
         init_wizard.platformdirs,
         "user_config_dir",
@@ -72,6 +73,7 @@ def test_zotero_retry_is_single_attempt(tmp_path, monkeypatch, capsys):
             "y",
             "1",
             str(tmp_path / "vault"),
+            "y",  # connect Zotero now
             "bad-key",
             "111",
             "y",

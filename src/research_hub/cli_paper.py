@@ -529,18 +529,19 @@ def _paper_resummarize(
         llm_cli=llm_cli,
         apply=apply,
         paper_keys=paper_keys,
+        skip_existing=False,
         provenance="legacy_cli_explicit_apply",
     )
     if report.apply_result is not None:
         for line in summarize_mod.receipt_lines(getattr(report.apply_result, "receipts", [])):
             print(line)
+        for warning in getattr(report.apply_result, "warnings", []):
+            print(f"  WARN {warning}", file=sys.stderr)
     if not report.ok:
         if report.apply_result is not None:
             receipt = report.apply_result
             print(f"confirmed applied: {len(receipt.applied)}  skipped: {len(receipt.skipped)}  errors: {len(receipt.errors)}")
             print(f"confirmed obsidian writes: {receipt.obsidian_writes}, zotero writes: {receipt.zotero_writes}")
-            for warning in getattr(receipt, "warnings", []):
-                print(f"  WARN {warning}", file=sys.stderr)
             for skip in receipt.skipped:
                 print(f"  SKIP {skip}")
             for error in receipt.errors:
@@ -549,7 +550,11 @@ def _paper_resummarize(
         return 1
     if report.prompt_path:
         print(f"no LLM CLI on PATH; prompt saved to {report.prompt_path}")
-        print("pipe it through your LLM CLI and re-run with --apply")
+        print("Prompt-only: no summaries were generated or applied, even with --apply.")
+        print("An agent in this host can read the saved prompt with authorized tools and return readable abstract-based summaries.")
+        print("Saving them requires a separately authorized supported operation for the selected destination.")
+        print("If that route is unavailable, keep the readable result and report saving as pending.")
+        print("Re-running --apply does not import externally generated summaries.")
         return 0
     print(f"cli used: {report.cli_used}")
     if not apply:

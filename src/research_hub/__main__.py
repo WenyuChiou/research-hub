@@ -1,4 +1,4 @@
-from research_hub.cli import main
+from research_hub.cli_entry import main
 
 
 if __name__ == "__main__":

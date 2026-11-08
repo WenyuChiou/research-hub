@@ -83,21 +83,29 @@ def _parse_note_metadata(md_path: Path) -> dict[str, str]:
     return meta
 
 
+def _read_abstract_content(md_path: Path) -> str | None:
+    """Read Abstract content without counting callout syntax or block anchors."""
+    from research_hub.markdown_conventions import unwrap_callout
+    from research_hub.paper_summarize import extract_markdown_section
+
+    try:
+        body = md_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None  # unreadable is unknown, not an absence observation
+    abstract = unwrap_callout(extract_markdown_section(body, "Abstract"))
+    # Strip standalone Obsidian IDs, preserving inline scientific notation.
+    return re.sub(r"(?m)^\^[A-Za-z0-9_-]+[ \t]*\r?$", "", abstract).strip()
+
+
 def _extract_abstract(md_path: Path, meta: dict[str, str]) -> str:
     """F8 content ladder rung 3: the paper's abstract as a self-describing
     text source. Pulls the `## Abstract` section from the note body (the
     abstract is not a frontmatter key). Returns "" if absent/placeholder
     so the caller can fall through to the URL rung. Prefixed with
     title/DOI so the NotebookLM text source is identifiable."""
-    try:
-        body = md_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    abstract = _read_abstract_content(md_path)
+    if abstract is None:
         return ""
-    m = re.search(r"^##\s+Abstract\s*\n(.+?)(?=\n##|\Z)", body,
-                  re.MULTILINE | re.DOTALL)
-    if not m:
-        return ""
-    abstract = m.group(1).strip()
     # Skip empty / TODO-placeholder abstracts (research-hub leaves these
     # when summarize had no abstract — uploading them is noise).
     if len(abstract) < 40 or abstract.lower().startswith(("[", "todo", "n/a")):
@@ -278,12 +286,21 @@ def bundle_cluster(
         url = _pick_url(meta)
         if url:
             from research_hub.notebooklm.url_quality import classify_url_source
+            from research_hub.paper_summarize import is_bad_abstract
 
             summarize_status = meta.get("summarize_status", "")
+            # Summary completion cannot clear the separate absent/short-abstract
+            # prior. Observe the saved Abstract, without changing the note or
+            # treating supplied summaries as acquisition/access evidence.
+            abstract_usable = None
+            if pdf is None:
+                abstract = _read_abstract_content(note_path)
+                if abstract is not None:
+                    abstract_usable = not is_bad_abstract(abstract)
             # Only probe when there is no local PDF (pdf is None); a PDF-backed
             # entry will take action="pdf" and the URL is never uploaded.
             quality_result = classify_url_source(
-                url, summarize_status, probe=(pdf is None)
+                url, summarize_status, probe=(pdf is None), abstract_usable=abstract_usable,
             )
             entry.url_quality = quality_result.quality
             entry.url_quality_reason = quality_result.reason

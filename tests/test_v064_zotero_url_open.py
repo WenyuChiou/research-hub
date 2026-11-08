@@ -26,7 +26,7 @@ def _patch_init_runtime(monkeypatch, tmp_path: Path) -> Path:
 
 def test_zotero_url_opens_when_interactive(monkeypatch, tmp_path):
     _patch_init_runtime(monkeypatch, tmp_path)
-    answers = iter(["y", "1", str(tmp_path / "vault"), "z-key", "123"])
+    answers = iter(["y", "1", str(tmp_path / "vault"), "y", "z-key", "123", "n"])
     opens: list[str] = []
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
@@ -38,7 +38,7 @@ def test_zotero_url_opens_when_interactive(monkeypatch, tmp_path):
 
 def test_no_browser_flag_suppresses_open(monkeypatch, tmp_path):
     _patch_init_runtime(monkeypatch, tmp_path)
-    answers = iter(["y", "1", str(tmp_path / "vault"), "z-key", "123"])
+    answers = iter(["y", "1", str(tmp_path / "vault"), "y", "z-key", "123"])
     opens: list[str] = []
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
@@ -50,13 +50,16 @@ def test_no_browser_flag_suppresses_open(monkeypatch, tmp_path):
 
 def test_webbrowser_failure_does_not_break_init(monkeypatch, tmp_path):
     _patch_init_runtime(monkeypatch, tmp_path)
-    answers = iter(["y", "1", str(tmp_path / "vault"), "z-key", "123"])
+    answers = iter(["y", "1", str(tmp_path / "vault"), "y", "z-key", "123", "n"])
+    opens: list[str] = []
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
 
-    def _raise(_url):
+    def _raise(url):
+        opens.append(url)
         raise Exception("browser failed")
 
     monkeypatch.setattr("webbrowser.open", _raise)
 
     assert init_wizard.run_init() == 0
+    assert opens == ["https://www.zotero.org/settings/keys"]

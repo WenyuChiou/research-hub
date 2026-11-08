@@ -103,6 +103,10 @@ def summarize_pending(
         status = str(meta.get("summarize_status", "") or "").strip()
         if status not in {"pending", "failed_no_abstract"}:
             continue
+        # Older ingest/apply writers could leave a supplied summary pending.
+        # Preserve its content and provenance without invoking another backend.
+        if sections_are_substantive(text):
+            continue
         if max_papers is not None and processed >= max_papers:
             break
 
@@ -253,6 +257,18 @@ def sections_are_substantive(text: str) -> bool:
     return True
 
 
+def mark_summary_content_done(text: str) -> str:
+    """Reuse the migration's ``done`` state for present structured sections.
+
+    This is a content-presence heuristic, not attestation of generation,
+    reading coverage, bibliographic verification, review, or remote writes.
+    Leave provenance and generation-specific fields exactly as supplied.
+    """
+    if sections_are_substantive(text) and _split_frontmatter(text) is not None:
+        return set_frontmatter_fields(text, {"summarize_status": "done"})
+    return text
+
+
 def extract_markdown_section(text: str, header: str) -> str:
     pattern = re.compile(
         rf"^##[ \t]+{re.escape(header)}[ \t]*\r?\n+(.*?)(?=^\s*---\s*$|^##[ \t]+|\Z)",
@@ -345,11 +361,15 @@ def _normalize_key_findings(value: str) -> str:
 
 
 def _is_substantive_section(section: str) -> bool:
+    # Inspect the title before stripping callout markup: pending warnings carry
+    # their marker in that title, followed by a lengthy instructional body.
+    if "summary pending" in section.lower():
+        return False
     stripped = _strip_callout_markup(section).strip()
     if len(stripped) < 20:
         return False
     lowered = stripped.lower()
-    if "summary pending" in lowered:
+    if re.search(r"\[(?:todo\b|abstract too thin\b|no-abstract-fallback\b|pdf needed\b)", lowered):
         return False
     return not any(placeholder.lower() in lowered for placeholder in STICKY_PLACEHOLDER_TEXTS)
 

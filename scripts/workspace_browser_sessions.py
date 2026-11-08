@@ -113,6 +113,7 @@ def check_composer_sessions(screen, service, fixtures, checks, output):
         screen.choose(fixtures["other_project"])
         expect(page.get_by_label("Purpose or question (optional)", exact=True)).to_have_count(0)
         screen.choose(project)
+        screen.navigate("Literature")
         open_source(fixtures["source"])
         assert_draft(purpose, locked)
 

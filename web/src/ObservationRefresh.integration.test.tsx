@@ -1,0 +1,40 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, expect, it, vi } from "vitest";
+import App from "./App";
+import { translator } from "./i18n";
+
+afterEach(() => vi.unstubAllGlobals());
+it("the normal App Refresh retries only the selected report after a transient failure with identical project metadata", async () => {
+  const hash="a".repeat(64);
+  const text="# Generated summary observation: local-a\n\nEvidence level: generated-summary. This is report-derived prose, NOT an original abstract or publisher capture.\n\n## Supplied generated summary\nRecovered synthetic draft.\n\nRole candidate (not human acceptance): Method\nReported later reading: abstract\nReported observation time: 2026-11-01T01:20:49Z\nReported sources: [\"https://example.invalid/a\"]\n";
+  const project={id:"project",title:"Synthetic refresh",archetype:"review",goal:"Read selected material"};
+  const record={id:"hub-a",kind:"source",data:{id:"local-a",title:"Source A",locator:"https://example.invalid/a",source_records:[{observation_id:"obs-a",source_id:"local-a",work_id:"work-a",status:"available",evidence_level:"generated-summary",text_path:"report.md",text_sha256:hash}]}};
+  const artifact={id:"artifact-a",project_id:"project",source_record_id:"hub-a",path:"report.md",role:"evidence",sha256:hash,current:true};
+  const workspace={ok:true,projects:[project],capabilities:{codex:{status:"unavailable",message:"Synthetic"},writing:{status:"unavailable",message:"Synthetic"},approval:{status:"unavailable",message:"Synthetic"}},protection_scope:"synthetic"};
+  const detail={ok:true,project,records:[record],artifacts:[artifact],tasks:[],actions:[],manuscript:{authority_sources:[],contract:{}},workflow:null,warnings:[]};
+  let reads=0;
+  const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json"}});
+  const fetch=vi.fn(async(input:RequestInfo|URL,options?:RequestInit)=>{
+    const url=String(input);
+    expect(options?.method ?? "GET").toBe("GET");
+    if(url.endsWith("/workspace"))return json(workspace);
+    if(url.endsWith("/projects/project"))return json(detail);
+    if(url.endsWith("/artifacts/artifact-a/text"))return ++reads===1?json({ok:false,error:"Transient",code:"source_unavailable"},503):json({ok:true,preview:{artifact_id:artifact.id,path:artifact.path,sha256:hash,text,bytes_read:new TextEncoder().encode(text).length,codepoint_length:Array.from(text).length,truncated:false}});
+    throw new Error("Unexpected synthetic request "+url);
+  });
+  vi.stubGlobal("fetch",fetch);
+  window.history.replaceState({},"","#literature");
+  const user=userEvent.setup();render(<App />);
+  const t=translator("en");
+  expect(await screen.findByText(t("observationPreviewError"))).toBeVisible();
+  expect(reads).toBe(1);
+  await user.click(screen.getByText("Generated summary draft · obs-a",{exact:true}));
+  await user.click(screen.getByRole("button",{name:"Refresh"}));
+  expect(await screen.findByText("Recovered synthetic draft.")).toBeVisible();
+  await waitFor(()=>expect(reads).toBe(2));
+  await user.click(screen.getByRole("button",{name:"Refresh"}));
+  await waitFor(()=>expect(reads).toBe(3));
+  expect(await screen.findByText("Recovered synthetic draft.")).toBeVisible();
+  expect(fetch.mock.calls.filter(c=>c[1]?.method==="POST")).toHaveLength(0);
+});

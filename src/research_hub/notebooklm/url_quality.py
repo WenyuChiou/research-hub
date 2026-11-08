@@ -147,6 +147,7 @@ def classify_url_source(
     *,
     probe: bool = True,
     timeout: int = 8,
+    abstract_usable: bool | None = None,
 ) -> UrlQuality:
     """Classify a URL source for upload quality before sending to NotebookLM.
 
@@ -155,10 +156,12 @@ def classify_url_source(
     Tier 2 FIRST (no network): host is in the open-access allowlist (arxiv.org
         etc.) → quality=ok immediately. Cheapest check, always reliable.
 
-    Tier 1 (metadata prior, probe to clear): summarize_status ==
-        "failed_no_abstract" → probe the URL to confirm or clear the signal.
+    Tier 1 (abstract prior): a separately observed unusable saved abstract, or
+        the legacy summarize_status == "failed_no_abstract" signal, retains
+        the conservative guard. Summary completion cannot clear this prior.
         If the probe returns ok (HTTP 200), the entry is still classified as
-        likely_error_page with reason probe_cleared_failed_no_abstract —
+        likely_error_page with reason no_usable_abstract (or the legacy
+        probe_cleared_failed_no_abstract reason).
         HTTP 200 alone is not sufficient evidence of accessible content.
         Springer/Wiley skeleton paywall pages return 200 but contain no body;
         NLM also cannot bypass the paywall, so uploading such a URL would
@@ -172,6 +175,11 @@ def classify_url_source(
 
     Fail-safe: any probe exception/timeout → quality="unknown" (never
     skipped downstream; only "likely_error_page" is filtered).
+
+    ``abstract_usable`` observes only the saved Abstract section under the
+    caller's content heuristic. It does not establish URL access or full-text
+    acquisition. None preserves legacy callers; True cannot clear a legacy
+    failed_no_abstract prior.
     """
     # Tier 2 FIRST: open-access host allowlist — cheapest, always reliable
     try:
@@ -184,23 +192,23 @@ def classify_url_source(
     can_probe = probe and url.startswith(("http://", "https://"))
     status = (summarize_status or "").strip()
 
-    # Tier 1: metadata prior — PROBE to clear real-content false positives
-    if status == "failed_no_abstract":
+    # Keep the access-quality prior independent of summary completion.
+    legacy_missing = status == "failed_no_abstract"
+    if legacy_missing or abstract_usable is False:
+        reason = "failed_no_abstract" if legacy_missing else "no_usable_abstract"
         if not can_probe:
-            return UrlQuality("likely_error_page", "failed_no_abstract",
+            return UrlQuality("likely_error_page", reason,
                               "metadata tier, probe unavailable")
         probed = _probe_url(url, timeout=timeout)
         if probed.quality == "ok":
-            # Even with HTTP 200, failed_no_abstract is reliable paywall evidence:
-            # the summarizer already tried and could not extract abstract text at
-            # ingest time. NLM also cannot bypass the paywall, so uploading the URL
-            # would silently produce zero indexed content. Treat as likely_error_page
-            # so the bundle falls back to abstract text when available.
-            return UrlQuality("likely_error_page", "probe_cleared_failed_no_abstract", probed.signal)
-        return UrlQuality("likely_error_page", "failed_no_abstract",
+            # A supplied summary and HTTP 200 do not establish accessible paper
+            # content on a publisher shell. Preserve the prior and fallback.
+            reason = "probe_cleared_failed_no_abstract" if legacy_missing else reason
+            return UrlQuality("likely_error_page", reason, probed.signal)
+        return UrlQuality("likely_error_page", reason,
                           f"metadata+probe={probed.quality}:{probed.signal}")
 
-    # Tier 3: ambiguous publisher / status done → probe
+    # Tier 3: ambiguous publisher without a negative abstract prior -> probe
     if not can_probe:
         return UrlQuality("unknown", "no_probe", "probe disabled or no URL")
     return _probe_url(url, timeout=timeout)

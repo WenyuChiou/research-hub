@@ -7,13 +7,22 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
-    # Group patch bumps so the upper-bounded deps don't open 7 PRs/week.
+    open-pull-requests-limit: 2
+    # Group related test-tool updates before the broader patch group.
+    # These groups apply only to version updates; security updates stay separate.
     groups:
+      test-tooling:
+        applies-to: version-updates
+        patterns:
+          - "pytest-cov"
+          - "pytest-mock"
+          - "pytest-socket"
+          - "pytest-split"
+          - "pytest-timeout"
+          - "responses"
+        update-types: ["minor", "patch"]
       runtime-patches:
         update-types: ["patch"]
-    labels:
-      - "dependencies"
     ignore:
       # notebooklm-py is capped <0.5.0 ON PURPOSE (see pyproject.toml): a 0.x
       # minor-version kwarg drift shipped v0.88.10 "100% NLM upload broken".
@@ -29,6 +38,6 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     labels:
       - "ci"

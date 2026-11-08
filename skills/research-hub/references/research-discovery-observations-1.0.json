@@ -1,0 +1,459 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "run_id",
+    "project_id",
+    "brief",
+    "capabilities",
+    "needs",
+    "attempts",
+    "sources",
+    "completion"
+  ],
+  "properties": {
+    "format": {
+      "const": "research-discovery-observations/1.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000,
+      "pattern": "\\S"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000,
+      "pattern": "\\S"
+    },
+    "brief": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000,
+      "pattern": "\\S"
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "kind",
+          "availability",
+          "observation"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "kind": {
+            "enum": [
+              "search",
+              "deep-research",
+              "read",
+              "citation",
+              "skill"
+            ]
+          },
+          "availability": {
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ]
+          },
+          "observation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "needs": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "text",
+          "families",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "families": {
+            "type": "array",
+            "maxItems": 10000,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000,
+              "pattern": "\\S"
+            },
+            "minItems": 1
+          },
+          "status": {
+            "enum": [
+              "covered",
+              "unresolved",
+              "not-assessed"
+            ]
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "attempts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "need_ids",
+          "kind",
+          "tool",
+          "input",
+          "status",
+          "outcome",
+          "result_count",
+          "receipt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "need_ids": {
+            "type": "array",
+            "maxItems": 10000,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000,
+              "pattern": "\\S"
+            }
+          },
+          "kind": {
+            "enum": [
+              "search",
+              "read"
+            ]
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "input": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "declared",
+              "observed",
+              "unavailable"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "success",
+              "empty",
+              "partial",
+              "timeout",
+              "denied",
+              "error",
+              "unknown"
+            ]
+          },
+          "result_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reference",
+                  "material"
+                ],
+                "properties": {
+                  "reference": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 20000,
+                        "pattern": "\\S"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "material": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "path",
+                          "sha256"
+                        ],
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 20000,
+                            "pattern": "\\S"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "work_id",
+          "version",
+          "reading_level",
+          "reading_ref",
+          "material",
+          "attempt_ids",
+          "title",
+          "locator",
+          "access",
+          "need_ids",
+          "relevance"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "work_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reading_level": {
+            "enum": [
+              "metadata",
+              "abstract",
+              "excerpt",
+              "full-text",
+              "unavailable"
+            ]
+          },
+          "reading_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000,
+                "pattern": "\\S"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "sha256"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000,
+                    "pattern": "\\S"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attempt_ids": {
+            "type": "array",
+            "maxItems": 10000,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000,
+              "pattern": "\\S"
+            }
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "locator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          },
+          "access": {
+            "enum": [
+              "public",
+              "restricted",
+              "unavailable",
+              "unknown"
+            ]
+          },
+          "need_ids": {
+            "type": "array",
+            "maxItems": 10000,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000,
+              "pattern": "\\S"
+            }
+          },
+          "relevance": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          }
+        }
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason",
+        "residual_need_ids"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "continue",
+            "partial",
+            "bounded-complete"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000,
+          "pattern": "\\S"
+        },
+        "residual_need_ids": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "pattern": "\\S"
+          }
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Caller-observed native discovery handoff; not execution attestation"
+}

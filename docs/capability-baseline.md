@@ -7,7 +7,7 @@ Unknown or untested is **not ready**. Software tests do not establish scientific
 
 ### Later changes are not included in this pinned baseline
 
-The installation commands intentionally retain the dated `6381dfa7` snapshot.
+The [historical workspace guide installation commands](workspace-guide.md#start-with-the-account-free-demo) retain the dated `6381dfa7` snapshot.
 It does **not** include the subsequent [#175 read-deadline and capability-probe
 budget fix](https://github.com/WenyuChiou/research-hub/pull/175), merged at
 `030bbd451022a9bdf8ab91cc12af5bed0b5cf857`. Do not use tests of a newer checkout
@@ -23,9 +23,7 @@ accepted-source pins are not advanced by this documentation clarification.
 
 ## Start without accounts
 
-Follow the [pinned source installation](../README.md#workspace-preview) in a
-new virtual environment (Python 3.10+). Dependency installation needs network
-access; the demo itself needs no accounts, browser login, model, or Node runtime.
+To reproduce this baseline, follow the [historical workspace guide installation commands](workspace-guide.md#start-with-the-account-free-demo) and check out `6381dfa7d474dd27cd4adb33f0f59ea8ec395150` in a new virtual environment (Python 3.10+). The [current README](../README.md#workspace-preview) instead identifies a newer source revision. Dependency installation needs network access; the demo itself needs no accounts, browser login, model, or Node runtime.
 
 ```sh
 research-hub project demo --root ./workspace-demo --json

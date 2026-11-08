@@ -67,8 +67,10 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
             "y",  # Q0: do you use Zotero?
             "1",  # persona menu in Zotero branch -> researcher
             str(tmp_path / "interactive-vault"),
+            "y",  # connect Zotero now
             "z-key",
             "999",
+            "n",  # defer optional NotebookLM
         ]
     )
     prompts: list[str] = []
@@ -87,7 +89,7 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
         "_check_first_run_readiness",
         lambda vault, *, persona, has_zotero: [("chrome", "OK", "patchright can launch Chrome")],
     )
-    # v0.62: mandatory NLM login auto-launches when chrome_ok; stub it out
+    # Keep optional login synthetic if the user chooses it.
     monkeypatch.setattr("research_hub.setup_command.run_notebooklm_login", lambda: None)
     # v0.68.4: stub webbrowser.open so the test does not actually launch a
     # real browser to https://www.zotero.org/settings/keys when the user
@@ -104,13 +106,14 @@ def test_init_interactive_prompts(tmp_path, monkeypatch, capsys):
     assert is_encrypted(config["zotero"]["api_key"])
     assert decrypt(config["zotero"]["api_key"], config_dir) == "z-key"
     assert config["zotero"]["library_id"] == "999"
-    # v0.62: when chrome_ok, NLM login auto-launches (no [y/N] prompt)
     assert prompts == [
         "> ",  # Q0
         "> ",  # persona menu in Zotero branch
         f"Vault root directory [{default_home / 'knowledge-base'}]: ",
+        "  Connect Zotero now? [y/N]: ",
         "  Zotero API key: ",
         "  Zotero library ID: ",
+        "  Connect NotebookLM now? [y/N]: ",
     ]
     assert "First-run readiness check" in output
     assert "patchright can launch Chrome" in output

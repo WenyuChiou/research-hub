@@ -1,0 +1,162 @@
+{
+  "detail": {
+    "ok": true,
+    "project": {
+      "archetype": "empirical",
+      "created_at": "2026-10-26T03:14:21.994752Z",
+      "goal": "",
+      "id": "p",
+      "title": "Synthetic native study"
+    },
+    "artifacts": [
+      {
+        "id": "777be046a7ca4c52ac295dfb0cdde879",
+        "path": "hub-discovery/90027c93d2e0828ffb13450119f5c7b027866e2041691186ce4d0d779312b3e8.json",
+        "registered_at": "2026-10-26T03:14:22.008738Z",
+        "role": "evidence",
+        "sha256": "90027c93d2e0828ffb13450119f5c7b027866e2041691186ce4d0d779312b3e8",
+        "current": true
+      }
+    ],
+    "records": [],
+    "actions": [],
+    "tasks": [],
+    "manuscript": null,
+    "workflow": {
+      "schema_version": "1.1",
+      "workflow_id": "workspace-p",
+      "current_stage": "orient",
+      "status": "running",
+      "updated_at": "2026-10-26T03:14:22.004765Z",
+      "trace_id": "57efc8fb62fc402bbaa4e4d5c03280a0",
+      "correlation_id": "c7562f51106848cd8e053cfa32f1eab5",
+      "policy_checkpoint_ref": null,
+      "policy_hash": null,
+      "evidence_packet_refs": [],
+      "actions": [],
+      "decisions": [],
+      "artifacts": [],
+      "attempt_history": [],
+      "pending_action": null,
+      "pending_external_action": null,
+      "external_write_ledger": [],
+      "recovery_status": "clean",
+      "migration_history": [],
+      "blocker": null
+    },
+    "warnings": [
+      "Bind the public writing adapter to initialize manuscript authority; no manuscript checks have passed yet."
+    ]
+  },
+  "view": {
+    "ok": true,
+    "artifact": {
+      "id": "777be046a7ca4c52ac295dfb0cdde879",
+      "sha256": "90027c93d2e0828ffb13450119f5c7b027866e2041691186ce4d0d779312b3e8",
+      "registered_at": "2026-10-26T03:14:22.008738Z"
+    },
+    "report": {
+      "structure": "valid",
+      "binding": "current",
+      "input_sha256": "90027c93d2e0828ffb13450119f5c7b027866e2041691186ce4d0d779312b3e8",
+      "material_bindings": [],
+      "material_reference_count": 0,
+      "receipt_scope": "caller-observed; saved captures are byte-checked, not authenticated",
+      "declared_attempts": 1,
+      "planned_attempts": 0,
+      "unavailable_attempts": 0,
+      "caller_observed_attempts": 0,
+      "unknown_source_versions": [
+        "s1"
+      ],
+      "unbound_source_material": [
+        "s1",
+        "s2"
+      ],
+      "completion": {
+        "reason": "Closest work not established",
+        "residual_need_ids": [
+          "n1"
+        ],
+        "status": "partial"
+      },
+      "execution_verified": false,
+      "semantic_assessment": "not-performed",
+      "human_selection": "outside-checker",
+      "execution_authorized": false,
+      "limits": [
+        "Observations and reading levels are caller supplied, not authenticated execution or reading proof.",
+        "Hashes bind selected bytes, not authenticity, semantic support, completeness or future file stability."
+      ]
+    },
+    "discovery": {
+      "format": "research-discovery-observations/1.0",
+      "project_id": "p",
+      "run_id": "synthetic-run",
+      "brief": "Synthetic scoped literature question",
+      "needs": [
+        {
+          "families": [
+            "closest",
+            "contrary"
+          ],
+          "id": "n1",
+          "status": "unresolved",
+          "text": "Find closest work"
+        }
+      ],
+      "completion": {
+        "reason": "Closest work not established",
+        "residual_need_ids": [
+          "n1"
+        ],
+        "status": "partial"
+      },
+      "sources": [
+        {
+          "id": "s1",
+          "work_id": "synthetic:1",
+          "title": "Same synthetic title",
+          "locator": "https://example.org/synthetic",
+          "access": "restricted",
+          "need_ids": [
+            "n1"
+          ],
+          "relevance": "Potential closest method; abstract only, increment unresolved",
+          "version": null,
+          "reading_level": "abstract",
+          "attempt_ids": []
+        },
+        {
+          "id": "s2",
+          "work_id": "synthetic:1",
+          "title": "Same synthetic title",
+          "locator": "javascript:alert(1)",
+          "access": "restricted",
+          "need_ids": [
+            "n1"
+          ],
+          "relevance": "Potential closest method; abstract only, increment unresolved",
+          "version": "synthetic-v2",
+          "reading_level": "abstract",
+          "attempt_ids": []
+        }
+      ],
+      "attempts": [
+        {
+          "id": "a1",
+          "need_ids": [
+            "n1"
+          ],
+          "kind": "search",
+          "tool": "host search",
+          "input": "synthetic query",
+          "status": "declared",
+          "outcome": "unknown",
+          "result_count": null
+        }
+      ]
+    }
+  },
+  "view_path": "/app/#literature?project=p&discovery=777be046a7ca4c52ac295dfb0cdde879"
+}

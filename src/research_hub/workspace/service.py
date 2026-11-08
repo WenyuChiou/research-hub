@@ -104,10 +104,24 @@ class WorkspaceService:
             if operation == "create":
                 return {"ok": True, "project": self.workspace.create_project(**values)}
             project_id = values.pop("project_id")
+            if operation in {"discovery-check", "discovery-save", "discovery-replay", "discovery-view"}:
+                from .discovery import check_profile, save_profile, replay_profile, view_profile
+                if operation == "discovery-check":
+                    report = check_profile(self.workspace, project_id, **values)
+                    return {"ok": report["binding"] == "current", "report": report}
+                if operation == "discovery-save":
+                    return save_profile(self.workspace, project_id, **values)
+                if operation == "discovery-view":
+                    return view_profile(self.workspace, project_id, **values)
+                return replay_profile(self.workspace, project_id, **values)
             if operation == "show":
                 return self.workspace.snapshot(project_id)
             if operation == "preview_text":
                 return self.preview_text(project_id, **values)
+            if operation in {"working-summary-context", "working-summary-save"}:
+                from .working_summary import WorkingSummary
+                summaries = WorkingSummary(self.workspace)
+                return (summaries.context if operation == "working-summary-context" else summaries.save)(project_id, **values)
             if operation in {"source_text", "source_text_lookup"}:
                 intake = self._text_intake()
                 return (intake.save if operation == "source_text" else intake.lookup)(project_id, **values)
@@ -115,6 +129,8 @@ class WorkspaceService:
                 return {"ok": True, "artifact": self.workspace.register_artifact(project_id, **values)}
             if operation == "record":
                 return {"ok": True, "record": self.workspace.add_record(project_id, **values)}
+            if operation == "record-batch":
+                return self.workspace.save_source_batch(project_id, **values)
             if operation == "search":
                 return self.search(project_id, **values)
         elif resource == "task":

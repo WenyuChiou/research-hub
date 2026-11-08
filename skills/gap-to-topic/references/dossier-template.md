@@ -72,6 +72,38 @@ candidate.> *Why it could be a gap:* <"Application coverage unresolved" /
 
 **Candidate 2 — <readable name>.** <…>
 
+### Candidate revision after closest/contrary comparison
+
+For each load-bearing nearest or contrary work, record its verified identity,
+actual reading level, compared question/system/method/outcome and source locator.
+Use a compact revision record, not a list of citations followed by generic unknown:
+
+| Original proposition | Observed overlap / contrary condition | Revised proposition | Remaining discriminating test |
+|---|---|---|---|
+| <candidate and version> | <source-bound comparison; unexamined if not read> | <narrow, reposition, retain with reason, or park; preserve useful value> | <bounded check and what would change the conclusion> |
+
+A missed/unread close work remains an explicit next reading task, not an invented
+comparison or proof the proposal is novel. If overlap removes the proposed
+increment, revise the question or park it; do not preserve the original novelty
+claim merely by changing the verdict to unknown. Contrary results may be
+conditional rather than directly comparable; state those applicability limits.
+A revised candidate needs a new version-bound review; updating a hash alone
+cannot carry old support forward. Human choice remains separate.
+
+Preserve the original brief and unchanged decisions alongside the revision.
+Identify exactly which premises, claims and feasibility checks need reassessment;
+do not restart unrelated work. A candidate hash change alone is not a blanket
+reauthorization requirement and does not erase prior decisions. It also does
+not extend permission to a new objective, destination, cost or action: assess
+those scope changes under the existing authorization rules. Keep source-binding
+freshness, human topic choice and execution permission as separate questions.
+
+Record **materials / needed fields / reuse conditions** for the proposed minimum
+study, with observed evidence and bounded next checks. Critical unknowns cannot
+be ready, even if a file downloaded or a structural checker passed. Theory or
+non-data work can mark a category not applicable with a reason; do not invent a
+dataset requirement. Keep untested expected benefits distinct from measured ones.
+
 ## 3. Decision Scorecards
 
 > *Per candidate, one small 3-column table — Gate / Score / Rationale —

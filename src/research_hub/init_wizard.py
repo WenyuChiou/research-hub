@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import sys
@@ -29,32 +30,30 @@ def _check_first_run_readiness(vault: Path, *, persona: str, has_zotero: bool) -
     else:
         rows.append(("obsidian", "INFO", f"no .obsidian/ in {vault} -- open Obsidian once to render"))
 
-    # patchright + Chrome probe (needed for NotebookLM)
+    # Presence is a passive hint, not a browser launch or authentication probe.
+    # Driver startup itself may need IPC, so do not run it during local init.
     try:
-        from patchright.sync_api import sync_playwright
-
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(channel="chrome", headless=True)
-                browser.close()
-            rows.append(("chrome", "OK", "patchright can launch Chrome (channel='chrome')"))
-        except Exception as exc:
-            rows.append(("chrome", "WARN", f"patchright cannot launch Chrome: {str(exc)[:120]}"))
-    except ImportError:
-        rows.append(("chrome", "WARN", "patchright not installed -- `pip install research-hub-pipeline[playwright]`"))
+        browser_package = importlib.util.find_spec("patchright")
+    except (ImportError, ValueError):
+        rows.append(("chrome", "WARN", "optional browser package presence unverified; NotebookLM setup can wait"))
+    else:
+        if browser_package is not None:
+            rows.append(("chrome", "INFO", "optional browser package found; browser launch and NotebookLM authentication unverified"))
+        else:
+            rows.append(("chrome", "WARN", "optional browser package absent; NotebookLM setup can wait"))
 
     # Zotero (skip for personas that don't use it)
     if has_zotero:
-        rows.append(("zotero", "OK", "credentials configured (verified above)"))
+        rows.append(("zotero", "INFO", "credentials configured; check access with `research-hub doctor`"))
     elif persona in {"analyst", "internal"}:
         rows.append(("zotero", "INFO", f"persona={persona} does not use Zotero"))
     else:
-        rows.append(("zotero", "WARN", "no Zotero key -- run `research-hub init` again to add"))
+        rows.append(("zotero", "INFO", "not connected; local import is available; connect later with `research-hub init`"))
 
-    # LLM CLI for --with-crystals (informational -- auto still works without)
+    # CLI presence is not proof of model access.
     for cli in ("claude", "codex", "gemini"):
         if shutil.which(cli):
-            rows.append(("llm-cli", "OK", f"`{cli}` on PATH -- `auto --with-crystals` will work"))
+            rows.append(("llm-cli", "INFO", f"`{cli}` on PATH; model access not verified"))
             break
     else:
         rows.append(("llm-cli", "INFO", "no supported LLM CLI on PATH -- crystals stay manual emit/apply"))
@@ -92,7 +91,10 @@ def _detect_existing_obsidian_vault(vault: Path) -> None:
         print("    alongside your existing notes. Nothing is overwritten.\n")
 
 
-def _print_completion_banner(vault_path: Path, config_path: Path, *, persona: str = "researcher") -> None:
+def _print_completion_banner(
+    vault_path: Path, config_path: Path, *, persona: str = "researcher",
+    has_zotero: bool = False, zotero_verified: bool = False,
+) -> None:
     """Print formatted completion message with next steps."""
     vault_str = str(vault_path)
     config_str = str(config_path)
@@ -110,24 +112,22 @@ def _print_completion_banner(vault_path: Path, config_path: Path, *, persona: st
     except Exception:
         detected_host = "claude-code"
         install_ready = False
-    if normalized_persona in {"analyst", "internal"}:
-        next_steps = [
-            ("research-hub import-folder <folder> --cluster <slug>", "Ingest local PDFs/docs into a cluster"),
-            ('research-hub auto "your topic" --no-nlm', "Optional paper search without NotebookLM"),
-            ("research-hub serve --dashboard", "See the result at http://127.0.0.1:8765/"),
-        ]
-    else:
-        next_steps = [
+    next_steps = [
+        ("research-hub import-folder <folder> --cluster <slug> --extensions md,txt",
+         "Import a selected local folder for reading; no accounts or Zotero writes"),
+        ("research-hub serve --dashboard", "Browse local notes at http://127.0.0.1:8765/"),
+    ]
+    if has_zotero and zotero_verified and normalized_persona not in {"analyst", "internal"}:
+        next_steps.extend([
             ('research-hub plan "your research topic"', "Review and confirm the plan"),
-            ('research-hub auto "your research topic"', "Run the full research pipeline"),
-            ("research-hub serve --dashboard", "See the result at http://127.0.0.1:8765/"),
-        ]
+            ('research-hub auto "your research topic" --no-nlm',
+             "Optional Zotero pipeline; first check doctor results and authorize its writes"),
+        ])
     if not install_ready:
-        next_steps.insert(
-            0,
+        next_steps.append(
             (
                 f"research-hub install --platform {detected_host}",
-                "Install MCP skill files for your AI host",
+                "Optional: install MCP skill files for your AI host",
             ),
         )
 
@@ -138,10 +138,21 @@ def _print_completion_banner(vault_path: Path, config_path: Path, *, persona: st
         f"  Your vault:  {vault_str}",
         f"  Your config: {config_str}",
         "",
-        "  Optional readiness check:",
+        "  Before connected workflows, inspect each readiness result:",
         "    research-hub doctor",
+        "    Config/session files and exit code 0 do not prove service access.",
         "",
-        "  NEXT STEPS (run in order):",
+        "  Zotero is an optional reference manager for saving and organizing papers.",
+        ("  Zotero settings are saved; access is not verified by configuration alone."
+         if has_zotero else
+         "  Zotero is not connected; local reading does not need it."),
+        ("  To opt into Zotero, choose: research-hub init --persona researcher"
+         if normalized_persona in {"analyst", "internal"} else
+         "  Connect later: research-hub init --persona " + normalized_persona),
+        "  NotebookLM is optional; connect later: research-hub notebooklm login --auto-detect",
+        "  For local PDF/DOCX import, install research-hub-pipeline[import].",
+        "",
+        "  NEXT STEPS (choose the workflow you need):",
         "",
     ]
     for idx, (command, detail) in enumerate(next_steps, start=1):
@@ -210,10 +221,42 @@ def run_init(
         _print_sample_completion_banner(vault)
         return 0
 
+    config_path = get_default_config_path()
+    config: dict[str, object] = {}
+    try:
+        try:
+            config_path.stat()
+        except FileNotFoundError:
+            pass
+        else:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(config, dict):
+                raise ValueError("Config must be a JSON object")
+            for section in ("knowledge_base", "zotero"):
+                if section in config and not isinstance(config[section], dict):
+                    raise ValueError(f"{section} must be a JSON object")
+            saved_root = config.get("knowledge_base", {}).get("root")
+            if "root" in config.get("knowledge_base", {}) and (
+                not isinstance(saved_root, str) or not saved_root.strip()
+            ):
+                raise ValueError("Saved vault root must be a nonempty path string")
+            if config.get("persona") is not None and not isinstance(config["persona"], str):
+                raise ValueError("Saved persona must be a string")
+    except (OSError, ValueError, UnicodeError) as exc:
+        print(f"Error: cannot reuse existing config {config_path} ({type(exc).__name__}); "
+              "existing settings were not changed.")
+        print("  Check the file permissions and JSON structure before retrying.")
+        return 1
+
+    saved_root = config.get("knowledge_base", {}).get("root")
+    saved_zotero = config.get("zotero", {})
+    if persona is None:
+        persona = config.get("persona")
     if persona is None and interactive:
-        print("\nDo you use Zotero for managing references? [y/N]")
+        print("\nZotero is an optional reference manager for saving and organizing papers.")
+        print("Do you use Zotero for managing references? [y/N]")
         print("  y = yes  (researcher / humanities personas)")
-        print("  N = no   (analyst / internal personas - Obsidian + NotebookLM only)")
+        print("  N = no   (analyst / internal personas - local files; integrations optional)")
         uses_zotero = input("> ").strip().lower().startswith("y")
 
         if uses_zotero:
@@ -236,6 +279,8 @@ def run_init(
 
     if vault_root:
         vault = Path(vault_root).expanduser().resolve()
+    elif saved_root:
+        vault = Path(saved_root).expanduser().resolve()
     elif interactive:
         default = str(Path.home() / "knowledge-base")
         answer = input(f"Vault root directory [{default}]: ").strip()
@@ -257,10 +302,16 @@ def run_init(
     except Exception as exc:
         print(f"  [init] WARN could not write .obsidian/graph.json: {exc}", file=sys.stderr)
 
-    if not no_zotero_persona and not zotero_key and interactive:
-        print("\n  Zotero API key is needed to sync papers.")
-        no_browser_flag = bool(no_browser) if "no_browser" in locals() else False
-        if interactive and not no_browser_flag:
+    if not no_zotero_persona:
+        zotero_library_id = zotero_library_id or saved_zotero.get("library_id")
+
+    connect_zotero = False
+    if not no_zotero_persona and not zotero_key and not saved_zotero.get("api_key") and interactive:
+        print("\n  Zotero is an optional reference manager for saving and organizing papers.")
+        print("  Local import works without it; Zotero-backed auto/ingest needs credentials.")
+        connect_zotero = input("  Connect Zotero now? [y/N]: ").strip().lower() == "y"
+    if connect_zotero:
+        if not no_browser:
             print("  Opening https://www.zotero.org/settings/keys in your browser.")
             print("  Log in, click 'Create new private key', enable Library Read/Write,")
             print("  then copy the key + library ID back here.")
@@ -273,18 +324,18 @@ def run_init(
                 pass
         else:
             print("  Get one at: https://www.zotero.org/settings/keys")
-        print("  Note: research-hub auto/ingest will fail without Zotero credentials.")
-        print("  If you don't actually use Zotero, abort and re-run init, answering N to the first question.")
+        print("  Leave the key blank to set up later and use local import now.")
         zotero_key = input("  Zotero API key: ").strip() or None
-    if not no_zotero_persona and not zotero_library_id and interactive:
+    if not no_zotero_persona and (zotero_key or saved_zotero.get("api_key")) and not zotero_library_id and interactive:
         print("  Your Zotero library ID (numeric, from the same settings page):")
         zotero_library_id = input("  Zotero library ID: ").strip() or None
 
     if no_zotero_persona:
-        print(f"  Persona: {persona} -> skipping Zotero (Obsidian + NotebookLM only)")
+        print(f"  Persona: {persona} -> skipping Zotero (local files; integrations optional)")
         zotero_key = None
         zotero_library_id = None
 
+    zotero_verified = False
     if not no_zotero_persona and zotero_key and zotero_library_id:
         import requests
 
@@ -295,6 +346,7 @@ def run_init(
                 timeout=5,
             )
             if response.status_code == 200:
+                zotero_verified = True
                 print("  Zotero credentials: OK")
             else:
                 print(f"  Zotero credentials: returned {response.status_code}")
@@ -309,6 +361,7 @@ def run_init(
                             timeout=5,
                         )
                         if response2.status_code == 200:
+                            zotero_verified = True
                             print("    Zotero credentials: OK")
                         else:
                             print(f"    WARN still {response2.status_code}; continuing offline.")
@@ -321,15 +374,7 @@ def run_init(
                 if choice.startswith("a"):
                     return 1
 
-    config_path = get_default_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    config: dict[str, object] = {}
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-        except Exception:
-            config = {}
 
     knowledge_base = config.setdefault("knowledge_base", {})
     if isinstance(knowledge_base, dict):
@@ -357,13 +402,22 @@ def run_init(
     chmod_sensitive(config_path, mode=0o600)
     print(f"  Config written: {config_path}")
 
-    has_zotero = bool(zotero_key and zotero_library_id and not no_zotero_persona)
+    stored_zotero = config.get("zotero", {})
+    has_zotero = bool(
+        isinstance(stored_zotero, dict) and stored_zotero.get("api_key")
+        and stored_zotero.get("library_id") and not no_zotero_persona
+    )
     readiness = _check_first_run_readiness(vault, persona=persona, has_zotero=has_zotero)
     _print_readiness(readiness)
 
-    chrome_ok = any(sub == "chrome" and stat == "OK" for sub, stat, _ in readiness)
-    if interactive and chrome_ok and persona not in {"analyst", "internal"}:
-        print("\n  Launching NotebookLM Google login (Ctrl-C to skip).")
+    browser_package_present = any(sub == "chrome" and stat in {"OK", "INFO"} for sub, stat, _ in readiness)
+    if interactive and browser_package_present and not no_browser and persona not in {"analyst", "internal"}:
+        print("\n  NotebookLM is optional and sends selected sources to Google's service.")
+        connect_nlm = input("  Connect NotebookLM now? [y/N]: ").strip().lower() == "y"
+    else:
+        connect_nlm = False
+    if connect_nlm:
+        print("  Launching NotebookLM Google login (Ctrl-C to skip).")
         try:
             from research_hub.setup_command import run_notebooklm_login
 
@@ -372,10 +426,8 @@ def run_init(
             print("  Skipped. Run later: research-hub notebooklm login --auto-detect")
         except Exception as exc:
             print(f"  Login failed: {exc}. Run later: research-hub notebooklm login --auto-detect")
-    elif interactive and not chrome_ok and persona not in {"analyst", "internal"}:
-        answer = input("  Chrome not ready. Run NotebookLM Google login later? [y/N]: ").strip().lower()
-        if answer == "y":
-            print("  Run: research-hub notebooklm login --auto-detect")
-
-    _print_completion_banner(vault, config_path, persona=persona)
+    _print_completion_banner(
+        vault, config_path, persona=persona,
+        has_zotero=has_zotero, zotero_verified=zotero_verified,
+    )
     return 0

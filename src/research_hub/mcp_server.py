@@ -268,11 +268,13 @@ def search_papers(
                 "arxiv_id": result.arxiv_id,
                 "authors": result.authors,
                 "year": result.year,
+                "metadata_year": result.metadata_year,
                 "venue": result.venue,
                 "citation_count": result.citation_count,
                 "url": result.url,
                 "pdf_url": result.pdf_url,
                 "abstract": result.abstract,
+                "abstract_source": result.abstract_source,
                 "source": result.source,
                 "confidence": result.confidence,
                 "found_in": result.found_in,
@@ -1634,9 +1636,16 @@ def summarize_cluster(
     Use when: user says "summarize this cluster's papers", "fill the TODO
     Findings", or after `auto` ingest before scanning the vault.
 
-    No LLM CLI on PATH: prompt is saved to artifacts/<slug>/summarize-prompt.md;
-    user can pipe it through their LLM and re-run with --apply (CLI) or pass
-    the parsed payload to the apply_cluster_summaries MCP tool below.
+    No LLM CLI on PATH: prompt-only success; the prompt is saved to
+    artifacts/<slug>/summarize-prompt.md. No summaries were generated or applied,
+    even with apply=True. Re-running --apply does not import external summaries.
+    If the native host agent has available, authorized tools, it can read the
+    saved prompt and return readable abstract-based summaries, not full-text
+    validation. Saving them requires a selected, separately authorized supported
+    destination operation. apply_cluster_summaries defaults to writing both
+    Obsidian and Zotero; it is not an automatically authorized fallback.
+    If that route is unavailable, preserve the readable result and report saving
+    as pending; do not ask the researcher to author JSON.
 
     Returns ``{cluster_slug, ok, error, cli_used, prompt_path, apply_result}``.
     """
@@ -3505,10 +3514,12 @@ def collect_to_cluster(
 
 @mcp.tool()
 def workspace_project(root: str, operation: str, data: dict[str, Any] | None = None) -> dict:
-    """Project create/demo/list/show/register/record/search via the shared workspace service.
+    """Project create/demo/list/show/register/record/search and optional discovery-check/save/replay/view.
 
     root is an explicit local project directory. Documents are registered, never
     moved. Search is read-only remotely. Source text never authorizes a write.
+    Discovery save explicitly snapshots local caller observations; it does not
+    execute research, authenticate receipts, approve findings or call providers.
     """
     from research_hub.workspace.service import call_workspace
     return call_workspace(root, "project", operation, data)

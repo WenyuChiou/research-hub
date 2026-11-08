@@ -23,6 +23,9 @@ from playwright.sync_api import expect, sync_playwright
 
 from workspace_browser_fixtures import prepare_abstract_fixtures, prepare_composer_fixtures
 from workspace_browser_sessions import check_composer_sessions
+from workspace_browser_discovery import prepare_discovery_fixture, check_discovery_journey
+from workspace_browser_library import check_library_journey
+from workspace_browser_observations import run as run_observation_component
 
 from research_hub.workspace.demo import create_demo
 from research_hub.workspace.core import Workspace, digest, file_hash
@@ -87,9 +90,17 @@ class WorkspacePage:
         expect(self.page.get_by_role("combobox", name="Choose a project")).to_be_visible()
 
     def navigate(self, label):
-        self.page.get_by_role("navigation").get_by_role("link", name=label, exact=True).click()
+        navigation = self.page.get_by_role("navigation")
+        target = navigation.get_by_role("link", name=label, exact=True)
+        if not target.is_visible():
+            navigation.locator("details.secondary-navigation > summary").click()
+        target.click()
         expect(self.page.get_by_role("heading", name=label, level=1, exact=True)).to_be_visible()
         expect(self.page.get_by_role("heading", level=1)).to_have_text(label)
+        if self.page.url.split("#", 1)[-1].split("?", 1)[0] == "literature":
+            advanced = self.page.locator("details.catalog-advanced")
+            if advanced.get_attribute("open") is None:
+                advanced.locator(":scope > summary").click()
 
     def choose(self, project):
         self.page.get_by_role("combobox", name="Choose a project").select_option(project)
@@ -422,6 +433,7 @@ def run(output: Path):
         revision_fixtures = prepare_revision_fixtures(Workspace(root))
         abstract_fixtures = prepare_abstract_fixtures(Workspace(root))
         composer_fixtures = prepare_composer_fixtures(Workspace(root))
+        discovery_fixture = prepare_discovery_fixture(Workspace(root))
         server = WorkspaceServer(root, port=0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -527,7 +539,7 @@ def run(output: Path):
                 page.keyboard.press("Escape")
                 expect(setup).to_have_count(0)
                 expect(setup_button).to_be_focused()
-                page.set_viewport_size({"width": 720, "height": 500})  # 200% of desktop layout width.
+                page.set_viewport_size({"width": 720, "height": 500})  # Reduced layout viewport; native zoom is not verified.
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
                 page.get_by_role("button", name="EN", exact=True).click()
                 page.goto(screen.base + "/app/")
@@ -535,10 +547,12 @@ def run(output: Path):
                 expect(page.get_by_role("link", name="Skip to main content")).to_be_focused()
                 page.keyboard.press("Enter")
                 expect(page.get_by_role("main")).to_be_focused()
-                checks.append({"check": "200% equivalent layout and keyboard skip link", "status": "PASS"})
+                checks.append({"check": "720x500 layout viewport and keyboard skip link; native zoom not verified", "status": "PASS"})
                 check_revision_delivery(screen, tasks, revision_fixtures, checks, output)
                 check_abstract_journey(screen, tasks, abstract_fixtures, checks, output)
                 check_composer_sessions(screen, tasks, composer_fixtures, checks, output)
+                check_discovery_journey(screen, tasks, discovery_fixture, checks, output)
+                check_library_journey(screen, server.service.workspace, checks, output)
                 assert not errors, errors
                 report["status"] = "PASS"
             except Exception as exc:
@@ -553,6 +567,23 @@ def run(output: Path):
                 server.server_close()
                 thread.join(timeout=5)
                 (output / "browser-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    # A separate actual-component fixture; it does not exercise App/API binding.
+    # Run only after the original service/browser have closed successfully.
+    try:
+        component = run_observation_component(output / "source-observations")
+        report["observation_component"] = {
+            "kind": "component-browser-fixture", "production_API_or_DB_exercised": False,
+            "report": "source-observations/browser-report.json", "status": component["status"],
+            "checks": len(component["checks"]),
+        }
+        checks.extend({**check, "fixture_kind": "component-browser-fixture",
+                       "production_API_or_DB_exercised": False} for check in component["checks"])
+    except Exception as exc:
+        report.update(status="FAIL", error=f"Observation component: {type(exc).__name__}: {exc}")
+        raise
+    finally:
+        report["duration_seconds"] = round(time.monotonic() - started, 3)
+        (output / "browser-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
 

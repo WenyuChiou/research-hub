@@ -160,8 +160,12 @@ def test_parallel_writes_produce_same_apply_result_as_sequential(tmp_path, monke
 
 def test_parallel_writes_preserve_per_paper_rollback_invariant(tmp_path, monkeypatch):
     import research_hub.summarize as summarize
+    from research_hub.summary_journal import SummaryJournal
+    from tests._journal_boundary_diagnostics import JournalBoundaryDiagnostics
 
     cfg = _build_cfg(tmp_path, "rollback", 5)
+    trace = JournalBoundaryDiagnostics(monkeypatch.setattr, SummaryJournal,
+                                       cfg.research_hub_dir / 'summary-operations.sqlite3')
     originals = {
         idx: (cfg.raw / "test-cluster" / f"paper-{idx:02d}.md").read_text(encoding="utf-8")
         for idx in range(1, 6)
@@ -177,7 +181,7 @@ def test_parallel_writes_preserve_per_paper_rollback_invariant(tmp_path, monkeyp
     monkeypatch.setattr(summarize, "_write_zotero_child_note", fail_one)
     result = apply_summaries(cfg, "test-cluster", _payload(5), zot=object())
 
-    assert len(result.errors) == 1, _failure_details(result)
+    assert len(result.errors) == 1, trace.emit() or _failure_details(result)
     assert "paper-02" in result.errors[0], _failure_details(result)
     for idx in range(1, 6):
         path = cfg.raw / "test-cluster" / f"paper-{idx:02d}.md"

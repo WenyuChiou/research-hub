@@ -242,16 +242,15 @@ def test_auto_step_symbols_are_cp950_safe():
 
 
 def test_init_wizard_readiness_check_includes_obsidian_chrome_zotero(monkeypatch, tmp_path):
-    """The first-run readiness probe should report on the four prerequisites."""
+    """Readiness distinguishes local state from optional, unverified access."""
     from research_hub import init_wizard
 
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / ".obsidian").mkdir()
 
-    # Force patchright import to fail so we get a deterministic WARN
-    import sys
-    monkeypatch.setitem(sys.modules, "patchright.sync_api", None)
+    # Optional browser package absence is a passive, deterministic WARN.
+    monkeypatch.setattr(init_wizard.importlib.util, "find_spec", lambda name: None)
     monkeypatch.setattr(init_wizard.shutil, "which", lambda name: None)
 
     rows = init_wizard._check_first_run_readiness(vault, persona="researcher", has_zotero=True)
@@ -261,5 +260,7 @@ def test_init_wizard_readiness_check_includes_obsidian_chrome_zotero(monkeypatch
     obs_status = next(s for sub, s, _ in rows if sub == "obsidian")
     assert obs_status == "OK"  # .obsidian exists
 
-    zot_status = next(s for sub, s, _ in rows if sub == "zotero")
-    assert zot_status == "OK"  # has_zotero=True
+    assert next(s for sub, s, _ in rows if sub == "chrome") == "WARN"
+    zot_status, zot_detail = next((s, detail) for sub, s, detail in rows if sub == "zotero")
+    assert zot_status == "INFO"  # Credential presence does not verify service access.
+    assert "check access" in zot_detail

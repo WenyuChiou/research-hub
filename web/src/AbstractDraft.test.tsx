@@ -544,6 +544,21 @@ describe("preparation interruption and explicit execution", () => {
 });
 
 describe("superseding source navigation", () => {
+  it("return from review opens the exact source tools before restoring focus", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, _options?: RequestInit) =>
+      response(String(input).endsWith("/workspace") ? workspace : {...detail,tasks:[task]}),
+    );
+    vi.stubGlobal("fetch", fetch);
+    window.history.replaceState({}, "", "#review");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", {name:t("abstractReturnSource")}));
+    const advanced = screen.getByText(t("catalogAdvanced"), {selector:"summary"}).closest("details")!;
+    expect(advanced).toHaveAttribute("open");
+    expect(await screen.findByLabelText(t("abstractChooseFile"))).toBeVisible();
+    await waitFor(() => expect(document.getElementById(`record-${source.id}`)).toHaveFocus());
+    expect(fetch.mock.calls.some(call => call[1]?.method === "POST")).toBe(false);
+  });
   it("does not mistake a newer supported-page navigation for a removed source", async () => {
     const frames = new Map<number, FrameRequestCallback>();
     let id = 0;
@@ -870,6 +885,9 @@ describe("transient refresh failure preserves source inputs and uncertainty", ()
       window.history.replaceState({}, "", "#literature");
       const user = userEvent.setup();
       render(<App />);
+      await user.click(
+        await screen.findByText(t("catalogAdvanced"), { selector: "summary" }),
+      );
       await user.click(
         await screen.findByRole("button", { name: t("abstractOpen") }),
       );

@@ -1,0 +1,202 @@
+[
+  {
+    "id": "synthetic-01",
+    "title": "Synthetic review item",
+    "year": 2021,
+    "category": "human-review",
+    "url": "https://example.org/synthetic-library/1",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-02",
+    "title": "Synthetic human item 02",
+    "year": 2022,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/2",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-03",
+    "title": "Synthetic human item 03",
+    "year": 2023,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/3",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-04",
+    "title": "Synthetic brand choice comparator",
+    "year": 2024,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/4",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-05",
+    "title": "Synthetic human item 05",
+    "year": 2020,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/5",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-06",
+    "title": "Synthetic human item 06",
+    "year": 2021,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/6",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-07",
+    "title": "Synthetic human item 07",
+    "year": 2022,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/7",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-08",
+    "title": "Synthetic human item 08",
+    "year": 2023,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/8",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-09",
+    "title": "Synthetic human item 09",
+    "year": 2024,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/9",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-10",
+    "title": "Synthetic human item 10",
+    "year": 2020,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/10",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-11",
+    "title": "Synthetic human item 11",
+    "year": 2021,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/11",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-12",
+    "title": "Synthetic human item 12",
+    "year": 2022,
+    "category": "human",
+    "url": "https://example.org/synthetic-library/12",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-13",
+    "title": "Synthetic llm item 13",
+    "year": 2023,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/13",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-14",
+    "title": "Synthetic llm item 14",
+    "year": 2024,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/14",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-15",
+    "title": "Synthetic llm item 15",
+    "year": 2020,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/15",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-16",
+    "title": "Synthetic llm item 16",
+    "year": 2021,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/16",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-17",
+    "title": "Synthetic llm item 17",
+    "year": 2022,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/17",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-18",
+    "title": "Synthetic model opinions comparator",
+    "year": 2023,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/18",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract-snippet",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-19",
+    "title": "Synthetic llm item 19",
+    "year": 2024,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/19",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  },
+  {
+    "id": "synthetic-20",
+    "title": "Synthetic llm item 20",
+    "year": 2020,
+    "category": "llm",
+    "url": "https://example.org/synthetic-library/20",
+    "relevance": "Synthetic test metadata; no real publication or research record.",
+    "reading_level": "abstract",
+    "reading_level_note": "Synthetic declared coverage for UI verification."
+  }
+]

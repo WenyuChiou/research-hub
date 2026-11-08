@@ -49,6 +49,26 @@ def _receipt(journal, operation_id):
             'candidate_sha256': body['candidate_sha256'], 'observations': journal.observations(operation_id)}
 
 
+def _project_confirmed_receipt(journal, operation_id, result, sinks, *, current_attempt_dispatched):
+    """Report acknowledged facts even when the later read-only projection fails.
+
+    Call only after every selected sink has a durable confirmed acknowledgement,
+    or after lookup already returned an all-confirmed operation. This failure
+    must not enter recovery or grant permission for another destination write.
+    """
+    try:
+        result.receipt = _receipt(journal, operation_id)
+    except Exception:
+        result.receipt = {
+            'version': 2, 'operation_id': operation_id,
+            'status': 'receipt_unavailable', 'write_outcome': 'confirmed',
+            'confirmed_sinks': list(sinks),
+            'current_attempt_dispatched': current_attempt_dispatched,
+        }
+        warning = 'destination writes confirmed; receipt projection unavailable; inspect the journal before any manual retry'
+        result.warning = '; '.join(filter(None, (result.warning, warning)))
+
+
 def apply_entry(cfg, paper, summary, zot, write_obsidian, write_zotero, *, provenance):
     # Import at call time to keep the established synthetic seams patchable.
     from . import summarize as s
@@ -130,8 +150,8 @@ def apply_entry(cfg, paper, summary, zot, write_obsidian, write_zotero, *, prove
             raise
         states = [v['state'] for v in body['sinks'].values()]
         if states and all(v == 'confirmed' for v in states):
-            result.receipt = _receipt(journal, operation_id)
-            result.skipped_reason = 'already confirmed; existing receipt returned without another write'
+            _project_confirmed_receipt(journal, operation_id, result, body['sinks'], current_attempt_dispatched=False)
+            result.skipped_reason = 'already confirmed; no destination write repeated'
             return result
         if any(v != 'prepared_unsent' for v in states):
             journal.recover(operation_id)
@@ -188,7 +208,7 @@ def apply_entry(cfg, paper, summary, zot, write_obsidian, write_zotero, *, prove
         result.applied = True
         result.obsidian_written = local_written
         result.zotero_written = write_zotero
-        result.receipt = _receipt(journal, operation_id)
+        _project_confirmed_receipt(journal, operation_id, result, targets, current_attempt_dispatched=True)
         return result
     except Exception as exc:
         # Preserve the structured batch and original uncertain identity even if
