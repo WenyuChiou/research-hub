@@ -38,6 +38,43 @@ Unattributed claims, missing citation mentions, and nearby apparently opposing
 sentences are screening flags, not final support/contradiction verdicts. Compare
 the underlying passages before making those judgments.
 
+## Check the inference, not just the quotation
+
+Apply the relevant checks to each consequential claim; do not force a
+statistical checklist onto qualitative/theoretical work or invent missing
+numbers. Use the actual host's reading tools and the source sections already
+identified above. These are source-review instructions, not a new schema,
+automated semantic validator, or requirement to install Hub or another service.
+
+- **Analysis target:** Keep each estimate, uncertainty interval and test result
+  attached to its actual analysis: study/part, sample or subgroup, pooled
+  population, outcome, model and contrast, including adjustments where reported.
+  Inspect the relevant table/figure, caption and notes when needed. Do not move
+  a statistic between parts, subgroups or pooled analyses; a valid pooled result
+  still describes that pooled analysis, not each component separately.
+- **Non-significance:** A non-significant difference does not establish
+  equivalence or no effect. Retain the estimate and uncertainty where reported.
+  An equivalence claim needs an appropriate analysis with justified equivalence
+  bounds, not a non-significant test alone.
+- **Effect target:** Distinguish main effects, interactions and simple/conditional
+  effects. An interaction is not an unconditional main effect; state the contrast
+  and conditions actually tested. That one subgroup is significant and another
+  is not does not itself establish an interaction.
+- **Causal scope:** Separate association, statistical mediation, causal effect
+  and demonstrated mechanism. Observational mediation alone does not establish a
+  causal mechanism; causal wording needs a defensible design/identification
+  argument and supporting evidence. Explicitly retain its assumptions and
+  unresolved confounding or temporal-order limits.
+- **Target transfer:** Separate the studied population/system from the proposed
+  target. A human-only finding is not direct evidence about model-agent behavior,
+  nor does a different population or task automatically transfer. When bridging
+  them, label the transfer as an inference and identify the missing target-specific
+  evidence; do not present the proposed explanation as a result of the cited study.
+
+If the analysis or transfer cannot be checked within the reading scope, narrow
+the claim or retain it as partial/unverifiable with the missing check visible.
+A verbatim quote and matching bytes do not resolve these inference questions.
+
 ## Optional executable source-audit profile
 
 For substantive reviews needing local binding checks, keep an optional

@@ -3,6 +3,7 @@ import { api, segment } from "./api";
 import { ErrorMessage, Panel, SourceLink } from "./components";
 import type { Translate } from "./i18n";
 import type { Artifact } from "./types";
+import { observationsForNeed } from "./discoveryCoverage";
 
 export interface DiscoveryView {
   ok: true;
@@ -35,6 +36,7 @@ export interface DiscoveryView {
     }[];
     attempts: {
       id: string;
+      need_ids: string[];
       kind: string;
       input: string;
       status: string;
@@ -130,10 +132,10 @@ export function DiscoveryPanel({
     loaded?.project === projectId && loaded.artifact === selected
       ? loaded.value
       : null;
+  const knownNeedIds = new Set(result?.discovery.needs.map((need) => need.id) ?? []);
   return (
     <Panel title={t("discoveryTitle")}>
       <div className="discovery-body">
-        <p>{t("discoveryIntro")}</p>
         <p className="small muted">{t("discoveryPlatform")}</p>
         {choices.length ? (
           <ul>
@@ -149,6 +151,10 @@ export function DiscoveryPanel({
         ) : (
           <p>{t("discoveryEmpty")}</p>
         )}
+        <details>
+          <summary>{t("discoveryHelp")}</summary>
+          <p>{t("discoveryIntro")}</p>
+        </details>
         {invalid && <p role="alert">{t("discoveryInvalidLink")}</p>}
         {failure != null && (
           <>
@@ -184,16 +190,51 @@ export function DiscoveryPanel({
                 t("discoveryNone")}
             </p>
             <h4>{t("discoveryNeeds")}</h4>
+            <p className="small muted">{t("discoveryCoverageAdvisory")}</p>
             <ul>
-              {result.discovery.needs.slice(0, limit).map((n) => (
-                <li key={n.id}>
-                  <strong>{n.text}</strong> — {n.status} ·{" "}
-                  {n.families.join(", ")}
-                </li>
-              ))}
+              {result.discovery.needs.slice(0, limit).map((n) => {
+                const observations = observationsForNeed(
+                  n.id, result.discovery.attempts, result.discovery.sources,
+                  knownNeedIds,
+                );
+                return (
+                  <li key={n.id}>
+                    <strong>{n.text}</strong> — {t("discoveryDeclaredStatus")}: {n.status}
+                    <p>{t("discoveryDeclaredFamilies")}: {n.families.join(", ")}</p>
+                    <p className="small muted">{t("discoveryFamilyUnknown")}</p>
+                    <details>
+                      <summary>
+                        {t("discoveryNeedObservations")}: {observations.attempts.length} / {observations.sources.length}
+                        {" · "}{t("discoveryAttemptsToInspect")}: {observations.attemptsToInspect.length}
+                        {(observations.attemptsWithLinkIssues.length > 0 || observations.sourcesWithLinkIssues.length > 0) && <>
+                          {" · "}{t("discoveryNeedLinkIssues")}: {observations.attemptsWithLinkIssues.length} / {observations.sourcesWithLinkIssues.length}
+                        </>}
+                      </summary>
+                      {(observations.attemptsWithLinkIssues.length > 0 || observations.sourcesWithLinkIssues.length > 0) && <>
+                        <p>{t("discoveryNeedLinkIssuesHelp")}</p>
+                        <p>{t("discoveryAttemptLinkIssues")} ({Math.min(limit, observations.attemptsWithLinkIssues.length)} / {observations.attemptsWithLinkIssues.length}): {observations.attemptsWithLinkIssues.slice(0, limit).map((record) => record.id).join(", ") || t("discoveryNone")}</p>
+                        <p>{t("discoverySourceLinkIssues")} ({Math.min(limit, observations.sourcesWithLinkIssues.length)} / {observations.sourcesWithLinkIssues.length}): {observations.sourcesWithLinkIssues.slice(0, limit).map((record) => record.id).join(", ") || t("discoveryNone")}</p>
+                      </>}
+                      <p>{t("discoveryLinkedAttempts")} ({Math.min(limit, observations.attempts.length)} / {observations.attempts.length})</p>
+                      {observations.attempts.length ? <ul>
+                        {observations.attempts.slice(0, limit).map((a) => <li key={a.id}>
+                          <p>{a.id} · {a.kind} · {a.input}</p>
+                          <p>{a.status} / {a.outcome} · {t("discoveryResultCount")}: {a.result_count ?? t("discoveryUnknown")}</p>
+                        </li>)}
+                      </ul> : <p>{t("discoveryNoLinkedAttempts")}</p>}
+                      <p>{t("discoveryLinkedSources")} ({Math.min(limit, observations.sources.length)} / {observations.sources.length})</p>
+                      {observations.sources.length ? <ul>
+                        {observations.sources.slice(0, limit).map((source) => <li key={source.id}>
+                          {source.id} · {source.title} · {source.reading_level} · {source.version ?? t("discoveryUnknown")}
+                        </li>)}
+                      </ul> : <p>{t("discoveryNoLinkedSources")}</p>}
+                    </details>
+                  </li>
+                );
+              })}
             </ul>
             <p>
-              {result.discovery.completion.status}:{" "}
+              {t("discoveryDeclaredCompletion")}: {result.discovery.completion.status}:{" "}
               {result.discovery.completion.reason}
             </p>
             <p>

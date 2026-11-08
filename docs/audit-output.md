@@ -42,6 +42,17 @@ their content is evidence, not a promise of identity or scientific correctness.
 Raw responses remain available when normalization drops information. A future
 incompatible envelope change requires a new schema version.
 
+Search-result JSON records include `abstract_source` and `metadata_year` as
+additive fields. These preserve the backend's observed abstract attribution
+and alternate metadata year through merge copies, CLI output and audit result
+artifacts. Unknown values stay `""` and `null`; the aggregate `source` or
+`found_in` values do not fill in missing attribution. If a later backend fills
+an empty abstract, its `abstract_source` travels with that text. Existing
+non-empty text and the selected record's year metadata retain their precedence.
+The metadata records an observation, not independent verification of the text
+or publication date. Downstream year-drift warnings remain a prompt to inspect
+the discrepancy, not an automatic correction.
+
 Parent links connect command → query/expansion → backend → HTTP/parse attempts.
 `backend-search` records each actual backend invocation before filtering,
 deduplication, ranking or the final CLI limit. Two backends finding the same DOI
@@ -50,6 +61,21 @@ produce two result artifacts even if the normal CLI prints one merged result.
 expansion records its prompt, returned text and failures before fallback.
 Enrichment records each resolver and abstract-recovery operation. Unknown
 backend names produce explicit `unknown_backend` events.
+
+An explicit modern arXiv revision such as `2411.12345v1` is resolved only by
+the arXiv backend, with that revision retained in the request and checked
+against the returned Atom identity. If arXiv is disabled, unavailable, or
+returns a different/unversioned identity, the candidate stays unresolved;
+work-level OpenAlex/Semantic Scholar metadata does not substitute for it.
+An empty abstract on a pinned revision is not filled from its journal DOI.
+The Python result retains `None` for an unresolved candidate; CLI/MCP output
+omits that candidate as before. Check audit results as well as the exit code.
+
+arXiv results keep their versionless `arxiv_id` for work-level deduplication,
+while their `url` and generated `pdf_url` retain the observed revision when
+present. An absent revision is not invented. These checks bind returned
+metadata and links, not downloaded PDF bytes or scientific claims. They do
+not add revision-aware deduplication or change other resolver contracts.
 
 ## Outcomes
 
@@ -84,6 +110,27 @@ SDKs, HTML-only searches without a checked response structure, missing API
 configuration and cached verification without a fresh response can be
 `unknown`; they are never promoted to `success_empty`. Audit does not add API
 keys or install optional search dependencies.
+
+## Adversarial search and recall
+
+`search --adversarial` reports query phrasings **attempted**, unique returned
+papers and per-query additions. These counts describe the observed result
+union before the final output limit. They do not measure relevant literature
+recall. A failed backend, a successful empty response and overlapping top-N
+results can all contribute zero new papers.
+
+The Python `RecallReport` keeps its existing fields, but `confidence` now
+returns `unassessed` instead of the old count-derived high/medium/low bands,
+and `saturated` remains false (saturation has **not been established**). Consumers
+must accept the new value rather than treat it as a low confidence estimate.
+CLI result JSON stays unchanged; the evidence qualification is on stderr.
+This applies with or without `--audit-output`, even when all recorded requests
+succeed. Audit success is execution evidence, not proof of literature coverage.
+
+Use the saved variants, backend outcomes and returned records to assess search
+limits and compare closest and contrary work. Missing, truncated or failed
+searches remain unresolved; no gap is declared open from a flat result count.
+No external requests or additional user steps are added by this report change.
 
 ## Failure, concurrency and evidence boundaries
 

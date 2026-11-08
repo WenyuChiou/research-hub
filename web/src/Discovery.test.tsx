@@ -9,6 +9,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import App from "./App";
+import { DiscoveryPanel } from "./Discovery";
+import { translator } from "./i18n";
 import generated from "./test-fixtures/discovery-view.json";
 
 const artifact = generated.view.artifact.id;
@@ -52,6 +54,177 @@ function route(hash: string) {
   });
 }
 afterEach(() => vi.unstubAllGlobals());
+
+it("labels supplied completion and exposes failed observations by exact need without writes", async () => {
+  window.history.replaceState({}, "", link());
+  const view = structuredClone(generated.view);
+  view.discovery.needs[0].status = "covered";
+  view.discovery.completion = { status: "bounded-complete", reason: "Caller assessment", residual_need_ids: [] };
+  view.discovery.attempts = [
+    { ...view.discovery.attempts[0], id: "closest", status: "observed", outcome: "success" },
+    { ...view.discovery.attempts[0], id: "contrary", status: "observed", outcome: "timeout", input: "Retained failed query" },
+    { ...view.discovery.attempts[0], id: "foreign", need_ids: ["other"], input: "Other need only" },
+  ];
+  const fetch = serve((url) => url.endsWith("/discovery") ? Promise.resolve(response(view)) : undefined);
+  render(<App />);
+  const result = await screen.findByRole("region", { name: "Saved Stage 1 result" });
+  expect(within(result).getByText(/Declared need status: covered/)).toBeVisible();
+  expect(within(result).getByText(/Declared completion: bounded-complete/)).toBeVisible();
+  expect(within(result).getByText(/Search-family linkage: unknown/)).toBeVisible();
+  const summary = within(result).getByText(/^Linked attempts \/ sources: 2 \/ 2 · Attempts to inspect: 1/);
+  const before = fetch.mock.calls.length;
+  await userEvent.click(summary);
+  const details = summary.closest("details")!;
+  expect(within(details).getByText(/contrary · search · Retained failed query/)).toBeVisible();
+  expect(within(details).getByText(/observed \/ timeout/)).toBeVisible();
+  expect(within(details).queryByText(/Other need only/)).not.toBeInTheDocument();
+  expect(fetch.mock.calls).toHaveLength(before);
+  expect(view.discovery.completion.status).toBe("bounded-complete");
+});
+
+it("keeps a successful empty search distinct from missing source evidence", async () => {
+  window.history.replaceState({}, "", link());
+  const view = structuredClone(generated.view);
+  const changed = { ...view, discovery: { ...view.discovery,
+    sources: [], attempts: [{ ...view.discovery.attempts[0], status: "observed", outcome: "empty", result_count: 0 }] } };
+  serve((url) => url.endsWith("/discovery") ? Promise.resolve(response(changed)) : undefined);
+  render(<App />);
+  const result = await screen.findByRole("region", { name: "Saved Stage 1 result" });
+  const summary = within(result).getByText("Linked attempts / sources: 1 / 0 · Attempts to inspect: 0");
+  await userEvent.click(summary);
+  const details = summary.closest("details")!;
+  expect(within(details).getByText(/observed \/ empty · Caller-declared result count: 0/)).toBeVisible();
+  expect(within(details).getByText(/does not prove no relevant literature exists/)).toBeVisible();
+  expect(within(result).getByText(/not verified coverage, source reliability or relevance/)).toBeVisible();
+});
+
+it("provides matching Traditional Chinese declaration and unknown-linkage labels", () => {
+  const t = translator("zh-TW");
+  expect(t("discoveryDeclaredStatus")).toBe("宣告的需求狀態");
+  expect(t("discoveryDeclaredCompletion")).toBe("宣告的完成狀態");
+  expect(t("discoveryFamilyUnknown")).toContain("未知");
+  expect(t("discoveryNoLinkedAttempts")).toContain("不代表未曾搜尋");
+});
+
+it("keeps the need disclosure keyboard-focusable and click activation reversible without a new request", async () => {
+  const fetch = serve();
+  const user = userEvent.setup();
+  render(<DiscoveryPanel projectId="p" artifacts={[]} selected={artifact} invalid={false} active={true} t={translator("en")} />);
+  const result = await screen.findByRole("region", { name: "Saved Stage 1 result" });
+  const summary = within(result).getByText("Linked attempts / sources: 1 / 2 · Attempts to inspect: 1");
+  const details = summary.closest("details")!;
+  const before = fetch.mock.calls.length;
+  await user.tab();
+  expect(screen.getByText("About saved research")).toHaveFocus();
+  await user.tab();
+  expect(summary).toHaveFocus();
+  // user-event 14 does not emulate native summary Enter/Space activation.
+  // Test tab order and click toggling here; native keys need a real browser.
+  await user.click(summary);
+  expect(details).toHaveAttribute("open");
+  expect(within(details).getByText(/a1 · search · synthetic query/)).toBeVisible();
+  expect(summary).toHaveFocus();
+  await user.click(summary);
+  expect(details).not.toHaveAttribute("open");
+  expect(summary).toHaveFocus();
+  await user.tab({ shift: true });
+  expect(screen.getByText("About saved research")).toHaveFocus();
+  expect(fetch.mock.calls).toHaveLength(before);
+});
+
+it("shows and expands all 52 related attempts and sources with explicit displayed totals", async () => {
+  const view = structuredClone(generated.view);
+  view.discovery.attempts = Array.from({ length: 52 }, (_, i) => ({
+    ...generated.view.discovery.attempts[0], id: `linked-attempt-${i}`, input: `Query ${i}`,
+  }));
+  view.discovery.sources = Array.from({ length: 52 }, (_, i) => ({
+    ...generated.view.discovery.sources[0], id: `linked-source-${i}`, title: `Related source ${i}`,
+  }));
+  const fetch = serve((url) => url.endsWith("/discovery") ? Promise.resolve(response(view)) : undefined);
+  render(<DiscoveryPanel projectId="p" artifacts={[]} selected={artifact} invalid={false} active={true} t={translator("en")} />);
+  const result = await screen.findByRole("region", { name: "Saved Stage 1 result" });
+  const summary = within(result).getByText("Linked attempts / sources: 52 / 52 · Attempts to inspect: 52");
+  await userEvent.click(summary);
+  const details = summary.closest("details")!;
+  expect(within(details).getByText("Linked attempts shown / recorded (50 / 52)")).toBeVisible();
+  expect(within(details).getByText("Linked sources shown / recorded (50 / 52)")).toBeVisible();
+  expect(within(details).queryByText(/linked-attempt-51 ·/)).not.toBeInTheDocument();
+  expect(within(details).queryByText(/linked-source-51 ·/)).not.toBeInTheDocument();
+  const before = fetch.mock.calls.length;
+  await userEvent.click(within(result).getByRole("button", { name: "Show the next 50 entries in each list" }));
+  expect(details).toHaveAttribute("open");
+  expect(within(details).getByText("Linked attempts shown / recorded (52 / 52)")).toBeVisible();
+  expect(within(details).getByText("Linked sources shown / recorded (52 / 52)")).toBeVisible();
+  expect(within(details).getByText(/linked-attempt-51 · search · Query 51/)).toBeVisible();
+  expect(within(details).getByText(/linked-source-51 · Related source 51/)).toBeVisible();
+  expect(within(result).queryByRole("button", { name: "Show the next 50 entries in each list" })).not.toBeInTheDocument();
+  expect(fetch.mock.calls).toHaveLength(before);
+});
+
+it("does not guess a need relationship when an incomplete response omits need_ids", async () => {
+  const view = { ...generated.view, discovery: { ...generated.view.discovery,
+    attempts: [{ ...generated.view.discovery.attempts[0], need_ids: undefined }],
+    sources: [{ ...generated.view.discovery.sources[0], need_ids: undefined }],
+  } };
+  serve((url) => url.endsWith("/discovery") ? Promise.resolve(response(view)) : undefined);
+  render(<DiscoveryPanel projectId="p" artifacts={[]} selected={artifact} invalid={false} active={true} t={translator("en")} />);
+  const result = await screen.findByRole("region", { name: "Saved Stage 1 result" });
+  const summary = within(result).getByText(/Linked attempts \/ sources: 0 \/ 0.*Snapshot attempts \/ sources with need-link issues: 1 \/ 1/);
+  await userEvent.click(summary);
+  const details = summary.closest("details")!;
+  expect(within(details).getByText(/missing or invalid need links/)).toBeVisible();
+  expect(within(details).queryByText(/a1 · search ·/)).not.toBeInTheDocument();
+  expect(within(details).getByText(/Missing records do not prove no search occurred/)).toBeVisible();
+});
+
+it("keeps valid mixed links visible and identifies both mixed and foreign-only record issues", async () => {
+  const view = structuredClone(generated.view);
+  const needId = view.discovery.needs[0].id;
+  view.discovery.attempts = [
+    { ...view.discovery.attempts[0], id: "foreign", need_ids: ["ghost"], input: "Foreign query" },
+    { ...view.discovery.attempts[0], id: "mixed", need_ids: [needId, "ghost"], input: "Mixed query" },
+  ];
+  view.discovery.sources = [
+    { ...view.discovery.sources[0], id: "foreign-source", need_ids: ["ghost"], title: "Foreign source" },
+    { ...view.discovery.sources[0], id: "mixed-source", need_ids: [needId, "ghost"], title: "Mixed source" },
+  ];
+  const fetch = serve((url) => url.endsWith("/discovery") ? Promise.resolve(response(view)) : undefined);
+  render(<DiscoveryPanel projectId="p" artifacts={[]} selected={artifact} invalid={false} active={true} t={translator("en")} />);
+  const result = await screen.findByRole("region", { name: "Saved Stage 1 result" });
+  const summary = within(result).getByText("Linked attempts / sources: 1 / 1 · Attempts to inspect: 1 · Snapshot attempts / sources with need-link issues: 2 / 2");
+  const before = fetch.mock.calls.length;
+  await userEvent.click(summary);
+  const details = summary.closest("details")!;
+  expect(within(details).getByText(/Counts include partly linked records/)).toBeVisible();
+  expect(within(details).getByText("Snapshot attempt IDs with need-link issues shown / recorded (2 / 2): foreign, mixed")).toBeVisible();
+  expect(within(details).getByText("Snapshot source IDs with need-link issues shown / recorded (2 / 2): foreign-source, mixed-source")).toBeVisible();
+  expect(within(details).getByText(/mixed · search · Mixed query/)).toBeVisible();
+  expect(within(details).getByText(/mixed-source · Mixed source/)).toBeVisible();
+  expect(within(details).queryByText(/foreign · search · Foreign query/)).not.toBeInTheDocument();
+  expect(within(details).queryByText(/foreign-source · Foreign source/)).not.toBeInTheDocument();
+  expect(fetch.mock.calls).toHaveLength(before);
+});
+
+it("explains the Crossref request and project record next to the search field", async () => {
+  window.history.replaceState({}, "", "#literature");
+  serve();
+  render(<App />);
+  const field = await screen.findByRole("textbox", { name: "Search question or keywords" });
+  expect(field).toHaveAccessibleDescription(translator("en")("searchPrivacy"));
+  expect(translator("zh-TW")("searchPrivacy")).toContain("Crossref");
+});
+
+it("keeps the Windows limitation visible and opens optional guidance", async () => {
+  const user = userEvent.setup();
+  render(<DiscoveryPanel projectId="p" artifacts={[]} selected={null} invalid={false} active={true} t={translator("en")} />);
+  expect(screen.getByText(/not yet available on Windows/)).toBeVisible();
+  expect(screen.getByText(/No saved research in this project/)).toBeVisible();
+  expect(screen.getByText(/Do not repeat research solely/)).not.toBeVisible();
+  await user.tab();
+  expect(screen.getByText("About saved research")).toHaveFocus();
+  await user.click(screen.getByText("About saved research"));
+  expect(screen.getByText(/Do not repeat research solely/)).toBeVisible();
+});
 
 it("one agent link opens exact saved native result with no integrations or writes, and setup interruption preserves it", async () => {
   window.history.replaceState({}, "", generated.view_path);

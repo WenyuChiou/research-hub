@@ -13,7 +13,9 @@ def test_recover_abstract_uses_semantic_scholar_after_crossref_and_unpaywall(mon
         if "unpaywall" in url:
             return SimpleNamespace(status_code=200, json=lambda: {"best_oa_location": {}})
         if "semanticscholar" in url:
-            return SimpleNamespace(status_code=200, json=lambda: {"abstract": "Recovered from S2"})
+            return SimpleNamespace(status_code=200, json=lambda: {
+                "externalIds": {"DOI": "10.1/example"}, "abstract": "Recovered from S2",
+            })
         raise AssertionError(url)
 
     monkeypatch.setattr("research_hub.search.abstract_recovery.requests.get", fake_get)
@@ -33,7 +35,7 @@ def test_recover_abstract_uses_semantic_scholar_tldr_fallback(monkeypatch):
         if "semanticscholar" in url:
             return SimpleNamespace(
                 status_code=200,
-                json=lambda: {"abstract": "", "tldr": {"text": "Short TLDR"}},
+                json=lambda: {"externalIds": {"DOI": "10.1/example"}, "abstract": "", "tldr": {"text": "Short TLDR"}},
             )
         raise AssertionError(url)
 

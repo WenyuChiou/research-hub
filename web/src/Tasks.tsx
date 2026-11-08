@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api, downloadPacket, metaToken, segment } from "./api";
 import {
   Disclosure,
@@ -11,6 +11,7 @@ import {
 import { operationLabel, type Translate } from "./i18n";
 import { AbstractDraftReview, uncertainMutation } from "./AbstractDraft";
 import type { Operation, Task } from "./types";
+import { TaskWorkingSummaryEditor } from "./WorkingSummaryEditor";
 import { taskFreshnessStatus } from "./taskFreshness";
 
 export interface TaskComposerProps {
@@ -89,6 +90,7 @@ export function parseOutputArtifacts(
 }
 
 export interface TaskCardProps {
+  active?: boolean;
   task: Task;
   runnerAvailable?: boolean;
   onReturnToSource?: (sourceId: string) => void;
@@ -98,6 +100,7 @@ export interface TaskCardProps {
 }
 export function TaskCard({
   task,
+  active = true,
   approvalMessage,
   t,
   onSaved,
@@ -108,6 +111,14 @@ export function TaskCard({
   const revision = taskFreshnessStatus(task);
   const abstractDraft = task.operation === "paper-abstract-draft";
   const [busy, setBusy] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  // A provenance refresh may unmount the editor while its POST is still in flight.
+  // Track those requests separately; an old settlement must not unlock a new editor.
+  const [pendingSummarySaves, setPendingSummarySaves] = useState(0);
+  const summarySavePending = useCallback((pending: boolean) => {
+    setPendingSummarySaves(count => count + (pending ? 1 : -1));
+  }, []);
+  const summaryOwnsTask = summaryOpen || pendingSummarySaves > 0;
   const [error, setError] = useState<unknown>(null);
   const [runLocked, setRunLocked] = useState(false);
   const runLock = useRef(false);
@@ -151,6 +162,7 @@ export function TaskCard({
     "blocked",
   ].includes(task.status);
   async function action(kind: "run" | "handoff" | "cancel" | "recover") {
+    if (summaryOwnsTask || busy) return;
     if (abstractDraft && kind === "run" && runLock.current) return;
     setBusy(true);
     setError(null);
@@ -236,7 +248,7 @@ export function TaskCard({
           <button
             className="button primary"
             disabled={
-              busy || (abstractDraft && (!runnerAvailable || runLocked))
+              busy || summaryOwnsTask || (abstractDraft && (!runnerAvailable || runLocked))
             }
             onClick={() => void action("run")}
           >
@@ -247,7 +259,7 @@ export function TaskCard({
         {handoffable && (
           <button
             className="button secondary"
-            disabled={busy}
+            disabled={busy || summaryOwnsTask}
             onClick={() => void action("handoff")}
           >
             {busy ? t("preparing") : t("downloadHandoff")}{" "}
@@ -257,7 +269,7 @@ export function TaskCard({
         {cancellable && (
           <button
             className="button secondary"
-            disabled={busy}
+            disabled={busy || summaryOwnsTask}
             onClick={() => void action("cancel")}
           >
             {t("cancelTask")}
@@ -273,6 +285,8 @@ export function TaskCard({
           {!runnerAvailable && (
             <p role="status">{t("abstractRunnerUnavailable")}</p>
           )}
+          {summaryOwnsTask && <p role="status">{t(summaryOpen ? "taskWorkingSummaryFinishFirst" : "taskWorkingSummarySavingFirst")}</p>}
+          <TaskWorkingSummaryEditor active={active && !busy} task={task} t={t} onSessionChange={setSummaryOpen} onSavePendingChange={summarySavePending} onSaved={() => onSaved(t("workingSummarySaved"))}/>
           <AbstractDraftReview
             task={task}
             t={t}
@@ -286,7 +300,7 @@ export function TaskCard({
             <p>{t("taskRecoveryNote")}</p>
             <button
               className="button secondary"
-              disabled={busy}
+              disabled={busy || summaryOwnsTask}
               onClick={() => void action("recover")}
             >
               {t("inspectInterruptedRun")}
@@ -383,6 +397,7 @@ export function TaskCard({
           {humanEnabled ? (
             <MutationForm
               key={task.action_hash}
+              disabled={busy || summaryOwnsTask}
               t={t}
               submit={t("recordDecision")}
               fields={[
@@ -400,11 +415,17 @@ export function TaskCard({
                 { name: "rationale", label: t("rationale"), textarea: true },
               ]}
               onSubmit={async (data) => {
-                await api(`/tasks/${segment(task.id)}/decision`, {
-                  ...Object.fromEntries(data),
-                  action_hash: task.action_hash,
-                });
-                await onSaved(t("decisionSaved"));
+                if (summaryOwnsTask || busy) return;
+                setBusy(true);
+                try {
+                  await api(`/tasks/${segment(task.id)}/decision`, {
+                    ...Object.fromEntries(data),
+                    action_hash: task.action_hash,
+                  });
+                  await onSaved(t("decisionSaved"));
+                } finally {
+                  setBusy(false);
+                }
               }}
             />
           ) : (

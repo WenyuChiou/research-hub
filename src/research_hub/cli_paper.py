@@ -550,7 +550,11 @@ def _paper_resummarize(
         return 1
     if report.prompt_path:
         print(f"no LLM CLI on PATH; prompt saved to {report.prompt_path}")
-        print("pipe it through your LLM CLI and re-run with --apply")
+        print("Prompt-only: no summaries were generated or applied, even with --apply.")
+        print("An agent in this host can read the saved prompt with authorized tools and return readable abstract-based summaries.")
+        print("Saving them requires a separately authorized supported operation for the selected destination.")
+        print("If that route is unavailable, keep the readable result and report saving as pending.")
+        print("Re-running --apply does not import externally generated summaries.")
         return 0
     print(f"cli used: {report.cli_used}")
     if not apply:

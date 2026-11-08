@@ -8,6 +8,7 @@ import json
 import mimetypes
 from pathlib import Path
 import secrets
+import sys
 import time
 from urllib.parse import unquote, urlsplit
 import webbrowser
@@ -15,13 +16,18 @@ import webbrowser
 from .core import WorkspaceError, encoded, safe_path
 from .service import WorkspaceService, call_workspace
 from .tasks import _LOCAL_HUMAN
+from .obsidian_validation import ObsidianValidation
+from .library_snapshot import LibrarySnapshot
 
 
 class WorkspaceServer(ThreadingHTTPServer):
     daemon_threads = True
     _service_type = WorkspaceService
 
-    def __init__(self, root, *, port=8765, human=False):
+    def __init__(self, root, *, port=8765, human=False, obsidian_vault=None, library_snapshot=None):
+        self.library_snapshot = LibrarySnapshot(library_snapshot)
+        self.obsidian_validation = ObsidianValidation(obsidian_vault)
+        self.obsidian_validation.assert_storage_outside(root)
         self.service = self._service_type(root)
         self.service.workspace.initialize_preparations()
         self.csrf = secrets.token_urlsafe(32)
@@ -74,8 +80,23 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         path = unquote(urlsplit(self.path).path)
         try:
             if path == "/api/v1/workspace":
-                return self._reply(200, self.server.service.capabilities(human=bool(self.server.human)))
+                result = self.server.service.capabilities(human=bool(self.server.human))
+                result["capabilities"]["obsidian_validation"] = self.server.obsidian_validation.capability()
+                return self._reply(200, result)
+            if path == "/api/v1/library/snapshot":
+                if urlsplit(self.path).query:
+                    return self._reply(400, {"ok": False, "code": "invalid_request", "error": "Snapshot requests accept no path parameters."})
+                result = self.server.library_snapshot.read()
+                return self._reply(404 if result.get("ok") is False else 200, result)
             segments = path.strip("/").split("/")
+            if (len(segments) == 5 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "working-summary"):
+                from urllib.parse import parse_qs
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) not in ({"source_record_id", "artifact_id"}, {"source_record_id", "task_id"}) or any(len(v) != 1 or not v[0] for v in query.values()):
+                    raise WorkspaceError("Select one source and generated draft", "invalid_request")
+                return self._result(self.server._call("project", "working-summary-context",
+                    {"project_id": segments[3], **{k: v[0] for k, v in query.items()}}))
             if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "source-text"):
                 return self._result(self.server._call("project", "source_text_lookup",
@@ -169,6 +190,12 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise WorkspaceError("Request must be an object")
             parts = unquote(urlsplit(self.path).path).strip("/").split("/")
+            if parts == ["api", "v1", "integrations", "obsidian", "validate"]:
+                if set(data) != {"vault_path"}:
+                    raise WorkspaceError("Only vault_path is accepted", "invalid_request")
+                result = self.server.obsidian_validation.validate(data["vault_path"])
+                status = 200 if result["ok"] else 403 if result["code"] == "vault_scope_denied" else 409
+                return self._reply(status, result)
             resource = operation = None
             proof = None
             if parts == ["api", "v1", "projects"]:
@@ -178,7 +205,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             elif len(parts) == 5 and parts[:2] == ["api", "v1"]:
                 if parts[2] == "projects":
                     data["project_id"] = parts[3]
-                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare", "source-text": "source_text"}.get(parts[4])
+                    operation = {"artifacts": "register", "records": "record", "search": "search", "tasks": "create", "bind": "bind", "audit": "audit", "impact": "impact", "delivery": "prepare", "source-text": "source_text", "working-summary": "working-summary-save"}.get(parts[4])
                     resource = "task" if parts[4] == "tasks" else "action" if parts[4] == "delivery" else "manuscript" if parts[4] in {"bind", "audit", "impact"} else "project"
                 elif parts[2] == "tasks":
                     resource = "task"
@@ -199,13 +226,18 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self._reply(400, {"ok": False, "error": str(exc), "code": "invalid_request"})
 
 
-def serve_workspace(root, *, port=8765, open_browser=True, human=False):
-    server = WorkspaceServer(root, port=port, human=human)
-    url = f"http://127.0.0.1:{server.server_port}/app/"
-    print(f"Research workspace: {url}")
-    if open_browser:
-        webbrowser.open(url)
+def serve_workspace(root, *, port=8765, open_browser=True, human=False, obsidian_vault=None, library_snapshot=None):
+    server = WorkspaceServer(root, port=port, human=human, obsidian_vault=obsidian_vault, library_snapshot=library_snapshot)
     try:
+        url = f"http://127.0.0.1:{server.server_port}/app/"
+        print(f"Research workspace: {url}", flush=True)
+        if open_browser:
+            try:
+                opened = webbrowser.open(url)
+            except (webbrowser.Error, OSError):
+                opened = False
+            if not opened:
+                print("Could not open a browser automatically. Open the workspace URL above in your browser.", file=sys.stderr)
         server.serve_forever()
     finally:
         server.server_close()

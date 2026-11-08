@@ -86,7 +86,8 @@ class CrossrefBackend:
             filters.append(f"from-pub-date:{year_from}-01-01")
         if year_to is not None:
             filters.append(f"until-pub-date:{year_to}-12-31")
-        filters.append("type:journal-article")
+        # Generic search includes proceedings and other publication types.
+        # Explicit exclusions are applied by the search orchestrator.
         if filters:
             params["filter"] = ",".join(filters)
 

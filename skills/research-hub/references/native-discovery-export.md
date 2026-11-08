@@ -28,9 +28,13 @@ search merely to fill a log or convert a bibliography into historical tool event
 
 Alongside the readable synthesis, the agent may emit a UTF-8 JSON file with format
 `research-discovery-observations/1.0`. It describes caller-observed evidence, not
-cryptographically authenticated execution. The bundled schema is
-`research_hub/schemas/research-discovery-observations-1.0.json`; unsupported versions
-and extra fields are rejected by the optional checker. Do not add these fields to
+cryptographically authenticated execution. The schema is bundled with the loaded
+skill at [`references/research-discovery-observations-1.0.json`](research-discovery-observations-1.0.json).
+Resolve that path relative to the directory containing the loaded `SKILL.md`, even
+when working in another project. The Hub package also keeps the canonical,
+byte-identical copy at `research_hub/schemas/research-discovery-observations-1.0.json`.
+The optional checker rejects unsupported versions and extra fields and checks
+relationships that the schema alone cannot establish. Do not add these fields to
 ResearchEvidencePacket v1 or the source-audit profile.
 
 ## Exact record shape
@@ -163,3 +167,270 @@ Returning researchers open the same exact result link; rechecking is read-only.
 A new research request may create a new immutable snapshot, never overwrite old
 evidence or imply renewed authorization. No Stage2 processing or provider writes
 are triggered by opening, rechecking, or closing setup guidance.
+
+## Optional standalone reader (no Hub runtime)
+
+The agent may render already selected observations with the loaded skill's
+`scripts/render_native_reader.py`. It uses only Python's
+standard library; no Hub installation, account, model, network or browser is
+used. Do not ask the researcher to re-enter literature. The agent prepares the
+presentation files from existing, authorized observations and supplied prose.
+This helper does not replace the optional native checker above: check-only
+checks rendering fields, exact references and generated links, not native
+execution, material-byte binding, scientific entailment or reading authenticity.
+The observations format and schema remain unchanged.
+
+Locate the actual loaded `SKILL.md` through the host's supplied skill/resource
+location, then resolve `scripts/render_native_reader.py` relative to that file's
+directory. Use the resulting absolute local script path with an already available
+Python interpreter. For URI-backed skills, obtain the accessible local path from
+the host; `skill://` is not a shell pathname. Do not guess user/cache paths or
+substitute a same-named project file or unrelated checkout.
+
+Keep the working directory at the user's selected project so the input/output
+arguments below remain project-relative. Replace `<resolved-reader-script>` with
+that resolved path; the quotes also cover spaces in skill locations. If the loaded
+skill has no accessible helper, or the host has no existing Python runtime,
+retain the native report and state that this optional renderer is unavailable;
+do not silently install Hub or ask the researcher to reconstruct the data.
+
+```text
+python "<resolved-reader-script>" --observations observations.json --content-en reader.en.json --content-zh-TW reader.zh-TW.json --bibliography verified-bibliography.json --check-only
+python "<resolved-reader-script>" --observations observations.json --content-en reader.en.json --content-zh-TW reader.zh-TW.json --bibliography verified-bibliography.json --output-dir new-reader-output
+```
+
+Each language file is optional. A supplied file must declare that exact
+language; an absent language produces no HTML and is recorded as missing.
+Without language files, only JSON/BibTeX/manifest exports are generated.
+The reader presents the research brief, recorded completion and needs first,
+followed by a category/work index and the source literature. Categories
+are only caller-provided presentation labels, not scientific classifications
+or acceptance decisions. Versions are grouped by their recorded `work_id`
+without collapsing their distinct source anchors. Delivery notes remain available
+in a collapsed appendix. Fixed interface labels and enumerated statuses are
+localized. Caller-supplied translations may accompany original observation text;
+without a supplied translation, free-text observations are labeled as original
+rather than silently translated. Missing per-source prose stays visibly not
+supplied. The helper neither translates nor asserts semantic parity. Original
+bibliographic titles remain unchanged. All five recorded reading levels (`metadata`, `abstract`, `excerpt`,
+`full-text`, `unavailable`), access limits and partial/residual needs stay visible;
+restricted and abstract-only leads are retained. Nothing decides inclusion or
+turns a saved body into a reading attestation.
+
+Presentation input is a view wrapper, not a second research-evidence schema:
+
+```json
+{
+  "format": "native-reader-content/1.0",
+  "language": "en",
+  "delivery_notes": ["Supplied cohort counts, decision boundaries and unknowns; not inferred by the renderer."],
+  "records": [{
+    "source_id": "S1", "work_id": "W1", "version": null,
+    "reading_level": "excerpt", "reading_ref": "saved-reading:S1",
+    "category": {"label": "Supplied category", "reason": "Supplied reason"},
+    "summary": "Supplied prose, not generated by this renderer.",
+    "limitations": ["Supplied limitation"],
+    "claims": [{
+      "id": "C1", "text": "Supplied claim text",
+      "reading_level": "excerpt", "reading_ref": "saved-reading:S1",
+      "locator": "Supplied section/page/character locator"
+    }]
+  }]
+}
+```
+
+Content format `native-reader-content/1.0` remains supported unchanged and
+rejects an `observation_translations` overlay. Format
+`native-reader-content/1.1` optionally accepts this overlay for sparse,
+caller-supplied translations of existing observation text. It does not replace
+or alter original observations, source identities, reading scopes, needs,
+completion status, or recorded scientific status. No translation or scientific
+assessment is generated by the renderer.
+
+For example, the following is an illustrative 1.1 **fragment**; include the
+mandatory outer `records` array as in the 1.0 example. Replace the placeholder
+hash with the SHA-256 of the exact original `--observations` file bytes, including
+any UTF-8 BOM and whitespace:
+
+```json
+{
+  "format": "native-reader-content/1.1",
+  "language": "zh-TW",
+  "records": [],
+  "observation_translations": {
+    "observations_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "run_id": "example-run",
+    "project_id": "example-project",
+    "brief": "呼叫者提供的研究簡述翻譯",
+    "completion_reason": "呼叫者提供的完成原因翻譯",
+    "needs": [{"id": "N1", "text": "呼叫者提供的需求翻譯"}],
+    "sources": [{"source_id": "S1", "work_id": "W1", "version": null,
+                 "title": "呼叫者提供的標題翻譯", "relevance": "呼叫者提供的相關性翻譯"}]
+  }
+}
+```
+
+The overlay requires `observations_sha256`, `run_id`, and `project_id`; run
+and project must match the observations. Its target language is the enclosing
+content language, which must match the requested reader language. The `brief`, `completion_reason`, `needs`, and
+`sources` fields are optional and may be sparse. Each need is identified by its
+existing `id`, and each source by the exact existing `source_id`, `work_id`, and
+nullable `version`. Duplicate need or source entries are invalid. A source
+translation entry must supply at least one of `title` or `relevance`; those are
+translated text, not changes to the recorded source. Supplied translations must
+be nonempty text, not null. Original text and status remain visible. SHA-256 binds an overlay to exact input bytes, not to
+the authenticity of that input or the correctness, completeness, or semantic
+parity of the translation. Verify supplied translations before relying on them.
+
+The optional root `delivery_notes` array contains plain supplied text, displayed
+in a collapsed appendix after the literature. Use existing recorded cohort counts,
+assessment limits and unknown totals when relevant; retain work-versus-version
+distinctions and overlapping categories. Notes are not computed inclusion or
+reading decisions, new summaries or translations. Missing notes/languages stay
+missing. Shared machine-readable count text may be copied unchanged to both
+language wrappers without claiming translation parity.
+
+The first five record fields are mandatory and join exactly to an existing
+observation source/work/nullable-version and its recorded reading scope/reference.
+The remaining fields are optional; category may be null, summary may be null,
+and absent limitations/claims are empty. Claim fields are mandatory when a claim
+is supplied. Claim IDs must be unique within each language; a shared ID across
+languages must retain the same source identity, scope and locator. A claim cannot
+exceed the source's reading level. Abstract/excerpt/full-text claims need a
+non-null supplied locator. These checks bind presentation references; they do
+not establish that the claim is supported. No referenced material is opened.
+
+Optional bibliography input uses `format: native-reader-bibliography/1.0` or
+`native-reader-bibliography/1.1` and a `records` array. Each record requires
+`source_id`, `work_id`, `version`,
+the unchanged source `title`, and `verification_ref` exactly equal to that
+source's recorded locator or non-null reading reference. Optional fields are
+`authors` (list or null), `year` (integer or null), `venue`, `doi`, and `url`
+(text or null). In both versions, a supplied DOI must be nonempty text with no
+disallowed control characters and must match the DOI syntax check, which also
+rejects whitespace. The agent supplies only already verified metadata; the
+renderer does not independently verify it. Unknown fields are omitted from BibTeX, never
+inferred from a URL, title or summary. Missing bibliography yields an empty BibTeX
+export. Every supplied bibliography record is retained regardless of access or
+reading level. Source/work/version joins, rather than titles, produce stable
+distinct anchors and BibTeX keys, including separate versions of one work.
+Reader bibliography sections show the supplied authors (as display names), year,
+venue, DOI and URL for each version, with missing fields marked as not supplied.
+The BibTeX export contains supplied version records, not necessarily complete
+citations; unknown fields can be absent. Check each citation and the imported
+author formatting before reuse; no external import or acceptance is attested.
+
+Version 1.0 continues to protect each supplied author display name as a literal
+BibTeX author, but the literal-brace serialization change described below also
+applies to it. Version 1.1 optionally accepts
+`author_kinds` on each record: an array parallel to the supplied `authors`
+array, with exactly the same length and only `person` or `literal` entries.
+If `author_kinds` is present, `authors` must be an array (including an empty
+array if both arrays are empty); `author_kinds: null` is invalid. When
+`author_kinds` is omitted, the literal behavior is retained. This illustrative
+record fragment explicitly distinguishes a person from an organization; it does
+not infer classifications:
+
+```json
+{
+  "authors": ["Alice Smith", "Research Organization"],
+  "author_kinds": ["person", "literal"]
+}
+```
+
+`literal` keeps individual protective braces; `person` emits the escaped supplied name without
+those braces. The renderer does not infer person versus organization or split a
+name into given and family components. A `person` value containing a standalone
+BibTeX `and` author delimiter (case-insensitive, at whitespace boundaries) is
+rejected: provide separate author entries or choose `literal` where appropriate.
+Explicit `person` names containing either `{` or `}` are rejected, even when
+the braces are balanced. Person names may contain at most two commas, and each
+comma-separated component must contain at least one character that is neither
+whitespace nor a hyphen; separator-only components such as `-` are unsupported.
+Hyphenated names with actual text remain accepted. These are bounded syntax
+checks, not name or identity verification. The caller is
+responsible for providing valid BibTeX person-name syntax and checking the
+imported result; the renderer does not verify the meaning or identity of a name.
+
+Version 1.1 protects each supplied title word (Unicode letter/digit/underscore
+runs) with a BibTeX case-preserving group; punctuation and whitespace remain
+outside word groups. Literal-brace escape macros are isolated in their own
+balanced groups, preventing them from consuming adjoining protected words in
+Pandoc. This preserves supplied case without guessing which words are proper
+names, while letting importers derive short titles at colons. It also
+prevents ordinary sentence-case normalization; it does not infer preferred
+citation-style capitalization. Version 1.0 title serialization is unchanged.
+This protects supplied case, not source accuracy or compatibility with every
+citation style. Imported short titles remain consumer-derived, not supplied
+bibliographic metadata. Pandoc 3.1.11.1 still omits literal brace glyphs encoded
+by these macros, as it does for 1.0; case protection does not promise an exact
+round trip of every literal character.
+
+For BibTeX text fields (including titles, names and venues), literal input
+braces are serialized as the balanced TeX macros `\textbraceleft{}` and
+`\textbraceright{}`; literal backslashes use `\textbackslash{}`. This also
+changes the exported bytes for 1.0 text fields containing braces; 1.0 text
+fields without braces retain their prior serialization. The JSON export preserves the
+original supplied text. DOI and URL fields continue to use percent-encoding.
+Synthetic BibTeX parser tests do not establish actual TeX rendering or
+compatibility across citation styles. Inspect the imported and typeset result;
+escaping alone is not a general guarantee of safe or correct output.
+
+To make existing assessment/provenance sidecars and delivery instructions
+discoverable, the agent may explicitly repeat `--attachment PATH` up to eight
+times on either command above. Each selected file must be an ordinary single-link regular file, at most 4 MiB,
+with an ASCII basename of letters, digits, dots, underscores or hyphens (starting
+with a letter/digit) and a `.json`, `.md`, `.txt` or `.pdf` suffix (case-insensitive).
+Windows device basenames (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`,
+`LPT1`–`LPT9`, case-insensitive even before additional extensions) are refused
+rather than renamed. This lexical check does not establish cross-platform ZIP
+extraction or filesystem acceptance.
+This tightens attachment-name validation independently of content or bibliography
+version (including content 1.0 and bibliography 1.0/1.1): previously accepted
+device names and the four non-ASCII letters admitted by Unicode case-insensitive
+matching are now rejected. Existing generated output is not renamed or rewritten;
+other content and export formats are unchanged.
+JSON, Markdown and text attachments must be UTF-8 without NUL. PDF attachments
+are read and copied as opaque bytes; their validity, contents, language and
+correspondence to a report are not verified. No PDF is generated, parsed,
+translated or treated as evidence of full-text reading. PDF download links are
+labeled as supplied attachments rather than verified matching-language reports. Generated-export names and case-insensitive
+duplicate basenames are refused. No directory scan or automatic file selection
+occurs. Attachment JSON is supporting text, not another validated evidence
+schema. Copies retain their exact bytes, input/output hashes and a download link
+in every supplied language reader; a missing required export link fails the
+presentation check. The renderer does not interpret assessment statuses or
+decide eligibility. Select only files authorized for this particular delivery;
+local generation does not authorize publication of their contents.
+
+Inputs are bounded to 4 MiB each, reject duplicate JSON keys/nonfinite values,
+and must be ordinary unlinked files. Bibliographic HTTP(S) links are checked;
+unsafe URL schemes are refused, and provenance references stay escaped text.
+HTML and BibTeX text use the escaping described above; this does not establish
+correct rendering or general safety. No scripts or remote assets are emitted.
+Check-only writes nothing and does not create an output directory. Generation
+requires a new output directory with an existing unlinked parent; existing
+outputs, traversal and input/output overlap are refused. Each directory is a
+new staged output set, incomplete until its final `manifest.json` is fully
+written. If an input changes during the final recheck or generation is interrupted,
+partial output files may already exist; retain the partial directory without
+treating HTML file existence as completion; choose a new output set after reconciliation.
+
+A parsed `status: complete` manifest and matching input and output hashes
+establish only present artifact consistency; they do not establish that the
+invocation succeeded or that `fsync` ensured durability. Record a successful
+zero exit and the `status: generated` response, including its
+`manifest_sha256`, separately from artifact checks. A failed or unknown
+invocation outcome remains unconfirmed even if the files match. Preserve that
+directory; retry using the same verified unchanged inputs in a fresh output
+directory.
+
+Outputs are `reader.en.html` and/or `reader.zh-TW.html` only for supplied
+languages, `references.bib`, `native-reader.json` (original observations plus
+separate presentation inputs and any selected attachment identities), selected
+supporting files, and a deterministic manifest of input/output
+hashes. Check local fragment/export links and manifest hashes before handing
+over the exact HTML paths. Generated readers are local artifacts, not permission
+to publish or upload source material. PDF generation and actual browser, assistive
+technology, layout, human reading and scientific acceptance remain unverified
+by the synthetic parser tests.

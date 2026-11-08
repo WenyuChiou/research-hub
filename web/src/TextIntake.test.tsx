@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
@@ -276,6 +277,9 @@ it("rejects invalid UTF-8 before saving and leaves source markup inert", async (
   window.history.replaceState({}, "", "#literature");
   render(<App />);
   const user = userEvent.setup();
+  await user.click(
+    await screen.findByText(t("catalogAdvanced"), { selector: "summary" }),
+  );
   await user.click(await screen.findByRole("button", { name: t("intakeAdd") }));
   await user.selectOptions(screen.getByLabelText(t("intakeInput")), "file");
   await user.type(screen.getByLabelText(t("intakeTitle")), "Public");
@@ -302,6 +306,7 @@ it("rejects invalid UTF-8 before saving and leaves source markup inert", async (
   ).toBe(true);
 });
 it("shows unsupported capability without writes while metadata-only source entry remains available", async () => {
+  const user = userEvent.setup();
   const fetch = vi.fn(async (input: RequestInfo | URL) =>
     String(input).endsWith("/workspace")
       ? response({
@@ -320,9 +325,15 @@ it("shows unsupported capability without writes while metadata-only source entry
   vi.stubGlobal("fetch", fetch);
   window.history.replaceState({}, "", "#literature");
   render(<App />);
+  await user.click(
+    await screen.findByText(t("catalogAdvanced"), { selector: "summary" }),
+  );
   expect(
     await screen.findByRole("button", { name: t("intakeAdd") }),
   ).toBeDisabled();
+  expect(screen.getByRole("button", { name: t("intakeAdd") })).toHaveAccessibleDescription(t("intakeUnavailable"));
+  expect(screen.getByText(t("intakeUnavailable"))).toBeVisible();
+  await user.click(screen.getByText(t("intakeDetails")));
   expect(screen.getByText(/Windows publication unsupported/)).toBeVisible();
   expect(screen.getByRole("button", { name: t("addSource") })).toBeEnabled();
   expect(
@@ -647,7 +658,11 @@ it("newer source choice on the same page is not replaced by a late text save", a
     );
   });
   await screen.findByRole("button", { name: t("intakeOpenSaved") });
-  expect(screen.getByLabelText(t("abstractChooseFile"))).toHaveValue("");
+  const composer = screen.getByRole("heading", { name: t("paper-abstract-draft") }).closest("section")!;
+  expect(within(composer).getByRole("heading", { name: existing.data.title })).toBeInTheDocument();
+  expect(within(composer).getByText(t("abstractNoText"))).toBeInTheDocument();
+  expect(screen.queryByLabelText(t("abstractChooseFile"))).not.toBeInTheDocument();
+  expect(fetch.mock.calls.filter(call => String(call[0]).includes("/artifacts/"))).toHaveLength(0);
   expect(screen.queryByLabelText(t("abstractText"))).not.toBeInTheDocument();
   expect(location.hash).toBe("#literature");
 });

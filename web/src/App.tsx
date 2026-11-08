@@ -1,11 +1,12 @@
 import { discoveryRoute } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { IntegrationsSetup } from "./IntegrationsSetup";
+import { useCompactReadingLayout } from "./readingLayout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
 import { ProjectPages, type RecoveredWork } from "./Pages";
-import { projectWarningLabel, translator, type MessageKey } from "./i18n";
+import { en, projectWarningLabel, translator, type MessageKey } from "./i18n";
 import type {
   Locale,
   Page,
@@ -26,7 +27,7 @@ const pages: Page[] = [
 const glyphs = ["◫", "≡", "⌘", "⌁", "¶", "✓"];
 function currentPage(): Page {
   const page = window.location.hash.slice(1).split("?", 1)[0];
-  return pages.includes(page as Page) ? (page as Page) : "overview";
+  return pages.includes(page as Page) ? (page as Page) : "literature";
 }
 const aborted = (error: unknown) =>
   error instanceof Error && error.name === "AbortError";
@@ -57,6 +58,17 @@ export default function App() {
     error?: boolean;
   } | null>(null);
   const [newProject, setNewProject] = useState(false);
+  const [categoryHost, setCategoryHost] = useState<HTMLDivElement | null>(null);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const navigationToggle = useRef<HTMLButtonElement>(null);
+  const lastReadingFocus = useRef<Element | null>(null);
+  const sidebar = useRef<HTMLElement>(null);
+  const compact = useCompactReadingLayout(next => {
+    // Native CSS can hide a control before the matchMedia event is dispatched.
+    const focused = document.activeElement === document.body ? lastReadingFocus.current : document.activeElement;
+    if (page === "literature" && !next && navigationToggle.current && navigationToggle.current === focused) sidebar.current?.querySelector<HTMLAnchorElement>(".brand")?.focus();
+    if (next && page === "literature" && sidebar.current?.contains(document.activeElement)) setNavigationOpen(true);
+  });
   const [refreshCount, setRefreshCount] = useState(0);
   const selectedRef = useRef(projectId);
   selectedRef.current = projectId;
@@ -423,14 +435,24 @@ export default function App() {
     setError(null);
     setRefreshCount((count) => count + 1);
   }
+  const navigationLinks = (items: Page[]) => (<>{items.map((item) => (
+      <a key={item} href={"#" + item} onClick={() => {navigationEpoch.current++;}} aria-current={page === item ? "page" : undefined}>
+        <span className="nav-symbol" aria-hidden="true">{glyphs[pages.indexOf(item)]}</span><span>{t(item)}</span>
+      </a>
+    ))}</>);
   const activeDetail = detail?.project.id === projectId ? detail : null;
   const showCreate = newProject || workspace?.projects.length === 0;
   return (
-    <div className="app-shell">
+    <div className={`app-shell${page === "literature" ? " reading-desk-shell" : ""}${navigationOpen ? " navigation-open" : ""}`}
+      onFocusCapture={event => { lastReadingFocus.current = event.target as Element; }}>
       <a className="skip-link" href="#main-content" onClick={focusMain}>
         {t("skip")}
       </a>
-      <aside className="sidebar">
+      <aside className="sidebar" ref={sidebar} onKeyDown={event => {
+        if (compact && navigationOpen && event.key === "Escape" && !(event.target as Element).closest('[role="dialog"]')) {
+          setNavigationOpen(false); navigationToggle.current?.focus();
+        }
+      }}>
         <a className="brand" href="#overview">
           <span className="brand-symbol" aria-hidden="true">
             r<span>h</span>
@@ -441,6 +463,9 @@ export default function App() {
             <small>{t("workspace")}</small>
           </span>
         </a>
+        {page === "literature" && <button type="button" ref={navigationToggle} className="button secondary reading-navigation-toggle"
+          aria-expanded={navigationOpen} aria-controls="workspace-navigation"
+          onClick={() => setNavigationOpen(open => !open)}>{t("readingNavigation")}</button>}
         <div className="project-control">
           <label htmlFor="project-switcher">{t("projects")}</label>
           <select
@@ -472,32 +497,23 @@ export default function App() {
               </option>
             ))}
           </select>
+          <p className="selected-project-title">{workspace?.projects.find((project) => project.id === projectId)?.title}</p>
           <button className="new-project" onClick={() => setNewProject(true)}>
             <span aria-hidden="true">＋</span>
             {t("newProject")}
           </button>
         </div>
-        <nav aria-label={t("navigation")}>
-          {pages.map((item, index) => (
-            <a
-              key={item}
-              href={`#${item}`}
-              onClick={() => {
-                navigationEpoch.current++;
-              }}
-              aria-current={page === item ? "page" : undefined}
-            >
-              <span className="nav-symbol" aria-hidden="true">
-                {glyphs[index]}
-              </span>
-              <span>{t(item)}</span>
-              <span className="nav-number" aria-hidden="true">
-                0{index + 1}
-              </span>
-            </a>
-          ))}
+        <nav id="workspace-navigation" aria-label={t("navigation")} hidden={page === "literature" && compact && !navigationOpen}>
+          <p className="nav-group-label">{t("catalogResearchNav")}</p>
+          {navigationLinks(pages.slice(0, 3))}
+          <details className="secondary-navigation" open={pages.slice(3).includes(page)}>
+            <summary>{t("catalogWritingNav")}</summary>
+            {navigationLinks(pages.slice(3))}
+          </details>
+          <div ref={setCategoryHost} hidden={page !== "literature"} />
         </nav>
         <div className="sidebar-footer">
+          <p className="integration-services-label">{t("catalogIntegrationsHint")}</p>
           <IntegrationsSetup
             workspace={workspace}
             projectId={projectId}
@@ -551,7 +567,7 @@ export default function App() {
             <span>{t("refresh")}</span>
           </button>
         </header>
-        <div className="content-wrap">
+        <div className={`content-wrap workspace-${page}`}>
           <div className="page-heading">
             <div>
               <div className="eyebrow">
@@ -625,8 +641,8 @@ export default function App() {
           ) : (
             <>
               {showCreate && (
-                <section className="project-onboarding">
-                  <div className="onboarding-intro">
+                <section className={workspace.projects.length ? "project-onboarding compact-create" : "project-onboarding"}>
+                  {workspace.projects.length === 0 && <div className="onboarding-intro">
                     <SmallEyebrow text={t("startEyebrow")} />
                     <h2>{t("startTitle")}</h2>
                     <p>{t("startBody")}</p>
@@ -636,7 +652,7 @@ export default function App() {
                       <i />
                       <i />
                     </div>
-                  </div>
+                  </div>}
                   <div className="onboarding-form">
                     <div className="panel-heading">
                       <h2>{t("newProject")}</h2>
@@ -698,17 +714,27 @@ export default function App() {
                   </>
                 ) : activeDetail ? (
                   <>
-                    {activeDetail.warnings?.length > 0 && (
+                    {activeDetail.warnings?.some((warning) =>
+                      page !== "literature" || warning !== en.writingAuthorityUnbound
+                    ) && (
                       <section className="notice warnings">
                         <strong>{t("warnings")}</strong>
                         <ul>
-                          {activeDetail.warnings.map((warning, index) => (
+                          {activeDetail.warnings.filter((warning) =>
+                            page !== "literature" || warning !== en.writingAuthorityUnbound
+                          ).map((warning, index) => (
                             <li key={index}>
                               {projectWarningLabel(warning, t)}
                             </li>
                           ))}
                         </ul>
                       </section>
+                    )}
+                    {page === "literature" && activeDetail.warnings?.includes(en.writingAuthorityUnbound) && (
+                      <details>
+                        <summary>{t("writingWarningSummary")}</summary>
+                        <p>{t("writingAuthorityUnbound")}</p>
+                      </details>
                     )}
                     <ProjectPages
                       key={projectId}
@@ -725,6 +751,8 @@ export default function App() {
                       detail={activeDetail}
                       workspace={workspace}
                       page={page}
+                      observationRevision={refreshCount}
+                      categoryHost={categoryHost}
                       t={t}
                       onSaved={onSaved}
                       navigate={navigate}

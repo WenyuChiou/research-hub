@@ -77,9 +77,9 @@ def test_preview_and_preparation_share_exact_reader(selected, monkeypatch):
     from research_hub.workspace import research_draft as route
     calls = []
     original = route.read_selected_text
-    def spy(*args):
+    def spy(*args, **kwargs):
         calls.append(args[2])
-        return original(*args)
+        return original(*args, **kwargs)
     monkeypatch.setattr(route, "read_selected_text", spy)
     preview = WorkspaceService(ws.root).preview_text("selected", artifact_id=artifact["id"])["preview"]
     start = preview["text"].index("研究")

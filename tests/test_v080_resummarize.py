@@ -79,7 +79,7 @@ def test_summarize_cluster_filters_prompt_to_requested_paper_keys(tmp_path, monk
     cluster_dir = cfg.raw / "agents"
     _write_note(cluster_dir / "paper-one.md", title="Paper One", zotero_key="ZK1", abstract="Abstract one.", summary="[TODO] Paper One")
     _write_note(cluster_dir / "paper-two.md", title="Paper Two", zotero_key="ZK2", abstract="Abstract two.", summary="[TODO] Paper Two")
-    monkeypatch.setattr("research_hub.auto.detect_llm_cli", lambda: None)
+    monkeypatch.setattr("research_hub.llm_cli.detect_llm_cli", lambda: None)
 
     report = summarize_cluster(cfg, "agents", paper_keys=["ZK2"])
 

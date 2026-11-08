@@ -59,6 +59,13 @@ not verification. A captured summary is not its cited original. Use the existing
 source-audit profile for local quote/range/byte checks when available, preserving
 its semantic and authenticity limits.
 
+If an important source is inaccessible at its first location, use available,
+authorized alternatives proportionately, such as a publisher record or a
+trustworthy open repository. Verify the work and version obtained; do not
+transfer support between versions without checking. Do not repeat work merely
+to fill a log or require the researcher to supply a file when a safe
+alternative is available.
+
 For feasibility, name the actual materials, needed fields (variables or
 observations), resolution/coverage, and reuse conditions. Unconfirmed availability,
 missing fields or unresolved permission cannot be called ready. Carry a bounded
@@ -127,14 +134,16 @@ full-text review. Preserve work/version and acquisition observations separately
 from storage dedup. Do not collapse arXiv v1/v2, corrections, or retractions into
 one current claim. Same DOI with conflicting title/year remains unresolved.
 
-For native `papers` handoff, use the existing `source_records` list for append-only
-observations: source/work/version IDs, acquisition and search references, actual
-level/status, compared metadata, decision/revision references, and affected
+For a selected `papers` handoff, use the existing `source_records` list for
+append-only observations: source/work/version IDs, acquisition and search
+references, actual level/status, compared metadata, decision/revision references, and affected
 claim IDs. Record corrections and include-to-exclude reversals with reason and
 prior decision reference; mark dependent claims stale and re-review them.
 Unknown versions remain unknown. Do not replace user notes or perform automatic
 Zotero merges. Existing provenance merging preserves distinct observations and
 exact replay; retained metadata does not establish independent verification.
+Native-only results can retain the same source, version, reading and claim
+boundaries in readable inline form without a structured handoff or Hub ingest.
 
 ## Bound completion honestly
 
@@ -157,6 +166,16 @@ marginal qualified yield when observable; and `continue`, `partial`, or
 - `bounded-complete` means adequate for the explicitly declared scope with
   remaining limits disclosed. Unresolved load-bearing needs/claims require
   `partial` or continuation; superficial zero-yield rounds cannot close them
+
+For a declared time or resource budget, reserve time for finalization inside
+the total budget. Before starting further work, consider the remaining budget
+and finalization; if insufficient, stop expanding and, where possible, give a
+brief partial result with covered and unresolved needs, actual reading scope,
+source versions, limitations and next steps. For a tiny or unknown budget, keep
+the result brief and do not assume a reserve is available. Before reusing
+evidence, verify source identity, version and actual reading scope; a state
+entry alone does not verify them. A hard host cutoff or stuck call can prevent
+any output; this is best effort, and no delivery or savings are guaranteed.
 
 If Hub's executable is missing, do available native-only research and report
 that the CLI route is unavailable in this executor. Inspect other supported

@@ -20,8 +20,6 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 import xml.etree.ElementTree as ET
 
-import requests
-
 VERSION = "1.0.0"
 GOOD = {"success", "success_empty"}
 _CURRENT: ContextVar[Attempt | None] = ContextVar("research_hub_audit", default=None)
@@ -70,6 +68,8 @@ def _safe(value):
 def _error_outcome(error):
     if isinstance(error, (KeyboardInterrupt, SystemExit)):
         return "cancelled"
+    import requests
+
     if isinstance(error, requests.Timeout):
         return "timeout"
     if isinstance(error, (ValueError, ET.ParseError)):
@@ -343,6 +343,8 @@ def audited(operation, *, backend=None, evidence=None):
 
 
 def http_request(method, url, *, client=None, **kwargs):
+    import requests
+
     request = getattr(client or requests, method.lower())
     if _CURRENT.get() is None:
         return request(url, **kwargs)

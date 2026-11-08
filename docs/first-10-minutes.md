@@ -17,21 +17,7 @@ All 4 personas share the same dashboard, MCP server, crystal system, and cluster
 
 ## If You Only Want To See It Work
 
-Use this path before creating API keys or signing in to Google:
-
-```bash
-pip install research-hub-pipeline
-research-hub dashboard --sample
-```
-
-Or create a local demo vault you can inspect in Obsidian:
-
-```bash
-research-hub init --sample
-```
-
-This skips Zotero, NotebookLM, and LLM CLI probes. It is the fastest
-way to confirm the package installed correctly.
+Before creating API keys or signing in to Google, try the [published dashboard sample](../README.md#published-dashboard). The documented isolated-root path was tested on Linux with Python 3.12; a bare `research-hub dashboard --sample` failed in a fresh HOME. The newer six-page workspace has a separate [source quickstart](../README.md#workspace-preview). The CLI also offers `research-hub init --sample` to create a local demo vault; that alternate published-wheel path was not independently checked in this test.
 
 ---
 

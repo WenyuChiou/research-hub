@@ -4,7 +4,7 @@ Current setup path for research-hub v1.x. research-hub is not a
 Claude-only skill: it is a Python CLI with MCP, REST, dashboard, and
 portable `SKILL.md` instructions.
 
-For a local workspace without accounts, start with the [capability baseline](capability-baseline.md).
+For a local workspace without accounts, start with the [README](../README.md#workspace-preview); the [capability baseline](capability-baseline.md) describes an older pinned revision.
 A successful install or setup exit code does not certify every integration.
 
 ## 1. Install The CLI
@@ -38,7 +38,7 @@ See [NotebookLM architecture](notebooklm.md).
 
 | You have | Recommended command |
 |---|---|
-| No accounts yet | `research-hub init --sample` or `research-hub dashboard --sample` |
+| No accounts yet | [Published dashboard sample](../README.md#published-dashboard) (Linux-tested) |
 | Zotero + Obsidian | `research-hub setup --skip-login` |
 | Zotero + Obsidian + NotebookLM | `research-hub setup` |
 | Local files, any persona | `research-hub init --persona researcher` (or `analyst`, `humanities`, `internal`); defer optional connections |
@@ -241,12 +241,7 @@ the first NotebookLM login by themselves.
 
 ## 5. Smoke Tests
 
-No-account preview:
-
-```bash
-research-hub dashboard --sample
-research-hub init --sample
-```
+For an account-free published dashboard preview, follow the [tested Linux sample path](../README.md#published-dashboard). In a fresh HOME, the bare `research-hub dashboard --sample` command can fail the initialization check.
 
 Machine-readable capability manifest:
 

@@ -78,11 +78,20 @@ def selected_artifact(workspace, project_id: str, artifact_id: str) -> dict:
     return artifact
 
 
-def read_selected_text(workspace, project_id: str, artifact_id: str) -> dict:
+def read_selected_text(workspace, project_id: str, artifact_id: str, *, source_record_id: str | None = None) -> dict:
     """Read-only preview and preparation share one strict source-byte reader."""
     if not isinstance(project_id, str) or not isinstance(artifact_id, str) or not project_id or not artifact_id:
         raise WorkspaceError("Select a registered project evidence artifact", "invalid_source")
     artifact = selected_artifact(workspace, project_id, artifact_id)
+    if source_record_id is not None:
+        if not isinstance(source_record_id, str) or not source_record_id:
+            raise WorkspaceError("Select a source record from this project", "invalid_source")
+        # Check the same registration used for the byte read. Only an absent
+        # owner is legacy-unbound; malformed ownership must never bypass it.
+        if "source_record_id" in artifact:
+            owner = artifact["source_record_id"]
+            if not isinstance(owner, str) or not owner or owner != source_record_id:
+                raise WorkspaceError("Selected evidence belongs to a different source record", "invalid_source")
     from ._source_storage import is_blob, read_blob, reference
     if is_blob(artifact):
         raw = read_blob(workspace, artifact)
@@ -122,7 +131,7 @@ def read_selection(workspace, project_id: str, selection: dict) -> dict:
     if row is None:
         raise WorkspaceError("Select a source record from this project", "invalid_source")
     record = {"id": selection["source_record_id"], "data": json.loads(row[0])}
-    preview = read_selected_text(workspace, project_id, selection["artifact_id"])
+    preview = read_selected_text(workspace, project_id, selection["artifact_id"], source_record_id=record["id"])
     if "storage" in preview and preview["reference"] != "hub-source:" + record["id"]:
         raise WorkspaceError("Saved-text selection belongs to a different source record", "invalid_source")
     text = preview["text"]
@@ -275,12 +284,8 @@ def validate_response(response, source: dict, *, profile_version=PROFILE_VERSION
     return resolve_response(response, source, profile_version=profile_version)[1]
 
 
-def store_result(workspace, task, response):
-    """Validate first, then create owned candidate artifacts; never edit sources."""
-    check(workspace, task)
-    bound = task["request"]["research_draft"]
-    raw_response = response
-    response, report = resolve_response(response, bound["source_pack"], profile_version=task_profile_version(task))
+def render_response(response):
+    """Render the resolved envelope without creating or accepting artifacts."""
     lines = ["# Abstract-only draft", "", "Unverified candidate — source-aware human review required.",
              "Publication identity unverified; publication version unknown.", ""]
     for section in SECTIONS:
@@ -292,7 +297,16 @@ def store_result(workspace, task, response):
         if not response[section]:
             lines.append("Unknown / not reported in this draft.")
         lines.append("")
-    prose = "\n".join(lines)
+    return "\n".join(lines)
+
+
+def store_result(workspace, task, response):
+    """Validate first, then create owned candidate artifacts; never edit sources."""
+    check(workspace, task)
+    bound = task["request"]["research_draft"]
+    raw_response = response
+    response, report = resolve_response(response, bound["source_pack"], profile_version=task_profile_version(task))
+    prose = render_response(response)
     root = safe_path(workspace.root, f"proposals/{task['id']}-{uuid.uuid4().hex}")
     root.mkdir(parents=True, exist_ok=False)
     documents = {"draft.md": prose, "draft-response.json": encoded(response),
@@ -312,7 +326,21 @@ def store_result(workspace, task, response):
 
 
 def parse_response(raw: str) -> dict:
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > 100_000:
+    return _parse_response(raw, max_bytes=100_000)
+
+
+def parse_resolved_response(raw: str) -> dict:
+    """Decode stored output whose derived offsets can exceed the raw-input cap.
+
+    The candidate reader bounds the stored bytes at 200000, then compares this
+    envelope with the freshly resolved, schema-validated original response.
+    This parser must not be used for incoming or stored raw responses.
+    """
+    return _parse_response(raw, max_bytes=200_000)
+
+
+def _parse_response(raw: str, *, max_bytes: int) -> dict:
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise WorkspaceError("Restricted draft response is oversized", "invalid_output")
     def unique(pairs):
         result = {}

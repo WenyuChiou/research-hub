@@ -86,7 +86,19 @@ Zotero/Obsidian/NotebookLM direct-write tools are outside this workspace gate.
 Propose names for a new research collection without creating anything. Use this BEFORE creating clusters/collections/notebooks. Show the suggestions to the user and ask them to confirm or override before any state-changing call.
 
 ### `search_papers(query: str, limit: int = 10, ...)`
-Multi-backend academic paper search (OpenAlex + arXiv + Crossref). Returns ranked candidates with title, authors, year, DOI, abstract. Use to find papers by topic, author, or DOI keyword.
+Multi-backend academic paper search using the configured academic backends.
+Returns ranked candidates with title, authors, year, DOI, and abstract. Use to
+find papers by topic, author, or DOI keyword.
+
+Each candidate also returns `abstract_source` and `metadata_year` when present
+in the search result. `abstract_source` identifies the observed origin of the
+selected abstract; it can differ from the aggregate record's `source` after
+cross-backend merging. `metadata_year` preserves the provider's recorded year
+separately from `year`, so a discrepancy remains visible. Unknown values stay
+`""` and `null`, respectively; neither is inferred from `source` or `year`.
+These fields preserve reported metadata, not verified source content, full-text
+reading, or literature coverage. `already_in_vault` and optional DOI verification
+remain separate observations, not evidence that an abstract was reviewed.
 
 ### `enrich_candidates(candidates: list[dict])`
 Enrich raw search results with abstracts and metadata. Use after `search_papers` if abstracts were missing.

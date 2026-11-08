@@ -54,11 +54,18 @@ jobs:
           .wheel-venv/bin/pip install dist/workspace/*.whl 'fastmcp>=2.0'
       - name: Verify clean wheel without Node runtime
         run: .wheel-venv/bin/python scripts/workspace_install_smoke.py --output artifacts/wheel-report.json
+      - name: Install workspace browser runtime
+        timeout-minutes: 2
+        run: pip install -e '.[mcp]'
+      - name: Install Chromium OS dependencies
+        timeout-minutes: 13
+        run: python -m playwright install-deps chromium
+      - name: Install Chromium browser
+        timeout-minutes: 3
+        run: python -m playwright install chromium
       - name: Real Chromium workspace smoke
-        run: |
-          pip install -e '.[mcp]'
-          python -m playwright install --with-deps chromium
-          python scripts/workspace_browser_smoke.py --output artifacts/browser
+        timeout-minutes: 3
+        run: python scripts/workspace_browser_smoke.py --output artifacts/browser
       - name: Check out immutable public writing producer
         uses: actions/checkout@v7
         with:
@@ -129,9 +136,13 @@ jobs:
       - name: Dependency CVE scan (pip-audit)
         # v0.95.0 W9 (G5 #19): supply-chain scan. Non-blocking for now;
         # promotes to blocking once dependency set is known-clean.
+        env:
+          # Redirected Windows output may default to cp1252; descriptions are Unicode.
+          PYTHONIOENCODING: utf-8
         run: |
-          pip install pip-audit
-          pip-audit --strict --desc || true
+          # Update runner tooling only; keep project requirements unchanged.
+          python -m pip install pip-audit "setuptools>=84.1.0"
+          python -m pip_audit --strict --desc || true
         continue-on-error: true
 
       - name: Run tests
@@ -195,9 +206,12 @@ jobs:
         continue-on-error: true
 
       - name: Dependency CVE scan (pip-audit)
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
-          pip install pip-audit
-          pip-audit --strict --desc || true
+          # Update runner tooling only; keep project requirements unchanged.
+          python -m pip install pip-audit "setuptools>=84.1.0"
+          python -m pip_audit --strict --desc || true
         continue-on-error: true
 
       - name: Run tests (shard ${{ matrix.split_index }}/4)

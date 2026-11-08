@@ -62,7 +62,7 @@ dev = [
 ]
 
 [project.scripts]
-research-hub = "research_hub.cli:main"
+research-hub = "research_hub.cli_entry:main"
 research-hub-mcp = "research_hub.mcp_server:main"
 
 [build-system]

@@ -80,7 +80,9 @@ describe("returning selected-project work", () => {
         makeTask("updated-last", "2026-10-24T00:00:00Z"),
       ],
     });
+    const user = userEvent.setup();
     render(<App />);
+    await user.click(screen.getByRole("link", { name: "Overview" }));
     await screen.findByRole("heading", { name: "Task activity" });
     expect(
       within(overview())
@@ -105,6 +107,7 @@ describe("returning selected-project work", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await user.click(screen.getByRole("link", { name: "Overview" }));
     await screen.findByRole("heading", { name: "Task activity" });
     await user.click(
       within(overview()).getByRole("button", { name: "Open task chosen-task" }),
@@ -293,6 +296,7 @@ describe("interrupted return navigation", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await user.click(screen.getByRole("link", { name: "Overview" }));
     await screen.findByRole("heading", { name: "Task activity" });
     await user.click(
       within(overview()).getByRole("button", {
@@ -318,6 +322,7 @@ describe("interrupted return navigation", () => {
     serve({ ...detail, tasks: [makeTask("same-id")] }, [project, second]);
     const user = userEvent.setup();
     render(<App />);
+    await user.click(screen.getByRole("link", { name: "Overview" }));
     await screen.findByRole("heading", { name: "Task activity" });
     await user.click(
       within(overview()).getByRole("button", { name: "Open task same-id" }),
@@ -347,6 +352,7 @@ describe("interrupted return navigation", () => {
     serve({ ...detail, tasks: [makeTask("task")] });
     const user = userEvent.setup();
     render(<App />);
+    await user.click(screen.getByRole("link", { name: "Overview" }));
     await screen.findByRole("heading", { name: "Task activity" });
     await user.click(
       within(overview()).getByRole("button", { name: "Open task task" }),

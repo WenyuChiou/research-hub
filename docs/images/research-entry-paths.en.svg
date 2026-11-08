@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="480" viewBox="0 0 320 480" role="img" aria-labelledby="title description" lang="en">
+  <title id="title">Two ways to begin</title>
+  <desc id="description">Choose native research without Hub, or install Hub for saved sources and proposals. Task handoff is optional. People review evidence. Saving is not reading or approval; nothing is automatically published.</desc>
+  <rect width="320" height="480" rx="12" fill="#ffffff" stroke="#64748b"/>
+  <g font-family="sans-serif" fill="#172b4d">
+    <text id="heading" x="16" y="34" font-size="20" font-weight="700">Choose your starting path</text>
+    <text id="subheading" x="16" y="59" font-size="16" font-weight="400">Use either path, or both.</text>
+    <g id="host">
+      <rect x="10" y="78" width="300" height="120" rx="8" fill="#eff6ff" stroke="#1d4ed8"/>
+      <text id="host-title" x="20" y="105" font-size="19" font-weight="700">A · Your AI host</text>
+      <text id="host-1" x="20" y="130" font-size="16" font-weight="400">Use available research tools.</text>
+      <text id="host-2" x="20" y="154" font-size="16" font-weight="400">Check sources and reading limits.</text>
+      <text id="host-3" x="20" y="178" font-size="16" font-weight="400">No Hub or integrations needed.</text>
+    </g>
+    <g id="hub">
+      <rect x="10" y="214" width="300" height="120" rx="8" fill="#f0fdfa" stroke="#0f766e"/>
+      <text id="hub-title" x="20" y="241" font-size="19" font-weight="700">B · Hub workspace</text>
+      <text id="hub-1" x="20" y="266" font-size="16" font-weight="400">Install and launch Hub.</text>
+      <text id="hub-2" x="20" y="290" font-size="16" font-weight="400">View saved sources and proposals.</text>
+      <text id="hub-3" x="20" y="314" font-size="16" font-weight="400">Optional: hand off AI tasks.</text>
+    </g>
+    <g id="review">
+      <rect x="10" y="350" width="300" height="120" rx="8" fill="#f8fafc" stroke="#64748b"/>
+      <text id="review-title" x="20" y="377" font-size="19" font-weight="700">You review and decide</text>
+      <text id="review-1" x="20" y="402" font-size="16" font-weight="400">Check evidence and proposals.</text>
+      <text id="review-2" x="20" y="426" font-size="16" font-weight="400">Saving ≠ reading or approval.</text>
+      <text id="review-3" x="20" y="450" font-size="16" font-weight="400">No automatic publication.</text>
+    </g>
+  </g>
+</svg>
