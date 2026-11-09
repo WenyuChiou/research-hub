@@ -407,3 +407,22 @@ Add this to your Claude Desktop config:
 
 21 MCP tools exposed. See [docs/mcp-tools.md](mcp-tools.md) for the
 full list.
+
+## Offline workspace audit
+
+### `task audit-batch`
+
+Audit explicitly selected existing abstract tasks across local workspaces without
+config, accounts, provider calls, database initialization, or workspace writes.
+
+```bash
+research-hub task audit-batch manifest.json [--format json|csv] [--output report.json]
+```
+
+The JSON manifest supplies project/source/task identities and expected hashes;
+there is no automatic workspace discovery. Output defaults to JSON on stdout.
+`--output` creates a new report outside all selected workspaces and never
+replaces a file. Exit 0 means all bindings passed, 1 means the report contains
+unprepared/missing/blocked rows, and 2 means invalid input or report destination.
+Binding success is not provider execution, scientific or human acceptance.
+See [manifest format and safety boundaries](workspace-batch-audit.md).

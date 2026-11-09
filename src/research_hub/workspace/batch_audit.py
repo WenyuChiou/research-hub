@@ -1,7 +1,7 @@
 """Offline integrity audit of an explicit list of existing abstract tasks.
 
 No discovery, preparation, generation, import, acceptance, or workspace writes.
-Run as ``python -m research_hub.workspace.batch_audit manifest.json``.
+Run as ``research-hub task audit-batch manifest.json``.
 """
 from __future__ import annotations
 
@@ -197,12 +197,15 @@ def audit(value):
             "entries": rows}
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifest", type=Path)
+def add_arguments(parser):
+    """Share the standalone and installed command argument contract."""
+    parser.add_argument("manifest", type=Path, help="Explicit selected-task manifest (JSON)")
     parser.add_argument("--format", choices=("json", "csv"), default="json")
     parser.add_argument("--output", type=Path, help="New report file outside every selected workspace (never overwrite)")
-    args = parser.parse_args(argv)
+
+
+def run(args):
+    """Audit parsed arguments without config, services, or workspace writes."""
     try:
         with args.manifest.open("rb") as stream:
             raw = stream.read(256_001)
@@ -234,6 +237,12 @@ def main(argv=None):
     except (OSError, ValueError, TypeError, RecursionError):
         print("Batch audit failed: invalid manifest or report destination; no workspace changes made.", file=sys.stderr)
         return 2
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_arguments(parser)
+    return run(parser.parse_args(argv))
 
 
 if __name__ == "__main__":
