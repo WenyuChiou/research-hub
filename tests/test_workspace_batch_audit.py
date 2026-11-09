@@ -7,7 +7,7 @@ import pytest
 
 from research_hub.workspace.batch_audit import audit, main, _ReadOnlyWorkspace
 from research_hub.workspace.core import encoded, digest, WorkspaceError
-from tests.test_workspace_task_summary import candidate, replace_task, reseal
+from tests.test_workspace_task_summary import candidate, near_limit_candidate, replace_task, reseal
 
 
 def manifest(candidate):
@@ -164,6 +164,7 @@ def test_readonly_guard(candidate):
         with workspace.db(write=True):
             pass
     with workspace.db() as db:
+        assert db.execute('PRAGMA query_only').fetchone()[0] == 1
         with pytest.raises(sqlite3.OperationalError):
             db.execute('CREATE TABLE forbidden (id TEXT)')
 
@@ -224,3 +225,74 @@ def test_cli_placeholder_exit_one(tmp_path, capsys):
                           'declared_status': 'blocked', 'reason_codes': ['source_unavailable']}]}))
     assert main([str(path)]) == 1
     assert json.loads(capsys.readouterr().out)['counts']['unprepared'] == 1
+
+
+@pytest.mark.parametrize('schema', ['future_version', 'future_reader', 'malformed_marker',
+                                    'boolean_version', 'missing_blob_table', 'missing_marker'])
+def test_storage_schema_rejected_before_binding(candidate, schema):
+    from research_hub.workspace._source_storage import FEATURE, initialize
+
+    workspace = candidate[0].workspace
+    with workspace.db(write=True) as db:
+        initialize(db)
+    # Deliberately corrupt only synthetic fixture metadata, bypassing the normal
+    # writer's compatibility guard. The candidate itself remains file-backed.
+    with sqlite3.connect(workspace.db_path) as db:
+        marker = dict(FEATURE)
+        if schema == 'future_version':
+            marker['schema_version'] = 2
+        elif schema == 'future_reader':
+            marker['minimum_reader'] = 'private-unsupported-reader'
+        elif schema == 'boolean_version':
+            marker['schema_version'] = True
+        if schema == 'missing_blob_table':
+            db.execute('DROP TABLE source_text_blobs')
+        elif schema == 'missing_marker':
+            db.execute("DELETE FROM workspace_metadata WHERE name='source_text_storage'")
+        else:
+            raw = 'private-invalid-json' if schema == 'malformed_marker' else encoded(marker)
+            db.execute("UPDATE workspace_metadata SET value=? WHERE name='source_text_storage'", (raw,))
+    before = snapshot(workspace.root)
+    with pytest.raises(WorkspaceError) as error:
+        with workspace.db():
+            pytest.fail('Normal reader must reject incompatible storage')
+    assert error.value.code == 'unsupported_storage'
+    report = audit(manifest(candidate))
+    row = report['entries'][0]
+    assert row['status'] == 'blocked'
+    assert row['diagnostic'] == 'unsupported_storage'
+    assert row['human_review'] == 'unknown'
+    assert row['scientific_acceptance'] == 'not_assessed'
+    assert row['input_hash'] == row['action_hash'] == row['draft_sha256'] == ''
+    assert row['source_bound_statements'] is None
+    assert row['candidate_files_checked'] is None
+    assert row['selected_codepoints'] is None
+    assert report['verified_totals'] == dict.fromkeys(
+        ('source_bound_statements', 'candidate_files_checked', 'selected_codepoints'), 0)
+    assert snapshot(workspace.root) == before
+    rendered = json.dumps(report)
+    assert 'private' not in rendered
+    assert str(workspace.root) not in rendered
+    assert 'blue water' not in rendered
+
+
+@pytest.mark.parametrize('schema', ['legacy', 'unmarked', 'supported'])
+def test_compatible_file_storage_schema_is_not_upgraded(candidate, schema):
+    from research_hub.workspace._source_storage import initialize
+
+    workspace = candidate[0].workspace
+    with workspace.db(write=True) as db:
+        if schema == 'legacy':
+            db.execute('DROP TABLE workspace_metadata')
+        elif schema == 'supported':
+            initialize(db)
+    before = snapshot(workspace.root)
+    assert result(candidate)['status'] == 'binding_pass'
+    assert snapshot(workspace.root) == before
+
+
+def test_compatible_blob_storage_schema_is_readonly(near_limit_candidate):
+    workspace = near_limit_candidate[0].workspace
+    before = snapshot(workspace.root)
+    assert result(near_limit_candidate)['status'] == 'binding_pass'
+    assert snapshot(workspace.root) == before

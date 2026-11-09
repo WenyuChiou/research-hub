@@ -115,6 +115,8 @@ class _ReadOnlyWorkspace(Workspace):
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA query_only=ON")
+            from ._source_storage import check_schema
+            check_schema(connection)
             yield connection
         finally:
             connection.close()
@@ -175,7 +177,7 @@ def audit_entry(entry):
         code = exc.code if isinstance(exc, WorkspaceError) else "invalid_or_unavailable"
         allowed = {"missing_workspace", "missing_file", "missing_task", "active_database", "changed_database",
                    "unsafe_path", "stale_input", "invalid_source", "context_limit", "invalid_output",
-                   "expected_hash_mismatch"}
+                   "expected_hash_mismatch", "unsupported_storage"}
         row.update(status="missing" if code in {"missing_workspace", "missing_file", "missing_task"} else "blocked",
                    diagnostic=code if code in allowed else "invalid_or_unavailable", human_review="unknown",
                    input_hash="", action_hash="", draft_sha256="", source_bound_statements=None,

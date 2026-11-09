@@ -113,7 +113,10 @@ status codes and candidate hashes, not source/candidate prose or filesystem path
 
 The tool reads existing SQLite through `mode=ro&immutable=1` with query-only
 connections, refusing WAL, SHM and journal files. Nested verifier reads use the
-same read-only workspace override; no migrations or database creation occur.
+same read-only workspace override. Every connection applies the normal reader's
+saved-text schema compatibility guard. Unsupported or inconsistent storage metadata blocks even
+file-backed candidates with the fixed `unsupported_storage` diagnostic; compatible
+legacy workspaces remain readable. No migrations or database creation occur.
 The database hash is checked before/after each entry. Audit only quiescent local
 workspaces: this is a point-in-time check, not a transaction/lock over filesystem
 files, and it cannot defend against a malicious concurrent process racing path
