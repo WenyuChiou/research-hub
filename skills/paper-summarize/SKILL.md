@@ -1,15 +1,47 @@
 ---
 name: paper-summarize
-description: "After research-hub ingests a cluster of cited papers, fill the per-paper Key Findings + Methodology + Relevance sections in BOTH Obsidian markdown and the Zotero child note. Use when the user says \"fill the TODO Key Findings/Methodology blocks left by research-hub auto\", \"I just ran auto and don't know what these papers are about\", or \"summarize the papers in cluster X\". Invokes a supported LLM CLI on each paper's abstract. NOT for summarizing the user's own manuscript draft — that's `paper-memory-builder`. NOT for cluster-level briefs — that's `research-hub notebooklm generate`. This skill is per-cited-paper only. If the user says \"extract claims from these papers\", disambiguate before acting: their own manuscript draft → `paper-memory-builder`; a cross-paper comparison matrix → `literature-triage-matrix`; per-cited-paper Key Findings → this skill."
+description: "Summarize individual cited papers at their actual reading depth: why the work was done, its objective, methods, results, conclusions, key points and limitations, with located source evidence. For full-text requests use the native-host reading route without requiring Hub or a vault. The existing research-hub summarize CLI remains abstract-only and fills Key Findings/Methodology/Relevance in authorized Obsidian and Zotero notes. Use for per-paper summaries or TODO Findings; use paper-memory-builder for the user's manuscript and literature-triage-matrix for cross-paper comparison."
 ---
 
 # paper-summarize
+
+## Choose the source scope first
+
+- **Per-paper body/full-text summary:** use the native route below when the
+  user asks why/what/how/results/conclusions, supplies a paper, or requests
+  full-text reading. Hub, Zotero, Obsidian and a separate LLM CLI are optional.
+- **Existing abstract-note update:** use the unchanged abstract-note mode
+  below for a requested cluster/TODO update based on its stored abstracts.
+  `research-hub summarize` and `paper-abstract-draft` remain abstract-only;
+  neither command becomes a full-text reader because this skill has two routes.
+- Do not silently downgrade a full-text request to abstract-only. If body
+  access is unavailable, preserve useful narrower claims, label the result
+  partial and explain the missing source; do not ask the researcher to fill JSON.
+
+## Native per-paper body summary
+
+Read [the per-paper contract](references/fulltext-summary.md), then the
+available authorized source with the host's native reading tools. Produce the
+seven-section readable summary plus source/version and actual reading scope.
+Keep `supported`, `analyst_inference` and `unknown` distinct. The contract is
+domain-neutral: methods and evidence follow the study design, not a fixed
+LLM, statistical or experimental template.
+
+Use the shared [research protocol](../research-hub/references/research-protocol.md)
+when source discovery is needed and for observed stage timing. Compare cited
+passages semantically; byte/quote checks alone are not scientific acceptance.
+Return useful prose without requiring Hub ingestion. Persist only through an
+available, selected and authorized destination; a readable result or local file
+does not establish an Obsidian/Roam import. Preserve human-authored content and
+report saving as pending if the destination cannot retain the evidence/statuses.
+
+## Abstract-note mode (existing CLI)
 
 The `auto` pipeline ingests metadata + abstract only — Summary / Key Findings / Methodology / Relevance stay as `[TODO]` skeletons in both Obsidian and Zotero. Cluster-level summarization (NotebookLM brief, crystals) does NOT fill per-paper notes. So after `auto`, the user has nothing scannable per paper without opening the PDF.
 
 This skill fills that gap. One LLM call per paper produces JSON-validated content for both destinations. These writes are not a distributed transaction: unconfirmed remote writes remain unknown, and local compensation is best-effort, never proof that the destinations are synchronized.
 
-## When to use
+### When to use abstract-note mode
 
 Trigger phrases:
 
@@ -22,10 +54,12 @@ Not for:
 
 - Generating a single CLUSTER-LEVEL summary — that's `research-hub notebooklm generate` (NotebookLM brief).
 - Filling Q&A on the cluster — that's `research-hub crystal emit/apply`.
-- Reading PDFs — abstract-only by design. PDF parsing is out of scope; the LLM is told to mark "[PDF needed]" if abstract is too thin.
+- Reading PDFs through the CLI — it is abstract-only by design; use the native
+  per-paper body route above instead. The abstract prompt marks "[PDF needed]"
+  when its input is too thin; that marker is not full-text reading.
 - Verifying brief vs source — that's `notebooklm-brief-verifier`.
 
-## Inputs
+### Abstract-note inputs
 
 - Cluster slug (must already exist in the vault under `raw/<slug>/`)
 - Optional LLM CLI override (`claude`, `codex`, `gemini`, `opencode`, `aichat`, `cursor`, or configured custom adapter)
@@ -33,7 +67,7 @@ Not for:
 
 The skill reads each paper's frontmatter (DOI, year, zotero-key) + the `## Abstract` body block. Papers with empty abstract get a "PDF needed" marker rather than hallucinated findings.
 
-## Outputs
+### Abstract-note outputs
 
 For each paper, three sections are rewritten:
 
@@ -49,7 +83,7 @@ For each paper, three sections are rewritten:
 
 Both writes must be confirmed for a paper to count as "applied". If the remote outcome is unconfirmed, report it as unknown and do not retry automatically. Local compensation restores the original note only if its current text still matches this invocation's written text; a newer observed edit is preserved. Failed compensation is reported for reconciliation rather than hiding other papers' outcomes. This check does not exclude a concurrent writer racing after the check. Inspect both destinations before an explicit retry; success counters count confirmed applied papers, not proof that failed/unknown papers were untouched.
 
-## Failure modes
+### Abstract-note failure modes
 
 - **No LLM CLI on PATH**: prompt is saved to `<vault>/.research_hub/artifacts/<cluster>/summarize-prompt.md`. This is **prompt-only** success (exit code 0; `ok=True`): no summaries were generated or applied, even with `--apply`. Re-running `--apply` does not import externally generated summaries. If the native host agent has available, authorized tools, it can read this prompt and return readable abstract-based summaries. These are not full-text validation. Persisting them requires a selected, separately authorized supported destination operation. The `apply_cluster_summaries` MCP tool defaults to writing both Obsidian and Zotero; it is not an automatically authorized fallback. If a supported authorized persistence route is unavailable, preserve the readable result and clearly report saving as pending; do not ask the researcher to author JSON.
 - **LLM returns malformed JSON**: report is `ok=False` with `error="LLM response had no parseable JSON object"`. No writes.
@@ -57,9 +91,9 @@ Both writes must be confirmed for a paper to count as "applied". If the remote o
 - **Empty key_findings / methodology / relevance**: entry skipped.
 - **Zotero write is unconfirmed for one paper**: report unknown, do not retry automatically, and attempt guarded local compensation. A newer observed edit or compensation failure is preserved/reported; other papers retain their own outcomes.
 
-## Verification
+### Abstract-note verification
 
-This skill's contract is exercised end-to-end by the test suite. The
+The abstract-note integration is exercised with fixtures by the test suite. The
 suites stub the LLM CLI but execute real Obsidian markdown writes against
 a fixture vault and real Zotero child-note writes against a mocked Zotero
 adapter. Successful rollback, unavailable compensation, newer observed edits,
@@ -100,7 +134,7 @@ research-hub summarize --cluster <slug> --apply --no-zotero
 
 After applying, scan `raw/<cluster>/*.md` — every paper's `## Key Findings` callout should have real bullets instead of `[TODO]`.
 
-## Operating notes
+### Abstract-note operating notes
 
 - Findings-first: the prompt instructs the LLM to state the result, not "The paper shows that…".
 - Anchored to the abstract: every Key Finding must trace to something the abstract claims. The LLM is told to mark uncertain claims with `[likely]`.
