@@ -100,7 +100,15 @@ def test_native_normal_unicode_exclusive_and_release(tmp_path):
     parent.mkdir()
     output = parent / '證據.zip'
     with w.destination_stream(str(output)) as stream:
+        # The exporter queries the new handle before writing any ZIP bytes.
+        before = os.fstat(stream.fileno())
+        assert before.st_size == 0
+        assert (before.st_dev, before.st_ino) == (output.stat().st_dev, output.stat().st_ino)
         stream.write(b'synthetic selected bytes')
+        stream.flush()
+        after = os.fstat(stream.fileno())
+        assert after.st_size == len(b'synthetic selected bytes')
+        assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
     assert output.read_bytes() == b'synthetic selected bytes'
     with pytest.raises(OSError):
         with w.destination_stream(str(output)):
@@ -311,7 +319,7 @@ def test_native_child_builds_utf16_relative_abi_and_exclusive_flags(native_calls
         assert ctypes.string_at(name.Buffer, name.Length) == '資料😀.zip'.encode('utf-16-le')
         assert name.MaximumLength == name.Length + 2
         assert ctypes.string_at(name.Buffer + name.Length, 2) == b'\0\0'
-        assert (access, attributes, sharing, disposition, options) == (0x40100000, 0x80, 1, 2, 0x200060)
+        assert (access, attributes, sharing, disposition, options) == (0x40100080, 0x80, 1, 2, 0x200060)
         assert allocation is None and ea is None and length == 0
         ctypes.cast(handle, ctypes.POINTER(w.HANDLE))[0] = 456
         ctypes.cast(status, ctypes.POINTER(w.IO_STATUS_BLOCK)).contents.Information = 2

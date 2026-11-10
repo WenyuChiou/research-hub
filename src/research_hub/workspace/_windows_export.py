@@ -42,6 +42,9 @@ class FILE_ID_INFO(ctypes.Structure):
 
 
 _DIRECTORY_ACCESS = 0x1000A0  # SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_TRAVERSE
+# GENERIC_WRITE does not include FILE_READ_ATTRIBUTES. The freshly created
+# output must support os.fstat() for the exporter's handle/path identity check.
+_OUTPUT_ACCESS = 0x40100080  # GENERIC_WRITE | SYNCHRONIZE | FILE_READ_ATTRIBUTES
 _SHARE_READ = 1
 _OPEN_REPARSE_POINT = 0x200000
 _SYNCHRONOUS_IO_NONALERT = 0x20
@@ -154,7 +157,7 @@ class _Native:
                                   0x1040, None, None)  # OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE
         handle, status = HANDLE(), IO_STATUS_BLOCK()
         result = self.nt.NtCreateFile(
-            ctypes.byref(handle), _DIRECTORY_ACCESS if directory else 0x40100000,
+            ctypes.byref(handle), _DIRECTORY_ACCESS if directory else _OUTPUT_ACCESS,
             ctypes.byref(attrs), ctypes.byref(status), None, 0x80, _SHARE_READ,
             _FILE_OPEN if directory else _FILE_CREATE,
             _OPEN_REPARSE_POINT | _SYNCHRONOUS_IO_NONALERT
