@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import stat
 import zipfile
 from pathlib import Path
 
@@ -11,6 +12,13 @@ from research_hub.workspace import stage1_inputs as module
 from research_hub.workspace.core import WorkspaceError
 from tests.test_workspace_batch_audit import manifest, snapshot
 from tests.test_workspace_task_summary import candidate, near_limit_candidate, replace_task, reseal
+
+
+requires_directory_export = pytest.mark.skipif(
+    not (os.name == "posix" and hasattr(os, "O_NOFOLLOW")
+         and hasattr(os, "O_DIRECTORY") and os.open in os.supports_dir_fd),
+    reason="Parent-swap protection requires native POSIX no-follow/dir_fd primitives",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +62,8 @@ def test_exact_selected_bytes_quotes_and_pending_boundary(candidate, tmp_path):
     original = next(x for x in task["result"]["artifacts"] if x["path"].endswith("/draft-response.json"))
     assert zipfile.ZipFile(outside(tmp_path)).read("B2-07/draft-response.json") == (root / original["path"]).read_bytes()
     assert json.loads(zipfile.ZipFile(outside(tmp_path)).read("manifest.json")) == report
+    if os.name == "posix":
+        assert stat.S_IMODE(outside(tmp_path).stat().st_mode) == 0o600
     assert snapshot(root) == before
     second = module.export(value, outside(tmp_path, "repeat"))
     assert second == report
@@ -192,6 +202,7 @@ def test_write_failure_has_no_completion_manifest(candidate, tmp_path, monkeypat
     assert snapshot(candidate[0].workspace.root) == before
 
 
+@requires_directory_export
 @pytest.mark.parametrize("with_source", [False, True])
 def test_replaced_output_does_not_redirect_writes(candidate, tmp_path, monkeypatch, with_source):
     destination = outside(tmp_path)
@@ -199,9 +210,9 @@ def test_replaced_output_does_not_redirect_writes(candidate, tmp_path, monkeypat
     victim = tmp_path / "untouched.txt"
     victim.write_text("PRIVATE KEEP")
     original = os.open
-    def replace(path, *args, **kwargs):
-        descriptor = original(path, *args, **kwargs)
-        if Path(path) == destination:
+    def replace(path, flags, *args, **kwargs):
+        descriptor = original(path, flags, *args, **kwargs)
+        if flags & os.O_CREAT and Path(path).name == destination.name:
             try:
                 destination.rename(moved)
             except OSError:
@@ -242,3 +253,233 @@ def test_replaced_output_during_write_uses_original_descriptor(candidate, tmp_pa
         assert "manifest.json" in zipfile.ZipFile(moved).namelist()
     else:
         assert "manifest.json" not in zipfile.ZipFile(destination).namelist()
+
+
+@requires_directory_export
+@pytest.mark.parametrize("component", ["parent", "ancestor"])
+@pytest.mark.parametrize("moment", ["after_check", "create"])
+@pytest.mark.parametrize("with_source", [False, True])
+def test_replaced_parent_never_creates_in_selected_workspace(
+        candidate, tmp_path, monkeypatch, component, moment, with_source):
+    workspace = candidate[0].workspace.root
+    output_root = outside(tmp_path, "output-parent")
+    parent = output_root / "nested"
+    parent.mkdir(parents=True)
+    destination = parent / "bundle.zip"
+    swapped = parent if component == "parent" else output_root
+    moved = outside(tmp_path, "moved-parent")
+    if component == "ancestor":
+        (workspace / "nested").mkdir()
+    value = manifest(candidate)
+    if not with_source:
+        value["entries"][0]["task_id"] = "0" * 32
+    before = snapshot(workspace)
+    changed = False
+
+    def swap():
+        nonlocal changed
+        assert not changed
+        swapped.rename(moved)
+        swapped.symlink_to(workspace, target_is_directory=True)
+        changed = True
+
+    if moment == "create":
+        original = os.open
+
+        def replace(path, flags, *args, **kwargs):
+            if flags & os.O_CREAT and Path(path).name == destination.name:
+                swap()
+            return original(path, flags, *args, **kwargs)
+
+        monkeypatch.setattr(os, "open", replace)
+    else:
+        original = module.safe_path
+        checks = 0
+
+        def replace(root, path, **kwargs):
+            nonlocal checks
+            result = original(root, path, **kwargs)
+            if Path(path) == destination:
+                checks += 1
+                if checks == 2:
+                    swap()
+            return result
+
+        monkeypatch.setattr(module, "safe_path", replace)
+
+    with pytest.raises((ValueError, WorkspaceError, OSError)):
+        module.export(value, destination)
+    assert changed
+    # Compare all saved paths and bytes, not merely absence of source disclosure.
+    assert snapshot(workspace) == before
+    pinned_output = moved / ("bundle.zip" if component == "parent" else "nested/bundle.zip")
+    if moment == "create":
+        assert pinned_output.read_bytes() == b""
+    else:
+        assert not pinned_output.exists()
+
+
+@requires_directory_export
+def test_parent_traversal_failure_closes_open_directories(candidate, tmp_path, monkeypatch):
+    parent = outside(tmp_path, "parent")
+    parent.mkdir()
+    destination = parent / "bundle.zip"
+    original = os.open
+    opened = []
+
+    def fail(path, flags, *args, **kwargs):
+        if flags & os.O_DIRECTORY and Path(path).name == parent.name:
+            raise OSError("Synthetic parent-open failure")
+        descriptor = original(path, flags, *args, **kwargs)
+        if flags & os.O_DIRECTORY:
+            opened.append(descriptor)
+        return descriptor
+
+    monkeypatch.setattr(os, "open", fail)
+    with pytest.raises(OSError):
+        module.export(manifest(candidate), destination)
+    assert opened and not destination.exists()
+    for descriptor in set(opened):
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+def test_legacy_creation_path_remains_available(candidate, tmp_path, monkeypatch):
+    """Compatibility seam only; this is not native Windows race validation."""
+    monkeypatch.setattr(module, "_WINDOWS_EXPORT_SUPPORTED", False)
+    monkeypatch.setattr(module, "_DIRECTORY_EXPORT_SUPPORTED", False)
+    destination = outside(tmp_path)
+    original = os.open
+    calls = []
+
+    def record(path, flags, *args, **kwargs):
+        if flags & os.O_CREAT:
+            calls.append((Path(path), kwargs))
+        return original(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", record)
+    before = snapshot(candidate[0].workspace.root)
+    result = module.export(manifest(candidate), destination)
+    assert result["counts"]["prepared"] == 1
+    assert calls == [(destination, {})]
+    assert json.loads(zipfile.ZipFile(destination).read("manifest.json")) == result
+    assert snapshot(candidate[0].workspace.root) == before
+
+
+def test_windows_dispatch_includes_only_explicit_workspace_roots(candidate, tmp_path, monkeypatch):
+    """Portable integration seam, not a native Windows acceptance test."""
+    from contextlib import contextmanager
+    from research_hub.workspace import _windows_export
+    calls = []
+    @contextmanager
+    def native(destination, *, workspace_roots):
+        calls.append((destination, workspace_roots))
+        with destination.open('xb') as stream:
+            yield stream
+    monkeypatch.setattr(module, '_WINDOWS_EXPORT_SUPPORTED', True)
+    monkeypatch.setattr(_windows_export, '_parts', lambda *args, **kwargs: None)
+    monkeypatch.setattr(_windows_export, 'destination_stream', native)
+    value = manifest(candidate)
+    value['entries'].append({'article_id': 'unknown', 'declared_status': 'unknown', 'reason_codes': ['unknown']})
+    destination = outside(tmp_path)
+    report = module.export(value, destination)
+    assert calls == [(destination, (value['entries'][0]['workspace_root'],))]
+    assert report['entries'][0]['human_acceptance'] == 'pending'
+    assert json.loads(zipfile.ZipFile(destination).read('manifest.json')) == report
+
+
+def test_windows_native_failure_is_redacted_without_legacy_fallback(candidate, tmp_path, monkeypatch, capsys):
+    from research_hub.workspace import _windows_export
+    def fail(*args, **kwargs):
+        raise OSError('PRIVATE ROOT / source text in native failure')
+    monkeypatch.setattr(module, '_WINDOWS_EXPORT_SUPPORTED', True)
+    monkeypatch.setattr(_windows_export, '_parts', lambda *args, **kwargs: None)
+    monkeypatch.setattr(_windows_export, 'destination_stream', fail)
+    path = tmp_path / 'manifest.json'
+    path.write_text(json.dumps(manifest(candidate)))
+    destination = outside(tmp_path)
+    assert module.main([str(path), str(destination)]) == 2
+    output = capsys.readouterr()
+    assert output.out == ''
+    assert output.err == 'Input preparation failed; no verified bundle completed.\n'
+    assert not destination.exists()
+
+
+def test_windows_invalid_spelling_rejected_before_capture(candidate, tmp_path, monkeypatch):
+    from research_hub.workspace import _windows_export
+    def invalid(*args, **kwargs):
+        raise ValueError('Invalid Windows path component')
+    monkeypatch.setattr(module, '_WINDOWS_EXPORT_SUPPORTED', True)
+    monkeypatch.setattr(_windows_export, '_parts', invalid)
+    monkeypatch.setattr(module, 'prepare', lambda *args: pytest.fail('unexpected capture'))
+    with pytest.raises(ValueError, match='Invalid Windows path component'):
+        module.export(manifest(candidate), outside(tmp_path))
+    assert not outside(tmp_path).exists()
+
+
+@pytest.mark.parametrize('moment', ['before_write', 'after_flush'])
+def test_windows_dispatch_retains_destination_identity_gate(candidate, tmp_path, monkeypatch, moment):
+    from contextlib import contextmanager
+    from research_hub.workspace import _windows_export
+    @contextmanager
+    def native(destination, *, workspace_roots):
+        with destination.open('xb') as stream:
+            yield stream
+    monkeypatch.setattr(module, '_WINDOWS_EXPORT_SUPPORTED', True)
+    monkeypatch.setattr(_windows_export, '_parts', lambda *args, **kwargs: None)
+    monkeypatch.setattr(_windows_export, 'destination_stream', native)
+    destination = outside(tmp_path)
+    original = module.safe_path
+    checks = 0
+    def replace(root, path, **kwargs):
+        nonlocal checks
+        if path == destination:
+            checks += 1
+            if checks == (3 if moment == 'before_write' else 4):
+                raise ValueError('Bundle destination changed')
+        return original(root, path, **kwargs)
+    monkeypatch.setattr(module, 'safe_path', replace)
+    with pytest.raises(ValueError, match='Bundle destination changed'):
+        module.export(manifest(candidate), destination)
+    if moment == 'before_write':
+        assert destination.read_bytes() == b''
+    else:
+        assert 'manifest.json' in zipfile.ZipFile(destination).namelist()
+
+
+@pytest.mark.parametrize("directory_relative", [False, pytest.param(True, marks=requires_directory_export)])
+def test_fdopen_failure_closes_output_descriptor(
+        candidate, tmp_path, monkeypatch, capsys, directory_relative):
+    """A refused stream transfer retains no descriptor or private-path error."""
+    import errno
+    monkeypatch.setattr(module, "_WINDOWS_EXPORT_SUPPORTED", False)
+    monkeypatch.setattr(module, "_DIRECTORY_EXPORT_SUPPORTED", directory_relative)
+    destination = outside(tmp_path, "fdopen-refused")
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest(candidate)))
+    before = snapshot(candidate[0].workspace.root)
+    descriptors = []
+
+    def refuse(descriptor, *args, **kwargs):
+        descriptors.append(descriptor)
+        raise OSError(errno.EMFILE, "Synthetic refusal with private path: " + str(destination))
+
+    monkeypatch.setattr(os, "fdopen", refuse)
+    assert module.main([str(path), str(destination)]) == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "Input preparation failed; no verified bundle completed.\n"
+    assert destination.read_bytes() == b""  # Never delete a refused output implicitly.
+    assert snapshot(candidate[0].workspace.root) == before
+    assert len(descriptors) == 1
+    # Close a leaked descriptor after the assertion so baseline sensitivity does
+    # not itself leave process resources behind.
+    try:
+        with pytest.raises(OSError) as error:
+            os.fstat(descriptors[0])
+        assert error.value.errno == errno.EBADF
+    finally:
+        try:
+            os.close(descriptors[0])
+        except OSError as error:
+            assert error.errno == errno.EBADF

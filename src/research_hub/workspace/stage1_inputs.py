@@ -1,11 +1,13 @@
 """Prepare a private, source-bound input bundle from explicitly selected tasks.
 
 This is not a native Core handoff, Stage 1 completion, or Stage 2 admission.
-No source discovery, model execution, acceptance, or workspace writes occur.
+Inputs are read-only; no source discovery, model execution, or acceptance occurs.
+See export() and the bundle guide for output-platform and path-race limitations.
 """
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -24,6 +26,14 @@ CORE_REQUIREMENTS = (
     "same_run_confirmed_research_brief",
     "original_claim_history_screening_and_coverage",
     "same_version_relevance_and_identity_reviews",
+)
+
+# Capture the host capability before tests or callers wrap os.open. The legacy
+# path on other non-Windows hosts is unchanged; it has no parent-race guard.
+_WINDOWS_EXPORT_SUPPORTED = os.name == "nt"
+_DIRECTORY_EXPORT_SUPPORTED = (
+    os.name == "posix" and hasattr(os, "O_NOFOLLOW")
+    and hasattr(os, "O_DIRECTORY") and os.open in os.supports_dir_fd
 )
 
 
@@ -107,15 +117,68 @@ def prepare(value):
              "entries": rows}, files)
 
 
+@contextmanager
+def _stream_from_descriptor(descriptor):
+    """Transfer ownership to a stream, closing the descriptor if transfer fails."""
+    try:
+        stream = os.fdopen(descriptor, "wb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    with stream:
+        yield stream
+
+
+@contextmanager
+def _destination_stream(destination, *, workspace_roots=()):
+    """Create under a no-follow, pinned parent where the host supports it.
+
+    This stops symlink redirection, not relocation of a pinned real directory.
+    Windows uses pinned native handles, without a path-based fallback.
+    """
+    if _WINDOWS_EXPORT_SUPPORTED:
+        from ._windows_export import destination_stream
+        with destination_stream(destination, workspace_roots=workspace_roots) as stream:
+            yield stream
+        return
+
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
+    if not _DIRECTORY_EXPORT_SUPPORTED:
+        with _stream_from_descriptor(os.open(destination, flags, 0o600)) as stream:
+            yield stream
+        return
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    directory = os.open(destination.anchor, directory_flags)
+    try:
+        for component in destination.parent.parts[1:]:
+            child = os.open(component, directory_flags, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        with _stream_from_descriptor(os.open(
+                destination.name, flags | os.O_NOFOLLOW, 0o600,
+                dir_fd=directory)) as stream:
+            yield stream
+    finally:
+        os.close(directory)
+
+
 def export(value, destination):
     """Write one new private ZIP outside every selected workspace.
 
     All archive writes use the same exclusive-created descriptor, never output
     child paths. A renamed/replaced output is refused before reporting success.
     An interrupted/unverified output is never overwritten or deleted implicitly.
+    POSIX no-follow directory handles prevent parent-symlink redirection, not
+    hostile relocation. Windows uses exclusive, handle-relative creation with
+    pinned ancestors and selected-root identity exclusion; native validation
+    remains a separate acceptance gate. See the guide for platform limits.
     """
     entries = validate_manifest(value)
     destination = Path(destination).absolute()
+    if _WINDOWS_EXPORT_SUPPORTED:
+        from ._windows_export import _parts
+        _parts(destination)
     safe_path(Path(destination.anchor), destination)
     if destination.exists() or not destination.parent.is_dir():
         raise ValueError("Select a new bundle file under an existing parent")
@@ -124,8 +187,8 @@ def export(value, destination):
             raise ValueError("Bundle must be outside selected workspaces")
     report, files = prepare(value)
     safe_path(Path(destination.anchor), destination)
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
-    with os.fdopen(os.open(destination, flags, 0o600), "wb") as stream:
+    with _destination_stream(destination, workspace_roots=tuple(
+            entry["workspace_root"] for entry in entries if "workspace_root" in entry)) as stream:
         identity = os.fstat(stream.fileno())
 
         def unchanged():
@@ -161,7 +224,7 @@ def main(argv=None):
                           "core_admission": "not_assessed", "stage2_execution_authorized": False}))
         return 0 if report["counts"]["prepared"] == len(report["entries"]) else 1
     except (OSError, ValueError, TypeError, RecursionError, WorkspaceError):
-        print("Input preparation failed; no verified bundle completed. Selected workspaces were not written by the preparer.", file=sys.stderr)
+        print("Input preparation failed; no verified bundle completed.", file=sys.stderr)
         return 2
 
 

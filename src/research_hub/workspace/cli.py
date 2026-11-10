@@ -15,12 +15,21 @@ def add_workspace_parsers(subparsers):
     for resource, operations in {
         "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay"),
         "manuscript": ("bind", "state", "audit", "impact"),
-        "task": ("create", "list", "show", "run", "handoff", "import", "decide", "cancel", "recover"),
+        "task": ("audit-batch", "create", "list", "show", "run", "handoff", "import", "decide", "cancel", "recover"),
         "action": ("prepare", "show", "decide", "execute", "reconcile"),
     }.items():
         parent = subparsers.add_parser(resource, help=f"Research workspace {resource} operations")
         children = parent.add_subparsers(dest="workspace_operation", required=True)
         for operation in operations:
+            if resource == "task" and operation == "audit-batch":
+                from .batch_audit import add_arguments
+
+                parser = children.add_parser(
+                    operation, help="Audit explicit existing abstract tasks offline",
+                    description="Read-only binding audit of selected tasks; no generation or human acceptance.",
+                )
+                add_arguments(parser)
+                continue
             parser = children.add_parser(operation)
             parser.add_argument("--root", required=True, help="Explicit local research workspace directory")
             parser.add_argument("--json", action="store_true")
@@ -76,6 +85,10 @@ def add_workspace_parsers(subparsers):
 
 def dispatch_workspace(args) -> int:
     resource, operation = args.command, args.workspace_operation
+    if resource == "task" and operation == "audit-batch":
+        from .batch_audit import run
+
+        return run(args)
     record_route = resource == "project" and operation == "record"
     source_preview = record_route and getattr(args, "dry_run", False)
     source_apply = record_route and getattr(args, "apply", False)

@@ -55,6 +55,47 @@ or unverified file is not removed or overwritten automatically; select a new
 destination when retrying.
 The console prints only counts and boundary flags, never source text or paths.
 
+### Output-parent race boundary
+
+On POSIX hosts with directory-relative, no-follow opens, the preparer walks all
+output-parent components without following symlinks and creates the ZIP relative
+to the opened parent descriptor. Replacing a parent path with a symlink cannot
+redirect creation into a selected workspace. A detected replacement fails rather
+than reporting a verified bundle; a zero-byte file may remain in the original
+output directory. Moving an already-open real directory elsewhere is outside
+this protection: use output directories whose location you control.
+
+On Windows, output creation uses native directory handles and handle-relative
+exclusive creation, with no path-based fallback. Each output ancestor and each
+explicitly selected workspace root is held without write/delete sharing until the
+ZIP stream closes. Directory reparse points are refused. Volume/file identities
+are compared before creation to reject output ancestors that alias a selected
+workspace. Only these paths are opened; there is no directory or library scan.
+The existing descriptor-versus-path identity checks still run before writing and
+after flushing. A native-open, identity-query, sharing or cleanup error fails the
+export rather than reporting success. This includes unavailable selected workspace
+roots; their root identities cannot safely be checked on this path.
+
+Ordinary drive and UNC paths are parsed, including Unicode names. Explicit extended
+or device namespaces, ADS names, reserved DOS device names and trailing-dot/space
+components are refused so NT creation and later Win32 path checks agree. Internally,
+only the validated drive/UNC anchor is converted to extended syntax. Windows files
+inherit their parent's access permissions; use a private output directory. This
+change does not create or change ACLs.
+
+**Windows candidate acceptance remains pending.** Portable tests check dispatch,
+ABI construction, path rules and failure/ownership behavior, not native filesystem
+security. An independent Windows primitive experiment is not an exporter run.
+The complete exporter (including fstat/stat checks and root identities), junction
+and reparse races, ordinary UNC/drive chains, aliases and filesystem compatibility
+still require native validation. Unsupported filesystems or incompatible open
+handles fail closed; no fallback weakens the checks. Do not describe Linux mocks
+or that independent experiment as a validated cross-platform fix.
+
+Other hosts without the POSIX primitives or Windows path retain the legacy
+exclusive-create path. Its parent race is not fixed: a concurrent replacement
+may create an empty file in a selected workspace before validation rejects it.
+
 ## Native Core handoff is a separate contract
 
 This output is `ResearchHubStage1InputBundle` version 1, **not**
