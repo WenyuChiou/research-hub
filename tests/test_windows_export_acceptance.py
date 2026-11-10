@@ -5,12 +5,14 @@ privileges, or machine settings are created or changed. Hooks only synchronize
 boundary events or record calls; actual filesystem operations remain native.
 """
 import ctypes
+from functools import wraps
 import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 import pytest
@@ -26,6 +28,42 @@ pytestmark = [
 ]
 
 
+def native_receipt(label):
+    """Show fixed per-case receipts even under quiet pytest capture.
+
+    A PASS is printed only after assertions and owned-directory cleanup finish.
+    Failures propagate without a PASS. Never print paths or exception details.
+    """
+    def decorate(test):
+        @wraps(test)
+        def run(*args, **kwargs):
+            case = label
+            if kwargs.get('boundary') == 'ancestor_open':
+                case += '/ancestor_open'
+            elif kwargs.get('boundary') == 'leaf_create':
+                case += '/leaf_create'
+            try:
+                result = test(*args, **kwargs)
+            except pytest.skip.Exception as error:
+                reasons = {
+                    'No existing alternate 8.3 name; alias acceptance remains unverified':
+                        'no alternate 8.3 name; gate unverified',
+                    'Existing loopback share unavailable within 10s; UNC gate unverified':
+                        'loopback share availability timeout; gate unverified',
+                    'Existing loopback share unavailable; UNC gate unverified':
+                        'loopback share unavailable; gate unverified',
+                }
+                reason = reasons.get(str(error), 'prerequisite unavailable; gate unverified')
+                with kwargs['capsys'].disabled():
+                    print(f'[windows-native] {case}: SKIP ({reason})', flush=True)
+                raise
+            with kwargs['capsys'].disabled():
+                print(f'[windows-native] {case}: PASS', flush=True)
+            return result
+        return run
+    return decorate
+
+
 def junction(link, target):
     result = subprocess.run(
         ['cmd', '/d', '/c', 'mklink', '/J', str(link), str(target)],
@@ -35,7 +73,8 @@ def junction(link, target):
 
 
 @pytest.mark.parametrize('boundary', ['ancestor_open', 'leaf_create'])
-def test_native_mutation_at_open_create_boundary(tmp_path, monkeypatch, boundary):
+@native_receipt('mutation_boundary')
+def test_native_mutation_at_open_create_boundary(tmp_path, monkeypatch, boundary, capsys):
     ancestor = tmp_path / 'ancestor'
     parent = ancestor / 'parent'
     parent.mkdir(parents=True)
@@ -103,7 +142,8 @@ def trace_native(monkeypatch):
     return identities, leaves
 
 
-def test_native_short_name_alias_identity_before_leaf(tmp_path, monkeypatch):
+@native_receipt('short_name_alias_identity')
+def test_native_short_name_alias_identity_before_leaf(tmp_path, monkeypatch, capsys):
     selected = tmp_path / 'selected-workspace-with-long-name'
     selected.mkdir()
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -161,27 +201,30 @@ def require_existing_loopback_share(path):
     return unc
 
 
-def test_native_unc_complete_exporter(candidate, tmp_path_factory):
-    output_parent = tmp_path_factory.mktemp('unc-output')
-    unc_parent = require_existing_loopback_share(output_parent)
-    root = candidate[0].workspace.root
-    before = snapshot(root)
-    output = unc_parent / 'bundle.zip'
-    # Once availability is established, unsupported native operations are errors,
-    # not skips. CI must expose any actual exporter incompatibility.
-    report = exporter.export(manifest(candidate), output)
-    assert report['counts']['prepared'] == 1
-    with zipfile.ZipFile(output_parent / 'bundle.zip') as archive:
-        assert json.loads(archive.read('manifest.json')) == report
-        for entry in report['entries']:
-            for item in entry['files']:
-                raw = archive.read(item['path'])
-                assert len(raw) == item['bytes']
-                assert hashlib.sha256(raw).hexdigest() == item['sha256']
-    assert snapshot(root) == before
+@native_receipt('unc_complete_exporter')
+def test_native_unc_complete_exporter(candidate, tmp_path, capsys):
+    with tempfile.TemporaryDirectory(prefix='unc-output-', dir=tmp_path.parent) as owned:
+        output_parent = Path(owned)
+        unc_parent = require_existing_loopback_share(output_parent)
+        root = candidate[0].workspace.root
+        before = snapshot(root)
+        output = unc_parent / 'bundle.zip'
+        # Once availability is established, unsupported native operations are errors,
+        # not skips. CI must expose any actual exporter incompatibility.
+        report = exporter.export(manifest(candidate), output)
+        assert report['counts']['prepared'] == 1
+        with zipfile.ZipFile(output_parent / 'bundle.zip') as archive:
+            assert json.loads(archive.read('manifest.json')) == report
+            for entry in report['entries']:
+                for item in entry['files']:
+                    raw = archive.read(item['path'])
+                    assert len(raw) == item['bytes']
+                    assert hashlib.sha256(raw).hexdigest() == item['sha256']
+        assert snapshot(root) == before
 
 
-def test_native_unc_workspace_alias_exporter_refused(candidate, monkeypatch):
+@native_receipt('unc_workspace_alias_identity')
+def test_native_unc_workspace_alias_exporter_refused(candidate, monkeypatch, capsys):
     root = candidate[0].workspace.root
     alias = require_existing_loopback_share(root)
     before = snapshot(root)
@@ -193,22 +236,24 @@ def test_native_unc_workspace_alias_exporter_refused(candidate, monkeypatch):
     assert snapshot(root) == before
 
 
-def test_native_unc_identity_fault_fails_closed(candidate, tmp_path_factory, monkeypatch):
+@native_receipt('unc_identity_fault_injection')
+def test_native_unc_identity_fault_fails_closed(candidate, tmp_path, monkeypatch, capsys):
     """Fault injection after a REAL UNC identity query; not unsupported-SMB evidence."""
-    output_parent = tmp_path_factory.mktemp('unc-fail-closed')
-    alias = require_existing_loopback_share(output_parent)
-    before = snapshot(candidate[0].workspace.root)
-    identity = w._Native.identity
-    queried = []
+    with tempfile.TemporaryDirectory(prefix='unc-fail-closed-', dir=tmp_path.parent) as owned:
+        output_parent = Path(owned)
+        alias = require_existing_loopback_share(output_parent)
+        before = snapshot(candidate[0].workspace.root)
+        identity = w._Native.identity
+        queried = []
 
-    def unavailable(native, handle):
-        queried.append(identity(native, handle))
-        raise OSError('Synthetic identity capability loss')
+        def unavailable(native, handle):
+            queried.append(identity(native, handle))
+            raise OSError('Synthetic identity capability loss')
 
-    monkeypatch.setattr(w._Native, 'identity', unavailable)
-    _, leaves = trace_native(monkeypatch)
-    with pytest.raises(OSError, match='Synthetic identity capability loss'):
-        exporter.export(manifest(candidate), alias / 'forbidden.zip')
-    assert queried and leaves == []
-    assert list(output_parent.iterdir()) == []
-    assert snapshot(candidate[0].workspace.root) == before
+        monkeypatch.setattr(w._Native, 'identity', unavailable)
+        _, leaves = trace_native(monkeypatch)
+        with pytest.raises(OSError, match='Synthetic identity capability loss'):
+            exporter.export(manifest(candidate), alias / 'forbidden.zip')
+        assert queried and leaves == []
+        assert list(output_parent.iterdir()) == []
+        assert snapshot(candidate[0].workspace.root) == before
