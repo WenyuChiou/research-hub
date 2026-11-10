@@ -1,6 +1,6 @@
 # Offline selected-task batch audit
 
-This developer-facing module replaces repeated per-paper integrity scripts with
+The `research-hub task audit-batch` command replaces repeated per-paper integrity scripts with
 one deterministic report for **explicitly selected existing abstract tasks**.
 It does not generate, import, classify, accept, or transmit research material.
 It is not a content comparison or a claim-entailment assessment.
@@ -20,7 +20,7 @@ It is not a content comparison or a claim-entailment assessment.
    consolidates statuses; explicit unavailable rows preserve the denominator.
 6. **New steps/costs:** a source-ledger producer supplies a small explicit JSON
    manifest. No additional account, provider, installation, or permissions are
-   required in an existing developer environment. Active SQLite journals require
+   required in an existing Research Hub installation. Active SQLite journals require
    a quiescent workspace before auditing; the tool never repairs/checkpoints it.
 7. **Non-users:** single-paper users can keep using existing task/working-summary
    interfaces. This module does not replace those interfaces or add UI steps.
@@ -32,7 +32,17 @@ It is not a content comparison or a claim-entailment assessment.
 
 ## Invocation and manifest
 
-From a source checkout:
+From an installed Research Hub package (no config or accounts needed):
+
+```sh
+research-hub task audit-batch manifest.json
+research-hub task audit-batch manifest.json --format csv --output report.csv
+```
+
+The manifest selects every workspace explicitly, so this command needs no
+`--root` or `--project` flag. JSON is the input format; JSON and CSV are report
+formats. The normal `python -m research_hub task audit-batch` entry is identical.
+From a source checkout, the standalone module remains supported:
 
 ```sh
 PYTHONPATH=src python -m research_hub.workspace.batch_audit manifest.json

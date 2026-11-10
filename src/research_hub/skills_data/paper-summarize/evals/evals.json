@@ -3,7 +3,7 @@
   "evals": [
     {
       "prompt": "Summarize the papers in cluster post-flood-household-relocation-behavioral-adaptation.",
-      "expected_behavior": "Run `research-hub summarize --cluster <slug>` (dry-run first), inspect parsed JSON, then re-run with --apply. Report which papers got updated in Obsidian + Zotero, list any skipped papers with reasons.",
+      "expected_behavior": "Identify this as the existing abstract-note mode unless body reading is requested. Prepare readable abstract-grounded summaries using available authorized tools; a dry-run may still invoke a provider. Apply only to selected authorized destinations and report confirmed, failed and unknown outcomes separately. Do not turn a request to summarize into permission for both vault and Zotero writes.",
       "must_not_touch": [
         ".research/",
         ".paper/"
@@ -19,7 +19,7 @@
     },
     {
       "prompt": "I just ran `auto X` and the notes are empty — give me real summaries.",
-      "expected_behavior": "Confirm that auto pipeline does NOT auto-fill per-paper Findings (by design, see paper-summarize SKILL). Then run summarize with --apply. After: spot-check 1-2 papers' markdown to verify findings are anchored in the abstract, not hallucinated.",
+      "expected_behavior": "Explain that auto leaves abstract-note skeletons. Produce useful summaries at actual input scope without requiring the researcher to author JSON. Do not claim full-text review from abstract inputs. Apply only through a selected authorized operation; a source spot-check is not an all-paper semantic review.",
       "must_not_touch": [
         ".research/",
         ".paper/"
@@ -27,10 +27,50 @@
     },
     {
       "prompt": "Update Zotero notes for cluster X with what each paper actually says.",
-      "expected_behavior": "Run with --apply (default writes both). Confirm zotero_writes count matches paper count. If any Zotero write failed, the markdown for that paper rolled back — call it out so the user knows the two systems are still in sync.",
+      "expected_behavior": "Respect the requested Zotero destination and existing note ownership. Do not write an unrequested Obsidian destination. Report each confirmed, failed or unknown outcome; compensation is best-effort, not a guarantee that both systems are synchronized. Inspect before an authorized retry.",
       "must_not_touch": [
         ".research/",
         ".paper/"
+      ]
+    },
+    {
+      "prompt": "Explain each saved paper: why did they do it, what was the objective, how did they study it, what did they find and conclude, and what are the limitations? Hub is not installed.",
+      "expected_behavior": "Use the native per-paper body route and references/fulltext-summary.md. Read actual introduction, methods/results/conclusions and relevant limitations, not just the abstract. Return all seven sections plus source/version and actual reading scope; distinguish supported, analyst_inference and unknown with located evidence. Do not require Hub, another account, a CLI model or user-authored JSON. Do not treat Relevance as Why.",
+      "must_not_touch": [
+        "original source files",
+        "unrequested vault/account notes"
+      ]
+    },
+    {
+      "prompt": "Write a full-text summary of this paper, but only its abstract is accessible.",
+      "expected_behavior": "Return useful explicitly abstract-only partial findings, preserve body-level unknowns and explain missing access. Do not promote a filled seven-section form to fulltext_body, invent facts or use a failed retrieval as zero-result evidence. Use permitted alternatives only; do not bypass access restrictions.",
+      "must_not_touch": [
+        "original source files",
+        "unrequested vault/account notes"
+      ]
+    },
+    {
+      "prompt": "Summarize this qualitative archival study and this hydrology modeling paper using the same seven questions.",
+      "expected_behavior": "Preserve each research design. Why describes the authors motivation and objective is separate. Do not force sample sizes or significance tests onto qualitative/theoretical work. Distinguish model agents from people and scenarios from observed intervention effects. Cite source premises for analyst inferences, preserve unknowns, and do not claim all-domain validity from these examples.",
+      "must_not_touch": [
+        "original source files",
+        "unrequested vault/account notes"
+      ]
+    },
+    {
+      "prompt": "How long did each Stage1 step take? Seven paper identities were already known; six fulltexts were reused and a known paper was reacquired. Two searches ran in parallel.",
+      "expected_behavior": "Use observed timestamps, distinguish new work identities from new acquisitions/versions, preserve failures and report unknown timings. Do not sum overlapping intervals, conflate tool roundtrip with wall time, invent a cold-start benchmark or infer recall from result counts. Compare full per-paper claims with source passages independently of structural checker success.",
+      "must_not_touch": [
+        "historical timing records",
+        "original source files"
+      ]
+    },
+    {
+      "prompt": "Export this body-grounded seven-section summary with analyst inferences to my chosen notes destination. The available adapter only accepts abstract drafts.",
+      "expected_behavior": "Do not relabel full text as paper-abstract-draft, discard inference/unknown or invent a task receipt to fit the adapter. Preserve the readable source-grounded result, use a compatible authorized destination if available, otherwise state saving is pending. A file export alone is not an actual Obsidian/Roam app import.",
+      "must_not_touch": [
+        "human annotations",
+        "unsupported destination schemas"
       ]
     }
   ]
