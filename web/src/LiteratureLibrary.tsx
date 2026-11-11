@@ -1,3 +1,4 @@
+import { NativeSummaryReader } from "./NativeSummaryReader";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCompactReadingLayout } from "./readingLayout";
@@ -244,6 +245,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             <SavedWorkingSummary record={selected} t={t}/>
             {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
               <button type="button" className="button secondary" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
+            {!note && <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && (!compact || readerOpen)} : undefined} t={t} />}
             {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
               <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && (!compact || readerOpen)} : undefined} t={t} />}</div>}
             {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && (!compact || readerOpen)} : undefined}

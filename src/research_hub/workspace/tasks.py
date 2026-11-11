@@ -81,6 +81,10 @@ class TaskService:
         reasons: list[dict] = []
         project_id = task.get("project_id", "")
         request = task.get("request") if isinstance(task.get("request"), dict) else {}
+        from .native_summary import contains_native
+        if contains_native(request.get("records", [])):
+            return [], [{"code": "native-summary-outside-task-scope",
+                         "message": "Stored task contains native summary prose; prepare a new task"}]
         requested_artifacts = request.get("artifacts", [])
 
         def identity(rows):
@@ -172,8 +176,9 @@ class TaskService:
                     return []
                 return [r for r in records if r["kind"] != "review"]
 
+            from .native_summary import project_records
             expected_records = scientific(request.get("records", []))
-            observed_records = [] if request.get("operation") == "paper-abstract-draft" else scientific(self.workspace.records(project_id))
+            observed_records = [] if request.get("operation") == "paper-abstract-draft" else scientific(project_records(self.workspace.records(project_id)))
             expected_hash = digest(expected_records)
             observed_hash = digest(observed_records)
             records_status = "current" if expected_hash == observed_hash else "stale"
@@ -441,9 +446,10 @@ class TaskService:
         if any(not a["current"] for a in artifacts):
             raise WorkspaceError("Registered input changed; register the intended revision before creating a task", "stale_input")
         task_id = uuid.uuid4().hex
+        from .native_summary import project_records
         request = {"schema_version": 1, "task_id": task_id, "operation": operation,
                    "project": project, "instructions": instructions, "artifacts": artifacts,
-                   "records": [] if research_draft else self.workspace.records(project_id), "allowed_changes": "proposal-only",
+                   "records": [] if research_draft else project_records(self.workspace.records(project_id)), "allowed_changes": "proposal-only",
                    "skill": "paper-review" if operation == "review" else "academic-writing-skills"}
         from .writing import WritingAdapter
         import os

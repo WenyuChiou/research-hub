@@ -426,3 +426,15 @@ replaces a file. Exit 0 means all bindings passed, 1 means the report contains
 unprepared/missing/blocked rows, and 2 means invalid input or report destination.
 Binding success is not provider execution, scientific or human acceptance.
 See [manifest format and safety boundaries](workspace-batch-audit.md).
+
+### Native authored source summaries
+
+`research-hub project native-summary-context --root ROOT --project PROJECT --source-record-id DBID --selections JSON --json`
+returns exact current source/evidence bindings and bounded selected text.
+`research-hub project native-summary-import --root ROOT --project PROJECT --path authored.json --json`
+imports one explicit authored seven-section envelope from a workspace-relative
+file. `research-hub project native-summary-read --root ROOT --project PROJECT --source-record-id DBID --json`
+reads it only while the source/evidence binding remains current. These commands
+run no model and do not mark human acceptance. See
+[native source summaries](native-source-summary.md) for schema, scope, Unicode
+coordinates, history limits, POSIX file-access limits, and revision semantics.
