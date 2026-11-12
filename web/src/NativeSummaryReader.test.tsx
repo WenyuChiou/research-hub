@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LiteratureLibrary } from "./LiteratureLibrary";
 import { NativeSummaryReader } from "./NativeSummaryReader";
@@ -34,6 +35,58 @@ describe("native summary selected-source reader", () => {
     expect(await screen.findByText(t("nativeScope"))).toBeVisible();
     expect(screen.getByText("Synthetic saved abstract remains unchanged.")).toBeVisible();
     expect(screen.getByRole("region",{name:t("nativeTitle")})).toBeVisible();
+  });
+  it.each(["en", "zh-TW"] as const)("classifies native-only presence consistently in %s without eagerly reading other rows", async locale => {
+    const translate=translator(locale), f=fixture(), other=fixture("two"), missing=fixture("missing");
+    delete missing.record.native_summary_available;
+    const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.body));
+    render(<LiteratureLibrary sources={[f.record,other.record,missing.record]} screenings={[]} t={translate} onScreen={async()=>{}} onPrepare={()=>{}} observationRead={f.scope}/>);
+    await screen.findByText(translate("nativeScope"));
+    expect(screen.getByRole("button",{name:`${translate("catalogNeedsSummary")} (1)`})).toBeVisible();
+    const row=screen.getByRole("row",{name:/Synthetic one/});
+    expect(within(row).getByText(translate("catalogNativeRegistered"))).toBeVisible();
+    expect(within(row).queryByText(translate("catalogNeedsSummary"))).not.toBeInTheDocument();
+    const detail=screen.getByRole("complementary",{name:translate("catalogDetail")});
+    expect(within(detail).getByText(translate("catalogNoSeparateSummary"))).toBeVisible();
+    expect(within(detail).queryByText(translate("catalogNoSummary"))).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region",{name:translate("catalogOrganizationState")})).queryByText(translate("catalogNeedsSummary"))).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button",{name:`${translate("catalogNeedsSummary")} (1)`}));
+    expect(screen.queryByRole("button",{name:"Synthetic one"})).not.toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"Synthetic missing"})).toBeVisible();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it.each(["loading","stale","unavailable","missing"])("keeps registered presence distinct from %s reader status", async status => {
+    const f=fixture();
+    const fetch=vi.spyOn(globalThis,"fetch");
+    if(status==="loading") fetch.mockImplementation(()=>new Promise(()=>{}));
+    else fetch.mockResolvedValue(response({...f.body,status}));
+    render(<LiteratureLibrary sources={[f.record]} screenings={[]} t={t} onScreen={async()=>{}} onPrepare={()=>{}} observationRead={f.scope}/>);
+    expect(screen.getByRole("button",{name:`${t("catalogNeedsSummary")} (0)`})).toBeVisible();
+    expect(screen.getAllByText(t("catalogNativeRegistered"))).toHaveLength(2);
+    expect(screen.getByText(t("catalogNoSeparateSummary"))).toBeVisible();
+    if(status!=="loading") await screen.findByText(t(status==="stale"?"nativeStale":status==="missing"?"nativeMissing":"nativeUnavailable"));
+    expect(screen.queryByText(t("nativeScope"))).not.toBeInTheDocument();
+    expect(screen.queryByText(/Synthetic one claim/)).not.toBeInTheDocument();
+    expect(screen.getByText(t("nativePending"))).toBeVisible();
+  });
+  it.each([undefined,false,"true",1,{},null])("does not treat malformed/absent presence %s as registered", flag => {
+    const f=fixture(); Object.assign(f.record,{native_summary_available:flag});
+    const fetch=vi.spyOn(globalThis,"fetch");
+    render(<LiteratureLibrary sources={[f.record]} screenings={[]} t={t} onScreen={async()=>{}} onPrepare={()=>{}} observationRead={f.scope}/>);
+    expect(screen.getByRole("button",{name:`${t("catalogNeedsSummary")} (1)`})).toBeVisible();
+    expect(screen.getByText(t("catalogNoSummary"))).toBeVisible();
+    expect(screen.queryByText(t("catalogNativeRegistered"))).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("does not apply Workspace candidate presence to library notes", () => {
+    const f=fixture(); f.record.kind="library-note";
+    const fetch=vi.spyOn(globalThis,"fetch");
+    render(<LiteratureLibrary sources={[f.record]} screenings={[]} t={t} onScreen={async()=>{}} onPrepare={()=>{}} observationRead={f.scope}/>);
+    expect(screen.getByRole("button",{name:`${t("catalogNeedsSummary")} (1)`})).toBeVisible();
+    expect(screen.getByText(t("catalogNoSummary"))).toBeVisible();
+    expect(screen.queryByText(t("catalogNativeRegistered"))).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("allows explicitly labelled inference without evidence and preserves its reason", async () => {
     const f=fixture(); f.body.native_summary.sections.objective[0].evidence=[];
