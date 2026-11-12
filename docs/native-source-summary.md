@@ -87,8 +87,11 @@ silently overwritten. There is no automatic cleanup or acceptance operation.
 The guarded read-only HTTP equivalent is
 `GET /api/v1/projects/PROJECT/native-summary?source_record_id=DBID`.
 It returns `ok`, `status`, `native_summary` and pending/not-assessed markers.
-`status` is `current`, `missing`, or `stale`. Only `current` returns prose; stale,
-invalid, inaccessible or mismatched evidence hides it. No HTTP import/edit/accept
+`status` is `current`, `missing`, `stale`, or `unavailable`. Only `current` returns
+prose. Unsupported safe-read capabilities and unavailable evidence files return
+`unavailable`: access failure does not establish that source identity or binding
+changed. Invalid or mismatched bindings return `stale`. Both statuses hide prose,
+preserve saved data, and leave context/import validation unchanged. No HTTP import/edit/accept
 route exists. Project snapshots omit native summary prose and history, exposing
 only a top-level `native_summary_available: true` presence flag on source records
 that have a saved candidate. The flag is not validation or acceptance. The existing

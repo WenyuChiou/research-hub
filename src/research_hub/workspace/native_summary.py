@@ -318,6 +318,11 @@ class NativeSummary:
                         fail()
                     _bound(self.workspace, db, record, value)
                     status = 'current'
-                except (WorkspaceError, ValueError, TypeError, KeyError, AttributeError):
+                except WorkspaceError as error:
+                    # Inability to read is unknown, not evidence of a changed
+                    # source. Both outcomes still hide all saved prose.
+                    status = ('unavailable' if error.code in {'unsupported_capability', 'source_unavailable'}
+                              else 'stale')
+                except (ValueError, TypeError, KeyError, AttributeError):
                     status = 'stale'
         return {'ok': True, 'status': status, 'native_summary': value if status == 'current' else None, **MARKERS}

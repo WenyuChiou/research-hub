@@ -55,6 +55,60 @@ def test_strict_json_portable(raw):
         parse(raw)
 
 
+@pytest.mark.parametrize('code, expected', [
+    ('unsupported_capability', 'unavailable'),
+    ('source_unavailable', 'unavailable'),
+    ('stale_input', 'stale'),
+    ('invalid_source', 'stale'),
+    ('unsafe_path', 'stale'),
+    ('unsupported_storage', 'stale'),
+])
+def test_read_distinguishes_unavailable_access_from_invalid_binding(setup, monkeypatch, code, expected):
+    w, r, _, text = setup
+    # Portable binding fixture; this does not claim native platform file access.
+    monkeypatch.setattr('research_hub.workspace.native_summary.read_path', lambda *_: text.encode('utf-8'))
+    n, value = envelope(setup)
+    saved = n.import_summary('p', envelope=json.dumps(value))['native_summary']
+    before = w.db_path.read_bytes()
+
+    def unavailable(*_):
+        raise WorkspaceError('Private path and source content must not leak', code)
+
+    monkeypatch.setattr('research_hub.workspace.native_summary.read_path', unavailable)
+    result = n.read('p', source_record_id=r['id'])
+    assert result == {'ok': True, 'status': expected, 'native_summary': None,
+                      'human_acceptance': 'pending', 'semantic_support': 'not_assessed'}
+    assert w.db_path.read_bytes() == before
+    # Changing the read status must not soften context/import failure gates.
+    with pytest.raises(WorkspaceError) as error:
+        n.import_summary('p', envelope=json.dumps(value))
+    assert error.value.code == code
+    assert w.db_path.read_bytes() == before
+    monkeypatch.setattr('research_hub.workspace.native_summary.read_path', lambda *_: text.encode('utf-8'))
+    restored = n.read('p', source_record_id=r['id'])
+    assert restored['status'] == 'current' and restored['native_summary'] == saved
+    assert w.db_path.read_bytes() == before
+
+
+@pytest.mark.skipif(not POSIX, reason='Pinned POSIX file reads')
+def test_missing_file_is_unavailable_but_changed_bytes_are_stale(setup):
+    w, r, _, _ = setup
+    n, value = envelope(setup)
+    n.import_summary('p', envelope=json.dumps(value))
+    before = w.db_path.read_bytes()
+    original, moved = w.root / 'source.txt', w.root / 'temporarily-moved.txt'
+    original.rename(moved)
+    unavailable = n.read('p', source_record_id=r['id'])
+    assert unavailable['status'] == 'unavailable' and unavailable['native_summary'] is None
+    assert w.db_path.read_bytes() == before
+    moved.rename(original)
+    assert n.read('p', source_record_id=r['id'])['status'] == 'current'
+    original.write_text('Changed evidence', encoding='utf-8')
+    stale = n.read('p', source_record_id=r['id'])
+    assert stale['status'] == 'stale' and stale['native_summary'] is None
+    assert w.db_path.read_bytes() == before
+
+
 def test_task_projection_and_legacy_gate_portable(tmp_path):
     rows = [{'id': 'r', 'kind': 'source', 'data': {'native_summary': {'secret': 1}, 'native_summary_history': [], 'working_summary': 'keep', 'title': 'keep'}}]
     assert contains_native(rows)
