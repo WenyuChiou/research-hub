@@ -65,6 +65,9 @@ class _HtmlRestrictionParser(HTMLParser):
         self.suppressed_depth = 0
         self.form_depth = 0
         self.restricted_form = False
+        self.headings: list[str] = []
+        self._heading_tag: str | None = None
+        self._heading_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
@@ -76,6 +79,9 @@ class _HtmlRestrictionParser(HTMLParser):
         if tag in self._SUPPRESSED:
             self.suppressed_depth = 1
             return
+        if tag in {"title", "h1", "h2"}:
+            self._heading_tag = tag
+            self._heading_parts = []
         if tag == "form":
             self.form_depth += 1
             action = values.get("action", "").lower()
@@ -102,12 +108,19 @@ class _HtmlRestrictionParser(HTMLParser):
             if tag in self._SUPPRESSED or self.suppressed_depth > 1:
                 self.suppressed_depth -= 1
             return
+        if tag == self._heading_tag:
+            heading = re.sub(r"\s+", " ", " ".join(self._heading_parts))
+            self.headings.append(heading.strip(" .!:\t\r\n").casefold())
+            self._heading_tag = None
+            self._heading_parts = []
         if tag == "form" and self.form_depth:
             self.form_depth -= 1
 
     def handle_data(self, data: str) -> None:
         if not self.suppressed_depth and data.strip():
             self.parts.append(data.strip())
+            if self._heading_tag is not None:
+                self._heading_parts.append(data.strip())
 
 
 class _PublicationTableParser(HTMLParser):
@@ -738,13 +751,26 @@ def _looks_restricted(text: str, final_url: str, *, html: bool = False) -> bool:
     ):
         return True
     restricted_form = False
+    cookie_gate_heading = False
     if html:
         parser = _HtmlRestrictionParser()
         parser.feed(text)
         text = " ".join(parser.parts)
         restricted_form = parser.restricted_form
+        cookie_gate_heading = "cookies must be enabled" in parser.headings
     lowered = text.lower()
-    return restricted_form or any(marker in lowered for marker in _LOGIN_MARKERS)
+    # A successful HTTP status can still carry a cookie/JavaScript access gate.
+    # Require its heading and continuation instruction, not merely "cookies" or
+    # a prompt stored in inert script/template configuration on a public page.
+    cookie_text = re.sub(r"\s+", " ", lowered)
+    cookie_gate = (
+        cookie_gate_heading
+        and "enable cookies for" in cookie_text
+        and "reload this page to continue" in cookie_text
+    )
+    return restricted_form or cookie_gate or any(
+        marker in lowered for marker in _LOGIN_MARKERS
+    )
 
 
 def _is_text_content_type(content_type: str) -> bool:
