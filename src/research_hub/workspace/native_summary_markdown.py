@@ -4,7 +4,15 @@ import re
 
 def _text(value):
     # Treat source/author prose as text, not HTML, Markdown links or embeds.
-    value = str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    # Preserve layout LF/TAB, but never emit terminal C0/C1 controls (including
+    # ESC, CR and DEL). Escape visibly before Markdown escaping, without
+    # changing the stored canonical summary or source-coordinate bindings.
+    value = ''.join(
+        f'\\u{ord(char):04x}' if (ord(char) < 32 and char not in '\n\t')
+        or 127 <= ord(char) <= 159 else char
+        for char in str(value)
+    )
+    value = value.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     return re.sub(r'([\\`*_{}\[\]()#+.!|~=-])', r'\\\1', value).replace('\n', '\n    ')
 
 

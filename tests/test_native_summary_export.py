@@ -83,3 +83,40 @@ def test_export_portable_noncurrent_never_returns_prose(monkeypatch, status):
     result = n.export_markdown('p', source_record_id='r')
     assert result['ok'] is False and result['markdown'] is None
     assert 'private' not in json.dumps(result)
+
+
+@pytest.mark.parametrize('codepoint', [*range(0, 9), *range(11, 32), *range(127, 160)])
+def test_renderer_displays_terminal_controls_visibly(codepoint):
+    from research_hub.workspace.native_summary_markdown import _text
+    char = chr(codepoint)
+    result = _text('before' + char + 'after')
+    assert char not in result
+    assert f'u{codepoint:04x}' in result
+    assert result.startswith('before') and result.endswith('after')
+
+
+def test_renderer_preserves_unicode_and_layout():
+    from research_hub.workspace.native_summary_markdown import _text
+    assert _text('中文🙂\nnext\ttab') == '中文🙂\n    next\ttab'
+
+
+@pytest.mark.skipif(not POSIX, reason="Pinned POSIX source-file reads")
+def test_cli_export_neutralizes_imported_terminal_sequences(setup):
+    w,r,a,text=setup
+    n,value=envelope(setup)
+    payload='RESET:\x1bc OSC:\x1b]0;title\x07 CSI:\x9b2J CR:\rhidden'
+    value['sections']['why'][0]['text']=payload
+    value['sections']['why'][0]['reason']=payload
+    n.import_summary('p',envelope=json.dumps(value))
+    before=w.db_path.read_bytes()
+    args=[sys.executable,'-m','research_hub','project','native-summary-export',
+          '--root',str(w.root),'--project','p','--source-record-id',r['id']]
+    plain=subprocess.run(args,capture_output=True)
+    structured=subprocess.run(args+['--json'],capture_output=True)
+    assert plain.returncode==structured.returncode==0
+    md=plain.stdout.decode('utf-8')
+    assert md==json.loads(structured.stdout)['markdown']
+    assert all(c not in md for c in ('\x1b','\x07','\x9b','\r'))
+    assert all(code in md for code in ('u001b','u0007','u009b','u000d'))
+    assert n.read('p',source_record_id=r['id'])['native_summary']['sections']['why'][0]['text']==payload
+    assert w.db_path.read_bytes()==before
