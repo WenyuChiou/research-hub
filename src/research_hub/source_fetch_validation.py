@@ -108,6 +108,10 @@ def validate_source_fetch(
     )
 
     result_path = Path(result_path).expanduser()
+    if output_dir is None:
+        # CLI paths are relative to the caller, not to their own parent again.
+        # Keep lexical components for the containment/link checks below.
+        result_path = result_path.absolute()
     root = Path(output_dir).expanduser().resolve() if output_dir else result_path.parent.resolve()
     errors: list[str] = []
     payload: dict[str, Any] = {}
