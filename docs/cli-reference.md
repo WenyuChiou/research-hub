@@ -448,3 +448,15 @@ that uncertainty instead of borrowing the merged record's backend. Ordinary
 unknown academic provenance remains compatible with an empty source field.
 Neither marker certifies content truth, publisher authorship, or scientific
 support. Existing saved data is not migrated by this change.
+
+### Native authored source summaries
+
+`research-hub project native-summary-context --root ROOT --project PROJECT --source-record-id DBID --selections JSON --json`
+returns exact current source/evidence bindings and bounded selected text.
+`research-hub project native-summary-import --root ROOT --project PROJECT --path authored.json --json`
+imports one explicit authored seven-section envelope from a workspace-relative
+file. `research-hub project native-summary-read --root ROOT --project PROJECT --source-record-id DBID --json`
+reads it only while the source/evidence binding remains current. These commands
+run no model and do not mark human acceptance. See
+[native source summaries](native-source-summary.md) for schema, scope, Unicode
+coordinates, history limits, POSIX file-access limits, and revision semantics.

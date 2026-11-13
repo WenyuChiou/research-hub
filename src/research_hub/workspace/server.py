@@ -90,6 +90,15 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 return self._reply(404 if result.get("ok") is False else 200, result)
             segments = path.strip("/").split("/")
             if (len(segments) == 5 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "native-summary"):
+                from urllib.parse import parse_qs
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) != {"source_record_id"} or len(query["source_record_id"]) != 1 or not query["source_record_id"][0]:
+                    raise WorkspaceError("Select exactly one project source", "invalid_request")
+                return self._result(self.server._call("project", "native-summary-read",
+                    {"project_id": segments[3], "source_record_id": query["source_record_id"][0]}))
+
+            if (len(segments) == 5 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "working-summary"):
                 from urllib.parse import parse_qs
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)

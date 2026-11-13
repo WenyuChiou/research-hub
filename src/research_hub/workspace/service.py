@@ -118,6 +118,13 @@ class WorkspaceService:
                 return self.workspace.snapshot(project_id)
             if operation == "preview_text":
                 return self.preview_text(project_id, **values)
+            if operation in {"native-summary-context", "native-summary-import", "native-summary-read"}:
+                from .native_summary import NativeSummary
+                summaries = NativeSummary(self.workspace)
+                handler = {"native-summary-context": summaries.context,
+                           "native-summary-import": summaries.import_summary,
+                           "native-summary-read": summaries.read}[operation]
+                return handler(project_id, **values)
             if operation in {"working-summary-context", "working-summary-save"}:
                 from .working_summary import WorkingSummary
                 summaries = WorkingSummary(self.workspace)
