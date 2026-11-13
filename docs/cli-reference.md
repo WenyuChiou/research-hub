@@ -427,6 +427,28 @@ unprepared/missing/blocked rows, and 2 means invalid input or report destination
 Binding success is not provider execution, scientific or human acceptance.
 See [manifest format and safety boundaries](workspace-batch-audit.md).
 
+
+### Web-search excerpt provenance
+
+The `websearch --json` command and MCP `web_search` tool retain the legacy
+`abstract` key for search-result compatibility. For generic web results this
+text is an excerpt, not a publisher abstract; the additive `abstract_source`
+field is `web-search-snippet`. Discovery preserves this classification through
+merges, prefers an available non-snippet abstract, and does not use snippets
+as paper abstracts or abstract-based note summaries. DOI recovery can still be
+attempted when an abstract is missing.
+
+Legacy candidates with `source: "web"` or `source: "websearch"` and an empty
+`abstract_source` are also treated as excerpts. Older CLI/MCP JSON that omitted
+both source fields cannot be reliably identified and is not reclassified by
+this change.
+When a non-web abstract with unknown provenance replaces an excerpt in a
+web-origin merged record, `abstract_source: "unknown"` explicitly preserves
+that uncertainty instead of borrowing the merged record's backend. Ordinary
+unknown academic provenance remains compatible with an empty source field.
+Neither marker certifies content truth, publisher authorship, or scientific
+support. Existing saved data is not migrated by this change.
+
 ### Native authored source summaries
 
 `research-hub project native-summary-context --root ROOT --project PROJECT --source-record-id DBID --selections JSON --json`
