@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from .search.base import is_web_search_excerpt
+
 logger = logging.getLogger(__name__)
 
 
@@ -201,16 +203,29 @@ def emit_prompt(
         abstract = paper.get("abstract", "(no abstract)")
         if not str(abstract or "").strip():
             abstract = "(no abstract)"
+        abstract_source = str(paper.get("abstract_source") or "").strip()
+        source = str(paper.get("source") or "").strip()
+        web_excerpt = is_web_search_excerpt(source, abstract_source)
+        text_label = "**Web-search excerpt (not a paper abstract):**" if web_excerpt else "**Abstract:**"
+        provenance = abstract_source or ("web-search-snippet" if web_excerpt else "unknown")
         lines.extend(
             [
                 f"### {i}. {title}",
                 f"**Authors:** {authors_str} ({year})",
                 f"**DOI:** {doi}",
-                "**Abstract:**",
+                f"**Text provenance:** {provenance}; discovery source: {source or 'unknown'}",
+                f"**Source URL:** {paper.get('url') or '(not supplied)'}",
+                text_label,
                 abstract,
                 "",
             ]
         )
+    if any(is_web_search_excerpt(p.get("source"), p.get("abstract_source")) for p in candidates):
+        lines.extend([
+            "Web-search excerpts are limited discovery evidence, not verified paper abstracts or full text.",
+            "Do not infer missing methods/results from an excerpt; disclose insufficient evidence in the scoring reason.",
+            "",
+        ])
     lines.append(_OUTPUT_INSTRUCTIONS)
     return "\n".join(lines)
 
