@@ -103,3 +103,36 @@ observed freshness projection, while all other legacy fields remain intact and
 ordinary source changes still invalidate tasks. Existing serialized tasks that
 already contain these fields fail the common input gate before handoff, execution,
 claim, import or revision. Stored packet payloads/hashes are never silently rewritten.
+
+## Selected summary Markdown transfer
+
+`project native-summary-export --root ROOT --project PROJECT --source-record-id DBID`
+
+Prints one current, source-bound seven-section authored summary as Markdown. Add
+`--json` for the structured result including `markdown`. This is a read-only
+render of the existing guarded read: missing, stale and unavailable summaries
+return no prose and a nonzero CLI exit. Source identity/revision, selected
+artifact hashes/ranges, quote coordinates, caller-assigned support labels and
+pending/not-assessed markers travel with the note. Exact quote text is Markdown
+escaped for display; this is not a new canonical evidence artifact.
+
+No vault, file, browser or remote account is opened as an output destination.
+The command emits the explicitly selected summary and source metadata, which may
+be private, to stdout. Keep redirected files private; emission does not grant
+permission to upload or publish. No history or unrelated source text is included.
+Source/author content is escaped as text, not executable HTML or note embeds.
+This generic Markdown is a transfer candidate for notes applications; native
+Obsidian/Roam import, rendering fidelity and user acceptance are not claimed.
+
+### Transfer pain point and scope
+
+- Who: researchers reusing an explicitly selected saved seven-section summary.
+- Current workflow: inspect JSON and manually copy fields into a note.
+- Friction/evidence: native-summary-read returns JSON; no selected-summary note
+  renderer exists in the current CLI. The user requested usable note transfer.
+- Steps removed: manual seven-section assembly and copying provenance/status.
+- New steps/costs: optional stdout redirection/import; no account or model cost.
+- Non-users: the JSON read and in-Hub reading view remain unchanged.
+- Acceptance: current-only export, metadata/labels/quotes retained, markup escaped,
+  source failures hidden and no database mutation. Synthetic tests do not prove
+  scientific support or actual notes-application acceptance.
