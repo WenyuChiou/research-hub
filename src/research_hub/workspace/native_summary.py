@@ -326,3 +326,14 @@ class NativeSummary:
                 except (ValueError, TypeError, KeyError, AttributeError):
                     status = 'stale'
         return {'ok': True, 'status': status, 'native_summary': value if status == 'current' else None, **MARKERS}
+
+
+    def export_markdown(self, project_id, *, source_record_id):
+        """Render only a currently bound selected summary; never write a vault."""
+        from .native_summary_markdown import render
+        result = self.read(project_id, source_record_id=source_record_id)
+        if result['status'] != 'current':
+            return {'ok': False, 'status': result['status'], 'markdown': None,
+                    'code': 'summary_not_current', **MARKERS}
+        return {'ok': True, 'status': 'current', 'markdown': render(result['native_summary']),
+                'format': 'markdown', **MARKERS}

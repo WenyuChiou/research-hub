@@ -13,7 +13,7 @@ from .tasks import _LOCAL_HUMAN
 
 def add_workspace_parsers(subparsers):
     for resource, operations in {
-        "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay", "native-summary-context", "native-summary-import", "native-summary-read"),
+        "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay", "native-summary-context", "native-summary-import", "native-summary-read", "native-summary-export"),
         "manuscript": ("bind", "state", "audit", "impact"),
         "task": ("audit-batch", "create", "list", "show", "run", "handoff", "import", "decide", "cancel", "recover"),
         "action": ("prepare", "show", "decide", "execute", "reconcile"),
@@ -44,7 +44,7 @@ def add_workspace_parsers(subparsers):
                 parser.add_argument("--path", required=True, help="Explicit native observations JSON inside root")
             if resource == "project" and operation == "discovery-replay":
                 parser.add_argument("--artifact-id", required=True)
-            if resource == "project" and operation in {"native-summary-context", "native-summary-read"}:
+            if resource == "project" and operation in {"native-summary-context", "native-summary-read", "native-summary-export"}:
                 parser.add_argument("--source-record-id", required=True)
             if resource == "project" and operation == "native-summary-context":
                 parser.add_argument("--selections", required=True, help="JSON list of artifact_id/start/end selections")
@@ -163,5 +163,8 @@ def dispatch_workspace(args) -> int:
             result = call_workspace(args.root, resource, operation, values, proof=proof)
     except (ValueError, OSError, EOFError) as exc:
         result = {"ok": False, "error": str(exc), "code": getattr(exc, "code", "invalid_request")}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if operation == "native-summary-export" and result.get("ok") and not args.json:
+        print(result["markdown"], end="")
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok") else 1
