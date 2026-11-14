@@ -34,6 +34,9 @@ Return useful prose without requiring Hub ingestion. Persist only through an
 available, selected and authorized destination; a readable result or local file
 does not establish an Obsidian/Roam import. Preserve human-authored content and
 report saving as pending if the destination cannot retain the evidence/statuses.
+For an already selected Hub workspace, follow the optional
+[native-summary handoff](references/fulltext-summary.md#optional-selected-hub-handoff);
+otherwise keep the native readable result without adding Hub setup.
 
 ## Abstract-note mode (existing CLI)
 
