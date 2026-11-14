@@ -101,3 +101,46 @@ The current `paper-abstract-draft` path cannot receive a full-text summary merel
 by relabeling it. Do not write to an existing vault or account without applicable
 permission, overwrite human annotations, or claim an actual app import from a
 synthetic roundtrip or a file export alone.
+
+
+## Optional selected Hub handoff
+
+Use this route only when the user has selected an existing Hub project/source
+and authorized the relevant local writes. It connects an authored body summary
+to the implemented Hub store and Markdown export; it does not search, extract,
+run a model, verify scientific support, or grant destination permissions.
+No Hub setup is required for the native readable summary above.
+
+1. Check the installed Hub actually exposes `project native-summary-context`,
+   `native-summary-import`, `native-summary-read` and `native-summary-export`.
+   A package version or this skill being present does not prove availability.
+   Read the [version-bound operation contract](https://github.com/WenyuChiou/research-hub/blob/e76e7ac40293592b17ba155e7f437b2f5742a7c5/docs/native-source-summary.md)
+   before using it, and check that it matches the available implementation.
+   If the commands or contract cannot be verified, return the readable summary
+   and report Hub persistence as pending; do not silently install or upgrade.
+2. Use the selected project, saved source database ID and explicitly selected
+   evidence artifacts only. Obtain fresh `native-summary-context` and preserve
+   its source identity, declared reading scope, revisions, hashes and selected
+   Unicode ranges. Do not scan a library or treat saved bytes as fully read.
+3. The agent prepares the seven-section authored envelope, not the researcher.
+   Keep `supported`, `analyst_inference` and `unknown` with their reasons; bind
+   quotations to the selected text and exact coordinates. Follow the contract's
+   complete schema and limits, not an improvised JSON shape. Do not substitute
+   `paper-abstract-draft` or change a claim's status to make an import pass.
+4. Import only within authorized scope using `native-summary-import`, then
+   check `native-summary-read` for the selected source. A conflict or validation
+   failure is not a save: preserve the readable result, inspect the cause and
+   refresh/reconcile before any retry rather than overwrite concurrent work.
+   File-backed intake requires supported POSIX pinned reads; on unsupported
+   platforms, report the limit without enabling BLOB storage or a path fallback.
+5. When a Markdown transfer is requested, use `native-summary-export` only for
+   that source. `current` permits prose; `missing`, `stale` or `unavailable` does
+   not. Preserve all seven sections, source binding, support labels and
+   `human_acceptance: pending` / `semantic_support: not_assessed`. Stdout or an
+   authorized local file is a transfer artifact, not an Obsidian/Roam import,
+   synchronization, or human acceptance. Do not upload private output without
+   separate applicable authorization.
+
+If any selected destination step is unavailable, deliver the useful readable
+summary and name the pending step. Do not make the user rebuild JSON or copy
+seven sections manually, and do not claim that prose delivery completed a save.
