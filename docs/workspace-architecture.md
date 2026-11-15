@@ -150,7 +150,7 @@ npm ci
 npm test
 npm run build
 cd ..
-python -m pip install playwright==1.58.0
+python -m pip install "playwright>=1.59"
 python -m playwright install chromium
 python scripts/workspace_browser_smoke.py --output ./browser-evidence
 ```

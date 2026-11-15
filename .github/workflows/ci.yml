@@ -48,7 +48,7 @@ jobs:
           test -z "$(git status --porcelain -- src/research_hub/workspace_static)"
       - name: Install test tooling and build wheel
         run: |
-          pip install build playwright==1.58.0
+          pip install build 'playwright>=1.59'
           python -m build --wheel --outdir dist/workspace
           python -m venv .wheel-venv
           .wheel-venv/bin/pip install dist/workspace/*.whl 'fastmcp>=2.0'

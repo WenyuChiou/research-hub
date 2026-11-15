@@ -4,7 +4,7 @@ Delivery fixtures simulate decision transport only, never a person's scientific
 approval. The missing-assessment compatibility case is an explicitly labelled
 HTTP response fixture; stale/missing files use actual backend assessments.
 
-Install the optional test runner with pip install playwright==1.58.0 and
+Install the optional test runner with pip install "playwright>=1.59" and
 python -m playwright install chromium. This is not a runtime dependency.
 """
 
