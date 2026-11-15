@@ -161,6 +161,32 @@ class WorkflowContracts(unittest.TestCase):
                 self.assertNotIn("if", install)
         self.assertEqual(cached, 4)
 
+    def test_workspace_browser_runner_matches_pinned_playwright(self):
+        workspace = WORKFLOW["jobs"]["workspace"]
+        self.assertEqual(workspace["runs-on"], "ubuntu-24.04")
+        install = next(s for s in workspace["steps"]
+                       if s.get("name") == "Install test tooling and build wheel")
+        self.assertIn("playwright==1.58.0", install["run"])
+        # Other Linux jobs still exercise the rolling latest image.
+        for name in ("test-ubuntu", "stress-tests", "skill-version-guard"):
+            self.assertEqual(WORKFLOW["jobs"][name]["runs-on"], "ubuntu-latest")
+
+    def test_workspace_browser_setup_and_smoke_are_not_optional(self):
+        workspace = WORKFLOW["jobs"]["workspace"]
+        self.assertNotIn("continue-on-error", workspace)
+        required = {
+            "Install Chromium OS dependencies": "python -m playwright install-deps chromium",
+            "Install Chromium browser": "python -m playwright install chromium",
+            "Real Chromium workspace smoke":
+                "python scripts/workspace_browser_smoke.py --output artifacts/browser",
+        }
+        for name, command in required.items():
+            step = next(s for s in workspace["steps"] if s.get("name") == name)
+            self.assertEqual(step["run"], command)
+            self.assertNotIn("if", step)
+            self.assertNotIn("continue-on-error", step)
+            self.assertNotIn("env", step)
+
     def test_every_windows_mac_row_runs_full_suite_exactly_once(self):
         steps = WORKFLOW["jobs"]["test"]["steps"]
         plain = next(s for s in steps if s.get("name") == "Run tests")

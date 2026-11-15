@@ -3,6 +3,7 @@ import copy
 import ctypes
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -84,6 +85,16 @@ def test_existing_writer_fails_closed(tmp_path):
     assert r.read_bytes(tmp_path, 'input.txt', 30) == b'synthetic original'
 
 
+def _remove_owned_junction(path):
+    """Remove only the test-owned junction, using Python 3.10+ no-follow metadata."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return
+    if info.st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
+        os.rmdir(path)  # Never recurse into the junction target.
+
+
 def junction(link, target):
     result = subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(link), str(target)],
                             capture_output=True, timeout=10)
@@ -116,8 +127,9 @@ def test_reparse_ancestor_never_returns_other_bytes(tmp_path, monkeypatch, bound
                 r.read_bytes(tmp_path, 'selected/input.txt', 50)
         assert (outside / 'input.txt').read_bytes() == b'other synthetic scope'
     finally:
-        if selected.is_junction():
-            os.rmdir(selected)  # Exactly this owned synthetic junction, not target.
+        _remove_owned_junction(selected)
+    assert not selected.exists()
+    assert (outside / 'input.txt').read_bytes() == b'other synthetic scope'
 
 
 def test_leaf_symlink_refused_if_available(tmp_path):
