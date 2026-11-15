@@ -61,3 +61,84 @@ def test_remove_failure_is_not_suppressed(removals, monkeypatch):
     monkeypatch.setattr(native_tests.os, 'rmdir', fail)
     with pytest.raises(PermissionError, match='synthetic removal denied'):
         native_tests._remove_owned_junction(path)
+
+
+def _exercise_before_child(tmp_path, monkeypatch, outcome):
+    """Exercise fixture state transitions without claiming Windows kernel behavior."""
+    selected = tmp_path / 'selected'
+    moved = tmp_path / 'old'
+    outside = tmp_path / 'outside'
+    calls = {'rename': 0, 'junction': 0, 'removed': 0}
+    path_type = type(tmp_path)
+    original_rename = path_type.rename
+
+    def rename(path, target):
+        if path == selected:
+            calls['rename'] += 1
+            if outcome == 'rename_blocked':
+                raise PermissionError('synthetic pinned-directory rename refusal')
+        return original_rename(path, target)
+
+    def junction(path, target):
+        assert path == selected and target == outside
+        calls['junction'] += 1
+        # A placeholder for state testing only; this is not an actual reparse point.
+        path.mkdir()
+
+    def cleanup(path):
+        if calls['junction']:
+            assert path == selected
+            path.rmdir()
+            calls['removed'] += 1
+
+    def original_child(native, handle, name, directory):
+        if outcome == 'unsafe_return':
+            return 1
+        raise OSError('synthetic no-follow read refusal')
+
+    def read(root, relative, limit):
+        assert root == tmp_path and relative == 'selected/input.txt'
+        if outcome == 'premature_error':
+            raise OSError('synthetic unrelated earlier failure')
+        try:
+            native_tests.r.NativeRead.child(object(), None, 'selected', True)
+        except OSError:
+            if outcome == 'outside_mutated':
+                (outside / 'input.txt').write_bytes(b'changed')
+            raise
+        return b'other synthetic scope'
+
+    with monkeypatch.context() as patch:
+        patch.setattr(path_type, 'rename', rename)
+        patch.setattr(native_tests, 'junction', junction)
+        patch.setattr(native_tests, '_remove_owned_junction', cleanup)
+        patch.setattr(native_tests.r.NativeRead, 'child', original_child)
+        patch.setattr(native_tests.r, 'read_bytes', read)
+        native_tests.test_reparse_ancestor_never_returns_other_bytes(
+            tmp_path, patch, 'before_child')
+    return calls
+
+
+@pytest.mark.parametrize('outcome', ['rename_blocked', 'junction_installed'])
+def test_before_child_accepts_only_observed_safe_outcomes(tmp_path, monkeypatch, outcome):
+    calls = _exercise_before_child(tmp_path, monkeypatch, outcome)
+    assert calls['rename'] == 1
+    if outcome == 'rename_blocked':
+        assert calls == {'rename': 1, 'junction': 0, 'removed': 0}
+        assert (tmp_path / 'selected/input.txt').read_bytes() == b'original'
+        assert not (tmp_path / 'old').exists()
+    else:
+        assert calls == {'rename': 1, 'junction': 1, 'removed': 1}
+        assert not (tmp_path / 'selected').exists()
+        assert (tmp_path / 'old/input.txt').read_bytes() == b'original'
+
+
+@pytest.mark.parametrize('outcome', ['premature_error', 'outside_mutated'])
+def test_before_child_rejects_unexercised_or_mutated_scope(tmp_path, monkeypatch, outcome):
+    with pytest.raises(AssertionError):
+        _exercise_before_child(tmp_path, monkeypatch, outcome)
+
+
+def test_before_child_still_requires_read_refusal(tmp_path, monkeypatch):
+    with pytest.raises(pytest.fail.Exception, match='DID NOT RAISE'):
+        _exercise_before_child(tmp_path, monkeypatch, 'unsafe_return')

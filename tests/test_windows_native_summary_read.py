@@ -108,17 +108,25 @@ def test_reparse_ancestor_never_returns_other_bytes(tmp_path, monkeypatch, bound
     (outside / 'input.txt').write_bytes(b'other synthetic scope')
     selected = tmp_path / 'selected'
     moved = tmp_path / 'old'
+    swap = {'attempted': False, 'rename_blocked': False, 'junction_installed': False}
     if boundary == 'before_child':
         selected.mkdir(); (selected / 'input.txt').write_bytes(b'original')
         original = r.NativeRead.child
         def child(native, handle, name, directory):
             if name == 'selected':
-                selected.rename(moved)
+                swap['attempted'] = True
+                try:
+                    selected.rename(moved)
+                except OSError:
+                    swap['rename_blocked'] = True
+                    raise
                 junction(selected, outside)
+                swap['junction_installed'] = True
             return original(native, handle, name, directory)
         monkeypatch.setattr(r.NativeRead, 'child', child)
     else:
         junction(selected, outside)
+        swap['junction_installed'] = True
     try:
         with pytest.raises(OSError):
             if boundary == 'workspace_ancestor':
@@ -126,9 +134,22 @@ def test_reparse_ancestor_never_returns_other_bytes(tmp_path, monkeypatch, bound
             else:
                 r.read_bytes(tmp_path, 'selected/input.txt', 50)
         assert (outside / 'input.txt').read_bytes() == b'other synthetic scope'
+        if boundary == 'before_child':
+            assert swap['attempted'], 'the intended boundary must actually be exercised'
     finally:
         _remove_owned_junction(selected)
-    assert not selected.exists()
+    if swap['junction_installed']:
+        assert not selected.exists()
+        if boundary == 'before_child':
+            assert (moved / 'input.txt').read_bytes() == b'original'
+    else:
+        # The pinned ancestor can reject rename before a junction is installed.
+        # Cleanup must preserve that ordinary directory, not delete it to pass.
+        assert boundary == 'before_child' and swap['rename_blocked']
+        info = selected.lstat()
+        assert stat.S_ISDIR(info.st_mode) and getattr(info, 'st_reparse_tag', 0) == 0
+        assert (selected / 'input.txt').read_bytes() == b'original'
+        assert not moved.exists()
     assert (outside / 'input.txt').read_bytes() == b'other synthetic scope'
 
 
