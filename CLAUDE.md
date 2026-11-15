@@ -1,3 +1,7 @@
+Workflow mode: solo
+
+Working rules: [docs/RULES.md](docs/RULES.md) - one change at a time, show it works, fail-first for bug fixes (from the project kit in `~/.claude/project-kit`).
+
 <!-- OPENWIKI:START -->
 
 ## OpenWiki
