@@ -373,7 +373,7 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
 
     def test_observation_translations_are_bound_labeled_and_additive(self):
         self.observations['needs'].append({'id': 'N2', 'text': 'Original residual need', 'families': [], 'status': 'unresolved'})
-        self.observations['completion']['residual_need_ids'] = ['N2']
+        self.observations['completion']['residual_need_ids'] = ['N1', 'N2']
         self.observations['completion']['status'] = 'partial'
         self.save_inputs()
         original_hash = hashlib.sha256(self.obs.read_bytes()).hexdigest()
@@ -395,7 +395,7 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
         self.assertEqual(exported['observations'], self.observations)
         self.assertEqual(exported['content'], self.content)
         self.assertEqual(exported['observations']['completion']['status'], 'partial')
-        self.assertEqual(exported['observations']['completion']['residual_need_ids'], ['N2'])
+        self.assertEqual(exported['observations']['completion']['residual_need_ids'], ['N1', 'N2'])
         self.assertEqual(exported['observations']['needs'][-1]['status'], 'unresolved')
         self.assertEqual(manifest['inputs']['observations']['sha256'], original_hash)
         for language, label, title_label in [('en', 'Supplied translation (not verified)', 'Supplied title translation (not verified)'),
@@ -438,7 +438,7 @@ print(json.dumps({'skill_bytecode': artifacts, 'host_flag_restored': True}))
 
     def test_translation_titles_in_indexes_bind_to_exact_version_and_language(self):
         self.observations['needs'].append({'id': 'N2', 'text': 'Original residual need', 'families': [], 'status': 'unresolved'})
-        self.observations['completion']['residual_need_ids'] = ['N2']
+        self.observations['completion']['residual_need_ids'] = ['N1', 'N2']
         self.save_inputs()
         one, two = self.observations['sources'][:2]
         for language in ('en', 'zh-TW'):

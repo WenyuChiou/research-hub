@@ -73,6 +73,23 @@ These are internal consistency checks, not proof that an empty search establishe
 novelty or that all required needs were included. Preserve the declared research
 bounds and scientific unknowns in the readable result. No fixed literature quota.
 
+## Standalone observation consistency
+
+The standalone reader applies the same attempt/count and need/completion
+relationship rules above before rendering or check-only success. It rejects
+unobserved success, failure-as-zero, read search counts, empty observation
+receipts, unlinked covered needs, missing residual needs and contradictory
+bounded completion. This is local record consistency, not execution, coverage
+or scientific validation; a caller's valid empty search still cannot prove
+that relevant work is absent.
+
+Valid partial/unknown observations and independently supplied sources without
+search history remain usable. A material-only receipt remains a recorded
+reference; the reader does not open or authenticate it. Existing incompatible
+packets must be reconciled by their author from actual observations, preserving
+the original files and unknowns; neither rendering nor a failed check rewrites
+the input, retries searches, invents receipts or grants a Hub save.
+
 ## Optional local check, save and replay
 
 Probe the installed interface with `research-hub project discovery-check --help`.
