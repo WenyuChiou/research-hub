@@ -88,6 +88,18 @@ def contains_native(records):
 
 def read_path(workspace, relative, limit):
     """Pin every directory and leaf; never resolve/follow user-supplied symlinks."""
+    if os.name == 'nt':
+        from ._windows_read import read_bytes
+        _string(relative, 4096)
+        try:
+            raw = read_bytes(workspace.root, relative, limit)
+        except ValueError as exc:
+            raise WorkspaceError('Select a workspace-relative regular file', 'unsafe_path') from exc
+        except OSError as exc:
+            raise WorkspaceError('Selected file is unavailable', 'source_unavailable') from exc
+        if len(raw) > limit:
+            fail('Selected file exceeds the native-summary limit', 'context_limit')
+        return raw
     from .text_intake import _directory, _read_file, _verify_location
     if not (os.name == 'posix' and hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_DIRECTORY')
             and os.open in os.supports_dir_fd):
