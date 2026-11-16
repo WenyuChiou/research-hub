@@ -421,5 +421,6 @@ class Workspace:
                 warnings.append(f"Manuscript authority needs review: {exc}")
         with self.db() as db:
             actions = [json.loads(r[0]) for r in db.execute("SELECT body FROM actions WHERE project=? ORDER BY rowid DESC", (project_id,))]
-        return {"ok": True, "project": project, "artifacts": artifacts, "records": self.records(project_id), "actions": actions,
+        from .native_summary import snapshot_records
+        return {"ok": True, "project": project, "artifacts": artifacts, "records": snapshot_records(self.records(project_id)), "actions": actions,
                 "tasks": TaskService(self).list(project_id), "manuscript": state, "workflow": workflow, "warnings": warnings}

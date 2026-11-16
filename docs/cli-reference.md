@@ -407,3 +407,56 @@ Add this to your Claude Desktop config:
 
 21 MCP tools exposed. See [docs/mcp-tools.md](mcp-tools.md) for the
 full list.
+
+## Offline workspace audit
+
+### `task audit-batch`
+
+Audit explicitly selected existing abstract tasks across local workspaces without
+config, accounts, provider calls, database initialization, or workspace writes.
+
+```bash
+research-hub task audit-batch manifest.json [--format json|csv] [--output report.json]
+```
+
+The JSON manifest supplies project/source/task identities and expected hashes;
+there is no automatic workspace discovery. Output defaults to JSON on stdout.
+`--output` creates a new report outside all selected workspaces and never
+replaces a file. Exit 0 means all bindings passed, 1 means the report contains
+unprepared/missing/blocked rows, and 2 means invalid input or report destination.
+Binding success is not provider execution, scientific or human acceptance.
+See [manifest format and safety boundaries](workspace-batch-audit.md).
+
+
+### Web-search excerpt provenance
+
+The `websearch --json` command and MCP `web_search` tool retain the legacy
+`abstract` key for search-result compatibility. For generic web results this
+text is an excerpt, not a publisher abstract; the additive `abstract_source`
+field is `web-search-snippet`. Discovery preserves this classification through
+merges, prefers an available non-snippet abstract, and does not use snippets
+as paper abstracts or abstract-based note summaries. DOI recovery can still be
+attempted when an abstract is missing.
+
+Legacy candidates with `source: "web"` or `source: "websearch"` and an empty
+`abstract_source` are also treated as excerpts. Older CLI/MCP JSON that omitted
+both source fields cannot be reliably identified and is not reclassified by
+this change.
+When a non-web abstract with unknown provenance replaces an excerpt in a
+web-origin merged record, `abstract_source: "unknown"` explicitly preserves
+that uncertainty instead of borrowing the merged record's backend. Ordinary
+unknown academic provenance remains compatible with an empty source field.
+Neither marker certifies content truth, publisher authorship, or scientific
+support. Existing saved data is not migrated by this change.
+
+### Native authored source summaries
+
+`research-hub project native-summary-context --root ROOT --project PROJECT --source-record-id DBID --selections JSON --json`
+returns exact current source/evidence bindings and bounded selected text.
+`research-hub project native-summary-import --root ROOT --project PROJECT --path authored.json --json`
+imports one explicit authored seven-section envelope from a workspace-relative
+file. `research-hub project native-summary-read --root ROOT --project PROJECT --source-record-id DBID --json`
+reads it only while the source/evidence binding remains current. These commands
+run no model and do not mark human acceptance. See
+[native source summaries](native-source-summary.md) for schema, scope, Unicode
+coordinates, history limits, POSIX file-access limits, and revision semantics.

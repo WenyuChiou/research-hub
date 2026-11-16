@@ -145,6 +145,32 @@ exact replay; retained metadata does not establish independent verification.
 Native-only results can retain the same source, version, reading and claim
 boundaries in readable inline form without a structured handoff or Hub ingest.
 
+## Measure the observed stages
+
+For a timed run, record available start/end boundaries and the observation
+basis for query/search, source acquisition, reading, per-paper summary,
+cross-paper comparison and verification/delivery. Record attempts, failures,
+retries and any intervention rather than erasing them from a successful run.
+Do not reconstruct missing timestamps from file modification times or invent
+backend latency from a tool return. Tool roundtrip and end-to-end wall time
+are different measures; report unmeasured stages as `unknown`.
+
+Separate new work identities from new source files/versions: reacquiring the
+PDF of a previously known paper is a new acquisition, not a newly discovered
+paper. State reused versus new inputs, cold versus warm setup and what occurred
+before the measured start. For overlapping stages, report intervals and total
+elapsed wall time; do not add parallel durations as if sequential or silently
+exclude waiting/error time. Keep raw hits, deduplicated works, screened works,
+retrieved bodies and source-reviewed claims on distinct denominators, retaining
+unavailable/unchecked rows. Counts or a fast run do not establish recall,
+summary fidelity or a universal time guarantee.
+
+For per-paper why/objective/methods/findings/conclusions/key-points/limitations,
+use the native body-summary route in `paper-summarize`; its existing Hub CLI
+remains abstract-only. A known-paper comparison and a from-scratch discovery
+run have different acceptance scopes. Evaluate search selection/omissions and
+summary entailment independently of production structural/source-binding checks.
+
 ## Bound completion honestly
 
 Return a compact final record: covered and unresolved need IDs; executed paths

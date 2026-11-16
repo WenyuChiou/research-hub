@@ -314,6 +314,7 @@ def web_search(query: str, max_results: int = 10, provider: str = "auto") -> dic
                     "title": result.title,
                     "url": result.url,
                     "abstract": result.abstract,
+                    "abstract_source": result.abstract_source,
                     "venue": result.venue,
                     "doc_type": result.doc_type,
                     "year": result.year,

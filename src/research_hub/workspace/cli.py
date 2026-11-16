@@ -13,14 +13,23 @@ from .tasks import _LOCAL_HUMAN
 
 def add_workspace_parsers(subparsers):
     for resource, operations in {
-        "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay"),
+        "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay", "native-summary-context", "native-summary-import", "native-summary-read", "native-summary-export"),
         "manuscript": ("bind", "state", "audit", "impact"),
-        "task": ("create", "list", "show", "run", "handoff", "import", "decide", "cancel", "recover"),
+        "task": ("audit-batch", "create", "list", "show", "run", "handoff", "import", "decide", "cancel", "recover"),
         "action": ("prepare", "show", "decide", "execute", "reconcile"),
     }.items():
         parent = subparsers.add_parser(resource, help=f"Research workspace {resource} operations")
         children = parent.add_subparsers(dest="workspace_operation", required=True)
         for operation in operations:
+            if resource == "task" and operation == "audit-batch":
+                from .batch_audit import add_arguments
+
+                parser = children.add_parser(
+                    operation, help="Audit explicit existing abstract tasks offline",
+                    description="Read-only binding audit of selected tasks; no generation or human acceptance.",
+                )
+                add_arguments(parser)
+                continue
             parser = children.add_parser(operation)
             parser.add_argument("--root", required=True, help="Explicit local research workspace directory")
             parser.add_argument("--json", action="store_true")
@@ -35,6 +44,12 @@ def add_workspace_parsers(subparsers):
                 parser.add_argument("--path", required=True, help="Explicit native observations JSON inside root")
             if resource == "project" and operation == "discovery-replay":
                 parser.add_argument("--artifact-id", required=True)
+            if resource == "project" and operation in {"native-summary-context", "native-summary-read", "native-summary-export"}:
+                parser.add_argument("--source-record-id", required=True)
+            if resource == "project" and operation == "native-summary-context":
+                parser.add_argument("--selections", required=True, help="JSON list of artifact_id/start/end selections")
+            if resource == "project" and operation == "native-summary-import":
+                parser.add_argument("--path", required=True, help="Authored envelope JSON, relative to workspace root")
             if resource == "project" and operation == "register":
                 parser.add_argument("--path", required=True)
                 parser.add_argument("--role", required=True)
@@ -76,6 +91,10 @@ def add_workspace_parsers(subparsers):
 
 def dispatch_workspace(args) -> int:
     resource, operation = args.command, args.workspace_operation
+    if resource == "task" and operation == "audit-batch":
+        from .batch_audit import run
+
+        return run(args)
     record_route = resource == "project" and operation == "record"
     source_preview = record_route and getattr(args, "dry_run", False)
     source_apply = record_route and getattr(args, "apply", False)
@@ -95,6 +114,9 @@ def dispatch_workspace(args) -> int:
             raise WorkspaceError("Source preview requires a declared project and JSON data")
         if getattr(args, "project", None):
             values["project_id"] = args.project
+        if getattr(args, "selections", None):
+            from .native_summary import parse
+            values["selections"] = parse(args.selections)
         if getattr(args, "source_selection", None):
             values["source_selection"] = json.loads(args.source_selection)
         if getattr(args, "data", None):
@@ -141,5 +163,8 @@ def dispatch_workspace(args) -> int:
             result = call_workspace(args.root, resource, operation, values, proof=proof)
     except (ValueError, OSError, EOFError) as exc:
         result = {"ok": False, "error": str(exc), "code": getattr(exc, "code", "invalid_request")}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if operation == "native-summary-export" and result.get("ok") and not args.json:
+        print(result["markdown"], end="")
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok") else 1

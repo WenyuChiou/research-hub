@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 
+def is_web_search_excerpt(source: object, abstract_source: object) -> bool:
+    """Identify explicit snippets and legacy unmarked web excerpts only."""
+    provenance = str(abstract_source or "").strip()
+    return provenance == "web-search-snippet" or (
+        not provenance and str(source or "").strip() in {"web", "websearch"}
+    )
+
+
 @dataclass(init=False)
 class SearchResult:
     """Normalized search result from any backend."""

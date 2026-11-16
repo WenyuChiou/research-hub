@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import stat
 import uuid
 
@@ -208,7 +209,7 @@ class TextIntake:
             preview_status = "available"
         except WorkspaceError as error:
             preview_status = "stale" if error.code == "stale_input" else "unavailable"
-        except (OSError, ValueError, TypeError, KeyError):
+        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
             preview_status = "unavailable"
         return {"ok": True, "intake": {"version": 1, "key": key, **state}, "record": record,
                 "artifact": {**artifact, "current": preview is not None}, "preview": preview,

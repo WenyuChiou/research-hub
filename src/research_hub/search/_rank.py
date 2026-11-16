@@ -6,7 +6,7 @@ import datetime
 import re
 from dataclasses import replace
 
-from research_hub.search.base import SearchResult
+from research_hub.search.base import SearchResult, is_web_search_excerpt
 
 
 def confidence_from_backends(found_in: list[str]) -> float:
@@ -33,9 +33,16 @@ def _merge_record(base: SearchResult, incoming: SearchResult) -> SearchResult:
         if backend_name not in found_in:
             found_in.append(backend_name)
     fill: dict[str, object] = {"found_in": found_in}
-    if not base.abstract and incoming.abstract:
+    base_is_excerpt = is_web_search_excerpt(base.source, base.abstract_source)
+    incoming_is_excerpt = is_web_search_excerpt(incoming.source, incoming.abstract_source)
+    if base.abstract and base_is_excerpt:
+        fill["abstract_source"] = "web-search-snippet"
+    if incoming.abstract and (not base.abstract or (base_is_excerpt and not incoming_is_excerpt)):
         fill["abstract"] = incoming.abstract
-        fill["abstract_source"] = incoming.abstract_source
+        fill["abstract_source"] = "web-search-snippet" if incoming_is_excerpt else incoming.abstract_source
+        if not str(fill["abstract_source"] or "").strip() and is_web_search_excerpt(base.source, ""):
+            # Unknown is not inferred from either aggregate/backend origin.
+            fill["abstract_source"] = "unknown"
     if not base.doi and incoming.doi:
         fill["doi"] = incoming.doi
     if not base.arxiv_id and incoming.arxiv_id:

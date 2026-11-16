@@ -1,4 +1,4 @@
-"""Keep local project readers independent of provider CLI initialization."""
+"""Keep local readers and selected-task audits independent of provider CLI initialization."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if raw_argv[:2] not in (["project", "show"], ["project", "list"]):
+    if raw_argv[:2] not in (["project", "show"], ["project", "list"], ["task", "audit-batch"]):
         from research_hub.cli import main as legacy_main
 
         return legacy_main(argv)

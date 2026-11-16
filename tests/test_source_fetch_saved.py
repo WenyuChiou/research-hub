@@ -368,3 +368,46 @@ def test_operation_downgrade_cannot_certify_terminal_fulltext(
         assert any(
             "saved import attempts require" in error for error in report["errors"]
         )
+
+@pytest.mark.parametrize("directory", ["bundle", "nested/資料"])
+def test_validate_relative_receipt_uses_cwd_when_root_is_omitted(tmp_path, monkeypatch, capsys, directory):
+    manifest, digest, _ = _saved_input(tmp_path / "input", _document())
+    import_saved_public_source(input_manifest=manifest, expected_manifest_sha256=digest,
+                               output_dir=tmp_path / directory)
+    monkeypatch.chdir(tmp_path)
+    receipt = Path(directory) / "source-fetch-result.json"
+    report = sf.validate_source_fetch(receipt)
+    assert report["valid"], report["errors"]
+    assert cli.main(["source", "validate", str(receipt), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["valid"]
+
+
+def test_validate_explicit_root_keeps_root_relative_receipt(tmp_path):
+    manifest, digest, _ = _saved_input(tmp_path / "input", _document())
+    import_saved_public_source(input_manifest=manifest, expected_manifest_sha256=digest,
+                               output_dir=tmp_path / "bundle")
+    report = sf.validate_source_fetch(Path("source-fetch-result.json"), output_dir=tmp_path / "bundle")
+    assert report["valid"], report["errors"]
+
+
+def test_validate_relative_receipt_does_not_follow_receipt_symlink(tmp_path, monkeypatch):
+    manifest, digest, _ = _saved_input(tmp_path / "input", _document())
+    import_saved_public_source(input_manifest=manifest, expected_manifest_sha256=digest,
+                               output_dir=tmp_path / "bundle")
+    link = tmp_path / "bundle" / "linked.json"
+    try:
+        link.symlink_to("source-fetch-result.json")
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    monkeypatch.chdir(tmp_path)
+    report = sf.validate_source_fetch(Path("bundle/linked.json"))
+    assert not report["valid"]
+    assert any("linked artifact" in error for error in report["errors"])
+
+
+def test_validate_relative_receipt_rejects_parent_traversal(tmp_path, monkeypatch):
+    (tmp_path / "bundle" / "child").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    report = sf.validate_source_fetch(Path("bundle/child/../source-fetch-result.json"))
+    assert not report["valid"]
+    assert any("escapes output directory" in error for error in report["errors"])

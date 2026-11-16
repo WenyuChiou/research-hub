@@ -37,6 +37,13 @@
   remain distinct from successful empty results. See `docs/audit-output.md`.
 
 ### Changed
+- Plugin `0.5.28` adds a native per-paper body-summary route with explicit
+  why/objective/methods/findings/conclusions/key-points/limitations, source
+  locators, reading scope and supported/inference/unknown distinctions. The
+  existing Hub summarize CLI and task profile remain abstract-only. Shared
+  research guidance distinguishes observed stage timing and reused versus new
+  work/source identities. These instructions do not establish scientific,
+  installed-host or notes-app acceptance; no runtime schema or release changes.
 - Plugin `0.5.2` strengthens shared native research instructions across Hub,
   triage, NotebookLM verification, gap-to-topic and workflow orchestration:
   preserved user scope, needs-to-query mapping, literature roles, version-aware

@@ -202,6 +202,8 @@ def _result_from_item(
     return SearchResult(
         title=str(item.get("title", "") or ""),
         abstract=str(item.get(snippet_key, "") or ""),
+        # Preserve the search excerpt for display without claiming an abstract.
+        abstract_source="web-search-snippet",
         year=_extract_year(url, item),
         authors=[],
         venue=domain,

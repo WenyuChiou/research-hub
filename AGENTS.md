@@ -57,9 +57,34 @@ implementation or publication instructions or valid authorization for other task
 - Findings need a concrete path and line/symbol, trigger, consequence, and
   evidence. Separate confirmed defects, hypotheses, and verification gaps; omit
   style-only preferences and follow the platform's required finding format.
-- A review task itself does not modify code, install dependencies, start paid
-  models, or merge. Every PR merge needs separate explicit user consent after
-  the user receives the review summary, actual test status, and remaining gaps.
+- A review-only task itself does not authorize code changes, dependency
+  installation, paid-model execution, publication, or merge. For an explicitly
+  assigned engineering task, follow the execution policy below.
+
+## Authorized Engineering Execution
+
+- Within the user's explicitly assigned scope and granted permissions, continue
+  routine investigation, reversible fixes, local tests, commits, pushes to the
+  task's feature branch, and updates to its existing PR without asking again
+  for each step. Preserve unrelated work; do not force-push over another
+  contributor's changes or silently expand the task.
+- Mark ready or merge an existing task PR without a new per-merge question only
+  when the latest head has author self-check, a passing independent subagent
+  review, applicable tests and necessary CI, no known blocker, and compliance
+  with the current contribution rules and GitHub protections. Record the exact
+  reviewed base/head (or matched tree), actual test results and remaining
+  verification gaps; recheck integration after base changes. Report the outcome
+  and evidence rather than treating CI as real-host or research acceptance.
+- This policy removes repeated confirmation for that authorized workflow, not
+  its quality gates. It does not authorize formal `APPROVE` submissions, new
+  task scope, releases, deployments, branch deletion, destructive operations,
+  paid services/model runs, credential or permission changes, or transmission
+  of private data. Obtain the applicable separate authorization for those
+  actions; never bypass platform safety requirements or repository protection.
+- A review-only or monitoring-only request remains read-only. A newer explicit
+  user restriction controls its task. Ask only when required authorization is
+  missing, scope or risk materially changes, or a consequential choice is
+  unresolved; continue independent authorized work while that part is blocked.
 
 ## Product Premises and Feature Proposals
 

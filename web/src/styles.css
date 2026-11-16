@@ -1691,3 +1691,14 @@ select option {
     padding: 1rem;
   }
 }
+
+/* Read-only native summary inside the existing selected-source reading desk. */
+.native-summary { min-width: 0; overflow-wrap: anywhere; }
+.native-summary h5 { font-size: 1rem; margin: 1.25rem 0 .5rem; }
+.native-summary code { white-space: normal; overflow-wrap: anywhere; }
+.native-scope { padding-inline-start: 1.25rem; }
+.native-scope li { margin-block: .75rem; }
+.native-claim { padding-block: .5rem; border-bottom: 1px solid var(--line); }
+.native-prose { white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-claim details { margin-block: .5rem; }
+.native-claim summary { cursor: pointer; }

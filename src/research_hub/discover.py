@@ -529,11 +529,16 @@ def _ensure_discover_meta(candidate: dict) -> dict:
 
 def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
     """Deduplicate candidate dicts by DOI/arXiv/title."""
-    from research_hub.search.base import SearchResult
+    from research_hub.search.base import SearchResult, is_web_search_excerpt
 
     merged: dict[str, dict] = {}
     order: list[str] = []
     for candidate in candidates:
+        candidate = dict(candidate)
+        if candidate.get("abstract") and is_web_search_excerpt(
+            candidate.get("source"), candidate.get("abstract_source")
+        ):
+            candidate["abstract_source"] = "web-search-snippet"
         result = SearchResult(
             title=str(candidate.get("title", "") or ""),
             doi=str(candidate.get("doi", "") or ""),
@@ -564,8 +569,17 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
             continue
 
         base = merged[key]
-        if not base.get("abstract") and candidate.get("abstract"):
+        base_is_excerpt = is_web_search_excerpt(base.get("source"), base.get("abstract_source"))
+        incoming_is_excerpt = is_web_search_excerpt(candidate.get("source"), candidate.get("abstract_source"))
+        if candidate.get("abstract") and (
+            not base.get("abstract") or (base_is_excerpt and not incoming_is_excerpt)
+        ):
             base["abstract"] = candidate.get("abstract")
+            base["abstract_source"] = candidate.get("abstract_source") or ""
+            if not str(base["abstract_source"]).strip() and is_web_search_excerpt(base.get("source"), ""):
+                # Explicitly unknown: do not let the aggregate web origin
+                # relabel an incoming non-web abstract as a legacy snippet.
+                base["abstract_source"] = "unknown"
         if not base.get("doi") and candidate.get("doi"):
             base["doi"] = candidate.get("doi")
         if not base.get("arxiv_id") and candidate.get("arxiv_id"):
@@ -1028,7 +1042,15 @@ def _to_papers_input(
         # backend returned one, and recover missing abstracts during ingest
         # so new notes do not land with permanent TODO-only summaries.
         abstract_text = str(candidate.get("abstract") or "").strip()
-        abstract_final = abstract_text
+        from research_hub.search.base import is_web_search_excerpt
+
+        abstract_source = str(candidate.get("abstract_source") or "").strip()
+        # Web snippets (including legacy unmarked web results) are search
+        # evidence, not abstracts. Keep unknown academic sources compatible.
+        is_web_excerpt = is_web_search_excerpt(candidate.get("source"), abstract_source)
+        abstract_final = "" if is_web_excerpt else abstract_text
+        if is_web_excerpt:
+            abstract_source = ""
         if abstract_final.lower() in {"(no abstract)", "no abstract"}:
             abstract_final = ""
         if not abstract_final and doi:
@@ -1057,8 +1079,7 @@ def _to_papers_input(
                     recovered = recover_abstract(doi, timeout=10)
                 if recovered.text:
                     abstract_final = recovered.text
-                    if not candidate.get("abstract_source"):
-                        candidate["abstract_source"] = recovered.source
+                    abstract_source = recovered.source
             except Exception:
                 pass
         has_real_abstract = bool(abstract_final)
@@ -1079,7 +1100,7 @@ def _to_papers_input(
             "year": candidate.get("year") or 0,
             "metadata_year": candidate.get("metadata_year"),
             "abstract": abstract_final or "(no abstract)",
-            "abstract_source": candidate.get("abstract_source") or "",
+            "abstract_source": abstract_source if abstract_final else "",
             "journal": _smart_journal_fallback(candidate),
             "slug": slug,
             "sub_category": cluster_slug or "",
