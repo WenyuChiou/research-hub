@@ -164,9 +164,10 @@ def observations_view(value):
         strings(need["families"])
         require(need["status"] in {"covered", "unresolved", "not-assessed"}, "invalid need status")
     attempts = indexed(value["attempts"], "id")
+    covered_by_observation = set()
     for attempt in attempts.values():
         obj(attempt, "id need_ids kind tool input status outcome result_count receipt".split())
-        require(set(strings(attempt["need_ids"])) <= set(needs), "unknown attempt need")
+        require(attempt["need_ids"] and set(strings(attempt["need_ids"])) <= set(needs), "Invalid attempt need references")
         text(attempt["tool"], True)
         text(attempt["input"])
         require(attempt["kind"] in {"search", "read"}, "invalid attempt kind")
@@ -178,6 +179,27 @@ def observations_view(value):
             receipt = obj(attempt["receipt"], ["reference", "material"])
             text(receipt["reference"], True)
             material(receipt["material"])
+            require(receipt["reference"] is not None or receipt["material"] is not None,
+                    "Empty receipt is not evidence")
+        if attempt["status"] == "observed":
+            require(attempt["tool"] is not None and attempt["receipt"] is not None,
+                    "Observed attempts require a tool and observation reference")
+        else:
+            require(attempt["outcome"] == "unknown" and count is None,
+                    "Unobserved attempts cannot claim a result")
+        if attempt["outcome"] in {"timeout", "denied", "error", "unknown"}:
+            require(count is None, "Unknown or failed result count cannot be zero")
+        if attempt["outcome"] == "empty":
+            require(attempt["kind"] == "search" and count == 0,
+                    "Empty search requires an observed zero count")
+        if attempt["kind"] == "read":
+            require(count is None, "Read observations are not search result counts")
+        if attempt["status"] == "observed" and attempt["outcome"] in {"success", "empty"}:
+            covered_by_observation.update(attempt["need_ids"])
+    for need in needs.values():
+        if need["status"] == "covered":
+            require(need["id"] in covered_by_observation,
+                    "Covered needs require an observed successful attempt, not just a declaration")
     sources = indexed(value["sources"], "id")
     for source in sources.values():
         obj(source, SOURCE_FIELDS)
@@ -189,14 +211,19 @@ def observations_view(value):
         if LEVELS[source["reading_level"]] > 0:
             require(source["reading_ref"] is not None, "assessed reading requires its recorded reference")
         require(source["access"] in {"public", "restricted", "unavailable", "unknown"}, "invalid access state")
-        require(set(strings(source["need_ids"])) <= set(needs), "unknown source need")
+        require(source["need_ids"] and set(strings(source["need_ids"])) <= set(needs), "Invalid source need references")
         require(set(strings(source["attempt_ids"])) <= set(attempts), "unknown source attempt")
         material(source["material"])
         locator_link(source["locator"])
     completion = obj(value["completion"], ["status", "reason", "residual_need_ids"])
     text(completion["reason"])
     require(completion["status"] in {"continue", "partial", "bounded-complete"}, "invalid completion state")
-    require(set(strings(completion["residual_need_ids"])) <= set(needs), "unknown residual need")
+    residual = set(strings(completion["residual_need_ids"]))
+    require(residual <= set(needs), "unknown residual need")
+    unresolved = {need["id"] for need in needs.values() if need["status"] != "covered"}
+    require(unresolved <= residual, "Unresolved needs must remain in the completion record")
+    if completion["status"] == "bounded-complete":
+        require(not residual, "Unresolved needs cannot be bounded-complete")
     return sources
 
 
