@@ -29,7 +29,8 @@ Not for:
 
 - A 5-page narrative literature review — that's a writing task.
 - Citation formatting — Zotero and the writing skill handle that.
-- Single-paper deep dive — use `paper-memory-builder`.
+- Single cited-paper deep dive — use `paper-summarize`; use
+  `paper-memory-builder` for the researcher's own manuscript claims and figures.
 
 ## Evidence contract
 
