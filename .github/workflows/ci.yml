@@ -18,7 +18,9 @@ concurrency:
 jobs:
   workspace:
     name: workspace UI, browser and installed wheel
-    runs-on: ubuntu-latest
+    # Pinned: on ubuntu-latest = 26.04, playwright 1.58.0 (below) refuses
+    # "install chromium" ("does not support chromium on ubuntu26.04-x64").
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
