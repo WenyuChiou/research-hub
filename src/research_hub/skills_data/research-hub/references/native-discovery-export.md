@@ -300,6 +300,55 @@ exceed the source's reading level. Abstract/excerpt/full-text claims need a
 non-null supplied locator. These checks bind presentation references; they do
 not establish that the claim is supported. No referenced material is opened.
 
+### Seven-section presentation (content 1.2)
+
+For an already authored per-paper summary, `native-reader-content/1.2` adds an
+optional record `sections` object. Keep 1.0/1.1 for existing flat summaries; their
+validation and output are unchanged. The 1.2 view also accepts the 1.1 translation
+overlay. It does **not** generate a summary or convert a Hub database envelope.
+
+When supplied, `sections` has exactly seven keys: `why`, `objective`, `methods`,
+`findings`, `conclusions`, `key_points`, `limitations`. Each holds 1–12 supplied
+items. Every item has exactly `id`, `text`, `status`, `reason`, `reading_level`,
+`reading_ref`, and nullable `locator`. For example, this is one **item**, not a
+complete content file:
+
+```json
+{
+  "id": "S1-conclusion-1",
+  "text": "The implication is tentative, rather than an author-reported result.",
+  "status": "analyst_inference",
+  "reason": "Caller-authored interpretation; not independently assessed.",
+  "reading_level": "excerpt",
+  "reading_ref": "saved-reading:S1",
+  "locator": "Discussion, paragraph 2"
+}
+```
+
+`status` is caller-supplied `supported`, `analyst_inference`, or `unknown`.
+Nonempty text and reason are required for **all** statuses; do not silently fill
+missing sections or upgrade unknowns. A supported annotation requires at least
+abstract-level reading and a supplied locator. Inference and unknown may have
+null locators. Every item retains the source's recorded reading reference and
+may only narrow, never expand, its reading level. An abstract/excerpt remains
+an abstract/excerpt even when all seven headings are supplied.
+
+Item IDs share the flat-claim namespace within a language. When an ID is reused
+across languages, its source/work/version, scope/reference/locator, section and
+status must match. A section item cannot become an unannotated flat claim in the
+other language. Text and reasons may differ as supplied translations, without
+asserting semantic parity. Languages can be sparse; missing sections or claims
+are not silently translated or invented.
+
+HTML displays each section, annotation, reason and supplied location; JSON
+preserves the supplied objects. Original observations, partial completion and
+residual needs stay unchanged. The renderer does not open source bytes, check
+quote offsets, establish entailment, certify a caller's `supported` annotation,
+or grant human acceptance. A valid structured presentation is not scientific
+validation, fulltext acquisition, or a complete Stage 1 execution. The optional
+Hub `native-source-summary-v1` schema separately binds owned saved evidence;
+this standalone view is not a replacement for or automatic import into it.
+
 Optional bibliography input uses `format: native-reader-bibliography/1.0` or
 `native-reader-bibliography/1.1` and a `records` array. Each record requires
 `source_id`, `work_id`, `version`,

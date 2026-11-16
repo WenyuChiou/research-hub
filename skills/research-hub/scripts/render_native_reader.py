@@ -22,6 +22,20 @@ LABELS = {
     "en": ("Stage 1 source reader", "Sources", "Recorded needs", "Completion", "Bibliography", "Provided category", "Provided summary", "Provided claims", "Limitations", "Not supplied", "Unknown version (null)"),
     "zh-TW": ("Stage 1 來源閱讀頁", "來源", "已記錄的研究需求", "完成狀態", "參考書目", "提供的分類", "提供的摘要", "提供的主張", "限制", "未提供", "版本未知（null）"),
 }
+SECTION_LABELS = {
+    "why": ("Why / motivation", "為什麼／研究動機"),
+    "objective": ("Objective", "目標／做什麼"),
+    "methods": ("Methods", "方法／怎麼做"),
+    "findings": ("Findings", "發現／結果"),
+    "conclusions": ("Conclusions", "結論"),
+    "key_points": ("Key points", "重點"),
+    "limitations": ("Limitations", "限制"),
+}
+ANNOTATION_LABELS = {
+    "supported": ("supported (caller annotation)", "supported（呼叫者標註支持）"),
+    "analyst_inference": ("analyst_inference (caller interpretation)", "analyst_inference（分析者推論）"),
+    "unknown": ("unknown (caller annotation)", "unknown（未知）"),
+}
 NOTICE = {
     "en": "Caller-provided observations and presentation only. Reading, source support, bibliography verification and translation parity are not attested. No inclusion or Stage 2 decision is made.",
     "zh-TW": "本頁僅呈現呼叫者提供的觀察與內容，不認證實際閱讀、來源支持、書目查核或翻譯對等性，也不作納入文獻或 Stage 2 決定。",
@@ -222,13 +236,39 @@ def observation_translations_view(value, observations, observations_sha256, sour
     return {"brief": value.get("brief"), "completion_reason": value.get("completion_reason"), "needs": needs, "sources": translated_sources}
 
 
+def sections_view(sections, source, claim_ids, shared_claims):
+    """Check supplied presentation annotations, not their semantic support."""
+    obj(sections, SECTION_LABELS)
+    for name in SECTION_LABELS:
+        items = rows(sections[name])
+        require(1 <= len(items) <= 12, "each section needs 1–12 supplied items")
+        for item in items:
+            obj(item, ["id", "text", "status", "reason", "reading_level", "reading_ref", "locator"])
+            key = text(item["id"])
+            require(key not in claim_ids, "duplicate claim identity")
+            claim_ids.add(key)
+            text(item["text"])
+            text(item["reason"])
+            annotation = text(item["status"])
+            require(annotation in ANNOTATION_LABELS, "unsupported semantic annotation")
+            level = text(item["reading_level"])
+            require(level in LEVELS and LEVELS[level] <= LEVELS[source["reading_level"]], "section item exceeds recorded reading scope")
+            require(item["reading_ref"] == source["reading_ref"], "section item reading reference differs from source")
+            text(item["locator"], True)
+            if annotation == "supported":
+                require(LEVELS[level] > 0 and item["locator"] is not None, "supported annotation needs assessed scope and supplied locator")
+            binding = identity(source) + [level, item["reading_ref"], item["locator"], "section", name, annotation]
+            require(key not in shared_claims or shared_claims[key] == binding, "cross-language section identity/scope/annotation mismatch")
+            shared_claims[key] = binding
+
+
 def content_view(value, language, sources, shared_claims, observations, observations_sha256):
     version = value.get("format") if isinstance(value, dict) else None
     optional = ["delivery_notes"]
-    if version == "native-reader-content/1.1":
+    if version in ("native-reader-content/1.1", "native-reader-content/1.2"):
         optional.append("observation_translations")
     obj(value, ["format", "language", "records"], optional)
-    require(isinstance(version, str) and version in {"native-reader-content/1.0", "native-reader-content/1.1"} and value["language"] == language, "requested language content is missing or mismatched")
+    require(isinstance(version, str) and version in {"native-reader-content/1.0", "native-reader-content/1.1", "native-reader-content/1.2"} and value["language"] == language, "requested language content is missing or mismatched")
     translations = None
     if "observation_translations" in value:
         translations = observation_translations_view(value["observation_translations"], observations, observations_sha256, sources)
@@ -236,7 +276,10 @@ def content_view(value, language, sources, shared_claims, observations, observat
         text(note)
     found, claim_ids = {}, set()
     for record in rows(value["records"]):
-        obj(record, "source_id work_id version reading_level reading_ref".split(), ["category", "summary", "limitations", "claims"])
+        record_optional = ["category", "summary", "limitations", "claims"]
+        if version == "native-reader-content/1.2":
+            record_optional.append("sections")
+        obj(record, "source_id work_id version reading_level reading_ref".split(), record_optional)
         source = joined(record, sources)
         require(source["id"] not in found, "duplicate source presentation")
         require(record["reading_level"] == source["reading_level"] and record["reading_ref"] == source["reading_ref"], "presentation changes recorded reading scope/reference")
@@ -261,6 +304,8 @@ def content_view(value, language, sources, shared_claims, observations, observat
             binding = identity(source) + [claim["reading_level"], claim["reading_ref"], claim["locator"]]
             require(key not in shared_claims or shared_claims[key] == binding, "cross-language claim identity/scope mismatch")
             shared_claims[key] = binding
+        if "sections" in record:
+            sections_view(record["sections"], source, claim_ids, shared_claims)
         found[source["id"]] = record
     return found, translations
 
@@ -446,6 +491,18 @@ def reader_html(language, observations, sources, content, bibliography, language
                 out.append('<p>' + esc(missing) + '</p>')
             for claim in record.get('claims', []):
                 out.extend(['<section id="claim-' + token([source['id'], claim['id']]) + '"><h5>' + esc(claim['id']) + '</h5><p>' + esc(claim['text']) + '</p>', paragraph(ui('Provided scope', '提供的範圍'), status(claim['reading_level'])), paragraph(ui('Recorded reference / supplied locator', '紀錄參照 / 提供的定位資訊'), (claim['reading_ref'] or missing) + ' / ' + (claim['locator'] or missing)), '</section>'])
+            if "sections" in record:
+                out.append('<h4>' + ui('Authored seven-section summary', '提供的七欄摘要') + '</h4>')
+                out.append('<p>' + ui('Statuses and reasons are caller annotations, not semantic verification. Unknowns and inferences remain distinct; reading scope is unchanged.', '狀態與理由是呼叫者標註，不代表語義驗證。未知與推論保持區別，閱讀範圍不變。') + '</p>')
+                for name, labels in SECTION_LABELS.items():
+                    out.append('<section><h5>' + ui(*labels) + '</h5>')
+                    for item in record['sections'][name]:
+                        out.extend(['<section id="claim-' + token([source['id'], item['id']]) + '"><h6>' + esc(item['id']) + '</h6><p>' + esc(item['text']) + '</p>',
+                                    paragraph(ui('Caller annotation', '呼叫者標註'), ui(*ANNOTATION_LABELS[item['status']])),
+                                    paragraph(ui('Supplied reason', '提供的理由'), item['reason']),
+                                    paragraph(ui('Provided scope', '提供的範圍'), status(item['reading_level'])),
+                                    paragraph(ui('Recorded reference / supplied locator', '紀錄參照 / 提供的定位資訊'), (item['reading_ref'] or missing) + ' / ' + (item['locator'] or missing)), '</section>'])
+                    out.append('</section>')
             out.append('<h4>' + esc(limits_label) + '</h4><ul>' + ''.join('<li>' + esc(v) + '</li>' for v in record.get('limitations', [])) + '</ul>')
             if source['id'] in bibliography:
                 out.append('<p><a href="#bib-' + bib_key(source) + '">' + esc(bib_label) + '</a></p>')
