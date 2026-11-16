@@ -49,7 +49,7 @@ def test_import_replay_read_and_stale(setup):
         n.import_summary('p', envelope=json.dumps(value))
 
 
-@pytest.mark.parametrize('raw', ['{"x":1,"x":2}', '{"x":"\\ud800"}', '{"x":"\\u0000"}', '{"x":NaN}', 'x' * 262145])
+@pytest.mark.parametrize('raw', ['{"x":1,"x":2}', '{"x":"\\ud800"}', '{"x":"\\u0000"}', '{"x":NaN}', 'x' * 262145], ids=['duplicate', 'surrogate', 'nul', 'nan', 'oversized'])
 def test_strict_json_portable(raw):
     with pytest.raises(WorkspaceError):
         parse(raw)
