@@ -174,18 +174,35 @@ class NativeReaderSectionsTests(unittest.TestCase):
         self.rejected()
 
     def test_missing_sections_stay_missing_and_legacy_bytes_unchanged(self):
-        self.observations, self.content, self.bibliography = fixture()
-        _, legacy, _ = self.prepare()
-        for content in self.content.values():
-            content['format'] = 'native-reader-content/1.2'
-        _, newer, _ = self.prepare()
-        for name in ('reader.en.html', 'reader.zh-TW.html'):
-            # Input hashes necessarily change; content presentation should not.
-            old = legacy[name].decode()
-            new = newer[name].decode()
-            self.assertNotIn('Authored seven-section', new)
-            self.assertNotIn('sections', json.loads(newer['native-reader.json'])['content']['en']['records'][0])
-            self.assertEqual(old.count('Provided claims'), new.count('Provided claims'))
+        for version in ('1.0', '1.1'):
+            with self.subTest(legacy_version=version):
+                self.observations, self.content, self.bibliography = fixture()
+                for content in self.content.values():
+                    content['format'] = 'native-reader-content/' + version
+                _, legacy, legacy_manifest = self.prepare()
+                for content in self.content.values():
+                    content['format'] = 'native-reader-content/1.2'
+                _, newer, newer_manifest = self.prepare()
+                exported = json.loads(newer['native-reader.json'])
+                for language in ('en', 'zh-TW'):
+                    for record in exported['content'][language]['records']:
+                        self.assertNotIn('sections', record)
+                    name = 'reader.' + language + '.html'
+                    old = legacy[name].decode()
+                    new = newer[name].decode()
+                    # The format change alters only these two content-input
+                    # digests. Normalize their exact, uniquely occurring values,
+                    # not the footer, all hashes, or arbitrary HTML content.
+                    for input_language in ('en', 'zh-TW'):
+                        old_hash = legacy_manifest['inputs'][input_language]['sha256']
+                        new_hash = newer_manifest['inputs'][input_language]['sha256']
+                        self.assertNotEqual(old_hash, new_hash)
+                        self.assertEqual(old.count(old_hash), 1)
+                        self.assertEqual(new.count(new_hash), 1)
+                        marker = 'CONTENT_SHA256[' + input_language + ']'
+                        old = old.replace(old_hash, marker)
+                        new = new.replace(new_hash, marker)
+                    self.assertEqual(old, new, (version, language))
 
     def test_section_prose_reason_and_locator_are_escaped(self):
         for content in self.content.values():
