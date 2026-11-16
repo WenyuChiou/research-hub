@@ -157,7 +157,7 @@ class WorkflowContracts(unittest.TestCase):
                 self.assertNotIn("if", install)
             if name == "workspace":
                 install = next(s for s in job["steps"] if s.get("name") == "Install test tooling and build wheel")
-                self.assertIn("pip install build 'playwright>=1.59'", install["run"])
+                self.assertIn("pip install build playwright==1.58.0", install["run"])
                 self.assertNotIn("if", install)
         self.assertEqual(cached, 4)
 
