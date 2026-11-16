@@ -1,9 +1,12 @@
 """Synthetic presentation tests; no source reading or semantic assessment."""
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from tests.test_native_reader import fixture, reader
 
@@ -14,7 +17,7 @@ class NativeReaderSectionsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='reader-sections-')
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.observations, self.content, self.bibliography = fixture()
         for language, content in self.content.items():
             content['format'] = 'native-reader-content/1.2'
@@ -41,6 +44,27 @@ class NativeReaderSectionsTests(unittest.TestCase):
         with self.assertRaises(reader.ReaderError):
             self.prepare()
         self.assertFalse((self.root / 'output').exists())
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX temporary-directory alias probe')
+    def test_fixture_canonicalizes_owned_temp_alias_without_relaxing_reader(self):
+        actual = self.root / 'actual-temp'
+        actual.mkdir()
+        alias = self.root / 'linked-temp'
+        alias.symlink_to(actual, target_is_directory=True)
+        probe = NativeReaderSectionsTests('test_seven_sections_three_states_roundtrip_and_reopen')
+        with patch('tests.test_native_reader_sections.tempfile.TemporaryDirectory',
+                   return_value=SimpleNamespace(name=str(alias), cleanup=lambda: None)):
+            probe.setUp()
+        try:
+            self.assertEqual(probe.root, actual.resolve())
+            probe.prepare()
+            # Only this owned test fixture is canonicalized; the production
+            # boundary must still refuse a caller-supplied linked path.
+            probe.root = alias
+            with self.assertRaisesRegex(reader.ReaderError, 'linked paths are not supported'):
+                probe.prepare()
+        finally:
+            probe.doCleanups()
 
     def test_seven_sections_three_states_roundtrip_and_reopen(self):
         inputs, files, manifest = self.prepare()
