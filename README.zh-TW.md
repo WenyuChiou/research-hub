@@ -129,6 +129,8 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 Native reader 可整理提供的研究摘要、來源索引與書目，也可附上明確提供的 PDF。PDF 僅原封複製並提供下載；這不代表它已被解析、翻譯、驗證或全文閱讀。原生閱讀器可將使用者提供的翻譯與原始觀察並列，並標示為未經驗證；閱讀器不會產生翻譯或驗證翻譯的準確性。提供翻譯的格式請見[原生閱讀器匯出指南](src/research_hub/skills_data/research-hub/references/native-discovery-export.md)。
 
+**來源摘要的版本界線：** 上方快速開始刻意固定在已驗證的舊工作區示範 `1f0726a7`，不是後續 Stage 1 更新的安裝步驟。原始碼版本 `231f9fbd` 的[已撰寫來源摘要 CLI](docs/cli-reference.md#native-authored-source-summaries)可保存並讀回明確提供的七欄摘要，綁定當前來源與證據；使用前請閱讀[摘要契約](docs/native-source-summary.md)。這是匯入既有內容，不會生成摘要、認定科學支持或記錄人工接受。原始碼版本與實際安裝入口必須分開核對，不能只看套件版本號相同。
+
 更多 skill 與 AI 主機安裝方式，見 [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills)、[AI 主機支援表](docs/ai-host-support.md)及 [MCP／REST 整合](docs/ai-integrations.md)。可選的 Hub 結果儲存與檢視邊界見[已儲存成果契約](docs/contracts/native-discovery-view.md)。
 
 ## 寫作、審查與交付

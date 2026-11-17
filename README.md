@@ -128,6 +128,8 @@ Then ask to focus on economic decisions and compare human baselines and evaluati
 
 The native reader can organize supplied research summaries, source indexes, and bibliographies, and attach a PDF explicitly supplied by the user. The PDF is copied unchanged for download; that does not mean it was parsed, translated, verified, or read in full. The reader can display caller-supplied translations alongside original observations, labeled unverified; it does not generate translations or verify their accuracy. See the [native reader export guide](src/research_hub/skills_data/research-hub/references/native-discovery-export.md) for the supplied-translation format.
 
+**Version boundary for source summaries:** the quick-start above intentionally pins the older, verified workspace demo at `1f0726a7`; it is not a setup recipe for the later Stage 1 changes. At source revision `231f9fbd`, the [authored source-summary CLI](docs/cli-reference.md#native-authored-source-summaries) can save and read an explicitly authored seven-section summary with current source/evidence bindings. Read the [summary contract](docs/native-source-summary.md) before using it. This imports supplied content; it does not generate summaries, establish scientific support, or record human acceptance. The source revision and installed entrypoint must be checked separately; a matching package version alone is not enough.
+
 See [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills), the [AI host support matrix](docs/ai-host-support.md), and [MCP/REST integration](docs/ai-integrations.md). The optional [saved-result contract](docs/contracts/native-discovery-view.md) describes what a Hub handoff stores and its platform boundaries.
 
 ## Write, review, and deliver
