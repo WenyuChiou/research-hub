@@ -22,7 +22,7 @@ def _require(text, clauses):
 
 @pytest.mark.parametrize("tree", [SOURCE, MIRROR], ids=["source", "packaged"])
 def test_native_route_and_legacy_cli_remain_distinct(tree):
-    text = (tree / "paper-summarize/SKILL.md").read_text()
+    text = (tree / "paper-summarize/SKILL.md").read_text(encoding="utf-8")
     _require(text, (
         "## Native per-paper body summary",
         "references/fulltext-summary.md",
@@ -38,7 +38,7 @@ def test_native_route_and_legacy_cli_remain_distinct(tree):
 
 @pytest.mark.parametrize("field", FIELDS)
 def test_fulltext_contract_preserves_every_question(field):
-    text = (SOURCE / REL).read_text()
+    text = (SOURCE / REL).read_text(encoding="utf-8")
     assert f"(`{field}`)" in text
 
 
@@ -56,18 +56,18 @@ GUARDS = (
 
 
 def test_scope_semantics_and_destination_boundaries():
-    _require((SOURCE / REL).read_text(), GUARDS)
+    _require((SOURCE / REL).read_text(encoding="utf-8"), GUARDS)
 
 
 @pytest.mark.parametrize("missing", GUARDS)
 def test_mutated_guidance_cannot_silently_drop_a_boundary(missing):
-    text = (SOURCE / REL).read_text()
+    text = (SOURCE / REL).read_text(encoding="utf-8")
     with pytest.raises(AssertionError, match="missing guidance"):
         _require(text.replace(missing, ""), GUARDS)
 
 
 def test_observed_timing_preserves_identity_and_overlap():
-    text = (SOURCE / "research-hub/references/research-protocol.md").read_text()
+    text = (SOURCE / "research-hub/references/research-protocol.md").read_text(encoding="utf-8")
     _require(text, (
         "## Measure the observed stages",
         "new work identities from new source files/versions",
@@ -80,7 +80,7 @@ def test_observed_timing_preserves_identity_and_overlap():
 
 
 def test_evals_cover_fulltext_abstract_domain_timing_and_export():
-    rows = json.loads((SOURCE / "paper-summarize/evals/evals.json").read_text())["evals"]
+    rows = json.loads((SOURCE / "paper-summarize/evals/evals.json").read_text(encoding="utf-8"))["evals"]
     native = rows[4:]
     assert len(native) == 5
     for needle in ("Hub is not installed", "only its abstract", "qualitative archival", "parallel", "adapter only accepts abstract"):
@@ -105,8 +105,8 @@ def test_installation_copies_the_full_native_contract(tmp_path, monkeypatch):
 
 
 def test_plugin_cache_version_changes_but_frozen_abstract_profile_does_not():
-    plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
-    assert plugin["version"] == "0.5.32"
+    plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    assert plugin["version"] == "0.5.33"
     frozen = MIRROR / "_profiles/abstract-draft-instructions-v1/paper-summarize/SKILL.md"
-    assert "abstract" in frozen.read_text().lower()
-    assert "## Native per-paper body summary" not in frozen.read_text()
+    assert "abstract" in frozen.read_text(encoding="utf-8").lower()
+    assert "## Native per-paper body summary" not in frozen.read_text(encoding="utf-8")
