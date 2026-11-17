@@ -3,7 +3,7 @@
   "evals": [
     {
       "prompt": "Find me 5 recent papers on agent-based modeling and put them in a notebook.",
-      "expected_behavior": "Drive `research-hub auto \"agent-based modeling\" --max-papers 5` end-to-end: search, ingest into Zotero + Obsidian, bundle + upload + generate brief in NotebookLM."
+      "expected_behavior": "Clarify only the unresolved notebook destination before any write; reuse any destination choice already supplied. Do not infer Zotero, Obsidian or NotebookLM from the word notebook. Continue discovery with available native tools within existing authorization while a destination is unresolved; use Hub only if selected and available. Five relevant distinct works is a target, not a quota. Preserve source identities, versions and actual reading depth. Execute only authorized writes to the selected destination and report its observed receipt separately from reading or scientific acceptance."
     },
     {
       "prompt": "Ingest the PDFs in ./papers into a cluster called my-review.",
@@ -16,6 +16,14 @@
     {
       "prompt": "Backfill missing tags and notes on my Zotero items.",
       "expected_behavior": "Dry-run first with `research-hub zotero backfill --tags --notes`; surface the report; only run `--apply` after the user confirms."
+    },
+    {
+      "prompt": "Find about 12 papers on human-agent decision behavior, abstracts first and two core papers closely. No storage; Research Hub is not installed.",
+      "expected_behavior": "Use available native search, reading and citation-following tools under references/research-protocol.md. Do not require Hub installation, JSON, integration accounts or credentials. Do not repeat supplied count/depth choices. Search topical, closest and contrary/boundary paths proportionately, preserve failures and uncovered needs, and do not pad to 12. Deduplicate work identities while retaining versions; report actual reading scope and assessed versus unassessed claims. Deliver a readable native result with no destination writes; missing CLI is not overall research failure."
+    },
+    {
+      "prompt": "Continue this literature review: one search timed out, another paper has only an abstract, and the closest study has conflicting preprint and journal claims.",
+      "expected_behavior": "Keep the timeout as a failed attempt, not zero results. Keep the abstract-only reading limit and bind each supported claim to its exact version and inspected sections. Investigate the version conflict through available authorized sources; retain unresolved claims and needs if no safe route remains. Return partial while load-bearing needs remain unresolved, with the next bounded step. Do not manufacture receipts, silently transfer support between versions or infer full reading from saved files. This search is not proof of novelty."
     }
   ]
 }
