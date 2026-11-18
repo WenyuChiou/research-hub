@@ -19,10 +19,27 @@ The `reading_scope` is copied exactly from source metadata, or `unknown` if abse
 It is a declared boundary, not verification that the entire paper was read. Hashes
 never establish full-paper coverage. No private text enters fixtures or logs.
 
-File reads pin every ancestor and leaf using POSIX no-follow descriptors. Absolute
-paths, traversal, backslashes, symlinks and non-regular files are rejected. On
-platforms without the required primitives, file access fails closed; this is not a
-Windows intake implementation. Import files must be relative to the workspace.
+## Safe file-read support
+
+Both evidence-file reads and authored-envelope file imports require a
+workspace-relative regular file. Absolute input paths, traversal, backslashes
+and non-regular files are rejected.
+
+- **POSIX:** no-follow, directory-relative descriptors reject symbolic links.
+  Reads keep the selected directory and leaf open, then recheck the selected
+  directory's location before returning bytes.
+- **Windows:** handle-relative reads are supported when the workspace is on a
+  fixed local drive. They keep every ancestor and the leaf pinned until the read
+  stream closes, and reject reparse points (including junctions and symbolic
+  links), ambiguous Windows names and incompatible sharing conflicts. UNC paths
+  and mapped network drives are not supported by this local-file route.
+
+Unsupported capabilities and unsafe or unavailable inputs fail closed, with
+no permissive path-open fallback. This read support does not enable Windows
+source-text/file-drop publication; that separate copy-and-register operation
+retains its own platform gate. It also does not enable or migrate BLOB storage.
+Backend support is not evidence that a user's installed host has been upgraded
+or accepted.
 
 ## Operations
 

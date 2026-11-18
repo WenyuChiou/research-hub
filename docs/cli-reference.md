@@ -459,4 +459,5 @@ file. `research-hub project native-summary-read --root ROOT --project PROJECT --
 reads it only while the source/evidence binding remains current. These commands
 run no model and do not mark human acceptance. See
 [native source summaries](native-source-summary.md) for schema, scope, Unicode
-coordinates, history limits, POSIX file-access limits, and revision semantics.
+coordinates, history limits, platform-specific safe-read limits, and revision
+semantics.
