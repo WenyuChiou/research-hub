@@ -23,7 +23,7 @@ def test_selected_hub_entry_resolves_and_preserves_scope():
             assert clause in section
 
 
-@pytest.mark.parametrize('operation', ['context', 'import', 'read', 'export'])
+@pytest.mark.parametrize('operation', ['context', 'compose', 'import', 'read', 'export'])
 def test_documented_selected_hub_commands_exist_without_opening_workspace(operation, tmp_path):
     import research_hub
     env = {**os.environ, 'PYTHONPATH': str(Path(research_hub.__file__).resolve().parent.parent)}
@@ -35,3 +35,15 @@ def test_documented_selected_hub_commands_exist_without_opening_workspace(operat
     assert result.returncode == 0, result.stderr
     assert '--root' in result.stdout and '--project' in result.stdout
     assert list(tmp_path.iterdir()) == before
+
+
+def test_compose_guidance_preserves_snapshot_and_authority_boundaries():
+    source = ROOT / 'skills/paper-summarize/references/fulltext-summary.md'
+    mirror = ROOT / 'src/research_hub/skills_data/paper-summarize/references/fulltext-summary.md'
+    assert source.read_bytes() == mirror.read_bytes()
+    guide = ' '.join(source.read_text(encoding='utf-8').split())
+    for clause in ('native-summary-compose --help', 'binding: snapshot_only',
+                   'not a saved or live-verified receipt', 'never refreshes a conflict',
+                   'Ambiguous/missing quotes are rejected', 'Do not redirect over either input file',
+                   'import rechecks live', 'without shifting reconstruction to the researcher'):
+        assert clause in guide

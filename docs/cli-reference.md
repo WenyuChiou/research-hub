@@ -453,6 +453,13 @@ support. Existing saved data is not migrated by this change.
 
 `research-hub project native-summary-context --root ROOT --project PROJECT --source-record-id DBID --selections JSON --json`
 returns exact current source/evidence bindings and bounded selected text.
+`research-hub project native-summary-compose --root ROOT --project PROJECT --source-record-id DBID --context-path context.json --sections-path sections.json`
+optionally composes an authored envelope from two explicit snapshot/section files
+without opening or writing the DB. Only exact unique quotes gain omitted Unicode
+offsets. Default stdout is compact import-ready JSON; `--json` adds an inspection
+wrapper with `binding: snapshot_only`. Neither is a save or live binding check.
+Keep output private and never redirect over inputs. Context/section input limits
+are 512/256 KiB; safe reads and the 256 KiB saved-envelope limit remain enforced.
 `research-hub project native-summary-import --root ROOT --project PROJECT --path authored.json --json`
 imports one explicit authored seven-section envelope from a workspace-relative
 file. `research-hub project native-summary-read --root ROOT --project PROJECT --source-record-id DBID --json`

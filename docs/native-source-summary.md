@@ -81,6 +81,51 @@ markers as envelope fields. The saved summary adds `saved_at`,
 `human_acceptance: pending`, `semantic_support: not_assessed`. This schema records
 an explicit authored import, not a provider execution receipt or human approval.
 
+## Optional bounded draft composition
+
+After reading the selected material, an agent can prepare only the seven-section
+object instead of manually reconstructing the binding header and quote offsets.
+This is an optional snapshot preview, not a save, model run, semantic assessment,
+live source check or acceptance. Existing context/import/read/export remain usable
+without it; verify `project native-summary-compose --help` on the actual install.
+
+Save the unchanged context command result as a private `context.json` under the
+selected root. Both the inner context object and the exact `{ok: true, context}`
+wrapper are accepted. Prepare a private `sections.json` containing exactly the
+seven section arrays described above. Item text, status and reason are authored,
+not generated or reclassified by this command. Evidence objects must name the
+selected `artifact_id` and exact `quote`. They may omit both `start` and `end`:
+only a unique literal occurrence inside that artifact's selected text supplies
+absolute file/Python-Unicode coordinates. Repeated or absent quotes are rejected.
+Explicit coordinates must already be correct; no normalization, repair, cross-file
+search or first-match fallback occurs.
+
+```bash
+research-hub project native-summary-compose --root ROOT --project PROJECT \
+  --source-record-id DBID --context-path context.json --sections-path sections.json
+```
+
+Default stdout is compact import-ready JSON, not a saved/live-verified receipt.
+`--json` returns an inspection wrapper with `mode: preview`,
+`binding: snapshot_only`, `envelope`, and pending/not-assessed markers. Do not
+submit that wrapper to import. The command never opens or initializes the DB,
+writes files, imports a draft, reads unselected artifacts, or calls a provider.
+It safely reads only those two explicit workspace-relative regular files. The
+same pinned-read platform and no-follow restrictions above apply. Context JSON
+is at most 512 KiB, section JSON 256 KiB. Duplicate keys, nonfinite numbers,
+invalid UTF-8, invalid shapes and excessive nesting fail closed. The composed
+envelope reserves saved-marker overhead within the existing 256 KiB limit.
+
+Keep snapshots/output private. Any permitted stdout redirection is a separate
+shell write; never redirect onto an input file. The agent handles the authorized
+file handoff, not manual researcher JSON reconstruction. A declared project and
+source must match the snapshot, but a snapshot can be old or caller-modified:
+this command cannot establish live ownership/freshness. Source identity, scope,
+hashes and revisions are copied unchanged, never refreshed to avoid conflicts.
+Use the existing explicit import only within write authorization; it independently
+rechecks live evidence/source and compare-and-save revisions. On a conflict,
+preserve the draft and reconcile. A successful preview does not authorize save.
+
 ## Revisions, history and reads
 
 `source_revision` hashes the source record excluding only its top-level
