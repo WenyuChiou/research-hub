@@ -106,7 +106,7 @@ def test_installation_copies_the_full_native_contract(tmp_path, monkeypatch):
 
 def test_plugin_cache_version_changes_but_frozen_abstract_profile_does_not():
     plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-    assert plugin["version"] == "0.5.33"
+    assert plugin["version"] == "0.5.34"
     frozen = MIRROR / "_profiles/abstract-draft-instructions-v1/paper-summarize/SKILL.md"
     assert "abstract" in frozen.read_text(encoding="utf-8").lower()
     assert "## Native per-paper body summary" not in frozen.read_text(encoding="utf-8")

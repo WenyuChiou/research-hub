@@ -114,7 +114,7 @@ No Hub setup is required for the native readable summary above.
 1. Check the installed Hub actually exposes `project native-summary-context`,
    `native-summary-import`, `native-summary-read` and `native-summary-export`.
    A package version or this skill being present does not prove availability.
-   Read the [version-bound operation contract](https://github.com/WenyuChiou/research-hub/blob/e76e7ac40293592b17ba155e7f437b2f5742a7c5/docs/native-source-summary.md)
+   Read the [version-bound operation contract](https://github.com/WenyuChiou/research-hub/blob/38fa9128bf7c17652bd98ee3ebb37e494762d3a8/docs/native-source-summary.md)
    before using it, and check that it matches the available implementation.
    If the commands or contract cannot be verified, return the readable summary
    and report Hub persistence as pending; do not silently install or upgrade.
@@ -127,12 +127,37 @@ No Hub setup is required for the native readable summary above.
    quotations to the selected text and exact coordinates. Follow the contract's
    complete schema and limits, not an improvised JSON shape. Do not substitute
    `paper-abstract-draft` or change a claim's status to make an import pass.
+   If `project native-summary-compose --help` confirms the optional preview
+   command is installed, the agent can prepare only the seven sections in a
+   private workspace-relative `sections.json`. Each item still has exactly
+   `text`, `status`, `reason` and `evidence`. Each quote names its selected
+   `artifact_id`; omit both `start`/`end` only for an exact unique literal quote.
+   Save the original context result unchanged in a private `context.json`, then
+   run `project native-summary-compose --root ROOT --project PROJECT
+   --source-record-id DBID --context-path context.json --sections-path sections.json`.
+   This emits compact import-ready JSON on stdout, without opening or writing
+   the database. It does not automatically save a file or run import. With
+   `--json`, inspect the wrapper's `binding: snapshot_only` and `envelope`.
+   Default stdout is an authored envelope, not a saved or live-verified receipt.
+   Keep output private; the agent handles authorized local file delivery, not
+   manual researcher copy/paste. Do not redirect over either input file.
+   Preview copies source identity, hashes, scope and revisions unchanged. It
+   never refreshes a conflict. Ambiguous/missing quotes are rejected; inspect
+   selected text and provide verified Unicode offsets or correct the draft,
+   never pick the first occurrence or downgrade a status to pass. JSON input
+   files are limited to 512 KiB for context and 256 KiB for sections, and the
+   complete saved envelope must still fit 256 KiB. Preview does not establish
+   current ownership, freshness or scientific support; import rechecks live
+   bindings and compare-and-save revisions. If compose is absent or fails,
+   retain the readable result. The agent may use the strict manual envelope
+   contract when available, without shifting reconstruction to the researcher.
 4. Import only within authorized scope using `native-summary-import`, then
    check `native-summary-read` for the selected source. A conflict or validation
    failure is not a save: preserve the readable result, inspect the cause and
    refresh/reconcile before any retry rather than overwrite concurrent work.
-   File-backed intake requires supported POSIX pinned reads; on unsupported
-   platforms, report the limit without enabling BLOB storage or a path fallback.
+   File-backed intake and compose require supported pinned reads (POSIX or
+   fixed-local-drive Windows). On unsupported platforms, report the limit
+   without enabling BLOB storage or a path fallback.
 5. When a Markdown transfer is requested, use `native-summary-export` only for
    that source. `current` permits prose; `missing`, `stale` or `unavailable` does
    not. Preserve all seven sections, source binding, support labels and

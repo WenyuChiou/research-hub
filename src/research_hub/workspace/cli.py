@@ -13,7 +13,7 @@ from .tasks import _LOCAL_HUMAN
 
 def add_workspace_parsers(subparsers):
     for resource, operations in {
-        "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay", "native-summary-context", "native-summary-import", "native-summary-read", "native-summary-export"),
+        "project": ("create", "demo", "list", "show", "register", "record", "search", "discovery-check", "discovery-save", "discovery-replay", "native-summary-context", "native-summary-compose", "native-summary-import", "native-summary-read", "native-summary-export"),
         "manuscript": ("bind", "state", "audit", "impact"),
         "task": ("audit-batch", "create", "list", "show", "run", "handoff", "import", "decide", "cancel", "recover"),
         "action": ("prepare", "show", "decide", "execute", "reconcile"),
@@ -44,8 +44,12 @@ def add_workspace_parsers(subparsers):
                 parser.add_argument("--path", required=True, help="Explicit native observations JSON inside root")
             if resource == "project" and operation == "discovery-replay":
                 parser.add_argument("--artifact-id", required=True)
-            if resource == "project" and operation in {"native-summary-context", "native-summary-read", "native-summary-export"}:
+            if resource == "project" and operation in {"native-summary-context", "native-summary-compose", "native-summary-read", "native-summary-export"}:
                 parser.add_argument("--source-record-id", required=True)
+            if resource == "project" and operation == "native-summary-compose":
+                parser.description = "Read-only snapshot preview; not a save, live binding check or semantic assessment."
+                parser.add_argument("--context-path", required=True, help="Saved context JSON, relative to root (512 KiB maximum)")
+                parser.add_argument("--sections-path", required=True, help="Seven authored sections JSON, relative to root (256 KiB maximum)")
             if resource == "project" and operation == "native-summary-context":
                 parser.add_argument("--selections", required=True, help="JSON list of artifact_id/start/end selections")
             if resource == "project" and operation == "native-summary-import":
@@ -150,7 +154,11 @@ def dispatch_workspace(args) -> int:
                 raise WorkspaceError("Decision not confirmed; task remains pending", "human_required")
             values["action_hash"] = action_hash
             proof = _LOCAL_HUMAN
-        if source_preview:
+        if resource == "project" and operation == "native-summary-compose":
+            from .native_summary_handoff import preview
+            result = preview(args.root, args.project, source_record_id=args.source_record_id,
+                             context_path=args.context_path, sections_path=args.sections_path)
+        elif source_preview:
             from .source_handoff import parse_preview_snapshot, preview_source_batch, preview_source_handoff
             if batch:
                 snapshot = parse_preview_snapshot(existing_records) if existing_records is not None else None
@@ -163,7 +171,12 @@ def dispatch_workspace(args) -> int:
             result = call_workspace(args.root, resource, operation, values, proof=proof)
     except (ValueError, OSError, EOFError) as exc:
         result = {"ok": False, "error": str(exc), "code": getattr(exc, "code", "invalid_request")}
-    if operation == "native-summary-export" and result.get("ok") and not args.json:
+    if operation == "native-summary-compose" and result.get("ok") and not args.json:
+        # Compact import-ready JSON: pretty printing could exceed the import
+        # byte limit even though the composed envelope passed its exact budget.
+        from .core import encoded
+        print(encoded(result["envelope"]))
+    elif operation == "native-summary-export" and result.get("ok") and not args.json:
         print(result["markdown"], end="")
     else:
         print(json.dumps(result, ensure_ascii=False, indent=2))
