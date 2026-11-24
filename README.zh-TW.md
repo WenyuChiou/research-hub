@@ -2,7 +2,7 @@
 
 # research-hub
 
-給研究者的本機工作區：整理文獻、證據與稿件，並由你審查 AI 提案。
+給研究者的本機工作區：串聯 AI 助理（Claude Code、Codex）與 **Zotero** 文獻狀態、**Obsidian** 筆記、**NotebookLM** 來源簡報及人工審查的論文草稿。
 
 繁體中文 · [English](README.md) · [工作區指南](docs/workspace-guide.zh-TW.md) · [安裝指南](docs/setup.md) · [開發者架構](docs/workspace-architecture.md)
 
@@ -10,11 +10,11 @@
 
 ## 為什麼使用 research-hub？
 
-研究散落在文獻、筆記、分析結果和稿件之間。一篇論文可能影響研究問題，一份資料更新可能讓某個結論或稿件段落需要重新檢視。research-hub 提供本機工作區，讓研究者與 AI 助理能記錄這些關聯、交接任務，並在採納提案前進行人工審查。
+文獻探索發生在 AI 助理對話中，而真正的研究工作則分散在 Zotero 文獻庫、Obsidian 筆記、NotebookLM 簡報、分析腳本與論文稿件之間。`research-hub` 將這些環節整合成單一可檢視的本機工作區，並與 [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills) 搭配支援 Stage 1–2 的探索到整理流程：
 
-- **保留脈絡：** 將研究問題、來源、證據、結果與稿件放在同一個專案中，而不只留在對話歷史裡。
-- **追蹤變動：** 登錄檔案路徑與檔案指紋（hash），協助辨識檔案是否改變，再檢視可能需要重新審查的工作。
-- **保留決策權：** AI 工作產生的提案要經人工檢視；本機交付也需要另行核准。
+- **建築在你的 AI 主機原生搜尋上：** 由 Claude Code 或 Codex 使用其原生搜尋與閱讀工具找文獻、讀原文，不強迫先經過獨立關鍵字腳本。
+- **一眼掌握 Zotero、Obsidian 與 NotebookLM 狀態：** 檢視 Zotero 收錄狀態、將結構化筆記或七段來源綁定摘要寫入 Obsidian 主題群組，並打包已驗證來源送入 NotebookLM。
+- **追蹤變動與保留人類決策權：** 登錄本機檔案雜湊以偵測需要重審的證據或稿件段落；所有 AI 提案與寫入都必須先經人工核准。
 
 ![概念圖：研究問題串連文獻、證據、分析、稿件提案與人工審查；輸入變動後，相關工作需要重新檢視。](docs/images/workspace-lifecycle.zh-TW.png)
 
@@ -22,11 +22,14 @@
 
 ![兩個起點：在工具可用的相容 AI 主機中研究，不必安裝 Hub；或安裝 Hub，檢視已保存來源與提案。任務交接是選用步驟。由人檢視來源與證據；保存不等於閱讀或核准，也不會自動發布。](docs/images/research-entry-paths.zh-TW.svg)
 
-**使用現有 AI 主機：** 需要可用的搜尋與閱讀工具，以及[可攜式技能與參考檔案](skills/research-hub/)。不需要安裝 Hub，也不需要 Zotero、Obsidian 或 NotebookLM。請見[技能載入方式](docs/setup.md#installed-skill-files)與[主機支援表](docs/ai-host-support.md)；Codex MCP 尚未通過版本發布驗證。
+1. **直接在現有 AI 主機開始（免裝 Hub）：**
+   - **前置條件：** 需要可用的搜尋與閱讀工具，以及[可攜式技能與參考檔案](skills/research-hub/)。不需要安裝 Hub，也不需要 Zotero、Obsidian 或 NotebookLM。請見[技能載入方式](docs/setup.md#installed-skill-files)與[主機支援表](docs/ai-host-support.md)；Codex MCP 尚未通過版本發布驗證。
+   - **第一個請求：**「幫我找 LLM 模擬人類決策的文獻，列出來源連結、相關性、版本及實際讀取範圍。」
+   - **預期成果：** 預期在主機中取得來源清單，明列未知資訊與不可用的工具或來源，不自動宣稱全文已讀，也不會未經要求寫入檔案。
 
-**第一個請求：**「幫我找 LLM 模擬人類決策的文獻，列出來源連結、相關性、版本及實際讀取範圍。」預期在主機中取得來源清單，明列未知資訊與不可用的工具或來源，不代表自動全文閱讀或保存到 Hub。
-
-**使用 Hub 工作區：** 需要 Python 3.10+、Git 及本機瀏覽器。[依下方已測試的示範安裝並啟動](#workspace-preview)，檢視兩筆種子書目及其讀取限制。選用的[成果保存](docs/contracts/native-discovery-view.md)與[任務交接](docs/workspace-guide.zh-TW.md#writing-adapter-preview)需要選定目的地與授權。
+2. **使用 Hub 工作區（保存書目、整合三端與視覺化檢視）：**
+   - **前置條件：** Python 3.10+、Git 及本機瀏覽器。
+   - [依下方已測試的示範安裝並啟動](#workspace-preview)，檢視兩筆種子書目及其讀取限制。選用的[成果保存](docs/contracts/native-discovery-view.md)與[任務交接](docs/workspace-guide.zh-TW.md#writing-adapter-preview)需要選定目的地與授權。
 
 <a id="start-here"></a>
 <a id="first-run-checklist"></a>
@@ -37,9 +40,7 @@
 
 ### 在本機試用工作區
 
-想使用 Hub 工作區，請選這條路徑；如果只想看已發布的舊版文獻儀表板，再看下面的選項。
-
-需要 Python 3.10+ 與 Git。以下從原始碼安裝工作區，並在**新建或空白的** `workspace-demo` 目錄建立示範資料。這條路徑與 PyPI 發布套件不同：套件版本號不保證包含目前原始碼的工作區功能。
+使用以下原始碼安裝步驟，在**新建或空白的** `workspace-demo` 目錄啟動本機互動工作區。原始碼工作區與 [PyPI 套件](https://pypi.org/project/research-hub-pipeline/)為不同發布線，套件版本號不代表包含最新原始碼功能。
 
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
@@ -48,7 +49,7 @@ git fetch origin 1f0726a7e92a1231e633963f17236a2f5c1eab8f
 git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f
 ```
 
-依作業系統選一組指令。這裡直接呼叫虛擬環境的 Python，不需要啟用腳本或變更 PowerShell 執行原則。安裝相依套件需要網路。
+依作業系統選擇以下指令（直接呼叫虛擬環境 Python，無需啟用腳本；安裝相依套件需連線網路）：
 
 **macOS / Linux**
 
@@ -61,8 +62,6 @@ python3 -m venv .venv
 
 **Windows PowerShell**
 
-一個 Windows 測試環境使用較早的 `14ddc070` 原始碼建立示範時遇到 `WinError 5`，原因尚未確定。請參閱[驗證與環境紀錄](docs/readme-verification-history.md)。
-
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
@@ -74,22 +73,25 @@ py -3 -m venv .venv
 
 1. 開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)，選 **繁體中文**，再在**專案**選擇 `DEMO: floating-point reading and review outline`（`review-demo`）。
 2. 開啟**文獻**，選取 **What Every Computer Scientist Should Know About Floating-Point Arithmetic**。
-3. 清單應有兩筆種子書目。所選來源會顯示 DOI `10.1145/103162.103163`、**尚未驗證**、**範圍未知**及**尚未保存摘要**。這是預期的示範狀態：沒有下載或摘要來源全文，附帶的篩選決定只是範例，不是你的審查結果。
+3. 清單應有兩筆種子書目。所選來源會顯示 DOI `10.1145/103162.103163`、**尚未驗證**、**範圍未知**及**尚未保存摘要**。這是預期的示範狀態：沒有下載或摘要全文，附帶的篩選決定只是範例，不是你的審查結果。
 
-另一個專案 `DEMO: three floating-point summation cases`（`summation-demo`）包含數值範例與稿件骨架；它的文獻清單是空的。兩個專案都不需要帳號，內容是教學輸入，不是已接受的研究。
+使用期間請保持終端機執行（按 `Ctrl+C` 停止）；之後重啟只需執行 `serve --workspace --root ./workspace-demo`。要管理自己的檔案，請見[使用自己的專案](docs/workspace-guide.zh-TW.md#使用自己的專案)。
 
-使用工作區時請保持終端機執行；按 `Ctrl+C` 停止。下次只需重跑上方 `serve --workspace --root ./workspace-demo` 指令，不要在已保存的工作上重建示範。若建立過程中斷，請檢查保留下來的部分檔案，再選另一個新建或空白的根目錄，並在建立與啟動時使用同一路徑。
+<details>
+<summary>驗證範圍、環境備註與第二個示範專案</summary>
 
-本次於 Linux、Python 3.12.14，以原始碼版本 `1f0726a7` 檢查示範建立、啟動及上述雙語任務；不代表已驗證 Windows、macOS 或全新相依套件安裝。詳見[確切驗證範圍](docs/readme-verification-history.md#source-demo-first-task-2026-11-07)。
+- **已驗證範圍：** 本次於 Linux、Python 3.12.14 以原始碼版本 `1f0726a7` 檢查示範建立、啟動及上述雙語任務；不代表已驗證 Windows、macOS 或全新相依套件安裝。詳見[確切驗證範圍](docs/readme-verification-history.md#source-demo-first-task-2026-11-07)。
+- **Windows 歷史備註：** 一個 Windows 測試環境使用較早的 `14ddc070` 原始碼建立示範時遇到 `WinError 5`，原因尚未確定；請參閱[驗證與環境紀錄](docs/readme-verification-history.md)。勿在已保存工作上重建示範；若建立中斷，請改用另一個全新空白目錄。
+- **第二個種子專案：** `DEMO: three floating-point summation cases`（`summation-demo`）包含數值範例與稿件骨架，文獻清單為空；兩個示範都不需要帳號。
 
-使用自己的檔案，請直接前往[使用自己的專案](docs/workspace-guide.zh-TW.md#使用自己的專案)；指南中較早的安裝固定版本是歷史紀錄。
+</details>
 
 <a id="published-dashboard"></a>
 
 <details>
-<summary>選用：試用已發布的舊版文獻儀表板</summary>
+<summary>選用：試用已發布的舊版文獻儀表板（PyPI 1.2.0）</summary>
 
-[PyPI 套件](https://pypi.org/project/research-hub-pipeline/)提供較早的文獻儀表板，不是較新的原始碼工作區。若要試用免帳號範例，以下獨立虛擬環境與空白根目錄的方式已在 Linux、Python 3.12 測試：
+[PyPI 套件](https://pypi.org/project/research-hub-pipeline/)提供較早的文獻群組儀表板，而非新版原始碼工作區。以下方式已在 Linux、Python 3.12 搭配空白 `RESEARCH_HUB_ROOT` 目錄測試：
 
 ```sh
 python3 -m venv .dashboard-venv
@@ -98,7 +100,7 @@ mkdir -p "$HOME/research-hub-preview"
 RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hub dashboard --sample
 ```
 
-請在 HOME 下使用新建或空白的 `research-hub-preview` 目錄：指令會在其中建立 `.research_hub` 與 `logs`。程式會印出產生的暫存 HTML 路徑；請在瀏覽器開啟該路徑。在乾淨 HOME 未設定根目錄時，直接執行 `dashboard --sample` 曾失敗；平台與瀏覽器的限制見[驗證紀錄](docs/readme-verification-history.md)。若要連接實際服務，請參閱[安裝指南](docs/setup.md)、[儀表板導覽](docs/dashboard-walkthrough.md)與[前十分鐘](docs/first-10-minutes.md)。
+在瀏覽器開啟程式印出的暫存 HTML 路徑。服務設定與平台限制請見[安裝指南](docs/setup.md)、[儀表板導覽](docs/dashboard-walkthrough.md)與[驗證紀錄](docs/readme-verification-history.md)。
 
 </details>
 
@@ -117,21 +119,25 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 | 論文 | 登錄 Word、LaTeX 或 Markdown，準備大綱與修訂。 |
 | 審閱與交付 | 檢視提案、記錄決定，準備本機交付檔。 |
 
-原始檔仍由你的編輯器修改；工作區登錄的是檔案路徑與雜湊。識別碼能解析不代表來源支持某項主張，請自行查核證據及科學判斷。
+原始檔仍由你的編輯器修改；工作區只追蹤檔案路徑與雜湊。識別碼能解析不等於來源支持某項主張，請自行核對原始證據與科學判斷。
 
-## 從文獻探索開始
+## 探索、整理與驗證文獻
 
-在能載入 research-hub 技能、並有搜尋與閱讀工具的相容 AI 工具（AI 主機）中，可先提出具體需求，例如：
+當你將 [research-hub 技能](skills/research-hub/)載入相容的 AI 主機（如 Claude Code 或 Codex）時，讓主機負責找與讀、讓 Research Hub 負責確定性儲存與三端串接：
 
-> 幫我找 LLM 模擬人類決策的文獻，列出原文連結、相關性、版本與可取得的全文限制。
+- **第一步 — 由 AI 主機原生找與讀：** 直接請主機搜尋、追引文並閱讀可取得的原文段落（例如：「幫我找 LLM 模擬人類決策的文獻，列出原文連結、相關性、版本與可取得的全文限制」）。搜尋片段不等於全文閱讀。
+- **第二步 — 同步 Zotero 狀態與寫入 Obsidian：** 取得書目清單後，經 `--dry-run` 預覽授權 `research-hub ingest` 以核對 **Zotero** 狀態並產出 **Obsidian** 主題筆記，或透過 `project record` 保存本機專案書目中繼資料。
+- **第三步 — 匯出精讀摘要與驗證 NotebookLM 簡報：** 使用 `paper-summarize` 產出七段來源綁定摘要（可匯出成 Obsidian／Roam Markdown），再用 `research-hub notebooklm` 搭配 `notebooklm-brief-verifier` 產生與查核簡報，最後交接給 `literature-triage-matrix` 與 `gap-to-topic`。
 
-接著可要求「聚焦經濟決策，比較真人基準與評估方法」。先檢視來源、可讀範圍與未解問題，再決定下一步。搜尋摘要不等於全文閱讀。此研究方式可獨立於 Hub 使用；Zotero、Obsidian、NotebookLM 與 Hub 儲存都不是先決條件。要使用 Hub 的視覺工作區或儲存功能，則需要安裝並啟動 Hub。
+<details>
+<summary>原生閱讀器邊界與來源摘要版本界線說明</summary>
 
-Native reader 可整理提供的研究摘要、來源索引與書目，也可附上明確提供的 PDF。PDF 僅原封複製並提供下載；這不代表它已被解析、翻譯、驗證或全文閱讀。原生閱讀器可將使用者提供的翻譯與原始觀察並列，並標示為未經驗證；閱讀器不會產生翻譯或驗證翻譯的準確性。提供翻譯的格式請見[原生閱讀器匯出指南](src/research_hub/skills_data/research-hub/references/native-discovery-export.md)。
+- **原生閱讀器邊界：** 僅呈現呼叫者提供的觀察、書目、原封附帶的 PDF 下載，以及明確標示「未經驗證」的並列翻譯；不會自動解析、翻譯或做科學驗證。格式請見[原生閱讀器匯出指南](src/research_hub/skills_data/research-hub/references/native-discovery-export.md)與選用的[已儲存成果契約](docs/contracts/native-discovery-view.md)。
+- **七段摘要 CLI 版本界線：** 快速開始的 `1f0726a7` 示範早於 Stage 1 來源摘要功能。自原始碼 `231f9fbd` 起，[已撰寫來源摘要 CLI](docs/cli-reference.md#native-authored-source-summaries)可保存與匯出綁定當前來源雜湊的七段摘要；使用前請先閱讀[摘要契約](docs/native-source-summary.md)，並分開核對原始碼修訂版與實際安裝入口。
 
-**來源摘要的版本界線：** 上方快速開始刻意固定在已驗證的舊工作區示範 `1f0726a7`，不是後續 Stage 1 更新的安裝步驟。原始碼版本 `231f9fbd` 的[已撰寫來源摘要 CLI](docs/cli-reference.md#native-authored-source-summaries)可保存並讀回明確提供的七欄摘要，綁定當前來源與證據；使用前請閱讀[摘要契約](docs/native-source-summary.md)。這是匯入既有內容，不會生成摘要、認定科學支持或記錄人工接受。原始碼版本與實際安裝入口必須分開核對，不能只看套件版本號相同。
+</details>
 
-更多 skill 與 AI 主機安裝方式，見 [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills)、[AI 主機支援表](docs/ai-host-support.md)及 [MCP／REST 整合](docs/ai-integrations.md)。可選的 Hub 結果儲存與檢視邊界見[已儲存成果契約](docs/contracts/native-discovery-view.md)。
+更多細節請見 [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills)、[AI 主機支援表](docs/ai-host-support.md)與 [MCP／REST 整合](docs/ai-integrations.md)。
 
 ## 寫作、審查與交付
 
@@ -142,19 +148,19 @@ Native reader 可整理提供的研究摘要、來源索引與書目，也可附
 | 可攜式交接 | 匯出任務到 AI 主機，再匯入文字與候選檔案雜湊。匯出後任務等待代理回覆。 |
 | 連接 Codex | 經登入且相容的 Codex CLI，使用明確信任的公開寫作套件產生文字，結果等待人工審查。 |
 
-[寫作設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)說明選用介接器的驗證及設定。連接的 Codex 接收有限長度的文字摘錄，不接收二進位文件內容。Word 格式、LaTeX 編譯和最終文件修改仍在你的編輯器完成。已接受的提案可經另一次核准打包成本機 ZIP；這不授權投稿或雲端上傳。工作區核准也不自動涵蓋既有 CLI、MCP、儀表板及雲端直接寫入工具。[邊界與復原指南](docs/workspace-guide.zh-TW.md#boundaries-and-recovery)列出細節。
+請參閱[寫作設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)與[邊界與復原指南](docs/workspace-guide.zh-TW.md#boundaries-and-recovery)。連接的 Codex 僅接收有限長度的文字摘錄而不含二進位檔；最終排版仍在編輯器完成，且本機 ZIP 交付需另行核准，不授權雲端上傳或覆蓋既有直接寫入工具。
 
 <a id="credential-reference"></a>
 <a id="connect-your-ai-host"></a>
 
 ## 選用整合
 
-- **Zotero：** 管理文獻；連線工作流程需要 API key 和 library ID。
-- **Obsidian：** 在本機 vault 中整理筆記，也可先使用本機檔案。
-- **NotebookLM：** 用來源資料製作摘要；需要瀏覽器登入與可用的工作階段。請參閱[設定](docs/notebooklm.md)與[疑難排解](docs/notebooklm-troubleshooting.md)。
-- **AI 主機：** 透過 [MCP／REST](docs/ai-integrations.md) 或可攜式 skills 連接；MCP 安裝需要額外的 `[mcp]` 套件。
+- **Zotero：** 追蹤文獻與分類收錄狀態（需 `ZOTERO_API_KEY` 與 `ZOTERO_LIBRARY_ID`）。
+- **Obsidian：** 在本機 vault 中整理主題群組筆記、精讀摘要與綜合總覽（也可先用純本機 Markdown）。
+- **NotebookLM：** 依主題打包上傳來源、製作簡報並反向核對主張（需瀏覽器工作階段；見[設定](docs/notebooklm.md)與[疑難排解](docs/notebooklm-troubleshooting.md)）。
+- **AI 主機：** 透過 [MCP／REST](docs/ai-integrations.md)（需 `[mcp]`）或依[安裝指南](docs/setup.md)載入可攜式 skills。
 
-依需要選擇整合，執行 `./.venv/bin/python -m research_hub doctor`（macOS／Linux）或 `.\.venv\Scripts\python.exe -m research_hub doctor`（Windows PowerShell），逐項查看結果；設定或安裝成功不代表每個服務都已驗證。[安裝指南](docs/setup.md)列出選用套件及憑證；另見[本機檔案匯入](docs/import-folder.zh-TW.md)、[EZproxy](docs/ezproxy.md)與[實際連線檢查表](docs/live-smoke.md)。
+執行 `./.venv/bin/python -m research_hub doctor`（macOS／Linux）或 `.\.venv\Scripts\python.exe -m research_hub doctor`（Windows PowerShell）可逐項檢查已設定的目的地。另見[本機檔案匯入](docs/import-folder.zh-TW.md)、[EZproxy](docs/ezproxy.md)與[實際連線檢查表](docs/live-smoke.md)。
 
 <details>
 <summary>整合憑證與選用套件</summary>
