@@ -210,28 +210,35 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       {categoryHost && active && !compact && createPortal(categoryFilters, categoryHost)}
       <div className="catalog-browse-controls" hidden={compact && readerOpen}>
       <div className="catalog-heading">
-        <div><h2>{t("catalogTitle")}</h2><p>{t("catalogIntro")}</p></div>
+        <h2>{t("catalogTitle")}</h2>
         <span className="catalog-total">{sources.length} {t("catalogItems")}</span>
       </div>
-      <div className="catalog-organize" role="group" aria-label={t("catalogOrganize")}>
-        {organizationViews.map(([value, label]) => <button key={value} type="button" className="button secondary"
-          aria-pressed={organization === value} onClick={() => setOrganization(value)}>
-          {t(label)} ({sources.filter((record) => matchesOrganization(record, value)).length})
-        </button>)}
-      </div>
-      <div className="catalog-toolbar">
-        <label className="catalog-search">{t("catalogSearch")}
-          <input ref={searchInput} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("catalogSearchHint")} />
-        </label>
-        <label className="catalog-category-select">{t("catalogCategory")}
-          <select ref={categorySelect} aria-label={t("catalogCategory")} value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
-            <option value="">{t("catalogAllCategories")}</option>
-            {categories.map((value) => <option key={value} value={value}>{categoryName(value, t)} ({sources.filter((record) => category(record) === value).length})</option>)}
-          </select>
-        </label>
-        <p className="catalog-match" role="status">{visible.length} / {sources.length} {t("catalogItems")}</p>
-        {(query || selectedCategory || organization !== "all") && <button type="button" className="button text-button small"
-          onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all"); searchInput.current?.focus();}}>{t("catalogClearFilters")}</button>}
+      <div className="catalog-control-bar">
+        <div className="catalog-organize" role="group" aria-label={t("catalogOrganize")}>
+          {organizationViews.map(([value, label]) => <button key={value} type="button" className="button secondary"
+            aria-pressed={organization === value} onClick={() => setOrganization(value)}>
+            {t(label)} ({sources.filter((record) => matchesOrganization(record, value)).length})
+          </button>)}
+        </div>
+        <div className="catalog-toolbar">
+          <label className="catalog-search">
+            <span className="sr-only">{t("catalogSearch")}</span>
+            <svg className="catalog-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input ref={searchInput} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("catalogSearchHint")} />
+          </label>
+          <label className="catalog-category-select"><span className="sr-only">{t("catalogCategory")}</span>
+            <select ref={categorySelect} aria-label={t("catalogCategory")} value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
+              <option value="">{t("catalogAllCategories")}</option>
+              {categories.map((value) => <option key={value} value={value}>{categoryName(value, t)} ({sources.filter((record) => category(record) === value).length})</option>)}
+            </select>
+          </label>
+          <p className="catalog-match" role="status">{visible.length} / {sources.length} {t("catalogItems")}</p>
+          {(query || selectedCategory || organization !== "all") && <button type="button" className="button text-button small"
+            onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all"); searchInput.current?.focus();}}>{t("catalogClearFilters")}</button>}
+        </div>
       </div>
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
       </div>
@@ -260,16 +267,16 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                     )}
                     {registeredDrafts.has(record.id) && <span id={`${detailId}-draft-${index}`} className="catalog-draft-tag">{t("catalogDraftRegistered")}</span>}</td>
                   <td>{text(record.data.year) || "—"}</td>
-                  <td><span className="badge neutral catalog-category">{categoryName(category(record), t)}</span></td>
+                  <td><span className="catalog-meta-text catalog-category">{categoryName(category(record), t)}</span></td>
                   <td>
-                    <span className="badge neutral">{readingScope(record, t)}</span>
+                    <span className="catalog-meta-text catalog-scope">{readingScope(record, t)}</span>
                     {record.kind === "source" && (
                       decision === "include" ? <span className="badge good catalog-item-state">✓ {t("include")}</span>
                         : decision === "exclude" ? <span className="badge danger catalog-item-state">✕ {t("exclude")}</span>
                           : <span className="badge warn catalog-item-state">{t("catalogNeedsScreening")}</span>
                     )}
-                    {registeredNativeSummary(record) && <span className="badge good catalog-item-state">{t("catalogNativeRegistered")}</span>}
-                    {missingSummary(record) && <span className="badge neutral catalog-item-state">{t("catalogNeedsSummary")}</span>}
+                    {registeredNativeSummary(record) && <span className="catalog-indicator good">{t("catalogNativeRegistered")}</span>}
+                    {missingSummary(record) && <span className="catalog-indicator muted">{t("catalogNeedsSummary")}</span>}
                   </td>
                 </tr>
               );})}</tbody>
