@@ -36,7 +36,7 @@ To run with coverage:
 pytest --cov=research_hub --cov-report=term-missing
 ```
 
-The CI workflow runs regular push checks on `master` and `verify/**`, and full PR checks against any base branch. Other feature-branch pushes need a PR. The `verify/**` route provides deliberate exact-commit push diagnostics; it does not replace PR merge, stress, or skill-version acceptance. See [CI routing and checkout identity](docs/ci-routing.md) for the matrix, cancellation policy, and verification boundary.
+The CI workflow classifies changed files via `scripts/classify_ci_changes.py` (failing closed to the full matrix for dependency/CI changes, unrecognized paths, or `verify/**` pushes), while routing pure docs or skills PRs to fast contract suites; see [CI routing and checkout identity](docs/ci-routing.md) for the scopes, cancellation policy, and checkout identity guard. Other feature-branch pushes need a PR.
 
 ---
 
