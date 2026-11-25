@@ -560,19 +560,21 @@ def _populate_zotero_template(
     ]
     template["collections"] = collections
 
+    from urllib.parse import urlsplit
+
     journal = str(pp.get("journal", "") or "")
     volume = pp.get("volume", "")
     issue = pp.get("issue", "")
     pages = pp.get("pages", "")
-    url_lower = str(pp.get("url", "") or "").lower()
+    url_host = (urlsplit(str(pp.get("url", "") or "")).hostname or "").lower()
     norm_doi = normalize_doi(str(pp.get("doi", "") or ""))
     source_name = str(pp.get("source", "") or "").strip().lower()
     is_arxiv = (
         norm_doi.startswith("10.48550/arxiv.")
-        or "arxiv.org/" in url_lower
+        or url_host in {"arxiv.org", "www.arxiv.org", "export.arxiv.org"}
         or bool(pp.get("arxiv_id"))
         or source_name == "arxiv"
-        or bool(re.search(r"\barxiv\b", journal, re.I))
+        or bool(re.search(r"(?<![a-z])arxiv(?![a-z])", journal, re.I))
     )
     arxiv_id = (
         str(pp.get("arxiv_id") or "").strip()
