@@ -88,6 +88,26 @@ def zotero_credential_fallback_paths() -> list[str]:
     return ordered
 
 
+def _decrypt_config_secret(value: str | None, config_dir: Path | None) -> str | None:
+    if not isinstance(value, str) or not value or config_dir is None:
+        return value
+    from research_hub.security.secret_box import decrypt, is_encrypted
+
+    if is_encrypted(value):
+        return decrypt(value, config_dir)
+    return value
+
+
+def _stat_token(path: Path | None) -> tuple[int, int] | None:
+    if path is None:
+        return None
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
 class HubConfig:
     """Resolve Research Hub paths from config, env vars, or HOME defaults."""
 
@@ -112,6 +132,7 @@ class HubConfig:
         config_ezproxy_host_suffix: str | None = None
         config_unpaywall_email: str | None = None
         config_zotero_parent_collection: str | None = None
+        config_s2_api_key: str | None = None
         config_llm_cli_adapters: dict = {}
         zotero: dict = {}
 
@@ -140,7 +161,11 @@ class HubConfig:
             config_ezproxy_host_suffix = data.get("ezproxy_host_suffix")
             zotero = data.get("zotero", {})
             config_unpaywall_email = data.get("unpaywall_email")
-            config_zotero_api_key = zotero.get("api_key")
+            config_zotero_api_key = _decrypt_config_secret(zotero.get("api_key"), config_path.parent)
+            search_cfg = data.get("search", {}) if isinstance(data.get("search"), dict) else {}
+            config_s2_api_key = _decrypt_config_secret(
+                search_cfg.get("semantic_scholar_api_key"), config_path.parent
+            )
             config_zotero_library_id = zotero.get("library_id")
             config_zotero_library_type = zotero.get("library_type")
             config_zotero_default_collection = zotero.get("default_collection")
@@ -227,6 +252,10 @@ class HubConfig:
             config_unpaywall_email or os.environ.get("UNPAYWALL_EMAIL", "")
         ).strip()
 
+        self.s2_api_key = str(
+            config_s2_api_key or os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
+        ).strip() or None
+
         for path in (self.logs, self.research_hub_dir):
             try:
                 path.mkdir(parents=True, exist_ok=True)
@@ -238,16 +267,31 @@ class HubConfig:
 
 _config: HubConfig | None = None
 _config_path: Path | None = None
+_config_stat: tuple[int, int] | None = None
+
+
+def invalidate_config_cache() -> None:
+    """Force the next ``get_config()`` call to re-read config from disk."""
+    global _config, _config_path, _config_stat
+    _config = None
+    _config_path = None
+    _config_stat = None
 
 
 def get_config() -> HubConfig:
-    """Return a cached HubConfig instance."""
+    """Return a cached HubConfig instance, hot-reloading on config edits."""
 
-    global _config, _config_path
+    global _config, _config_path, _config_stat
     resolved_path = _resolve_config_path()
-    if _config is None or _config_path != resolved_path:
+    current_stat = _stat_token(resolved_path)
+    if (
+        _config is None
+        or _config_path != resolved_path
+        or _config_stat != current_stat
+    ):
         _config = HubConfig()
         _config_path = resolved_path
+        _config_stat = _stat_token(resolved_path)
     return _config
 
 

@@ -28,7 +28,12 @@ from research_hub.errors import MissingCredential
 from research_hub.config import zotero_credential_fallback_paths
 from research_hub.security.secret_box import decrypt, is_encrypted
 
-sys.stdout.reconfigure(encoding="utf-8")
+_reconfigure = getattr(sys.stdout, "reconfigure", None)
+if callable(_reconfigure):
+    try:
+        _reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # Local API settings
 LOCAL_API_BASE = "http://localhost:23119/api"
@@ -167,20 +172,20 @@ def _load_credentials() -> tuple[str | None, str | None, str]:
     return api_key, lib_id, lib_type
 
 
-def check_local_api(timeout=2) -> bool:
+def check_local_api(timeout=2, *, library_id: str | None = None) -> bool:
     """Test if Zotero desktop local API is reachable.
 
     Returns True if localhost:23119 responds, False otherwise.
     """
     from research_hub.config import get_config
 
-    library_id = get_config().zotero_library_id
-    if library_id is None:
+    resolved_id = library_id if library_id is not None else get_config().zotero_library_id
+    if resolved_id is None:
         return False
 
     try:
         req = urllib.request.Request(
-            f"{LOCAL_API_BASE}/users/{library_id}/items?limit=1",
+            f"{LOCAL_API_BASE}/users/{resolved_id}/items?limit=1",
             headers=LOCAL_API_HEADERS,
         )
         urllib.request.urlopen(req, timeout=timeout)
@@ -240,7 +245,7 @@ def add_note(zot, item_key: str, content: str, *, managed_summary: bool = False)
         r = zot.create_items([note])
         return bool(r.get("successful"))
     except Exception as e:
-        print(f"  Note error for {item_key}: {e}")
+        print(f"  Note error for {item_key}: {e}", file=sys.stderr)
         return False
 
 
@@ -283,7 +288,7 @@ def safe_api_call(func, *args, max_retries=3, **kwargs):
         except Exception as e:
             if "429" in str(e):
                 wait = 2 ** attempt
-                print(f"  Rate limited, waiting {wait}s...")
+                print(f"  Rate limited, waiting {wait}s...", file=sys.stderr)
                 time.sleep(wait)
             else:
                 raise
@@ -412,14 +417,11 @@ class ZoteroDualClient:
     """Dual-mode Zotero client: local API for fast reads, Web API for writes.
 
     Automatically detects whether Zotero desktop is running.
-    If local API is unreachable, all operations fall back to Web API.
-
-    Usage::
-
-        dual = ZoteroDualClient()          # reads config.json automatically
-        results = dual.search("flood")     # fast local read (or web fallback)
-        dual.create_note("KEY", "Title", "Content")  # web write
+    If local API is unreachable, all operations fall back to Web API, and
+    periodically re-probe localhost:23119 after a cooldown to recover fast reads.
     """
+
+    _LOCAL_RETRY_COOLDOWN_SEC = 30.0
 
     def __init__(self, user_id=None, api_key=None):
         from pyzotero import zotero
@@ -427,36 +429,61 @@ class ZoteroDualClient:
         resolved_api_key, resolved_lib_id, lib_type = _load_credentials()
         self.user_id = user_id or resolved_lib_id
         self.api_key = api_key or resolved_api_key
+        self.lib_type = lib_type
+        self._local_retry_after = 0.0
 
         # Web client for writes (needs API key) — also used as fallback for reads
         self.web = zotero.Zotero(self.user_id, lib_type, self.api_key)
 
         # Test local API connectivity before creating local client
-        self.local_available = check_local_api()
+        self.local_available = check_local_api(library_id=self.user_id)
 
         if self.local_available:
             try:
                 self.local = zotero.Zotero(self.user_id, lib_type, local=True)
                 # Verify with a real request
                 self.local.top(limit=1)
-                print("[ZoteroDualClient] Local API connected (fast reads enabled)")
+                print("[ZoteroDualClient] Local API connected (fast reads enabled)", file=sys.stderr)
             except Exception as e:
-                print(f"[ZoteroDualClient] Local API init failed: {e}")
-                print("[ZoteroDualClient] Falling back to Web API for all operations")
+                print(f"[ZoteroDualClient] Local API init failed: {e}", file=sys.stderr)
+                print("[ZoteroDualClient] Falling back to Web API for all operations", file=sys.stderr)
                 self.local = self.web
                 self.local_available = False
+                self._local_retry_after = time.monotonic() + self._LOCAL_RETRY_COOLDOWN_SEC
         else:
-            print("[ZoteroDualClient] Zotero desktop not running (localhost:23119 unreachable)")
-            print("[ZoteroDualClient] Using Web API for all operations")
+            print("[ZoteroDualClient] Zotero desktop not running (localhost:23119 unreachable)", file=sys.stderr)
+            print("[ZoteroDualClient] Using Web API for all operations", file=sys.stderr)
             self.local = self.web
             self.local_available = False
+            self._local_retry_after = time.monotonic() + self._LOCAL_RETRY_COOLDOWN_SEC
+
+    def _maybe_reconnect_local(self) -> None:
+        if getattr(self, "local_available", False):
+            return
+        retry_after = getattr(self, "_local_retry_after", 0.0)
+        if time.monotonic() < retry_after:
+            return
+        cooldown = getattr(self, "_LOCAL_RETRY_COOLDOWN_SEC", 30.0)
+        user_id = getattr(self, "user_id", None)
+        lib_type = getattr(self, "lib_type", "user")
+        if check_local_api(timeout=1, library_id=user_id):
+            try:
+                from pyzotero import zotero
+
+                candidate = zotero.Zotero(user_id, lib_type, local=True)
+                candidate.top(limit=1)
+                self.local = candidate
+                self.local_available = True
+                print("[ZoteroDualClient] Reconnected Local API (fast reads restored)", file=sys.stderr)
+                return
+            except Exception:
+                pass
+        self._local_retry_after = time.monotonic() + cooldown
 
     def _read(self, method_name, *args, **kwargs):
-        """Execute a read operation with automatic local-to-web fallback.
-
-        Tries local API first (fast). If it fails, falls back to Web API.
-        Updates self.local_available so subsequent calls skip local directly.
-        """
+        """Execute a read operation with automatic local-to-web fallback and reconnect."""
+        if not self.local_available:
+            self._maybe_reconnect_local()
         if self.local_available:
             try:
                 return getattr(self.local, method_name)(*args, **kwargs)
@@ -464,10 +491,11 @@ class ZoteroDualClient:
                 error_str = str(e)
                 # Connection refused, timeout, or other network error
                 if any(k in error_str.lower() for k in ["connection", "timeout", "refused", "urlopen"]):
-                    print(f"[ZoteroDualClient] Local API lost connection: {e}")
-                    print("[ZoteroDualClient] Switching to Web API for remaining operations")
+                    print(f"[ZoteroDualClient] Local API lost connection: {e}", file=sys.stderr)
+                    print("[ZoteroDualClient] Switching to Web API for remaining operations", file=sys.stderr)
                     self.local_available = False
                     self.local = self.web
+                    self._local_retry_after = time.monotonic() + getattr(self, "_LOCAL_RETRY_COOLDOWN_SEC", 30.0)
                 else:
                     raise  # Re-raise non-connection errors
         # Web API fallback

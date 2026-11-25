@@ -660,6 +660,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8765)
+    serve_parser.add_argument(
+        "--mcp-transport",
+        choices=["stdio", "streamable-http", "sse"],
+        default="stdio",
+        help="MCP transport when serving without --dashboard or --workspace (default: stdio)",
+    )
     serve_parser.add_argument("--workspace", action="store_true", help="Open the researcher workspace; no legacy vault config required")
     serve_parser.add_argument("--root", default=".", help="Workspace project directory (with --workspace)")
     serve_parser.add_argument("--obsidian-vault", default=None, help="Authorize metadata-only validation of this exact existing local vault (with --workspace); no configuration is saved")
@@ -2806,6 +2812,8 @@ def _main_dispatch(args, parser) -> int:
         parser.error("--obsidian-vault requires --workspace")
     if args.command == "serve" and args.library_snapshot is not None and not args.workspace:
         parser.error("--library-snapshot requires --workspace")
+    if args.command == "serve" and getattr(args, "mcp_transport", "stdio") != "stdio" and (args.dashboard or getattr(args, "workspace", False)):
+        parser.error("--mcp-transport cannot be combined with --dashboard or --workspace")
     if args.command == "serve" and getattr(args, "workspace", False):
         if args.allow_external or args.host != "127.0.0.1" or args.dashboard:
             parser.error("--workspace is loopback-only and separate from --dashboard")

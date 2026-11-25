@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 from typing import Any, Callable
 
 from research_hub import __version__
@@ -2576,13 +2577,63 @@ def restore_quarantine(slug: str, cluster_slug: str) -> dict[str, Any]:
         return _entrypoint_tool_error(exc, cluster_slug or None)
 
 
-def main() -> None:
-    """Entry point for `research-hub serve`."""
+class _StdioProtocolGuard:
+    """Redirect accidental print() writes away from MCP JSON-RPC stdout.
+
+    ``mcp.server.stdio.stdio_server`` binds directly to ``sys.stdout.buffer``,
+    so exposing the original underlying binary ``.buffer`` keeps the JSON-RPC
+    pipe pure while routing stray Python ``print(...)`` text to ``sys.stderr``.
+    """
+
+    def __init__(self, proto_stdout: Any, err_stream: Any) -> None:
+        self._proto = proto_stdout
+        self._err = err_stream
+
+    @property
+    def buffer(self) -> Any:
+        return self._proto.buffer
+
+    @property
+    def encoding(self) -> str:
+        return getattr(self._proto, "encoding", "utf-8")
+
+    def isatty(self) -> bool:
+        return False
+
+    def write(self, data: str) -> int:
+        return self._err.write(data)
+
+    def writelines(self, lines: Any) -> None:
+        self._err.writelines(lines)
+
+    def flush(self) -> None:
+        self._err.flush()
+
+    def reconfigure(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+def main(
+    *,
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+) -> None:
+    """Entry point for ``research-hub serve``."""
     if FastMCP is None:
-        print("MCP server requires fastmcp. Install with:")
-        print("  pip install research-hub-pipeline[mcp]")
+        print("MCP server requires fastmcp. Install with:", file=sys.stderr)
+        print("  pip install research-hub-pipeline[mcp]", file=sys.stderr)
         raise SystemExit(1)
-    mcp.run()
+    if transport == "stdio":
+        orig_stdout = sys.stdout
+        if hasattr(orig_stdout, "buffer") and not isinstance(orig_stdout, _StdioProtocolGuard):
+            sys.stdout = _StdioProtocolGuard(orig_stdout, sys.stderr)  # type: ignore[assignment]
+        try:
+            mcp.run(transport="stdio")
+        finally:
+            sys.stdout = orig_stdout
+    else:
+        mcp.run(transport=transport, host=host, port=port)
 
 
 mcp.tool()(search_papers)
