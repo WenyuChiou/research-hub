@@ -301,6 +301,10 @@ export const en = {
     "Only if NotebookLM login is needed, use the existing local login flow; it opens a browser and needs the documented browser prerequisites:",
   integrationPrivacy:
     "This panel does not read or store keys or cookies, and does not run the displayed commands. The vault path is used only for explicitly authorized read-only validation and is not saved. Keep credentials out of browser storage and shared logs.",
+  integrationLocalPrivacy:
+    "API keys saved in this local Hub panel are stored encrypted on this computer (0600 permissions) and never returned in UI responses or saved in browser storage. Explicit NotebookLM login actions update your local Playwright session state; vault checks remain read-only.",
+  zoteroLocalCredentialsHelp:
+    "Loads non-secret local Zotero status and encrypts API keys on this computer via the local Hub config. Check format verifies syntax only; Test Zotero connection probes local/Web API.",
   integrationGuide: "Full setup steps and storage/prerequisite guidance",
 
   sourceLocallySaved: "Locally saved",
@@ -1198,6 +1202,10 @@ export const zhTW: Record<MessageKey, string> = {
     "只有需要 NotebookLM 登入時才使用既有本機登入流程；此指令會開啟瀏覽器，且需要文件列出的瀏覽器前置需求：",
   integrationPrivacy:
     "此面板不讀取或儲存金鑰與 cookies，也不執行顯示的命令。Vault 路徑僅用於明確授權的純唯讀驗證，不會儲存。請勿將憑證放入瀏覽器儲存空間或共用日誌。",
+  integrationLocalPrivacy:
+    "在此本機面板儲存的 API 金鑰會加密寫入此電腦設定檔（0600 權限），絕不會回傳至前端或寫入瀏覽器儲存空間。明確觸發 NotebookLM 登入會更新本機 Playwright 工作階段；Vault 檢查仍維持唯讀。",
+  zoteroLocalCredentialsHelp:
+    "載入不含機密的本機 Zotero 設定狀態，並將 API 金鑰於此電腦加密儲存。「檢查格式」僅驗證字元格式；「測試 Zotero 連線」會實際偵測本機或 Web API。",
   integrationGuide: "完整設定步驟與儲存／前置需求說明",
 
   sourceLocallySaved: "本機儲存時間",

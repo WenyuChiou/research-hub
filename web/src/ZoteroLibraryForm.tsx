@@ -183,7 +183,7 @@ export function ZoteroLibraryForm({
       noValidate
     >
       <p id={id + "-help"} className="small">
-        {t("zoteroDraftHelp")}
+        {t(enabled ? "zoteroLocalCredentialsHelp" : "zoteroDraftHelp")}
       </p>
       <div className="integration-form-fields">
         <label htmlFor={id + "-library"}>

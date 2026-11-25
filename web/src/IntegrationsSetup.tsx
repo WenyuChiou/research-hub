@@ -267,7 +267,7 @@ export function IntegrationsSetup({
                 <code>python -m research_hub doctor</code>
               </li>
             </ol>
-            <p>{t("integrationPrivacy")}</p>
+            <p>{t(localCap?.status === "available" ? "integrationLocalPrivacy" : "integrationPrivacy")}</p>
             <a
               href="https://github.com/WenyuChiou/research-hub/blob/master/docs/setup.md"
               target="_blank"

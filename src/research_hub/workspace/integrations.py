@@ -171,28 +171,65 @@ class LocalIntegrationsManager:
         except RuntimeError:
             return ""
 
+    def _resolve_zotero_effective(
+        self, data: dict[str, Any], config_dir: Path | None
+    ) -> dict[str, Any]:
+        """Resolve Zotero credentials with the same precedence as zotero.client._load_credentials."""
+        zot = data.get("zotero") if isinstance(data.get("zotero"), dict) else {}
+        raw_zot_key = str(zot.get("api_key") or data.get("zotero_api_key") or "").strip()
+        cfg_lib_id = str(zot.get("library_id") or data.get("zotero_library_id") or "").strip()
+        cfg_lib_type = str(zot.get("library_type") or data.get("zotero_library_type") or "").strip()
+
+        env_key = str(os.environ.get("ZOTERO_API_KEY") or "").strip()
+        env_lib_id = str(os.environ.get("ZOTERO_LIBRARY_ID") or "").strip()
+        env_lib_type = str(os.environ.get("ZOTERO_LIBRARY_TYPE") or "").strip()
+
+        dotenv_key = ""
+        dotenv_lib_id = ""
+        dotenv_lib_type = ""
+        if not env_key or not env_lib_id:
+            try:
+                from research_hub.zotero.client import _read_env_file
+
+                env_file = _read_env_file()
+                dotenv_key = str(env_file.get("ZOTERO_API_KEY") or "").strip()
+                dotenv_lib_id = str(env_file.get("ZOTERO_LIBRARY_ID") or "").strip()
+                dotenv_lib_type = str(env_file.get("ZOTERO_LIBRARY_TYPE") or "").strip()
+            except Exception:
+                pass
+
+        cfg_key = self._decrypt_field(raw_zot_key, config_dir) if config_dir else raw_zot_key
+
+        effective_key = env_key or dotenv_key or cfg_key
+        effective_lib_id = env_lib_id or dotenv_lib_id or cfg_lib_id
+        effective_lib_type = env_lib_type or dotenv_lib_type or cfg_lib_type or "user"
+        if effective_lib_type not in {"user", "group"}:
+            effective_lib_type = "user"
+
+        return {
+            "api_key": effective_key,
+            "library_id": effective_lib_id,
+            "library_type": effective_lib_type,
+            "raw_config_key": raw_zot_key,
+        }
+
     def capability(self) -> dict[str, Any]:
         """Non-sensitive summary included in /api/v1/workspace."""
         if not self.enabled:
             return {"version": 1, "status": "unavailable"}
         try:
-            _, data = self._read_config_dict()
+            path, data = self._read_config_dict()
         except WorkspaceError:
             return {"version": 1, "status": "available", "config_error": True}
-        zot = data.get("zotero") if isinstance(data.get("zotero"), dict) else {}
         search_cfg = data.get("search") if isinstance(data.get("search"), dict) else {}
-        raw_zot_key = str(zot.get("api_key") or data.get("zotero_api_key") or "").strip()
-        zot_lib_id = str(zot.get("library_id") or data.get("zotero_library_id") or "").strip()
-        zot_lib_type = str(
-            zot.get("library_type")
-            or data.get("zotero_library_type")
-            or os.environ.get("ZOTERO_LIBRARY_TYPE")
-            or "user"
-        ).strip()
-        if zot_lib_type not in {"user", "group"}:
-            zot_lib_type = "user"
+        resolved_zot = self._resolve_zotero_effective(data, path.parent)
+        raw_zot_key = resolved_zot["raw_config_key"]
         raw_s2_key = str(search_cfg.get("semantic_scholar_api_key") or "").strip()
-        unpaywall_raw = str(data.get("unpaywall_email") or zot.get("unpaywall_email") or "").strip()
+        unpaywall_raw = str(
+            data.get("unpaywall_email")
+            or (data.get("zotero") if isinstance(data.get("zotero"), dict) else {}).get("unpaywall_email")
+            or ""
+        ).strip()
         state_file = self._nlm_state_file(data)
         nlm_present = False
         try:
@@ -200,13 +237,11 @@ class LocalIntegrationsManager:
         except OSError:
             nlm_present = False
 
-        env_zot_key = bool(os.environ.get("ZOTERO_API_KEY", "").strip())
-        env_zot_lib = os.environ.get("ZOTERO_LIBRARY_ID", "").strip()
         env_s2_key = bool(os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip())
         env_unpaywall = bool(os.environ.get("UNPAYWALL_EMAIL", "").strip())
 
-        effective_lib_id = zot_lib_id or env_zot_lib
-        effective_zot_key = bool(raw_zot_key) or env_zot_key
+        effective_lib_id = resolved_zot["library_id"]
+        effective_zot_key = bool(resolved_zot["api_key"])
 
         return {
             "version": 1,
@@ -215,7 +250,7 @@ class LocalIntegrationsManager:
             "zotero_api_key_present": effective_zot_key,
             "zotero_api_key_encrypted": bool(raw_zot_key and is_encrypted(raw_zot_key)),
             "zotero_library_id": effective_lib_id,
-            "zotero_library_type": zot_lib_type,
+            "zotero_library_type": resolved_zot["library_type"],
             "unpaywall_email_present": bool(unpaywall_raw) or env_unpaywall,
             "s2_api_key_present": bool(raw_s2_key) or env_s2_key,
             "s2_api_key_encrypted": bool(raw_s2_key and is_encrypted(raw_s2_key)),
@@ -368,13 +403,10 @@ class LocalIntegrationsManager:
         if not self.enabled:
             raise WorkspaceError("Local integrations are unavailable in this server mode", "integrations_unavailable")
         path, data = self._read_config_dict()
-        zot = data.get("zotero") if isinstance(data.get("zotero"), dict) else {}
-        lib_id = str(zot.get("library_id") or data.get("zotero_library_id") or os.environ.get("ZOTERO_LIBRARY_ID") or "").strip()
-        lib_type = str(zot.get("library_type") or data.get("zotero_library_type") or os.environ.get("ZOTERO_LIBRARY_TYPE") or "user").strip()
-        if lib_type not in {"user", "group"}:
-            lib_type = "user"
-        raw_key = zot.get("api_key") or data.get("zotero_api_key")
-        api_key = self._decrypt_field(raw_key, path.parent) or str(os.environ.get("ZOTERO_API_KEY") or "").strip()
+        resolved = self._resolve_zotero_effective(data, path.parent)
+        lib_id = resolved["library_id"]
+        lib_type = resolved["library_type"]
+        api_key = resolved["api_key"]
 
         local_ok = False
         if lib_id:

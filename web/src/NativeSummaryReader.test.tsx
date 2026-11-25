@@ -205,4 +205,15 @@ describe("native summary selected-source reader", () => {
     expect(await screen.findByText(t("nativeExportCopied"))).toBeVisible();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+  it("shows export failure when clipboard writeText is unavailable instead of false copy success", async () => {
+    const f = fixture();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(response(f.body))
+      .mockResolvedValueOnce(response({ ok: true, markdown: "# Title\n\n## Why\nBecause [supported]" }));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    render(<NativeSummaryReader record={f.record} scope={f.scope} t={t} exportable />);
+    await userEvent.click(await screen.findByRole("button", { name: t("nativeCopyMarkdown") }));
+    expect(await screen.findByText(t("nativeExportFailed"))).toBeVisible();
+    expect(screen.queryByText(t("nativeExportCopied"))).not.toBeInTheDocument();
+  });
 });

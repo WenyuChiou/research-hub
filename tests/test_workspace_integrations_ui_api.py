@@ -19,6 +19,22 @@ from research_hub.workspace.integrations import LocalIntegrationsManager
 from research_hub.workspace.server import WorkspaceServer
 
 
+@pytest.fixture(autouse=True)
+def _isolate_home_and_env(tmp_path: Path, monkeypatch):
+    fake_home = tmp_path / "isolated_home"
+    fake_home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    for var in (
+        "ZOTERO_API_KEY",
+        "ZOTERO_LIBRARY_ID",
+        "ZOTERO_LIBRARY_TYPE",
+        "SEMANTIC_SCHOLAR_API_KEY",
+        "UNPAYWALL_EMAIL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
 def _get_json(url: str) -> tuple[int, dict]:
     try:
         with urlopen(url, timeout=5) as resp:
@@ -239,6 +255,28 @@ def test_zotero_and_notebooklm_probes_and_login_modes(tmp_path: Path, monkeypatc
     assert zot_res["ok"] is True
     assert zot_res["probe"]["status"] == "connected_web"
     assert "zot-secret-test" not in json.dumps(zot_res)
+
+    # Environment ZOTERO_* takes precedence over config.json (matches zotero.client._load_credentials)
+    monkeypatch.setenv("ZOTERO_LIBRARY_ID", "99999")
+    monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "group")
+    monkeypatch.setenv("ZOTERO_API_KEY", "env-key-wins")
+
+    class _EnvZot:
+        def __init__(self, lib_id, lib_type, api_key):
+            assert lib_id == "99999"
+            assert lib_type == "group"
+            assert api_key == "env-key-wins"
+
+        def top(self, limit=1):
+            return []
+
+    monkeypatch.setattr(pyzot_mod, "Zotero", _EnvZot)
+    assert mgr.capability()["zotero_library_id"] == "99999"
+    assert mgr.capability()["zotero_library_type"] == "group"
+    assert mgr.check_zotero()["probe"]["status"] == "connected_web"
+    monkeypatch.delenv("ZOTERO_LIBRARY_ID", raising=False)
+    monkeypatch.delenv("ZOTERO_LIBRARY_TYPE", raising=False)
+    monkeypatch.delenv("ZOTERO_API_KEY", raising=False)
 
     # NotebookLM check when state file missing
     import research_hub.notebooklm.auth as nlm_auth

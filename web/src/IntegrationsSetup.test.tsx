@@ -391,6 +391,9 @@ it("supports opt-in encrypted local credentials save, Zotero probe, and Notebook
   }
   render(<Harness />);
   const panel = await open();
+  expect(within(panel).getByText(t("integrationLocalPrivacy"))).toBeVisible();
+  expect(within(panel).getByText(t("zoteroLocalCredentialsHelp"))).toBeVisible();
+  expect(within(panel).queryByText(t("integrationPrivacy"))).not.toBeInTheDocument();
   await userEvent.type(within(panel).getByRole("textbox", { name: t("zoteroLibraryId") }), "987654");
   await userEvent.selectOptions(within(panel).getByRole("combobox", { name: t("zoteroLibraryType") }), "group");
   await userEvent.type(within(panel).getByLabelText(/Zotero API key/i), "secret-zot-key");
