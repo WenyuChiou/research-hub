@@ -1,13 +1,19 @@
 :root {
-  --navy: #182927;
-  --paper: #f5f3ec;
-  --white: #fcfbf6;
-  --ink: #1f2b28;
-  --muted: #526059;
-  --line: #d8d6ca;
-  --teal: #1b5e51;
-  --focus: #9a6b18;
-  --wash: #efede4;
+  /* Cool-neutral Linear x Notion surface ladder (subtle slate tint, no pure black/white). */
+  --navy: #131720;
+  --paper: #f6f7f9;
+  --white: #fcfcfd;
+  --sidebar-bg: #f1f3f6;
+  --ink: #171c26;
+  --muted: #4e5868;
+  --line: #e2e5ec;
+  --line-strong: #cbd1dc;
+  --teal: #1d4e5f;
+  --teal-hover: #163d4b;
+  --focus: #2563eb;
+  --wash: #eef0f5;
+  --selection-bg: #e9f1f4;
+  --selection-border: #bfd4dc;
   /* Modular desktop reference-manager scale in rem (respects browser root zoom). */
   --text-2xs: 0.6875rem;
   --text-meta: 0.75rem;
@@ -19,10 +25,16 @@
   --leading-body: 1.65;
   --leading-control: 1.4;
   --leading-help: 1.55;
+  /* Unified native grotesque stack for instant load and crisp Latin + CJK alignment. */
   --body-font:
-    "Segoe UI Variable Text", "Segoe UI", "PingFang TC", "Microsoft JhengHei",
-    sans-serif;
+    "Segoe UI Variable Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei", sans-serif;
   --display-font:
-    "Palatino Linotype", "Book Antiqua", "Iowan Old Style", "Noto Serif TC",
-    Georgia, serif;
+    "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei", sans-serif;
+  /* Motion tokens (emil-design-eng & impeccable motion craft). */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-ui: 170ms;
 }

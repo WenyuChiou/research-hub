@@ -341,3 +341,16 @@ it("avoids thick side-stripe callouts and generic theme overrides in library sty
   expect(libraryCss).not.toMatch(/--display-font\s*:/);
   expect(styles + "\n" + libraryCss).not.toMatch(/border-(?:left|right)\s*:\s*[2-9]px\s+solid/);
 });
+
+it("enforces design-engineering micro-interaction and scroll containment craft rules", () => {
+  const combined = styles + "\n" + libraryCss;
+  expect(combined).not.toMatch(/transition\s*:\s*all\b/i);
+  expect(values(".integrations-panel", "overscroll-behavior")).toContain("contain");
+  expect(values(".integrations-panel", "transform-origin")).toContain("bottom left");
+  expect(
+    libraryRules
+      .filter((rule) => rule.selectors.includes(".catalog-list"))
+      .map((rule) => rule.style.getPropertyValue("overscroll-behavior").trim()),
+  ).toContain("contain");
+  expect(values("button", "touch-action")).toContain("manipulation");
+});

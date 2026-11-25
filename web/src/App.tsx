@@ -25,7 +25,71 @@ const pages: Page[] = [
   "manuscript",
   "review",
 ];
-const glyphs = ["01", "02", "03", "04", "05", "06"];
+
+function NavIcon({ page }: { page: Page }) {
+  const shared = {
+    width: 14,
+    height: 14,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+    focusable: false,
+  };
+  switch (page) {
+    case "overview":
+      return (
+        <svg {...shared}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </svg>
+      );
+    case "literature":
+      return (
+        <svg {...shared}>
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
+      );
+    case "evidence":
+      return (
+        <svg {...shared}>
+          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+          <rect x="9" y="3" width="6" height="4" rx="1" />
+          <path d="M9 12h6" />
+          <path d="M9 16h4" />
+        </svg>
+      );
+    case "design":
+      return (
+        <svg {...shared}>
+          <path d="M3 3v18h18" />
+          <path d="m7 14 4-4 3 3 5-6" />
+        </svg>
+      );
+    case "manuscript":
+      return (
+        <svg {...shared}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+          <path d="M8 13h8" />
+          <path d="M8 17h5" />
+        </svg>
+      );
+    case "review":
+      return (
+        <svg {...shared}>
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+          <path d="m9 11 3 3L22 4" />
+        </svg>
+      );
+  }
+}
 function currentPage(): Page {
   const page = window.location.hash.slice(1).split("?", 1)[0];
   return pages.includes(page as Page) ? (page as Page) : "literature";
@@ -536,7 +600,7 @@ export default function App() {
   }, [connectionLost, browserOffline, reconnectAttempts]);
   const navigationLinks = (items: Page[]) => (<>{items.map((item) => (
       <a key={item} href={"#" + item} onClick={() => {navigationEpoch.current++;}} aria-current={page === item ? "page" : undefined}>
-        <span className="nav-symbol" aria-hidden="true">{glyphs[pages.indexOf(item)]}</span><span>{t(item)}</span>
+        <span className="nav-symbol" aria-hidden="true"><NavIcon page={item} /></span><span>{t(item)}</span>
       </a>
     ))}</>);
   const activeDetail = detail?.project.id === projectId ? detail : null;
@@ -557,8 +621,12 @@ export default function App() {
       }}>
         <a className="brand" href="#overview">
           <span className="brand-symbol" aria-hidden="true">
-            r<span>h</span>
-            <i />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              <path d="M9 7h6" />
+              <path d="M9 11h4" />
+            </svg>
           </span>
           <span>
             {t("app")}
