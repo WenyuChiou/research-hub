@@ -167,9 +167,40 @@ export function ProjectPages({
   const records = (kind: string) =>
     detail.records.filter((record) => record.kind === kind);
   const sources = records("source");
-  const sourceOptions = sources.map((source) => ({
+  const titleCounts = new Map<string, number>();
+  for (const source of sources) {
+    const label = textValue(source.data.title).trim();
+    titleCounts.set(label, (titleCounts.get(label) ?? 0) + 1);
+  }
+  const baseSourceOptions = sources.map((source) => {
+    const title = textValue(source.data.title).trim();
+    const fallback = textValue(source.data.year || source.data.doi || source.data.locator).trim() || source.id.slice(0, 6);
+    const label = !title ? source.id : (titleCounts.get(title) ?? 0) > 1 ? `${title} (${fallback})` : title;
+    return { source, title, label };
+  });
+  const baseCounts = new Map<string, number>();
+  for (const option of baseSourceOptions) {
+    baseCounts.set(option.label, (baseCounts.get(option.label) ?? 0) + 1);
+  }
+  const refinedSourceOptions = baseSourceOptions.map(({ source, title, label }) => {
+    if ((baseCounts.get(label) ?? 0) <= 1) {
+      return { source, label };
+    }
+    const detailPart = [
+      textValue(source.data.year).trim(),
+      textValue(source.data.doi || source.data.locator).trim() || source.id.slice(0, 6),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return { source, label: `${title || source.id} (${detailPart})` };
+  });
+  const refinedCounts = new Map<string, number>();
+  for (const option of refinedSourceOptions) {
+    refinedCounts.set(option.label, (refinedCounts.get(option.label) ?? 0) + 1);
+  }
+  const sourceOptions = refinedSourceOptions.map(({ source, label }) => ({
     value: source.id,
-    label: `${textValue(source.data.title)} · ${source.id}`,
+    label: (refinedCounts.get(label) ?? 0) > 1 ? `${label} · ${source.id.slice(0, 6)}` : label,
   }));
   const next = nextOperation(detail);
   const pending =
@@ -219,10 +250,6 @@ export function ProjectPages({
             tabIndex={-1}
           >
             {render(record)}
-            <InspectJson
-              title={`${t("inspect")} · ${page === "literature" ? record.id.slice(0, 8) : record.id}`}
-              value={record}
-            />
           </article>
         ))}
       </div>
@@ -249,10 +276,6 @@ export function ProjectPages({
                     : artifact.role}
                 </SmallLabel>
                 <p className="file-path">{artifactReference(artifact)}</p>
-                <details className="inspect">
-                  <summary>{t("fingerprint")}</summary>
-                  <code className="hash">{artifact.sha256}</code>
-                </details>
               </div>
               <span
                 className={`badge ${artifact.current ? "neutral" : "warn"}`}
@@ -641,7 +664,6 @@ export function ProjectPages({
             </Disclosure>
           </Panel>
         </div>
-        </details>
         <Panel title={t("screening")}>
             {recordList(records("screening"), "noScreening", (record) => {
               const source = sources.find(
@@ -715,6 +737,7 @@ export function ProjectPages({
               />
             </Disclosure>
         </Panel>
+        </details>
       </div>
 
       <div hidden={page !== "evidence"} className="page-content">
@@ -734,12 +757,13 @@ export function ProjectPages({
                       const source = sources.find((item) => item.id === id);
                       return (
                         <div key={String(id)}>
-                          <code>{String(id)}</code>
-                          {source && (
+                          {source ? (
                             <SourceLink
                               locator={source.data.locator}
                               title={textValue(source.data.title)}
                             />
+                          ) : (
+                            <code>{String(id)}</code>
                           )}
                         </div>
                       );

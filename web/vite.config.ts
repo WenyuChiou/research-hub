@@ -10,7 +10,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     // Readability contracts inspect real CSS instead of Vitest's CSS stubs.
-    css: { include: [/src\/(styles|tokens)\.css/] },
+    css: { include: [/src\/(styles|tokens|library)\.css/] },
     setupFiles: "./src/test-setup.ts",
     restoreMocks: true,
   },

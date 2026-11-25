@@ -67,7 +67,7 @@ describe("localized readiness and writing-authority warning", () => {
     await user.click(summary);
     expect(screen.getByText(writingWarning, { exact: true })).toBeVisible();
     const sidebar = screen.getByText("EN", { selector: "button" }).closest("aside");
-    await user.click(within(sidebar!).getByRole("button", { name: "繁體中文" }));
+    await user.click(within(sidebar!).getByRole("button", { name: "中" }));
     expect(screen.getByText(translatedWarning, { exact: true })).toBeVisible();
     expect(screen.getByText(unknownWarning)).toBeVisible();
     await user.click(within(sidebar!).getByRole("link", { name: "研究總覽" }));
@@ -118,7 +118,7 @@ describe("localized readiness and writing-authority warning", () => {
     const languages = within(
       within(sidebar!).getByRole("group", { name: "Interface language" }),
     );
-    await user.click(languages.getByRole("button", { name: "繁體中文" }));
+    await user.click(languages.getByRole("button", { name: "中" }));
     expect(
       screen.getByText(translatedWarning, { exact: true }),
     ).toBeInTheDocument();

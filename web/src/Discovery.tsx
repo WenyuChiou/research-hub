@@ -173,9 +173,6 @@ export function DiscoveryPanel({
         {result && (
           <section aria-label={t("discoveryResult")}>
             <h3>{result.discovery.brief}</h3>
-            <p>
-              {t("discoverySnapshot")}: <code>{result.artifact.sha256}</code>
-            </p>
             <p role="status">
               {t("discoveryBinding")}: {result.report.binding}
             </p>

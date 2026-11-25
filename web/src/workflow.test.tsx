@@ -200,7 +200,7 @@ describe("researcher interactions", () => {
     const languages = within(
       screen.getByRole("group", { name: "Interface language" }),
     );
-    await user.click(languages.getByRole("button", { name: "繁體中文" }));
+    await user.click(languages.getByRole("button", { name: "中" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "研究總覽",
     );

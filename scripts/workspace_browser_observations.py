@@ -245,7 +245,7 @@ def run(output: Path, *, port: int = 0):
         select("Generated-only draft")
         open_observation("only-generated")
         expect(library.get_by_text("Generated-only synthetic summary.", exact=True)).to_be_visible()
-        expect(library.get_by_text("No summary saved. Preliminary relevance below is not a full-paper summary.", exact=True)).to_be_visible()
+        expect(library.get_by_text("No summary saved.", exact=True)).to_be_visible()
         check("Generated-only body does not replace missing saved summary")
         select("Unbound draft")
         open_observation("missing-binding")

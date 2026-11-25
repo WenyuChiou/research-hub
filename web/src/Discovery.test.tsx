@@ -244,7 +244,7 @@ it("one agent link opens exact saved native result with no integrations or write
   expect(result.querySelector('a[href^="javascript:"]')).toBeNull();
   const calls = fetch.mock.calls.length;
   await user.click(
-    screen.getByRole("button", { name: "Integrations & setup" }),
+    screen.getByRole("button", { name: "Setup" }),
   );
   expect(screen.getByRole("dialog")).toBeVisible();
   await user.keyboard("{Escape}");

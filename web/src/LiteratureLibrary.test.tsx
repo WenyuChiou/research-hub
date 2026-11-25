@@ -31,6 +31,25 @@ describe("literature collection", () => {
     expect(screen.queryByRole("heading", {name:"Synthetic model opinions comparator"})).not.toBeInTheDocument();
   });
 
+  it("matches coauthors when searching papers displayed as FirstAuthor et al.", async () => {
+    const user = userEvent.setup();
+    const multiAuthor: ResearchRecord = {
+      id: "multi-author-paper",
+      kind: "source",
+      data: {
+        title: "Accurate Sum and Dot Product",
+        authors: ["Takeshi Ogita", "Siegfried M. Rump", "Shin'ichi Oishi"],
+        year: 2005,
+        identity_status: "unverified",
+        human_acceptance: "pending",
+      },
+    };
+    render(<LiteratureLibrary sources={[multiAuthor]} screenings={[]} t={t} onScreen={vi.fn()} onPrepare={vi.fn()} />);
+    expect(screen.getAllByText("Takeshi Ogita et al.").length).toBeGreaterThan(0);
+    await user.type(screen.getByLabelText(t("catalogSearch")), "Rump");
+    expect(screen.getByRole("button", { name: "Accurate Sum and Dot Product" })).toBeVisible();
+  });
+
   it("binds a screening note to the selected source and reads its saved decision without promoting reading status", async () => {
     const user = userEvent.setup();
     const save = vi.fn().mockResolvedValue(undefined);
@@ -76,7 +95,6 @@ describe("organizing saved material", () => {
     expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(2);
     expect(screen.queryByRole("button", {name:"Existing readonly note"})).not.toBeInTheDocument();
     expect(screen.queryByRole("button", {name:"Saved abstract paper"})).not.toBeInTheDocument();
-    expect(screen.getByText(t("catalogOrganizationHelp"))).toBeVisible();
   });
 
   it("combines organization, category and search, and clears them together without writes or network calls", async () => {

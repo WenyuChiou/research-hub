@@ -617,7 +617,6 @@ export default function App() {
           <div ref={setCategoryHost} hidden={page !== "literature"} />
         </nav>
         <div className="sidebar-footer">
-          <p className="integration-services-label">{t("catalogIntegrationsHint")}</p>
           <IntegrationsSetup
             workspace={workspace}
             projectId={projectId}
@@ -625,29 +624,24 @@ export default function App() {
             onLiveStateChange={setLiveIntegrations}
             t={t}
           />
-          <span className="local-marker">
-            <i aria-hidden="true" />
-            {t("local")}
-          </span>
-          <p>{t("startEyebrow")}</p>
           <div
             className="language-switch"
             role="group"
             aria-label={t("language")}
           >
             <button
+              aria-pressed={locale === "zh-TW"}
+              onClick={() => setLocale("zh-TW")}
+              lang="zh-TW"
+            >
+              中
+            </button>
+            <button
               aria-pressed={locale === "en"}
               onClick={() => setLocale("en")}
               lang="en"
             >
               EN
-            </button>
-            <button
-              aria-pressed={locale === "zh-TW"}
-              onClick={() => setLocale("zh-TW")}
-              lang="zh-TW"
-            >
-              繁體中文
             </button>
           </div>
         </div>
@@ -877,10 +871,6 @@ export default function App() {
                 ) : null)}
             </>
           )}
-          <footer className="content-footer">
-            <span>{t("app")}</span>
-            <span>{t("startEyebrow")}</span>
-          </footer>
         </div>
       </main>
     </div>
