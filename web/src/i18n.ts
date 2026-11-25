@@ -1,4 +1,4 @@
-import type { Locale, Operation, ProjectDetail } from "./types";
+import type { Locale, ObsidianValidationResult, Operation, ProjectDetail } from "./types";
 
 export const en = {
   nativeDeclaredScope: "Declared reading scope",
@@ -1797,6 +1797,34 @@ export function projectWarningLabel(warning: string, t: Translate): string {
   return warning === en.writingAuthorityUnbound
     ? t("writingAuthorityUnbound")
     : warning;
+}
+export function obsidianStatusLabel(
+  obsidian: ObsidianValidationResult,
+  t: Translate,
+): string {
+  const statusMap = {
+    valid: "obsidianValid",
+    not_found: "obsidianNotFound",
+    not_directory: "obsidianNotDirectory",
+    not_vault: "obsidianNotVault",
+    registry_missing: "obsidianRegistryMissing",
+    invalid_registry: "obsidianRegistryInvalid",
+    registry_mismatch: "obsidianRegistryMismatch",
+    unreadable: "obsidianUnreadable",
+    unsafe_path: "obsidianUnsafePath",
+    scope_denied: "obsidianScopeDenied",
+    unavailable: "obsidianUnavailable",
+    timeout: "obsidianTimeout",
+    error: "obsidianError",
+  } as const;
+  if (Object.hasOwn(statusMap, obsidian.status)) {
+    const key = statusMap[obsidian.status as keyof typeof statusMap];
+    const base = t(key);
+    return obsidian.status === "valid" && Number.isInteger(obsidian.collection_count)
+      ? `${base} (${obsidian.collection_count} ${t("libraryCollections")})`
+      : base;
+  }
+  return t("obsidianError");
 }
 export function statusTone(
   status: string,

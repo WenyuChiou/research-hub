@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCompactReadingLayout } from "./readingLayout";
 import { MutationForm, ReadText, SourceLink } from "./components";
-import { statusLabel, type Translate } from "./i18n";
+import { obsidianStatusLabel, statusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
 import { SourceObservations } from "./ObservationHistory";
 import type { ObservationTextContext } from "./sourceObservations";
@@ -300,11 +300,8 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               })()}</dd>
               <dt>Obsidian</dt><dd>{(() => {
                 if (note) return t("catalogObsidianReadOnly");
-                if (liveIntegrations?.obsidian?.status === "valid") {
-                  const count = liveIntegrations.obsidian.collection_count;
-                  return Number.isInteger(count)
-                    ? `${t("obsidianValid")} (${count} ${t("libraryCollections")})`
-                    : t("obsidianValid");
+                if (liveIntegrations?.obsidian) {
+                  return obsidianStatusLabel(liveIntegrations.obsidian, t);
                 }
                 return t(
                   workspace?.capabilities?.obsidian_validation?.status === "available"

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
-import type { Translate } from "./i18n";
+import { obsidianStatusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, Workspace } from "./types";
 import { NotebookLmAuthControls } from "./NotebookLmAuthControls";
 import { ObsidianValidationForm } from "./ObsidianValidationForm";
@@ -92,25 +92,8 @@ export function IntegrationsSetup({
             : "integrationNlmMissing",
       )
     : t("integrationNotChecked");
-  const obsidianStatusMap = {
-    valid: "obsidianValid",
-    not_found: "obsidianNotFound",
-    not_directory: "obsidianNotDirectory",
-    not_vault: "obsidianNotVault",
-    registry_missing: "obsidianRegistryMissing",
-    invalid_registry: "obsidianRegistryInvalid",
-    registry_mismatch: "obsidianRegistryMismatch",
-    unreadable: "obsidianUnreadable",
-    unsafe_path: "obsidianUnsafePath",
-  } as const;
   const obsidianConnectionText = liveState?.obsidian
-    ? (liveState.obsidian.status in obsidianStatusMap
-        ? `${t(obsidianStatusMap[liveState.obsidian.status as keyof typeof obsidianStatusMap])}${
-            liveState.obsidian.status === "valid" && Number.isInteger(liveState.obsidian.collection_count)
-              ? ` (${liveState.obsidian.collection_count} ${t("libraryCollections")})`
-              : ""
-          }`
-        : t("obsidianError"))
+    ? obsidianStatusLabel(liveState.obsidian, t)
     : t("integrationNotChecked");
   const compactParts: string[] = [];
   if (liveState?.zotero) {

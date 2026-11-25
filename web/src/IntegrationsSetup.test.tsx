@@ -450,4 +450,10 @@ it("propagates live Obsidian read-only validation into Current connection and th
   await userEvent.click(within(panel).getByRole("button", { name: t("obsidianValidate") }));
   expect(await within(panel).findByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`)).toBeVisible();
   expect(screen.getByText(t("integrationSummaryObsidianOk"))).toBeVisible();
+  // Failed retry clears prior valid status and updates footer summary
+  vi.mocked(api).mockRejectedValueOnce(new Error("offline"));
+  await userEvent.click(within(panel).getByRole("button", { name: t("obsidianValidate") }));
+  expect(await screen.findByText(t("integrationSummaryObsidianIssue"))).toBeVisible();
+  expect(await within(panel).findByText(t("obsidianError"), { selector: "dd" })).toBeVisible();
+  expect(within(panel).queryByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`)).not.toBeInTheDocument();
 });

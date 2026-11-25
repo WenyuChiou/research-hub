@@ -322,9 +322,7 @@ class LocalIntegrationsManager:
                 raise WorkspaceError("Invalid search section in configuration", "invalid_config")
             search_cfg = dict(search_cfg)
 
-            zotero_touched = False
-            prev_id = str(zot.get("library_id") or data.get("zotero_library_id") or "").strip().lstrip("0")
-            prev_type = str(zot.get("library_type") or data.get("zotero_library_type") or "user").strip()
+            before_zot = self._resolve_zotero_effective(data, path.parent)
             if "zotero_library_id" in payload:
                 raw_id = payload["zotero_library_id"]
                 if not isinstance(raw_id, str):
@@ -333,16 +331,11 @@ class LocalIntegrationsManager:
                 if not trimmed:
                     zot.pop("library_id", None)
                     data.pop("zotero_library_id", None)
-                    if prev_id:
-                        zotero_touched = True
                 else:
                     if not _DIGITS_RE.match(trimmed) or not re.search(r"[1-9]", trimmed):
                         raise WorkspaceError("Enter a positive numeric Zotero library ID", "invalid_request")
-                    new_id = trimmed.lstrip("0")
-                    zot["library_id"] = new_id
+                    zot["library_id"] = trimmed.lstrip("0")
                     data.pop("zotero_library_id", None)
-                    if new_id != prev_id:
-                        zotero_touched = True
 
             if "zotero_library_type" in payload:
                 lib_type = payload["zotero_library_type"]
@@ -350,13 +343,10 @@ class LocalIntegrationsManager:
                     raise WorkspaceError("Zotero library type must be 'user' or 'group'", "invalid_request")
                 zot["library_type"] = lib_type
                 data.pop("zotero_library_type", None)
-                if lib_type != prev_type:
-                    zotero_touched = True
 
             if payload.get("clear_zotero_api_key") is True:
                 zot.pop("api_key", None)
                 data.pop("zotero_api_key", None)
-                zotero_touched = True
             elif "zotero_api_key" in payload:
                 raw_key = payload["zotero_api_key"]
                 if isinstance(raw_key, str) and raw_key.strip():
@@ -371,7 +361,6 @@ class LocalIntegrationsManager:
                         raise WorkspaceError("Failed to encrypt Zotero API key", "encryption_unavailable")
                     zot["api_key"] = encrypted_zot
                     data.pop("zotero_api_key", None)
-                    zotero_touched = True
 
             if "unpaywall_email" in payload:
                 raw_email = payload["unpaywall_email"]
@@ -406,6 +395,9 @@ class LocalIntegrationsManager:
                 data["zotero"] = zot
             else:
                 data.pop("zotero", None)
+
+            after_zot = self._resolve_zotero_effective(data, path.parent)
+            zotero_touched = before_zot != after_zot
 
             if search_cfg:
                 data["search"] = search_cfg

@@ -40,6 +40,7 @@ export function ObsidianValidationForm({
   function cancel() {
     generation.current++; pending.current?.abort(); pending.current = null;
     setPath(scope); setState({kind:"cancelled"});
+    onValidated?.(null);
   }
   async function validate(event: FormEvent) {
     event.preventDefault();
@@ -62,7 +63,19 @@ export function ObsidianValidationForm({
       onValidated?.({ status: value.status, collection_count: value.collection_count, observed_at: value.observed_at });
     } catch (failure) {
       if (intent !== generation.current) return;
-      setState({kind:"error",code:failure instanceof ApiError ? failure.code : "validation_error"});
+      const code = failure instanceof ApiError ? failure.code : "validation_error";
+      setState({kind:"error", code});
+      onValidated?.({
+        status:
+          code === "vault_scope_denied"
+            ? "scope_denied"
+            : code === "vault_validation_unavailable"
+              ? "unavailable"
+              : code === "validation_timeout"
+                ? "timeout"
+                : "error",
+        observed_at: new Date().toISOString(),
+      });
     } finally {
       clearTimeout(timer);
       if (intent === generation.current) pending.current = null;
