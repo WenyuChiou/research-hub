@@ -53,6 +53,8 @@ export default function App() {
   );
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const hadConnectionLossRef = useRef(false);
+  const inFlightWorkspaceRef = useRef(false);
+  const inFlightDetailRef = useRef(false);
   const latestStateRef = useRef({
     browserOffline: false,
     error: null as unknown,
@@ -192,14 +194,18 @@ export default function App() {
 
   useEffect(() => {
     const controller = new AbortController();
+    inFlightWorkspaceRef.current = true;
     setError(null);
     api<Workspace>("/workspace", undefined, controller.signal)
       .then((value) => {
+        if (controller.signal.aborted) return;
+        inFlightWorkspaceRef.current = false;
         setWorkspace(value);
         setProjectId((selected) => selected || value.projects[0]?.id || "");
         if (
           hadConnectionLossRef.current &&
           !latestStateRef.current.browserOffline &&
+          !inFlightDetailRef.current &&
           !latestStateRef.current.detailError
         ) {
           hadConnectionLossRef.current = false;
@@ -208,14 +214,22 @@ export default function App() {
         }
       })
       .catch((failure) => {
+        inFlightWorkspaceRef.current = false;
         if (!aborted(failure)) setError(failure);
       });
-    return () => controller.abort();
+    return () => {
+      inFlightWorkspaceRef.current = false;
+      controller.abort();
+    };
   }, [refreshCount]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      inFlightDetailRef.current = false;
+      return;
+    }
     const controller = new AbortController();
+    inFlightDetailRef.current = true;
     setDetailError(null);
     api<ProjectDetail>(
       `/projects/${segment(projectId)}`,
@@ -224,11 +238,13 @@ export default function App() {
     )
       .then((value) => {
         if (controller.signal.aborted) return;
+        inFlightDetailRef.current = false;
         setDetail(value);
         setPollStatus({ projectId, lastSuccess: Date.now(), stale: false });
         if (
           hadConnectionLossRef.current &&
           !latestStateRef.current.browserOffline &&
+          !inFlightWorkspaceRef.current &&
           !latestStateRef.current.error
         ) {
           hadConnectionLossRef.current = false;
@@ -237,10 +253,14 @@ export default function App() {
         }
       })
       .catch((failure) => {
+        inFlightDetailRef.current = false;
         if (!controller.signal.aborted && !aborted(failure))
           setDetailError(failure);
       });
-    return () => controller.abort();
+    return () => {
+      inFlightDetailRef.current = false;
+      controller.abort();
+    };
   }, [projectId, refreshCount]);
 
   const onSaved = useCallback(
@@ -499,15 +519,21 @@ export default function App() {
   useEffect(() => {
     if (!connectionLost) return;
     hadConnectionLossRef.current = true;
+    if (browserOffline) return;
+    const controller = new AbortController();
     const delay = Math.min(3000 * 2 ** Math.min(reconnectAttempts, 4), 30000);
     const timer = window.setTimeout(() => {
-      void refreshSessionTokens().then(() => {
+      void refreshSessionTokens(controller.signal).then(() => {
+        if (controller.signal.aborted) return;
         setReconnectAttempts((n) => n + 1);
-        refresh();
+        setRefreshCount((count) => count + 1);
       });
     }, delay);
-    return () => window.clearTimeout(timer);
-  }, [connectionLost, reconnectAttempts]);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [connectionLost, browserOffline, reconnectAttempts]);
   const navigationLinks = (items: Page[]) => (<>{items.map((item) => (
       <a key={item} href={"#" + item} onClick={() => {navigationEpoch.current++;}} aria-current={page === item ? "page" : undefined}>
         <span className="nav-symbol" aria-hidden="true">{glyphs[pages.indexOf(item)]}</span><span>{t(item)}</span>

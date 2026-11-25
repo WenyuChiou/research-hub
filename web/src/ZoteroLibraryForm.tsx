@@ -328,6 +328,16 @@ export function ZoteroLibraryForm({
                 {t("integrationClearKey")}
               </button>
             )}
+            {capability?.s2_api_key_present && (
+              <button
+                className="button text-button"
+                type="button"
+                disabled={busy}
+                onClick={() => void clearSavedKey("clear_s2_api_key")}
+              >
+                {t("integrationClearKey")} (Semantic Scholar)
+              </button>
+            )}
           </>
         )}
         <button className="button text-button" type="button" onClick={reset}>

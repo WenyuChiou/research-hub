@@ -28,11 +28,16 @@ function upsertMeta(name: string, content: string): void {
 
 /** Re-sync CSRF/human tokens after an unexpected server restart without reloading UI state. */
 export async function refreshSessionTokens(signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const timer = window.setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch("/app/", {
       credentials: "same-origin",
       cache: "no-store",
-      signal,
+      signal: controller.signal,
     });
     if (!response.ok) return false;
     const html = await response.text();
@@ -43,6 +48,9 @@ export async function refreshSessionTokens(signal?: AbortSignal): Promise<boolea
     return Boolean(csrfMatch?.[1]);
   } catch {
     return false;
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -181,6 +189,9 @@ async function request<T>(
     (!response.ok && !(response.status === 400 && auditFindings)) ||
     (value.ok !== true && !auditFindings)
   ) {
+    if (response.status === 403 && value.code === "forbidden") {
+      void refreshSessionTokens();
+    }
     throw new ApiError(
       value.error || `The request failed (HTTP ${response.status}).`,
       value.code || "request_failed",

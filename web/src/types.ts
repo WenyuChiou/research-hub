@@ -56,9 +56,17 @@ export interface NlmProbeResult {
   state_present?: boolean;
   observed_at: string;
 }
+export interface NlmLoginJobState {
+  status: "idle" | "running" | "succeeded" | "failed";
+  mode: string | null;
+  message: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
 export interface IntegrationLiveState {
   zotero?: ZoteroProbeResult | null;
   notebooklm?: NlmProbeResult | null;
+  loginJob?: NlmLoginJobState | null;
   obsidianStatus?: string | null;
   credentials?: LocalIntegrationsCapability | null;
 }

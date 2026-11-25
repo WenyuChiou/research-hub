@@ -94,11 +94,15 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/workspace":
                 result = self.server.service.capabilities(human=bool(self.server.human))
                 result["capabilities"]["obsidian_validation"] = self.server.obsidian_validation.capability()
-                if self.server.integrations.enabled:
-                    result["capabilities"]["local_integrations"] = self.server.integrations.capability()
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is not None and integrations.enabled:
+                    result["capabilities"]["local_integrations"] = integrations.capability()
                 return self._reply(200, result)
             if path == "/api/v1/integrations/status":
-                result = self.server.integrations.status()
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "code": "integrations_unavailable", "error": "Local integrations are unavailable in this server mode."})
+                result = integrations.status()
                 return self._reply(200 if result.get("ok") else 403, result)
             if path == "/api/v1/library/snapshot":
                 if urlsplit(self.path).query:
@@ -231,8 +235,11 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 status = 200 if result["ok"] else 403 if result["code"] == "vault_scope_denied" else 409
                 return self._reply(status, result)
             if parts == ["api", "v1", "integrations", "credentials"]:
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
                 try:
-                    result = self.server.integrations.save_credentials(data)
+                    result = integrations.save_credentials(data)
                     return self._reply(200, result)
                 except WorkspaceError as exc:
                     status = 403 if exc.code == "integrations_unavailable" else 400
@@ -240,22 +247,31 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if parts == ["api", "v1", "integrations", "zotero", "check"]:
                 if data:
                     raise WorkspaceError("Check accepts an empty JSON object", "invalid_request")
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
                 try:
-                    return self._reply(200, self.server.integrations.check_zotero())
+                    return self._reply(200, integrations.check_zotero())
                 except WorkspaceError as exc:
                     status = 403 if exc.code == "integrations_unavailable" else 400
                     return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
             if parts == ["api", "v1", "integrations", "notebooklm", "check"]:
                 if data:
                     raise WorkspaceError("Check accepts an empty JSON object", "invalid_request")
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
                 try:
-                    return self._reply(200, self.server.integrations.check_notebooklm())
+                    return self._reply(200, integrations.check_notebooklm())
                 except WorkspaceError as exc:
                     status = 403 if exc.code == "integrations_unavailable" else 400
                     return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
             if parts == ["api", "v1", "integrations", "notebooklm", "login"]:
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
                 try:
-                    result = self.server.integrations.start_notebooklm_login(data)
+                    result = integrations.start_notebooklm_login(data)
                     return self._reply(200 if result.get("ok") else 400, result)
                 except WorkspaceError as exc:
                     status = 403 if exc.code == "integrations_unavailable" else 409 if exc.code == "login_in_progress" else 400

@@ -28,7 +28,7 @@ from research_hub.config import (
     invalidate_config_cache,
 )
 from research_hub.security import chmod_sensitive
-from research_hub.security.secret_box import decrypt, encrypt, is_encrypted
+from research_hub.security.secret_box import _HAS_CRYPTO, decrypt, encrypt, is_encrypted
 from .core import WorkspaceError, atomic_json
 
 
@@ -183,7 +183,12 @@ class LocalIntegrationsManager:
         search_cfg = data.get("search") if isinstance(data.get("search"), dict) else {}
         raw_zot_key = str(zot.get("api_key") or data.get("zotero_api_key") or "").strip()
         zot_lib_id = str(zot.get("library_id") or data.get("zotero_library_id") or "").strip()
-        zot_lib_type = str(zot.get("library_type") or data.get("zotero_library_type") or "user").strip()
+        zot_lib_type = str(
+            zot.get("library_type")
+            or data.get("zotero_library_type")
+            or os.environ.get("ZOTERO_LIBRARY_TYPE")
+            or "user"
+        ).strip()
         if zot_lib_type not in {"user", "group"}:
             zot_lib_type = "user"
         raw_s2_key = str(search_cfg.get("semantic_scholar_api_key") or "").strip()
@@ -252,96 +257,112 @@ class LocalIntegrationsManager:
         if not isinstance(payload, dict) or not payload or not set(payload).issubset(_ALLOWED_CREDENTIAL_FIELDS):
             raise WorkspaceError("Unsupported credential update fields", "invalid_request")
 
-        path, data = self._read_config_dict()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        chmod_sensitive(path.parent, mode=0o700)
+        with self._lock:
+            path, data = self._read_config_dict()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            chmod_sensitive(path.parent, mode=0o700)
 
-        zot = data.get("zotero")
-        if zot is None:
-            zot = {}
-        if not isinstance(zot, dict):
-            raise WorkspaceError("Invalid zotero section in configuration", "invalid_config")
-        zot = dict(zot)
+            zot = data.get("zotero")
+            if zot is None:
+                zot = {}
+            if not isinstance(zot, dict):
+                raise WorkspaceError("Invalid zotero section in configuration", "invalid_config")
+            zot = dict(zot)
 
-        search_cfg = data.get("search")
-        if search_cfg is None:
-            search_cfg = {}
-        if not isinstance(search_cfg, dict):
-            raise WorkspaceError("Invalid search section in configuration", "invalid_config")
-        search_cfg = dict(search_cfg)
+            search_cfg = data.get("search")
+            if search_cfg is None:
+                search_cfg = {}
+            if not isinstance(search_cfg, dict):
+                raise WorkspaceError("Invalid search section in configuration", "invalid_config")
+            search_cfg = dict(search_cfg)
 
-        zotero_touched = False
-        if "zotero_library_id" in payload:
-            raw_id = payload["zotero_library_id"]
-            if not isinstance(raw_id, str):
-                raise WorkspaceError("Zotero library ID must be a string", "invalid_request")
-            trimmed = raw_id.strip()
-            if not trimmed:
-                zot.pop("library_id", None)
-                data.pop("zotero_library_id", None)
-            else:
-                if not _DIGITS_RE.match(trimmed) or not re.search(r"[1-9]", trimmed):
-                    raise WorkspaceError("Enter a positive numeric Zotero library ID", "invalid_request")
-                zot["library_id"] = trimmed.lstrip("0")
-            zotero_touched = True
-
-        if "zotero_library_type" in payload:
-            lib_type = payload["zotero_library_type"]
-            if lib_type not in {"user", "group"}:
-                raise WorkspaceError("Zotero library type must be 'user' or 'group'", "invalid_request")
-            zot["library_type"] = lib_type
-            zotero_touched = True
-
-        if payload.get("clear_zotero_api_key") is True:
-            zot.pop("api_key", None)
-            data.pop("zotero_api_key", None)
-            zotero_touched = True
-        elif "zotero_api_key" in payload:
-            raw_key = payload["zotero_api_key"]
-            if isinstance(raw_key, str) and raw_key.strip():
-                validated = _validate_secret_key(raw_key, label="Zotero API key")
-                zot["api_key"] = encrypt(validated, path.parent)
-                data.pop("zotero_api_key", None)
+            zotero_touched = False
+            if "zotero_library_id" in payload:
+                raw_id = payload["zotero_library_id"]
+                if not isinstance(raw_id, str):
+                    raise WorkspaceError("Zotero library ID must be a string", "invalid_request")
+                trimmed = raw_id.strip()
+                if not trimmed:
+                    zot.pop("library_id", None)
+                    data.pop("zotero_library_id", None)
+                else:
+                    if not _DIGITS_RE.match(trimmed) or not re.search(r"[1-9]", trimmed):
+                        raise WorkspaceError("Enter a positive numeric Zotero library ID", "invalid_request")
+                    zot["library_id"] = trimmed.lstrip("0")
                 zotero_touched = True
 
-        if "unpaywall_email" in payload:
-            raw_email = payload["unpaywall_email"]
-            if not isinstance(raw_email, str):
-                raise WorkspaceError("Unpaywall email must be a string", "invalid_request")
-            email = raw_email.strip()
-            if not email:
-                data.pop("unpaywall_email", None)
-                zot.pop("unpaywall_email", None)
+            if "zotero_library_type" in payload:
+                lib_type = payload["zotero_library_type"]
+                if lib_type not in {"user", "group"}:
+                    raise WorkspaceError("Zotero library type must be 'user' or 'group'", "invalid_request")
+                zot["library_type"] = lib_type
+                zotero_touched = True
+
+            if payload.get("clear_zotero_api_key") is True:
+                zot.pop("api_key", None)
+                data.pop("zotero_api_key", None)
+                zotero_touched = True
+            elif "zotero_api_key" in payload:
+                raw_key = payload["zotero_api_key"]
+                if isinstance(raw_key, str) and raw_key.strip():
+                    validated = _validate_secret_key(raw_key, label="Zotero API key")
+                    if not _HAS_CRYPTO:
+                        raise WorkspaceError(
+                            "Encrypted secret storage requires the 'cryptography' package (pip install research-hub-pipeline[secrets]).",
+                            "encryption_unavailable",
+                        )
+                    encrypted_zot = encrypt(validated, path.parent)
+                    if not is_encrypted(encrypted_zot):
+                        raise WorkspaceError("Failed to encrypt Zotero API key", "encryption_unavailable")
+                    zot["api_key"] = encrypted_zot
+                    data.pop("zotero_api_key", None)
+                    zotero_touched = True
+
+            if "unpaywall_email" in payload:
+                raw_email = payload["unpaywall_email"]
+                if not isinstance(raw_email, str):
+                    raise WorkspaceError("Unpaywall email must be a string", "invalid_request")
+                email = raw_email.strip()
+                if not email:
+                    data.pop("unpaywall_email", None)
+                    zot.pop("unpaywall_email", None)
+                else:
+                    if len(email) > 320 or not _EMAIL_RE.match(email):
+                        raise WorkspaceError("Enter a valid Unpaywall email address", "invalid_request")
+                    data["unpaywall_email"] = email
+
+            if payload.get("clear_s2_api_key") is True:
+                search_cfg.pop("semantic_scholar_api_key", None)
+            elif "s2_api_key" in payload:
+                raw_s2 = payload["s2_api_key"]
+                if isinstance(raw_s2, str) and raw_s2.strip():
+                    validated_s2 = _validate_secret_key(raw_s2, label="Semantic Scholar API key")
+                    if not _HAS_CRYPTO:
+                        raise WorkspaceError(
+                            "Encrypted secret storage requires the 'cryptography' package (pip install research-hub-pipeline[secrets]).",
+                            "encryption_unavailable",
+                        )
+                    encrypted_s2 = encrypt(validated_s2, path.parent)
+                    if not is_encrypted(encrypted_s2):
+                        raise WorkspaceError("Failed to encrypt Semantic Scholar API key", "encryption_unavailable")
+                    search_cfg["semantic_scholar_api_key"] = encrypted_s2
+
+            if zot:
+                data["zotero"] = zot
             else:
-                if len(email) > 320 or not _EMAIL_RE.match(email):
-                    raise WorkspaceError("Enter a valid Unpaywall email address", "invalid_request")
-                data["unpaywall_email"] = email
+                data.pop("zotero", None)
 
-        if payload.get("clear_s2_api_key") is True:
-            search_cfg.pop("semantic_scholar_api_key", None)
-        elif "s2_api_key" in payload:
-            raw_s2 = payload["s2_api_key"]
-            if isinstance(raw_s2, str) and raw_s2.strip():
-                validated_s2 = _validate_secret_key(raw_s2, label="Semantic Scholar API key")
-                search_cfg["semantic_scholar_api_key"] = encrypt(validated_s2, path.parent)
+            if search_cfg:
+                data["search"] = search_cfg
+            else:
+                data.pop("search", None)
 
-        if zot:
-            data["zotero"] = zot
-        else:
-            data.pop("zotero", None)
-
-        if search_cfg:
-            data["search"] = search_cfg
-        else:
-            data.pop("search", None)
-
-        atomic_json(path, data)
-        chmod_sensitive(path, mode=0o600)
-        invalidate_config_cache()
-        if zotero_touched:
-            with self._lock:
+            atomic_json(path, data)
+            chmod_sensitive(path, mode=0o600)
+            invalidate_config_cache()
+            if zotero_touched:
                 self._probes["zotero"] = None
-        return {"ok": True, "saved": True, "credentials": self.capability()}
+            return {"ok": True, "saved": True, "credentials": self.capability()}
 
     def check_zotero(self) -> dict[str, Any]:
         if not self.enabled:
@@ -507,13 +528,14 @@ class LocalIntegrationsManager:
                     "started_at": _utc_now(),
                     "finished_at": None,
                 }
+                login_snapshot = dict(self._login_job)
             worker = threading.Thread(
                 target=self._run_browser_window_login,
                 args=(session_dir, state_file),
                 daemon=True,
             )
             worker.start()
-            return {"ok": True, "login": dict(self._login_job)}
+            return {"ok": True, "login": login_snapshot}
 
         if mode == "browser_cookies":
             raw_browser = payload.get("browser") or ""
@@ -550,11 +572,26 @@ class LocalIntegrationsManager:
             info = src.lstat()
         except OSError as exc:
             raise WorkspaceError("Selected state file could not be read", "invalid_request") from exc
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_STATE_IMPORT_BYTES:
+        if stat.S_ISLNK(info.st_mode) or (getattr(info, "st_file_attributes", 0) & 0x400) or not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_STATE_IMPORT_BYTES:
             raise WorkspaceError("Selected file must be a regular JSON file under 2 MiB", "invalid_request")
         try:
-            raw_bytes = src.read_bytes()
+            open_flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(src, open_flags)
+            try:
+                finfo = os.fstat(fd)
+                if not stat.S_ISREG(finfo.st_mode) or finfo.st_size > _MAX_STATE_IMPORT_BYTES:
+                    raise WorkspaceError("Selected file must be a regular JSON file under 2 MiB", "invalid_request")
+                with os.fdopen(fd, "rb") as stream:
+                    fd = -1
+                    raw_bytes = stream.read(_MAX_STATE_IMPORT_BYTES + 1)
+                if len(raw_bytes) > _MAX_STATE_IMPORT_BYTES:
+                    raise WorkspaceError("Selected file must be under 2 MiB", "invalid_request")
+            finally:
+                if fd >= 0:
+                    os.close(fd)
             parsed = json.loads(raw_bytes.decode("utf-8"))
+        except WorkspaceError:
+            raise
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise WorkspaceError("Selected file is not valid UTF-8 JSON", "invalid_request") from exc
         if not isinstance(parsed, dict) or not isinstance(parsed.get("cookies"), list) or not parsed["cookies"]:
@@ -562,12 +599,27 @@ class LocalIntegrationsManager:
 
         state_file.parent.mkdir(parents=True, exist_ok=True)
         chmod_sensitive(state_file.parent, mode=0o700)
-        atomic_json(state_file, parsed)
-        _tighten_state_file_perms(state_file)
-        health = ensure_session_health(state_file, auto_refresh=True)
+        tmp_state = state_file.parent / f".import-check-{os.getpid()}-{threading.get_ident()}.json"
+        try:
+            atomic_json(tmp_state, parsed)
+            _tighten_state_file_perms(tmp_state)
+            health = ensure_session_health(tmp_state, auto_refresh=True)
+            if not health.get("ok"):
+                return {
+                    "ok": False,
+                    "code": "auth_invalid",
+                    "error": "Imported NotebookLM state is expired or invalid; existing session was kept unchanged.",
+                }
+            # Persist refreshed/validated bytes from the checked temporary copy without clobbering on invalid input.
+            checked_payload = json.loads(tmp_state.read_text(encoding="utf-8"))
+            atomic_json(state_file, checked_payload)
+            _tighten_state_file_perms(state_file)
+        finally:
+            tmp_state.unlink(missing_ok=True)
+
         probe = {
-            "status": "authenticated" if health.get("ok") else "expired",
-            "code": "ok" if health.get("ok") else "auth_invalid",
+            "status": "authenticated",
+            "code": "ok",
             "refreshed": bool(health.get("refreshed", False)),
             "state_present": state_file.exists(),
             "observed_at": _utc_now(),

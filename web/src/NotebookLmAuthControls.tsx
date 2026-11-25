@@ -1,22 +1,20 @@
 import { useEffect, useId, useState } from "react";
 import { ApiError, api } from "./api";
 import type { Translate } from "./i18n";
-import type { LocalIntegrationsCapability, NlmProbeResult } from "./types";
-
-interface LoginJobState {
-  status: "idle" | "running" | "succeeded" | "failed";
-  mode: string | null;
-  message: string;
-}
+import type { LocalIntegrationsCapability, NlmLoginJobState, NlmProbeResult } from "./types";
 
 export function NotebookLmAuthControls({
   capability,
   probe,
+  loginJob: controlledLoginJob,
+  onLoginJobChange,
   onProbeUpdated,
   t,
 }: {
   capability?: LocalIntegrationsCapability;
   probe?: NlmProbeResult | null;
+  loginJob?: NlmLoginJobState | null;
+  onLoginJobChange?: (job: NlmLoginJobState) => void;
   onProbeUpdated?: (probe: NlmProbeResult) => void;
   t: Translate;
 }) {
@@ -28,7 +26,13 @@ export function NotebookLmAuthControls({
   const [showImport, setShowImport] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [loginJob, setLoginJob] = useState<LoginJobState | null>(null);
+  const [localLoginJob, setLocalLoginJob] = useState<NlmLoginJobState | null>(null);
+  const loginJob = controlledLoginJob ?? localLoginJob;
+
+  function updateLoginJob(job: NlmLoginJobState) {
+    setLocalLoginJob(job);
+    onLoginJobChange?.(job);
+  }
 
   useEffect(() => {
     if (!enabled || loginJob?.status !== "running") return;
@@ -37,11 +41,11 @@ export function NotebookLmAuthControls({
         try {
           const st = await api<{
             ok: boolean;
-            login_job?: LoginJobState;
+            login_job?: NlmLoginJobState;
             probes?: { notebooklm_auth?: NlmProbeResult | null };
           }>("/integrations/status");
           if (st.login_job) {
-            setLoginJob(st.login_job);
+            updateLoginJob(st.login_job);
             if (st.login_job.status === "succeeded") {
               setStatusMessage(t("integrationNlmAuthenticated"));
               setErrorMessage(null);
@@ -94,10 +98,10 @@ export function NotebookLmAuthControls({
     setErrorMessage(null);
     setStatusMessage(null);
     try {
-      const res = await api<{ ok: boolean; login: LoginJobState }>("/integrations/notebooklm/login", {
+      const res = await api<{ ok: boolean; login: NlmLoginJobState }>("/integrations/notebooklm/login", {
         mode: "browser_window",
       });
-      if (res.login) setLoginJob(res.login);
+      if (res.login) updateLoginJob(res.login);
       setStatusMessage(t("integrationNlmRunning"));
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : t("integrationNlmLoginFailed"));

@@ -98,10 +98,12 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
   async function copyMarkdown() {
     const md = await fetchMarkdown();
     if (!md) return;
+    if (!navigator.clipboard?.writeText) {
+      setExportStatus({ tone: "bad", text: t("nativeExportFailed") });
+      return;
+    }
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(md);
-      }
+      await navigator.clipboard.writeText(md);
       setExportStatus({ tone: "good", text: t("nativeExportCopied") });
     } catch {
       setExportStatus({ tone: "bad", text: t("nativeExportFailed") });

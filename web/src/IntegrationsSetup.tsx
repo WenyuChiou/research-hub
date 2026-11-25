@@ -220,6 +220,7 @@ export function IntegrationsSetup({
                           onLiveStateChange?.((prev) => ({
                             ...prev,
                             credentials: creds,
+                            zotero: null,
                           }))
                         }
                         onProbeUpdated={(probe) =>
@@ -234,6 +235,13 @@ export function IntegrationsSetup({
                       <NotebookLmAuthControls
                         capability={localCap}
                         probe={liveState?.notebooklm}
+                        loginJob={liveState?.loginJob}
+                        onLoginJobChange={(job) =>
+                          onLiveStateChange?.((prev) => ({
+                            ...prev,
+                            loginJob: job,
+                          }))
+                        }
                         onProbeUpdated={(probe) =>
                           onLiveStateChange?.((prev) => ({
                             ...prev,

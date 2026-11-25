@@ -174,6 +174,20 @@ def test_credentials_save_encrypts_secrets_and_never_echoes(tmp_path: Path, monk
         assert reloaded.s2_api_key == raw_s2_secret
         assert reloaded.unpaywall_email == raw_email
 
+        # Verify env ZOTERO_LIBRARY_TYPE fallback when not in config
+        monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "group")
+        clear_type_mgr = LocalIntegrationsManager(tmp_path / "env_only.json")
+        assert clear_type_mgr.capability()["zotero_library_type"] == "group"
+
+        # Refuse secret saves when cryptography package is unavailable
+        import research_hub.workspace.integrations as integ_mod
+
+        monkeypatch.setattr(integ_mod, "_HAS_CRYPTO", False)
+        with pytest.raises(Exception) as crypto_exc:
+            clear_type_mgr.save_credentials({"zotero_api_key": "must-not-save-plain"})
+        assert "cryptography" in str(crypto_exc.value).lower()
+        assert not (tmp_path / "env_only.json").exists()
+
         # Clear keys explicitly
         code, body = _post_json(
             f"{base}/api/v1/integrations/credentials",
@@ -248,6 +262,7 @@ def test_zotero_and_notebooklm_probes_and_login_modes(tmp_path: Path, monkeypatc
         mgr.start_notebooklm_login({"mode": "import_state", "state_path": str(bad_state)})
     assert "cookies" in str(bad_exc.value).lower()
 
+    # Valid import_state creates working state.json
     good_state = tmp_path / "good_state.json"
     good_state.write_text(
         json.dumps({"cookies": [{"name": "SID", "value": "v", "domain": ".google.com"}]}),
@@ -262,6 +277,29 @@ def test_zotero_and_notebooklm_probes_and_login_modes(tmp_path: Path, monkeypatc
     assert imp_res["ok"] is True
     assert imp_res["probe"]["status"] == "authenticated"
     assert imp_res["probe"]["refreshed"] is True
+
+    # Invalid/expired import_state must NOT overwrite working state_file
+    expired_state = tmp_path / "expired_state.json"
+    expired_state.write_text(
+        json.dumps({"cookies": [{"name": "SID", "value": "expired", "domain": ".google.com"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        nlm_auth,
+        "ensure_session_health",
+        lambda sf, auto_refresh=True: {"ok": False, "refreshed": False},
+    )
+    exp_res = mgr.start_notebooklm_login({"mode": "import_state", "state_path": str(expired_state)})
+    assert exp_res["ok"] is False and exp_res["code"] == "auth_invalid"
+    active_state = json.loads(nlm_auth.default_state_file(kb_root / ".research_hub").read_text(encoding="utf-8"))
+    assert active_state["cookies"][0]["value"] == "v"
+
+    # Re-enable ok health check for browser_cookies
+    monkeypatch.setattr(
+        nlm_auth,
+        "ensure_session_health",
+        lambda sf, auto_refresh=True: {"ok": True, "refreshed": True},
+    )
 
     # browser_cookies mode
     monkeypatch.setattr(nlm_auth, "login_from_browser", lambda sf, browser=None: 0)
