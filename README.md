@@ -13,7 +13,7 @@ Your local research workspace connecting AI assistants (Claude Code, Codex) with
 Literature discovery happens inside your AI host's conversation, while real research lives across Zotero libraries, Obsidian notes, NotebookLM briefs, analysis scripts, and manuscripts. `research-hub` turns those pieces into one inspectable local workspace—paired with [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills) for Stage 1–2 discovery-to-synthesis:
 
 - **Build on your AI host's native search:** Let Claude Code or Codex find and read papers using its own search and reading tools—no separate keyword scraper or lock-in required.
-- **Keep Zotero, Obsidian & NotebookLM in view:** Inspect Zotero sync status, save structured or seven-section source-bound summaries into Obsidian cluster notes, and bundle verified sources for NotebookLM briefs.
+- **Keep Zotero, Obsidian & NotebookLM in view:** Inspect Zotero sync status, save structured cluster notes into Obsidian, bundle verified sources for NotebookLM briefs, and optionally store caller-authored seven-section source summaries in the Hub workspace (`231f9fbd+`, exportable as generic Markdown).
 - **Track changes & keep decisions human:** Register local file hashes to surface stale evidence or manuscript sections when inputs change; AI proposals and destination writes always wait for your approval.
 
 ![Concept diagram: research questions connect literature, evidence, analysis, manuscript proposals, and human review; changed inputs return work for review.](docs/images/workspace-lifecycle.en.png)
@@ -126,13 +126,13 @@ When you pair the [research-hub skill](skills/research-hub/) with a capable AI h
 
 - **Step 1 — Discover & read natively:** Ask your AI host to search, chain citations, and read accessible sections directly (e.g., *"Find literature on LLMs simulating human decisions; include original links, relevance, versions, and limits on available full text"*). Search snippets never count as full-text reading.
 - **Step 2 — Sync to Zotero & Obsidian:** Hand verified bibliographic records to `research-hub ingest` (after previewing `--dry-run`) to track **Zotero** status and generate structured **Obsidian** cluster notes, or save local project metadata via `project record`.
-- **Step 3 — Export deep summaries & NotebookLM briefs:** Use `paper-summarize` for seven-section source-bound summaries (exportable to Obsidian/Roam Markdown) and `research-hub notebooklm` + `notebooklm-brief-verifier` to generate and audit source-grounded briefs before moving downstream to `literature-triage-matrix` and `gap-to-topic`.
+- **Step 3 — Summarize & verify NotebookLM briefs:** Use `paper-summarize` for native seven-section full-text summaries (with optional Hub CLI save/generic Markdown stdout export at `231f9fbd+`, or abstract-only Obsidian/Zotero cluster note updates) and `research-hub notebooklm` + `notebooklm-brief-verifier` to generate and audit source-grounded briefs before moving downstream to `literature-triage-matrix` and `gap-to-topic`.
 
 <details>
 <summary>Native reader boundaries &amp; source-summary revision note</summary>
 
 - **Native reader scope:** Displays caller-supplied observations, bibliographies, unchanged PDF attachments, and supplied side-by-side translations (explicitly labeled unverified). It never auto-parses, translates, or scientifically validates content. See [native reader export guide](src/research_hub/skills_data/research-hub/references/native-discovery-export.md) and the optional [saved-result contract](docs/contracts/native-discovery-view.md).
-- **Seven-section summary CLI boundary:** The quick-start pin `1f0726a7` predates Stage 1 authored source summaries. From source revision `231f9fbd` onward, the [authored source-summary CLI](docs/cli-reference.md#native-authored-source-summaries) saves and exports caller-authored seven-section summaries bound to current source hashes; read the [summary contract](docs/native-source-summary.md) first and verify your installed revision separately from package version numbers.
+- **Seven-section summary CLI boundary:** The quick-start pin `1f0726a7` predates Stage 1 authored source summaries. From source revision `231f9fbd` onward, the [authored source-summary CLI](docs/cli-reference.md#native-authored-source-summaries) saves and exports caller-authored seven-section summaries to generic Markdown stdout bound to current source hashes; this imports supplied content only and does not generate summaries, claim Obsidian/Roam import fidelity, establish scientific support, or record human acceptance. Read the [summary contract](docs/native-source-summary.md) first and verify your installed revision separately from package version numbers.
 
 </details>
 
@@ -147,7 +147,7 @@ See [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills), the 
 | Portable handoff | Export a task to your AI host, then import prose and candidate file hashes. Export leaves the task waiting for the agent. |
 | Connected Codex | An authenticated, compatible Codex CLI uses an explicitly trusted public writing bundle to produce prose; the result waits for human review. |
 
-See [writing setup](docs/workspace-guide.md#writing-adapter-preview) and [boundaries and recovery](docs/workspace-guide.md#boundaries-and-recovery). Connected Codex receives bounded text excerpts, not binary files; formatting remains in your editor, and local ZIP delivery requires separate human approval without authorizing cloud uploads or overwriting existing direct-write tools.
+See [writing setup](docs/workspace-guide.md#writing-adapter-preview) and [boundaries and recovery](docs/workspace-guide.md#boundaries-and-recovery). Connected Codex receives bounded text excerpts, not binary files; formatting remains in your editor, and accepted proposals can be packaged into a local ZIP only after separate human approval (which does not authorize cloud upload or publication). Workspace approval does not automatically protect existing direct-write CLI, MCP, dashboard, or cloud tools.
 
 ## Optional integrations
 

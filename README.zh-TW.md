@@ -13,7 +13,7 @@
 文獻探索發生在 AI 助理對話中，而真正的研究工作則分散在 Zotero 文獻庫、Obsidian 筆記、NotebookLM 簡報、分析腳本與論文稿件之間。`research-hub` 將這些環節整合成單一可檢視的本機工作區，並與 [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills) 搭配支援 Stage 1–2 的探索到整理流程：
 
 - **建築在你的 AI 主機原生搜尋上：** 由 Claude Code 或 Codex 使用其原生搜尋與閱讀工具找文獻、讀原文，不強迫先經過獨立關鍵字腳本。
-- **一眼掌握 Zotero、Obsidian 與 NotebookLM 狀態：** 檢視 Zotero 收錄狀態、將結構化筆記或七段來源綁定摘要寫入 Obsidian 主題群組，並打包已驗證來源送入 NotebookLM。
+- **一眼掌握 Zotero、Obsidian 與 NotebookLM 狀態：** 檢視 Zotero 收錄狀態、在 Obsidian 整理結構化主題筆記、打包已驗證來源送入 NotebookLM，並可於 Hub 工作區（`231f9fbd+`）保存呼叫者撰寫的七段來源綁定摘要（支援匯出通用 Markdown）。
 - **追蹤變動與保留人類決策權：** 登錄本機檔案雜湊以偵測需要重審的證據或稿件段落；所有 AI 提案與寫入都必須先經人工核准。
 
 ![概念圖：研究問題串連文獻、證據、分析、稿件提案與人工審查；輸入變動後，相關工作需要重新檢視。](docs/images/workspace-lifecycle.zh-TW.png)
@@ -127,13 +127,13 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 - **第一步 — 由 AI 主機原生找與讀：** 直接請主機搜尋、追引文並閱讀可取得的原文段落（例如：「幫我找 LLM 模擬人類決策的文獻，列出原文連結、相關性、版本與可取得的全文限制」）。搜尋片段不等於全文閱讀。
 - **第二步 — 同步 Zotero 狀態與寫入 Obsidian：** 取得書目清單後，經 `--dry-run` 預覽授權 `research-hub ingest` 以核對 **Zotero** 狀態並產出 **Obsidian** 主題筆記，或透過 `project record` 保存本機專案書目中繼資料。
-- **第三步 — 匯出精讀摘要與驗證 NotebookLM 簡報：** 使用 `paper-summarize` 產出七段來源綁定摘要（可匯出成 Obsidian／Roam Markdown），再用 `research-hub notebooklm` 搭配 `notebooklm-brief-verifier` 產生與查核簡報，最後交接給 `literature-triage-matrix` 與 `gap-to-topic`。
+- **第三步 — 整理單篇摘要與驗證 NotebookLM 簡報：** 使用 `paper-summarize` 產出原生七段全文摘要（可選用 `231f9fbd+` 的 Hub CLI 保存並匯出通用 Markdown 至 stdout，或只用既有論文摘要更新 Obsidian／Zotero 群組筆記），再用 `research-hub notebooklm` 搭配 `notebooklm-brief-verifier` 產生與查核簡報，最後交接給 `literature-triage-matrix` 與 `gap-to-topic`。
 
 <details>
 <summary>原生閱讀器邊界與來源摘要版本界線說明</summary>
 
 - **原生閱讀器邊界：** 僅呈現呼叫者提供的觀察、書目、原封附帶的 PDF 下載，以及明確標示「未經驗證」的並列翻譯；不會自動解析、翻譯或做科學驗證。格式請見[原生閱讀器匯出指南](src/research_hub/skills_data/research-hub/references/native-discovery-export.md)與選用的[已儲存成果契約](docs/contracts/native-discovery-view.md)。
-- **七段摘要 CLI 版本界線：** 快速開始的 `1f0726a7` 示範早於 Stage 1 來源摘要功能。自原始碼 `231f9fbd` 起，[已撰寫來源摘要 CLI](docs/cli-reference.md#native-authored-source-summaries)可保存與匯出綁定當前來源雜湊的七段摘要；使用前請先閱讀[摘要契約](docs/native-source-summary.md)，並分開核對原始碼修訂版與實際安裝入口。
+- **七段摘要 CLI 版本界線：** 快速開始的 `1f0726a7` 示範早於 Stage 1 來源摘要功能。自原始碼 `231f9fbd` 起，[已撰寫來源摘要 CLI](docs/cli-reference.md#native-authored-source-summaries)可保存與匯出綁定當前來源雜湊的呼叫者撰寫七段摘要至通用 Markdown stdout；這只會匯入既有內容，不會生成摘要、宣稱 Obsidian／Roam 匯入保真度、認定科學支持或記錄人工接受。使用前請先閱讀[摘要契約](docs/native-source-summary.md)，並分開核對原始碼修訂版與實際安裝入口。
 
 </details>
 
@@ -148,7 +148,7 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 | 可攜式交接 | 匯出任務到 AI 主機，再匯入文字與候選檔案雜湊。匯出後任務等待代理回覆。 |
 | 連接 Codex | 經登入且相容的 Codex CLI，使用明確信任的公開寫作套件產生文字，結果等待人工審查。 |
 
-請參閱[寫作設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)與[邊界與復原指南](docs/workspace-guide.zh-TW.md#boundaries-and-recovery)。連接的 Codex 僅接收有限長度的文字摘錄而不含二進位檔；最終排版仍在編輯器完成，且本機 ZIP 交付需另行核准，不授權雲端上傳或覆蓋既有直接寫入工具。
+請參閱[寫作設定](docs/workspace-guide.zh-TW.md#writing-adapter-preview)與[邊界與復原指南](docs/workspace-guide.zh-TW.md#boundaries-and-recovery)。連接的 Codex 僅接收有限長度的文字摘錄而不含二進位檔；最終排版仍在編輯器完成，已接受的提案經另行核准可打包為本機 ZIP（不代表授權投稿或雲端上傳），且工作區核准不會自動涵蓋既有 CLI、MCP、儀表板及雲端直接寫入工具。
 
 <a id="credential-reference"></a>
 <a id="connect-your-ai-host"></a>
