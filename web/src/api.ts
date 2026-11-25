@@ -189,9 +189,6 @@ async function request<T>(
     (!response.ok && !(response.status === 400 && auditFindings)) ||
     (value.ok !== true && !auditFindings)
   ) {
-    if (response.status === 403 && value.code === "forbidden") {
-      void refreshSessionTokens();
-    }
     throw new ApiError(
       value.error || `The request failed (HTTP ${response.status}).`,
       value.code || "request_failed",
@@ -199,6 +196,14 @@ async function request<T>(
     );
   }
   return value as T;
+}
+
+/** Refresh CSRF/human tokens when a local integration action hits an explicit 403 forbidden after idle restart. */
+export async function recoverCsrfIfForbidden(err: unknown): Promise<boolean> {
+  if (err instanceof ApiError && err.status === 403 && err.code === "forbidden") {
+    return refreshSessionTokens();
+  }
+  return false;
 }
 
 export const segment = (value: string): string => encodeURIComponent(value);

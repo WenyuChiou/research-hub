@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { ApiError, api } from "./api";
+import { ApiError, api, recoverCsrfIfForbidden } from "./api";
 import type { Translate } from "./i18n";
 import type { LocalIntegrationsCapability, ZoteroProbeResult } from "./types";
 
@@ -133,6 +133,7 @@ export function ZoteroLibraryForm({
       setS2ApiKey("");
       setSaveMessage(t("integrationSaved"));
     } catch (err) {
+      void recoverCsrfIfForbidden(err);
       setSaveError(err instanceof ApiError ? err.message : t("integrationSaveFailed"));
     } finally {
       setBusy(false);
@@ -152,6 +153,7 @@ export function ZoteroLibraryForm({
       if (res.credentials) onCredentialsSaved?.(res.credentials);
       setSaveMessage(t("integrationSaved"));
     } catch (err) {
+      void recoverCsrfIfForbidden(err);
       setSaveError(err instanceof ApiError ? err.message : t("integrationSaveFailed"));
     } finally {
       setBusy(false);
@@ -169,6 +171,7 @@ export function ZoteroLibraryForm({
       );
       if (res.probe) onProbeUpdated?.(res.probe);
     } catch (err) {
+      void recoverCsrfIfForbidden(err);
       setSaveError(err instanceof ApiError ? err.message : t("integrationZoteroUnreachable"));
     } finally {
       setBusy(false);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, auditProject, ApiError, refreshSessionTokens, safeSourceUrl } from "./api";
+import { api, auditProject, ApiError, recoverCsrfIfForbidden, refreshSessionTokens, safeSourceUrl } from "./api";
 
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -129,7 +129,7 @@ describe("workspace API boundary", () => {
       vi.unstubAllGlobals();
     });
 
-    it("refreshes CSRF token after HTTP 403 forbidden without replaying the POST write", async () => {
+    it("refreshes CSRF token on explicit 403 forbidden recovery without replaying the POST write", async () => {
       document.head.innerHTML = "";
       token("research-hub-csrf-token", "stale-token");
       const fetchMock = vi
@@ -143,13 +143,14 @@ describe("workspace API boundary", () => {
         );
       vi.stubGlobal("fetch", fetchMock);
 
-      await expect(api("/integrations/credentials", { zotero_library_id: "123" })).rejects.toMatchObject({
-        status: 403,
-        code: "forbidden",
-      });
-      await Promise.resolve();
-      await Promise.resolve();
-
+      let caught: unknown;
+      try {
+        await api("/integrations/credentials", { zotero_library_id: "123" });
+      } catch (err) {
+        caught = err;
+        await recoverCsrfIfForbidden(err);
+      }
+      expect(caught).toMatchObject({ status: 403, code: "forbidden" });
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/integrations/credentials");
       expect(fetchMock.mock.calls[1][0]).toBe("/app/");

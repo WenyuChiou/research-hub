@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { ApiError, api } from "./api";
+import { ApiError, api, recoverCsrfIfForbidden } from "./api";
 import type { Translate } from "./i18n";
 import type { LocalIntegrationsCapability, NlmLoginJobState, NlmProbeResult } from "./types";
 
@@ -87,6 +87,7 @@ export function NotebookLmAuthControls({
       const res = await api<{ ok: boolean; probe: NlmProbeResult }>("/integrations/notebooklm/check", {});
       if (res.probe) applyProbe(res.probe);
     } catch (err) {
+      void recoverCsrfIfForbidden(err);
       setErrorMessage(err instanceof ApiError ? err.message : t("integrationNlmLoginFailed"));
     } finally {
       setBusy(false);
@@ -104,6 +105,7 @@ export function NotebookLmAuthControls({
       if (res.login) updateLoginJob(res.login);
       setStatusMessage(t("integrationNlmRunning"));
     } catch (err) {
+      void recoverCsrfIfForbidden(err);
       setErrorMessage(err instanceof ApiError ? err.message : t("integrationNlmLoginFailed"));
     } finally {
       setBusy(false);
@@ -121,6 +123,7 @@ export function NotebookLmAuthControls({
       );
       if (res.probe) applyProbe(res.probe);
     } catch (err) {
+      void recoverCsrfIfForbidden(err);
       setErrorMessage(err instanceof ApiError ? err.message : t("integrationNlmLoginFailed"));
     } finally {
       setBusy(false);
@@ -142,6 +145,7 @@ export function NotebookLmAuthControls({
       );
       if (res.probe) applyProbe(res.probe);
     } catch (err) {
+      void recoverCsrfIfForbidden(err);
       setErrorMessage(err instanceof ApiError ? err.message : t("integrationNlmLoginFailed"));
     } finally {
       setBusy(false);

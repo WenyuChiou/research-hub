@@ -13,6 +13,7 @@ import { translator } from "./i18n";
 import type { Workspace } from "./types";
 vi.mock("./api", () => ({
   api: vi.fn(() => new Promise(() => {})),
+  recoverCsrfIfForbidden: vi.fn(async () => false),
   refreshSessionTokens: vi.fn(async () => true),
   ApiError: class ApiError extends Error {
     status = 500;
