@@ -571,7 +571,7 @@ def _populate_zotero_template(
             template[field] = value
 
     if item_type == "preprint":
-        repo = "arXiv" if (arxiv_id or "arxiv" in journal.lower()) else journal
+        repo = "arXiv" if (arxiv_id or re.search(r"\barxiv\b", journal, re.I)) else journal
         if repo:
             _set_if_supported("repository", repo)
         if arxiv_id:

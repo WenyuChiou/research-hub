@@ -175,6 +175,7 @@ def test_write_papers_to_zotero_respects_strict_zotero_templates() -> None:
 
     papers = [
         {"title": "Preprint", "authors": ["Jane Doe"], "year": 2024, "doi": "10.48550/arXiv.2401.00001", "url": "https://arxiv.org/abs/2401.00001", "journal": "arXiv", "abstract": "A", "source": "arxiv"},
+        {"title": "Earth Preprint", "authors": ["Jane Doe"], "year": 2024, "doi": "10.31223/X50000", "url": "https://eartharxiv.org/repository/view/1", "journal": "EarthArXiv", "abstract": "A", "item_type": "preprint"},
         {"title": "Conf", "authors": ["Jane Doe"], "year": 2024, "doi": "10.1000/conf", "journal": "ICML", "abstract": "A", "item_type": "conferencePaper"},
         {"title": "BookSec", "authors": ["Jane Doe"], "year": 2024, "doi": "10.1000/sec", "journal": "Handbook", "abstract": "A", "item_type": "bookSection"},
         {"title": "Book", "authors": ["Jane Doe"], "year": 2024, "doi": "10.1000/book", "journal": "MIT Press", "abstract": "A", "item_type": "book"},
@@ -185,11 +186,13 @@ def test_write_papers_to_zotero_respects_strict_zotero_templates() -> None:
     ]
     zot = _StrictZot()
     zr, notes_out, errors = write_papers_to_zotero(zot, papers, "c-slug", "COLL1", batch_coll="BATCH1", log=lambda _: None)
-    assert errors == [] and len(zr) == 8 and len(notes_out) == 8
-    pre = next(x for x in zot.created if x["itemType"] == "preprint")
+    assert errors == [] and len(zr) == 9 and len(notes_out) == 9
+    pre = next(x for x in zot.created if x["itemType"] == "preprint" and x["title"] == "Preprint")
     assert "publicationTitle" not in pre
     assert pre["repository"] == "arXiv"
     assert pre["archiveID"] == "arXiv:2401.00001"
+    earth = next(x for x in zot.created if x["itemType"] == "preprint" and x["title"] == "Earth Preprint")
+    assert earth["repository"] == "EarthArXiv"
     conf = next(x for x in zot.created if x["itemType"] == "conferencePaper")
     assert conf["proceedingsTitle"] == "ICML"
     sec = next(x for x in zot.created if x["itemType"] == "bookSection")
@@ -270,6 +273,9 @@ def test_reused_zotero_hit_updates_collections_preserves_zr_and_string_authors(t
 
     assert pipeline.run_pipeline(dry_run=False, cluster_slug="c", verify=False) == 0
     assert z.updated and set(z.updated[0]["collections"]) >= {"CLUST1", "BATCH2"}
+    log_text = (cfg.logs / "pipeline_log.txt").read_text(encoding="utf-8")
+    assert "suggestion failed" not in log_text
+    assert "->cluster:" in log_text
     output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
     statuses = {row["title"]: row["status"] for row in output["zotero_results"]}
     assert statuses == {"Reused Paper Long Title": "REUSED", "Fresh Paper Long Title": "CREATED"}
@@ -280,13 +286,13 @@ def test_check_duplicate_normalizes_doi_and_falls_back_to_title() -> None:
 
     class _Zot:
         def items(self, *, q: str, limit: int = 5) -> list[dict]:
-            if q.startswith("Large Language"):
-                return [{"data": {"title": "Large Language Model based Multi-Agents", "DOI": "10.48550/arxiv.2402.01680"}}]
+            if q.startswith("Different Title"):
+                return [{"data": {"title": "Stored Title Variant", "DOI": "10.48550/arxiv.2402.01680"}}]
             if q == "untitled-check":
                 return [{"data": {"itemType": "note"}}, {"data": {"title": None, "DOI": "10.1000/match"}}]
             return []
 
-    assert check_duplicate(_Zot(), "Large Language Model based Multi-Agents", "10.48550/arXiv.2402.01680") is True
+    assert check_duplicate(_Zot(), "Different Title Spelling", "10.48550/arXiv.2402.01680") is True
     assert check_duplicate(_Zot(), "", "untitled-check") is False
     assert check_duplicate(_Zot(), None, "10.1000/MATCH") is False  # type: ignore[arg-type]
 
