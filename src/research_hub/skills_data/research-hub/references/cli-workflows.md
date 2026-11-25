@@ -23,8 +23,9 @@ research-hub import-folder ./papers --cluster my-local-review
 ```
 
 Missing credentials adapt per selected destination:
-- **Missing Zotero:** use `import-folder`, sample/dashboard mode, or ask the user to set `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID`.
-- **Missing NotebookLM auth:** pass `--no-nlm`, or ask the user to complete `research-hub notebooklm login --auto-detect`.
+- **Interactive Workspace UI (`research-hub serve --workspace`):** Open the bottom-left **Integrations & setup** panel to save encrypted API keys (Zotero API key/Library ID, Unpaywall email, Semantic Scholar API key, stored with `secret_box` `0600` ACLs), run live Zotero/NotebookLM checks, trigger or import NotebookLM browser logins, recover automatically on idle restarts (`refreshSessionTokens`), and copy or download `#288` portable Markdown summaries from the Literature reader.
+- **Missing Zotero:** use `import-folder`, sample/dashboard mode, configure credentials in **Integrations & setup**, or set `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID` (`ZoteroDualClient` auto-retries the local API after transient disconnects).
+- **Missing NotebookLM auth:** pass `--no-nlm`, use **Integrations & setup** in `--workspace` (`browser_window`, `browser_cookies`, or `import_state`), or run `research-hub notebooklm login --auto-detect` (expired PSIDTS cookies refresh automatically during `ensure_session_health` checks).
 - **Missing LLM CLI for batch relevance/summary:** pass `--no-fit-check` or use host-native evaluation/summarization instead of spawning a subprocess CLI (`claude`, `codex`, `gemini`, `opencode`, `aichat`, `cursor`).
 
 ## Headless / Batch CLI Discovery (`auto` & `discover`)
@@ -81,6 +82,14 @@ MCP config for compatible STDIO hosts:
 
 ```json
 { "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+```
+
+Loopback HTTP / SSE transport options (`stdio` wraps stdout with `_StdioProtocolGuard` to keep JSON-RPC clean; HTTP modes bind loopback hosts only):
+
+```bash
+research-hub serve --mcp-transport stdio
+research-hub serve --mcp-transport streamable-http --port 8000
+research-hub serve --mcp-transport sse --port 8000
 ```
 
 Built-in platform installers:
