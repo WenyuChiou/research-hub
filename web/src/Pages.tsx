@@ -172,12 +172,36 @@ export function ProjectPages({
     const label = textValue(source.data.title).trim();
     titleCounts.set(label, (titleCounts.get(label) ?? 0) + 1);
   }
-  const sourceOptions = sources.map((source) => {
+  const baseSourceOptions = sources.map((source) => {
     const title = textValue(source.data.title).trim();
     const fallback = textValue(source.data.year || source.data.doi || source.data.locator).trim() || source.id.slice(0, 6);
     const label = !title ? source.id : (titleCounts.get(title) ?? 0) > 1 ? `${title} (${fallback})` : title;
-    return { value: source.id, label };
+    return { source, title, label };
   });
+  const baseCounts = new Map<string, number>();
+  for (const option of baseSourceOptions) {
+    baseCounts.set(option.label, (baseCounts.get(option.label) ?? 0) + 1);
+  }
+  const refinedSourceOptions = baseSourceOptions.map(({ source, title, label }) => {
+    if ((baseCounts.get(label) ?? 0) <= 1) {
+      return { source, label };
+    }
+    const detailPart = [
+      textValue(source.data.year).trim(),
+      textValue(source.data.doi || source.data.locator).trim() || source.id.slice(0, 6),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return { source, label: `${title || source.id} (${detailPart})` };
+  });
+  const refinedCounts = new Map<string, number>();
+  for (const option of refinedSourceOptions) {
+    refinedCounts.set(option.label, (refinedCounts.get(option.label) ?? 0) + 1);
+  }
+  const sourceOptions = refinedSourceOptions.map(({ source, label }) => ({
+    value: source.id,
+    label: (refinedCounts.get(label) ?? 0) > 1 ? `${label} · ${source.id.slice(0, 6)}` : label,
+  }));
   const next = nextOperation(detail);
   const pending =
     detail.tasks.find((task) => task.status === "awaiting_human") ??

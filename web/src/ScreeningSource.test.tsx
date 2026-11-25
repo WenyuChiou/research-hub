@@ -106,6 +106,7 @@ it("saved screening shows exact source title/scope and keyboard return focuses t
     ),
   ).toBe(true);
 });
+
 it("duplicate titles retain their separate exact record targets", async () => {
   serve([
     source("source-a", "Same title"),
@@ -184,4 +185,40 @@ it("refresh removing the exact source removes the return action without dropping
       ),
     ),
   ).toBe(true);
+});
+
+it("keeps duplicate-title same-year source options uniquely identifiable while keeping unique titles clean", async () => {
+  serve([
+    {
+      id: "src-preprint",
+      kind: "source",
+      data: { title: "Same paper", year: "2026", doi: "10.1101/preprint", reading_scope: "full_text" },
+    },
+    {
+      id: "src-journal",
+      kind: "source",
+      data: { title: "Same paper", year: "2026", doi: "10.1038/journal", reading_scope: "full_text" },
+    },
+    {
+      id: "src-unique",
+      kind: "source",
+      data: { title: "Unique paper", year: "2026", doi: "10.1000/unique", reading_scope: "abstract" },
+    },
+  ]);
+  render(<App />);
+  const adv = await screen.findByText("Add sources & batch tools", { selector: "summary" });
+  const details = adv.closest("details");
+  if (details && !details.open) adv.click();
+  const heading = await screen.findByRole("heading", { name: "Screening decisions" });
+  const section = heading.closest("section")!;
+  const select = within(section).getByRole("combobox", { name: /^Source/ });
+  const labels = Array.from((select as HTMLSelectElement).options)
+    .map((opt) => opt.textContent ?? "")
+    .filter((text) => text !== "Choose…");
+  expect(labels).toEqual([
+    "Same paper (2026 · 10.1101/preprint)",
+    "Same paper (2026 · 10.1038/journal)",
+    "Unique paper",
+  ]);
+  expect(new Set(labels).size).toBe(labels.length);
 });
