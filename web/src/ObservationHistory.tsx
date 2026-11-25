@@ -27,7 +27,6 @@ export function SourceObservations({ record, context, t }: { record: ResearchRec
         <dt>{t("observationOriginalReading")}</dt><dd>{view.originalReading ?? unknown}</dd>
         <dt>{t("observationVersion")}</dt><dd>{obs.version ?? unknown} · {obs.versionReviewed ? t("observationReviewRef") : t("observationVersionPending")}</dd>
         <dt>{t("observationReference")}</dt><dd>{obs.referencePresent ? t("observationReferencePresent") : unknown}</dd>
-        <dt>{t("observationTextHash")}</dt><dd>{obs.textHash ? <code>{obs.textHash}</code> : unknown}</dd>
       </dl>
       {obs.generated && <>
         <dl>

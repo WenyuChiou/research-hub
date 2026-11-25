@@ -8,15 +8,17 @@
   --teal: #1b5e51;
   --focus: #9a6b18;
   --wash: #efede4;
-  /* Readable defaults; rem units respect the browser's preferred text size. */
-  --text-body: 1.125rem;
-  --text-control: 1rem;
-  --text-meta: 0.875rem;
-  --text-section: 1.375rem;
-  --text-subheading: 1.25rem;
+  /* Modular desktop reference-manager scale in rem (respects browser root zoom). */
+  --text-2xs: 0.6875rem;
+  --text-meta: 0.75rem;
+  --text-control: 0.8125rem;
+  --text-list: 0.875rem;
+  --text-body: 0.9375rem;
+  --text-subheading: 1.0625rem;
+  --text-section: 1.1875rem;
   --leading-body: 1.65;
-  --leading-control: 1.5;
-  --leading-help: 1.6;
+  --leading-control: 1.4;
+  --leading-help: 1.55;
   --body-font:
     "Segoe UI Variable Text", "Segoe UI", "PingFang TC", "Microsoft JhengHei",
     sans-serif;

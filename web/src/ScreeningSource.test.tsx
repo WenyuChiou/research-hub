@@ -65,6 +65,9 @@ function serve(records: ResearchRecord[]) {
   return fetch;
 }
 async function card(id = "decision-a") {
+  const adv = await screen.findByText("Add sources & batch tools", { selector: "summary" });
+  const details = adv.closest("details");
+  if (details && !details.open) adv.click();
   await screen.findByRole("heading", { name: "Screening decisions" });
   return document.getElementById(`record-${id}`)!;
 }

@@ -177,10 +177,13 @@ export function DeliveryCard({ action, t, onSaved }: DeliveryCardProps) {
         <span className={`badge ${statusTone(action.status)}`}>{label}</span>
       </div>
       <InspectJson title={t("deliveryPacket")} value={action.packet} />
-      <div className="authority-reference">
-        <SmallLabel>{t("actionHash")}</SmallLabel>
-        <code>{action.action_hash}</code>
-      </div>
+      <details className="inspect">
+        <summary>{t("taskDetails")}</summary>
+        <div className="authority-reference">
+          <SmallLabel>{t("actionHash")}</SmallLabel>
+          <code>{action.action_hash}</code>
+        </div>
+      </details>
       {action.status === "awaiting_human" && (
         <section className="decision-box">
           <h4>{t("humanDecision")}</h4>
@@ -254,13 +257,13 @@ export function DeliveryCard({ action, t, onSaved }: DeliveryCardProps) {
             <dd>
               <code>{action.receipt.path}</code>
             </dd>
-            <dt>{t("fingerprint")}</dt>
-            <dd>
-              <code>{action.receipt.sha256}</code>
-            </dd>
             <dt>{t("receiptVerifiedAt")}</dt>
             <dd>{action.receipt.verified_at}</dd>
           </dl>
+          <details className="inspect">
+            <summary>{t("fingerprint")}</summary>
+            <code>{action.receipt.sha256}</code>
+          </details>
         </section>
       )}
     </article>

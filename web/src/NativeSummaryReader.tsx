@@ -125,33 +125,36 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
   }
 
   return <section className="native-summary" aria-label={t("nativeTitle")}>
-    <h4>{t("nativeTitle")}</h4>
-    <p className="small muted">{t("nativePending")}</p>
-    {exportable && summary && scope?.projectId && (
-      <div className="native-export-actions">
-        <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void copyMarkdown()}>
-          {t("nativeCopyMarkdown")}
-        </button>
-        <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void downloadMarkdown()}>
-          {t("nativeDownloadMarkdown")}
-        </button>
-        {exportStatus && (
-          <span role="status" className={exportStatus.tone === "good" ? "small good-text" : "small bad-text"}>
-            {exportStatus.text}
-          </span>
-        )}
+    <div className="native-summary-header">
+      <div>
+        <h4>{t("nativeTitle")}</h4>
+        {summary && <span className="badge neutral">{t("nativeDeclaredScope")}: {summary.reading_scope}</span>}
       </div>
-    )}
-    {!summary && <p role="status">{t(current?.status === "missing" ? "nativeMissing" : current?.status === "stale" ? "nativeStale" : current?.status === "unavailable" ? "nativeUnavailable" : "nativeLoading")}</p>}
+      {exportable && summary && scope?.projectId && (
+        <div className="native-export-actions">
+          <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void copyMarkdown()}>
+            {t("nativeCopyMarkdown")}
+          </button>
+          <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void downloadMarkdown()}>
+            {t("nativeDownloadMarkdown")}
+          </button>
+          {exportStatus && (
+            <span role="status" className={exportStatus.tone === "good" ? "small good-text" : "small bad-text"}>
+              {exportStatus.text}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+    {!summary && <p className="small muted" role="status">{t(current?.status === "missing" ? "nativeMissing" : current?.status === "stale" ? "nativeStale" : current?.status === "unavailable" ? "nativeUnavailable" : "nativeLoading")}</p>}
     {summary && <>
-      <p className="small"><strong>{t("nativeDeclaredScope")}: {summary.reading_scope}</strong></p>
-      <p className="small">{t("nativeScope")}</p>
-      <ul className="native-scope">{summary.selections.map((s, i) => <li key={i}><code>{s.artifact_id}</code> · {t("nativeOffsets")}: [{s.start}, {s.end})<br />SHA-256: <code>{s.sha256}</code><br />{t("nativeSelectionHash")}: <code>{s.text_sha256}</code></li>)}</ul>
       {sections.map((section, i) => <section key={section}><h5>{t(titles[i])}</h5>{summary.sections[section].map((claim, j) => <div className="native-claim" key={j}>
-        <p className="small"><strong>{t(claim.status === "supported" ? "nativeSupported" : claim.status === "analyst_inference" ? "nativeInference" : "nativeUnknown")}</strong> <code>{claim.status}</code></p>
+        <span className={`badge ${claim.status === "supported" ? "good" : claim.status === "analyst_inference" ? "warn" : "neutral"}`}>
+          {t(claim.status === "supported" ? "nativeSupported" : claim.status === "analyst_inference" ? "nativeInference" : "nativeUnknown")}
+        </span>
         {claim.text && <p className="native-prose">{claim.text}</p>}
-        <p className="native-prose">{t("nativeReason")}: {claim.reason}</p>
-        {claim.evidence.map((e, k) => <details key={k}><summary>{t("nativeEvidence")} · {e.artifact_id} · [{e.start}, {e.end})</summary><p className="native-prose">{e.quote}</p><p className="small">{t("nativeOffsets")}: [{e.start}, {e.end})<br />SHA-256: <code>{summary.selections.find(s => s.artifact_id === e.artifact_id && s.start <= e.start && s.end >= e.end)?.sha256}</code></p></details>)}
+        <p className="native-reason">{t("nativeReason")}: {claim.reason}</p>
+        {claim.evidence.map((e, k) => <details key={k} className="native-evidence"><summary>{t("nativeEvidence")}</summary><blockquote className="native-quote">{e.quote}</blockquote></details>)}
       </div>)}</section>)}
     </>}
   </section>;

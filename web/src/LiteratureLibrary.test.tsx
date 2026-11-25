@@ -76,7 +76,6 @@ describe("organizing saved material", () => {
     expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(2);
     expect(screen.queryByRole("button", {name:"Existing readonly note"})).not.toBeInTheDocument();
     expect(screen.queryByRole("button", {name:"Saved abstract paper"})).not.toBeInTheDocument();
-    expect(screen.getByText(t("catalogOrganizationHelp"))).toBeVisible();
   });
 
   it("combines organization, category and search, and clears them together without writes or network calls", async () => {

@@ -137,7 +137,7 @@ describe("final workspace regressions", () => {
       actionNotice.getByRole("button", { name: "Dismiss message" }),
     ).toBeInTheDocument();
     await user.click(
-      language.getByRole("button", { name: "繁體中文" }),
+      language.getByRole("button", { name: "中" }),
     );
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "研究總覽",

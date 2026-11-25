@@ -50,6 +50,7 @@ it("offers a compact footer entry before project load; opening a separate panel 
   const before = vi.mocked(api).mock.calls.length;
   const panel = await open();
   expect(panel.closest("aside")).toBeNull();
+  await userEvent.click(within(panel).getByText(t("integrationAdvancedSetup")));
   expect(within(panel).getByText("python -m research_hub setup")).toBeVisible();
   expect(vi.mocked(api).mock.calls.length).toBe(before);
 });
@@ -218,7 +219,7 @@ it("uses an explicit readable theme for the footer trigger instead of inherited 
 it("separates all current connection states from saved observations and explains the owner login boundary", async () => {
   render(<IntegrationsSetup workspace={workspace(saved)} t={t} />);
   const panel = await open();
-  expect(within(panel).getAllByText(t("integrationNotChecked"))).toHaveLength(3);
+  expect(within(panel).getAllByText(t("integrationNotChecked"), { selector: "dd" })).toHaveLength(3);
   expect(within(panel).getAllByText(t("integrationSavedObservation"))).toHaveLength(3);
   expect(within(panel).getByText(t("snapshotPassed"))).toBeVisible();
   expect(within(panel).getByText(t("snapshotFailed"))).toBeVisible();
@@ -256,10 +257,11 @@ it.each(["en", "zh-TW"] as const)("shows observation provenance, exact UTC time 
   render(<IntegrationsSetup workspace={workspace({...saved,observed_at:"2026-10-25T00:00:00.123456Z"})} t={tr} />);
   await userEvent.click(screen.getByRole("button", {name:tr("integrationsSetup")}));
   const panel = within(screen.getByRole("dialog"));
+  await userEvent.click(panel.getByText(tr("integrationAdvancedSetup")));
   expect(panel.getByText(tr("integrationSavedSetupSource"))).toBeVisible();
   expect(panel.getByText("2026-10-25T00:00:00.123456Z")).toHaveAttribute("datetime", "2026-10-25T00:00:00.123456Z");
   expect(panel.getByText(tr("integrationFreshSaved"))).toBeVisible();
-  expect(panel.getAllByText(tr("integrationNotChecked"))).toHaveLength(3);
+  expect(panel.getAllByText(tr("integrationNotChecked"), { selector: "dd" })).toHaveLength(3);
   expect(panel.getAllByText(tr("integrationDestinationUnknown"))).toHaveLength(2);
   expect(panel.getByText(tr("integrationNoStartupVault"))).toBeVisible();
   expect(vi.mocked(api).mock.calls.length).toBe(calls);
@@ -271,8 +273,9 @@ it.each([
 ] as const)("labels %s observations without turning a saved pass into current connectivity", async (freshness, label) => {
   render(<IntegrationsSetup workspace={workspace({...saved,freshness})} t={t} />);
   const panel = await open();
+  await userEvent.click(within(panel).getByText(t("integrationAdvancedSetup")));
   expect(within(panel).getByText(t(label))).toBeVisible();
-  expect(within(panel).getAllByText(t("integrationNotChecked"))).toHaveLength(3);
+  expect(within(panel).getAllByText(t("integrationNotChecked"), { selector: "dd" })).toHaveLength(3);
   expect(panel.textContent).not.toContain(t("snapshotPassed"));
   expect(panel.textContent).not.toContain(t("snapshotFailed"));
 });
@@ -281,6 +284,7 @@ it.each(["SECRET_TIME", "2026-10-25T00:00:00Z?token=SECRET", "2026-02-30T00:00:0
   "does not expose or trust malformed observation time %s", async (observed_at) => {
     render(<IntegrationsSetup workspace={workspace({...saved,observed_at,source_path:"PRIVATE_PATH",token:"SECRET_TOKEN"})} t={t} />);
     const panel = await open();
+    await userEvent.click(within(panel).getByText(t("integrationAdvancedSetup")));
     expect(panel.querySelector("time")).toBeNull();
     expect(within(panel).getByText(t("integrationFreshInvalid"))).toBeVisible();
     expect(panel.innerHTML).not.toMatch(/SECRET|PRIVATE/);
@@ -300,7 +304,7 @@ it("shows an exact startup-selected Obsidian destination without a probe or conn
   await userEvent.selectOptions(within(panel).getByRole("combobox", {name:t("zoteroLibraryType")}), "group");
   await userEvent.click(within(panel).getByRole("button", {name:t("zoteroCheckFormat")}));
   expect(within(panel).getAllByText(t("integrationDestinationUnknown"))).toHaveLength(2);
-  expect(within(panel).getAllByText(t("integrationNotChecked"))).toHaveLength(3);
+  expect(within(panel).getAllByText(t("integrationNotChecked"), { selector: "dd" })).toHaveLength(3);
   expect(within(panel).getByText(t("zoteroFormatValid"))).toBeVisible();
   expect(vi.mocked(api).mock.calls.length).toBe(calls);
 });
@@ -312,6 +316,7 @@ it.each([
   render(<IntegrationsSetup workspace={workspace({...saved,freshness:value})} t={t} />);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   const panel = await open();
+  await userEvent.click(within(panel).getByText(t("integrationAdvancedSetup")));
   expect(within(panel).getByText(t("integrationFreshInvalid"))).toBeVisible();
   expect(panel.textContent).not.toContain(t("snapshotPassed"));
   expect(panel.innerHTML).not.toContain("SECRET_FRESHNESS");
@@ -392,9 +397,10 @@ it("supports opt-in encrypted local credentials save, Zotero probe, and Notebook
   }
   render(<Harness />);
   const panel = await open();
-  expect(within(panel).getByText(t("integrationLocalPrivacy"))).toBeVisible();
   expect(within(panel).getByText(t("zoteroLocalCredentialsHelp"))).toBeVisible();
   expect(within(panel).queryByText(t("integrationPrivacy"))).not.toBeInTheDocument();
+  await userEvent.click(within(panel).getByText(t("integrationAdvancedSetup")));
+  expect(within(panel).getByText(t("integrationLocalPrivacy"))).toBeVisible();
   await userEvent.type(within(panel).getByRole("textbox", { name: t("zoteroLibraryId") }), "987654");
   await userEvent.selectOptions(within(panel).getByRole("combobox", { name: t("zoteroLibraryType") }), "group");
   await userEvent.type(within(panel).getByLabelText(/Zotero API key/i), "secret-zot-key");
@@ -403,6 +409,7 @@ it("supports opt-in encrypted local credentials save, Zotero probe, and Notebook
   await userEvent.click(within(panel).getByRole("button", { name: t("integrationCheckZotero") }));
   expect((await within(panel).findAllByText(t("integrationZoteroConnectedWeb"))).length).toBeGreaterThan(0);
   // Saving Unpaywall / S2 keys without touching Zotero preserves the live Zotero probe
+  await userEvent.click(within(panel).getByText(t("integrationOptionalKeys")));
   await userEvent.type(within(panel).getByLabelText(/Unpaywall email/i), "scholar@example.edu");
   await userEvent.click(within(panel).getByRole("button", { name: t("integrationSaveCredentials") }));
   expect(await within(panel).findByText(t("integrationSaved"))).toBeVisible();
@@ -445,15 +452,16 @@ it("propagates live Obsidian read-only validation into Current connection and th
     return <IntegrationsSetup workspace={scoped} liveState={live} onLiveStateChange={setLive} t={t} />;
   }
   render(<Harness />);
-  expect(screen.getByText(t("integrationCompact"))).toBeVisible();
+  expect(screen.getByRole("button", { name: t("integrationsSetup") })).toHaveAttribute("title", t("integrationCompact"));
   const panel = await open();
   await userEvent.click(within(panel).getByRole("button", { name: t("obsidianValidate") }));
-  expect(await within(panel).findByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`)).toBeVisible();
-  expect(screen.getByText(t("integrationSummaryObsidianOk"))).toBeVisible();
+  expect(await within(panel).findByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`, { selector: "dd" })).toBeVisible();
+  expect(within(panel).getByText(t("integrationSummaryObsidianOk"))).toBeVisible();
+  expect(screen.getByRole("button", { name: t("integrationsSetup") })).toHaveAttribute("title", t("integrationSummaryObsidianOk"));
   // Failed retry clears prior valid status and updates footer summary
   vi.mocked(api).mockRejectedValueOnce(new Error("offline"));
   await userEvent.click(within(panel).getByRole("button", { name: t("obsidianValidate") }));
-  expect(await screen.findByText(t("integrationSummaryObsidianIssue"))).toBeVisible();
+  expect(await within(panel).findByText(t("integrationSummaryObsidianIssue"))).toBeVisible();
   expect(await within(panel).findByText(t("obsidianError"), { selector: "dd" })).toBeVisible();
   expect(within(panel).queryByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`)).not.toBeInTheDocument();
 });

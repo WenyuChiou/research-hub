@@ -112,6 +112,12 @@ export function IntegrationsSetup({
   }
   const compactSummaryText = compactParts.length ? compactParts.join(" · ") : t("integrationCompact");
 
+  const hasLiveProbe = Boolean(liveState?.zotero || liveState?.obsidian || liveState?.notebooklm);
+  const hasLiveIssue = Boolean(
+    (liveState?.zotero && !["connected_local_and_web", "connected_web", "connected_local"].includes(liveState.zotero.status)) ||
+    (liveState?.obsidian && liveState.obsidian.status !== "valid") ||
+    (liveState?.notebooklm && liveState.notebooklm.status !== "authenticated"),
+  );
   const statuses = {
     passed: "snapshotPassed",
     failed: "snapshotFailed",
@@ -145,13 +151,29 @@ export function IntegrationsSetup({
         <button
           ref={trigger}
           className="button secondary"
+          title={compactSummaryText}
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
           onClick={() => (open ? close() : setOpen(true))}
         >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
           {t("integrationsSetup")}
+          {hasLiveProbe && <span className={`setup-dot ${hasLiveIssue ? "warn" : "ok"}`} aria-hidden="true" />}
         </button>
-        <small>{compactSummaryText}</small>
       </div>
       {open &&
         createPortal(
@@ -172,54 +194,44 @@ export function IntegrationsSetup({
               <h2 ref={heading} id={panelId + "-title"} tabIndex={-1}>
                 {t("integrationsSetup")}
               </h2>
-              <button className="button" onClick={close}>
+              <button className="button secondary small" onClick={close}>
                 {t("integrationClose")}
               </button>
             </header>
-            <p>{t("integrationsOptional")}</p>
-            <p>{t("integrationsHistorical")}</p>
-            <dl className="integration-status" aria-label={t("integrationObservationDetails")}>
-              <div><dt>{t("integrationObservationSource")}</dt><dd>{t(knownSnapshot ? "integrationSavedSetupSource" : "integrationObservationUnavailable")}</dd></div>
-              <div><dt>{t("integrationObservedAt")}</dt><dd>{observedAt ? <time dateTime={observedAt}>{observedAt}</time> : t("integrationObservationUnavailable")}</dd></div>
-              <div><dt>{t("integrationObservationFreshness")}</dt><dd>{t(snapshot ? freshnessLabels[freshness] : "integrationFreshMissing")}</dd></div>
-            </dl>
+            <p className="small muted">{t("integrationsOptional")}</p>
+            {compactParts.length > 0 && (
+              <p className="small" role="status">{compactSummaryText}</p>
+            )}
             <ul className="integration-tools">
               {services.map(([key, label, href, guidance]) => {
                 const status =
                   knownSnapshot && freshness === "saved"
                     ? snapshot.components?.[key]
                     : "unknown";
+                const connText =
+                  key === "zotero"
+                    ? zoteroConnectionText
+                    : key === "notebooklm_auth"
+                      ? nlmConnectionText
+                      : obsidianConnectionText;
+                const connTone =
+                  key === "zotero" && liveState?.zotero
+                    ? ["connected_local_and_web", "connected_web", "connected_local"].includes(liveState.zotero.status) ? "good" : "warn"
+                    : key === "notebooklm_auth" && liveState?.notebooklm
+                      ? liveState.notebooklm.status === "authenticated" ? "good" : "warn"
+                      : key === "vault" && liveState?.obsidian
+                        ? liveState.obsidian.status === "valid" ? "good" : "warn"
+                        : "neutral";
                 return (
                   <li key={key} className="integration-tool">
-                    <h3>{label}</h3>
-                    <dl className="integration-status">
-                      <div><dt>{t("integrationSelectedDestination")}</dt><dd>{t(key === "vault" ? selectedVault ? "integrationSelectedVault" : "integrationNoStartupVault" : "integrationDestinationUnknown")}</dd></div>
-                      <div>
-                        <dt>{t("integrationCurrentConnection")}</dt>
-                        <dd>
-                          {key === "zotero"
-                            ? zoteroConnectionText
-                            : key === "notebooklm_auth"
-                              ? nlmConnectionText
-                              : obsidianConnectionText}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t("integrationSavedObservation")}</dt>
-                        <dd>
-                          {t(
-                            typeof status === "string" &&
-                              Object.hasOwn(statuses, status)
-                              ? statuses[status as keyof typeof statuses]
-                              : "snapshotUnknown",
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                    <p>
+                    <div className="setup-tool-header">
+                      <h3>{label}</h3>
+                      <span className={`badge ${connTone}`}>{connText}</span>
+                    </div>
+                    <p className="small muted">
                       {t(guidance)}{" "}
                       <a href={href} target="_blank" rel="noopener noreferrer">
-                        {t("integrationOfficial")} — {label}
+                        {t("integrationOfficial")}
                       </a>
                     </p>
                     {key === "vault" && (
@@ -276,29 +288,53 @@ export function IntegrationsSetup({
                         t={t}
                       />
                     )}
+                    <dl className="integration-status">
+                      <div><dt>{t("integrationSelectedDestination")}</dt><dd>{t(key === "vault" ? selectedVault ? "integrationSelectedVault" : "integrationNoStartupVault" : "integrationDestinationUnknown")}</dd></div>
+                      <div><dt>{t("integrationCurrentConnection")}</dt><dd>{connText}</dd></div>
+                      <div>
+                        <dt>{t("integrationSavedObservation")}</dt>
+                        <dd>
+                          {t(
+                            typeof status === "string" &&
+                              Object.hasOwn(statuses, status)
+                              ? statuses[status as keyof typeof statuses]
+                              : "snapshotUnknown",
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
                   </li>
                 );
               })}
             </ul>
-            <h3>{t("integrationAdvancedSetup")}</h3>
-            <ol>
-              <li>
-                {t("integrationSetupStep")}{" "}
-                <code>python -m research_hub setup</code>
-              </li>
-              <li>{t("integrationReuse")}</li>
-              <li>
-                {t("integrationCheck")}{" "}
-                <code>python -m research_hub doctor</code>
-              </li>
-            </ol>
-            <p>{t(localCap?.status === "available" ? "integrationLocalPrivacy" : "integrationPrivacy")}</p>
+            <details className="setup-diagnostics">
+              <summary>{t("integrationAdvancedSetup")}</summary>
+              <p>{t("integrationsHistorical")}</p>
+              <dl className="integration-status" aria-label={t("integrationObservationDetails")}>
+                <div><dt>{t("integrationObservationSource")}</dt><dd>{t(knownSnapshot ? "integrationSavedSetupSource" : "integrationObservationUnavailable")}</dd></div>
+                <div><dt>{t("integrationObservedAt")}</dt><dd>{observedAt ? <time dateTime={observedAt}>{observedAt}</time> : t("integrationObservationUnavailable")}</dd></div>
+                <div><dt>{t("integrationObservationFreshness")}</dt><dd>{t(snapshot ? freshnessLabels[freshness] : "integrationFreshMissing")}</dd></div>
+              </dl>
+              <ol>
+                <li>
+                  {t("integrationSetupStep")}{" "}
+                  <code>python -m research_hub setup</code>
+                </li>
+                <li>{t("integrationReuse")}</li>
+                <li>
+                  {t("integrationCheck")}{" "}
+                  <code>python -m research_hub doctor</code>
+                </li>
+              </ol>
+              <p>{t(localCap?.status === "available" ? "integrationLocalPrivacy" : "integrationPrivacy")}</p>
+            </details>
             <a
+              className="setup-guide-link"
               href="https://github.com/WenyuChiou/research-hub/blob/master/docs/setup.md"
               target="_blank"
               rel="noopener noreferrer"
             >
-              {t("integrationGuide")} (SDK 0.8.6)
+              {t("integrationGuide")}
             </a>
           </section>,
           document.body,

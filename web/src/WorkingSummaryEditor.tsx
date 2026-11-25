@@ -78,11 +78,11 @@ function SummarySelection({record, scope, t, onOpen, onSaved, artifacts}: Props 
   if (!scope || !artifacts.length) return null;
   return <section className="working-summary-editor" hidden={!scope.active} aria-label={t("workingSummaryReview")}>
     <p className="small muted">{t("workingSummaryReviewHelp")}</p>
-    <div className="working-summary-choices">{artifacts.map(artifact => <button key={artifact.id} type="button"
-      className="button secondary" disabled={!scope.active || Boolean(selected)}
+    <div className="working-summary-choices">{artifacts.map((artifact, index) => <button key={artifact.id} type="button"
+      className="button secondary small" disabled={!scope.active || Boolean(selected)}
       aria-label={`${t("workingSummaryReview")} ${artifact.id}`}
       onClick={event => {if (active.current) {opener.current = event.currentTarget; setSelected(artifact); onOpen?.();}}}>
-      {t("workingSummaryReview")} <code>{artifact.id}</code>
+      {t("workingSummaryReview")}{artifact.path ? ` · ${artifact.path.split("/").pop()}` : artifacts.length > 1 ? ` (${index + 1})` : ""}
     </button>)}</div>
     {selected && <SummarySession key={`${selected.id}:${selected.sha256}`} sourceId={record.id} selection={{kind:"observation", artifact:selected}}
       projectId={scope.projectId} active={scope.active} t={t} onSaved={onSaved} onClose={() => {
@@ -240,7 +240,7 @@ function SummarySession({sourceId, selection, projectId, active, t, onClose, onS
     className="working-summary-session" onKeyDown={event => {
       if (activeRef.current && event.key === "Escape") {event.stopPropagation(); if (phase !== "saving") close();}
     }}>
-    <h4 id={`${id}-heading`} ref={heading} tabIndex={-1}>{t(provenance ? "taskWorkingSummaryOpen" : "workingSummaryReview")} <code>{selectionId}</code></h4>
+    <h4 id={`${id}-heading`} ref={heading} tabIndex={-1}>{t(provenance ? "taskWorkingSummaryOpen" : "workingSummaryReview")}</h4>
     <p id={`${id}-help`} className="small muted">{t("workingSummaryHelp")}{provenance && <> {t("taskWorkingSummaryPending")}</>}</p>
     {phase === "loading" && <p role="status">{t("workingSummaryLoading")}</p>}
     {context && <label className="field field-wide">{t("workingSummaryText")}<textarea ref={input} rows={10}

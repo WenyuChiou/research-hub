@@ -154,57 +154,64 @@ export function NotebookLmAuthControls({
 
   return (
     <div className="notebooklm-auth-controls">
-      <p>{t("integrationNlmPrerequisites")}</p>
+      {!enabled && <p className="small muted">{t("integrationNlmPrerequisites")}</p>}
       {enabled ? (
         <>
           <div className="integration-form-actions">
-            <button type="button" className="button secondary" disabled={busy} onClick={() => void checkSession()}>
-              {busy ? t("integrationChecking") : t("integrationNlmCheck")}
-            </button>
-            <button type="button" className="button primary" disabled={busy || loginJob?.status === "running"} onClick={() => void startBrowserLogin()}>
+            <button type="button" className="button primary small" disabled={busy || loginJob?.status === "running"} onClick={() => void startBrowserLogin()}>
               {t("integrationNlmOpenBrowser")}
             </button>
-            <button type="button" className="button secondary" disabled={busy} onClick={() => void importCookies()}>
-              {t("integrationNlmImportCookies")}
-            </button>
-            <button type="button" className="button text-button" disabled={busy} onClick={() => setShowImport((v) => !v)}>
-              {t("integrationNlmImportFile")}
+            <button type="button" className="button secondary small" disabled={busy} onClick={() => void checkSession()}>
+              {busy ? t("integrationChecking") : t("integrationNlmCheck")}
             </button>
           </div>
-          <div className="integration-form-fields">
-            <label htmlFor={id + "-browser"}>
-              {t("integrationNlmBrowserSelect")}
-              <select
-                id={id + "-browser"}
-                value={browser}
-                onChange={(e) => setBrowser(e.target.value)}
-              >
-                <option value="">{t("integrationNlmBrowserAuto")}</option>
-                <option value="chrome">Chrome</option>
-                <option value="edge">Edge</option>
-                <option value="firefox">Firefox</option>
-                <option value="chromium">Chromium</option>
-              </select>
-            </label>
-            {showImport && (
-              <label htmlFor={id + "-state-path"}>
-                {t("integrationNlmStatePathLabel")}
-                <div className="integration-inline-row">
-                  <input
-                    id={id + "-state-path"}
-                    type="text"
-                    value={statePath}
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(e) => setStatePath(e.target.value)}
-                  />
-                  <button type="button" className="button secondary" disabled={busy} onClick={() => void importStateFile()}>
-                    {t("integrationNlmImportFile")}
-                  </button>
-                </div>
+          <details className="integration-optional-keys">
+            <summary>{t("integrationNlmAdvanced")}</summary>
+            <div className="integration-form-fields">
+              <label htmlFor={id + "-browser"}>
+                {t("integrationNlmBrowserSelect")}
+                <select
+                  id={id + "-browser"}
+                  value={browser}
+                  onChange={(e) => setBrowser(e.target.value)}
+                >
+                  <option value="">{t("integrationNlmBrowserAuto")}</option>
+                  <option value="chrome">Chrome</option>
+                  <option value="edge">Edge</option>
+                  <option value="firefox">Firefox</option>
+                  <option value="chromium">Chromium</option>
+                </select>
               </label>
+            </div>
+            <div className="integration-form-actions">
+              <button type="button" className="button secondary small" disabled={busy} onClick={() => void importCookies()}>
+                {t("integrationNlmImportCookies")}
+              </button>
+              <button type="button" className="button text-button small" disabled={busy} onClick={() => setShowImport((v) => !v)}>
+                {t("integrationNlmImportFile")}
+              </button>
+            </div>
+            {showImport && (
+              <div className="integration-form-fields">
+                <label htmlFor={id + "-state-path"} className="field-wide">
+                  {t("integrationNlmStatePathLabel")}
+                  <div className="integration-inline-row">
+                    <input
+                      id={id + "-state-path"}
+                      type="text"
+                      value={statePath}
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(e) => setStatePath(e.target.value)}
+                    />
+                    <button type="button" className="button secondary small" disabled={busy} onClick={() => void importStateFile()}>
+                      {t("integrationNlmImportFile")}
+                    </button>
+                  </div>
+                </label>
+              </div>
             )}
-          </div>
+          </details>
           {statusMessage && <p role="status" className="small">{statusMessage}</p>}
           {errorMessage && <p role="alert" className="small bad-text">{errorMessage}</p>}
           {!statusMessage && !errorMessage && probe && (

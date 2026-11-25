@@ -23,6 +23,25 @@ const missingSummary = (record: ResearchRecord) => !savedSummary(record) &&
   !workingSummary(record) && !registeredNativeSummary(record);
 type Organization = "all" | "unclassified" | "missing-summary" | "unscreened";
 
+function formatAuthors(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!Array.isArray(value)) return "";
+  const names = value.map((item) => {
+    if (typeof item === "string") return item.trim();
+    if (item && typeof item === "object") {
+      const obj = item as Record<string, unknown>;
+      const direct = text(obj.name).trim();
+      if (direct) return direct;
+      const family = text(obj.family).trim();
+      const given = text(obj.given).trim();
+      return [family, given].filter(Boolean).join(", ");
+    }
+    return "";
+  }).filter(Boolean);
+  if (!names.length) return "";
+  return names.length > 2 ? `${names[0]} et al.` : names.join(", ");
+}
+
 function categoryName(value: string, t: Translate) {
   if (value === "human") return t("catalogHuman");
   if (value === "human-review") return t("catalogHumanReview");
@@ -104,10 +123,14 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       latestScreenings.set(screening.data.source_id, screening);
     }
   }
-  const screened = (record: ResearchRecord) => {
+  const screenedDecision = (record: ResearchRecord): "include" | "exclude" | null => {
     const decision = latestScreenings.get(record.id)?.data;
-    return Boolean(decision && (decision.decision === "include" || decision.decision === "exclude") && typeof decision.rationale === "string" && decision.rationale.trim());
+    if (decision && (decision.decision === "include" || decision.decision === "exclude") && typeof decision.rationale === "string" && decision.rationale.trim()) {
+      return decision.decision;
+    }
+    return null;
   };
+  const screened = (record: ResearchRecord) => screenedDecision(record) !== null;
   const matchesOrganization = (record: ResearchRecord, value: Organization) =>
     value === "unclassified" ? !category(record)
       : value === "missing-summary" ? missingSummary(record)
@@ -121,7 +144,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   const visible = sources.filter((record) =>
     matchesOrganization(record, organization) &&
     (!selectedCategory || category(record) === selectedCategory) &&
-    (!search || [record.data.title, record.data.year, record.data.relevance, category(record), ...strings(record.data.tags), ...strings(record.data.labels)]
+    (!search || [record.data.title, formatAuthors(record.data.authors), record.data.year, record.data.doi, record.data.venue, record.data.journal, record.data.relevance, category(record), ...strings(record.data.tags), ...strings(record.data.labels)]
       .map(text).join(" ").toLocaleLowerCase().includes(search)),
   );
   const exactSelected = visible.find((record) => record.id === selectedId);
@@ -146,6 +169,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
     }
   }, [readerOpen, compact, active, exactSelected]);
   const latest = selected ? latestScreenings.get(selected.id) : undefined;
+  const selectedDecision = selected ? screenedDecision(selected) : null;
   const summary = selected && savedSummary(selected);
   const note = selected?.kind === "library-note";
   // Registered references are discoverable without fetching every row. They do
@@ -157,8 +181,6 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   function openDrafts(focus = true) {
     const entries = observationReader.current?.querySelectorAll<HTMLDetailsElement>('.source-observation[data-generated="true"]');
     entries?.forEach(entry => { entry.open = true; });
-    // Retain every declared version. Focus follows saved order, not a newest-
-    // version selection or a preference for one observation's claims.
     if (focus) entries?.[0]?.querySelector<HTMLElement>(":scope > summary")?.focus();
   }
   const categoryFilters = <div ref={categoryControls} className="catalog-categories" role="group" aria-label={t("catalogCategories")} hidden={compact}>
@@ -167,13 +189,14 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
     {categories.map(value => <button type="button" key={value} aria-pressed={selectedCategory === value} onClick={() => setSelectedCategory(value)}>{categoryName(value,t)} <span>{sources.filter(record => category(record) === value).length}</span></button>)}
   </div>;
 
+  const selectedAuthors = selected ? formatAuthors(selected.data.authors) : "";
+  const selectedVenue = selected ? (text(selected.data.venue) || text(selected.data.journal)) : "";
+
   return (
     <section className={`literature-library${compact && readerOpen ? " is-reading" : ""}`} aria-label={t("catalogTitle")}
       onFocusCapture={event => { lastReadingFocus.current = event.target as Element; }}
       onBlurCapture={event => {
         const next = event.relatedTarget;
-        // Keep the pre-CSS target only until focus actually leaves this desk.
-        // Category controls may live in the sidebar portal, outside this DOM node.
         if (next instanceof Node && !event.currentTarget.contains(next) && !categoryControls.current?.contains(next)) {
           lastReadingFocus.current = null;
         }
@@ -190,7 +213,6 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
           {t(label)} ({sources.filter((record) => matchesOrganization(record, value)).length})
         </button>)}
       </div>
-      <p className="catalog-organization-help">{t("catalogOrganizationHelp")}</p>
       <div className="catalog-toolbar">
         <label className="catalog-search">{t("catalogSearch")}
           <input ref={searchInput} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("catalogSearchHint")} />
@@ -202,7 +224,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
           </select>
         </label>
         <p className="catalog-match" role="status">{visible.length} / {sources.length} {t("catalogItems")}</p>
-        {(query || selectedCategory || organization !== "all") && <button type="button" className="button text-button"
+        {(query || selectedCategory || organization !== "all") && <button type="button" className="button text-button small"
           onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all"); searchInput.current?.focus();}}>{t("catalogClearFilters")}</button>}
       </div>
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
@@ -213,24 +235,38 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
           {visible.length ? (
             <table>
               <thead><tr><th scope="col">{t("title")}</th><th scope="col">{t("catalogYear")}</th><th scope="col">{t("catalogCategory")}</th><th scope="col">{t("catalogCoverage")}</th></tr></thead>
-              <tbody>{visible.map((record, index) => (
+              <tbody>{visible.map((record, index) => {
+                const authors = formatAuthors(record.data.authors);
+                const venue = text(record.data.venue) || text(record.data.journal);
+                const decision = screenedDecision(record);
+                return (
                 <tr key={record.id} className={selected?.id === record.id ? "is-selected" : undefined}>
                   <td><button ref={selected?.id === record.id ? selectedButton : undefined} className="catalog-title" aria-controls={detailId} aria-describedby={registeredDrafts.has(record.id) ? `${detailId}-draft-${index}` : undefined} aria-pressed={selected?.id === record.id} onClick={() => {
                     returnPosition.current = {page: window.scrollY, list: list.current?.scrollTop ?? 0};
                     setSelectionMissing(false); setReaderOpen(true); openDraftRequested.current = true;
                     if (selectedId === record.id && readerOpen) { detailHeading.current?.focus(); openDrafts(false); openDraftRequested.current = false; }
                     else { focusRequested.current = true; setSelectedId(record.id); }
-                  }}>{text(record.data.title)}</button><span className="catalog-origin">{record.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}{Boolean(matches?.get(record.id)?.length) && <> · {t("libraryIdentityMatch")}</>}</span>
+                  }}>{text(record.data.title)}</button>
+                    {(authors || venue || record.kind === "library-note" || matches?.get(record.id)?.length) && (
+                      <span className="catalog-submeta">
+                        {[authors, venue, record.kind === "library-note" ? t("libraryNoteOrigin") : null, matches?.get(record.id)?.length ? t("libraryIdentityMatch") : null].filter(Boolean).join(" · ")}
+                      </span>
+                    )}
                     {registeredDrafts.has(record.id) && <span id={`${detailId}-draft-${index}`} className="catalog-draft-tag">{t("catalogDraftRegistered")}</span>}</td>
                   <td>{text(record.data.year) || "—"}</td>
-                  <td><span className="catalog-category">{categoryName(category(record), t)}</span></td>
-                  <td>{readingScope(record, t)}
-                    {registeredNativeSummary(record) && <span className="catalog-item-state">{t("catalogNativeRegistered")}</span>}
-                    {missingSummary(record) && <span className="catalog-item-state">{t("catalogNeedsSummary")}</span>}
-                    {record.kind === "source" && !screened(record) && <span className="catalog-item-state">{t("catalogNeedsScreening")}</span>}
+                  <td><span className="badge neutral catalog-category">{categoryName(category(record), t)}</span></td>
+                  <td>
+                    <span className="badge neutral">{readingScope(record, t)}</span>
+                    {record.kind === "source" && (
+                      decision === "include" ? <span className="badge good catalog-item-state">✓ {t("include")}</span>
+                        : decision === "exclude" ? <span className="badge danger catalog-item-state">✕ {t("exclude")}</span>
+                          : <span className="badge warn catalog-item-state">{t("catalogNeedsScreening")}</span>
+                    )}
+                    {registeredNativeSummary(record) && <span className="badge good catalog-item-state">{t("catalogNativeRegistered")}</span>}
+                    {missingSummary(record) && <span className="badge neutral catalog-item-state">{t("catalogNeedsSummary")}</span>}
                   </td>
                 </tr>
-              ))}</tbody>
+              );})}</tbody>
             </table>
           ) : <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>}
         </div>
@@ -241,41 +277,79 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             }
           }}>
           {selected ? <>
-            <p className="catalog-detail-label">{t("catalogDetail")}</p>
+            <div className="catalog-detail-top">
+              <div className="catalog-meta">
+                <span>{text(selected.data.year) || "—"}</span>
+                <span>·</span>
+                <span>{categoryName(category(selected), t)}</span>
+                <span>·</span>
+                <span>{readingScope(selected, t)}</span>
+                <span className="badge neutral">{statusLabel(text(selected.data.identity_status) || "unverified", t)}</span>
+              </div>
+              <button type="button" className="button text-button small catalog-back" aria-label={t("catalogBackToList")} onClick={() => {
+                if (compact) { returnRequested.current = true; setReaderOpen(false); }
+                else { selectedButton.current?.focus(); }
+              }}>← {t("catalogBackShort")}</button>
+            </div>
             <h3 ref={detailHeading} tabIndex={-1}>{text(selected.data.title)}</h3>
-            <button type="button" className="button text-button catalog-back" onClick={() => {
-              if (compact) { returnRequested.current = true; setReaderOpen(false); }
-              else { selectedButton.current?.focus(); }
-            }}>{t("catalogBackToList")}</button>
-            <div className="catalog-meta"><span>{text(selected.data.year) || "—"}</span><span>{categoryName(category(selected), t)}</span><span>{statusLabel(text(selected.data.identity_status) || "unverified", t)}</span><span>{readingScope(selected,t)}</span></div>
-            {selected.data.locator_kind !== "local-copy" && <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
+            {(selectedAuthors || selectedVenue || selected.data.locator_kind !== "local-copy") && (
+              <p className="catalog-authors-line">
+                {[selectedAuthors, selectedVenue].filter(Boolean).join(" · ")}
+                {(selectedAuthors || selectedVenue) && selected.data.locator_kind !== "local-copy" && selected.data.locator ? " · " : ""}
+                {selected.data.locator_kind !== "local-copy" && <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
+              </p>
+            )}
             {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
-            <section><h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>{summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t(registeredNativeSummary(selected) ? "catalogNoSeparateSummary" : "catalogNoSummary")}</p>}</section>
+            {!note && <div className="catalog-triage-bar">
+              <details className="catalog-screening">
+                <summary>
+                  <span>{t("catalogScreening")}</span>
+                  <span className={`badge ${selectedDecision === "include" ? "good" : selectedDecision === "exclude" ? "danger" : "warn"}`}>
+                    {selectedDecision === "include" ? `✓ ${t("include")}` : selectedDecision === "exclude" ? `✕ ${t("exclude")}` : t("catalogNeedsScreening")}
+                  </span>
+                </summary>
+                <p className="small muted">{t("catalogScreeningHelp")}</p>
+                {latest && <div className="catalog-saved-screening" role="status"><strong>{statusLabel(text(latest.data.decision), t)}</strong><ReadText value={text(latest.data.rationale)} /></div>}
+                <MutationForm key={selected.id} t={t} submit={t("catalogSaveScreening")} fields={[
+                  {name:"decision",label:t("decision"),options:[{value:"include",label:t("include")},{value:"exclude",label:t("exclude")}]},
+                  {name:"rationale",label:t("rationale"),textarea:true},
+                ]} onSubmit={(data) => onScreen(selected.id, String(data.get("decision")), String(data.get("rationale")))} />
+              </details>
+            </div>}
+            {!note && registeredNativeSummary(selected) && (
+              <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && (!compact || readerOpen)} : undefined} t={t} exportable />
+            )}
+            <section>
+              <h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>
+              {summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t(registeredNativeSummary(selected) ? "catalogNoSeparateSummary" : "catalogNoSummary")}</p>}
+            </section>
             <SavedWorkingSummary record={selected} t={t}/>
             {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
-              <button type="button" className="button secondary" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
-            {!note && <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && (!compact || readerOpen)} : undefined} t={t} exportable />}
+              <button type="button" className="button secondary small" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
             {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
               <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && (!compact || readerOpen)} : undefined} t={t} />}</div>}
             {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && (!compact || readerOpen)} : undefined}
               suspended={Boolean(pageSuspended && draftScope?.active === false && (!compact || readerOpen))}
               onOpen={() => {setSelectedId(selected.id); setReaderOpen(true);}}
               t={t} onSaved={onWorkingSummarySaved}/>}
-            <section aria-label={t("catalogOrganizationState")}><h4>{t("catalogOrganizationState")}</h4><ul>
-              {!category(selected) && <li>{t("catalogNeedsCategory")}</li>}
-              {registeredNativeSummary(selected) && <li>{t("catalogNativeRegistered")}</li>}
-              {missingSummary(selected) && <li>{t("catalogNeedsSummary")}</li>}
-              <li>{note ? t("catalogReadOnlyItem") : screened(selected) ? t("catalogScreeningRecorded") : t("catalogNeedsScreening")}</li>
-            </ul></section>
-            <section><h4>{t("catalogCoverage")}</h4><p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p></section>
-            <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="muted">{t("catalogNoRelevance")}</p>}</section>
+            <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="small muted">{t("catalogNoRelevance")}</p>}</section>
+            <section aria-label={t("catalogOrganizationState")}>
+              <h4>{t("catalogOrganizationState")}</h4>
+              <ul className="catalog-state-pills">
+                {!category(selected) && <li className="badge warn">{t("catalogNeedsCategory")}</li>}
+                {registeredNativeSummary(selected) && <li className="badge good">{t("catalogNativeRegistered")}</li>}
+                {missingSummary(selected) && <li className="badge neutral">{t("catalogNeedsSummary")}</li>}
+                <li className="badge neutral">{note ? t("catalogReadOnlyItem") : screened(selected) ? t("catalogScreeningRecorded") : t("catalogNeedsScreening")}</li>
+              </ul>
+            </section>
             <section><h4>{t("catalogSource")}</h4>
-              {selected.data.locator_kind === "local-copy" && <p>{t("intakeLocalLocator")}</p>}
+              <p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p>
+              {selected.data.locator_kind === "local-copy" && <p className="small">{t("intakeLocalLocator")}</p>}
               {text(selected.data.doi) && <p className="small">DOI: {text(selected.data.doi)}</p>}
               {note && <><p className="small">{t("libraryNotePath")}: <code>{text(selected.data.note_path)}</code></p><p className="small">{t("libraryMetadataStatus")}: {selected.data.metadata_status === "available" ? t("libraryAvailable") : t("libraryUnavailableMetadata")}</p>{text(selected.data.saved_reading_status) && <p className="small">{t("librarySavedStatus")}: {text(selected.data.saved_reading_status)}</p>}</>}
-              {Boolean(matches?.get(selected.id)?.length) && <div className="catalog-missing"><strong>{t("libraryIdentityMatch")}</strong><p>{t("libraryMatchHelp")}</p><ul>{matches!.get(selected.id)!.map((other) => <li key={other.id}>{text(other.data.title)} · {other.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}<br /><code>{other.kind === "library-note" ? text(other.data.note_path) : other.id}</code></li>)}</ul></div>}
+              {Boolean(matches?.get(selected.id)?.length) && <div className="catalog-missing"><strong>{t("libraryIdentityMatch")}</strong><p>{t("libraryMatchHelp")}</p><ul>{matches!.get(selected.id)!.map((other) => <li key={other.id}>{text(other.data.title)} · {other.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}{other.kind === "library-note" && <><br /><code>{text(other.data.note_path)}</code></>}</li>)}</ul></div>}
               {text(selected.data.publication_version) && <p className="small">{text(selected.data.publication_version)}</p>}
-              <details className="catalog-provenance"><summary>{t("catalogProvenance")}</summary><p>{note ? t("libraryNoteOrigin") : text(selected.data.batch_id) || t("catalogUnknownOrigin")}</p>{note && <p className="small">{t("libraryMetadataHash")}: <code>{text(selected.data.frontmatter_sha256) || t("libraryUnavailableMetadata")}</code></p>}{Array.isArray(selected.data.prior_batch_matches) && selected.data.prior_batch_matches.length > 0 && <p>{t("catalogPriorMatch")}</p>}</details>
+              <details className="catalog-provenance"><summary>{t("catalogProvenance")}</summary><p>{note ? t("libraryNoteOrigin") : text(selected.data.batch_id) || t("catalogUnknownOrigin")}</p>{Array.isArray(selected.data.prior_batch_matches) && selected.data.prior_batch_matches.length > 0 && <p>{t("catalogPriorMatch")}</p>}</details>
             </section>
             <details className="catalog-tool-use"><summary>{t("catalogToolUse")}</summary><dl>
               <dt>Zotero</dt><dd>{(() => {
@@ -324,16 +398,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 return t(localCap?.nlm_state_present ? "catalogNlmStatePresent" : "catalogNlmUnavailable");
               })()}</dd>
             </dl></details>
-            {!note && <details className="catalog-screening">
-              <summary>{t("catalogScreening")}</summary>
-              <p className="small muted">{t("catalogScreeningHelp")}</p>
-              {latest && <div className="catalog-saved-screening" role="status"><strong>{statusLabel(text(latest.data.decision), t)}</strong><ReadText value={text(latest.data.rationale)} /></div>}
-              <MutationForm key={selected.id} t={t} submit={t("catalogSaveScreening")} fields={[
-                {name:"decision",label:t("decision"),options:[{value:"include",label:t("include")},{value:"exclude",label:t("exclude")}]},
-                {name:"rationale",label:t("rationale"),textarea:true},
-              ]} onSubmit={(data) => onScreen(selected.id, String(data.get("decision")), String(data.get("rationale")))} />
-            </details>}
-            {!note && <button className="button secondary catalog-source-tools" onClick={() => onPrepare(selected)}>{t("catalogSourceTools")}</button>}
+            {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(selected)}>{t("catalogSourceTools")}</button>}
           </> : <p>{t("catalogSelectSource")}</p>}
         </aside>
       </div>

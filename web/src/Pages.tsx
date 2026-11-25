@@ -169,7 +169,7 @@ export function ProjectPages({
   const sources = records("source");
   const sourceOptions = sources.map((source) => ({
     value: source.id,
-    label: `${textValue(source.data.title)} · ${source.id}`,
+    label: textValue(source.data.title) || source.id,
   }));
   const next = nextOperation(detail);
   const pending =
@@ -219,10 +219,6 @@ export function ProjectPages({
             tabIndex={-1}
           >
             {render(record)}
-            <InspectJson
-              title={`${t("inspect")} · ${page === "literature" ? record.id.slice(0, 8) : record.id}`}
-              value={record}
-            />
           </article>
         ))}
       </div>
@@ -249,10 +245,6 @@ export function ProjectPages({
                     : artifact.role}
                 </SmallLabel>
                 <p className="file-path">{artifactReference(artifact)}</p>
-                <details className="inspect">
-                  <summary>{t("fingerprint")}</summary>
-                  <code className="hash">{artifact.sha256}</code>
-                </details>
               </div>
               <span
                 className={`badge ${artifact.current ? "neutral" : "warn"}`}
@@ -641,7 +633,6 @@ export function ProjectPages({
             </Disclosure>
           </Panel>
         </div>
-        </details>
         <Panel title={t("screening")}>
             {recordList(records("screening"), "noScreening", (record) => {
               const source = sources.find(
@@ -715,6 +706,7 @@ export function ProjectPages({
               />
             </Disclosure>
         </Panel>
+        </details>
       </div>
 
       <div hidden={page !== "evidence"} className="page-content">
@@ -734,12 +726,13 @@ export function ProjectPages({
                       const source = sources.find((item) => item.id === id);
                       return (
                         <div key={String(id)}>
-                          <code>{String(id)}</code>
-                          {source && (
+                          {source ? (
                             <SourceLink
                               locator={source.data.locator}
                               title={textValue(source.data.title)}
                             />
+                          ) : (
+                            <code>{String(id)}</code>
                           )}
                         </div>
                       );

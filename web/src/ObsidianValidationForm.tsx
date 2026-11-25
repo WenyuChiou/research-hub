@@ -90,8 +90,8 @@ export function ObsidianValidationForm({
     <p className="small">{t("obsidianScopeHelp")}</p>
     {!scope && <p role="status">{t("obsidianUnavailable")}</p>}
     <div className="obsidian-validation-actions">
-      <button className="button secondary" type="submit" disabled={!scope || !path.trim() || state.kind === "loading"}>{t("obsidianValidate")}</button>
-      <button className="button text-button" type="button" onClick={cancel}>{t("cancel")}</button>
+      <button className="button secondary small" type="submit" disabled={!scope || !path.trim() || state.kind === "loading"}>{t("obsidianValidate")}</button>
+      <button className="button text-button small" type="button" onClick={cancel}>{t("cancel")}</button>
     </div>
     <p role={state.kind === "error" ? "alert" : "status"}>
       {state.kind === "unknown" ? t("obsidianUnknown") : state.kind === "loading" ? t("obsidianLoading")

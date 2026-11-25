@@ -32,7 +32,7 @@ describe("native summary selected-source reader", () => {
     const f=fixture(); f.record.data.summary="Synthetic saved abstract remains unchanged.";
     vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.body));
     render(<LiteratureLibrary sources={[f.record]} screenings={[]} t={t} onScreen={async()=>{}} onPrepare={()=>{}} observationRead={f.scope}/>);
-    expect(await screen.findByText(t("nativeScope"))).toBeVisible();
+    expect(await screen.findByText(t("nativeWhy"))).toBeVisible();
     expect(screen.getByText("Synthetic saved abstract remains unchanged.")).toBeVisible();
     expect(screen.getByRole("region",{name:t("nativeTitle")})).toBeVisible();
   });
@@ -41,7 +41,7 @@ describe("native summary selected-source reader", () => {
     delete missing.record.native_summary_available;
     const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.body));
     render(<LiteratureLibrary sources={[f.record,other.record,missing.record]} screenings={[]} t={translate} onScreen={async()=>{}} onPrepare={()=>{}} observationRead={f.scope}/>);
-    await screen.findByText(translate("nativeScope"));
+    await screen.findByText(translate("nativeWhy"));
     expect(screen.getByRole("button",{name:`${translate("catalogNeedsSummary")} (1)`})).toBeVisible();
     const row=screen.getByRole("row",{name:/Synthetic one/});
     expect(within(row).getByText(translate("catalogNativeRegistered"))).toBeVisible();
@@ -66,9 +66,7 @@ describe("native summary selected-source reader", () => {
     expect(screen.getAllByText(t("catalogNativeRegistered"))).toHaveLength(2);
     expect(screen.getByText(t("catalogNoSeparateSummary"))).toBeVisible();
     if(status!=="loading") await screen.findByText(t(status==="stale"?"nativeStale":status==="missing"?"nativeMissing":"nativeUnavailable"));
-    expect(screen.queryByText(t("nativeScope"))).not.toBeInTheDocument();
     expect(screen.queryByText(/Synthetic one claim/)).not.toBeInTheDocument();
-    expect(screen.getByText(t("nativePending"))).toBeVisible();
   });
   it.each([undefined,false,"true",1,{},null])("does not treat malformed/absent presence %s as registered", flag => {
     const f=fixture(); Object.assign(f.record,{native_summary_available:flag});
@@ -92,23 +90,21 @@ describe("native summary selected-source reader", () => {
     const f=fixture(); f.body.native_summary.sections.objective[0].evidence=[];
     vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.body));
     render(<NativeSummaryReader record={f.record} scope={f.scope} t={t}/>);
-    expect(await screen.findByText(t("nativeScope"))).toBeVisible();
-    expect(screen.getByText("analyst_inference")).toBeVisible();
-    expect(screen.getByText(/Declared reading scope: unknown/)).toBeVisible();
+    expect(await screen.findByText(t("nativeInference"))).toBeVisible();
+    expect(screen.getByText(/Scope: unknown/)).toBeVisible();
   });
-  it("renders all seven sections, epistemic labels, reasons, exact Unicode evidence and hashes safely with GET only", async () => {
+  it("renders all seven sections, epistemic badges, reasons and Unicode evidence cleanly without exposing hashes or offsets", async () => {
     const f=fixture(); const before=JSON.stringify(f.record);
     const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.body));
     const {container}=render(<NativeSummaryReader record={f.record} scope={f.scope} t={t}/>);
-    expect(await screen.findByText(t("nativeScope"))).toBeVisible();
+    expect(await screen.findByText(t("nativeWhy"))).toBeVisible();
     for (const title of ["nativeWhy","nativeObjective","nativeMethods","nativeFindings","nativeConclusions","nativeKeyPoints","nativeLimitations"] as const) expect(screen.getByText(t(title))).toBeVisible();
-    expect(screen.getAllByText("supported").length).toBeGreaterThan(0);
-    expect(screen.getByText("analyst_inference")).toBeVisible();
-    expect(screen.getByText("unknown")).toBeVisible();
-    expect(screen.getByText(t("nativePending"))).toBeVisible();
+    expect(screen.getAllByText(t("nativeSupported")).length).toBeGreaterThan(0);
+    expect(screen.getByText(t("nativeInference"))).toBeVisible();
+    expect(screen.getByText(t("nativeUnknown"))).toBeVisible();
     expect(screen.getAllByText("Synthetic 🧪 evidence.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("a".repeat(64)).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\[4, 25\)/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("a".repeat(64))).not.toBeInTheDocument();
+    expect(screen.queryByText(/\[4, 25\)/)).not.toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(fetch.mock.calls[0][0]).toBe("/api/v1/projects/project/native-summary?source_record_id=one");
@@ -119,7 +115,7 @@ describe("native summary selected-source reader", () => {
     const f=fixture(); vi.spyOn(globalThis,"fetch").mockResolvedValue(response({...f.body,status}));
     render(<NativeSummaryReader record={f.record} scope={f.scope} t={t}/>);
     expect(await screen.findByText(t(status === "missing" ? "nativeMissing" : status === "stale" ? "nativeStale" : "nativeUnavailable"))).toBeVisible();
-    expect(screen.queryByText(t("nativeScope"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("nativeWhy"))).not.toBeInTheDocument();
   });
   it.each(["source","project","title","locator","hash","current","offset","section","evidence","status"])("rejects malformed or mismatched %s", async kind => {
     const f=fixture(); const s=f.body.native_summary;
@@ -136,14 +132,14 @@ describe("native summary selected-source reader", () => {
     vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.body));
     render(<NativeSummaryReader record={f.record} scope={f.scope} t={t}/>);
     expect(await screen.findByText(t("nativeStale"))).toBeVisible();
-    expect(screen.queryByText(t("nativeScope"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("nativeWhy"))).not.toBeInTheDocument();
   });
   it.each(["human_acceptance","semantic_support","saved_at"])("hides prose with missing persisted %s", async marker => {
     const f=fixture(); delete (f.body.native_summary as Record<string, unknown>)[marker];
     vi.spyOn(globalThis,"fetch").mockResolvedValue(response(f.body));
     render(<NativeSummaryReader record={f.record} scope={f.scope} t={t}/>);
     expect(await screen.findByText(t("nativeStale"))).toBeVisible();
-    expect(screen.queryByText(t("nativeScope"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("nativeWhy"))).not.toBeInTheDocument();
   });
   it("cancels rapid switching and ignores out-of-order responses, including a return to the first source", async () => {
     const a=fixture(), b=fixture("two"); let late!: (r:Response)=>void;
@@ -162,11 +158,11 @@ describe("native summary selected-source reader", () => {
   it("hides stale prose immediately on refresh, retries once and does not refetch on unrelated rerenders", async () => {
     const f=fixture(); const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValueOnce(response(f.body)).mockResolvedValue(response({...f.body,status:"stale"}));
     const {rerender}=render(<NativeSummaryReader record={f.record} scope={f.scope} t={t}/>);
-    await screen.findByText(t("nativeScope"));
+    await screen.findByText(t("nativeWhy"));
     rerender(<NativeSummaryReader record={{...f.record}} scope={{...f.scope}} t={t}/>);
     expect(fetch).toHaveBeenCalledTimes(1);
     rerender(<NativeSummaryReader record={f.record} scope={{...f.scope,revision:1}} t={t}/>);
-    expect(screen.queryByText(t("nativeScope"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("nativeWhy"))).not.toBeInTheDocument();
     expect(await screen.findByText(t("nativeStale"))).toBeVisible();
     expect(fetch).toHaveBeenCalledTimes(2);
   });

@@ -237,7 +237,7 @@ export function ZoteroLibraryForm({
         </label>
         {enabled && (
           <>
-            <label htmlFor={id + "-api-key"}>
+            <label htmlFor={id + "-api-key"} className="field-wide">
               {t("integrationApiKeyLabel")}
               <span className="small muted">
                 {" "}
@@ -254,6 +254,13 @@ export function ZoteroLibraryForm({
                 onChange={(event) => setZoteroApiKey(event.target.value)}
               />
             </label>
+          </>
+        )}
+      </div>
+      {enabled && (
+        <details className="integration-optional-keys">
+          <summary>{t("integrationOptionalKeys")}</summary>
+          <div className="integration-form-fields">
             <label htmlFor={id + "-unpaywall"}>
               {t("integrationUnpaywallLabel")}
               <span className="small muted">
@@ -288,9 +295,33 @@ export function ZoteroLibraryForm({
                 onChange={(event) => setS2ApiKey(event.target.value)}
               />
             </label>
-          </>
-        )}
-      </div>
+          </div>
+          {(capability?.zotero_api_key_present || capability?.s2_api_key_present) && (
+            <div className="integration-form-actions">
+              {capability?.zotero_api_key_present && (
+                <button
+                  className="button text-button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void clearSavedKey("clear_zotero_api_key")}
+                >
+                  {t("integrationClearKey")} (Zotero)
+                </button>
+              )}
+              {capability?.s2_api_key_present && (
+                <button
+                  className="button text-button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void clearSavedKey("clear_s2_api_key")}
+                >
+                  {t("integrationClearKey")} (Semantic Scholar)
+                </button>
+              )}
+            </div>
+          )}
+        </details>
+      )}
       {checked && !idValid && (
         <p id={id + "-id-error"} role="alert">
           {t("zoteroInvalidId")}
@@ -302,13 +333,10 @@ export function ZoteroLibraryForm({
         </p>
       )}
       <div className="integration-form-actions">
-        <button className="button secondary" type="submit">
-          {t("zoteroCheckFormat")}
-        </button>
         {enabled && (
           <>
             <button
-              className="button primary"
+              className="button primary small"
               type="button"
               disabled={busy}
               onClick={() => void saveCredentials()}
@@ -316,36 +344,19 @@ export function ZoteroLibraryForm({
               {busy ? t("integrationSaving") : t("integrationSaveCredentials")}
             </button>
             <button
-              className="button secondary"
+              className="button secondary small"
               type="button"
               disabled={busy}
               onClick={() => void checkZotero()}
             >
               {t("integrationCheckZotero")}
             </button>
-            {capability?.zotero_api_key_present && (
-              <button
-                className="button text-button"
-                type="button"
-                disabled={busy}
-                onClick={() => void clearSavedKey("clear_zotero_api_key")}
-              >
-                {t("integrationClearKey")}
-              </button>
-            )}
-            {capability?.s2_api_key_present && (
-              <button
-                className="button text-button"
-                type="button"
-                disabled={busy}
-                onClick={() => void clearSavedKey("clear_s2_api_key")}
-              >
-                {t("integrationClearKey")} (Semantic Scholar)
-              </button>
-            )}
           </>
         )}
-        <button className="button text-button" type="button" onClick={reset}>
+        <button className="button secondary small" type="submit">
+          {t("zoteroCheckFormat")}
+        </button>
+        <button className="button text-button small" type="button" onClick={reset}>
           {t("cancel")}
         </button>
       </div>

@@ -128,7 +128,7 @@ def check_discovery_journey(screen, service, fixture, checks, output):
         expect(result.get_by_text('Sources without original material bytes: s1, s2', exact=True)).to_be_visible()
         expect(result.get_by_text('Referenced bytes at last check: current', exact=True)).to_be_visible()
         need_keyboard = check_need_disclosure_keyboard(page, screen.base, result)
-        entry = page.get_by_role('button', name='Integrations & setup', exact=True)
+        entry = page.get_by_role('button', name='Setup', exact=True)
         entry.focus()
         page.keyboard.press('Enter')
         expect(page.get_by_role('dialog')).to_be_visible()

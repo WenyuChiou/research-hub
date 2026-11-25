@@ -71,20 +71,31 @@ export function LibraryCollection(props: {
   const visible = scope === "obsidian" ? snapshot?.notes ?? [] : scope === "all" ? all : props.sources;
   return <>
     <section className="library-connection" aria-label={t("libraryConnection")}>
-      <div>
+      <div className="library-connection-info">
         <strong>{t("libraryConnection")}</strong>
-        {snapshot && <p>{t("librarySnapshotKind")}</p>}
-        <details className="library-scope-details"><summary>{t("librarySnapshotDetails")}</summary><p>{t("libraryScopeHelp")}</p>
-          {snapshot && <p className="small">{props.sources.length} {t("libraryWorkspaceSources")} · {snapshot.notes.length} {t("libraryMarkdownNotes")} · {snapshot.collections.length} {t("libraryCollections")}<br />{t("libraryCaptured")}: {snapshot.captured_at}</p>}
+        {snapshot && (
+          <select aria-label={t("libraryScope")} value={scope} onChange={(event) => setScope(event.target.value)}>
+            <option value="workspace">{t("libraryWorkspace")} ({props.sources.length})</option>
+            <option value="obsidian">{t("libraryObsidian")} ({snapshot.notes.length})</option>
+            <option value="all">{t("libraryAll")} ({all.length})</option>
+          </select>
+        )}
+        <details className="library-scope-details">
+          <summary>{t("librarySnapshotDetails")}</summary>
+          <p>{t("libraryScopeHelp")}</p>
+          {snapshot && (
+            <p className="small">
+              {t("librarySnapshotKind")} · {props.sources.length} {t("libraryWorkspaceSources")} · {snapshot.notes.length} {t("libraryMarkdownNotes")} · {snapshot.collections.length} {t("libraryCollections")} ({t("libraryCaptured")}: {snapshot.captured_at})
+            </p>
+          )}
         </details>
         {failed && <p role="alert">{snapshot ? t("libraryRetained") : t("libraryUnavailable")}</p>}
       </div>
-      <button className="button secondary" disabled={loading} onClick={() => void load()}>{loading ? t("loading") : snapshot ? t("libraryReload") : t("libraryLoad")}</button>
-      {snapshot && <label>{t("libraryScope")}<select value={scope} onChange={(event) => setScope(event.target.value)}>
-        <option value="workspace">{t("libraryWorkspace")} ({props.sources.length})</option>
-        <option value="obsidian">{t("libraryObsidian")} ({snapshot.notes.length})</option>
-        <option value="all">{t("libraryAll")} ({all.length})</option>
-      </select></label>}
+      <div className="library-connection-actions">
+        <button className="button secondary small" disabled={loading} onClick={() => void load()}>
+          {loading ? t("loading") : snapshot ? t("libraryReload") : t("libraryLoad")}
+        </button>
+      </div>
     </section>
     <LiteratureLibrary key={scope} {...props} sources={visible} matches={identityMatches(all)} />
   </>;

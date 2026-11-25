@@ -475,7 +475,7 @@ def run(output: Path):
                 expect(page.get_by_role("heading", name="Overview", level=1, exact=True)).to_be_visible()
                 check_setup_trigger_contrast(page, checks, {"width": 1440, "height": 1000})
                 page.screenshot(path=str(output / "workspace-ui.en.png"))
-                page.get_by_role("button", name="繁體中文", exact=True).click()
+                page.get_by_role("button", name="中", exact=True).click()
                 expect(page.locator("html")).to_have_attribute("lang", "zh-TW")
                 expect(page.get_by_role("button", name="關閉訊息", exact=True)).to_have_count(0)
                 for label in ("研究總覽", "文獻", "證據", "設計與結果", "論文", "審閱與交付"):
@@ -495,13 +495,14 @@ def run(output: Path):
                 checks.append({"check": "390px viewport has no horizontal page overflow", "status": "PASS",
                                "screenshot": "workspace-ui.390px.png", "viewport": {"width": 390, "height": 844}})
                 # Bottom entry opens a separate panel, never expands the sidebar.
-                setup_button = page.get_by_role("button", name="整合服務與設定", exact=True)
+                setup_button = page.get_by_role("button", name="設定", exact=True)
                 before_sidebar = page.locator(".sidebar").bounding_box()
                 setup_button.focus()
                 page.keyboard.press("Enter")
-                setup = page.get_by_role("dialog", name="整合服務與設定", exact=True)
+                setup = page.get_by_role("dialog", name="設定", exact=True)
                 expect(setup).to_be_visible()
-                expect(setup.get_by_role("heading", name="整合服務與設定", exact=True)).to_be_focused()
+                expect(setup.get_by_role("heading", name="設定", exact=True)).to_be_focused()
+                setup.locator("details.setup-diagnostics > summary").click()
                 expect(setup.get_by_text("python -m research_hub setup", exact=True)).to_be_visible()
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
                 geometry = setup.bounding_box()
@@ -531,7 +532,7 @@ def run(output: Path):
                 assert bottom["scrollTop"] > 0
                 assert bottom["guideTop"] >= bottom["headerBottom"] - 1
                 assert bottom["guideBottom"] <= bottom["panelBottom"] + 1
-                expect(setup.get_by_role("button", name="關閉設定說明", exact=True)).to_be_visible()
+                expect(setup.get_by_role("button", name="關閉", exact=True)).to_be_visible()
                 page.screenshot(path=str(output / "workspace-integrations-panel-bottom.390px.png"), full_page=True)
                 checks.append({"check": "Setup final guide reachable by programmatic inner scroll and focus; no external navigation",
                                "status": "PASS", "geometry": bottom,

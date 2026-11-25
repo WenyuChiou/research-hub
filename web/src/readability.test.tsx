@@ -78,26 +78,23 @@ function contrast(foreground: string, background: string) {
 }
 
 describe("workspace readability source contract", () => {
-  it("keeps body at 18px and meaningful helper/control text at 16px by default", () => {
+  it("uses a modular desktop reference-manager rem scale (15px body, 13px controls, 12px meta)", () => {
     for (const [size, selectors] of [
-      [18, ["body", ".preserve-lines", ".question-block p"]],
+      [15, ["body", ".preserve-lines", ".question-block p", ".native-prose"]],
       [
-        16,
+        13,
         [
           ".button",
           "input",
           "textarea",
           "select",
-          ".field label",
-          ".field small",
-          ".form-note",
-          ".protection",
           ".capability",
           ".notice",
           ".decision-box p",
           ".tool-intro",
         ],
       ],
+      [12, [".field label", ".field small", ".form-note", ".protection", ".native-reason"]],
     ] as const) {
       for (const selector of selectors) {
         const sizes = values(selector, "font-size");
@@ -110,78 +107,76 @@ describe("workspace readability source contract", () => {
     }
     expect(values("body", "line-height")).toEqual(["var(--leading-body)"]);
     expect(Number(resolve("var(--leading-body)"))).toBeGreaterThanOrEqual(1.6);
-    expect(Number(resolve("var(--leading-help)"))).toBeGreaterThanOrEqual(1.6);
+    expect(Number(resolve("var(--leading-help)"))).toBeGreaterThanOrEqual(1.5);
   });
-  it("has no sub-14px font-size overrides and uses scalable rem typography", () => {
+  it("has no sub-11px font-size overrides and uses scalable rem typography", () => {
     for (const rule of rules) {
       const value = rule.style.getPropertyValue("font-size").trim();
       if (!value || value === "inherit" || value.startsWith("clamp(")) continue;
       if (
         rule.selectors.every((selector) =>
-          [
-            ".brand-symbol",
-            ".folio span",
-            ".folio strong",
-            ".file-icon",
-          ].includes(selector),
+          [".brand-symbol", ".file-icon"].includes(selector),
         )
       )
         continue;
       expect(pixels(value), rule.selectors.join(", ")).toBeGreaterThanOrEqual(
-        14,
+        11,
       );
       expect(pixels(value, 32)).toBe(pixels(value) * 2);
     }
-    // Decorative aria-hidden folio typography is the only tiny font shorthand.
-    for (const selector of [
-      ".badge",
-      ".record-id",
-      "code",
-      "pre",
-      ".content-footer",
-      ".delivery-receipt .metadata",
-    ]) {
+    for (const selector of [".badge", ".nav-symbol", ".nav-number"]) {
+      const desktopSizes = values(selector, "font-size", "");
       expect(
-        values(selector, "font-size").map((value) => pixels(value)),
+        desktopSizes.map((value) => pixels(value)),
         selector,
-      ).toEqual(values(selector, "font-size").map(() => 14));
+      ).toEqual(desktopSizes.map(() => 11));
+    }
+    for (const selector of [".record-id", "code", "pre", ".delivery-receipt .metadata"]) {
+      const desktopSizes = values(selector, "font-size", "");
+      expect(
+        desktopSizes.map((value) => pixels(value)),
+        selector,
+      ).toEqual(desktopSizes.map(() => 12));
     }
   });
-  it("uses two flexible mobile navigation columns without shrinking labels", () => {
+  it("uses compact desktop sidebar controls and two flexible mobile navigation columns", () => {
     expect(
       values(".sidebar nav", "grid-template-columns", "(max-width: 720px)"),
     ).toEqual(["repeat(2, minmax(0, 1fr))"]);
-    for (const selector of [
-      ".sidebar nav a",
-      ".project-control select",
-      ".new-project",
-      ".language-switch button",
-    ]) {
+    for (const selector of [".sidebar nav a", ".project-control select"]) {
       const sizes = values(selector, "font-size");
-      expect(
-        sizes.map((value) => pixels(value)),
-        selector,
-      ).toEqual(sizes.map(() => 16));
+      expect(sizes.map((value) => pixels(value)), selector).toEqual(
+        sizes.map(() => 13),
+      );
+    }
+    for (const selector of [".new-project", ".language-switch button"]) {
+      const desktopSizes = values(selector, "font-size", "");
+      expect(desktopSizes.map((value) => pixels(value)), selector).toEqual(
+        desktopSizes.map(() => 12),
+      );
     }
   });
-  it("sets 44px minimum heights on the specific controls as well as generic controls", () => {
+  it("enforces compact desktop button/input geometry and mobile touch targets", () => {
     for (const selector of [
       ".button",
-      ".button.text-button",
-      ".notice button",
-      ".capability summary",
-      ".inspect summary",
-      ".protection > summary",
       ".project-control select",
-      ".new-project",
-      ".language-switch button",
+      ".sidebar nav a",
+      ".capability summary",
       "input",
       "select",
     ]) {
-      const heights = values(selector, "min-height");
+      const heights = values(selector, "min-height", "");
       expect(heights.length, selector).toBeGreaterThan(0);
       expect(
-        heights.every((value) => Number.parseFloat(value) >= 44),
+        heights.every((value) => Number.parseFloat(value) >= 30 && Number.parseFloat(value) <= 36),
+        selector,
+      ).toBe(true);
+    }
+    for (const selector of ["button", ".button", "input", "select", ".sidebar nav a"]) {
+      const mobileHeights = values(selector, "min-height", "(max-width: 720px)");
+      expect(mobileHeights.length, selector).toBeGreaterThan(0);
+      expect(
+        mobileHeights.every((value) => Number.parseFloat(value) >= 40),
         selector,
       ).toBe(true);
     }
@@ -199,6 +194,7 @@ describe("workspace readability source contract", () => {
       ".file-path",
       ".protection > summary",
       "code",
+      "select[multiple] option",
     ]) {
       expect(values(selector, "overflow-wrap"), selector).toContain("anywhere");
     }
@@ -219,13 +215,13 @@ describe("workspace readability source contract", () => {
         selector,
       ).toBe(true);
     }
-    expect(values(".panel-button", "max-width")).toEqual(["calc(100% - 44px)"]);
+    expect(values(".panel-button", "max-width")).toEqual(["calc(100% - 36px)"]);
     expect(values(".activity-row", "flex-wrap", "(max-width: 720px)")).toEqual([
       "wrap",
     ]);
   });
   it("pads readiness summaries without replacing native disclosure markers", () => {
-    expect(values(".protection > summary", "padding")).toEqual(["0.5rem 0px"]);
+    expect(values(".protection > summary", "padding")).toEqual(["0.35rem 0px"]);
     expect(values(".protection > summary", "display")).toEqual([]);
     expect(values(".protection > summary", "list-style")).toEqual([]);
   });
@@ -245,7 +241,6 @@ describe("workspace readability source contract", () => {
     expect(contrast(token("--focus"), token("--navy"))).toBeGreaterThanOrEqual(
       3,
     );
-    expect(values(".content-footer", "color")).toEqual(["var(--muted)"]);
   });
   it.each([
     [
@@ -274,10 +269,10 @@ describe("workspace readability source contract", () => {
   });
 });
 
-it("keeps integration guidance in an independent viewport-bounded panel", () => {
+it("keeps integration guidance in a compact independent bottom-left viewport-bounded popover", () => {
   expect(values(".integrations-panel", "position")).toContain("fixed");
   expect(values(".integrations-panel", "overflow-y")).toContain("auto");
-  expect(values(".integration-entry", "flex-basis")).toContain("100%");
+  expect(values(".integration-entry .button", "width")).toContain("auto");
 });
 
 it("keeps the setup trigger secondary theme above normal-text contrast", () => {

@@ -165,14 +165,17 @@ export function ManuscriptTools({
               ? audit.report
               : JSON.stringify(audit.report, null, 2)}
           </pre>
-          <dl className="metadata">
-            <dt>{t("checkExitCode")}</dt>
-            <dd>{audit.exit_code}</dd>
-            <dt>{t("adapterFingerprint")}</dt>
-            <dd>
-              <code>{audit.adapter_sha256}</code>
-            </dd>
-          </dl>
+          <details className="inspect">
+            <summary>{t("taskDiagnostics")}</summary>
+            <dl className="metadata">
+              <dt>{t("checkExitCode")}</dt>
+              <dd>{audit.exit_code}</dd>
+              <dt>{t("adapterFingerprint")}</dt>
+              <dd>
+                <code>{audit.adapter_sha256}</code>
+              </dd>
+            </dl>
+          </details>
         </section>
       )}
       {impact && (
