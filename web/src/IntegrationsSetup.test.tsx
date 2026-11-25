@@ -465,3 +465,28 @@ it("propagates live Obsidian read-only validation into Current connection and th
   expect(await within(panel).findByText(t("obsidianError"), { selector: "dd" })).toBeVisible();
   expect(within(panel).queryByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`)).not.toBeInTheDocument();
 });
+
+it("closes when clicking outside without stealing focus, and on Escape even when focus moved outside", async () => {
+  render(
+    <>
+      <button type="button">Outside target</button>
+      <IntegrationsSetup workspace={null} t={t} />
+    </>,
+  );
+  const setupButton = screen.getByRole("button", { name: t("integrationsSetup") });
+  const outsideButton = screen.getByRole("button", { name: "Outside target" });
+  await userEvent.click(setupButton);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+  await userEvent.click(outsideButton);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(outsideButton).toHaveFocus();
+
+  await userEvent.click(setupButton);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  outsideButton.focus();
+  expect(outsideButton).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(setupButton).toHaveFocus();
+});

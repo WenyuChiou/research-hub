@@ -263,4 +263,22 @@ describe("opening selected material", () => {
     expect(details.getByText(t("obsidianRegistryMismatch"))).toBeVisible();
     expect(details.queryByText(t("catalogObsidianConfigured"))).not.toBeInTheDocument();
   });
+
+  it("does not render a stray 0 when source authors/venue are empty and identity matches map has an empty array", () => {
+    const bareSource = {
+      ...organizationSources[0],
+      id: "bare-src",
+      data: { title: "Bare Paper Title", reading_scope: "abstract" },
+    };
+    const { container } = render(
+      <LiteratureLibrary
+        {...organizationProps()}
+        sources={[bareSource]}
+        matches={new Map([["bare-src", []]])}
+      />,
+    );
+    const titleCell = container.querySelector("tbody td:first-child")!;
+    expect(titleCell.querySelector(".catalog-submeta")).toBeNull();
+    expect(titleCell.textContent).toBe("Bare Paper Title");
+  });
 });
