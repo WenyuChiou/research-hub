@@ -129,6 +129,7 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
       <div>
         <h4>{t("nativeTitle")}</h4>
         {summary && <span className="badge neutral">{t("nativeDeclaredScope")}: {summary.reading_scope}</span>}
+        {summary && <span className="badge warn">{t("nativePending")}</span>}
       </div>
       {exportable && summary && scope?.projectId && (
         <div className="native-export-actions">
@@ -154,7 +155,12 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
         </span>
         {claim.text && <p className="native-prose">{claim.text}</p>}
         <p className="native-reason">{t("nativeReason")}: {claim.reason}</p>
-        {claim.evidence.map((e, k) => <details key={k} className="native-evidence"><summary>{t("nativeEvidence")}</summary><blockquote className="native-quote">{e.quote}</blockquote></details>)}
+        {claim.evidence.map((e, k) => {
+          const artifactName = summary.selections.length > 1
+            ? scope?.artifacts.find(a => a.id === e.artifact_id)?.path?.split(/[/\\]/).pop()
+            : undefined;
+          return <details key={k} className="native-evidence"><summary>{t("nativeEvidence")}{artifactName ? ` · ${artifactName}` : ""}</summary><blockquote className="native-quote">{e.quote}</blockquote></details>;
+        })}
       </div>)}</section>)}
     </>}
   </section>;

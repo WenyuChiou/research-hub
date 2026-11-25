@@ -38,6 +38,8 @@ function parseRules(source: string) {
   return rules;
 }
 const rules = parseRules(styles);
+const libraryRules = parseRules(libraryCss);
+const combinedRules = [...rules, ...libraryRules];
 const theme = parseRules(tokens)[0].style;
 function values(selector: string, property: string, media?: string) {
   return rules
@@ -179,6 +181,52 @@ describe("workspace readability source contract", () => {
         mobileHeights.every((value) => Number.parseFloat(value) >= 40),
         selector,
       ).toBe(true);
+    }
+    for (const selector of [
+      "button",
+      ".button",
+      ".button.small",
+      ".button.text-button",
+      ".project-control select",
+      ".sidebar .new-project",
+      ".sidebar nav a",
+      ".language-switch button",
+      ".reading-desk-shell .project-control select",
+      ".reading-desk-shell .sidebar nav > a",
+      ".reading-desk-shell .reading-navigation-toggle",
+      ".reading-desk-shell .language-switch button",
+      ".integration-entry .button",
+      ".catalog-toolbar input",
+      ".catalog-toolbar select",
+      ".catalog-organize .button",
+      ".catalog-title",
+      ".catalog-categories > button",
+      ".library-connection select",
+      ".obsidian-validation input",
+      ".integration-form-fields input",
+      ".integration-form-fields select",
+    ]) {
+      const mobileHeights = combinedRules
+        .filter(
+          (rule) =>
+            rule.selectors.includes(selector) &&
+            rule.media === "(max-width: 760px)",
+        )
+        .map((rule) => rule.style.getPropertyValue("min-height").trim())
+        .filter(Boolean);
+      expect(mobileHeights.length, selector).toBeGreaterThan(0);
+      expect(
+        mobileHeights.every((value) => Number.parseFloat(value) >= 44),
+        selector,
+      ).toBe(true);
+      const lastRule = combinedRules
+        .filter(
+          (rule) =>
+            rule.selectors.includes(selector) &&
+            Boolean(rule.style.getPropertyValue("min-height").trim()),
+        )
+        .at(-1);
+      expect(lastRule?.media, selector).toBe("(max-width: 760px)");
     }
   });
   it("provides wrapping guards for long Chinese/English labels, paths and card headings", () => {

@@ -248,3 +248,29 @@
   .literature-library .catalog-detail { padding: 16px 14px; }
   .catalog-heading p { font-size: var(--text-meta); }
 }
+@media (max-width: 760px) {
+  button,
+  .button,
+  .button.small,
+  .button.text-button,
+  .project-control select,
+  .sidebar .new-project,
+  .sidebar nav a,
+  .language-switch button,
+  .reading-desk-shell .project-control select,
+  .reading-desk-shell .sidebar nav > a,
+  .reading-desk-shell .reading-navigation-toggle,
+  .reading-desk-shell .language-switch button,
+  .integration-entry .button,
+  .catalog-toolbar input,
+  .catalog-toolbar select,
+  .catalog-organize .button,
+  .catalog-title,
+  .catalog-categories > button,
+  .library-connection select,
+  .obsidian-validation input,
+  .integration-form-fields input,
+  .integration-form-fields select {
+    min-height: 44px;
+  }
+}

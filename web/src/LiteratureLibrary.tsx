@@ -23,10 +23,12 @@ const missingSummary = (record: ResearchRecord) => !savedSummary(record) &&
   !workingSummary(record) && !registeredNativeSummary(record);
 type Organization = "all" | "unclassified" | "missing-summary" | "unscreened";
 
-function formatAuthors(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (!Array.isArray(value)) return "";
-  const names = value.map((item) => {
+function authorNames(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value.trim() ? [value.trim()] : [];
+  }
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
     if (typeof item === "string") return item.trim();
     if (item && typeof item === "object") {
       const obj = item as Record<string, unknown>;
@@ -38,6 +40,10 @@ function formatAuthors(value: unknown): string {
     }
     return "";
   }).filter(Boolean);
+}
+
+function formatAuthors(value: unknown): string {
+  const names = authorNames(value);
   if (!names.length) return "";
   return names.length > 2 ? `${names[0]} et al.` : names.join(", ");
 }
@@ -144,7 +150,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   const visible = sources.filter((record) =>
     matchesOrganization(record, organization) &&
     (!selectedCategory || category(record) === selectedCategory) &&
-    (!search || [record.data.title, formatAuthors(record.data.authors), record.data.year, record.data.doi, record.data.venue, record.data.journal, record.data.relevance, category(record), ...strings(record.data.tags), ...strings(record.data.labels)]
+    (!search || [record.data.title, ...authorNames(record.data.authors), record.data.year, record.data.doi, record.data.venue, record.data.journal, record.data.relevance, category(record), ...strings(record.data.tags), ...strings(record.data.labels)]
       .map(text).join(" ").toLocaleLowerCase().includes(search)),
   );
   const exactSelected = visible.find((record) => record.id === selectedId);

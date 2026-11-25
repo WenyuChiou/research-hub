@@ -100,6 +100,7 @@ describe("native summary selected-source reader", () => {
     expect(await screen.findByText(t("nativeWhy"))).toBeVisible();
     for (const title of ["nativeWhy","nativeObjective","nativeMethods","nativeFindings","nativeConclusions","nativeKeyPoints","nativeLimitations"] as const) expect(screen.getByText(t(title))).toBeVisible();
     expect(screen.getAllByText(t("nativeSupported")).length).toBeGreaterThan(0);
+    expect(screen.getByText(t("nativePending"))).toBeVisible();
     expect(screen.getByText(t("nativeInference"))).toBeVisible();
     expect(screen.getByText(t("nativeUnknown"))).toBeVisible();
     expect(screen.getAllByText("Synthetic 🧪 evidence.").length).toBeGreaterThan(0);

@@ -132,7 +132,7 @@ def check_library_journey(screen, workspace, checks, output):
         for name in ("Zotero", "Obsidian", "NotebookLM"):
             tool = setup.locator("li.integration-tool").filter(has=page.get_by_role("heading", name=name, exact=True))
             expect(tool.get_by_text("Reported pass (historical)", exact=True)).to_be_visible()
-            expect(tool.get_by_text("Not checked", exact=True)).to_be_visible()
+            expect(tool.locator("dd").filter(has_text="Not checked")).to_be_visible()
         checks.append({"check": "1440x500 setup trigger is fully in view; saved observation time/pass never claims current connection", "status": "PASS", "native_zoom": "not_verified"})
 
         form = setup.get_by_role("form", name="Zotero library draft", exact=True)

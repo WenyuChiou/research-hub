@@ -167,10 +167,17 @@ export function ProjectPages({
   const records = (kind: string) =>
     detail.records.filter((record) => record.kind === kind);
   const sources = records("source");
-  const sourceOptions = sources.map((source) => ({
-    value: source.id,
-    label: textValue(source.data.title) || source.id,
-  }));
+  const titleCounts = new Map<string, number>();
+  for (const source of sources) {
+    const label = textValue(source.data.title).trim();
+    titleCounts.set(label, (titleCounts.get(label) ?? 0) + 1);
+  }
+  const sourceOptions = sources.map((source) => {
+    const title = textValue(source.data.title).trim();
+    const fallback = textValue(source.data.year || source.data.doi || source.data.locator).trim() || source.id.slice(0, 6);
+    const label = !title ? source.id : (titleCounts.get(title) ?? 0) > 1 ? `${title} (${fallback})` : title;
+    return { value: source.id, label };
+  });
   const next = nextOperation(detail);
   const pending =
     detail.tasks.find((task) => task.status === "awaiting_human") ??
