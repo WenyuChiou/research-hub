@@ -551,7 +551,7 @@ def _populate_zotero_template(
     ]
     template["date"] = pp["year"]
     if not is_full_schema or "DOI" in template:
-        template["DOI"] = pp["doi"]
+        template["DOI"] = pp.get("doi", "")
     template["url"] = pp.get("url", "")
     template["abstractNote"] = pp["abstract"]
     template["tags"] = [
@@ -1297,10 +1297,11 @@ def run_pipeline(
                         if zotero_hit.zotero_key:
                             try:
                                 existing_item = zot.item(zotero_hit.zotero_key)
+                                existing_data = existing_item["data"]
                                 existing_tags = {
                                     tag["tag"]
-                                    for tag in existing_item.get("data", {}).get("tags", [])
-                                    if "tag" in tag
+                                    for tag in (existing_data.get("tags") or [])
+                                    if isinstance(tag, dict) and "tag" in tag
                                 }
                                 hub_tags = set(
                                     _compose_hub_tags(
@@ -1310,7 +1311,6 @@ def run_pipeline(
                                     )
                                 )
                                 new_tags = hub_tags - existing_tags
-                                existing_data = existing_item["data"]
                                 added_colls: list[str] = []
                                 if not callable(move) and desired_colls:
                                     cur_colls = list(existing_data.get("collections") or [])
@@ -1319,7 +1319,7 @@ def run_pipeline(
                                         existing_data["collections"] = [*cur_colls, *added_colls]
                                 if new_tags:
                                     existing_data["tags"] = [
-                                        *existing_data.get("tags", []),
+                                        *(existing_data.get("tags") or []),
                                         *[{"tag": tag} for tag in sorted(new_tags)],
                                     ]
                                 if new_tags or added_colls:

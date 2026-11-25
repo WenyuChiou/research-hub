@@ -268,16 +268,16 @@ def check_duplicate(
     from research_hub.utils.doi import normalize_doi
 
     norm_doi = normalize_doi(doi) if doi else ""
-    norm_title = title.lower()
+    norm_title = (title or "").lower()
 
     def _matches(items: list[dict]) -> bool:
         return any(
-            e.get("data", {}).get("title", "").lower() == norm_title
-            or (norm_doi and normalize_doi(e.get("data", {}).get("DOI", "")) == norm_doi)
+            (norm_title and (e.get("data", {}).get("title") or "").lower() == norm_title)
+            or (norm_doi and normalize_doi(e.get("data", {}).get("DOI", "") or "") == norm_doi)
             for e in (items or [])
         )
 
-    query = doi or title[:50]
+    query = doi or (title or "")[:50]
     try:
         if collection_key:
             existing = zot.collection_items(collection_key, q=query, limit=5)
