@@ -174,42 +174,53 @@ class LocalIntegrationsManager:
     def _resolve_zotero_effective(
         self, data: dict[str, Any], config_dir: Path | None
     ) -> dict[str, Any]:
-        """Resolve Zotero credentials with the same precedence as zotero.client._load_credentials."""
+        """Resolve Zotero credentials with the exact precedence of zotero.client._load_credentials."""
         zot = data.get("zotero") if isinstance(data.get("zotero"), dict) else {}
         raw_zot_key = str(zot.get("api_key") or data.get("zotero_api_key") or "").strip()
-        cfg_lib_id = str(zot.get("library_id") or data.get("zotero_library_id") or "").strip()
-        cfg_lib_type = str(zot.get("library_type") or data.get("zotero_library_type") or "").strip()
 
-        env_key = str(os.environ.get("ZOTERO_API_KEY") or "").strip()
-        env_lib_id = str(os.environ.get("ZOTERO_LIBRARY_ID") or "").strip()
-        env_lib_type = str(os.environ.get("ZOTERO_LIBRARY_TYPE") or "").strip()
+        api_key = str(os.environ.get("ZOTERO_API_KEY") or "").strip()
+        lib_id = str(os.environ.get("ZOTERO_LIBRARY_ID") or "").strip()
+        lib_type = str(os.environ.get("ZOTERO_LIBRARY_TYPE") or "user").strip() or "user"
 
-        dotenv_key = ""
-        dotenv_lib_id = ""
-        dotenv_lib_type = ""
-        if not env_key or not env_lib_id:
+        if not api_key or not lib_id:
             try:
                 from research_hub.zotero.client import _read_env_file
 
                 env_file = _read_env_file()
-                dotenv_key = str(env_file.get("ZOTERO_API_KEY") or "").strip()
-                dotenv_lib_id = str(env_file.get("ZOTERO_LIBRARY_ID") or "").strip()
-                dotenv_lib_type = str(env_file.get("ZOTERO_LIBRARY_TYPE") or "").strip()
+                if not api_key:
+                    api_key = str(env_file.get("ZOTERO_API_KEY") or "").strip()
+                if not lib_id:
+                    lib_id = str(env_file.get("ZOTERO_LIBRARY_ID") or "").strip()
+                lib_type = str(env_file.get("ZOTERO_LIBRARY_TYPE") or lib_type).strip() or lib_type
             except Exception:
                 pass
 
-        cfg_key = self._decrypt_field(raw_zot_key, config_dir) if config_dir else raw_zot_key
+        if not api_key or not lib_id:
+            if not api_key:
+                raw_flat = str(data.get("zotero_api_key") or "").strip()
+                api_key = (self._decrypt_field(raw_flat, config_dir) if config_dir else raw_flat) or ""
+            if not lib_id:
+                lib_id = str(data.get("zotero_library_id") or "").strip()
+            flat_type = str(data.get("zotero_library_type") or "").strip()
+            if flat_type:
+                lib_type = flat_type
 
-        effective_key = env_key or dotenv_key or cfg_key
-        effective_lib_id = env_lib_id or dotenv_lib_id or cfg_lib_id
-        effective_lib_type = env_lib_type or dotenv_lib_type or cfg_lib_type or "user"
-        if effective_lib_type not in {"user", "group"}:
-            effective_lib_type = "user"
+            if not api_key:
+                raw_nested = str(zot.get("api_key") or "").strip()
+                api_key = (self._decrypt_field(raw_nested, config_dir) if config_dir else raw_nested) or ""
+            if not lib_id:
+                lib_id = str(zot.get("library_id") or "").strip()
+            nested_type = str(zot.get("library_type") or "").strip()
+            if nested_type:
+                lib_type = nested_type
+
+        if lib_type not in {"user", "group"}:
+            lib_type = "user"
 
         return {
-            "api_key": effective_key,
-            "library_id": effective_lib_id,
-            "library_type": effective_lib_type,
+            "api_key": api_key,
+            "library_id": lib_id,
+            "library_type": lib_type,
             "raw_config_key": raw_zot_key,
         }
 
