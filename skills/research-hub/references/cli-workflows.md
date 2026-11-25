@@ -42,12 +42,13 @@ Interactive two-phase discovery with external relevance scoring:
 
 ```bash
 research-hub discover new --cluster project-topic --query "agent-based modeling flood adaptation"
-research-hub fit-check emit --cluster project-topic
-# Evaluate prompt in host or chosen AI, then apply:
-research-hub discover continue --cluster project-topic --scores scores.json
+# -> emits search results + a fit-check scoring prompt; stashes state
+
+# Evaluate the emitted prompt in your host or chosen AI, then apply:
+research-hub discover continue --cluster project-topic --scored scores.json
 ```
 
-`research-hub fit-check {emit|apply|audit|drift}` re-scores or audits an existing cluster; `discover variants` widens recall before narrowing.
+`research-hub fit-check emit --cluster project-topic --candidates candidates.json` (plus `apply`/`audit`/`drift`) exposes the underlying gates separately; `discover variants` widens recall before narrowing.
 
 ## Local Folder Import & Synthesis
 
@@ -66,7 +67,7 @@ Run `synthesize` after per-paper notes are populated; it reads cluster memory an
 research-hub memory list --cluster project-topic
 research-hub memory read --cluster project-topic
 research-hub memory emit --cluster project-topic
-research-hub memory apply --cluster project-topic --payload memory.json
+research-hub memory apply --cluster project-topic --scored memory.json
 
 research-hub doctor --autofix
 research-hub tidy

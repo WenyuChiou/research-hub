@@ -5,7 +5,7 @@ description: Operate research-hub workflows pairing your AI host's native search
 
 # research-hub
 
-research-hub is your local Stage 1–2 research workspace connecting **host-native AI discovery & reading** (Claude Code, Codex, Gemini CLI, etc.) with **Zotero**, **Obsidian**, and **NotebookLM**. Host-native research remains useful without Hub or any integration account; choose a destination before its setup or write steps.
+research-hub is an AI-operable local Stage 1–2 research workspace connecting **host-native AI discovery & reading** (Claude Code, Codex, Gemini CLI, etc.) with **Zotero**, **Obsidian**, and **NotebookLM**. Host-native research remains useful without Hub or any integration account; choose a destination before its setup or write steps.
 
 ## Runtime contract (do this first)
 
@@ -72,16 +72,18 @@ For AI hosts such as Claude Code, Codex, Gemini CLI, Cursor, OpenClaw, Hermes, o
    research-hub auto "TOPIC" --max-papers 3 --no-nlm
    ```
 
-5. If NotebookLM is selected after your cluster input is ready, run its staged commands (login, bundle, upload, generate, download — each requires its own authorization and observed receipt):
+5. If a CLI-managed run stops before search because no relevance judge is on PATH, pass `--no-fit-check` or configure a supported `--llm-cli` adapter (`codex`, `gemini`, etc.; see [cli-workflows.md](references/cli-workflows.md)).
+
+6. If NotebookLM is selected after your cluster input is ready, run its staged commands (login, bundle, upload, generate, download — each requires its own authorization and observed receipt):
 
    ```bash
-   research-hub notebooklm bundle --cluster <slug>
-   research-hub notebooklm upload --cluster <slug>
-   research-hub notebooklm generate --cluster <slug> --type brief
-   research-hub notebooklm download --cluster <slug>
+   research-hub notebooklm bundle --cluster project-topic
+   research-hub notebooklm upload --cluster project-topic
+   research-hub notebooklm generate --cluster project-topic --type brief
+   research-hub notebooklm download --cluster project-topic
    ```
 
-6. For machine-readable automation, prefer `--json` flags when available, or use the MCP/REST surfaces exposed by `research-hub serve`.
+7. For machine-readable automation, prefer `--json` flags when available, or use the MCP/REST surfaces exposed by `research-hub serve`.
 
 ## Pick The Right Entry Point
 
