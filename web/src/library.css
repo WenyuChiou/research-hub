@@ -198,6 +198,12 @@
   gap: 8px;
   margin: 12px 0;
 }
+.integration-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 .integration-draft-preview {
   padding: 10px;
   background: var(--wash);

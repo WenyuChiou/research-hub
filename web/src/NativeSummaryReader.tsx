@@ -40,12 +40,14 @@ function validSummary(v: unknown, record: ResearchRecord, scope: ObservationRead
 }
 
 type State = { key: string; status: "loading" | "current" | "missing" | "stale" | "unavailable"; summary?: Summary };
-export function NativeSummaryReader({ record, scope, t }: { record: ResearchRecord; scope?: ObservationReadScope; t: Translate }) {
+export function NativeSummaryReader({ record, scope, t, exportable = false }: { record: ResearchRecord; scope?: ObservationReadScope; t: Translate; exportable?: boolean }) {
   const eligible = Boolean(scope?.active && scope.projectId && record.kind === "source" && record.id);
   const available = "native_summary_available" in record && record.native_summary_available === true;
   // Include selected source metadata and artifact versions, but not unrelated renders.
   const key = JSON.stringify([eligible, available, scope?.projectId, scope?.revision, record.id, record.data, scope?.artifacts]);
   const [state, setState] = useState<State>();
+  const [exportStatus, setExportStatus] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
   useEffect(() => {
     if (!eligible || !scope || !available) return;
     const controller = new AbortController();
@@ -68,9 +70,76 @@ export function NativeSummaryReader({ record, scope, t }: { record: ResearchReco
   if (!eligible) return null;
   const current: State | undefined = !available ? {key, status:"missing"} : state?.key === key ? state : undefined;
   const summary = current?.status === "current" ? current.summary : undefined;
+
+  async function fetchMarkdown(): Promise<string | null> {
+    if (!scope?.projectId || !record.id) return null;
+    setExportBusy(true);
+    setExportStatus(null);
+    try {
+      const result = await api<{ ok?: boolean; markdown?: string | null; error?: string }>(
+        `/projects/${segment(scope.projectId)}/native-summary/markdown?source_record_id=${encodeURIComponent(record.id)}`,
+      );
+      if (!result?.ok || typeof result.markdown !== "string" || !result.markdown) {
+        setExportStatus({ tone: "bad", text: result?.error || t("nativeExportFailed") });
+        return null;
+      }
+      return result.markdown;
+    } catch (err) {
+      setExportStatus({
+        tone: "bad",
+        text: err instanceof ApiError ? err.message : t("nativeExportFailed"),
+      });
+      return null;
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  async function copyMarkdown() {
+    const md = await fetchMarkdown();
+    if (!md) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(md);
+      }
+      setExportStatus({ tone: "good", text: t("nativeExportCopied") });
+    } catch {
+      setExportStatus({ tone: "bad", text: t("nativeExportFailed") });
+    }
+  }
+
+  async function downloadMarkdown() {
+    const md = await fetchMarkdown();
+    if (!md) return;
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${record.id.replace(/[^a-zA-Z0-9._-]/g, "_")}-summary.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return <section className="native-summary" aria-label={t("nativeTitle")}>
     <h4>{t("nativeTitle")}</h4>
     <p className="small muted">{t("nativePending")}</p>
+    {exportable && summary && scope?.projectId && (
+      <div className="native-export-actions">
+        <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void copyMarkdown()}>
+          {t("nativeCopyMarkdown")}
+        </button>
+        <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void downloadMarkdown()}>
+          {t("nativeDownloadMarkdown")}
+        </button>
+        {exportStatus && (
+          <span role="status" className={exportStatus.tone === "good" ? "small good-text" : "small bad-text"}>
+            {exportStatus.text}
+          </span>
+        )}
+      </div>
+    )}
     {!summary && <p role="status">{t(current?.status === "missing" ? "nativeMissing" : current?.status === "stale" ? "nativeStale" : current?.status === "unavailable" ? "nativeUnavailable" : "nativeLoading")}</p>}
     {summary && <>
       <p className="small"><strong>{t("nativeDeclaredScope")}: {summary.reading_scope}</strong></p>

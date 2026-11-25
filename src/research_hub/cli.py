@@ -2828,7 +2828,8 @@ def _main_dispatch(args, parser) -> int:
             human = True
         from research_hub.workspace.server import serve_workspace
         serve_workspace(args.root, port=args.port, open_browser=not args.no_browser, human=human,
-                        obsidian_vault=args.obsidian_vault, library_snapshot=args.library_snapshot)
+                        obsidian_vault=args.obsidian_vault, library_snapshot=args.library_snapshot,
+                        integrations_config="auto")
         return 0
 
     # This explicit-input checker must not discover a vault or account config.

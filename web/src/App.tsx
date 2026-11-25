@@ -3,11 +3,12 @@ import { ComposerSessions } from "./composerSession";
 import { IntegrationsSetup } from "./IntegrationsSetup";
 import { useCompactReadingLayout } from "./readingLayout";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, segment } from "./api";
+import { api, ApiError, refreshSessionTokens, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
 import { ProjectPages, type RecoveredWork } from "./Pages";
 import { en, projectWarningLabel, translator, type MessageKey } from "./i18n";
 import type {
+  IntegrationLiveState,
   Locale,
   Page,
   Project,
@@ -46,6 +47,19 @@ export default function App() {
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [detailError, setDetailError] = useState<unknown>(null);
+  const [liveIntegrations, setLiveIntegrations] = useState<IntegrationLiveState>({});
+  const [browserOffline, setBrowserOffline] = useState(
+    () => typeof navigator !== "undefined" && navigator.onLine === false,
+  );
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const hadConnectionLossRef = useRef(false);
+  const latestStateRef = useRef({
+    browserOffline: false,
+    error: null as unknown,
+    detailError: null as unknown,
+    locale,
+  });
+  latestStateRef.current = { browserOffline, error, detailError, locale };
   const [pollStatus, setPollStatus] = useState<{
     projectId: string;
     lastSuccess: number;
@@ -183,6 +197,15 @@ export default function App() {
       .then((value) => {
         setWorkspace(value);
         setProjectId((selected) => selected || value.projects[0]?.id || "");
+        if (
+          hadConnectionLossRef.current &&
+          !latestStateRef.current.browserOffline &&
+          !latestStateRef.current.detailError
+        ) {
+          hadConnectionLossRef.current = false;
+          setReconnectAttempts(0);
+          setNotice({ message: translator(latestStateRef.current.locale)("pollReconnected") });
+        }
       })
       .catch((failure) => {
         if (!aborted(failure)) setError(failure);
@@ -203,6 +226,15 @@ export default function App() {
         if (controller.signal.aborted) return;
         setDetail(value);
         setPollStatus({ projectId, lastSuccess: Date.now(), stale: false });
+        if (
+          hadConnectionLossRef.current &&
+          !latestStateRef.current.browserOffline &&
+          !latestStateRef.current.error
+        ) {
+          hadConnectionLossRef.current = false;
+          setReconnectAttempts(0);
+          setNotice({ message: translator(latestStateRef.current.locale)("pollReconnected") });
+        }
       })
       .catch((failure) => {
         if (!controller.signal.aborted && !aborted(failure))
@@ -435,6 +467,47 @@ export default function App() {
     setError(null);
     setRefreshCount((count) => count + 1);
   }
+
+  const isRetryableConnectionError = (failure: unknown) =>
+    failure !== null &&
+    (!(failure instanceof ApiError) ||
+      failure.status >= 500 ||
+      failure.status === 408 ||
+      failure.status === 429);
+  const connectionLost =
+    browserOffline ||
+    isRetryableConnectionError(error) ||
+    isRetryableConnectionError(detailError);
+
+  useEffect(() => {
+    const onOffline = () => setBrowserOffline(true);
+    const onOnline = () => {
+      setBrowserOffline(false);
+      void refreshSessionTokens().then(() => {
+        setReconnectAttempts(0);
+        refresh();
+      });
+    };
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!connectionLost) return;
+    hadConnectionLossRef.current = true;
+    const delay = Math.min(3000 * 2 ** Math.min(reconnectAttempts, 4), 30000);
+    const timer = window.setTimeout(() => {
+      void refreshSessionTokens().then(() => {
+        setReconnectAttempts((n) => n + 1);
+        refresh();
+      });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [connectionLost, reconnectAttempts]);
   const navigationLinks = (items: Page[]) => (<>{items.map((item) => (
       <a key={item} href={"#" + item} onClick={() => {navigationEpoch.current++;}} aria-current={page === item ? "page" : undefined}>
         <span className="nav-symbol" aria-hidden="true">{glyphs[pages.indexOf(item)]}</span><span>{t(item)}</span>
@@ -517,6 +590,8 @@ export default function App() {
           <IntegrationsSetup
             workspace={workspace}
             projectId={projectId}
+            liveState={liveIntegrations}
+            onLiveStateChange={setLiveIntegrations}
             t={t}
           />
           <span className="local-marker">
@@ -584,6 +659,18 @@ export default function App() {
               0{pages.indexOf(page) + 1}
             </span>
           </div>
+          {connectionLost && (
+            <div role="status" className="notice notice-warn">
+              <span>{t("pollReconnecting")}</span>{" "}
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() => void refreshSessionTokens().then(() => refresh())}
+              >
+                {t("pollReconnectNow")}
+              </button>
+            </div>
+          )}
           {pollStatus?.projectId === projectId && pollStatus.stale && (
             <div role="alert" className="notice notice-error">
               <span>
@@ -750,6 +837,7 @@ export default function App() {
                       composerSessions={composerSessions}
                       detail={activeDetail}
                       workspace={workspace}
+                      liveIntegrations={liveIntegrations}
                       page={page}
                       observationRevision={refreshCount}
                       categoryHost={categoryHost}

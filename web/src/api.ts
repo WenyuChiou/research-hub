@@ -16,6 +16,36 @@ export function metaToken(name: string): string {
   );
 }
 
+function upsertMeta(name: string, content: string): void {
+  let node = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+  if (!node && document.head) {
+    node = document.createElement("meta");
+    node.name = name;
+    document.head.appendChild(node);
+  }
+  if (node) node.content = content;
+}
+
+/** Re-sync CSRF/human tokens after an unexpected server restart without reloading UI state. */
+export async function refreshSessionTokens(signal?: AbortSignal): Promise<boolean> {
+  try {
+    const response = await fetch("/app/", {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) return false;
+    const html = await response.text();
+    const csrfMatch = html.match(/<meta\s+name="research-hub-csrf-token"\s+content="([^"]+)"/i);
+    if (csrfMatch?.[1]) upsertMeta("research-hub-csrf-token", csrfMatch[1]);
+    const humanMatch = html.match(/<meta\s+name="research-hub-human-token"\s+content="([^"]+)"/i);
+    if (humanMatch?.[1]) upsertMeta("research-hub-human-token", humanMatch[1]);
+    return Boolean(csrfMatch?.[1]);
+  } catch {
+    return false;
+  }
+}
+
 /** Tokens are read from this server-rendered document, never persisted or included in URLs. */
 export async function api<T>(
   path: string,

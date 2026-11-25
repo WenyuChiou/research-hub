@@ -13,6 +13,11 @@ import { translator } from "./i18n";
 import type { Workspace } from "./types";
 vi.mock("./api", () => ({
   api: vi.fn(() => new Promise(() => {})),
+  refreshSessionTokens: vi.fn(async () => true),
+  ApiError: class ApiError extends Error {
+    status = 500;
+    code = "error";
+  },
   segment: encodeURIComponent,
 }));
 afterEach(cleanup);
@@ -130,7 +135,7 @@ it("exposes exact official links but no secret inputs or raw snapshot values", a
       "https://www.zotero.org/settings/keys",
       "https://help.obsidian.md/manage-vaults",
       "https://notebook.google.com/",
-      "https://github.com/WenyuChiou/research-hub/blob/fix/nlm-085-integrations-guidance/docs/setup.md",
+      "https://github.com/WenyuChiou/research-hub/blob/master/docs/setup.md",
     ]),
   );
   for (const a of panel.querySelectorAll("a"))
@@ -309,4 +314,90 @@ it.each([
   expect(within(panel).getByText(t("integrationFreshInvalid"))).toBeVisible();
   expect(panel.textContent).not.toContain(t("snapshotPassed"));
   expect(panel.innerHTML).not.toContain("SECRET_FRESHNESS");
+});
+
+it("supports opt-in encrypted local credentials save, Zotero probe, and NotebookLM browser/session actions", async () => {
+  const { api } = await import("./api");
+  vi.mocked(api).mockImplementation(async (path: string, body?: unknown) => {
+    if (path === "/integrations/credentials") {
+      return {
+        ok: true,
+        saved: true,
+        credentials: {
+          version: 1,
+          status: "available",
+          zotero_configured: true,
+          zotero_api_key_present: true,
+          zotero_api_key_encrypted: true,
+          zotero_library_id: "987654",
+          zotero_library_type: "group",
+          unpaywall_email_present: true,
+          s2_api_key_present: true,
+          s2_api_key_encrypted: true,
+          nlm_state_present: false,
+        },
+        body,
+      };
+    }
+    if (path === "/integrations/zotero/check") {
+      return {
+        ok: true,
+        probe: {
+          status: "connected_web",
+          local_api: false,
+          web_api: "ok",
+          observed_at: "2026-11-25T00:00:00Z",
+        },
+      };
+    }
+    if (path === "/integrations/notebooklm/check") {
+      return {
+        ok: true,
+        probe: {
+          status: "authenticated",
+          code: "ok",
+          refreshed: true,
+          state_present: true,
+          observed_at: "2026-11-25T00:00:00Z",
+        },
+      };
+    }
+    return {};
+  });
+
+  const optInWorkspace: Workspace = {
+    ok: true,
+    projects: [],
+    protection_scope: "synthetic",
+    capabilities: {
+      codex: { status: "unavailable", message: "synthetic" },
+      writing: { status: "unavailable", message: "synthetic" },
+      approval: { status: "unavailable", message: "synthetic" },
+      local_integrations: {
+        version: 1,
+        status: "available",
+        zotero_configured: false,
+        zotero_api_key_present: false,
+        zotero_library_id: "",
+        zotero_library_type: "user",
+        nlm_state_present: false,
+      },
+    },
+  };
+  const { useState } = await import("react");
+  function Harness() {
+    const [live, setLive] = useState({});
+    return <IntegrationsSetup workspace={optInWorkspace} liveState={live} onLiveStateChange={setLive} t={t} />;
+  }
+  render(<Harness />);
+  const panel = await open();
+  await userEvent.type(within(panel).getByRole("textbox", { name: t("zoteroLibraryId") }), "987654");
+  await userEvent.selectOptions(within(panel).getByRole("combobox", { name: t("zoteroLibraryType") }), "group");
+  await userEvent.type(within(panel).getByLabelText(/Zotero API key/i), "secret-zot-key");
+  await userEvent.click(within(panel).getByRole("button", { name: t("integrationSaveCredentials") }));
+  expect(await within(panel).findByText(t("integrationSaved"))).toBeVisible();
+  await userEvent.click(within(panel).getByRole("button", { name: t("integrationCheckZotero") }));
+  expect((await within(panel).findAllByText(t("integrationZoteroConnectedWeb"))).length).toBeGreaterThan(0);
+  await userEvent.click(within(panel).getByRole("button", { name: t("integrationNlmCheck") }));
+  expect((await within(panel).findAllByText(t("integrationNlmAuthenticated"))).length).toBeGreaterThan(0);
 });

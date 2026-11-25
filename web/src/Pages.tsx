@@ -40,6 +40,7 @@ import {
   usePreparationRecovery,
 } from "./PrepareRecovery";
 import type {
+  IntegrationLiveState,
   Operation,
   Page,
   ProjectDetail,
@@ -67,6 +68,7 @@ export interface PagesProps {
   navigationEpoch?: { current: number };
   detail: ProjectDetail;
   workspace: Workspace;
+  liveIntegrations?: IntegrationLiveState;
   page: Page;
   observationRevision?: number;
   categoryHost?: HTMLElement | null;
@@ -83,6 +85,7 @@ export function ProjectPages({
   navigationEpoch: providedEpoch,
   detail,
   workspace,
+  liveIntegrations,
   page,
   observationRevision = 0,
   categoryHost = null,
@@ -427,6 +430,7 @@ export function ProjectPages({
 
       <div hidden={page !== "literature"} className="page-content">
         <LibraryCollection sources={sources} screenings={records("screening")} t={t} categoryHost={categoryHost}
+          workspace={workspace} liveIntegrations={liveIntegrations}
           pageSuspended={page !== "literature"}
           onWorkingSummarySaved={() => onSaved(t("workingSummarySaved"))}
           observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}

@@ -191,4 +191,18 @@ describe("native summary selected-source reader", () => {
     expect(await screen.findByText(zh("nativeStale"))).toBeVisible();
     expect(screen.queryByText(/private/)).not.toBeInTheDocument();
   });
+  it("copies portable #288 markdown when exportable is enabled", async () => {
+    const f = fixture();
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(response(f.body))
+      .mockResolvedValueOnce(response({ ok: true, markdown: "# Synthetic Title\n\n## Why\nBecause [supported]" }));
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<NativeSummaryReader record={f.record} scope={f.scope} t={t} exportable />);
+    expect(await screen.findByRole("button", { name: t("nativeCopyMarkdown") })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: t("nativeCopyMarkdown") }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("# Synthetic Title\n\n## Why\nBecause [supported]"));
+    expect(await screen.findByText(t("nativeExportCopied"))).toBeVisible();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
