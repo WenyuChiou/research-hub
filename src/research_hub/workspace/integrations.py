@@ -335,6 +335,7 @@ class LocalIntegrationsManager:
                     if not _DIGITS_RE.match(trimmed) or not re.search(r"[1-9]", trimmed):
                         raise WorkspaceError("Enter a positive numeric Zotero library ID", "invalid_request")
                     zot["library_id"] = trimmed.lstrip("0")
+                    data.pop("zotero_library_id", None)
                 zotero_touched = True
 
             if "zotero_library_type" in payload:
@@ -342,6 +343,7 @@ class LocalIntegrationsManager:
                 if lib_type not in {"user", "group"}:
                     raise WorkspaceError("Zotero library type must be 'user' or 'group'", "invalid_request")
                 zot["library_type"] = lib_type
+                data.pop("zotero_library_type", None)
                 zotero_touched = True
 
             if payload.get("clear_zotero_api_key") is True:

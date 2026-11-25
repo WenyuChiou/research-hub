@@ -194,6 +194,20 @@ def test_credentials_save_encrypts_secrets_and_never_echoes(tmp_path: Path, monk
         monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "group")
         clear_type_mgr = LocalIntegrationsManager(tmp_path / "env_only.json")
         assert clear_type_mgr.capability()["zotero_library_type"] == "group"
+        monkeypatch.delenv("ZOTERO_LIBRARY_TYPE", raising=False)
+
+        # Updating flat-key legacy config removes flat zotero_library_id/zotero_library_type overrides
+        flat_cfg = tmp_path / "flat_legacy.json"
+        flat_cfg.write_text(
+            json.dumps({"zotero_library_id": "111", "zotero_library_type": "user", "zotero_api_key": "old"}),
+            encoding="utf-8",
+        )
+        flat_mgr = LocalIntegrationsManager(flat_cfg)
+        flat_res = flat_mgr.save_credentials({"zotero_library_id": "222", "zotero_library_type": "group"})
+        assert flat_res["credentials"]["zotero_library_id"] == "222"
+        assert flat_res["credentials"]["zotero_library_type"] == "group"
+        flat_saved = json.loads(flat_cfg.read_text(encoding="utf-8"))
+        assert "zotero_library_id" not in flat_saved and "zotero_library_type" not in flat_saved
 
         # Refuse secret saves when cryptography package is unavailable
         import research_hub.workspace.integrations as integ_mod
