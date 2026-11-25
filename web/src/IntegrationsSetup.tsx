@@ -30,6 +30,7 @@ export function IntegrationsSetup({
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const panelId = useId();
   const previousProject = useRef(projectId);
@@ -39,6 +40,30 @@ export function IntegrationsSetup({
   };
   useEffect(() => {
     if (open) heading.current?.focus();
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        !panel.current?.contains(target) &&
+        !trigger.current?.contains(target)
+      ) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
   useEffect(() => {
     const navigate = () => setOpen(false); // Never steal focus from newer navigation.
@@ -178,6 +203,7 @@ export function IntegrationsSetup({
       {open &&
         createPortal(
           <section
+            ref={panel}
             id={panelId}
             role="dialog"
             aria-modal="false"

@@ -253,7 +253,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                     if (selectedId === record.id && readerOpen) { detailHeading.current?.focus(); openDrafts(false); openDraftRequested.current = false; }
                     else { focusRequested.current = true; setSelectedId(record.id); }
                   }}>{text(record.data.title)}</button>
-                    {(authors || venue || record.kind === "library-note" || matches?.get(record.id)?.length) && (
+                    {Boolean(authors || venue || record.kind === "library-note" || matches?.get(record.id)?.length) && (
                       <span className="catalog-submeta">
                         {[authors, venue, record.kind === "library-note" ? t("libraryNoteOrigin") : null, matches?.get(record.id)?.length ? t("libraryIdentityMatch") : null].filter(Boolean).join(" · ")}
                       </span>
