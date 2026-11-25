@@ -94,7 +94,10 @@ def _decrypt_config_secret(value: str | None, config_dir: Path | None) -> str | 
     from research_hub.security.secret_box import decrypt, is_encrypted
 
     if is_encrypted(value):
-        return decrypt(value, config_dir)
+        try:
+            return decrypt(value, config_dir)
+        except RuntimeError:
+            return None
     return value
 
 
@@ -291,7 +294,7 @@ def get_config() -> HubConfig:
     ):
         _config = HubConfig()
         _config_path = resolved_path
-        _config_stat = _stat_token(resolved_path)
+        _config_stat = current_stat
     return _config
 
 

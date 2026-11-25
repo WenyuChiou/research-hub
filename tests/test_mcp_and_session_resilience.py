@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 import io
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import urllib.error
 
@@ -21,20 +22,38 @@ def test_stdio_protocol_guard_keeps_binary_buffer_and_redirects_stray_stdout():
     guard = _StdioProtocolGuard(proto_stdout, err_buf)
 
     assert guard.buffer is raw_bytes
+    assert guard.writable() is True
+    assert guard.closed is False
+    assert guard.errors == "strict"
+    assert guard.isatty() is False
+    with pytest.raises(io.UnsupportedOperation):
+        guard.fileno()
+
     guard.write("[ZoteroDualClient] Local API lost connection\n")
+    guard.writelines(["line-two\n"])
     guard.flush()
 
-    assert err_buf.getvalue() == "[ZoteroDualClient] Local API lost connection\n"
+    assert err_buf.getvalue() == "[ZoteroDualClient] Local API lost connection\nline-two\n"
     assert raw_bytes.getvalue() == b""
 
-    captured = io.StringIO()
-    with redirect_stdout(captured):
-        print("@article{ok}")
-    assert captured.getvalue().strip() == "@article{ok}"
+    # Verify redirect_stdout captures and restores _StdioProtocolGuard cleanly.
+    orig = sys.stdout
+    sys.stdout = guard  # type: ignore[assignment]
+    try:
+        captured = io.StringIO()
+        with redirect_stdout(captured):
+            print("@article{ok}")
+        assert sys.stdout is guard
+        assert captured.getvalue().strip() == "@article{ok}"
+        print("stray-after-restore")
+    finally:
+        sys.stdout = orig
+
+    assert "stray-after-restore" in err_buf.getvalue()
+    assert raw_bytes.getvalue() == b""
 
 
-def test_mcp_main_wraps_stdout_only_on_stdio_and_forwards_http_host_port(monkeypatch):
-    import sys
+def test_mcp_main_wraps_stdout_only_on_stdio_and_enforces_loopback_http(monkeypatch):
     from research_hub import mcp_server
 
     seen = []
@@ -54,10 +73,49 @@ def test_mcp_main_wraps_stdout_only_on_stdio_and_forwards_http_host_port(monkeyp
             assert seen[-1][1] == "_StdioProtocolGuard"
         assert sys.stdout is orig_stdout
 
+        # Also verifies sys.stdout restoration even when mcp.run raises.
+        class BoomMCP:
+            def run(self, **kwargs):
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(mcp_server, "mcp", BoomMCP())
+        with pytest.raises(RuntimeError, match="boom"):
+            mcp_server.main(transport="stdio")
+        assert sys.stdout is orig_stdout
+
+        monkeypatch.setattr(mcp_server, "mcp", DummyMCP())
         mcp_server.main(transport="streamable-http", host="127.0.0.1", port=9123)
         assert seen[-1] == ({"transport": "streamable-http", "host": "127.0.0.1", "port": 9123}, type(orig_stdout).__name__)
+
+        with pytest.raises(ValueError, match="loopback-only"):
+            mcp_server.main(transport="streamable-http", host="0.0.0.0", port=9123)
     finally:
         sys.stdout = orig_stdout
+
+
+def test_mcp_main_missing_fastmcp_prints_to_stderr(monkeypatch, capsys):
+    from research_hub import mcp_server
+
+    monkeypatch.setattr(mcp_server, "FastMCP", None)
+    with pytest.raises(SystemExit) as exc:
+        mcp_server.main()
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "fastmcp" in captured.err.lower()
+
+
+def test_cli_mcp_transport_validation(tmp_path, monkeypatch):
+    from research_hub import cli
+
+    with pytest.raises(SystemExit):
+        cli.main(["serve", "--mcp-transport", "streamable-http", "--workspace", "--root", str(tmp_path)])
+    with pytest.raises(SystemExit):
+        cli.main(["serve", "--mcp-transport", "sse", "--dashboard"])
+
+    monkeypatch.setenv("RESEARCH_HUB_ROOT", str(tmp_path))
+    with pytest.raises(SystemExit, match="loopback-only"):
+        cli.main(["serve", "--mcp-transport", "streamable-http", "--host", "0.0.0.0", "--allow-external"])
 
 
 def test_config_hot_reload_and_secret_decryption(tmp_path, monkeypatch):
@@ -110,7 +168,48 @@ def test_config_hot_reload_and_secret_decryption(tmp_path, monkeypatch):
     assert second is not first
     assert second.zotero_library_id == "2222"
     assert second.s2_api_key == "s2-secret-rotated-7890"
+
+    # Corrupted secret_box key must not crash get_config() / doctor / where; returns None safely.
+    key_file = cfg_dir / ".secret_box.key"
+    if key_file.exists():
+        from cryptography.fernet import Fernet
+
+        key_file.write_bytes(Fernet.generate_key())
+        hub_config.invalidate_config_cache()
+        degraded = hub_config.get_config()
+        assert degraded.s2_api_key is None
+        assert degraded.zotero_api_key is None
+
     hub_config.invalidate_config_cache()
+
+
+def test_search_fallback_forwards_configured_s2_key_when_env_unset(tmp_path, monkeypatch):
+    from research_hub import config as hub_config
+    from research_hub.search import fallback
+
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
+    monkeypatch.setattr(hub_config, "_resolve_config_path", lambda: tmp_path / "config.json")
+    monkeypatch.setattr(hub_config, "get_config", lambda: SimpleNamespace(s2_api_key="cfg-s2-key"))
+
+    captured_keys: list[str | None] = []
+
+    class FakeS2(fallback.SemanticScholarClient):
+        def __init__(self, api_key: str | None = None):
+            super().__init__(api_key=api_key)
+            captured_keys.append(self.api_key)
+
+        def search(self, query, limit=20, year_from=None, year_to=None):
+            return []
+
+    monkeypatch.setattr(fallback, "SemanticScholarClient", FakeS2)
+    monkeypatch.setitem(fallback._BACKEND_REGISTRY, "semantic-scholar", FakeS2)
+    fallback.search_papers("test query", limit=2, backends=("semantic-scholar",))
+    assert captured_keys == ["cfg-s2-key"]
+
+    # Env var wins over config key.
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "env-s2-key")
+    fallback.search_papers("test query", limit=2, backends=("semantic-scholar",))
+    assert captured_keys == ["cfg-s2-key", "env-s2-key"]
 
 
 def test_zotero_dual_client_logs_stderr_and_reconnects_local_api(monkeypatch, capsys):
@@ -133,6 +232,8 @@ def test_zotero_dual_client_logs_stderr_and_reconnects_local_api(monkeypatch, ca
         def item(self, key):
             if self.local:
                 local_state["calls"] += 1
+                if key == "BAD-KEY":
+                    raise KeyError("item missing")
                 if not local_state["up"]:
                     raise urllib.error.URLError("Connection refused")
                 return {"source": "local", "key": key}
@@ -143,7 +244,12 @@ def test_zotero_dual_client_logs_stderr_and_reconnects_local_api(monkeypatch, ca
     monkeypatch.setattr(pyz, "Zotero", FakeZotero)
     monkeypatch.setattr(zclient, "check_local_api", lambda timeout=2, library_id=None: local_state["up"])
 
-    # Exercise reconnect state machine without bypassing conftest's global Zotero network guard.
+    # Minimal __new__ instance without local_available attr still works safely via getattr guards.
+    minimal = zclient.ZoteroDualClient.__new__(zclient.ZoteroDualClient)
+    minimal.web = FakeZotero("54321", "user", "web-key")
+    minimal._local_retry_after = 999.0
+    assert minimal.get_item("M1")["source"] == "web"
+
     dual = zclient.ZoteroDualClient.__new__(zclient.ZoteroDualClient)
     dual.user_id = "54321"
     dual.api_key = "web-key"
@@ -154,9 +260,19 @@ def test_zotero_dual_client_logs_stderr_and_reconnects_local_api(monkeypatch, ca
     dual.local_available = True
     assert dual.get_item("A1")["source"] == "local"
 
+    # Non-connection exceptions must still propagate rather than latching local_available=False.
+    with pytest.raises(KeyError):
+        dual.get_item("BAD-KEY")
+    assert dual.local_available is True
+
     # Drop local API: logs go to stderr (never stdout!), falls back to Web API.
     local_state["up"] = False
     assert dual.get_item("A2")["source"] == "web"
+    assert dual.local_available is False
+
+    # Failed probe after cooldown keeps cooldown extending without crashing.
+    now[0] += dual._LOCAL_RETRY_COOLDOWN_SEC + 1.0
+    assert dual.get_item("A2b")["source"] == "web"
     assert dual.local_available is False
 
     # Recover local API before cooldown expires: stays on Web API without probing every call.
@@ -174,16 +290,25 @@ def test_zotero_dual_client_logs_stderr_and_reconnects_local_api(monkeypatch, ca
     assert "Reconnected Local API" in captured.err
 
 
-def test_ensure_session_health_auto_refreshes_expired_psidts(tmp_path, monkeypatch):
+def test_ensure_session_health_auto_refreshes_and_handles_negative_cases(tmp_path, monkeypatch):
+    from research_hub.errors import RequiresAuthRefresh
     from research_hub.notebooklm import auth as nlm_auth
     from research_hub.notebooklm import keepalive as nlm_keepalive
+
+    missing = tmp_path / "missing-state.json"
+    assert nlm_auth.ensure_session_health(missing) == {
+        "ok": False,
+        "reason": "state.json missing",
+        "expires_at": None,
+        "refreshed": False,
+    }
 
     state_file = tmp_path / "state.json"
     state_file.write_text('{"cookies": [{"name": "SID", "value": "x"}]}', encoding="utf-8")
 
+    # Happy recovery via refresh_and_persist_session.
     probes = [{"ok": False, "reason": "auth error: expired", "expires_at": None}, {"ok": True, "reason": "ok", "expires_at": None}]
     refreshed = []
-
     monkeypatch.setattr(nlm_auth, "check_session_health", lambda _path: probes.pop(0))
     monkeypatch.setattr(
         nlm_keepalive,
@@ -195,6 +320,26 @@ def test_ensure_session_health_auto_refreshes_expired_psidts(tmp_path, monkeypat
     assert health == {"ok": True, "reason": "ok", "expires_at": None, "refreshed": True}
     assert refreshed == [state_file]
 
-    # require_session_health uses ensure_session_health and succeeds cleanly.
-    probes.extend([{"ok": False, "reason": "expired", "expires_at": None}, {"ok": True, "reason": "ok", "expires_at": None}])
-    nlm_auth.require_session_health(state_file)
+    # auto_refresh=False skips keepalive.
+    monkeypatch.setattr(nlm_auth, "check_session_health", lambda _path: {"ok": False, "reason": "expired", "expires_at": None})
+    no_ref = nlm_auth.ensure_session_health(state_file, auto_refresh=False)
+    assert no_ref["ok"] is False and no_ref["refreshed"] is False
+    assert len(refreshed) == 1
+
+    # Failed keepalive leaves ok=False and raises RequiresAuthRefresh in require_session_health.
+    monkeypatch.setattr(
+        nlm_keepalive,
+        "refresh_and_persist_session",
+        lambda _path: SimpleNamespace(ok=False, reason="revoked"),
+    )
+    with pytest.raises(RequiresAuthRefresh):
+        nlm_auth.require_session_health(state_file)
+
+    # Re-probe still returning ok=False even after keepalive ok also raises RequiresAuthRefresh.
+    monkeypatch.setattr(
+        nlm_keepalive,
+        "refresh_and_persist_session",
+        lambda _path: SimpleNamespace(ok=True, reason="ok"),
+    )
+    res_still_bad = nlm_auth.ensure_session_health(state_file)
+    assert res_still_bad == {"ok": False, "reason": "expired", "expires_at": None, "refreshed": False}

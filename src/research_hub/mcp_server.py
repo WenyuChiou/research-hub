@@ -19,6 +19,7 @@ Claude Desktop config (~/.claude/claude_desktop_config.json):
 from __future__ import annotations
 
 from dataclasses import asdict
+import io
 import json
 import os
 from pathlib import Path
@@ -2597,8 +2598,28 @@ class _StdioProtocolGuard:
     def encoding(self) -> str:
         return getattr(self._proto, "encoding", "utf-8")
 
+    @property
+    def errors(self) -> str | None:
+        return getattr(self._proto, "errors", "strict")
+
+    @property
+    def closed(self) -> bool:
+        return bool(getattr(self._err, "closed", False))
+
+    def writable(self) -> bool:
+        return True
+
     def isatty(self) -> bool:
         return False
+
+    def fileno(self) -> int:
+        # Never expose proto stdout fd 1 to subprocesses; bind stderr or reject.
+        if hasattr(self._err, "fileno"):
+            try:
+                return int(self._err.fileno())
+            except (io.UnsupportedOperation, AttributeError, OSError):
+                pass
+        raise io.UnsupportedOperation("MCP stdout guard does not expose fd 1")
 
     def write(self, data: str) -> int:
         return self._err.write(data)
@@ -2611,6 +2632,9 @@ class _StdioProtocolGuard:
 
     def reconfigure(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def main(
@@ -2633,6 +2657,10 @@ def main(
         finally:
             sys.stdout = orig_stdout
     else:
+        if host not in _LOOPBACK_HOSTS:
+            raise ValueError(
+                f"MCP HTTP transport is loopback-only for local client safety; got host={host!r}"
+            )
         mcp.run(transport=transport, host=host, port=port)
 
 

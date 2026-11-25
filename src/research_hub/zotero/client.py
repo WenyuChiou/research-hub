@@ -482,9 +482,9 @@ class ZoteroDualClient:
 
     def _read(self, method_name, *args, **kwargs):
         """Execute a read operation with automatic local-to-web fallback and reconnect."""
-        if not self.local_available:
+        if not getattr(self, "local_available", False):
             self._maybe_reconnect_local()
-        if self.local_available:
+        if getattr(self, "local_available", False):
             try:
                 return getattr(self.local, method_name)(*args, **kwargs)
             except Exception as e:
