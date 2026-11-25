@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
-import type { Translate } from "./i18n";
+import { obsidianStatusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, Workspace } from "./types";
 import { NotebookLmAuthControls } from "./NotebookLmAuthControls";
 import { ObsidianValidationForm } from "./ObsidianValidationForm";
@@ -92,6 +92,25 @@ export function IntegrationsSetup({
             : "integrationNlmMissing",
       )
     : t("integrationNotChecked");
+  const obsidianConnectionText = liveState?.obsidian
+    ? obsidianStatusLabel(liveState.obsidian, t)
+    : t("integrationNotChecked");
+  const compactParts: string[] = [];
+  if (liveState?.zotero) {
+    const ok = ["connected_local_and_web", "connected_web", "connected_local"].includes(liveState.zotero.status);
+    compactParts.push(t(ok ? "integrationSummaryZoteroOk" : "integrationSummaryZoteroIssue"));
+  }
+  if (liveState?.obsidian) {
+    compactParts.push(
+      t(liveState.obsidian.status === "valid" ? "integrationSummaryObsidianOk" : "integrationSummaryObsidianIssue"),
+    );
+  }
+  if (liveState?.notebooklm) {
+    compactParts.push(
+      t(liveState.notebooklm.status === "authenticated" ? "integrationSummaryNlmOk" : "integrationSummaryNlmIssue"),
+    );
+  }
+  const compactSummaryText = compactParts.length ? compactParts.join(" · ") : t("integrationCompact");
 
   const statuses = {
     passed: "snapshotPassed",
@@ -132,7 +151,7 @@ export function IntegrationsSetup({
         >
           {t("integrationsSetup")}
         </button>
-        <small>{t("integrationCompact")}</small>
+        <small>{compactSummaryText}</small>
       </div>
       {open &&
         createPortal(
@@ -182,7 +201,7 @@ export function IntegrationsSetup({
                             ? zoteroConnectionText
                             : key === "notebooklm_auth"
                               ? nlmConnectionText
-                              : t("integrationNotChecked")}
+                              : obsidianConnectionText}
                         </dd>
                       </div>
                       <div>
@@ -208,6 +227,12 @@ export function IntegrationsSetup({
                         capability={
                           workspace?.capabilities?.obsidian_validation
                         }
+                        onValidated={(obsidian) =>
+                          onLiveStateChange?.((prev) => ({
+                            ...prev,
+                            obsidian,
+                          }))
+                        }
                         t={t}
                       />
                     )}
@@ -216,11 +241,11 @@ export function IntegrationsSetup({
                         t={t}
                         capability={localCap}
                         probe={liveState?.zotero}
-                        onCredentialsSaved={(creds) =>
+                        onCredentialsSaved={(creds, zoteroTouched) =>
                           onLiveStateChange?.((prev) => ({
                             ...prev,
                             credentials: creds,
-                            zotero: null,
+                            ...(zoteroTouched ? { zotero: null } : {}),
                           }))
                         }
                         onProbeUpdated={(probe) =>

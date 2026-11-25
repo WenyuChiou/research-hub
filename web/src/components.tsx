@@ -161,7 +161,6 @@ export function MutationForm({
         </div>
         <button className="button primary" type="submit">
           {busy ? t("saving") : submit}
-          <span aria-hidden="true">↗</span>
         </button>
       </fieldset>
       {error !== null && <ErrorMessage error={error} t={t} />}

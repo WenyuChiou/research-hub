@@ -270,6 +270,31 @@ def test_zotero_and_notebooklm_probes_and_login_modes(tmp_path: Path, monkeypatc
     assert zot_res["probe"]["status"] == "connected_web"
     assert "zot-secret-test" not in json.dumps(zot_res)
 
+    # Saving Unpaywall / S2 keys with unchanged Zotero ID/type preserves cached Zotero probe
+    same_id_res = mgr.save_credentials({
+        "zotero_library_id": "12345",
+        "zotero_library_type": "user",
+        "unpaywall_email": "scholar@example.edu",
+        "s2_api_key": "s2-secret-value-123",
+    })
+    assert same_id_res["zotero_touched"] is False
+    assert mgr.status()["probes"]["zotero"]["status"] == "connected_web"
+
+    # Changing Zotero ID marks zotero_touched=True and invalidates cached Zotero probe
+    changed_id_res = mgr.save_credentials({"zotero_library_id": "54321", "zotero_library_type": "user"})
+    assert changed_id_res["zotero_touched"] is True
+    assert mgr.status()["probes"]["zotero"] is None
+    # Mixed flat+nested config: flat takes precedence; saving nested value drops flat override -> zotero_touched=True
+    mixed_cfg = tmp_path / "mixed_cfg.json"
+    mixed_cfg.write_text(
+        json.dumps({"knowledge_base": {"root": str(kb_root)}, "zotero_library_id": "111", "zotero": {"library_id": "222", "library_type": "user"}}),
+        encoding="utf-8",
+    )
+    mixed_mgr = LocalIntegrationsManager(mixed_cfg)
+    mixed_res = mixed_mgr.save_credentials({"zotero_library_id": "222", "zotero_library_type": "user"})
+    assert mixed_res["zotero_touched"] is True
+    mgr.save_credentials({"zotero_library_id": "12345", "zotero_library_type": "user"})
+
     # Environment ZOTERO_* takes precedence over config.json (matches zotero.client._load_credentials)
     monkeypatch.setenv("ZOTERO_LIBRARY_ID", "99999")
     monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "group")

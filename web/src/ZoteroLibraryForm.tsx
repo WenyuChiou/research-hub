@@ -34,7 +34,7 @@ export function ZoteroLibraryForm({
   t: Translate;
   capability?: LocalIntegrationsCapability;
   probe?: ZoteroProbeResult | null;
-  onCredentialsSaved?: (creds: LocalIntegrationsCapability) => void;
+  onCredentialsSaved?: (creds: LocalIntegrationsCapability, zoteroTouched: boolean) => void;
   onProbeUpdated?: (probe: ZoteroProbeResult) => void;
 }) {
   const id = useId();
@@ -124,11 +124,12 @@ export function ZoteroLibraryForm({
     }
     setBusy(true);
     try {
-      const res = await api<{ ok: boolean; credentials?: LocalIntegrationsCapability }>(
+      const res = await api<{ ok: boolean; zotero_touched?: boolean; credentials?: LocalIntegrationsCapability }>(
         "/integrations/credentials",
         payload,
       );
-      if (res.credentials) onCredentialsSaved?.(res.credentials);
+      const touched = typeof res.zotero_touched === "boolean" ? res.zotero_touched : Boolean(payload.zotero_api_key);
+      if (res.credentials) onCredentialsSaved?.(res.credentials, touched);
       setZoteroApiKey("");
       setS2ApiKey("");
       setSaveMessage(t("integrationSaved"));
@@ -146,11 +147,12 @@ export function ZoteroLibraryForm({
     setSaveMessage(null);
     setSaveError(null);
     try {
-      const res = await api<{ ok: boolean; credentials?: LocalIntegrationsCapability }>(
+      const res = await api<{ ok: boolean; zotero_touched?: boolean; credentials?: LocalIntegrationsCapability }>(
         "/integrations/credentials",
         { [which]: true },
       );
-      if (res.credentials) onCredentialsSaved?.(res.credentials);
+      const touched = typeof res.zotero_touched === "boolean" ? res.zotero_touched : which === "clear_zotero_api_key";
+      if (res.credentials) onCredentialsSaved?.(res.credentials, touched);
       setSaveMessage(t("integrationSaved"));
     } catch (err) {
       void recoverCsrfIfForbidden(err);

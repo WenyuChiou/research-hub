@@ -9,7 +9,7 @@ import {
   SmallLabel,
 } from "./components";
 import type { Translate } from "./i18n";
-import type { ProjectDetail } from "./types";
+import type { Capability, ProjectDetail } from "./types";
 
 interface ImpactReport {
   ok: true;
@@ -24,12 +24,19 @@ interface ImpactReport {
 }
 export interface ManuscriptToolsProps {
   detail: ProjectDetail;
+  writingCapability?: Capability;
   t: Translate;
   onSaved: (message: string) => Promise<void>;
 }
 
 /** Uses the writing adapter's current state and reports; scientific rules stay there. */
-export function ManuscriptTools({ detail, t, onSaved }: ManuscriptToolsProps) {
+export function ManuscriptTools({
+  detail,
+  writingCapability,
+  t,
+  onSaved,
+}: ManuscriptToolsProps) {
+  const writingUnavailable = writingCapability?.status === "unavailable";
   const [binding, setBinding] = useState<{
     path: string;
     state: unknown;
@@ -67,10 +74,16 @@ export function ManuscriptTools({ detail, t, onSaved }: ManuscriptToolsProps) {
     <Panel title={t("writingChecks")} className="writing-tools">
       <div className="tool-intro">
         <p>{t("writingAuthorityNote")}</p>
+        {writingUnavailable && (
+          <p className="notice" role="status">
+            {t("writingAdapterUnavailable")}
+            {writingCapability?.message ? ` (${writingCapability.message})` : ""}
+          </p>
+        )}
         <div className="button-row">
           <button
             className="button secondary"
-            disabled={busy}
+            disabled={busy || writingUnavailable}
             onClick={() => void inspect("bind")}
           >
             {t("bindManuscript")}
@@ -106,7 +119,7 @@ export function ManuscriptTools({ detail, t, onSaved }: ManuscriptToolsProps) {
         note={t("auditScopeNote")}
         reset={false}
         successMessage={false}
-        disabled={busy}
+        disabled={busy || writingUnavailable}
         fields={[
           {
             name: "operation",

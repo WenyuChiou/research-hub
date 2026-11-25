@@ -402,6 +402,58 @@ it("supports opt-in encrypted local credentials save, Zotero probe, and Notebook
   expect(await within(panel).findByText(t("integrationSaved"))).toBeVisible();
   await userEvent.click(within(panel).getByRole("button", { name: t("integrationCheckZotero") }));
   expect((await within(panel).findAllByText(t("integrationZoteroConnectedWeb"))).length).toBeGreaterThan(0);
+  // Saving Unpaywall / S2 keys without touching Zotero preserves the live Zotero probe
+  await userEvent.type(within(panel).getByLabelText(/Unpaywall email/i), "scholar@example.edu");
+  await userEvent.click(within(panel).getByRole("button", { name: t("integrationSaveCredentials") }));
+  expect(await within(panel).findByText(t("integrationSaved"))).toBeVisible();
+  expect((await within(panel).findAllByText(t("integrationZoteroConnectedWeb"))).length).toBeGreaterThan(0);
   await userEvent.click(within(panel).getByRole("button", { name: t("integrationNlmCheck") }));
   expect((await within(panel).findAllByText(t("integrationNlmAuthenticated"))).length).toBeGreaterThan(0);
+});
+
+it("propagates live Obsidian read-only validation into Current connection and the footer summary", async () => {
+  const { api } = await import("./api");
+  vi.mocked(api).mockResolvedValueOnce({
+    ok: true,
+    status: "valid",
+    read_only: true,
+    saved: false,
+    note_bodies_read: false,
+    observed_at: "2026-11-25T00:00:00Z",
+    collection_count: 3,
+  });
+  const scoped: Workspace = {
+    ok: true,
+    projects: [],
+    protection_scope: "synthetic",
+    capabilities: {
+      codex: { status: "unavailable", message: "synthetic" },
+      writing: { status: "unavailable", message: "synthetic" },
+      approval: { status: "unavailable", message: "synthetic" },
+      obsidian_validation: {
+        version: 1,
+        status: "available",
+        read_only: true,
+        scope: "startup_selected_exact_vault",
+        authorized_vault: "/synthetic/vault",
+      },
+    },
+  };
+  const { useState } = await import("react");
+  function Harness() {
+    const [live, setLive] = useState({});
+    return <IntegrationsSetup workspace={scoped} liveState={live} onLiveStateChange={setLive} t={t} />;
+  }
+  render(<Harness />);
+  expect(screen.getByText(t("integrationCompact"))).toBeVisible();
+  const panel = await open();
+  await userEvent.click(within(panel).getByRole("button", { name: t("obsidianValidate") }));
+  expect(await within(panel).findByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`)).toBeVisible();
+  expect(screen.getByText(t("integrationSummaryObsidianOk"))).toBeVisible();
+  // Failed retry clears prior valid status and updates footer summary
+  vi.mocked(api).mockRejectedValueOnce(new Error("offline"));
+  await userEvent.click(within(panel).getByRole("button", { name: t("obsidianValidate") }));
+  expect(await screen.findByText(t("integrationSummaryObsidianIssue"))).toBeVisible();
+  expect(await within(panel).findByText(t("obsidianError"), { selector: "dd" })).toBeVisible();
+  expect(within(panel).queryByText(`${t("obsidianValid")} (3 ${t("libraryCollections")})`)).not.toBeInTheDocument();
 });

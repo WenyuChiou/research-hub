@@ -63,10 +63,16 @@ export interface NlmLoginJobState {
   started_at?: string | null;
   finished_at?: string | null;
 }
+export interface ObsidianValidationResult {
+  status: string;
+  collection_count?: number;
+  observed_at: string;
+}
 export interface IntegrationLiveState {
   zotero?: ZoteroProbeResult | null;
   notebooklm?: NlmProbeResult | null;
   loginJob?: NlmLoginJobState | null;
+  obsidian?: ObsidianValidationResult | null;
   obsidianStatus?: string | null;
   credentials?: LocalIntegrationsCapability | null;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
 import type { MessageKey, Translate } from "./i18n";
-import type { Workspace } from "./types";
+import type { ObsidianValidationResult, Workspace } from "./types";
 
 type Capability = Workspace["capabilities"]["obsidian_validation"];
 const results = {
@@ -14,7 +14,15 @@ type Result = {ok: true; status: keyof typeof results; read_only: true; saved: f
   note_bodies_read: false; observed_at: string; collection_count?: number};
 type State = {kind:"unknown"} | {kind:"loading"} | {kind:"cancelled"} | {kind:"error"; code:string} | {kind:"result"; value:Result};
 
-export function ObsidianValidationForm({ capability, t }: {capability?: Capability; t: Translate}) {
+export function ObsidianValidationForm({
+  capability,
+  t,
+  onValidated,
+}: {
+  capability?: Capability;
+  t: Translate;
+  onValidated?: (result: ObsidianValidationResult | null) => void;
+}) {
   const scope = capability?.version === 1 && capability.read_only === true &&
     capability.scope === "startup_selected_exact_vault" && capability.status === "available"
     ? capability.authorized_vault ?? "" : "";
@@ -32,6 +40,7 @@ export function ObsidianValidationForm({ capability, t }: {capability?: Capabili
   function cancel() {
     generation.current++; pending.current?.abort(); pending.current = null;
     setPath(scope); setState({kind:"cancelled"});
+    onValidated?.(null);
   }
   async function validate(event: FormEvent) {
     event.preventDefault();
@@ -51,9 +60,22 @@ export function ObsidianValidationForm({ capability, t }: {capability?: Capabili
       if (intent !== generation.current) return;
       if (!value || !Object.hasOwn(results,value.status) || value.read_only !== true || value.saved !== false || value.note_bodies_read !== false) throw new Error("Invalid validation response");
       setState({kind:"result",value});
+      onValidated?.({ status: value.status, collection_count: value.collection_count, observed_at: value.observed_at });
     } catch (failure) {
       if (intent !== generation.current) return;
-      setState({kind:"error",code:failure instanceof ApiError ? failure.code : "validation_error"});
+      const code = failure instanceof ApiError ? failure.code : "validation_error";
+      setState({kind:"error", code});
+      onValidated?.({
+        status:
+          code === "vault_scope_denied"
+            ? "scope_denied"
+            : code === "vault_validation_unavailable"
+              ? "unavailable"
+              : code === "validation_timeout"
+                ? "timeout"
+                : "error",
+        observed_at: new Date().toISOString(),
+      });
     } finally {
       clearTimeout(timer);
       if (intent === generation.current) pending.current = null;
@@ -64,7 +86,7 @@ export function ObsidianValidationForm({ capability, t }: {capability?: Capabili
     : state.kind === "error" && state.code === "validation_timeout" ? "obsidianTimeout" : "obsidianError";
   return <form className="obsidian-validation" onSubmit={(event)=>void validate(event)} aria-label={t("obsidianValidation")}>
     <label>{t("obsidianVaultPath")}<input name="vault_path" type="text" value={path} autoComplete="off" spellCheck={false}
-      disabled={!scope || state.kind === "loading"} onChange={(event)=>{setPath(event.target.value);setState({kind:"unknown"});}} /></label>
+      disabled={!scope || state.kind === "loading"} onChange={(event)=>{setPath(event.target.value);setState({kind:"unknown"});onValidated?.(null);}} /></label>
     <p className="small">{t("obsidianScopeHelp")}</p>
     {!scope && <p role="status">{t("obsidianUnavailable")}</p>}
     <div className="obsidian-validation-actions">

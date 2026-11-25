@@ -219,4 +219,30 @@ describe("opening selected material", () => {
     expect(props.onScreen).not.toHaveBeenCalled();
     expect(props.onPrepare).not.toHaveBeenCalled();
   });
+
+  it("surfaces live failed Obsidian validation instead of claiming configured ready", async () => {
+    const user = userEvent.setup();
+    render(
+      <LiteratureLibrary
+        {...organizationProps()}
+        sources={[organizationSources[0]]}
+        workspace={{
+          ok: true,
+          projects: [],
+          protection_scope: "synthetic",
+          capabilities: {
+            codex: { status: "unavailable", message: "" },
+            writing: { status: "unavailable", message: "" },
+            approval: { status: "unavailable", message: "" },
+            obsidian_validation: { version: 1, status: "available", read_only: true, scope: "startup_selected_exact_vault" },
+          },
+        }}
+        liveIntegrations={{ obsidian: { status: "registry_mismatch", observed_at: "2026-11-25T00:00:00Z" } }}
+      />,
+    );
+    const details = within(screen.getByRole("complementary", { name: t("catalogDetail") }));
+    await user.click(details.getByText(t("catalogToolUse")));
+    expect(details.getByText(t("obsidianRegistryMismatch"))).toBeVisible();
+    expect(details.queryByText(t("catalogObsidianConfigured"))).not.toBeInTheDocument();
+  });
 });

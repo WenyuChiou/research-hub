@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCompactReadingLayout } from "./readingLayout";
 import { MutationForm, ReadText, SourceLink } from "./components";
-import { statusLabel, type Translate } from "./i18n";
+import { obsidianStatusLabel, statusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
 import { SourceObservations } from "./ObservationHistory";
 import type { ObservationTextContext } from "./sourceObservations";
@@ -298,13 +298,17 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
                 return t(localCap?.zotero_configured ? "catalogZoteroConfigured" : "catalogZoteroUnavailable");
               })()}</dd>
-              <dt>Obsidian</dt><dd>{t(
-                note
-                  ? "catalogObsidianReadOnly"
-                  : workspace?.capabilities?.obsidian_validation?.status === "available"
+              <dt>Obsidian</dt><dd>{(() => {
+                if (note) return t("catalogObsidianReadOnly");
+                if (liveIntegrations?.obsidian) {
+                  return obsidianStatusLabel(liveIntegrations.obsidian, t);
+                }
+                return t(
+                  workspace?.capabilities?.obsidian_validation?.status === "available"
                     ? "catalogObsidianConfigured"
                     : "catalogObsidianUnavailable",
-              )}</dd>
+                );
+              })()}</dd>
               <dt>NotebookLM</dt><dd>{(() => {
                 const probe = liveIntegrations?.notebooklm;
                 if (probe) {

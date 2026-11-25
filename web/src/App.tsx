@@ -25,7 +25,7 @@ const pages: Page[] = [
   "manuscript",
   "review",
 ];
-const glyphs = ["◫", "≡", "⌘", "⌁", "¶", "✓"];
+const glyphs = ["01", "02", "03", "04", "05", "06"];
 function currentPage(): Page {
   const page = window.location.hash.slice(1).split("?", 1)[0];
   return pages.includes(page as Page) ? (page as Page) : "literature";
@@ -540,6 +540,9 @@ export default function App() {
       </a>
     ))}</>);
   const activeDetail = detail?.project.id === projectId ? detail : null;
+  const selectedProjectTitle = workspace?.projects.find(
+    (project) => project.id === projectId,
+  )?.title;
   const showCreate = newProject || workspace?.projects.length === 0;
   return (
     <div className={`app-shell${page === "literature" ? " reading-desk-shell" : ""}${navigationOpen ? " navigation-open" : ""}`}
@@ -596,7 +599,9 @@ export default function App() {
               </option>
             ))}
           </select>
-          <p className="selected-project-title">{workspace?.projects.find((project) => project.id === projectId)?.title}</p>
+          {selectedProjectTitle && selectedProjectTitle.length > 28 && (
+            <p className="selected-project-title">{selectedProjectTitle}</p>
+          )}
           <button className="new-project" onClick={() => setNewProject(true)}>
             <span aria-hidden="true">＋</span>
             {t("newProject")}
@@ -673,7 +678,7 @@ export default function App() {
             <div>
               <div className="eyebrow">
                 {activeDetail
-                  ? `${activeDetail.project.archetype === "review" ? t("reviewStudy") : t("empirical")} / ${activeDetail.project.id}`
+                  ? `${activeDetail.project.archetype === "review" ? t("reviewStudy") : t("empirical")} · ${activeDetail.project.id}`
                   : t("local")}
               </div>
               <h1 ref={headingRef} tabIndex={-1}>
@@ -681,9 +686,6 @@ export default function App() {
               </h1>
               <p>{t(`${page}Subtitle` as MessageKey)}</p>
             </div>
-            <span className="page-index" aria-hidden="true">
-              0{pages.indexOf(page) + 1}
-            </span>
           </div>
           {connectionLost && (
             <div role="status" className="notice notice-warn">
@@ -760,11 +762,6 @@ export default function App() {
                     <h2>{t("startTitle")}</h2>
                     <p>{t("startBody")}</p>
                     <p>{t("integrationFirstUse")}</p>
-                    <div aria-hidden="true" className="onboarding-lines">
-                      <i />
-                      <i />
-                      <i />
-                    </div>
                   </div>}
                   <div className="onboarding-form">
                     <div className="panel-heading">
@@ -881,7 +878,7 @@ export default function App() {
             </>
           )}
           <footer className="content-footer">
-            <span>RESEARCH HUB</span>
+            <span>{t("app")}</span>
             <span>{t("startEyebrow")}</span>
           </footer>
         </div>

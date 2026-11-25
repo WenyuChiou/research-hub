@@ -1,13 +1,13 @@
 :root {
-  --navy: #172c3d;
-  --paper: #f5f5ee;
-  --white: #fffef9;
-  --ink: #253c39;
-  --muted: #59685b;
-  --line: #dedfd3;
-  --teal: #17695a;
+  --navy: #182927;
+  --paper: #f5f3ec;
+  --white: #fcfbf6;
+  --ink: #1f2b28;
+  --muted: #526059;
+  --line: #d8d6ca;
+  --teal: #1b5e51;
   --focus: #9a6b18;
-  --wash: #f3f4ec;
+  --wash: #efede4;
   /* Readable defaults; rem units respect the browser's preferred text size. */
   --text-body: 1.125rem;
   --text-control: 1rem;
@@ -17,7 +17,10 @@
   --leading-body: 1.65;
   --leading-control: 1.5;
   --leading-help: 1.6;
-  --body-font: "Trebuchet MS", "Microsoft JhengHei", "PingFang TC", sans-serif;
+  --body-font:
+    "Segoe UI Variable Text", "Segoe UI", "PingFang TC", "Microsoft JhengHei",
+    sans-serif;
   --display-font:
-    "Palatino Linotype", "Book Antiqua", "Noto Serif TC", Georgia, serif;
+    "Palatino Linotype", "Book Antiqua", "Iowan Old Style", "Noto Serif TC",
+    Georgia, serif;
 }
