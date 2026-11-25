@@ -296,6 +296,90 @@ class ClassifierContracts(unittest.TestCase):
         self.assertEqual(res_bad["scope"], "full")
 
 
+    def test_docs_and_skills_jobs_include_all_contract_and_installer_suites(self):
+        expected_tests = set(CLASSIFY["DOCS_EXACT"]) | set(CLASSIFY["SKILLS_EXACT"])
+        expected_tests = {p for p in expected_tests if p.startswith("tests/")}
+        expected_tests.add("tests/test_workspace_producer_integration.py")
+        expected_tests.add("tests/test_v089_describe.py")
+        for job_name in ("docs-and-skills", "docs-and-skills-windows"):
+            with self.subTest(job=job_name):
+                cmd = next(
+                    s["run"]
+                    for s in WORKFLOW["jobs"][job_name]["steps"]
+                    if s.get("name", "").startswith("Run ")
+                )
+                for test_file in sorted(expected_tests):
+                    self.assertIn(test_file, cmd)
+
+    def test_classify_event_resolves_real_git_histories_and_shallow_boundaries(self):
+        with tempfile.TemporaryDirectory(prefix="hub-ci-classify-") as directory:
+            repo = Path(directory)
+            git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            git_env.update({
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CEILING_DIRECTORIES": str(repo.parent),
+                "GIT_TERMINAL_PROMPT": "0",
+                "GIT_AUTHOR_NAME": "CI fixture",
+                "GIT_AUTHOR_EMAIL": "ci@example.invalid",
+                "GIT_COMMITTER_NAME": "CI fixture",
+                "GIT_COMMITTER_EMAIL": "ci@example.invalid",
+                "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+0000",
+                "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+0000",
+            })
+
+            def g(*args):
+                return subprocess.run(
+                    ["git", *args],
+                    cwd=repo,
+                    env=git_env,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=10,
+                ).stdout.strip()
+
+            g("init", "--quiet", "--initial-branch=master", "--template=", str(repo))
+            (repo / "README.md").write_text("base\n", encoding="utf-8")
+            (repo / "src").mkdir()
+            (repo / "src/app.py").write_text("x = 1\n", encoding="utf-8")
+            g("add", ".")
+            g("commit", "--quiet", "-m", "base")
+            base = g("rev-parse", "HEAD")
+
+            # Docs-only PR branch from base
+            g("checkout", "--quiet", "-b", "pr-docs")
+            (repo / "README.md").write_text("docs update\n", encoding="utf-8")
+            g("add", "README.md")
+            g("commit", "--quiet", "-m", "docs")
+            head_docs = g("rev-parse", "HEAD")
+
+            pr_event = {"pull_request": {"base": {"sha": base}, "head": {"sha": head_docs}}}
+            self.assertEqual(
+                CLASSIFY_EVENT("pull_request", pr_event, "refs/pull/1/merge", cwd=repo)["scope"],
+                "docs",
+            )
+
+            # Master push changing src/ -> code
+            g("checkout", "--quiet", "master")
+            (repo / "src/app.py").write_text("x = 2\n", encoding="utf-8")
+            g("add", "src/app.py")
+            g("commit", "--quiet", "-m", "code")
+            after_code = g("rev-parse", "HEAD")
+            push_event = {"before": base, "after": after_code}
+            self.assertEqual(
+                CLASSIFY_EVENT("push", push_event, "refs/heads/master", cwd=repo)["scope"],
+                "code",
+            )
+
+            # Missing/unfetched before commit fails closed to full
+            missing_before = {"before": "1" * 40, "after": after_code}
+            self.assertEqual(
+                CLASSIFY_EVENT("push", missing_before, "refs/heads/master", cwd=repo)["scope"],
+                "full",
+            )
+
+
 class CheckoutIdentity(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

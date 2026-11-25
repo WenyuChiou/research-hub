@@ -10,7 +10,7 @@ Every run starts with `classify` (`scripts/classify_ci_changes.py`), which verif
 
 | Scope | Triggered paths | Jobs executed |
 |---|---|---|
-| `docs` | `README*.md`, `CHANGELOG.md`, `docs/**`, `openwiki/**`, pure docs contract tests | `classify`, `docs-and-skills` (Ubuntu py3.12), `skill-version-guard` (PR) |
+| `docs` | `README*.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `AGENTS.md`, `UPGRADE.md`, `LICENSE`, `SECURITY.md`, `docs/**`, `openwiki/**`, pure docs contract tests | `classify`, `docs-and-skills` (Ubuntu py3.12), `skill-version-guard` (PR) |
 | `skills` | `skills/**`, `src/research_hub/skills_data/**`, `.claude-plugin/plugin.json`, skill/reader contract tests (+ optional docs) | `classify`, `docs-and-skills` (Ubuntu py3.12), `docs-and-skills-windows` (Windows py3.12), `skill-version-guard` (PR) |
 | `code` | Known `src/**`, `tests/**`, `scripts/**`, `web/**` changes (no infra/dependency files) | `classify`, `test-ubuntu` (3.10–3.13 shards + 3.14 shard 1), `test` (Windows py3.12 w/ 62% coverage + macOS py3.12), `workspace` (only if workspace UI/CLI/web changed), `stress-tests` (PR), `skill-version-guard` (PR) |
 | `full` | `verify/**`, dependency/CI infra files, unrecognized paths, or diff errors | Everything in `code` + `workspace` + `test-extended-os` (Windows `3.10, 3.11, 3.13, 3.14*`; macOS `3.10, 3.14*`) + `dependency-audit` |

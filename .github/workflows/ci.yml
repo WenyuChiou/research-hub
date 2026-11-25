@@ -69,12 +69,27 @@ jobs:
             tests/test_workspace_docs.py \
             tests/test_workspace_producer_integration.py \
             tests/test_summary_doc_contract.py \
+            tests/test_mcp_tools_doc_coverage.py \
+            tests/test_native_summary_platform_docs.py \
+            tests/test_v040_onboarding.py \
+            tests/test_v091_w6_rationalize.py \
             tests/test_skills_data_parity.py \
             tests/test_skill_structure.py \
             tests/test_frontmatter_schema.py \
             tests/test_v066_skill_schema.py \
             tests/test_v066_research_workspace_docs.py \
             tests/test_v068_3_version_sync.py \
+            tests/test_v068_legacy_knowledge_base_alias.py \
+            tests/test_skill_installer.py \
+            tests/test_triage_single_paper_routing.py \
+            tests/test_discovery_observations.py \
+            tests/test_check_claims_schema.py \
+            tests/test_gap_preliminary_directions.py \
+            tests/test_adversarial_recall_evidence.py \
+            tests/test_handoff_gap_to_topic_design_helper.py \
+            tests/test_source_audit_profile.py \
+            tests/test_research_workflow_orchestrator.py \
+            tests/test_workspace_abstract_resource_bytes.py \
             tests/test_stage1_native_handoff_guidance.py \
             tests/test_fulltext_summary_guidance.py \
             tests/test_summarize_prompt_only.py \
@@ -110,16 +125,35 @@ jobs:
       - name: Run skill parity and installer suites
         run: |
           pytest -q `
+            tests/test_readme_entry_paths.py `
+            tests/test_v089_readme_machine_parseable.py `
+            tests/test_workspace_docs.py `
+            tests/test_workspace_producer_integration.py `
+            tests/test_summary_doc_contract.py `
+            tests/test_mcp_tools_doc_coverage.py `
+            tests/test_native_summary_platform_docs.py `
+            tests/test_v040_onboarding.py `
+            tests/test_v091_w6_rationalize.py `
             tests/test_skills_data_parity.py `
             tests/test_skill_structure.py `
             tests/test_frontmatter_schema.py `
             tests/test_v066_skill_schema.py `
             tests/test_v066_research_workspace_docs.py `
             tests/test_v068_3_version_sync.py `
+            tests/test_v068_legacy_knowledge_base_alias.py `
+            tests/test_skill_installer.py `
+            tests/test_triage_single_paper_routing.py `
+            tests/test_discovery_observations.py `
+            tests/test_check_claims_schema.py `
+            tests/test_gap_preliminary_directions.py `
+            tests/test_adversarial_recall_evidence.py `
+            tests/test_handoff_gap_to_topic_design_helper.py `
+            tests/test_source_audit_profile.py `
+            tests/test_research_workflow_orchestrator.py `
+            tests/test_workspace_abstract_resource_bytes.py `
             tests/test_stage1_native_handoff_guidance.py `
             tests/test_fulltext_summary_guidance.py `
             tests/test_summarize_prompt_only.py `
-            tests/test_summary_doc_contract.py `
             tests/test_selected_hub_handoff_contract.py `
             tests/test_research_process_receipts.py `
             tests/test_source_claim_guidance.py `

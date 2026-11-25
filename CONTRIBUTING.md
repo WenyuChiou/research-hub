@@ -82,7 +82,7 @@ Fixes #42
 ## Pull requests
 
 - Target `master`
-- Ensure CI is green (all three Python versions)
+- Ensure all routed CI checks are green (`docs-and-skills`, `test`, `test-ubuntu`, and any applicable guards)
 - Ensure tests still pass with `pytest -q`
 - A passing independent subagent review of the latest PR revision, as described below
 - Squash-merge unless you have a specific reason to keep individual commits
