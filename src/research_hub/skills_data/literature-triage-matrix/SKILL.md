@@ -115,6 +115,14 @@ Column meanings:
   role, need IDs, omission effect, alternatives and applicability conditions
   in a compact companion note rather than silently adding unwanted columns.
 
+### Optional Verified BibTeX Export (.bib)
+
+Only when the researcher requests BibTeX output or downstream LaTeX/Pandoc/Zotero handoff, write `<project-root>/.research/literature_matrix.bib` alongside `literature_matrix.md`:
+
+- **Verified metadata only:** Emit `@article`/`@inproceedings`/`@misc` entries strictly from verified Zotero item metadata, Crossref/DOI, PubMed/PMID, or arXiv records already observed in this run.
+- **No guessed fields:** Use deterministic citekeys matching the `Citation` column (e.g., `smith2024adaptation`), keep `title`/`author`/`year`/`doi` exact, and omit unverified volume/pages/venue fields rather than guessing.
+- **Skip unverified rows honestly:** Never synthesize BibTeX from memory; skip unverified rows and list their count in `[literature-triage-matrix]` output (`BibTeX exported: X verified, Y skipped unverified`).
+
 ## Token-saving behavior
 
 - Read existing `.research/literature_matrix.md` first; only emit rows
