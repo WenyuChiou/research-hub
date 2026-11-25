@@ -516,7 +516,7 @@ def run(output: Path):
                                "screenshot": "workspace-integrations-panel.390px.png",
                                "viewport": {"width": 390, "height": 844}, "native_zoom": "not_verified"})
                 # Reach the final guide without opening an external website.
-                guide = setup.locator('a[href="https://github.com/WenyuChiou/research-hub/blob/fix/nlm-085-integrations-guidance/docs/setup.md"]')
+                guide = setup.locator('a[href="https://github.com/WenyuChiou/research-hub/blob/master/docs/setup.md"]')
                 expect(guide).to_have_count(1)
                 guide.scroll_into_view_if_needed()
                 guide.focus()

@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { api, auditProject, ApiError, safeSourceUrl } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api, auditProject, ApiError, recoverCsrfIfForbidden, refreshSessionTokens, safeSourceUrl } from "./api";
 
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -121,5 +121,58 @@ describe("workspace API boundary", () => {
     expect(safeSourceUrl("javascript:alert(1)")).toBeUndefined();
     expect(safeSourceUrl("file:///private.txt")).toBeUndefined();
     expect(safeSourceUrl("paper-local")).toBeUndefined();
+  });
+
+  describe("session token refresh", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it("refreshes CSRF token on explicit 403 forbidden recovery without replaying the POST write", async () => {
+      document.head.innerHTML = "";
+      token("research-hub-csrf-token", "stale-token");
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(response({ ok: false, error: "Untrusted request", code: "forbidden" }, 403))
+        .mockResolvedValueOnce(
+          new Response('<meta name="research-hub-csrf-token" content="new-csrf-token">', {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+          }),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+
+      let caught: unknown;
+      try {
+        await api("/integrations/credentials", { zotero_library_id: "123" });
+      } catch (err) {
+        caught = err;
+        await recoverCsrfIfForbidden(err);
+      }
+      expect(caught).toMatchObject({ status: 403, code: "forbidden" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/integrations/credentials");
+      expect(fetchMock.mock.calls[1][0]).toBe("/app/");
+      expect(document.querySelector<HTMLMetaElement>('meta[name="research-hub-csrf-token"]')?.content).toBe(
+        "new-csrf-token",
+      );
+    });
+
+    it("bounds stalled refreshSessionTokens reads with a 5s timeout", async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const pending = refreshSessionTokens();
+      await vi.advanceTimersByTimeAsync(5100);
+      await expect(pending).resolves.toBe(false);
+    });
   });
 });

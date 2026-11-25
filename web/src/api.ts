@@ -16,6 +16,44 @@ export function metaToken(name: string): string {
   );
 }
 
+function upsertMeta(name: string, content: string): void {
+  let node = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+  if (!node && document.head) {
+    node = document.createElement("meta");
+    node.name = name;
+    document.head.appendChild(node);
+  }
+  if (node) node.content = content;
+}
+
+/** Re-sync CSRF/human tokens after an unexpected server restart without reloading UI state. */
+export async function refreshSessionTokens(signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const timer = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch("/app/", {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const html = await response.text();
+    const csrfMatch = html.match(/<meta\s+name="research-hub-csrf-token"\s+content="([^"]+)"/i);
+    if (csrfMatch?.[1]) upsertMeta("research-hub-csrf-token", csrfMatch[1]);
+    const humanMatch = html.match(/<meta\s+name="research-hub-human-token"\s+content="([^"]+)"/i);
+    if (humanMatch?.[1]) upsertMeta("research-hub-human-token", humanMatch[1]);
+    return Boolean(csrfMatch?.[1]);
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 /** Tokens are read from this server-rendered document, never persisted or included in URLs. */
 export async function api<T>(
   path: string,
@@ -158,6 +196,14 @@ async function request<T>(
     );
   }
   return value as T;
+}
+
+/** Refresh CSRF/human tokens when a local integration action hits an explicit 403 forbidden after idle restart. */
+export async function recoverCsrfIfForbidden(err: unknown): Promise<boolean> {
+  if (err instanceof ApiError && err.status === 403 && err.code === "forbidden") {
+    return refreshSessionTokens();
+  }
+  return false;
 }
 
 export const segment = (value: string): string => encodeURIComponent(value);

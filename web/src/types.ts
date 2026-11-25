@@ -37,6 +37,53 @@ export interface SetupSnapshot {
   display_max_age_seconds: number;
   components: Record<string, string>;
 }
+export interface ZoteroProbeResult {
+  status:
+    | "connected_local_and_web"
+    | "connected_web"
+    | "connected_local"
+    | "auth_failed"
+    | "missing_credentials"
+    | "unreachable";
+  local_api: boolean;
+  web_api: string;
+  observed_at: string;
+}
+export interface NlmProbeResult {
+  status: "authenticated" | "expired" | "missing";
+  code: string;
+  refreshed?: boolean;
+  state_present?: boolean;
+  observed_at: string;
+}
+export interface NlmLoginJobState {
+  status: "idle" | "running" | "succeeded" | "failed";
+  mode: string | null;
+  message: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+export interface IntegrationLiveState {
+  zotero?: ZoteroProbeResult | null;
+  notebooklm?: NlmProbeResult | null;
+  loginJob?: NlmLoginJobState | null;
+  obsidianStatus?: string | null;
+  credentials?: LocalIntegrationsCapability | null;
+}
+export interface LocalIntegrationsCapability {
+  version: number;
+  status: "available" | "unavailable";
+  config_error?: boolean;
+  zotero_configured?: boolean;
+  zotero_api_key_present?: boolean;
+  zotero_api_key_encrypted?: boolean;
+  zotero_library_id?: string;
+  zotero_library_type?: "user" | "group";
+  unpaywall_email_present?: boolean;
+  s2_api_key_present?: boolean;
+  s2_api_key_encrypted?: boolean;
+  nlm_state_present?: boolean;
+}
 export interface Workspace {
   ok: true;
   projects: Project[];
@@ -48,6 +95,7 @@ export interface Workspace {
       scope: string;
       authorized_vault?: string;
     };
+    local_integrations?: LocalIntegrationsCapability;
     text_intake?: Capability & {
       version: number;
       workspace_instance_id: string;

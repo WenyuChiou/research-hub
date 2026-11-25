@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { LiteratureLibrary } from "./LiteratureLibrary";
 import { identityMatches } from "./libraryIdentity";
 import type { Translate } from "./i18n";
-import type { ResearchRecord } from "./types";
+import type {
+  IntegrationLiveState,
+  ResearchRecord,
+  Workspace,
+} from "./types";
 import type { ObservationReadScope } from "./ObservationPreview";
 
 export interface LibrarySnapshot {
@@ -34,6 +38,8 @@ export function LibraryCollection(props: {
   pageSuspended?: boolean;
   categoryHost?: HTMLElement | null;
   onWorkingSummarySaved?: () => Promise<void>;
+  workspace?: Workspace | null;
+  liveIntegrations?: IntegrationLiveState;
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);

@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlsplit
 import webbrowser
 
 from .core import WorkspaceError, encoded, safe_path
+from .integrations import LocalIntegrationsManager
 from .service import WorkspaceService, call_workspace
 from .tasks import _LOCAL_HUMAN
 from .obsidian_validation import ObsidianValidation
@@ -24,9 +25,20 @@ class WorkspaceServer(ThreadingHTTPServer):
     daemon_threads = True
     _service_type = WorkspaceService
 
-    def __init__(self, root, *, port=8765, human=False, obsidian_vault=None, library_snapshot=None):
+    def __init__(self, root, *, port=8765, human=False, obsidian_vault=None, library_snapshot=None, integrations_config=None):
         self.library_snapshot = LibrarySnapshot(library_snapshot)
-        self.obsidian_validation = ObsidianValidation(obsidian_vault)
+        self.integrations = LocalIntegrationsManager(integrations_config)
+        effective_vault = obsidian_vault
+        if effective_vault is None and integrations_config is not None:
+            candidate_vault = self.integrations.default_vault_root()
+            if candidate_vault is not None:
+                try:
+                    probe = ObsidianValidation(candidate_vault)
+                    probe.assert_storage_outside(root)
+                    effective_vault = candidate_vault
+                except ValueError:
+                    effective_vault = None
+        self.obsidian_validation = ObsidianValidation(effective_vault)
         self.obsidian_validation.assert_storage_outside(root)
         self.service = self._service_type(root)
         self.service.workspace.initialize_preparations()
@@ -82,13 +94,30 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/workspace":
                 result = self.server.service.capabilities(human=bool(self.server.human))
                 result["capabilities"]["obsidian_validation"] = self.server.obsidian_validation.capability()
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is not None and integrations.enabled:
+                    result["capabilities"]["local_integrations"] = integrations.capability()
                 return self._reply(200, result)
+            if path == "/api/v1/integrations/status":
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "code": "integrations_unavailable", "error": "Local integrations are unavailable in this server mode."})
+                result = integrations.status()
+                return self._reply(200 if result.get("ok") else 403, result)
             if path == "/api/v1/library/snapshot":
                 if urlsplit(self.path).query:
                     return self._reply(400, {"ok": False, "code": "invalid_request", "error": "Snapshot requests accept no path parameters."})
                 result = self.server.library_snapshot.read()
                 return self._reply(404 if result.get("ok") is False else 200, result)
             segments = path.strip("/").split("/")
+            if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "native-summary" and segments[5] == "markdown"):
+                from urllib.parse import parse_qs
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query) != {"source_record_id"} or len(query["source_record_id"]) != 1 or not query["source_record_id"][0]:
+                    raise WorkspaceError("Select exactly one project source", "invalid_request")
+                return self._result(self.server._call("project", "native-summary-export",
+                    {"project_id": segments[3], "source_record_id": query["source_record_id"][0]}))
             if (len(segments) == 5 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "native-summary"):
                 from urllib.parse import parse_qs
@@ -205,6 +234,48 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = self.server.obsidian_validation.validate(data["vault_path"])
                 status = 200 if result["ok"] else 403 if result["code"] == "vault_scope_denied" else 409
                 return self._reply(status, result)
+            if parts == ["api", "v1", "integrations", "credentials"]:
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
+                try:
+                    result = integrations.save_credentials(data)
+                    return self._reply(200, result)
+                except WorkspaceError as exc:
+                    status = 403 if exc.code == "integrations_unavailable" else 400
+                    return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
+            if parts == ["api", "v1", "integrations", "zotero", "check"]:
+                if data:
+                    raise WorkspaceError("Check accepts an empty JSON object", "invalid_request")
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
+                try:
+                    return self._reply(200, integrations.check_zotero())
+                except WorkspaceError as exc:
+                    status = 403 if exc.code == "integrations_unavailable" else 400
+                    return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
+            if parts == ["api", "v1", "integrations", "notebooklm", "check"]:
+                if data:
+                    raise WorkspaceError("Check accepts an empty JSON object", "invalid_request")
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
+                try:
+                    return self._reply(200, integrations.check_notebooklm())
+                except WorkspaceError as exc:
+                    status = 403 if exc.code == "integrations_unavailable" else 400
+                    return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
+            if parts == ["api", "v1", "integrations", "notebooklm", "login"]:
+                integrations = getattr(self.server, "integrations", None)
+                if integrations is None:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
+                try:
+                    result = integrations.start_notebooklm_login(data)
+                    return self._reply(200 if result.get("ok") else 400, result)
+                except WorkspaceError as exc:
+                    status = 403 if exc.code == "integrations_unavailable" else 409 if exc.code == "login_in_progress" else 400
+                    return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
             resource = operation = None
             proof = None
             if parts == ["api", "v1", "projects"]:
@@ -235,8 +306,16 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self._reply(400, {"ok": False, "error": str(exc), "code": "invalid_request"})
 
 
-def serve_workspace(root, *, port=8765, open_browser=True, human=False, obsidian_vault=None, library_snapshot=None):
-    server = WorkspaceServer(root, port=port, human=human, obsidian_vault=obsidian_vault, library_snapshot=library_snapshot)
+def serve_workspace(root, *, port=8765, open_browser=True, human=False, obsidian_vault=None, library_snapshot=None, integrations_config=None):
+    server_kwargs = {
+        "port": port,
+        "human": human,
+        "obsidian_vault": obsidian_vault,
+        "library_snapshot": library_snapshot,
+    }
+    if integrations_config is not None:
+        server_kwargs["integrations_config"] = integrations_config
+    server = WorkspaceServer(root, **server_kwargs)
     try:
         url = f"http://127.0.0.1:{server.server_port}/app/"
         print(f"Research workspace: {url}", flush=True)

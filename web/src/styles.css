@@ -1702,3 +1702,6 @@ select option {
 .native-prose { white-space: pre-wrap; overflow-wrap: anywhere; }
 .native-claim details { margin-block: .5rem; }
 .native-claim summary { cursor: pointer; }
+.native-export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 12px; }
+.good-text { color: var(--good, #1f6f43); }
+.bad-text { color: var(--danger, #a62626); }

@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useCompactReadingLayout } from "./readingLayout";
 import { MutationForm, ReadText, SourceLink } from "./components";
 import { statusLabel, type Translate } from "./i18n";
-import type { ResearchRecord } from "./types";
+import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
 import { SourceObservations } from "./ObservationHistory";
 import type { ObservationTextContext } from "./sourceObservations";
 import { ObservationPreview, observationArtifacts, type ObservationReadScope } from "./ObservationPreview";
@@ -40,7 +40,7 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved }: {
+export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   t: Translate;
@@ -52,6 +52,8 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   pageSuspended?: boolean;
   categoryHost?: HTMLElement | null;
   onWorkingSummarySaved?: () => Promise<void>;
+  workspace?: Workspace | null;
+  liveIntegrations?: IntegrationLiveState;
 }) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -252,7 +254,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             <SavedWorkingSummary record={selected} t={t}/>
             {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
               <button type="button" className="button secondary" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
-            {!note && <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && (!compact || readerOpen)} : undefined} t={t} />}
+            {!note && <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && (!compact || readerOpen)} : undefined} t={t} exportable />}
             {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
               <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && (!compact || readerOpen)} : undefined} t={t} />}</div>}
             {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && (!compact || readerOpen)} : undefined}
@@ -276,9 +278,47 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               <details className="catalog-provenance"><summary>{t("catalogProvenance")}</summary><p>{note ? t("libraryNoteOrigin") : text(selected.data.batch_id) || t("catalogUnknownOrigin")}</p>{note && <p className="small">{t("libraryMetadataHash")}: <code>{text(selected.data.frontmatter_sha256) || t("libraryUnavailableMetadata")}</code></p>}{Array.isArray(selected.data.prior_batch_matches) && selected.data.prior_batch_matches.length > 0 && <p>{t("catalogPriorMatch")}</p>}</details>
             </section>
             <details className="catalog-tool-use"><summary>{t("catalogToolUse")}</summary><dl>
-              <dt>Zotero</dt><dd>{t("catalogZoteroUnavailable")}</dd>
-              <dt>Obsidian</dt><dd>{t(note ? "catalogObsidianReadOnly" : "catalogObsidianUnavailable")}</dd>
-              <dt>NotebookLM</dt><dd>{t("catalogNlmUnavailable")}</dd>
+              <dt>Zotero</dt><dd>{(() => {
+                const probe = liveIntegrations?.zotero;
+                if (probe) {
+                  return t(
+                    probe.status === "connected_local_and_web"
+                      ? "integrationZoteroConnectedBoth"
+                      : probe.status === "connected_web"
+                        ? "integrationZoteroConnectedWeb"
+                        : probe.status === "connected_local"
+                          ? "integrationZoteroConnectedLocal"
+                          : probe.status === "auth_failed"
+                            ? "integrationZoteroAuthFailed"
+                            : probe.status === "missing_credentials"
+                              ? "integrationZoteroMissingCreds"
+                              : "integrationZoteroUnreachable",
+                  );
+                }
+                const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
+                return t(localCap?.zotero_configured ? "catalogZoteroConfigured" : "catalogZoteroUnavailable");
+              })()}</dd>
+              <dt>Obsidian</dt><dd>{t(
+                note
+                  ? "catalogObsidianReadOnly"
+                  : workspace?.capabilities?.obsidian_validation?.status === "available"
+                    ? "catalogObsidianConfigured"
+                    : "catalogObsidianUnavailable",
+              )}</dd>
+              <dt>NotebookLM</dt><dd>{(() => {
+                const probe = liveIntegrations?.notebooklm;
+                if (probe) {
+                  return t(
+                    probe.status === "authenticated"
+                      ? "catalogNlmAuthenticated"
+                      : probe.status === "expired"
+                        ? "catalogNlmExpired"
+                        : "catalogNlmUnavailable",
+                  );
+                }
+                const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
+                return t(localCap?.nlm_state_present ? "catalogNlmStatePresent" : "catalogNlmUnavailable");
+              })()}</dd>
             </dl></details>
             {!note && <details className="catalog-screening">
               <summary>{t("catalogScreening")}</summary>

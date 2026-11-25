@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import type { Translate } from "./i18n";
-import type { Workspace } from "./types";
+import type { IntegrationLiveState, Workspace } from "./types";
+import { NotebookLmAuthControls } from "./NotebookLmAuthControls";
 import { ObsidianValidationForm } from "./ObsidianValidationForm";
 import { ZoteroLibraryForm } from "./ZoteroLibraryForm";
 
@@ -13,15 +14,19 @@ function observationTime(value: unknown): string | null {
   return normalized.slice(0, 19) === value.slice(0, 19) ? value : null;
 }
 
-/** Local drafts and scoped Obsidian validation; no credentials or provider probes. */
+/** Local connections setup, encrypted credentials, NLM login, and scoped Obsidian validation. */
 export function IntegrationsSetup({
   workspace,
   t,
   projectId = "",
+  liveState,
+  onLiveStateChange,
 }: {
   workspace: Workspace | null;
   t: Translate;
   projectId?: string;
+  liveState?: IntegrationLiveState;
+  onLiveStateChange?: Dispatch<SetStateAction<IntegrationLiveState>>;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -62,6 +67,32 @@ export function IntegrationsSetup({
   const vault = workspace?.capabilities?.obsidian_validation;
   const selectedVault = vault?.version === 1 && vault.status === "available" && vault.read_only === true &&
     vault.scope === "startup_selected_exact_vault" && typeof vault.authorized_vault === "string" && Boolean(vault.authorized_vault.trim());
+  const localCap = liveState?.credentials ?? workspace?.capabilities?.local_integrations;
+  const zoteroConnectionText = liveState?.zotero
+    ? t(
+        liveState.zotero.status === "connected_local_and_web"
+          ? "integrationZoteroConnectedBoth"
+          : liveState.zotero.status === "connected_web"
+            ? "integrationZoteroConnectedWeb"
+            : liveState.zotero.status === "connected_local"
+              ? "integrationZoteroConnectedLocal"
+              : liveState.zotero.status === "auth_failed"
+                ? "integrationZoteroAuthFailed"
+                : liveState.zotero.status === "missing_credentials"
+                  ? "integrationZoteroMissingCreds"
+                  : "integrationZoteroUnreachable",
+      )
+    : t("integrationNotChecked");
+  const nlmConnectionText = liveState?.notebooklm
+    ? t(
+        liveState.notebooklm.status === "authenticated"
+          ? "integrationNlmAuthenticated"
+          : liveState.notebooklm.status === "expired"
+            ? "integrationNlmExpired"
+            : "integrationNlmMissing",
+      )
+    : t("integrationNotChecked");
+
   const statuses = {
     passed: "snapshotPassed",
     failed: "snapshotFailed",
@@ -146,7 +177,13 @@ export function IntegrationsSetup({
                       <div><dt>{t("integrationSelectedDestination")}</dt><dd>{t(key === "vault" ? selectedVault ? "integrationSelectedVault" : "integrationNoStartupVault" : "integrationDestinationUnknown")}</dd></div>
                       <div>
                         <dt>{t("integrationCurrentConnection")}</dt>
-                        <dd>{t("integrationNotChecked")}</dd>
+                        <dd>
+                          {key === "zotero"
+                            ? zoteroConnectionText
+                            : key === "notebooklm_auth"
+                              ? nlmConnectionText
+                              : t("integrationNotChecked")}
+                        </dd>
                       </div>
                       <div>
                         <dt>{t("integrationSavedObservation")}</dt>
@@ -174,17 +211,45 @@ export function IntegrationsSetup({
                         t={t}
                       />
                     )}
-                    {key === "zotero" && <ZoteroLibraryForm t={t} />}
+                    {key === "zotero" && (
+                      <ZoteroLibraryForm
+                        t={t}
+                        capability={localCap}
+                        probe={liveState?.zotero}
+                        onCredentialsSaved={(creds) =>
+                          onLiveStateChange?.((prev) => ({
+                            ...prev,
+                            credentials: creds,
+                            zotero: null,
+                          }))
+                        }
+                        onProbeUpdated={(probe) =>
+                          onLiveStateChange?.((prev) => ({
+                            ...prev,
+                            zotero: probe,
+                          }))
+                        }
+                      />
+                    )}
                     {key === "notebooklm_auth" && (
-                      <>
-                        <p>{t("integrationNlmPrerequisites")}</p>
-                        <p>
-                          {t("integrationNlmReconnect")}{" "}
-                          <code>
-                            {"python -m research_hub notebooklm login --auto-detect"}
-                          </code>
-                        </p>
-                      </>
+                      <NotebookLmAuthControls
+                        capability={localCap}
+                        probe={liveState?.notebooklm}
+                        loginJob={liveState?.loginJob}
+                        onLoginJobChange={(job) =>
+                          onLiveStateChange?.((prev) => ({
+                            ...prev,
+                            loginJob: job,
+                          }))
+                        }
+                        onProbeUpdated={(probe) =>
+                          onLiveStateChange?.((prev) => ({
+                            ...prev,
+                            notebooklm: probe,
+                          }))
+                        }
+                        t={t}
+                      />
                     )}
                   </li>
                 );
@@ -202,13 +267,13 @@ export function IntegrationsSetup({
                 <code>python -m research_hub doctor</code>
               </li>
             </ol>
-            <p>{t("integrationPrivacy")}</p>
+            <p>{t(localCap?.status === "available" ? "integrationLocalPrivacy" : "integrationPrivacy")}</p>
             <a
-              href="https://github.com/WenyuChiou/research-hub/blob/fix/nlm-085-integrations-guidance/docs/setup.md"
+              href="https://github.com/WenyuChiou/research-hub/blob/master/docs/setup.md"
               target="_blank"
               rel="noopener noreferrer"
             >
-              {t("integrationGuide")} (SDK 0.8.5)
+              {t("integrationGuide")} (SDK 0.8.6)
             </a>
           </section>,
           document.body,
