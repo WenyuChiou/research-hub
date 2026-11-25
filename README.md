@@ -2,7 +2,7 @@
 
 # research-hub
 
-A workspace on your computer for researchers to organize papers, evidence, and drafts, with AI-assisted proposals you review.
+Your local research workspace connecting AI assistants (Claude Code, Codex) with **Zotero** library status, **Obsidian** notes, **NotebookLM** source briefs, and human-reviewed manuscript drafts.
 
 [繁體中文](README.zh-TW.md) · [Workspace guide](docs/workspace-guide.md) · [Setup guide](docs/setup.md) · [Developer architecture](docs/workspace-architecture.md)
 
@@ -10,11 +10,11 @@ A workspace on your computer for researchers to organize papers, evidence, and d
 
 ## Why research-hub?
 
-Research is spread across papers, notes, analysis, and manuscripts. A new paper can change a question; an updated file can make a conclusion or section worth revisiting. research-hub gives researchers and AI assistants a local workspace to record those connections, hand off tasks, and review proposals before accepting them.
+Literature discovery happens inside your AI host's conversation, while real research lives across Zotero libraries, Obsidian notes, NotebookLM briefs, analysis scripts, and manuscripts. `research-hub` turns those pieces into one inspectable local workspace—paired with [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills) for Stage 1–2 discovery-to-synthesis:
 
-- **Keep context:** bring questions, sources, evidence, results, and manuscripts into one project rather than leaving them only in a conversation.
-- **Track changes:** register file paths and a file fingerprint (hash) to help detect changes, then inspect work that may need review when inputs change.
-- **Keep decisions human:** AI proposals require review; a local delivery requires separate approval.
+- **Build on your AI host's native search:** Let Claude Code or Codex find and read papers using its own search and reading tools—no separate keyword scraper or lock-in required.
+- **Keep Zotero, Obsidian & NotebookLM in view:** Inspect Zotero sync status, save structured cluster notes into Obsidian, bundle verified sources for NotebookLM briefs, and optionally store caller-authored seven-section source summaries in the Hub workspace (`231f9fbd+`, exportable as generic Markdown).
+- **Track changes & keep decisions human:** Register local file hashes to surface stale evidence or manuscript sections when inputs change; AI proposals and destination writes always wait for your approval.
 
 ![Concept diagram: research questions connect literature, evidence, analysis, manuscript proposals, and human review; changed inputs return work for review.](docs/images/workspace-lifecycle.en.png)
 
@@ -22,11 +22,14 @@ Research is spread across papers, notes, analysis, and manuscripts. A new paper 
 
 ![Two starting paths: research with an available compatible AI host without Hub, or install Hub to view saved sources and proposals. Task handoff is optional. People review sources and evidence; saving is not reading or approval, and nothing is automatically published.](docs/images/research-entry-paths.en.svg)
 
-**Use your existing AI host:** You need working search/reading tools and the [portable skill with its references](skills/research-hub/). No Hub installation, Zotero, Obsidian, or NotebookLM is required. See [skill loading](docs/setup.md#installed-skill-files) and [host support](docs/ai-host-support.md); Codex MCP is not release-verified.
+1. **Start directly in your AI host (no Hub install needed):**
+   - **Prerequisites:** Working search/reading tools in your host plus the [portable skill with its references](skills/research-hub/). No Hub installation, Zotero, Obsidian, or NotebookLM is required. See [skill loading](docs/setup.md#installed-skill-files) and [host support](docs/ai-host-support.md); Codex MCP is not release-verified.
+   - **First request:** “Find papers on LLMs simulating human decisions. Include source links, relevance, versions, and actual reading limits.”
+   - **Expected result:** Expect a source list in your host, with unknowns and unavailable tools/sources stated cleanly—never automatic full-text claims or unrequested writes.
 
-**First request:** “Find papers on LLMs simulating human decisions. Include source links, relevance, versions, and actual reading limits.” Expect a source list in your host, with unknowns and unavailable tools/sources stated, not automatic full-text reading or a Hub save.
-
-**Use the Hub workspace:** You need Python 3.10+, Git, and a local browser. [Install and launch the tested demo below](#workspace-preview) to inspect two seed references and their reading limits. Optional [result saving](docs/contracts/native-discovery-view.md) and [task handoff](docs/workspace-guide.md#writing-adapter-preview) require a selected destination and authorization.
+2. **Use the Hub workspace (saved literature, integrations & visual review):**
+   - **Prerequisites:** Python 3.10+, Git, and a local browser.
+   - [Install and launch the tested demo below](#workspace-preview) to inspect two seed references and their reading limits. Optional [result saving](docs/contracts/native-discovery-view.md) and [task handoff](docs/workspace-guide.md#writing-adapter-preview) require a selected destination and authorization.
 
 ## Install and get started
 
@@ -36,9 +39,7 @@ Research is spread across papers, notes, analysis, and manuscripts. A new paper 
 
 ### Try the local workspace
 
-Choose this path for the Hub workspace. If you only want to try the older published literature dashboard, see the separate option below.
-
-You need Python 3.10+ and Git. These commands install a specific source revision and create teaching fixtures in a **new or empty** `workspace-demo` directory. The source workspace is separate from the PyPI release: a package version does not establish that the installed wheel contains current source features.
+Use the source install below to launch the interactive local workspace in a **new or empty** `workspace-demo` directory. The source workspace is separate from the published [PyPI package](https://pypi.org/project/research-hub-pipeline/), so a package version does not imply current source features.
 
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
@@ -47,7 +48,7 @@ git fetch origin 1f0726a7e92a1231e633963f17236a2f5c1eab8f
 git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f
 ```
 
-Choose the block for your system. They call the virtual environment's Python directly, without activation or changing PowerShell execution policy. Dependency installation needs network access.
+Run the commands for your OS (no shell activation required; dependency installation needs network access):
 
 **macOS / Linux**
 
@@ -60,8 +61,6 @@ python3 -m venv .venv
 
 **Windows PowerShell**
 
-One Windows test environment using the earlier `14ddc070` source encountered `WinError 5` during demo creation; its cause is not yet known. See [verification and environment notes](docs/readme-verification-history.md).
-
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
@@ -73,22 +72,25 @@ py -3 -m venv .venv
 
 1. Open [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/) and, in **Projects**, choose `DEMO: floating-point reading and review outline` (`review-demo`).
 2. Open **Literature**, then select **What Every Computer Scientist Should Know About Floating-Point Arithmetic**.
-3. Expect two seed references in the list. The selected source shows DOI `10.1145/103162.103163`, **Unverified**, **Coverage unknown**, and **No summary saved**. These are expected demo states: no source text was downloaded or summarized, and the supplied screening decisions are examples, not your review.
+3. Expect two seed references in the list. The selected source shows DOI `10.1145/103162.103163`, **Unverified**, **Coverage unknown**, and **No summary saved**. These are expected demo states: no full text was downloaded or summarized, and supplied screening decisions are examples, not your review.
 
-The other project, `DEMO: three floating-point summation cases` (`summation-demo`), contains numerical examples and a manuscript scaffold; its Literature list is empty. Both projects are account-free teaching inputs, not accepted research.
+Keep the terminal running while using the workspace (`Ctrl+C` to stop); later runs only need `serve --workspace --root ./workspace-demo`. For your own files, go to [bring your own project](docs/workspace-guide.md#bring-your-own-project).
 
-Keep the terminal running while using the workspace; stop it with `Ctrl+C`. To return later, run only the `serve --workspace --root ./workspace-demo` command above. Do not recreate the demo over saved work. If creation was interrupted, inspect the preserved partial directory and use another new or empty root for both creation and serving.
+<details>
+<summary>Verification scope, troubleshooting notes, and second demo project</summary>
 
-Demo creation, launch, and this bilingual first task were checked on Linux with Python 3.12.14 at source revision `1f0726a7`; this does not verify Windows, macOS, or a fresh dependency installation. See [the exact verification scope](docs/readme-verification-history.md#source-demo-first-task-2026-11-07).
+- **Verified scope:** Demo creation, launch, and this bilingual first task were checked on Linux with Python 3.12.14 at source revision `1f0726a7`; this does not verify Windows, macOS, or a clean dependency installation. See [the exact verification scope](docs/readme-verification-history.md#source-demo-first-task-2026-11-07).
+- **Windows historical note:** One Windows test environment using the earlier `14ddc070` source encountered `WinError 5` during demo creation; its cause is not yet known. See [verification and environment notes](docs/readme-verification-history.md). Do not recreate the demo over saved work; if creation is interrupted, use another new or empty root.
+- **Second seed project:** `DEMO: three floating-point summation cases` (`summation-demo`) holds numerical examples and a manuscript scaffold with an empty Literature list; both projects are account-free teaching inputs.
 
-For your own files, go directly to [bring your own project](docs/workspace-guide.md#bring-your-own-project); the guide’s earlier installation pin is historical.
+</details>
 
 <a id="published-dashboard"></a>
 
 <details>
-<summary>Optional: try the older published literature dashboard</summary>
+<summary>Optional: try the older published literature dashboard (PyPI 1.2.0)</summary>
 
-The [PyPI package](https://pypi.org/project/research-hub-pipeline/) provides the older literature dashboard, not the newer source workspace. For an account-free sample, this separate virtual environment and empty root were tested on Linux with Python 3.12:
+The [PyPI package](https://pypi.org/project/research-hub-pipeline/) ships the older cluster dashboard rather than the source workspace above. Tested on Linux with Python 3.12 in an empty `RESEARCH_HUB_ROOT` directory:
 
 ```sh
 python3 -m venv .dashboard-venv
@@ -97,7 +99,7 @@ mkdir -p "$HOME/research-hub-preview"
 RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hub dashboard --sample
 ```
 
-Use a new or empty `research-hub-preview` directory under HOME: the command creates `.research_hub` and `logs` there. It prints the generated temporary HTML path; open that path in your browser. The bare `dashboard --sample` failed in a fresh HOME without the root setting; see [verification notes](docs/readme-verification-history.md) for platform and browser limits. For real services, see [setup](docs/setup.md), the [dashboard tour](docs/dashboard-walkthrough.md), and [first 10 minutes](docs/first-10-minutes.md).
+Open the printed temporary HTML path in your browser. See [setup](docs/setup.md), the [dashboard tour](docs/dashboard-walkthrough.md), and [verification notes](docs/readme-verification-history.md) for service configuration and platform limits.
 
 </details>
 
@@ -116,21 +118,25 @@ Use a new or empty `research-hub-preview` directory under HOME: the command crea
 | Manuscript | Register Word, LaTeX, or Markdown and prepare outlines and revisions. |
 | Review & delivery | Inspect proposals, record decisions, and prepare a local handoff. |
 
-Your editor remains responsible for changes to original files; the workspace registers their paths and hashes. A resolvable identifier does not prove a source supports a claim: check the evidence and scientific judgments yourself.
+Your editor owns changes to original files; the workspace tracks paths and hashes. Resolvable identifiers alone never prove scientific support—always verify claims against the underlying source.
 
-## Discover literature
+## Discover, organize, and verify literature
 
-In a compatible AI tool (an AI host) that can load the research-hub skill and has search and reading tools, start with a concrete request, for example:
+When you pair the [research-hub skill](skills/research-hub/) with a capable AI host (such as Claude Code or Codex), keep discovery on the host and let Research Hub handle deterministic storage and multi-destination handoffs:
 
-> Find literature on LLMs simulating human decisions; include original links, relevance, versions, and limits on available full text.
+- **Step 1 — Discover & read natively:** Ask your AI host to search, chain citations, and read accessible sections directly (e.g., *"Find literature on LLMs simulating human decisions; include original links, relevance, versions, and limits on available full text"*). Search snippets never count as full-text reading.
+- **Step 2 — Sync to Zotero & Obsidian:** Hand verified bibliographic records to `research-hub ingest` (after previewing `--dry-run`) to track **Zotero** status and generate structured **Obsidian** cluster notes, or save local project metadata via `project record`.
+- **Step 3 — Summarize & verify NotebookLM briefs:** Use `paper-summarize` for native seven-section full-text summaries (with optional Hub CLI save/generic Markdown stdout export at `231f9fbd+`, or abstract-only Obsidian/Zotero cluster note updates) and `research-hub notebooklm` + `notebooklm-brief-verifier` to generate and audit source-grounded briefs before moving downstream to `literature-triage-matrix` and `gap-to-topic`.
 
-Then ask to focus on economic decisions and compare human baselines and evaluation methods. Review the sources, reading coverage, and open questions before deciding what to do next. Search snippets are not full-text reading. This research approach can be used independently of Hub; Zotero, Obsidian, NotebookLM, and Hub storage are optional. The Hub visual workspace and saved-result view do require Hub.
+<details>
+<summary>Native reader boundaries &amp; source-summary revision note</summary>
 
-The native reader can organize supplied research summaries, source indexes, and bibliographies, and attach a PDF explicitly supplied by the user. The PDF is copied unchanged for download; that does not mean it was parsed, translated, verified, or read in full. The reader can display caller-supplied translations alongside original observations, labeled unverified; it does not generate translations or verify their accuracy. See the [native reader export guide](src/research_hub/skills_data/research-hub/references/native-discovery-export.md) for the supplied-translation format.
+- **Native reader scope:** Displays caller-supplied observations, bibliographies, unchanged PDF attachments, and supplied side-by-side translations (explicitly labeled unverified). It never auto-parses, translates, or scientifically validates content. See [native reader export guide](src/research_hub/skills_data/research-hub/references/native-discovery-export.md) and the optional [saved-result contract](docs/contracts/native-discovery-view.md).
+- **Seven-section summary CLI boundary:** The quick-start pin `1f0726a7` predates Stage 1 authored source summaries. From source revision `231f9fbd` onward, the [authored source-summary CLI](docs/cli-reference.md#native-authored-source-summaries) saves and exports caller-authored seven-section summaries to generic Markdown stdout bound to current source hashes; this imports supplied content only and does not generate summaries, claim Obsidian/Roam import fidelity, establish scientific support, or record human acceptance. Read the [summary contract](docs/native-source-summary.md) first and verify your installed revision separately from package version numbers.
 
-**Version boundary for source summaries:** the quick-start above intentionally pins the older, verified workspace demo at `1f0726a7`; it is not a setup recipe for the later Stage 1 changes. At source revision `231f9fbd`, the [authored source-summary CLI](docs/cli-reference.md#native-authored-source-summaries) can save and read an explicitly authored seven-section summary with current source/evidence bindings. Read the [summary contract](docs/native-source-summary.md) before using it. This imports supplied content; it does not generate summaries, establish scientific support, or record human acceptance. The source revision and installed entrypoint must be checked separately; a matching package version alone is not enough.
+</details>
 
-See [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills), the [AI host support matrix](docs/ai-host-support.md), and [MCP/REST integration](docs/ai-integrations.md). The optional [saved-result contract](docs/contracts/native-discovery-view.md) describes what a Hub handoff stores and its platform boundaries.
+See [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills), the [AI host support matrix](docs/ai-host-support.md), and [MCP/REST integration](docs/ai-integrations.md).
 
 ## Write, review, and deliver
 
@@ -141,18 +147,18 @@ See [AI Research Skills](https://github.com/WenyuChiou/ai-research-skills), the 
 | Portable handoff | Export a task to your AI host, then import prose and candidate file hashes. Export leaves the task waiting for the agent. |
 | Connected Codex | An authenticated, compatible Codex CLI uses an explicitly trusted public writing bundle to produce prose; the result waits for human review. |
 
-The optional [writing setup](docs/workspace-guide.md#writing-adapter-preview) explains how to verify and configure the adapter. Connected Codex receives bounded text excerpts, not binary document contents. Use your editor for Word formatting, LaTeX compilation, and final document changes. Accepted proposals can be packaged into a local ZIP after separate approval; this does not authorize publication or cloud upload. Workspace approval does not automatically protect existing direct-write CLI, MCP, dashboard, or cloud tools. See [boundaries and recovery](docs/workspace-guide.md#boundaries-and-recovery).
+See [writing setup](docs/workspace-guide.md#writing-adapter-preview) and [boundaries and recovery](docs/workspace-guide.md#boundaries-and-recovery). Connected Codex receives bounded text excerpts, not binary files; formatting remains in your editor, and accepted proposals can be packaged into a local ZIP only after separate human approval (which does not authorize cloud upload or publication). Workspace approval does not automatically protect existing direct-write CLI, MCP, dashboard, or cloud tools.
 
 ## Optional integrations
 
 <a id="connect-your-ai-host"></a>
 
-- **Zotero:** manage references; the connection requires an API key and library ID.
-- **Obsidian:** organize notes in a local vault, or begin with local files.
-- **NotebookLM:** create source-based briefings; it requires browser sign-in and a working session. See [setup](docs/notebooklm.md) and [troubleshooting](docs/notebooklm-troubleshooting.md).
-- **AI hosts:** connect through [MCP/REST](docs/ai-integrations.md) or portable skills; MCP requires the optional `[mcp]` extra.
+- **Zotero:** Track library items and collection status (`ZOTERO_API_KEY` + `ZOTERO_LIBRARY_ID`).
+- **Obsidian:** Organize per-cluster notes, deep summaries, and synthesis pages inside a local vault (or start from local Markdown).
+- **NotebookLM:** Bundle clusters, generate briefings, and audit claims against sources (requires browser session; see [setup](docs/notebooklm.md) and [troubleshooting](docs/notebooklm-troubleshooting.md)).
+- **AI hosts:** Connect via [MCP/REST](docs/ai-integrations.md) (requires `[mcp]`) or portable skills via [install guidance](docs/setup.md).
 
-Choose integrations as needed and run `./.venv/bin/python -m research_hub doctor` (macOS/Linux) or `.\.venv\Scripts\python.exe -m research_hub doctor` (Windows PowerShell) to inspect them individually. Setup or installation does not itself verify a service. The [setup guide](docs/setup.md) covers extras and credentials; see also [local file import](docs/import-folder.md), [EZproxy](docs/ezproxy.md), and the [live smoke checklist](docs/live-smoke.md).
+Run `./.venv/bin/python -m research_hub doctor` (macOS/Linux) or `.\.venv\Scripts\python.exe -m research_hub doctor` (Windows PowerShell) to inspect selected destinations individually. See [local file import](docs/import-folder.md), [EZproxy](docs/ezproxy.md), and the [live smoke checklist](docs/live-smoke.md).
 
 <a id="credential-reference"></a>
 <details>
