@@ -1,4 +1,4 @@
-"""Offline CI contracts and real temporary-Git checkout identity regressions."""
+"""Offline CI contracts, path classifier checks, and temporary-Git checkout identity regressions."""
 
 import ast
 from copy import deepcopy
@@ -22,9 +22,13 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_ci_checkout.py"
+CLASSIFIER_PATH = ROOT / "scripts/classify_ci_changes.py"
 GUARD = runpy.run_path(str(SCRIPT))
+CLASSIFY = runpy.run_path(str(CLASSIFIER_PATH))
 VERIFY = GUARD["verify_checkout"]
 IDENTITY_ERROR = GUARD["CheckoutIdentityError"]
+CLASSIFY_PATHS = CLASSIFY["classify_paths"]
+CLASSIFY_EVENT = CLASSIFY["classify_event"]
 # BaseLoader preserves the Actions key `on`, which YAML 1.1 otherwise calls True.
 WORKFLOW = yaml.load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
@@ -101,36 +105,44 @@ class WorkflowContracts(unittest.TestCase):
         self.assertEqual(concurrency(action="edited", run_id=202), ("CI-202", False))
         self.assertNotEqual(concurrency(action="edited")[0], concurrency()[0])
 
-    def test_job_names_and_matrix_remain_full(self):
+    def test_job_topology_matrix_and_macos_budget(self):
         jobs = WORKFLOW["jobs"]
-        self.assertEqual(set(jobs), {"workspace", "test", "test-ubuntu", "stress-tests", "skill-version-guard"})
+        expected_jobs = {
+            "classify",
+            "docs-and-skills",
+            "docs-and-skills-windows",
+            "workspace",
+            "test",
+            "test-extended-os",
+            "test-ubuntu",
+            "dependency-audit",
+            "stress-tests",
+            "skill-version-guard",
+        }
+        self.assertEqual(set(jobs), expected_jobs)
         self.assertEqual(jobs["workspace"]["name"], "workspace UI, browser and installed wheel")
-        self.assertEqual(jobs["test"]["name"], "test (${{ matrix.os }}, py${{ matrix.python-version }})")
-        self.assertEqual(jobs["test-ubuntu"]["name"], "test (ubuntu-latest, py${{ matrix.python-version }}, shard ${{ matrix.split_index }}/4)")
-        self.assertEqual(jobs["skill-version-guard"]["name"], "skill-version-guard")
-        self.assertNotIn("name", jobs["stress-tests"])
-        matrix = jobs["test"]["strategy"]["matrix"]
-        self.assertEqual(matrix, {"os": ["windows-latest", "macos-latest"],
-            "python-version": ["3.10", "3.11", "3.12", "3.13"],
-            "include": [{"os": os_name, "python-version": "3.14", "experimental": "true"}
-                        for os_name in ("windows-latest", "macos-latest")]})
+        self.assertEqual(jobs["test"]["strategy"]["matrix"], {
+            "os": ["windows-latest", "macos-latest"],
+            "python-version": ["3.12"],
+        })
+        ext_include = jobs["test-extended-os"]["strategy"]["matrix"]["include"]
+        mac_ext = [row for row in ext_include if row["os"] == "macos-latest"]
+        self.assertEqual(len(mac_ext), 2, "Cap macOS jobs at 3 total per run (1 core + 2 extended)")
+        self.assertEqual({(row["python-version"], row.get("experimental")) for row in mac_ext},
+                         {("3.10", None), ("3.14", "true")})
         self.assertEqual(jobs["test-ubuntu"]["strategy"]["matrix"], {
             "python-version": ["3.10", "3.11", "3.12", "3.13"], "split_index": ["1", "2", "3", "4"],
             "include": [{"python-version": "3.14", "split_index": "1", "experimental": "true"}],
         })
-        for name in ("test", "test-ubuntu"):
+        for name in ("test", "test-extended-os", "test-ubuntu"):
             self.assertEqual(jobs[name]["strategy"]["fail-fast"], "false")
+        for name in ("test-extended-os", "test-ubuntu"):
             self.assertEqual(jobs[name]["continue-on-error"], "${{ matrix.experimental || false }}")
 
-    def test_every_pr_edit_runs_real_jobs_not_skipped_success_substitutes(self):
+    def test_every_job_verifies_checkout_identity_before_work(self):
         self.assertNotIn("permissions", WORKFLOW)
         for name, job in WORKFLOW["jobs"].items():
             with self.subTest(job=name):
-                if name in ("stress-tests", "skill-version-guard"):
-                    self.assertEqual(job["if"], "github.event_name == 'pull_request'")
-                else:
-                    self.assertNotIn("if", job)
-                self.assertNotIn("needs", job)
                 guards = [s for s in job["steps"] if s.get("name") == "Verify checkout identity"]
                 self.assertEqual(len(guards), 1)
                 guard = guards[0]
@@ -141,17 +153,27 @@ class WorkflowContracts(unittest.TestCase):
                 first_work = next(i for i, s in enumerate(job["steps"]) if "run" in s)
                 self.assertEqual(guard_index, first_work)
                 self.assertTrue(job["steps"][0]["uses"].startswith("actions/checkout@"))
+                if name in ("classify", "skill-version-guard"):
+                    self.assertNotIn("needs", job)
+                else:
+                    self.assertEqual(job["needs"], "classify")
+                    self.assertIn("needs.classify.outputs.", job["if"])
 
-    def test_download_cache_keeps_dependency_installation(self):
+    def test_download_cache_and_deduplicated_audit_and_no_dead_defuddle(self):
         cached = 0
+        audit_jobs = []
         for name, job in WORKFLOW["jobs"].items():
             for step in job["steps"]:
+                run_cmd = step.get("run", "")
+                self.assertNotIn("defuddle-cli", run_cmd)
+                if "pip_audit" in run_cmd:
+                    audit_jobs.append(name)
                 if step.get("uses", "").startswith("actions/setup-python@"):
                     cached += 1
                     self.assertEqual(step["with"]["cache"], "pip")
                     self.assertEqual(step["with"]["cache-dependency-path"].splitlines(),
                                      ["pyproject.toml", "constraints.txt", ".github/workflows/ci.yml"])
-            if name in ("test", "test-ubuntu", "stress-tests"):
+            if name in ("test", "test-extended-os", "test-ubuntu", "dependency-audit", "stress-tests"):
                 install = next(s for s in job["steps"] if s.get("name") == "Install dependencies")
                 self.assertEqual(install["run"], "pip install -e '.[mcp,dev,playwright,import]'")
                 self.assertNotIn("if", install)
@@ -159,7 +181,8 @@ class WorkflowContracts(unittest.TestCase):
                 install = next(s for s in job["steps"] if s.get("name") == "Install test tooling and build wheel")
                 self.assertIn("pip install build playwright==1.58.0", install["run"])
                 self.assertNotIn("if", install)
-        self.assertEqual(cached, 4)
+        self.assertEqual(cached, 8)
+        self.assertEqual(audit_jobs, ["dependency-audit"])
 
     def test_workspace_browser_runner_matches_pinned_playwright(self):
         workspace = WORKFLOW["jobs"]["workspace"]
@@ -167,8 +190,7 @@ class WorkflowContracts(unittest.TestCase):
         install = next(s for s in workspace["steps"]
                        if s.get("name") == "Install test tooling and build wheel")
         self.assertIn("playwright==1.58.0", install["run"])
-        # Other Linux jobs still exercise the rolling latest image.
-        for name in ("test-ubuntu", "stress-tests", "skill-version-guard"):
+        for name in ("classify", "docs-and-skills", "test-ubuntu", "dependency-audit", "stress-tests", "skill-version-guard"):
             self.assertEqual(WORKFLOW["jobs"][name]["runs-on"], "ubuntu-latest")
 
     def test_workspace_browser_setup_and_smoke_are_not_optional(self):
@@ -187,27 +209,175 @@ class WorkflowContracts(unittest.TestCase):
             self.assertNotIn("continue-on-error", step)
             self.assertNotIn("env", step)
 
-    def test_every_windows_mac_row_runs_full_suite_exactly_once(self):
+    def test_core_and_extended_os_rows_match_expected_commands(self):
         steps = WORKFLOW["jobs"]["test"]["steps"]
         plain = next(s for s in steps if s.get("name") == "Run tests")
         coverage = next(s for s in steps if s.get("name") == "Coverage")
         self.assertEqual(plain["run"], 'pytest -q --maxfail=3 -m "not slow"')
         self.assertEqual(coverage["run"], 'pytest --cov=research_hub --cov-report=term-missing --cov-fail-under=62 -m "not slow"')
-        for os_name, version in itertools.product(("windows-latest", "macos-latest"), ("3.10", "3.11", "3.12", "3.13", "3.14")):
-            with self.subTest(os=os_name, version=version):
-                context = SimpleNamespace(os=os_name, **{"python-version": version})
-                # Actions allows hyphenated context names; Python uses attributes.
-                clauses = [s["if"].replace("matrix.python-version", "matrix.version") for s in (plain, coverage)]
-                context.version = version
-                selected = [bool(expression(clause, matrix=context)) for clause in clauses]
-                self.assertEqual(sum(selected), 1)
-                self.assertEqual(selected[1], os_name == "windows-latest" and version == "3.12")
-        for step in (plain, coverage):
-            self.assertNotIn("continue-on-error", step)
+        for os_name in ("windows-latest", "macos-latest"):
+            context = SimpleNamespace(os=os_name)
+            selected = [bool(expression(s["if"], matrix=context)) for s in (plain, coverage)]
+            self.assertEqual(sum(selected), 1)
+            self.assertEqual(selected[1], os_name == "windows-latest")
         ubuntu = next(s for s in WORKFLOW["jobs"]["test-ubuntu"]["steps"] if s.get("name", "").startswith("Run tests"))
         self.assertEqual(ubuntu["run"], 'pytest -q --maxfail=3 -m "not slow" --splits 4 --group ${{ matrix.split_index }}')
         stress = next(s for s in WORKFLOW["jobs"]["stress-tests"]["steps"] if s.get("name") == "Run stress tests")
         self.assertEqual(stress["run"], 'pytest tests/stress/ -v -o "addopts=" -m stress')
+
+
+class ClassifierContracts(unittest.TestCase):
+    def test_docs_only_skips_heavy_matrices(self):
+        res = CLASSIFY_PATHS(["README.md", "README.zh-TW.md", "docs/setup.md"],
+                             event_name="pull_request", github_ref="refs/pull/291/merge")
+        self.assertEqual(res["scope"], "docs")
+        self.assertEqual(res["run_docs_skills_linux"], "true")
+        self.assertEqual(res["run_docs_skills_windows"], "false")
+        self.assertEqual(res["run_workspace"], "false")
+        self.assertEqual(res["run_python_tests"], "false")
+        self.assertEqual(res["run_full_os_matrix"], "false")
+        self.assertEqual(res["run_stress"], "false")
+        self.assertEqual(res["run_audit"], "false")
+
+    def test_skills_only_runs_linux_and_windows_contracts(self):
+        res = CLASSIFY_PATHS(
+            ["skills/research-hub/SKILL.md", "src/research_hub/skills_data/research-hub/SKILL.md",
+             ".claude-plugin/plugin.json", "tests/test_fulltext_summary_guidance.py"],
+            event_name="pull_request", github_ref="refs/pull/292/merge",
+        )
+        self.assertEqual(res["scope"], "skills")
+        self.assertEqual(res["run_docs_skills_linux"], "true")
+        self.assertEqual(res["run_docs_skills_windows"], "true")
+        self.assertEqual(res["run_workspace"], "false")
+        self.assertEqual(res["run_python_tests"], "false")
+
+    def test_code_without_workspace_ui_skips_workspace_browser_and_extended_os(self):
+        res = CLASSIFY_PATHS(["src/research_hub/zotero_sync.py", "tests/test_zotero_sync.py"],
+                             event_name="pull_request", github_ref="refs/pull/300/merge")
+        self.assertEqual(res["scope"], "code")
+        self.assertEqual(res["run_docs_skills_linux"], "false")
+        self.assertEqual(res["run_workspace"], "false")
+        self.assertEqual(res["run_python_tests"], "true")
+        self.assertEqual(res["run_full_os_matrix"], "false")
+        self.assertEqual(res["run_stress"], "true")
+        self.assertEqual(res["run_audit"], "false")
+
+    def test_workspace_ui_code_triggers_workspace_browser_job(self):
+        for changed in (["web/src/App.tsx"], ["src/research_hub/workspace/cli.py"], ["tests/test_workspace_smoke.py"]):
+            with self.subTest(changed=changed):
+                res = CLASSIFY_PATHS(changed, event_name="pull_request", github_ref="refs/pull/301/merge")
+                self.assertEqual(res["scope"], "code")
+                self.assertEqual(res["run_workspace"], "true")
+                self.assertEqual(res["run_python_tests"], "true")
+                self.assertEqual(res["run_full_os_matrix"], "false")
+
+    def test_infra_verify_unknown_and_empty_fail_closed_to_full(self):
+        full_cases = [
+            (["pyproject.toml"], "pull_request", "refs/pull/289/merge"),
+            ([".github/workflows/ci.yml"], "pull_request", "refs/pull/292/merge"),
+            (["Makefile"], "pull_request", "refs/pull/293/merge"),
+            (["../outside.py"], "pull_request", "refs/pull/294/merge"),
+            ([], "pull_request", "refs/pull/295/merge"),
+            (["README.md"], "push", "refs/heads/verify/exact-check"),
+        ]
+        for paths, event, ref in full_cases:
+            with self.subTest(paths=paths, event=event, ref=ref):
+                res = CLASSIFY_PATHS(paths, event_name=event, github_ref=ref)
+                self.assertEqual(res["scope"], "full")
+                self.assertEqual(res["run_workspace"], "true")
+                self.assertEqual(res["run_python_tests"], "true")
+                self.assertEqual(res["run_full_os_matrix"], "true")
+                self.assertEqual(res["run_audit"], "true")
+
+    def test_classify_event_fails_closed_on_missing_or_invalid_git_refs(self):
+        res = CLASSIFY_EVENT("push", {"before": "0" * 40, "after": "a" * 40}, "refs/heads/master", cwd=ROOT)
+        self.assertEqual(res["scope"], "full")
+        res_bad = CLASSIFY_EVENT("workflow_dispatch", {}, "refs/heads/master", cwd=ROOT)
+        self.assertEqual(res_bad["scope"], "full")
+
+
+    def test_docs_and_skills_jobs_include_all_contract_and_installer_suites(self):
+        expected_tests = set(CLASSIFY["DOCS_EXACT"]) | set(CLASSIFY["SKILLS_EXACT"])
+        expected_tests = {p for p in expected_tests if p.startswith("tests/")}
+        expected_tests.add("tests/test_workspace_producer_integration.py")
+        expected_tests.add("tests/test_v089_describe.py")
+        for job_name in ("docs-and-skills", "docs-and-skills-windows"):
+            with self.subTest(job=job_name):
+                cmd = next(
+                    s["run"]
+                    for s in WORKFLOW["jobs"][job_name]["steps"]
+                    if s.get("name", "").startswith("Run ")
+                )
+                for test_file in sorted(expected_tests):
+                    self.assertIn(test_file, cmd)
+
+    def test_classify_event_resolves_real_git_histories_and_shallow_boundaries(self):
+        with tempfile.TemporaryDirectory(prefix="hub-ci-classify-") as directory:
+            repo = Path(directory)
+            git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            git_env.update({
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CEILING_DIRECTORIES": str(repo.parent),
+                "GIT_TERMINAL_PROMPT": "0",
+                "GIT_AUTHOR_NAME": "CI fixture",
+                "GIT_AUTHOR_EMAIL": "ci@example.invalid",
+                "GIT_COMMITTER_NAME": "CI fixture",
+                "GIT_COMMITTER_EMAIL": "ci@example.invalid",
+                "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+0000",
+                "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+0000",
+            })
+
+            def g(*args):
+                return subprocess.run(
+                    ["git", *args],
+                    cwd=repo,
+                    env=git_env,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=10,
+                ).stdout.strip()
+
+            g("init", "--quiet", "--initial-branch=master", "--template=", str(repo))
+            (repo / "README.md").write_text("base\n", encoding="utf-8")
+            (repo / "src").mkdir()
+            (repo / "src/app.py").write_text("x = 1\n", encoding="utf-8")
+            g("add", ".")
+            g("commit", "--quiet", "-m", "base")
+            base = g("rev-parse", "HEAD")
+
+            # Docs-only PR branch from base
+            g("checkout", "--quiet", "-b", "pr-docs")
+            (repo / "README.md").write_text("docs update\n", encoding="utf-8")
+            g("add", "README.md")
+            g("commit", "--quiet", "-m", "docs")
+            head_docs = g("rev-parse", "HEAD")
+
+            pr_event = {"pull_request": {"base": {"sha": base}, "head": {"sha": head_docs}}}
+            self.assertEqual(
+                CLASSIFY_EVENT("pull_request", pr_event, "refs/pull/1/merge", cwd=repo)["scope"],
+                "docs",
+            )
+
+            # Master push changing src/ -> code
+            g("checkout", "--quiet", "master")
+            (repo / "src/app.py").write_text("x = 2\n", encoding="utf-8")
+            g("add", "src/app.py")
+            g("commit", "--quiet", "-m", "code")
+            after_code = g("rev-parse", "HEAD")
+            push_event = {"before": base, "after": after_code}
+            self.assertEqual(
+                CLASSIFY_EVENT("push", push_event, "refs/heads/master", cwd=repo)["scope"],
+                "code",
+            )
+
+            # Missing/unfetched before commit fails closed to full
+            missing_before = {"before": "1" * 40, "after": after_code}
+            self.assertEqual(
+                CLASSIFY_EVENT("push", missing_before, "refs/heads/master", cwd=repo)["scope"],
+                "full",
+            )
 
 
 class CheckoutIdentity(unittest.TestCase):
@@ -330,7 +500,6 @@ class CheckoutIdentity(unittest.TestCase):
             self.verify(event, ref=event["ref"], name="push")
 
     def test_verify_branch_push_validates_the_exact_commit(self):
-        # A final linear commit needs no synthetic PR merge to exercise push CI.
         self.git_run("update-ref", "refs/heads/master", self.base)
         event = {"after": self.base, "ref": "refs/heads/verify/recovery", "deleted": False}
         self.assertEqual(self.verify(event, sha=self.base, ref=event["ref"], name="push"), self.base)
