@@ -450,6 +450,15 @@ def _cmd_serve(args, cfg) -> int:
         )
         return 0
 
+    transport = getattr(args, "mcp_transport", "stdio") or "stdio"
+    if transport != "stdio":
+        if args.host not in {"127.0.0.1", "localhost", "::1"}:
+            raise SystemExit("MCP HTTP transport is loopback-only (use 127.0.0.1, localhost, or ::1)")
+        from research_hub.mcp_server import main as mcp_main
+
+        mcp_main(transport=transport, host=args.host, port=args.port)
+        return 0
+
     from research_hub.mcp_server import main as mcp_main
 
     mcp_main()

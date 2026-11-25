@@ -155,10 +155,40 @@ def check_session_health(state_file: Path) -> dict[str, Any]:
         return {"ok": False, "reason": f"unexpected error: {_clean_auth_reason(exc)}", "expires_at": None}
 
 
+def ensure_session_health(
+    state_file: Path,
+    *,
+    auto_refresh: bool = True,
+) -> dict[str, Any]:
+    """Check NotebookLM session health and auto-rotate expired freshness cookies.
+
+    When the initial probe fails and a saved ``state.json`` exists, runs one
+    ``refresh_and_persist_session`` attempt (via ``fetch_tokens_with_domains``)
+    and re-probes before reporting failure. Returns the health dict with an
+    extra boolean ``refreshed`` field.
+    """
+    state_file = Path(state_file)
+    health = check_session_health(state_file)
+    if health.get("ok"):
+        return {**health, "refreshed": False}
+    if not auto_refresh or not state_file.exists():
+        return {**health, "refreshed": False}
+    try:
+        from research_hub.notebooklm.keepalive import refresh_and_persist_session
+
+        refresh_result = refresh_and_persist_session(state_file)
+    except Exception:
+        return {**health, "refreshed": False}
+    if not refresh_result.ok:
+        return {**health, "refreshed": False}
+    rechecked = check_session_health(state_file)
+    return {**rechecked, "refreshed": bool(rechecked.get("ok"))}
+
+
 def require_session_health(state_file: Path) -> None:
     """Raise a structured auth-refresh error when NotebookLM auth is stale."""
 
-    health = check_session_health(state_file)
+    health = ensure_session_health(state_file, auto_refresh=True)
     if health.get("ok"):
         return
     reason = str(health.get("reason") or "auth invalid")

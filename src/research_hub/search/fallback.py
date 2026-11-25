@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from contextvars import copy_context
 from dataclasses import dataclass
 import logging
+import os
 from collections.abc import Iterable, Sequence
 
 from research_hub.search.arxiv_backend import ArxivBackend
@@ -170,7 +171,18 @@ def search_papers(
             "query": query, "limit": per_backend_limit,
             "year_from": year_from, "year_to": year_to,
         }, evidence="parsed") as attempt:
-            backend = cls()
+            if cls is SemanticScholarClient and not os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip():
+                cfg_s2_key = None
+                try:
+                    from research_hub.config import _resolve_config_path, get_config
+
+                    if _resolve_config_path() is not None:
+                        cfg_s2_key = get_config().s2_api_key
+                except Exception:
+                    cfg_s2_key = None
+                backend = cls(api_key=cfg_s2_key) if cfg_s2_key else cls()
+            else:
+                backend = cls()
             results = backend.search(
                 query,
                 limit=per_backend_limit,
