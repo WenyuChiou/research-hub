@@ -176,6 +176,7 @@ def test_write_papers_to_zotero_respects_strict_zotero_templates() -> None:
     papers = [
         {"title": "Preprint", "authors": ["Jane Doe"], "year": 2024, "doi": "10.48550/arXiv.2401.00001", "url": "https://arxiv.org/abs/2401.00001", "journal": "arXiv", "abstract": "A", "source": "arxiv"},
         {"title": "Earth Preprint", "authors": ["Jane Doe"], "year": 2024, "doi": "10.31223/X50000", "url": "https://eartharxiv.org/repository/view/1", "journal": "EarthArXiv", "abstract": "A", "item_type": "preprint"},
+        {"title": "Preprints Org", "authors": ["Jane Doe"], "year": 2024, "doi": "10.20944/preprints202401.1234.v1", "url": "https://www.preprints.org/manuscript/202401.1234/v1", "journal": "Preprints.org", "abstract": "A", "item_type": "preprint"},
         {"title": "Conf", "authors": ["Jane Doe"], "year": 2024, "doi": "10.1000/conf", "journal": "ICML", "abstract": "A", "item_type": "conferencePaper"},
         {"title": "BookSec", "authors": ["Jane Doe"], "year": 2024, "doi": "10.1000/sec", "journal": "Handbook", "abstract": "A", "item_type": "bookSection"},
         {"title": "Book", "authors": ["Jane Doe"], "year": 2024, "doi": "10.1000/book", "journal": "MIT Press", "abstract": "A", "item_type": "book"},
@@ -186,13 +187,16 @@ def test_write_papers_to_zotero_respects_strict_zotero_templates() -> None:
     ]
     zot = _StrictZot()
     zr, notes_out, errors = write_papers_to_zotero(zot, papers, "c-slug", "COLL1", batch_coll="BATCH1", log=lambda _: None)
-    assert errors == [] and len(zr) == 9 and len(notes_out) == 9
+    assert errors == [] and len(zr) == 10 and len(notes_out) == 10
     pre = next(x for x in zot.created if x["itemType"] == "preprint" and x["title"] == "Preprint")
     assert "publicationTitle" not in pre
     assert pre["repository"] == "arXiv"
     assert pre["archiveID"] == "arXiv:2401.00001"
     earth = next(x for x in zot.created if x["itemType"] == "preprint" and x["title"] == "Earth Preprint")
     assert earth["repository"] == "EarthArXiv"
+    porg = next(x for x in zot.created if x["itemType"] == "preprint" and x["title"] == "Preprints Org")
+    assert porg["repository"] == "Preprints.org"
+    assert porg.get("archiveID", "") == ""
     conf = next(x for x in zot.created if x["itemType"] == "conferencePaper")
     assert conf["proceedingsTitle"] == "ICML"
     sec = next(x for x in zot.created if x["itemType"] == "bookSection")

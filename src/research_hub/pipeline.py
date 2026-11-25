@@ -564,14 +564,27 @@ def _populate_zotero_template(
     volume = pp.get("volume", "")
     issue = pp.get("issue", "")
     pages = pp.get("pages", "")
-    arxiv_id = _extract_arxiv_id_from_url_or_doi(pp.get("url", ""), pp.get("doi", ""))
+    url_lower = str(pp.get("url", "") or "").lower()
+    norm_doi = normalize_doi(str(pp.get("doi", "") or ""))
+    source_name = str(pp.get("source", "") or "").strip().lower()
+    is_arxiv = (
+        norm_doi.startswith("10.48550/arxiv.")
+        or "arxiv.org/" in url_lower
+        or bool(pp.get("arxiv_id"))
+        or source_name == "arxiv"
+        or bool(re.search(r"\barxiv\b", journal, re.I))
+    )
+    arxiv_id = (
+        str(pp.get("arxiv_id") or "").strip()
+        or _extract_arxiv_id_from_url_or_doi(pp.get("url", ""), pp.get("doi", ""))
+    ) if is_arxiv else ""
 
     def _set_if_supported(field: str, value: object) -> None:
         if not is_full_schema or field in template:
             template[field] = value
 
     if item_type == "preprint":
-        repo = "arXiv" if (arxiv_id or re.search(r"\barxiv\b", journal, re.I)) else journal
+        repo = "arXiv" if is_arxiv else journal
         if repo:
             _set_if_supported("repository", repo)
         if arxiv_id:
