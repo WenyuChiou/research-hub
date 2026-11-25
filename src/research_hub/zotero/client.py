@@ -265,19 +265,34 @@ def check_duplicate(
     """Check if an item already exists in Zotero by DOI or title."""
     if allow_library_duplicates:
         return False
+    from research_hub.utils.doi import normalize_doi
+
+    norm_doi = normalize_doi(doi) if doi else ""
+    norm_title = title.lower()
+
+    def _matches(items: list[dict]) -> bool:
+        return any(
+            e.get("data", {}).get("title", "").lower() == norm_title
+            or (norm_doi and normalize_doi(e.get("data", {}).get("DOI", "")) == norm_doi)
+            for e in (items or [])
+        )
+
     query = doi or title[:50]
     try:
         if collection_key:
             existing = zot.collection_items(collection_key, q=query, limit=5)
         else:
             existing = zot.items(q=query, limit=5)
+        if _matches(existing):
+            return True
+        # Zotero's QuickSearch q= parameter can tokenize DOI punctuation/slashes and
+        # miss existing items on library-wide lookups; fall back to title prefix.
+        if not existing and not collection_key and doi and title:
+            fallback = zot.items(q=title[:50], limit=5)
+            return _matches(fallback)
     except Exception:
         return False
-    return any(
-        e["data"]["title"].lower() == title.lower()
-        or (doi and e["data"].get("DOI", "") == doi)
-        for e in existing
-    )
+    return False
 
 
 def safe_api_call(func, *args, max_retries=3, **kwargs):

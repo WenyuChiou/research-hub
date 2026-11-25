@@ -533,6 +533,79 @@ def _ensure_batch_subcollection(
     return ""
 
 
+def _populate_zotero_template(
+    template: dict,
+    pp: dict,
+    item_type: str,
+    *,
+    cluster_slug: str | None,
+    batch_label: str,
+    collections: list[str],
+) -> dict:
+    """Populate a Zotero item template strictly matching its itemType schema."""
+    is_full_schema = "title" in template and "creators" in template
+    template["title"] = pp["title"]
+    template["creators"] = [
+        {"creatorType": "author", "name": author} if isinstance(author, str) else author
+        for author in pp["authors"]
+    ]
+    template["date"] = pp["year"]
+    if not is_full_schema or "DOI" in template:
+        template["DOI"] = pp["doi"]
+    template["url"] = pp.get("url", "")
+    template["abstractNote"] = pp["abstract"]
+    template["tags"] = [
+        {"tag": tag}
+        for tag in _compose_hub_tags(pp, cluster_slug, batch_label=batch_label)
+    ]
+    template["collections"] = collections
+
+    journal = str(pp.get("journal", "") or "")
+    volume = pp.get("volume", "")
+    issue = pp.get("issue", "")
+    pages = pp.get("pages", "")
+    arxiv_id = _extract_arxiv_id_from_url_or_doi(pp.get("url", ""), pp.get("doi", ""))
+
+    def _set_if_supported(field: str, value: object) -> None:
+        if not is_full_schema or field in template:
+            template[field] = value
+
+    if item_type == "preprint":
+        repo = "arXiv" if (arxiv_id or "arxiv" in journal.lower()) else journal
+        if repo:
+            _set_if_supported("repository", repo)
+        if arxiv_id:
+            _set_if_supported("archiveID", f"arXiv:{arxiv_id}")
+        if not is_full_schema:
+            template["publicationTitle"] = journal
+            template["volume"] = volume
+            template["issue"] = issue
+            template["pages"] = pages
+    elif item_type == "conferencePaper":
+        _set_if_supported("proceedingsTitle", journal)
+        _set_if_supported("volume", volume)
+        _set_if_supported("issue", issue)
+        _set_if_supported("pages", pages)
+    elif item_type == "bookSection":
+        _set_if_supported("bookTitle", journal)
+        _set_if_supported("volume", volume)
+        _set_if_supported("pages", pages)
+    elif item_type == "book":
+        _set_if_supported("publisher", journal)
+        _set_if_supported("volume", volume)
+    elif item_type == "thesis":
+        _set_if_supported("university", journal)
+    elif item_type == "report":
+        _set_if_supported("institution", journal)
+        _set_if_supported("pages", pages)
+    else:
+        _set_if_supported("publicationTitle", journal)
+        _set_if_supported("volume", volume)
+        _set_if_supported("issue", issue)
+        _set_if_supported("pages", pages)
+    return template
+
+
 def write_papers_to_zotero(
     zot,
     papers: list[dict],
@@ -561,27 +634,17 @@ def write_papers_to_zotero(
         apply_doi_prefix_overrides(pp)
         item_type = pp.get("item_type", "") or _zotero_item_type(pp)
         template = zot.item_template(item_type)
-        template["title"] = pp["title"]
-        template["creators"] = [
-            {"creatorType": "author", "name": author} if isinstance(author, str) else author
-            for author in pp["authors"]
-        ]
-        template["date"] = pp["year"]
-        template["DOI"] = pp["doi"]
-        template["url"] = pp.get("url", "")
-        template["publicationTitle"] = pp.get("journal", "")
-        template["volume"] = pp.get("volume", "")
-        template["issue"] = pp.get("issue", "")
-        template["pages"] = pp.get("pages", "")
-        template["abstractNote"] = pp["abstract"]
-        template["tags"] = [
-            {"tag": tag}
-            for tag in _compose_hub_tags(pp, cluster_slug, batch_label=batch_label)
-        ]
         collections = [target_collection] if target_collection else []
         if batch_coll and batch_coll not in collections:
             collections.append(batch_coll)
-        template["collections"] = collections
+        _populate_zotero_template(
+            template,
+            pp,
+            item_type,
+            cluster_slug=cluster_slug,
+            batch_label=batch_label,
+            collections=collections,
+        )
         if len(collections) == 1:
             log(f"  Routing to collection: {collections[0]} (cluster={cluster_slug or 'none'})")
         else:
@@ -1224,10 +1287,13 @@ def run_pipeline(
                         continue
                     if zotero_hit:
                         cluster = clusters.get(cluster_slug) if cluster_slug else None
-                        if cluster and cluster.zotero_collection_key:
-                            move = getattr(zot, "move_to_collection", None)
-                            if callable(move) and zotero_hit.zotero_key:
-                                move(zotero_hit.zotero_key, cluster.zotero_collection_key)
+                        desired_colls = list(dict.fromkeys(
+                            c for c in ((cluster.zotero_collection_key if cluster else ""), batch_coll) if c
+                        ))
+                        move = getattr(zot, "move_to_collection", None)
+                        if callable(move) and zotero_hit.zotero_key:
+                            for coll_key in desired_colls:
+                                move(zotero_hit.zotero_key, coll_key)
                         if zotero_hit.zotero_key:
                             try:
                                 existing_item = zot.item(zotero_hit.zotero_key)
@@ -1244,12 +1310,19 @@ def run_pipeline(
                                     )
                                 )
                                 new_tags = hub_tags - existing_tags
+                                existing_data = existing_item["data"]
+                                added_colls: list[str] = []
+                                if not callable(move) and desired_colls:
+                                    cur_colls = list(existing_data.get("collections") or [])
+                                    added_colls = [c for c in desired_colls if c not in cur_colls]
+                                    if added_colls:
+                                        existing_data["collections"] = [*cur_colls, *added_colls]
                                 if new_tags:
-                                    existing_data = existing_item["data"]
                                     existing_data["tags"] = [
                                         *existing_data.get("tags", []),
                                         *[{"tag": tag} for tag in sorted(new_tags)],
                                     ]
+                                if new_tags or added_colls:
                                     zot.update_item(existing_data)
                                 children = zot.children(zotero_hit.zotero_key)
                                 has_note = any(
@@ -1267,6 +1340,13 @@ def run_pipeline(
                         # into research-hub. Reuse the existing Zotero key and
                         # defer to Obsidian-note creation downstream.
                         pp["zotero_key"] = zotero_hit.zotero_key or ""
+                        zr.append(
+                            {
+                                "title": pp["title"],
+                                "status": "REUSED",
+                                "key": zotero_hit.zotero_key or "",
+                            }
+                        )
                         manifest.append(
                             new_entry(
                                 cluster=cluster_slug or "",
@@ -1317,7 +1397,7 @@ def run_pipeline(
             pending_zotero_papers.append(pp)
 
         if not no_zotero and pending_zotero_papers:
-            zr, papers_for_notes, zotero_errors = write_papers_to_zotero(
+            batch_zr, papers_for_notes, zotero_errors = write_papers_to_zotero(
                 zot,
                 pending_zotero_papers,
                 cluster_slug,
@@ -1327,6 +1407,7 @@ def run_pipeline(
                 zotero_batch_size=zotero_batch_size,
                 log=p,
             )
+            zr.extend(batch_zr)
             errors.extend(zotero_errors)
 
         # write_papers_to_zotero reassigns papers_for_notes, so add the
@@ -1565,9 +1646,11 @@ def run_pipeline(
                         title=pp["title"],
                         doi=pp.get("doi", ""),
                         authors=[
-                            f"{a.get('firstName', '')} {a.get('lastName', '')}".strip()
-                            or a.get("name", "")
-                            for a in pp.get("authors", [])
+                            a.strip() if isinstance(a, str) else (
+                                f"{a.get('firstName', '')} {a.get('lastName', '')}".strip()
+                                or a.get("name", "")
+                            )
+                            for a in (pp.get("authors") or [])
                         ],
                         year=pp.get("year"),
                         venue=pp.get("journal", ""),
