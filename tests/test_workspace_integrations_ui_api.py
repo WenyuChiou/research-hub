@@ -270,6 +270,22 @@ def test_zotero_and_notebooklm_probes_and_login_modes(tmp_path: Path, monkeypatc
     assert zot_res["probe"]["status"] == "connected_web"
     assert "zot-secret-test" not in json.dumps(zot_res)
 
+    # Saving Unpaywall / S2 keys with unchanged Zotero ID/type preserves cached Zotero probe
+    same_id_res = mgr.save_credentials({
+        "zotero_library_id": "12345",
+        "zotero_library_type": "user",
+        "unpaywall_email": "scholar@example.edu",
+        "s2_api_key": "s2-secret-value-123",
+    })
+    assert same_id_res["zotero_touched"] is False
+    assert mgr.status()["probes"]["zotero"]["status"] == "connected_web"
+
+    # Changing Zotero ID marks zotero_touched=True and invalidates cached Zotero probe
+    changed_id_res = mgr.save_credentials({"zotero_library_id": "54321", "zotero_library_type": "user"})
+    assert changed_id_res["zotero_touched"] is True
+    assert mgr.status()["probes"]["zotero"] is None
+    mgr.save_credentials({"zotero_library_id": "12345", "zotero_library_type": "user"})
+
     # Environment ZOTERO_* takes precedence over config.json (matches zotero.client._load_credentials)
     monkeypatch.setenv("ZOTERO_LIBRARY_ID", "99999")
     monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "group")

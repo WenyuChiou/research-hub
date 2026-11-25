@@ -355,17 +355,7 @@ export function ProjectPages({
                 : needSources
                   ? t("viewLiterature")
                   : t("prepareTask")}
-              <span aria-hidden="true">↗</span>
             </button>
-          </div>
-          <div className="folio" aria-hidden="true">
-            <span>RESEARCH / FIELDNOTES</span>
-            <i />
-            <i />
-            <i />
-            <strong>
-              {String(records("question").length + 1).padStart(2, "0")}
-            </strong>
           </div>
         </section>
         <div className="page-grid">
@@ -829,7 +819,12 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "manuscript"} className="page-content">
-        <ManuscriptTools detail={detail} t={t} onSaved={onSaved} />
+        <ManuscriptTools
+          detail={detail}
+          writingCapability={workspace.capabilities.writing}
+          t={t}
+          onSaved={onSaved}
+        />
         <div className="page-grid">
           <Panel title={t("argument")}>
             {recordList(records("outline"), "noOutline", (record) => (
@@ -874,7 +869,6 @@ export function ProjectPages({
                 }}
               >
                 {t("prepareTask")}
-                <span aria-hidden="true">↗</span>
               </button>
             </Panel>
             {detail.workflow && (

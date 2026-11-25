@@ -298,13 +298,20 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
                 return t(localCap?.zotero_configured ? "catalogZoteroConfigured" : "catalogZoteroUnavailable");
               })()}</dd>
-              <dt>Obsidian</dt><dd>{t(
-                note
-                  ? "catalogObsidianReadOnly"
-                  : workspace?.capabilities?.obsidian_validation?.status === "available"
+              <dt>Obsidian</dt><dd>{(() => {
+                if (note) return t("catalogObsidianReadOnly");
+                if (liveIntegrations?.obsidian?.status === "valid") {
+                  const count = liveIntegrations.obsidian.collection_count;
+                  return Number.isInteger(count)
+                    ? `${t("obsidianValid")} (${count} ${t("libraryCollections")})`
+                    : t("obsidianValid");
+                }
+                return t(
+                  workspace?.capabilities?.obsidian_validation?.status === "available"
                     ? "catalogObsidianConfigured"
                     : "catalogObsidianUnavailable",
-              )}</dd>
+                );
+              })()}</dd>
               <dt>NotebookLM</dt><dd>{(() => {
                 const probe = liveIntegrations?.notebooklm;
                 if (probe) {

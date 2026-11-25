@@ -5,7 +5,7 @@ export const en = {
   nativeTitle: "Source-bound structured summary",
   nativePending: "Human acceptance: pending. Scientific support: not assessed. Reading this summary does not accept or verify its claims.",
   nativeMissing: "No native summary is saved for this source.",
-  nativeStale: "Source identity or evidence has changed, or the summary binding is invalid. Summary prose is hidden. Refresh after checking the selected source.",
+  nativeStale: "Source metadata, working summary, or linked evidence changed since import, or the binding is invalid. Summary prose is hidden until re-imported for the current source.",
   nativeUnavailable: "The summary could not be verified or read. Its content remains unknown. Use Refresh to retry.",
   nativeLoading: "Reading the selected source’s native summary…",
   nativeScope: "Reading scope: only the selected text ranges below. This is not a declaration of full-paper coverage.",
@@ -499,6 +499,8 @@ export const en = {
   writingChecks: "Manuscript checks",
   writingAuthorityNote:
     "Use the current writing authority and its editable manuscript state. Research records do not automatically overwrite that state.",
+  writingAdapterUnavailable:
+    "Writing adapter is not configured in this workspace; binding and manuscript checks are disabled.",
   writingAuthorityUnbound:
     "Bind the public writing adapter to initialize manuscript authority; no manuscript checks have passed yet.",
   bindManuscript: "Bind manuscript state",
@@ -587,7 +589,7 @@ export const en = {
   recoveryInspected: "Recovery inspected. Review the updated task state.",
   app: "Research Hub",
   workspace: "Researcher workspace",
-  local: "LOCAL WORKSPACE",
+  local: "Local workspace",
   overview: "Overview",
   literature: "Literature",
   evidence: "Evidence",
@@ -616,7 +618,7 @@ export const en = {
   startTitle: "Give your research a home.",
   startBody:
     "Create a project to bring your question, literature, evidence, and manuscript into one connected workspace.",
-  startEyebrow: "FROM QUESTION TO CONTRIBUTION",
+  startEyebrow: "From question to manuscript",
   chooseProject: "Choose a project",
   noProject: "No project selected",
   skip: "Skip to main content",
@@ -635,7 +637,7 @@ export const en = {
   saved: "Saved to this project.",
   saving: "Saving…",
   dismiss: "Dismiss message",
-  nextStep: "YOUR NEXT STEP",
+  nextStep: "Next step",
   researchQuestion: "Research question",
   noQuestion: "Start with the question your work should answer.",
   addQuestion: "Record question",
@@ -901,6 +903,12 @@ export const en = {
   nativeDownloadMarkdown: "Download .md",
   nativeExportCopied: "Copied portable Markdown.",
   nativeExportFailed: "Could not export verified Markdown.",
+  integrationSummaryZoteroOk: "Zotero ready",
+  integrationSummaryZoteroIssue: "Zotero needs attention",
+  integrationSummaryObsidianOk: "Obsidian valid",
+  integrationSummaryObsidianIssue: "Obsidian needs check",
+  integrationSummaryNlmOk: "NotebookLM ready",
+  integrationSummaryNlmIssue: "NotebookLM login needed",
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
@@ -908,7 +916,7 @@ export const zhTW: Record<MessageKey, string> = {
   nativeTitle: "綁定來源的結構化摘要",
   nativePending: "人工接受狀態：待審。科學支持程度：尚未評估。閱讀此摘要不代表接受或驗證其中主張。",
   nativeMissing: "此來源尚未儲存原生摘要。",
-  nativeStale: "來源身分或證據已變更，或摘要綁定無效。已隱藏摘要文字。請確認所選來源後重新整理。",
+  nativeStale: "來源中繼資料、工作摘要或關聯證據在匯入後已有更動，或摘要綁定無效。為避免誤讀，已隱藏摘要內容；請重新確認並匯入目前來源的摘要。",
   nativeUnavailable: "無法驗證或讀取摘要，內容仍屬未知。請使用重新整理重試。",
   nativeLoading: "正在讀取所選來源的原生摘要…",
   nativeScope: "閱讀範圍：僅限下列選定文字區間，不代表已涵蓋全文。",
@@ -1390,6 +1398,8 @@ export const zhTW: Record<MessageKey, string> = {
   writingChecks: "論文檢查",
   writingAuthorityNote:
     "使用目前的寫作規範來源與可編輯的論文狀態。研究紀錄不會自動覆寫該狀態。",
+  writingAdapterUnavailable:
+    "此工作空間尚未設定寫作介接器；目前停用論文狀態連結與檢查。",
   writingAuthorityUnbound:
     "請連結公開寫作介接器，建立稿件的正式狀態來源；目前尚無任何稿件檢查通過。",
   bindManuscript: "連結論文狀態",
@@ -1498,7 +1508,7 @@ export const zhTW: Record<MessageKey, string> = {
   goal: "研究目標",
   startTitle: "讓研究有個歸屬。",
   startBody: "建立專案，將研究問題、文獻、證據與論文集中在同一個工作空間。",
-  startEyebrow: "從研究問題到學術貢獻",
+  startEyebrow: "從研究問題到文稿整理",
   chooseProject: "選擇專案",
   noProject: "尚未選擇專案",
   skip: "跳至主要內容",
@@ -1762,6 +1772,12 @@ export const zhTW: Record<MessageKey, string> = {
   nativeDownloadMarkdown: "下載 .md",
   nativeExportCopied: "已複製可攜式 Markdown。",
   nativeExportFailed: "無法匯出已驗證的 Markdown。",
+  integrationSummaryZoteroOk: "Zotero 已連線",
+  integrationSummaryZoteroIssue: "Zotero 連線異常",
+  integrationSummaryObsidianOk: "Obsidian 已驗證",
+  integrationSummaryObsidianIssue: "Obsidian 待確認",
+  integrationSummaryNlmOk: "NotebookLM 已登入",
+  integrationSummaryNlmIssue: "NotebookLM 需登入",
 };
 export const dictionaries = { en, "zh-TW": zhTW };
 export type Translate = (key: MessageKey) => string;

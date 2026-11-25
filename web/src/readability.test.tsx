@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { Field } from "./components";
 import tokens from "./tokens.css?raw";
 import styles from "./styles.css?raw";
+import libraryCss from "./library.css?raw";
 
 // Source/cascade guardrails, NOT measured layout or actual browser zoom.
 // jsdom cannot measure glyphs, rendered overflow, or browser zoom.
@@ -290,4 +291,10 @@ it("keeps the setup trigger secondary theme above normal-text contrast", () => {
     return "#" + channels!.slice(1).map(channel => Number(channel).toString(16).padStart(2, "0")).join("");
   };
   expect(contrast(hex(foreground), hex(background))).toBeGreaterThanOrEqual(4.5);
+});
+
+it("avoids thick side-stripe callouts and generic theme overrides in library styling", () => {
+  expect(libraryCss).not.toMatch(/:root\s*\{/);
+  expect(libraryCss).not.toMatch(/--display-font\s*:/);
+  expect(styles + "\n" + libraryCss).not.toMatch(/border-(?:left|right)\s*:\s*[2-9]px\s+solid/);
 });

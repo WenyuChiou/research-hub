@@ -198,6 +198,43 @@ describe("manuscript authority integration", () => {
     expect(screen.getByText("Accepted input changed")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+  it("disables binding and manuscript checks when writing adapter is unavailable while keeping impact inspectable", async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn().mockResolvedValue(
+      response({
+        ok: true,
+        impacts: [],
+        stale_tasks: [],
+        automatic_semantic_sync: false,
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    render(
+      <ManuscriptTools
+        detail={detail}
+        writingCapability={{
+          status: "unavailable",
+          message: "Configure RESEARCH_HUB_WRITING_ADAPTER",
+        }}
+        t={t}
+        onSaved={async () => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Bind manuscript state" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Run manuscript check/ }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/Configure RESEARCH_HUB_WRITING_ADAPTER/),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Inspect change impact" }),
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toContain("/impact");
+  });
 });
 
 describe("local proposal delivery", () => {
