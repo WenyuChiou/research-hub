@@ -1,48 +1,25 @@
 ---
 name: paper-summarize
-description: "Summarize individual cited papers at their actual reading depth: why the work was done, its objective, methods, results, conclusions, key points and limitations, with located source evidence. For full-text requests use the native-host reading route without requiring Hub or a vault. The existing research-hub summarize CLI remains abstract-only and fills Key Findings/Methodology/Relevance in authorized Obsidian and Zotero notes. Use for per-paper summaries or TODO Findings; use paper-memory-builder for the user's manuscript and literature-triage-matrix for cross-paper comparison."
+description: "Have your active AI host (Claude Code, Codex, etc.) natively read cited papers and produce seven-section source-bound summaries (why, objective, methods, results, conclusions, key points, limitations) without requiring Hub or a separate LLM CLI. Also covers the existing abstract-only research-hub summarize CLI to fill Key Findings/Methodology/Relevance in authorized Obsidian and Zotero notes. Use for per-paper summaries or TODO Findings; use paper-memory-builder for the user's manuscript and literature-triage-matrix for cross-paper comparison."
 ---
 
 # paper-summarize
 
 ## Choose the source scope first
 
-- **Per-paper body/full-text summary:** use the native route below when the
-  user asks why/what/how/results/conclusions, supplies a paper, or requests
-  full-text reading. Hub, Zotero, Obsidian and a separate LLM CLI are optional.
-- **Existing abstract-note update:** use the unchanged abstract-note mode
-  below for a requested cluster/TODO update based on its stored abstracts.
-  `research-hub summarize` and `paper-abstract-draft` remain abstract-only;
-  neither command becomes a full-text reader because this skill has two routes.
-- Do not silently downgrade a full-text request to abstract-only. If body
-  access is unavailable, preserve useful narrower claims, label the result
-  partial and explain the missing source; do not ask the researcher to fill JSON.
+- **Per-paper body/full-text summary (Default — Host-Native):** use the native route below when the user asks why/what/how/results/conclusions, supplies a paper, or requests full-text reading. Your active AI host reads and summarizes directly; Hub, Zotero, Obsidian and a separate LLM CLI are optional.
+- **Existing abstract-note update (CLI batch helper):** use the unchanged abstract-note mode below for a requested cluster/TODO update based on its stored abstracts. `research-hub summarize` and `paper-abstract-draft` remain abstract-only; neither command becomes a full-text reader because this skill has two routes.
+- Do not silently downgrade a full-text request to abstract-only. If body access is unavailable, preserve useful narrower claims, label the result partial and explain the missing source; do not ask the researcher to fill JSON.
 
 ## Native per-paper body summary
 
-Read [the per-paper contract](references/fulltext-summary.md), then the
-available authorized source with the host's native reading tools. Produce the
-seven-section readable summary plus source/version and actual reading scope.
-Keep `supported`, `analyst_inference` and `unknown` distinct. The contract is
-domain-neutral: methods and evidence follow the study design, not a fixed
-LLM, statistical or experimental template.
+Read [the per-paper contract](references/fulltext-summary.md), then inspect the available authorized source with your host's native reading tools (do not shell out to `--llm-cli` for single-paper body reading). Produce the seven-section readable summary plus source/version and actual reading scope. Keep `supported`, `analyst_inference` and `unknown` distinct. The contract is domain-neutral: methods and evidence follow the study design, not a fixed LLM, statistical or experimental template.
 
-Use the shared [research protocol](../research-hub/references/research-protocol.md)
-when source discovery is needed and for observed stage timing. Compare cited
-passages semantically; byte/quote checks alone are not scientific acceptance.
-Return useful prose without requiring Hub ingestion. Persist only through an
-available, selected and authorized destination; a readable result or local file
-does not establish an Obsidian/Roam import. Preserve human-authored content and
-report saving as pending if the destination cannot retain the evidence/statuses.
-For an already selected Hub workspace, follow the optional
-[native-summary handoff](references/fulltext-summary.md#optional-selected-hub-handoff);
-otherwise keep the native readable result without adding Hub setup.
+Use the shared [research protocol](../research-hub/references/research-protocol.md) when source discovery is needed and for observed stage timing. Compare cited passages semantically; byte/quote checks alone are not scientific acceptance. Return useful prose without requiring Hub ingestion. Persist only through an available, selected and authorized destination; a readable result or local file does not establish an Obsidian/Roam import. Preserve human-authored content and report saving as pending if the destination cannot retain the evidence/statuses (`human_acceptance: pending`, `semantic_support: not_assessed`). For an already selected Hub workspace, follow the optional [native-summary handoff](references/fulltext-summary.md#optional-selected-hub-handoff) (including deterministic `project native-summary-import` / `native-summary-export` generic Markdown stdout export); otherwise keep the native readable result without adding Hub setup.
 
 ## Abstract-note mode (existing CLI)
 
-The `auto` pipeline ingests metadata + abstract only — Summary / Key Findings / Methodology / Relevance stay as `[TODO]` skeletons in both Obsidian and Zotero. Cluster-level summarization (NotebookLM brief, crystals) does NOT fill per-paper notes. So after `auto`, the user has nothing scannable per paper without opening the PDF.
-
-This skill fills that gap. One LLM call per paper produces JSON-validated content for both destinations. These writes are not a distributed transaction: unconfirmed remote writes remain unknown, and local compensation is best-effort, never proof that the destinations are synchronized.
+The `auto` or abstract-only `ingest` pipeline writes metadata + abstract only — Summary / Key Findings / Methodology / Relevance stay as `[TODO]` skeletons in Obsidian and Zotero. Cluster-level synthesis (NotebookLM brief, crystals) does NOT fill per-paper notes. When an existing cluster has thin TODO notes, prefer host-native reading above, or use this CLI fallback to populate abstract-only notes in Obsidian and Zotero. These writes are not a distributed transaction: unconfirmed remote writes remain unknown, and local compensation is best-effort, never proof that the destinations are synchronized.
 
 ### When to use abstract-note mode
 
@@ -50,22 +27,19 @@ Trigger phrases:
 
 - "Summarize the papers in cluster X."
 - "Fill the TODO Key Findings for X."
-- "I just ran `auto X` and the notes are empty — give me real summaries."
-- "Update Zotero notes for cluster X with what each paper actually says."
+- "Update Zotero notes for cluster X from their stored abstracts."
 
 Not for:
 
 - Generating a single CLUSTER-LEVEL summary — that's `research-hub notebooklm generate` (NotebookLM brief).
 - Filling Q&A on the cluster — that's `research-hub crystal emit/apply`.
-- Reading PDFs through the CLI — it is abstract-only by design; use the native
-  per-paper body route above instead. The abstract prompt marks "[PDF needed]"
-  when its input is too thin; that marker is not full-text reading.
+- Reading PDFs through the CLI — it is abstract-only by design; use the native per-paper body route above instead. The abstract prompt marks "[PDF needed]" when its input is too thin; that marker is not full-text reading.
 - Verifying brief vs source — that's `notebooklm-brief-verifier`.
 
 ### Abstract-note inputs
 
 - Cluster slug (must already exist in the vault under `raw/<slug>/`)
-- Optional LLM CLI override (`claude`, `codex`, `gemini`, `opencode`, `aichat`, `cursor`, or configured custom adapter)
+- Optional LLM CLI override (`claude`, `codex`, `gemini`, `opencode`, `aichat`, `cursor`, or configured custom adapter) — CLI batch fallback only; omit when your active AI host is generating summaries directly
 - Optional `--apply` flag (default off, dry-run)
 
 The skill reads each paper's frontmatter (DOI, year, zotero-key) + the `## Abstract` body block. Papers with empty abstract get a "PDF needed" marker rather than hallucinated findings.
@@ -94,52 +68,18 @@ Both writes must be confirmed for a paper to count as "applied". If the remote o
 - **Empty key_findings / methodology / relevance**: entry skipped.
 - **Zotero write is unconfirmed for one paper**: report unknown, do not retry automatically, and attempt guarded local compensation. A newer observed edit or compensation failure is preserved/reported; other papers retain their own outcomes.
 
-### Abstract-note verification
-
-The abstract-note integration is exercised with fixtures by the test suite. The
-suites stub the LLM CLI but execute real Obsidian markdown writes against
-a fixture vault and real Zotero child-note writes against a mocked Zotero
-adapter. Successful rollback, unavailable compensation, newer observed edits,
-and unknown remote acknowledgement are distinct contracts; the bounded direct
-fault script adds coverage without claiming live-provider acceptance.
+### Abstract-note verification & operating notes
 
 ```bash
 # Run the full paper-summarize suite (23 tests)
-python -m pytest -q \
-  tests/test_v069_summarize.py \
-  tests/test_v073_parallel_summarize.py \
-  tests/test_v080_resummarize.py
-```
+python -m pytest -q tests/test_v069_summarize.py tests/test_v073_parallel_summarize.py tests/test_v080_resummarize.py
 
-Coverage breakdown:
-
-| Test file | Count | What it covers |
-|---|---|---|
-| `tests/test_v069_summarize.py` | 17 | Prompt builder shape, validator (rejects unknown slugs / empty fields / wrong types), Obsidian + Zotero apply path, rollback when Zotero fails, no-LLM-on-PATH fallback |
-| `tests/test_v073_parallel_summarize.py` | 3 | Parallel summarize across multiple clusters, ordering, error isolation |
-| `tests/test_v080_resummarize.py` | 3 | Re-summarize behaviour: idempotent on same input, overwrite on different LLM output, --no-zotero path |
-
-For a manual smoke check against a live vault:
-
-```bash
-# Dry-run (emit prompt + show LLM output, no writes)
+# Dry-run / apply against a live vault
 research-hub summarize --cluster <slug>
-
-# Live run (writes to Obsidian + Zotero)
 research-hub summarize --cluster <slug> --apply
-
-# Override LLM
-research-hub summarize --cluster <slug> --llm-cli codex --apply
-
-# Obsidian-only (skip Zotero — useful when Zotero is offline)
 research-hub summarize --cluster <slug> --apply --no-zotero
 ```
 
-After applying, scan `raw/<cluster>/*.md` — every paper's `## Key Findings` callout should have real bullets instead of `[TODO]`.
-
-### Abstract-note operating notes
-
-- Findings-first: the prompt instructs the LLM to state the result, not "The paper shows that…".
-- Anchored to the abstract: every Key Finding must trace to something the abstract claims. The LLM is told to mark uncertain claims with `[likely]`.
+- Findings-first & anchored to the abstract: state findings directly, mark uncertain claims `[likely]`.
 - Re-running may regenerate different content and overwrite the selected summary sections; this is not an idempotency or duplicate-prevention guarantee. `--no-zotero` and `--no-obsidian` disable only their named destination: they are not preview flags, and `--apply` still writes to the other enabled destination. Omit `--apply` to avoid summary destination writes; model invocation and local prompt artifacts may still occur.
 - Each paper has separate destination outcomes with best-effort local compensation, not an atomic cross-system transaction. Preserve unknown outcomes and reconcile the exact intended write before any explicit retry.

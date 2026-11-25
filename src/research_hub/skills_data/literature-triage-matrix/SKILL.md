@@ -149,8 +149,9 @@ After writing the matrix, print:
 
 - Don't write to `.paper/` — that's `paper-memory-builder`'s territory.
 - Don't fabricate findings if a paper's note is sparse. Emit the row with
-  `?` in unknown columns and a note: `(Obsidian note incomplete — run
-  research-hub auto with --max-papers 1 to enrich, or fill manually)`.
+  `?` in unknown columns and a note: `(Obsidian note incomplete — read
+  the accessible source natively via paper-summarize, use research-hub
+  summarize for abstract-only CLI backfill, or fill manually)`.
 - Don't re-summarize unchanged verified evidence unnecessarily. Re-check
   claims when a publication version, correction or dependent decision changes.
 - Don't include columns the user didn't ask for. The default 9 columns
