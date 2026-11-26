@@ -271,6 +271,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
     .map((id) => sources.find((record) => record.id === id))
     .filter((record): record is ResearchRecord => Boolean(record && record.kind !== "library-note"));
   const hiddenDraftRecords = openSummaryRecords.filter((record) => record.id !== selected?.id);
+  const bannerDraftRecords = viewMode === "table" || (compact && !readerOpen) ? openSummaryRecords : hiddenDraftRecords;
   const editorRecords: ResearchRecord[] = [];
   if (selected && selected.kind !== "library-note") editorRecords.push(selected);
   for (const draftRecord of hiddenDraftRecords) editorRecords.push(draftRecord);
@@ -531,6 +532,32 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       </div>
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
       </div>
+      {bannerDraftRecords.length > 0 && (
+        <div className="catalog-unsaved-drafts" role="status">
+          <span>{t("catalogUnsavedDrafts")}</span>
+          {bannerDraftRecords.map((draftRecord) => (
+            <button
+              key={draftRecord.id}
+              type="button"
+              className="button secondary small"
+              onClick={() => {
+                if (!visible.some((item) => item.id === draftRecord.id)) {
+                  setQuery("");
+                  setSelectedCategory("");
+                  setOrganization("all");
+                }
+                setSelectionMissing(false);
+                setSelectedId(draftRecord.id);
+                setReaderOpen(true);
+                focusRequested.current = true;
+                setViewMode("split");
+              }}
+            >
+              {t("catalogReturnDraft")}: {text(draftRecord.data.title)}
+            </button>
+          ))}
+        </div>
+      )}
       {viewMode === "table" && (
         <div className="catalog-master-view">
           {summaryStats.groups.length > 0 && (
@@ -802,32 +829,6 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               event.stopPropagation(); returnRequested.current = true; setReaderOpen(false);
             }
           }}>
-          {hiddenDraftRecords.length > 0 && (
-            <div className="catalog-unsaved-drafts" role="status">
-              <span>{t("catalogUnsavedDrafts")}</span>
-              {hiddenDraftRecords.map((draftRecord) => (
-                <button
-                  key={draftRecord.id}
-                  type="button"
-                  className="button secondary small"
-                  onClick={() => {
-                    if (!visible.some((item) => item.id === draftRecord.id)) {
-                      setQuery("");
-                      setSelectedCategory("");
-                      setOrganization("all");
-                    }
-                    setSelectionMissing(false);
-                    setSelectedId(draftRecord.id);
-                    setReaderOpen(true);
-                    focusRequested.current = true;
-                    setViewMode("split");
-                  }}
-                >
-                  {t("catalogReturnDraft")}: {text(draftRecord.data.title)}
-                </button>
-              ))}
-            </div>
-          )}
           {selected ? <div key={selected.id} className="catalog-detail-body">
             <div className="catalog-detail-top">
               <div className="catalog-meta">
@@ -971,7 +972,11 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               {editorRecords.map((rec) => {
                 const isCurrent = rec.id === selected?.id;
                 const editorActive = Boolean(draftScope?.active && viewMode === "split" && (!compact || readerOpen) && isCurrent);
-                const editorSuspended = Boolean((!compact || readerOpen) && (!isCurrent || viewMode === "table" || (pageSuspended && draftScope?.active === false)));
+                const editorSuspended = Boolean(
+                  !isCurrent ||
+                    ((!compact || readerOpen) &&
+                      (viewMode === "table" || (pageSuspended && draftScope?.active === false))),
+                );
                 return (
                   <div key={rec.id} hidden={!isCurrent}>
                     <WorkingSummaryEditor

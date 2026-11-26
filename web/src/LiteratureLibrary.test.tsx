@@ -605,4 +605,104 @@ describe("master literature table, category summary, and clean status tooltips",
     await user.click(screen.getByRole("button", { name: "Human Study In Other Category" }));
     expect(screen.queryByRole("button", { name: new RegExp(t("catalogReturnDraft")) })).not.toBeInTheDocument();
   });
+
+  it("retains unsaved working-summary edits on compact viewports when overview opens another category and user returns to Reader", async () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      media: "(max-width: 1080px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    vi.stubGlobal("scrollTo", vi.fn());
+    const user = userEvent.setup();
+    const sha = "e".repeat(64);
+    const artifact = {
+      id: "art-compact",
+      project_id: "proj-compact",
+      source_record_id: "src-llm-c",
+      role: "evidence",
+      path: "reports/compact.md",
+      sha256: sha,
+      current: true,
+    };
+    const llmRecord: ResearchRecord = {
+      id: "src-llm-c",
+      kind: "source",
+      data: {
+        id: "src-llm-c",
+        title: "Compact LLM Draft",
+        category: "llm",
+        identity_status: "unverified",
+        source_records: [
+          {
+            observation_id: "obs-c",
+            work_id: "work-c",
+            source_id: "src-llm-c",
+            evidence_level: "generated-summary",
+            status: "available",
+            text_path: "reports/compact.md",
+            text_sha256: sha,
+          },
+        ],
+      },
+    };
+    const humanRecord: ResearchRecord = {
+      id: "src-human-c",
+      kind: "source",
+      data: { id: "src-human-c", title: "Compact Human Paper", category: "human", identity_status: "unverified" },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (inputUrl) => {
+      const url = String(inputUrl);
+      if (url.includes("/working-summary")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            context: {
+              source_record_id: "src-llm-c",
+              artifact_id: "art-compact",
+              artifact_sha256: sha,
+              revision: "f".repeat(64),
+              draft_text: "Compact base.",
+              working_summary: null,
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          preview: { artifact_id: "art-compact", sha256: sha, path: "reports/compact.md", text: "Compact base." },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    });
+    try {
+      const base = {
+        sources: [llmRecord, humanRecord],
+        screenings: [],
+        t,
+        onScreen: vi.fn(),
+        onPrepare: vi.fn(),
+        observationRead: { projectId: "proj-compact", artifacts: [artifact], active: true, revision: 0 },
+      };
+      const { rerender } = render(<LiteratureLibrary {...base} requestedView={{ mode: "split", nonce: 0 }} />);
+      await user.click(screen.getByRole("button", { name: "Compact LLM Draft" }));
+      await user.click(screen.getByRole("button", { name: `${t("workingSummaryReview")} art-compact` }));
+      const editor = await screen.findByRole("textbox", { name: t("workingSummaryText") });
+      await user.type(editor, " Unsaved compact text.");
+
+      // Overview jumps to a different category ("human"), then user clicks Reader (not a paper row)
+      rerender(<LiteratureLibrary {...base} requestedView={{ mode: "table", category: "human", nonce: 1 }} />);
+      await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
+
+      // Return-to-draft banner is accessible right from compact list and restores exact unsaved text
+      await user.click(screen.getByRole("button", { name: `${t("catalogReturnDraft")}: Compact LLM Draft` }));
+      expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+        "Compact base. Unsaved compact text.",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
