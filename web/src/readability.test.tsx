@@ -353,4 +353,14 @@ it("enforces design-engineering micro-interaction and scroll containment craft r
       .map((rule) => rule.style.getPropertyValue("overscroll-behavior").trim()),
   ).toContain("contain");
   expect(values("button", "touch-action")).toContain("manipulation");
+  expect(values("[data-tooltip]::after", "pointer-events")).toContain("none");
+  expect(
+    combinedRules
+      .filter(
+        (rule) =>
+          rule.selectors.includes(".icon-btn") &&
+          rule.media === "(max-width: 760px)",
+      )
+      .map((rule) => Number.parseFloat(rule.style.getPropertyValue("min-height"))),
+  ).toContain(44);
 });

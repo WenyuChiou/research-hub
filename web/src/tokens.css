@@ -1,19 +1,23 @@
 :root {
-  /* Cool-neutral Linear x Notion surface ladder (subtle slate tint, no pure black/white). */
-  --navy: #131720;
-  --paper: #f6f7f9;
-  --white: #fcfcfd;
-  --sidebar-bg: #f1f3f6;
-  --ink: #171c26;
-  --muted: #4e5868;
-  --line: #e2e5ec;
-  --line-strong: #cbd1dc;
-  --teal: #1d4e5f;
-  --teal-hover: #163d4b;
+  /* Calibrated Nordic cool-slate & deep ocean-sapphire palette (60-30-10 tonal depth). */
+  --navy: #121826;
+  --paper: #f4f6fa;
+  --white: #fdfeff;
+  --sidebar-bg: #ebeff5;
+  --ink: #131a26;
+  --muted: #4b576b;
+  --line: #dde3ee;
+  --line-strong: #c5cedd;
+  --teal: #0e5a72;
+  --teal-hover: #0a4457;
+  --accent-soft: #e6f3f7;
+  --accent-border: #b4d8e4;
   --focus: #2563eb;
-  --wash: #eef0f5;
-  --selection-bg: #e9f1f4;
-  --selection-border: #bfd4dc;
+  --wash: #e8edf5;
+  --selection-bg: #e8f3f7;
+  --selection-border: #b8d8e4;
+  --tooltip-bg: #141b26;
+  --tooltip-fg: #f8fafc;
   /* Modular desktop reference-manager scale in rem (respects browser root zoom). */
   --text-2xs: 0.6875rem;
   --text-meta: 0.75rem;
@@ -32,9 +36,12 @@
   --display-font:
     "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang TC", "Microsoft JhengHei", sans-serif;
-  /* Motion tokens (emil-design-eng & impeccable motion craft). */
+  /* Motion tokens (emil-design-eng & impeccable smooth physics). */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration-fast: 120ms;
-  --duration-ui: 170ms;
+  --duration-fast: 130ms;
+  --duration-ui: 190ms;
+  --duration-panel: 220ms;
+  --tooltip-delay: 180ms;
 }
