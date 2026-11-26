@@ -137,6 +137,28 @@ def _clean_list_field(value: object, *, name: str, max_items: int, item_limit: i
     return items
 
 
+def _clean_tags_field(value: object, *, max_items: int = 30, item_limit: int = 80) -> list[str]:
+    if isinstance(value, str):
+        raw_items = [part for part in re.split(r"[;；,，\n]+", value)]
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raise WorkspaceError("tags must be a list of strings")
+    seen: set[str] = set()
+    items: list[str] = []
+    for entry in raw_items:
+        cleaned = _clean_text_field(entry, name="tags", limit=item_limit).lstrip("#").strip()
+        if not cleaned:
+            continue
+        key = cleaned.casefold()
+        if key not in seen:
+            seen.add(key)
+            items.append(cleaned)
+    if len(items) > max_items:
+        raise WorkspaceError(f"tags supports at most {max_items} entries")
+    return items
+
+
 def _clean_year_field(value: object) -> str:
     if isinstance(value, bool):
         raise WorkspaceError("year must be a 4-digit year or empty")
@@ -170,7 +192,7 @@ def _validate_source_curation(data: dict) -> dict:
     if "summary" in data:
         normalized["summary"] = _clean_text_field(data["summary"], name="summary", limit=20000)
     if "tags" in data:
-        normalized["tags"] = _clean_list_field(data["tags"], name="tags", max_items=30, item_limit=80)
+        normalized["tags"] = _clean_tags_field(data["tags"], max_items=30, item_limit=80)
     return normalized
 
 
@@ -269,12 +291,14 @@ class Workspace:
         self.project(project_id)
         return safe_path(self.root, f".research/projects/{project_id}")
 
-    def artifacts(self, project_id: str, *, history: bool = False) -> list[dict]:
+    def artifacts(self, project_id: str, *, history: bool = False, source_record_ids: set[str] | frozenset[str] | None = None) -> list[dict]:
         self.project(project_id)
         with self.db() as db:
             items = [json.loads(r[0]) for r in db.execute("SELECT body FROM artifacts WHERE project=? ORDER BY rowid", (project_id,))]
         if not history:
             items = [item for item in items if not item.get("superseded_by")]
+        if source_record_ids is not None:
+            items = [item for item in items if item.get("source_record_id") in source_record_ids]
         for item in items:
             try:
                 from ._source_storage import current_hash
@@ -412,6 +436,12 @@ class Workspace:
                     data["year"] = cleaned_year
                 else:
                     data.pop("year", None)
+            if "tags" in data and data["tags"] is not None:
+                cleaned_tags = _clean_tags_field(data["tags"], max_items=30, item_limit=80)
+                if cleaned_tags:
+                    data["tags"] = cleaned_tags
+                else:
+                    data.pop("tags", None)
         if kind == "source_curation":
             data = _validate_source_curation(data)
             if not any(r["id"] == data["source_id"] and r["kind"] == "source" for r in self.records(project_id)):

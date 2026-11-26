@@ -800,3 +800,651 @@
     min-width: 44px;
   }
 }
+
+/* ==========================================================================
+   Unslop Archival Panels: Health & Pipeline Strip, Semantic Labels, AI Handoff
+   ========================================================================== */
+
+.catalog-health-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) auto;
+  gap: 12px 16px;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.catalog-health-coverage {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.catalog-health-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.catalog-health-label {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.catalog-health-kpis {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-2xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.catalog-health-kpis strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.catalog-coverage-meter {
+  display: flex;
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--wash);
+  gap: 1px;
+}
+.meter-seg {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  transition: width var(--duration-ui) var(--ease-out-quart);
+}
+.meter-seg.scope-full { background: var(--scope-full-dot); }
+.meter-seg.scope-abstract { background: var(--scope-abstract-dot); }
+.meter-seg.scope-metadata { background: var(--scope-meta-dot); }
+.meter-seg.scope-unknown { background: var(--scope-unknown-dot); }
+.catalog-scope-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.catalog-health-pipeline {
+  display: grid;
+  gap: 6px;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+  align-content: center;
+}
+.catalog-pipeline-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pipeline-dot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  min-height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-tint);
+  color: var(--ink);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1.2;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+button.pipeline-dot-chip {
+  cursor: pointer;
+}
+button.pipeline-dot-chip:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  button.pipeline-dot-chip:hover {
+    border-color: var(--teal);
+    background: var(--accent-soft);
+    color: var(--teal-hover);
+  }
+}
+.pipeline-dot-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pipeline-dot-chip.is-ok::before { background: #10925e; }
+.pipeline-dot-chip.is-ok {
+  border-color: #b7e4cc;
+  background: #edf9f2;
+  color: #0d5c3d;
+}
+.pipeline-dot-chip.is-configured::before { background: var(--teal); }
+.pipeline-dot-chip.is-configured {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--teal-hover);
+}
+.pipeline-dot-chip.is-error::before { background: #b42318; }
+.pipeline-dot-chip.is-error {
+  border-color: #f3c1bc;
+  background: #fef1f0;
+  color: #991b1b;
+}
+.pipeline-dot-chip.is-idle::before { background: #94a3b8; }
+
+/* Semantic reading-scope label pills */
+.scope-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  min-height: 22px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+.scope-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+button.scope-pill {
+  cursor: pointer;
+}
+button.scope-pill:active {
+  transform: scale(0.97);
+}
+.scope-pill.scope-full {
+  background: var(--scope-full-bg);
+  color: var(--scope-full-fg);
+  border-color: var(--scope-full-border);
+}
+.scope-pill.scope-full::before { background: var(--scope-full-dot); }
+.scope-pill.scope-abstract {
+  background: var(--scope-abstract-bg);
+  color: var(--scope-abstract-fg);
+  border-color: var(--scope-abstract-border);
+}
+.scope-pill.scope-abstract::before { background: var(--scope-abstract-dot); }
+.scope-pill.scope-metadata {
+  background: var(--scope-meta-bg);
+  color: var(--scope-meta-fg);
+  border-color: var(--scope-meta-border);
+}
+.scope-pill.scope-metadata::before { background: var(--scope-meta-dot); }
+.scope-pill.scope-unknown {
+  background: var(--scope-unknown-bg);
+  color: var(--scope-unknown-fg);
+  border-color: var(--scope-unknown-border);
+}
+.scope-pill.scope-unknown::before { background: var(--scope-unknown-dot); }
+button.scope-pill[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--white), 0 0 0 3.5px var(--teal);
+}
+.pill-count {
+  opacity: 0.92;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Keyword / tag chips & filter strip */
+.catalog-label-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 12px;
+  padding: 8px 12px;
+  background: var(--surface-tint);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.catalog-label-heading {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  min-height: 20px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 5px;
+  background: var(--tag-bg);
+  border: 1px solid var(--tag-border);
+  color: var(--tag-fg);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.tag-chip-more {
+  background: var(--wash);
+  border-color: var(--line);
+  color: var(--muted);
+}
+.tag-chip-btn {
+  cursor: pointer;
+  min-height: 22px;
+  padding: 2px 8px;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+.tag-chip-btn:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tag-chip-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-border);
+    color: var(--teal-hover);
+  }
+}
+.tag-chip-btn[aria-pressed="true"] {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #ffffff;
+}
+.tag-chip-btn[aria-pressed="true"] .pill-count {
+  opacity: 0.9;
+}
+.catalog-row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.catalog-detail-header {
+  padding: 12px 16px 14px;
+  margin: -6px -6px 12px;
+  background: var(--surface-tint);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.catalog-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.catalog-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.tag-edit-link {
+  background: none;
+  border: 1px dashed var(--line-strong);
+  border-radius: 5px;
+  padding: 2px 8px;
+  min-height: 22px;
+  font-size: var(--text-2xs);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tag-edit-link:hover {
+    border-color: var(--teal);
+    color: var(--teal);
+    background: var(--accent-soft);
+  }
+}
+
+/* AI Agent Handoff & Destination Export Modal */
+@keyframes handoff-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.handoff-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(15, 23, 42, 0.36);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.handoff-modal {
+  width: min(740px, 100%);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow:
+    0 24px 48px -12px rgba(15, 23, 42, 0.22),
+    0 8px 18px -6px rgba(15, 23, 42, 0.1);
+  overflow: hidden;
+  animation: handoff-modal-in var(--duration-panel) var(--ease-out-expo);
+}
+.handoff-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-tint);
+}
+.handoff-modal-header h2 {
+  font-family: var(--display-font);
+  font-size: var(--text-section);
+  font-weight: 600;
+  margin: 0 0 2px;
+  letter-spacing: -0.02em;
+}
+.handoff-modal-header p {
+  margin: 0;
+}
+.handoff-context-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+}
+.handoff-scope-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--wash);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+}
+.handoff-scope-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  padding: 3px 10px;
+  min-height: 26px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart);
+}
+.handoff-scope-switch button[aria-pressed="true"] {
+  background: var(--white);
+  color: var(--teal);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.handoff-boundary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.handoff-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 20px;
+  background: var(--surface-tint);
+  border-bottom: 1px solid var(--line);
+}
+.handoff-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-control);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
+}
+.handoff-tabs button[aria-selected="true"] {
+  color: var(--teal);
+  border-bottom-color: var(--teal);
+  font-weight: 600;
+}
+.handoff-modal-body {
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 14px;
+}
+.handoff-dest-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.handoff-agent-pane {
+  display: grid;
+  gap: 12px;
+}
+.handoff-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.handoff-preset-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    box-shadow var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+.handoff-preset-card:active {
+  transform: scale(0.98);
+}
+@media (hover: hover) and (pointer: fine) {
+  .handoff-preset-card:hover {
+    border-color: var(--line-strong);
+    background: var(--surface-tint);
+  }
+}
+.handoff-preset-card[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--teal);
+  box-shadow: 0 1px 3px rgba(14, 90, 114, 0.12);
+}
+.handoff-preset-card strong {
+  font-size: var(--text-control);
+  color: var(--ink);
+  font-weight: 600;
+}
+.handoff-preset-card[aria-pressed="true"] strong {
+  color: var(--teal-hover);
+}
+.handoff-preset-card span {
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.handoff-prompt-box {
+  display: grid;
+  gap: 6px;
+}
+.handoff-prompt-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.handoff-prompt-label label {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--ink);
+}
+.handoff-prompt-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-tint);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  resize: vertical;
+}
+.handoff-prompt-box textarea:focus {
+  border-color: var(--teal);
+  background: var(--white);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.handoff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.handoff-export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.handoff-export-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-tint);
+}
+.handoff-export-card h3 {
+  font-size: var(--text-control);
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+.handoff-export-card p {
+  margin: 0;
+  line-height: 1.45;
+}
+.handoff-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.handoff-status-note {
+  margin: 0;
+  font-size: var(--text-meta);
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .catalog-health-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .catalog-health-pipeline {
+    padding-left: 0;
+    padding-top: 10px;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+@media (max-width: 640px) {
+  .handoff-backdrop {
+    padding: 8px;
+  }
+  .handoff-modal-header,
+  .handoff-context-strip,
+  .handoff-tabs,
+  .handoff-modal-body {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .handoff-preset-grid,
+  .handoff-export-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .catalog-detail-header {
+    margin: 0 0 12px;
+  }
+}
+@media (max-width: 760px) {
+  button.pipeline-dot-chip,
+  button.scope-pill,
+  .tag-chip-btn,
+  .tag-edit-link,
+  .handoff-scope-switch button {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .handoff-modal,
+  .catalog-detail-body {
+    animation: none;
+  }
+  .meter-seg,
+  .scope-pill,
+  .tag-chip-btn,
+  .tag-edit-link,
+  .pipeline-dot-chip,
+  .handoff-preset-card,
+  .handoff-scope-switch button,
+  .handoff-tabs button {
+    transition: none;
+  }
+}

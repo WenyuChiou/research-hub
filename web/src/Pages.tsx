@@ -42,6 +42,7 @@ import {
 } from "./PrepareRecovery";
 import type {
   IntegrationLiveState,
+  Locale,
   Operation,
   Page,
   ProjectDetail,
@@ -73,8 +74,10 @@ export interface PagesProps {
   page: Page;
   observationRevision?: number;
   categoryHost?: HTMLElement | null;
+  locale?: Locale;
   t: Translate;
   onSaved: (message: string, recovered?: RecoveredWork) => Promise<void>;
+  onOpenSetup?: () => void;
   navigate: (page: Page, focusId?: string) => void;
 }
 const textValue = (value: unknown) => String(value ?? "");
@@ -90,8 +93,10 @@ export function ProjectPages({
   page,
   observationRevision = 0,
   categoryHost = null,
+  locale,
   t,
   onSaved,
+  onOpenSetup,
   navigate: parentNavigate,
 }: PagesProps) {
   const localEpoch = useRef(0);
@@ -242,6 +247,26 @@ export function ProjectPages({
       data,
     });
     await onSaved(t("saved"));
+  }
+  async function createHandoffTask(payload: {
+    operation: "synthesize" | "frame";
+    instructions: string;
+    selected_source_ids?: string[];
+  }) {
+    const body: Record<string, unknown> = {
+      operation: payload.operation,
+      mode: "handoff",
+      instructions: payload.instructions,
+    };
+    if (payload.selected_source_ids?.length) {
+      body.selected_source_ids = payload.selected_source_ids;
+    }
+    const response = await api<{ ok: true; task: Task }>(
+      `/projects/${segment(detail.project.id)}/tasks`,
+      body,
+    );
+    await onSaved(t("taskCreated"));
+    return { id: response.task.id };
   }
   const genericForm = (
     kind: string,
@@ -501,7 +526,12 @@ export function ProjectPages({
                                   </span>
                                 </button>
                               </td>
-                              <td className="num">{group.total}</td>
+                              <td className="num">
+                                <span className="overview-cat-count">{group.total}</span>
+                                <span className="overview-cat-bar" aria-hidden="true">
+                                  <span style={{ width: `${Math.max(6, Math.round((group.total / stats.total) * 100))}%` }} />
+                                </span>
+                              </td>
                               <td className="num">{group.included}</td>
                               <td className="num">{group.awaiting}</td>
                               <td className="num">{group.withSummary}</td>
@@ -548,7 +578,9 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
-        <LibraryCollection sources={sources} screenings={records("screening")} curations={records("source_curation")} t={t} categoryHost={categoryHost}
+        <LibraryCollection sources={sources} screenings={records("screening")} curations={records("source_curation")} locale={locale} t={t} categoryHost={categoryHost}
+          projectId={detail.project.id}
+          projectTitle={detail.project.title}
           workspace={workspace} liveIntegrations={liveIntegrations}
           requestedView={literatureViewRequest}
           pageSuspended={page !== "literature"}
@@ -556,6 +588,9 @@ export function ProjectPages({
           observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}
           onScreen={(sourceId, decision, rationale) => saveRecord("screening", {source_id:sourceId, decision, rationale})}
           onCurate={(sourceId, curation) => saveRecord("source_curation", {source_id:sourceId, ...curation})}
+          onCreateHandoffTask={createHandoffTask}
+          onNavigateReview={(taskId) => navigate("review", taskId ? `review-task-${taskId}` : undefined)}
+          onOpenSetup={onOpenSetup}
           onOpenAddTools={openAddSourceTools}
           onPrepare={(record) => {
             setCatalogToolsOpen(true);
@@ -793,6 +828,7 @@ export function ProjectPages({
                   { name: "locator", label: t("locator") },
                   { name: "doi", label: t("doi"), required: false },
                   { name: "category", label: t("catalogCategory"), hint: t("catalogMetaCategoryHint"), required: false },
+                  { name: "tags", label: t("catalogMetaTags"), hint: t("catalogMetaTagsHint"), required: false },
                   { name: "year", label: t("catalogYear"), hint: t("catalogMetaYearHint"), pattern: "[0-9]{4}", required: false },
                   { name: "authors", label: t("catalogMetaAuthors"), hint: t("catalogMetaAuthorsHint"), required: false },
                   { name: "venue", label: t("catalogMetaVenue"), required: false },

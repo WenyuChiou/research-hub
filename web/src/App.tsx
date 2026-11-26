@@ -175,6 +175,7 @@ export default function App() {
     error?: boolean;
   } | null>(null);
   const [newProject, setNewProject] = useState(false);
+  const [setupOpenRequest, setSetupOpenRequest] = useState(0);
   const [categoryHost, setCategoryHost] = useState<HTMLDivElement | null>(null);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const navigationToggle = useRef<HTMLButtonElement>(null);
@@ -749,6 +750,7 @@ export default function App() {
             projectId={projectId}
             liveState={liveIntegrations}
             onLiveStateChange={setLiveIntegrations}
+            openRequest={setupOpenRequest}
             t={t}
           />
           <div
@@ -1027,8 +1029,10 @@ export default function App() {
                       page={page}
                       observationRevision={refreshCount}
                       categoryHost={categoryHost}
+                      locale={locale}
                       t={t}
                       onSaved={onSaved}
+                      onOpenSetup={() => setSetupOpenRequest((value) => value + 1)}
                       navigate={navigate}
                     />
                   </>

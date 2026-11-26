@@ -21,12 +21,14 @@ export function IntegrationsSetup({
   projectId = "",
   liveState,
   onLiveStateChange,
+  openRequest = 0,
 }: {
   workspace: Workspace | null;
   t: Translate;
   projectId?: string;
   liveState?: IntegrationLiveState;
   onLiveStateChange?: Dispatch<SetStateAction<IntegrationLiveState>>;
+  openRequest?: number;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -34,6 +36,13 @@ export function IntegrationsSetup({
   const heading = useRef<HTMLHeadingElement>(null);
   const panelId = useId();
   const previousProject = useRef(projectId);
+  const handledOpenRequest = useRef(openRequest);
+  useEffect(() => {
+    if (openRequest > handledOpenRequest.current) {
+      handledOpenRequest.current = openRequest;
+      setOpen(true);
+    }
+  }, [openRequest]);
   const close = () => {
     setOpen(false);
     trigger.current?.focus();
