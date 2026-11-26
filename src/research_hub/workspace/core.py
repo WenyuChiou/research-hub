@@ -291,12 +291,14 @@ class Workspace:
         self.project(project_id)
         return safe_path(self.root, f".research/projects/{project_id}")
 
-    def artifacts(self, project_id: str, *, history: bool = False) -> list[dict]:
+    def artifacts(self, project_id: str, *, history: bool = False, source_record_ids: set[str] | frozenset[str] | None = None) -> list[dict]:
         self.project(project_id)
         with self.db() as db:
             items = [json.loads(r[0]) for r in db.execute("SELECT body FROM artifacts WHERE project=? ORDER BY rowid", (project_id,))]
         if not history:
             items = [item for item in items if not item.get("superseded_by")]
+        if source_record_ids is not None:
+            items = [item for item in items if item.get("source_record_id") in source_record_ids]
         for item in items:
             try:
                 from ._source_storage import current_hash

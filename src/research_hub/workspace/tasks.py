@@ -97,10 +97,7 @@ class TaskService:
                 current_artifacts = [selected_artifact(self.workspace, project_id, request["research_draft"]["source_selection"]["artifact_id"])]
             elif isinstance(request.get("selected_source_ids"), list):
                 selected_set = set(request["selected_source_ids"])
-                current_artifacts = [
-                    a for a in self.workspace.artifacts(project_id)
-                    if a.get("source_record_id") in selected_set
-                ]
+                current_artifacts = self.workspace.artifacts(project_id, source_record_ids=selected_set)
             else:
                 current_artifacts = self.workspace.artifacts(project_id)
             expected_identity = identity(requested_artifacts)
@@ -482,10 +479,7 @@ class TaskService:
             artifacts = [{**selected_artifact(self.workspace, project_id, source_selection["artifact_id"]), "current": True}]
         elif normalized_source_ids is not None:
             selected_set = set(normalized_source_ids)
-            artifacts = [
-                a for a in self.workspace.artifacts(project_id)
-                if a.get("source_record_id") in selected_set
-            ]
+            artifacts = self.workspace.artifacts(project_id, source_record_ids=selected_set)
         else:
             artifacts = self.workspace.artifacts(project_id)
         if any(not a["current"] for a in artifacts):

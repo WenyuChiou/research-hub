@@ -664,10 +664,21 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
             },
         )
         source_ids.append(rec["id"])
-    # Also register an unrelated private manuscript file to prove selected_source_ids excludes it
+    # Also register an unrelated private manuscript file to prove selected_source_ids never even reads/hashes it
     private_draft = ws.root / "private_manuscript.md"
     private_draft.write_text("# Private Draft\nDo not leak into single-paper handoff.\n", encoding="utf-8")
     ws.register_artifact(project["id"], path="private_manuscript.md", role="main_manuscript")
+
+    from research_hub.workspace import _source_storage as storage_mod
+
+    orig_current_hash = storage_mod.current_hash
+    hashed_paths: list[str] = []
+
+    def _spy_current_hash(workspace, item):
+        hashed_paths.append(str(item.get("path") or ""))
+        return orig_current_hash(workspace, item)
+
+    monkeypatch.setattr(storage_mod, "current_hash", _spy_current_hash)
 
     server = WorkspaceServer(ws.root, port=0, human=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -724,6 +735,7 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
         assert task["request"]["artifacts"] == []
         assert "manuscript_state" not in task["request"]
         assert task["request"]["adapter_sha256"] is None
+        assert "private_manuscript.md" not in hashed_paths
 
         # Export handoff packet — verify only the 2 selected sources are exported, never the other 18 or private draft
         code, packet = _http_json(
