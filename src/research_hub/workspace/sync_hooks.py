@@ -227,13 +227,21 @@ def _category_slug(data: dict[str, Any]) -> str:
     return _clean_line(data.get("category")) or _clean_line(data.get("sub_category"))
 
 
-def _source_revision_sha256(record: dict[str, Any], screening: str) -> str:
-    return digest({
+def _source_revision_sha256(
+    record: dict[str, Any],
+    screening: str,
+    artifact_ref: dict[str, str] | None = None,
+) -> str:
+    payload: dict[str, Any] = {
         "id": _clean_line(record.get("id")),
         "revision": record.get("revision"),
         "data": record.get("data") if isinstance(record.get("data"), dict) else {},
         "screening": screening,
-    })
+    }
+    if artifact_ref:
+        payload["artifact_status"] = _clean_line(artifact_ref.get("artifact_status"))
+        payload["artifact_sha256"] = _clean_line(artifact_ref.get("artifact_sha256"))
+    return digest(payload)
 
 
 def _zotero_source_fingerprint(record: dict[str, Any]) -> str:
@@ -371,7 +379,7 @@ def _render_obsidian_note(
     data = record["data"]
     source_id = _clean_line(record.get("id"))
     source_rev = _clean_line(record.get("revision") or 1)
-    rev_sha256 = _source_revision_sha256(record, screening)
+    rev_sha256 = _source_revision_sha256(record, screening, artifact_ref)
     title = _clean_line(data.get("title")) or "Untitled source"
     authors = _collect_authors(data.get("authors"))
     tags = _collect_tags(data)
@@ -383,9 +391,10 @@ def _render_obsidian_note(
     scope = _reading_scope(data)
     identity = _clean_line(data.get("identity_status")) or "unverified"
     pub_version = _clean_line(data.get("publication_version"))
+    art_status = _clean_line((artifact_ref or {}).get("artifact_status"))
     art_id = _clean_line((artifact_ref or {}).get("artifact_id"))
-    art_path = _clean_line((artifact_ref or {}).get("artifact_path"))
-    art_sha = _clean_line((artifact_ref or {}).get("artifact_sha256"))
+    art_path = _clean_line((artifact_ref or {}).get("artifact_path")) if art_status == "verified" else ""
+    art_sha = _clean_line((artifact_ref or {}).get("artifact_sha256")) if art_status == "verified" else ""
     summary = _saved_summary(data)
     working = _working_summary_text(data)
     relevance = str(data.get("relevance") or "").strip()
@@ -410,6 +419,8 @@ def _render_obsidian_note(
     ]
     if pub_version:
         fm_lines.append(f"publication_version: {_yaml_quote(pub_version)}")
+    if art_status:
+        fm_lines.append(f"artifact_status: {_yaml_quote(art_status)}")
     if art_id:
         fm_lines.append(f"artifact_id: {_yaml_quote(art_id)}")
     if art_path:
@@ -419,7 +430,12 @@ def _render_obsidian_note(
     fm_lines.append("---")
     frontmatter = "\n".join(fm_lines)
 
-    prov_suffix = f" · Workspace artifact: `{_inline_md(art_path)}`" if art_path else ""
+    if art_status == "verified" and art_path:
+        prov_suffix = f" · Workspace artifact: `{_inline_md(art_path)}`"
+    elif art_status == "unknown":
+        prov_suffix = " · Workspace artifact: `unknown` (changed or unavailable since registration)"
+    else:
+        prov_suffix = ""
     body_lines = [
         f"# {_inline_md(title)}",
         "",
@@ -450,14 +466,15 @@ def _render_nlm_individual_source(
 ) -> str:
     data = record["data"]
     source_id = _clean_line(record.get("id"))
-    rev_sha256 = _source_revision_sha256(record, screening)
+    rev_sha256 = _source_revision_sha256(record, screening, artifact_ref)
     title = _clean_line(data.get("title")) or f"Source {index}"
     authors = ", ".join(_collect_authors(data.get("authors"))) or "Unknown"
     year = _clean_line(data.get("year")) or "n.d."
     venue = _clean_line(data.get("venue")) or _clean_line(data.get("journal"))
     doi = _clean_bare_doi(data.get("doi"))
     url = _safe_http_url(data.get("locator"), data.get("locator_kind"))
-    art_path = _clean_line((artifact_ref or {}).get("artifact_path"))
+    art_status = _clean_line((artifact_ref or {}).get("artifact_status"))
+    art_path = _clean_line((artifact_ref or {}).get("artifact_path")) if art_status == "verified" else ""
     scope = _reading_scope(data)
     category = _category_slug(data) or "unclassified"
     tags = _collect_tags(data)
@@ -487,8 +504,10 @@ def _render_nlm_individual_source(
         lines.append(f"- **DOI**: {_inline_md(doi)}")
     if url:
         lines.append(f"- **URL**: {url}")
-    if art_path:
+    if art_status == "verified" and art_path:
         lines.append(f"- **Workspace Artifact**: `{_inline_md(art_path)}`")
+    elif art_status == "unknown":
+        lines.append("- **Workspace Artifact**: `unknown` (changed or unavailable since registration)")
     lines.extend([
         f"- **Category**: {_inline_md(category)}",
         f"- **Screening**: {_inline_md(screening)}",
@@ -515,16 +534,21 @@ def _render_nlm_pack_markdown(
     project_id: str,
     project_title: str,
     screenings: dict[str, str] | None = None,
+    artifact_refs: dict[str, dict[str, str]] | None = None,
 ) -> str:
     full_text = [s for s in sources if _reading_scope(s["data"]) == "full-text"]
     abstract_or_meta = [s for s in sources if _reading_scope(s["data"]) != "full-text"]
     screening_map = screenings or {}
+    art_map = artifact_refs or {}
 
     def _entry(record: dict[str, Any], idx: int) -> str:
         data = record["data"]
         source_id = _clean_line(record.get("id"))
         decision = screening_map.get(source_id, "unscreened")
-        rev_sha256 = _source_revision_sha256(record, decision)
+        art_ref = art_map.get(source_id)
+        art_status = _clean_line((art_ref or {}).get("artifact_status"))
+        art_path = _clean_line((art_ref or {}).get("artifact_path")) if art_status == "verified" else ""
+        rev_sha256 = _source_revision_sha256(record, decision, art_ref)
         title = _clean_line(data.get("title")) or f"Source {idx}"
         authors = ", ".join(_collect_authors(data.get("authors"))) or "Unknown"
         year = _clean_line(data.get("year")) or "n.d."
@@ -559,6 +583,10 @@ def _render_nlm_pack_markdown(
             parts.append(f"- DOI: {_inline_md(doi)}")
         if url:
             parts.append(f"- Locator: {url}")
+        if art_status == "verified" and art_path:
+            parts.append(f"- Workspace Artifact: `{_inline_md(art_path)}`")
+        elif art_status == "unknown":
+            parts.append("- Workspace Artifact: `unknown` (changed or unavailable since registration)")
         parts.append(f"\n{summary}" if summary else "\n[No abstract or summary saved locally.]")
         if working:
             parts.append(f"\n#### Working Summary (Unverified Draft)\n{working}")
@@ -771,10 +799,13 @@ class WorkspaceSyncHooks:
         return ""
 
     def _resolve_source_artifacts(self, project_id: str, sources: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+        lookup_failed = False
+        items: list[dict[str, Any]] = []
         try:
             items = self.workspace.artifacts(project_id)
         except Exception:
-            return {}
+            lookup_failed = True
+
         by_id: dict[str, dict[str, Any]] = {}
         by_source: dict[str, dict[str, Any]] = {}
         for item in items:
@@ -792,24 +823,58 @@ class WorkspaceSyncHooks:
             sid = _clean_line(rec.get("id"))
             if not sid:
                 continue
-            explicit_aid = _clean_line(rec.get("data", {}).get("artifact_id"))
-            art = by_id.get(explicit_aid) if explicit_aid else by_source.get(sid)
+            sdata = rec.get("data") if isinstance(rec.get("data"), dict) else {}
+            explicit_aid = _clean_line(sdata.get("artifact_id"))
+            is_local_copy = _clean_line(sdata.get("locator_kind")) == "local-copy"
+            if lookup_failed:
+                if explicit_aid or is_local_copy:
+                    resolved_map[sid] = {
+                        "artifact_status": "unknown",
+                        "artifact_id": explicit_aid,
+                        "artifact_path": "",
+                        "artifact_sha256": "",
+                    }
+                continue
+
+            if explicit_aid:
+                cand = by_id.get(explicit_aid)
+                art = cand if cand and _clean_line(cand.get("source_record_id")) in {"", sid} else None
+            else:
+                art = by_source.get(sid)
+
             if not art:
+                if explicit_aid or is_local_copy:
+                    resolved_map[sid] = {
+                        "artifact_status": "unknown",
+                        "artifact_id": explicit_aid,
+                        "artifact_path": "",
+                        "artifact_sha256": "",
+                    }
                 continue
+
+            found_aid = _clean_line(art.get("id")) or explicit_aid
             raw_rel = _clean_line(art.get("path"))
-            if not raw_rel:
-                continue
-            try:
-                safe_rel = safe_path(self.workspace.root, raw_rel).relative_to(self.workspace.root).as_posix()
-            except (WorkspaceError, ValueError, OSError):
-                continue
-            if safe_rel.startswith(".research/"):
-                continue
-            resolved_map[sid] = {
-                "artifact_id": _clean_line(art.get("id")),
-                "artifact_path": safe_rel,
-                "artifact_sha256": _clean_line(art.get("sha256")),
-            }
+            safe_rel = ""
+            if raw_rel:
+                try:
+                    safe_rel = safe_path(self.workspace.root, raw_rel).relative_to(self.workspace.root).as_posix()
+                except (WorkspaceError, ValueError, OSError):
+                    safe_rel = ""
+
+            if safe_rel and not safe_rel.startswith(".research/") and art.get("current") is True:
+                resolved_map[sid] = {
+                    "artifact_status": "verified",
+                    "artifact_id": found_aid,
+                    "artifact_path": safe_rel,
+                    "artifact_sha256": _clean_line(art.get("sha256")),
+                }
+            else:
+                resolved_map[sid] = {
+                    "artifact_status": "unknown",
+                    "artifact_id": found_aid,
+                    "artifact_path": "",
+                    "artifact_sha256": "",
+                }
         return resolved_map
 
     def bundle_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -819,31 +884,31 @@ class WorkspaceSyncHooks:
         if extra:
             raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
 
-        project, sources, screenings = self._resolve_project_sources(
-            project_id, body.get("selected_source_ids")
-        )
-        artifact_refs = self._resolve_source_artifacts(project_id, sources)
+        self._validate_project_id(project_id)
         export_rel = f".research/exports/notebooklm-{project_id}"
         pack_rel = f"{export_rel}/00-notebooklm-source-pack.md"
         manifest_rel = f"{export_rel}/manifest.json"
-
-        full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
-        abstract_only_count = len(sources) - full_text_count
-        generated_at = _utc_now()
-
-        manifest = {
-            "project_id": project_id,
-            "project_title": project["title"],
-            "source_count": len(sources),
-            "full_text_count": full_text_count,
-            "abstract_only_count": abstract_only_count,
-            "generated_at": generated_at,
-        }
 
         used_names: set[str] = set()
         source_files: list[str] = []
         manifest_sources: list[dict[str, Any]] = []
         with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            project, sources, screenings = self._resolve_project_sources(
+                project_id, body.get("selected_source_ids")
+            )
+            artifact_refs = self._resolve_source_artifacts(project_id, sources)
+            full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
+            abstract_only_count = len(sources) - full_text_count
+            generated_at = _utc_now()
+            manifest = {
+                "project_id": project_id,
+                "project_title": project["title"],
+                "source_count": len(sources),
+                "full_text_count": full_text_count,
+                "abstract_only_count": abstract_only_count,
+                "generated_at": generated_at,
+            }
+
             export_dir = safe_path(self.workspace.root, export_rel)
             sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
             pack_path = safe_path(self.workspace.root, pack_rel)
@@ -886,13 +951,16 @@ class WorkspaceSyncHooks:
                     "locator": _safe_http_url(
                         rec["data"].get("locator"), rec["data"].get("locator_kind")
                     ),
+                    "artifact_status": (art_ref or {}).get("artifact_status", ""),
+                    "artifact_id": (art_ref or {}).get("artifact_id", ""),
                     "artifact_path": (art_ref or {}).get("artifact_path", ""),
+                    "artifact_sha256": (art_ref or {}).get("artifact_sha256", ""),
                     "reading_scope": _reading_scope(rec["data"]),
                     "screening": decision,
                     "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
                     "publication_version": _clean_line(rec["data"].get("publication_version")),
                     "recorded_at": _clean_line(rec["data"].get("recorded_at")),
-                    "revision_sha256": _source_revision_sha256(rec, decision),
+                    "revision_sha256": _source_revision_sha256(rec, decision, art_ref),
                     "source_file": file_rel,
                 })
 
@@ -903,6 +971,7 @@ class WorkspaceSyncHooks:
                     project_id=project_id,
                     project_title=project["title"],
                     screenings=screenings,
+                    artifact_refs=artifact_refs,
                 ),
             )
             manifest["sources"] = manifest_sources
@@ -925,7 +994,13 @@ class WorkspaceSyncHooks:
     def sync_zotero(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         integrations = self._require_enabled()
         body = dict(payload or {})
-        extra = set(body) - {"dry_run", "selected_source_ids", "expected_revisions", "expected_library"}
+        extra = set(body) - {
+            "dry_run",
+            "selected_source_ids",
+            "expected_revisions",
+            "expected_library",
+            "expected_plan_digest",
+        }
         if extra:
             raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
 
@@ -957,6 +1032,16 @@ class WorkspaceSyncHooks:
                 )
             expected_library = raw_expected_lib.strip()
 
+        expected_plan_digest: str | None = None
+        raw_expected_plan = body.get("expected_plan_digest")
+        if raw_expected_plan is not None:
+            if not isinstance(raw_expected_plan, str) or not raw_expected_plan.strip():
+                raise WorkspaceError(
+                    "expected_plan_digest must be a non-empty string when provided",
+                    "invalid_request",
+                )
+            expected_plan_digest = raw_expected_plan.strip()
+
         def _read_zotero_target() -> tuple[str, str, str, str]:
             c_path, c_data = integrations._read_config_dict()
             res = integrations._resolve_zotero_effective(c_data, c_path.parent)
@@ -975,7 +1060,7 @@ class WorkspaceSyncHooks:
         api_key, library_id, library_type, destination_library = _read_zotero_target()
 
         if not api_key or not library_id:
-            if not dry_run and expected_library is not None:
+            if not dry_run and (expected_library is not None or expected_plan_digest is not None):
                 raise WorkspaceError(
                     "Zotero destination library changed after the dry-run preview; run Preview again before writing",
                     "stale_preview",
@@ -1007,6 +1092,7 @@ class WorkspaceSyncHooks:
 
         from research_hub.utils.doi import normalize_doi
 
+        locked_destination = destination_library
         safe_lib_slug = _slugify(f"{library_type}-{library_id}", fallback=project_id)
         write_guard = (
             contextlib.nullcontext()
@@ -1020,11 +1106,14 @@ class WorkspaceSyncHooks:
         with write_guard:
             if not dry_run:
                 api_key, library_id, library_type, destination_library = _read_zotero_target()
-                if not api_key or not library_id or (
-                    expected_library is not None and destination_library != expected_library
+                if (
+                    not api_key
+                    or not library_id
+                    or destination_library != locked_destination
+                    or (expected_library is not None and destination_library != expected_library)
                 ):
                     raise WorkspaceError(
-                        "Zotero destination library changed after the dry-run preview; run Preview again before writing",
+                        "Zotero destination library changed during or after the dry-run preview; run Preview again before writing",
                         "stale_preview",
                     )
                 _, sources, _ = self._resolve_project_sources(
@@ -1090,6 +1179,20 @@ class WorkspaceSyncHooks:
                         "action": "create",
                     })
 
+            plan_digest = digest({
+                "destination_library": destination_library,
+                "source_revisions": source_revisions,
+                "items": [
+                    {
+                        "id": item["id"],
+                        "action": item["action"],
+                        "doi": item["doi"],
+                        "title": item["title"],
+                    }
+                    for item in items_plan
+                ],
+            })
+
             if dry_run:
                 return {
                     "ok": True,
@@ -1100,8 +1203,15 @@ class WorkspaceSyncHooks:
                     "duplicates": duplicates,
                     "destination_library": destination_library,
                     "source_revisions": source_revisions,
+                    "plan_digest": plan_digest,
                     "items": items_plan,
                 }
+
+            if expected_plan_digest is not None and plan_digest != expected_plan_digest:
+                raise WorkspaceError(
+                    "Zotero sync plan changed since the dry-run preview; run Preview again before writing",
+                    "stale_preview",
+                )
 
             zotero_payloads: list[dict[str, Any]] = []
             template_base: dict[str, Any] = {}
@@ -1266,19 +1376,20 @@ class WorkspaceSyncHooks:
         if extra:
             raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
 
-        project, sources, screenings = self._resolve_project_sources(
-            project_id, body.get("selected_source_ids")
-        )
-        artifact_refs = self._resolve_source_artifacts(project_id, sources)
+        self._validate_project_id(project_id)
         export_rel = f".research/exports/obsidian-{project_id}"
         base_rel = f"{export_rel}/{project_id}.base"
         manifest_rel = f"{export_rel}/manifest.json"
-        generated_at = _utc_now()
 
         used_names: set[str] = set()
         note_files: list[str] = []
         manifest_notes: list[dict[str, Any]] = []
         with self._export_lock(f"obsidian:{project_id}", f".obsidian-{project_id}"):
+            project, sources, screenings = self._resolve_project_sources(
+                project_id, body.get("selected_source_ids")
+            )
+            artifact_refs = self._resolve_source_artifacts(project_id, sources)
+            generated_at = _utc_now()
             export_dir = safe_path(self.workspace.root, export_rel)
             base_path = safe_path(self.workspace.root, base_rel)
             manifest_path = safe_path(self.workspace.root, manifest_rel)
@@ -1313,12 +1424,13 @@ class WorkspaceSyncHooks:
                     "index": index,
                     "source_id": _clean_line(rec.get("id")),
                     "source_revision": rec.get("revision", 1),
-                    "revision_sha256": _source_revision_sha256(rec, decision),
+                    "revision_sha256": _source_revision_sha256(rec, decision, art_ref),
                     "title": _clean_line(rec["data"].get("title")) or f"Note {index}",
                     "doi": _clean_bare_doi(rec["data"].get("doi")),
                     "locator": _safe_http_url(
                         rec["data"].get("locator"), rec["data"].get("locator_kind")
                     ),
+                    "artifact_status": (art_ref or {}).get("artifact_status", ""),
                     "artifact_id": (art_ref or {}).get("artifact_id", ""),
                     "artifact_path": (art_ref or {}).get("artifact_path", ""),
                     "artifact_sha256": (art_ref or {}).get("artifact_sha256", ""),

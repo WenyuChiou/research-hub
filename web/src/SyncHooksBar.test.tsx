@@ -430,6 +430,7 @@ describe("SyncHooksPanel", () => {
             duplicates: 0,
             destination_library: "user:12345",
             source_revisions: { "src-1": "rev-hash-2" },
+            plan_digest: "plan-hash-2",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -494,6 +495,7 @@ describe("SyncHooksPanel", () => {
       selected_source_ids: ["src-1"],
       expected_library: "user:12345",
       expected_revisions: { "src-1": "rev-hash-2" },
+      expected_plan_digest: "plan-hash-2",
     });
   });
 });

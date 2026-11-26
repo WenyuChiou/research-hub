@@ -674,8 +674,73 @@ def test_zotero_failed_writes_lookup_errors_and_concurrent_exports(tmp_path: Pat
         )
         assert code_eds_obs == 200
         ed1_note = (ws.root / eds_obs["note_files"][0]).read_text(encoding="utf-8")
+        assert 'artifact_status: "verified"' in ed1_note
         assert 'artifact_path: "sources/ed1.txt"' in ed1_note
         assert str(ws.root) not in ed1_note
+
+        # Editing the registered local file invalidates currency -> exported note & manifest mark artifact unknown
+        local_art_file.write_text("Edited after registration without re-registering!\n", encoding="utf-8")
+        code_eds_obs_stale, eds_obs_stale = _post_json(
+            f"{base}/api/v1/projects/proj-eds/integrations/obsidian/pack",
+            {"selected_source_ids": [ed1["id"]]},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_eds_obs_stale == 200
+        ed1_stale_note = (ws.root / eds_obs_stale["note_files"][0]).read_text(encoding="utf-8")
+        assert 'artifact_status: "unknown"' in ed1_stale_note
+        assert "sources/ed1.txt" not in ed1_stale_note
+        assert "artifact_sha256:" not in ed1_stale_note
+        stale_manifest = json.loads((ws.root / eds_obs_stale["manifest_file"]).read_text(encoding="utf-8"))
+        assert stale_manifest["notes"][0]["artifact_status"] == "unknown"
+        assert stale_manifest["notes"][0]["artifact_path"] == ""
+        assert stale_manifest["notes"][0]["artifact_sha256"] == ""
+
+        # 2e. Remote duplicate state drift between preview and confirmation rejects stale expected_plan_digest
+        remote_items = [{"data": {"title": "Editorial", "DOI": "10.1000/editorial-2025-b"}}]
+
+        class _DriftZotero:
+            writes: int = 0
+
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                pass
+
+            def items(self, q: str = "", limit: int = 5):
+                return list(remote_items)
+
+            def create_items(self, items_list: list[dict]):
+                _DriftZotero.writes += len(items_list)
+                return {"successful": {"0": {"key": "ZD1"}}, "failed": {}}
+
+        monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _DriftZotero)
+        code_dp, dp_res = _post_json(
+            f"{base}/api/v1/projects/proj-eds/integrations/zotero/sync",
+            {"dry_run": True, "selected_source_ids": [ed1["id"], ed2["id"]]},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_dp == 200
+        assert dp_res["would_create"] == 1
+        assert dp_res["duplicates"] == 1
+        assert dp_res["plan_digest"]
+
+        # Remote item deleted before confirmation -> would expand write set from 1 to 2 -> rejected!
+        remote_items.clear()
+        code_drift, drift_res = _post_json(
+            f"{base}/api/v1/projects/proj-eds/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "selected_source_ids": [ed1["id"], ed2["id"]],
+                "expected_library": dp_res["destination_library"],
+                "expected_revisions": dp_res["source_revisions"],
+                "expected_plan_digest": dp_res["plan_digest"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_drift == 400
+        assert drift_res["code"] == "stale_preview"
+        assert _DriftZotero.writes == 0
 
         # 3. Concurrent Obsidian & NotebookLM exports serialize via file_lock without losing files
         errors: list[Exception] = []

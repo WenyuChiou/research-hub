@@ -53,6 +53,7 @@ export interface ZoteroSyncResponse {
   failed_items?: ZoteroFailedItem[];
   destination_library?: string;
   source_revisions?: Record<string, string>;
+  plan_digest?: string;
   items?: ZoteroSyncItemPlan[];
 }
 
@@ -506,6 +507,7 @@ export function SyncHooksPanel({
     const previewedIds = zotPreviewEntry.payloadSourceIds;
     const previewedRevisions = zotPreviewEntry.data.source_revisions;
     const previewedLibrary = zotPreviewEntry.data.destination_library;
+    const previewedPlanDigest = zotPreviewEntry.data.plan_digest;
     setZotWriteCount((count) => count + 1);
     setZotError(null);
     try {
@@ -513,6 +515,7 @@ export function SyncHooksPanel({
       if (previewedIds) payload.selected_source_ids = previewedIds;
       if (previewedRevisions) payload.expected_revisions = previewedRevisions;
       if (previewedLibrary) payload.expected_library = previewedLibrary;
+      if (previewedPlanDigest) payload.expected_plan_digest = previewedPlanDigest;
       const response = await postIntegrationHook<ZoteroSyncResponse>("zotero/sync", payload);
       if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       if (response.status === "failed") {
