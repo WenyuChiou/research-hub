@@ -4,6 +4,11 @@ import {
   computeDestinationStatuses,
   type HandoffScope,
 } from "./AgentHandoffModal";
+import {
+  classifyLabelTone,
+  DestinationBrandChip,
+  GitHubLabelText,
+} from "./BrandIcons";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
@@ -672,8 +677,16 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   }
   const categoryFilters = <div ref={categoryControls} className="catalog-categories" role="group" aria-label={t("catalogCategories")} hidden={compact}>
     <h3>{t("catalogCategories")}</h3>
-    <button type="button" aria-pressed={!selectedCategory} onClick={() => setSelectedCategory("")}>{t("catalogAllCategories")} <span>{sources.length}</span></button>
-    {categories.map(value => <button type="button" key={value} aria-pressed={selectedCategory === value} onClick={() => setSelectedCategory(value)}>{categoryName(value,t)} <span>{sources.filter(record => category(record) === value).length}</span></button>)}
+    <button type="button" aria-pressed={!selectedCategory} onClick={() => setSelectedCategory("")}>
+      <span className="cat-nav-item"><span className="cat-nav-dot label-tone-slate" aria-hidden="true" />{t("catalogAllCategories")}</span>{" "}
+      <span className="cat-nav-count">{sources.length}</span>
+    </button>
+    {categories.map(value => (
+      <button type="button" key={value} aria-pressed={selectedCategory === value} onClick={() => setSelectedCategory(value)}>
+        <span className="cat-nav-item"><span className={`cat-nav-dot label-tone-${classifyLabelTone(value)}`} aria-hidden="true" />{categoryName(value,t)}</span>{" "}
+        <span className="cat-nav-count">{sources.filter(record => category(record) === value).length}</span>
+      </button>
+    ))}
   </div>;
 
   const selectedAuthors = selected ? formatAuthors(selected.data.authors) : "";
@@ -872,12 +885,14 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
         const total = sources.length;
         const pct = (count: number) => `${Math.round((count / total) * 1000) / 10}%`;
         const dest = computeDestinationStatuses(workspace, liveIntegrations);
-        const destTip = (state: "ok" | "configured" | "error" | "idle") =>
-          state === "configured"
-            ? t("pipelineStatusConfigured")
-            : state === "error"
-              ? t("pipelineStatusError")
-              : undefined;
+        const destStatusText = (state: "ok" | "configured" | "error" | "idle") =>
+          state === "ok"
+            ? t("pipelineStatusOk")
+            : state === "configured"
+              ? t("pipelineStatusConfigured")
+              : state === "error"
+                ? t("pipelineStatusError")
+                : t("pipelineStatusIdle");
         const scopeButtons: [ScopeTone, string, number][] = [
           ["full", t("catalogFullTextDeclared"), scopeCounts.full],
           ["abstract", t("catalogAbstractOnly"), scopeCounts.abstract],
@@ -916,22 +931,27 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 ))}
               </div>
             </div>
-            <div className="catalog-health-pipeline" aria-label={t("catalogHealthPipeline")}>
+            <div className="catalog-health-pipeline" role="group" aria-label={t("catalogHealthPipeline")}>
               <span className="catalog-health-label">{t("catalogHealthPipeline")}</span>
               <div className="catalog-pipeline-dots">
-                {onOpenSetup ? (
-                  <>
-                    <button type="button" className={`pipeline-dot-chip is-${dest.obsidian}`} title={destTip(dest.obsidian)} onClick={onOpenSetup}>Obsidian</button>
-                    <button type="button" className={`pipeline-dot-chip is-${dest.zotero}`} title={destTip(dest.zotero)} onClick={onOpenSetup}>Zotero</button>
-                    <button type="button" className={`pipeline-dot-chip is-${dest.notebooklm}`} title={destTip(dest.notebooklm)} onClick={onOpenSetup}>NotebookLM</button>
-                  </>
-                ) : (
-                  <>
-                    <span className={`pipeline-dot-chip is-${dest.obsidian}`} title={destTip(dest.obsidian)}>Obsidian</span>
-                    <span className={`pipeline-dot-chip is-${dest.zotero}`} title={destTip(dest.zotero)}>Zotero</span>
-                    <span className={`pipeline-dot-chip is-${dest.notebooklm}`} title={destTip(dest.notebooklm)}>NotebookLM</span>
-                  </>
-                )}
+                <DestinationBrandChip
+                  brand="obsidian"
+                  state={dest.obsidian}
+                  statusText={destStatusText(dest.obsidian)}
+                  onClick={onOpenSetup}
+                />
+                <DestinationBrandChip
+                  brand="zotero"
+                  state={dest.zotero}
+                  statusText={destStatusText(dest.zotero)}
+                  onClick={onOpenSetup}
+                />
+                <DestinationBrandChip
+                  brand="notebooklm"
+                  state={dest.notebooklm}
+                  statusText={destStatusText(dest.notebooklm)}
+                  onClick={onOpenSetup}
+                />
               </div>
             </div>
           </div>
@@ -979,18 +999,25 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
       </div>
       {allTags.length > 0 && (
         <div className="catalog-label-bar" role="group" aria-label={t("catalogFilterByTag")}>
-          <span className="catalog-label-heading">{t("catalogLabelsHeading")}</span>
+          <span className="catalog-label-heading">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.42 0l8.58-8.58a1 1 0 0 0 0-1.42L12 2Z" />
+              <circle cx="7" cy="7" r="1.5" />
+            </svg>
+            <span>{t("catalogLabelsHeading")}</span>
+          </span>
           {visibleTagChips.map(({ label, count }) => {
             const pressed = selectedTagLower === label.toLocaleLowerCase();
+            const tone = classifyLabelTone(label);
             return (
               <button
                 key={label}
                 type="button"
-                className="tag-chip tag-chip-btn"
+                className={`tag-chip tag-chip-btn label-tone-${tone}`}
                 aria-pressed={pressed}
                 onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === label.toLocaleLowerCase() ? "" : label))}
               >
-                <span>#{label}</span>
+                <GitHubLabelText label={label} />
                 <span className="pill-count">{count}</span>
               </button>
             );
@@ -1225,11 +1252,11 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                                 <button
                                   key={tag}
                                   type="button"
-                                  className="tag-chip tag-chip-btn"
+                                  className={`tag-chip tag-chip-btn label-tone-${classifyLabelTone(tag)}`}
                                   aria-pressed={selectedTagLower === tag.toLocaleLowerCase()}
                                   onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === tag.toLocaleLowerCase() ? "" : tag))}
                                 >
-                                  #{tag}
+                                  <GitHubLabelText label={tag} />
                                 </button>
                               ))}
                               {sourceTags(record).length > 4 && (
@@ -1239,7 +1266,10 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                           )}
                         </td>
                         <td>
-                          <span className="catalog-cat-pill">{categoryName(category(record), t)}</span>
+                          <span className={`catalog-cat-pill label-tone-${classifyLabelTone(category(record))}`}>
+                            <span className="gh-label-dot" aria-hidden="true" />
+                            <span>{categoryName(category(record), t)}</span>
+                          </span>
                         </td>
                         <td className="catalog-master-year">{text(record.data.year) || "—"}</td>
                         <td>
@@ -1335,8 +1365,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                       </span>
                     )}
                     {registeredDrafts.has(record.id) && <span id={`${detailId}-draft-${index}`} className="catalog-draft-tag">{t("catalogDraftRegistered")}</span>}</td>
-                  <td>{text(record.data.year) || "—"}</td>
-                  <td><span className="catalog-meta-text catalog-category">{categoryName(category(record), t)}</span></td>
+                  <td className="catalog-list-year">{text(record.data.year) || "—"}</td>
+                  <td><span className={`catalog-cat-pill catalog-cat-pill-sm label-tone-${classifyLabelTone(category(record))}`}><span className="gh-label-dot" aria-hidden="true" /><span>{categoryName(category(record), t)}</span></span></td>
                   <td>
                     <span className={`scope-pill scope-${readingScopeTone(record)} catalog-scope`}>{readingScope(record, t)}</span>
                     {record.kind === "source" && (
@@ -1347,7 +1377,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     {registeredNativeSummary(record) && <span className="catalog-indicator good">{t("catalogNativeRegistered")}</span>}
                     {missingSummary(record) && <span className="catalog-indicator muted">{t("catalogNeedsSummary")}</span>}
                     {sourceTags(record).slice(0, 3).map((tag) => (
-                      <span key={tag} className="tag-chip">#{tag}</span>
+                      <span key={tag} className={`tag-chip label-tone-${classifyLabelTone(tag)}`}><GitHubLabelText label={tag} /></span>
                     ))}
                     {sourceTags(record).length > 3 && (
                       <span className="tag-chip tag-chip-more">+{sourceTags(record).length - 3}</span>
@@ -1377,8 +1407,11 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
             <div className="catalog-detail-header">
             <div className="catalog-detail-top">
               <div className="catalog-meta">
-                <span>{text(selected.data.year) || "—"}</span>
-                <span className="catalog-cat-pill">{categoryName(category(selected), t)}</span>
+                <span className="catalog-year-pill">{text(selected.data.year) || "—"}</span>
+                <span className={`catalog-cat-pill label-tone-${classifyLabelTone(category(selected))}`}>
+                  <span className="gh-label-dot" aria-hidden="true" />
+                  <span>{categoryName(category(selected), t)}</span>
+                </span>
                 <span
                   className={`scope-pill scope-${readingScopeTone(selected)} tooltip-rich`}
                   tabIndex={0}
@@ -1442,11 +1475,11 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                   <button
                     key={tag}
                     type="button"
-                    className="tag-chip tag-chip-btn"
+                    className={`tag-chip tag-chip-btn label-tone-${classifyLabelTone(tag)}`}
                     aria-pressed={selectedTagLower === tag.toLocaleLowerCase()}
                     onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === tag.toLocaleLowerCase() ? "" : tag))}
                   >
-                    #{tag}
+                    <GitHubLabelText label={tag} />
                   </button>
                 ))}
                 {onCurate && !note && (
@@ -1494,7 +1527,10 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     <span>{t("catalogEditMeta")}</span>
                     <span className="catalog-curation-badges">
                       {selectedDraftDirty && <span className="badge warn">{t("catalogMetaUnsaved")}</span>}
-                      <span className="catalog-cat-pill">{categoryName(category(selected), t)}</span>
+                      <span className={`catalog-cat-pill label-tone-${classifyLabelTone(category(selected))}`}>
+                        <span className="gh-label-dot" aria-hidden="true" />
+                        <span>{categoryName(category(selected), t)}</span>
+                      </span>
                     </span>
                   </summary>
                   {curationOpen && (
@@ -1581,7 +1617,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
             <section><h4>{t("catalogSource")}</h4>
               <p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p>
               {selected.data.locator_kind === "local-copy" && <p className="small">{t("intakeLocalLocator")}</p>}
-              {text(selected.data.doi) && <p className="small">DOI: {text(selected.data.doi)}</p>}
+              {text(selected.data.doi) && <p className="small">DOI: <code className="catalog-doi-code">{text(selected.data.doi)}</code></p>}
               {note && <><p className="small">{t("libraryNotePath")}: <code>{text(selected.data.note_path)}</code></p><p className="small">{t("libraryMetadataStatus")}: {selected.data.metadata_status === "available" ? t("libraryAvailable") : t("libraryUnavailableMetadata")}</p>{text(selected.data.saved_reading_status) && <p className="small">{t("librarySavedStatus")}: {text(selected.data.saved_reading_status)}</p>}</>}
               {Boolean(matches?.get(selected.id)?.length) && <div className="catalog-missing"><strong>{t("libraryIdentityMatch")}</strong><p>{t("libraryMatchHelp")}</p><ul>{matches!.get(selected.id)!.map((other) => <li key={other.id}>{text(other.data.title)} · {other.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}{other.kind === "library-note" && <><br /><code>{text(other.data.note_path)}</code></>}</li>)}</ul></div>}
               {text(selected.data.publication_version) && <p className="small">{text(selected.data.publication_version)}</p>}

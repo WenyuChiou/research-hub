@@ -647,12 +647,48 @@ export default function App() {
       controller.abort();
     };
   }, [connectionLost, browserOffline, reconnectAttempts]);
-  const navigationLinks = (items: Page[]) => (<>{items.map((item) => (
-      <a key={item} href={"#" + item} onClick={() => {navigationEpoch.current++;}} aria-current={page === item ? "page" : undefined}>
-        <span className="nav-symbol" aria-hidden="true"><NavIcon page={item} /></span><span>{t(item)}</span>
-      </a>
-    ))}</>);
   const activeDetail = detail?.project.id === projectId ? detail : null;
+  const pageCount = (item: Page): number => {
+    if (!activeDetail) return 0;
+    if (item === "literature") return activeDetail.records.filter((r) => r.kind === "source").length;
+    if (item === "evidence") return activeDetail.records.filter((r) => r.kind === "claim").length;
+    if (item === "design") return activeDetail.records.filter((r) => r.kind === "analysis").length;
+    if (item === "manuscript") {
+      return (
+        activeDetail.records.filter((r) => r.kind === "outline").length +
+        (activeDetail.artifacts.some((a) => a.role === "main_manuscript") ? 1 : 0)
+      );
+    }
+    if (item === "review") return activeDetail.tasks.length;
+    return 0;
+  };
+  const navigationLinks = (items: Page[]) => (
+    <>
+      {items.map((item) => {
+        const count = pageCount(item);
+        return (
+          <a
+            key={item}
+            href={"#" + item}
+            onClick={() => {
+              navigationEpoch.current++;
+            }}
+            aria-current={page === item ? "page" : undefined}
+          >
+            <span className="nav-symbol" aria-hidden="true">
+              <NavIcon page={item} />
+            </span>
+            <span className="nav-label-text">{t(item)}</span>
+            {count > 0 && (
+              <span className="nav-number" aria-hidden="true">
+                {count}
+              </span>
+            )}
+          </a>
+        );
+      })}
+    </>
+  );
   const selectedProjectTitle = workspace?.projects.find(
     (project) => project.id === projectId,
   )?.title;
