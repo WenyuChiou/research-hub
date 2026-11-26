@@ -603,12 +603,26 @@ export function ProjectPages({
               {warning}
             </p>
           ))}
-          {results !== null && (
+          {results !== null && (() => {
+            const normalizeDoi = (value: unknown) =>
+              typeof value === "string"
+                ? value.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "").toLowerCase()
+                : "";
+            const normalizeLocator = (value: unknown) =>
+              typeof value === "string" ? value.trim().replace(/\/+$/, "").toLowerCase() : "";
+            const savedDois = new Set(sources.map((s) => normalizeDoi(s.data.doi)).filter(Boolean));
+            const savedLocators = new Set(sources.map((s) => normalizeLocator(s.data.locator)).filter(Boolean));
+            return (
             <section className="search-results">
               <h3>{t("searchResults")}</h3>
               {results.length ? (
                 results.map((result) => {
-                  const alreadyAdded = addedSearchIds.includes(result.source_id);
+                  const resultDoi = normalizeDoi(result.doi);
+                  const resultLocator = normalizeLocator(result.locator);
+                  const alreadyAdded =
+                    addedSearchIds.includes(result.source_id) ||
+                    (Boolean(resultDoi) && savedDois.has(resultDoi)) ||
+                    (Boolean(resultLocator) && savedLocators.has(resultLocator));
                   return (
                   <div key={result.source_id} className="search-result">
                     <div>
@@ -643,7 +657,8 @@ export function ProjectPages({
                 <EmptyState compact>{t("noResults")}</EmptyState>
               )}
             </section>
-          )}
+            );
+          })()}
         </Panel>
         {!selectedDiscovery && discoveryPanel}
         <div>

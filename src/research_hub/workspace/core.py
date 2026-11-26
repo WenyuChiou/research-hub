@@ -121,7 +121,8 @@ def _clean_text_field(value: object, *, name: str, limit: int) -> str:
 
 def _clean_list_field(value: object, *, name: str, max_items: int, item_limit: int) -> list[str]:
     if isinstance(value, str):
-        raw_items = [part for part in re.split(r"[,;，；\n]+", value)]
+        delimiter = r"[;；\n]+" if re.search(r"[;；\n]", value) else r"[,，]+"
+        raw_items = [part for part in re.split(delimiter, value)]
     elif isinstance(value, list):
         raw_items = value
     else:
@@ -387,13 +388,25 @@ class Workspace:
         if kind == "source":
             # Identity claims from callers are not verifier evidence.
             data["identity_status"] = "unverified"
-            if isinstance(data.get("authors"), str):
-                cleaned_authors = _clean_list_field(data["authors"], name="authors", max_items=50, item_limit=200)
-                if cleaned_authors:
-                    data["authors"] = cleaned_authors
+            if "authors" in data and data["authors"] is not None:
+                if isinstance(data["authors"], str):
+                    cleaned_authors = _clean_list_field(data["authors"], name="authors", max_items=50, item_limit=200)
+                    if cleaned_authors:
+                        data["authors"] = cleaned_authors
+                    else:
+                        data.pop("authors", None)
+                elif isinstance(data["authors"], list):
+                    if all(isinstance(item, str) for item in data["authors"]):
+                        cleaned_authors = _clean_list_field(data["authors"], name="authors", max_items=50, item_limit=200)
+                        if cleaned_authors:
+                            data["authors"] = cleaned_authors
+                        else:
+                            data.pop("authors", None)
+                    elif any(not isinstance(item, (str, dict)) for item in data["authors"]):
+                        raise WorkspaceError("authors must be a list of strings or author objects")
                 else:
-                    data.pop("authors", None)
-            if isinstance(data.get("year"), (str, int)) and not isinstance(data.get("year"), bool):
+                    raise WorkspaceError("authors must be a string or list of authors")
+            if "year" in data and data["year"] is not None:
                 cleaned_year = _clean_year_field(data["year"])
                 if cleaned_year:
                     data["year"] = cleaned_year

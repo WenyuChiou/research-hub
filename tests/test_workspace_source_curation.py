@@ -86,3 +86,38 @@ def test_add_source_normalizes_optional_authors_and_year(tmp_path):
     assert source["data"]["year"] == "2020"
     assert source["data"]["category"] == "llm"
     assert source["data"]["identity_status"] == "unverified"
+
+    csl_source = ws.add_record(
+        project["id"],
+        kind="source",
+        data={
+            "title": "Structured Authors Paper",
+            "locator": "https://example.org/csl",
+            "authors": [{"family": "Smith", "given": "John"}, {"family": "Doe", "given": "Jane"}],
+            "year": 2024,
+        },
+    )
+    assert csl_source["data"]["authors"] == [
+        {"family": "Smith", "given": "John"},
+        {"family": "Doe", "given": "Jane"},
+    ]
+    assert csl_source["data"]["year"] == "2024"
+
+    semicolon_curation = ws.add_record(
+        project["id"],
+        kind="source_curation",
+        data={
+            "source_id": source["id"],
+            "authors": "Smith, John; Doe, Jane",
+        },
+    )
+    assert semicolon_curation["data"]["authors"] == ["Smith, John", "Doe, Jane"]
+
+    for invalid_source in (
+        {"title": "Bad Year Bool", "locator": "https://example.org/1", "year": True},
+        {"title": "Bad Year Text", "locator": "https://example.org/2", "year": "twenty"},
+        {"title": "Bad Authors Num", "locator": "https://example.org/3", "authors": 123},
+        {"title": "Bad Authors List", "locator": "https://example.org/4", "authors": [42]},
+    ):
+        with pytest.raises(WorkspaceError):
+            ws.add_record(project["id"], kind="source", data=invalid_source)

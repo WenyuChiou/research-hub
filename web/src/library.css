@@ -533,6 +533,17 @@
   border-top: 1px solid var(--line);
   padding-top: 8px;
 }
+.catalog-curation-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.catalog-curation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .catalog-empty-state {
   padding: 20px 16px;
   display: grid;

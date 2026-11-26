@@ -778,8 +778,131 @@ describe("master literature table, category summary, and clean status tooltips",
     );
     expect(screen.getAllByText("Shunyu Yao, Jeffrey Zhao · ICLR 2023").length).toBeGreaterThan(0);
     expect(screen.getByText("Interleaves thought and action traces.", { selector: "p.preserve-lines" })).toBeVisible();
+    expect(within(form).getByRole("status")).toHaveTextContent(t("saved"));
     expect(JSON.stringify(bare)).toBe(originalSnapshot);
     expect(applySourceCurations([bare], curations)[0].data.identity_status).toBe("unverified");
+  });
+
+  it("preserves unsaved curation notes across collapsing the editor and switching papers", async () => {
+    const user = userEvent.setup();
+    const first: ResearchRecord = {
+      id: "src-draft-a",
+      kind: "source",
+      data: { title: "First Paper", locator: "https://example.org/a", year: "2024" },
+    };
+    const second: ResearchRecord = {
+      id: "src-draft-b",
+      kind: "source",
+      data: { title: "Second Paper", locator: "https://example.org/b", year: "2025" },
+    };
+    render(
+      <LiteratureLibrary
+        sources={[first, second]}
+        screenings={[]}
+        curations={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onCurate={vi.fn().mockResolvedValue(undefined)}
+        onPrepare={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    const form = screen.getByRole("button", { name: t("catalogSaveMeta") }).closest("form")!;
+    await user.type(within(form).getByLabelText(t("catalogRelevance")), "Work-in-progress relevance note");
+
+    // Collapse the details panel and re-open: unsaved text and indicator must remain.
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    expect(screen.getByText(t("catalogMetaUnsaved"))).toBeVisible();
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    expect(screen.getByLabelText(t("catalogRelevance"))).toHaveValue("Work-in-progress relevance note");
+
+    // Switch to second paper and return to first paper: unsaved text must remain intact.
+    await user.click(screen.getByRole("button", { name: "Second Paper" }));
+    expect(screen.getByLabelText(t("catalogRelevance"))).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "First Paper" }));
+    expect(screen.getByLabelText(t("catalogRelevance"))).toHaveValue("Work-in-progress relevance note");
+
+    // Explicit Discard clears the unsaved draft.
+    await user.click(screen.getByRole("button", { name: t("catalogResetMeta") }));
+    expect(screen.getByLabelText(t("catalogRelevance"))).toHaveValue("");
+    expect(screen.queryByText(t("catalogMetaUnsaved"))).toBeNull();
+  });
+
+  it("preserves structured author boundaries and allows clearing inherited abstract and journal", async () => {
+    const user = userEvent.setup();
+    const onCurate = vi.fn().mockResolvedValue(undefined);
+    const structured: ResearchRecord = {
+      id: "src-struct-1",
+      kind: "source",
+      data: {
+        title: "Structured Authors Study",
+        locator: "https://example.org/struct",
+        authors: [
+          { family: "Smith", given: "John" },
+          { family: "Doe", given: "Jane" },
+        ],
+        journal: "Nature Methods",
+        abstract: "Original abstract from import.",
+      },
+    };
+    const { rerender } = render(
+      <LiteratureLibrary
+        sources={[structured]}
+        screenings={[]}
+        curations={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onCurate={onCurate}
+        onPrepare={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    const form = screen.getByRole("button", { name: t("catalogSaveMeta") }).closest("form")!;
+    expect(within(form).getByLabelText(t("catalogMetaAuthors"))).toHaveValue("Smith, John; Doe, Jane");
+
+    // Editing only category must not overwrite structured authors with broken comma splits.
+    await user.type(within(form).getByLabelText(t("catalogCategory")), "human");
+    await user.click(within(form).getByRole("button", { name: t("catalogSaveMeta") }));
+    expect(onCurate).toHaveBeenLastCalledWith("src-struct-1", { category: "human" });
+
+    // Editing authors with semicolon keeps internal commas intact, and clearing venue/summary overrides journal/abstract.
+    await user.type(within(form).getByLabelText(t("catalogMetaAuthors")), "; Lee, Amy");
+    await user.clear(within(form).getByLabelText(t("catalogMetaVenue")));
+    await user.clear(within(form).getByLabelText(t("catalogMetaSummary")));
+    await user.click(within(form).getByRole("button", { name: t("catalogSaveMeta") }));
+    expect(onCurate).toHaveBeenLastCalledWith("src-struct-1", {
+      authors: ["Smith, John", "Doe, Jane", "Lee, Amy"],
+      venue: "",
+      summary: "",
+    });
+
+    const clearedCurations: ResearchRecord[] = [
+      {
+        id: "cur-clear",
+        kind: "source_curation",
+        data: {
+          source_id: "src-struct-1",
+          authors: ["Smith, John", "Doe, Jane", "Lee, Amy"],
+          venue: "",
+          summary: "",
+        },
+      },
+    ];
+    rerender(
+      <LiteratureLibrary
+        sources={[structured]}
+        screenings={[]}
+        curations={clearedCurations}
+        t={t}
+        onScreen={vi.fn()}
+        onCurate={onCurate}
+        onPrepare={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Original abstract from import.")).toBeNull();
+    expect(screen.queryByText(/Nature Methods/)).toBeNull();
+    expect(structured.data.abstract).toBe("Original abstract from import.");
+    expect(structured.data.journal).toBe("Nature Methods");
   });
 
   it("renders a primary CTA button in empty literature view that opens the add/search panel", async () => {

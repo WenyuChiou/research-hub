@@ -387,4 +387,67 @@ describe("researcher interactions", () => {
       vi.useRealTimers();
     }
   });
+  it("marks Crossref search results as already added when matching saved project DOI or locator", async () => {
+    const user = userEvent.setup();
+    const savedSource = {
+      id: "src-saved-1",
+      kind: "source",
+      data: {
+        title: "Saved Paper",
+        doi: "https://doi.org/10.1000/ABC.1",
+        locator: "https://example.org/saved/",
+        identity_status: "unverified",
+      },
+    };
+    const records: unknown[] = [savedSource];
+    const fetch = vi.fn().mockImplementation(async (url: string, options?: RequestInit) => {
+      if (url === "/api/v1/workspace") return response(workspace);
+      if (url.endsWith("/search") && options?.method === "POST") {
+        return response({
+          ok: true,
+          warnings: [],
+          results: [
+            {
+              source_id: "cr-1",
+              title: "Saved Paper",
+              doi: "10.1000/abc.1",
+              locator: "https://example.org/other",
+            },
+            {
+              source_id: "cr-2",
+              title: "Fresh Paper",
+              doi: "10.1000/fresh.2",
+              locator: "https://example.org/fresh",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/records") && options?.method === "POST") {
+        const body = JSON.parse(String(options.body));
+        records.push({ id: `src-${records.length + 1}`, kind: body.kind, data: body.data });
+        return response({ ok: true, record: records[records.length - 1] });
+      }
+      return response({ ...detail, records: [...records] });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App />);
+    await screen.findAllByText("Saved Paper");
+    await user.click(screen.getByText(t("catalogAdvanced"), { selector: "summary" }));
+    const searchInput = screen.getByRole("textbox", { name: new RegExp(`^${t("searchQuery")}`) });
+    await user.type(searchInput, "saved paper");
+    await user.click(screen.getByRole("button", { name: t("searchAction") }));
+
+    // Already-saved DOI matches immediately on first search; fresh paper still offers Add source.
+    expect(await screen.findByText(`✓ ${t("searchAdded")}`)).toBeInTheDocument();
+    const searchSection = screen.getByRole("heading", { level: 3, name: t("searchResults") }).closest("section")!;
+    const addButtons = within(searchSection).getAllByRole("button", { name: t("addSource") });
+    expect(addButtons).toHaveLength(1);
+
+    // Adding the fresh paper and repeating the search keeps BOTH marked as Added.
+    await user.click(addButtons[0]);
+    expect(await within(searchSection).findAllByText(`✓ ${t("searchAdded")}`)).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: t("searchAction") }));
+    expect(await within(searchSection).findAllByText(`✓ ${t("searchAdded")}`)).toHaveLength(2);
+    expect(within(searchSection).queryByRole("button", { name: t("addSource") })).toBeNull();
+  });
 });

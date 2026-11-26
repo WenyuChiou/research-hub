@@ -190,41 +190,84 @@ export function applySourceCurations(
     if (record.kind !== "source") return record;
     const overlay = overlays.get(record.id);
     if (!overlay) return record;
-    return { ...record, data: { ...record.data, ...overlay } };
+    const nextData: Record<string, unknown> = { ...record.data, ...overlay };
+    if ("summary" in overlay && !text(overlay.summary).trim()) {
+      nextData.abstract = "";
+    }
+    if ("venue" in overlay && !text(overlay.venue).trim()) {
+      nextData.journal = "";
+    }
+    return { ...record, data: nextData };
   });
 }
 
 function formatAuthorsInput(value: unknown): string {
-  return authorNames(value).join(", ");
+  const names = authorNames(value);
+  return names.some((name) => /[,，]/.test(name)) ? names.join("; ") : names.join(", ");
 }
 
 function parseAuthorsInput(value: string): string[] {
+  const delimiter = /[;；\n]/.test(value) ? /[;；\n]+/ : /[,，]+/;
   return value
-    .split(/[,;，；\n]+/)
+    .split(delimiter)
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
+interface CurationDraft {
+  category: string;
+  year: string;
+  authors: string;
+  venue: string;
+  relevance: string;
+  summary: string;
+  changed: {
+    category?: boolean;
+    year?: boolean;
+    authors?: boolean;
+    venue?: boolean;
+    relevance?: boolean;
+    summary?: boolean;
+  };
+}
+
+function baseCurationDraft(record: ResearchRecord): CurationDraft {
+  return {
+    category: sourceCategory(record),
+    year: text(record.data.year),
+    authors: formatAuthorsInput(record.data.authors),
+    venue: text(record.data.venue) || text(record.data.journal),
+    relevance: text(record.data.relevance),
+    summary: savedSummary(record),
+    changed: {},
+  };
+}
+
+function isDraftDirty(draft: CurationDraft | undefined): boolean {
+  return Boolean(draft && Object.values(draft.changed).some(Boolean));
+}
+
 function SourceCurationForm({
-  record,
+  draft,
+  dirty,
+  saved,
   categories,
   t,
+  onChange,
+  onDiscard,
   onSave,
 }: {
-  record: ResearchRecord;
+  draft: CurationDraft;
+  dirty: boolean;
+  saved: boolean;
   categories: string[];
   t: Translate;
+  onChange: (next: CurationDraft) => void;
+  onDiscard: () => void;
   onSave: (curation: SourceCurationInput) => Promise<void>;
 }) {
   const listId = useId();
-  const [categoryVal, setCategoryVal] = useState(() => sourceCategory(record));
-  const [yearVal, setYearVal] = useState(() => text(record.data.year));
-  const [authorsVal, setAuthorsVal] = useState(() => formatAuthorsInput(record.data.authors));
-  const [venueVal, setVenueVal] = useState(() => text(record.data.venue) || text(record.data.journal));
-  const [relevanceVal, setRelevanceVal] = useState(() => text(record.data.relevance));
-  const [summaryVal, setSummaryVal] = useState(() => text(record.data.summary) || text(record.data.abstract));
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const suggestions = [...new Set(["llm", "human", "human-review", ...categories])];
 
@@ -234,19 +277,18 @@ function SourceCurationForm({
       aria-busy={busy}
       onSubmit={async (event) => {
         event.preventDefault();
+        const payload: SourceCurationInput = {};
+        if (draft.changed.category) payload.category = draft.category.trim();
+        if (draft.changed.year) payload.year = draft.year.trim();
+        if (draft.changed.authors) payload.authors = parseAuthorsInput(draft.authors);
+        if (draft.changed.venue) payload.venue = draft.venue.trim();
+        if (draft.changed.relevance) payload.relevance = draft.relevance.trim();
+        if (draft.changed.summary) payload.summary = draft.summary.trim();
+        if (!Object.keys(payload).length) return;
         setBusy(true);
         setError(null);
-        setSaved(false);
         try {
-          await onSave({
-            category: categoryVal.trim(),
-            year: yearVal.trim(),
-            authors: parseAuthorsInput(authorsVal),
-            venue: venueVal.trim(),
-            relevance: relevanceVal.trim(),
-            summary: summaryVal.trim(),
-          });
-          setSaved(true);
+          await onSave(payload);
         } catch (failure) {
           setError(failure);
         } finally {
@@ -261,8 +303,8 @@ function SourceCurationForm({
             <input
               id={`${listId}-cat`}
               list={listId}
-              value={categoryVal}
-              onChange={(e) => setCategoryVal(e.target.value)}
+              value={draft.category}
+              onChange={(e) => onChange({ ...draft, category: e.target.value, changed: { ...draft.changed, category: true } })}
               maxLength={120}
             />
             <datalist id={listId}>
@@ -276,8 +318,8 @@ function SourceCurationForm({
             <label htmlFor={`${listId}-year`}>{t("catalogYear")}</label>
             <input
               id={`${listId}-year`}
-              value={yearVal}
-              onChange={(e) => setYearVal(e.target.value)}
+              value={draft.year}
+              onChange={(e) => onChange({ ...draft, year: e.target.value, changed: { ...draft.changed, year: true } })}
               pattern="[0-9]{4}"
               maxLength={4}
               placeholder="2024"
@@ -288,8 +330,8 @@ function SourceCurationForm({
             <label htmlFor={`${listId}-authors`}>{t("catalogMetaAuthors")}</label>
             <input
               id={`${listId}-authors`}
-              value={authorsVal}
-              onChange={(e) => setAuthorsVal(e.target.value)}
+              value={draft.authors}
+              onChange={(e) => onChange({ ...draft, authors: e.target.value, changed: { ...draft.changed, authors: true } })}
               maxLength={1000}
             />
             <small>{t("catalogMetaAuthorsHint")}</small>
@@ -298,8 +340,8 @@ function SourceCurationForm({
             <label htmlFor={`${listId}-venue`}>{t("catalogMetaVenue")}</label>
             <input
               id={`${listId}-venue`}
-              value={venueVal}
-              onChange={(e) => setVenueVal(e.target.value)}
+              value={draft.venue}
+              onChange={(e) => onChange({ ...draft, venue: e.target.value, changed: { ...draft.changed, venue: true } })}
               maxLength={300}
             />
           </div>
@@ -308,8 +350,8 @@ function SourceCurationForm({
             <textarea
               id={`${listId}-rel`}
               rows={2}
-              value={relevanceVal}
-              onChange={(e) => setRelevanceVal(e.target.value)}
+              value={draft.relevance}
+              onChange={(e) => onChange({ ...draft, relevance: e.target.value, changed: { ...draft.changed, relevance: true } })}
               maxLength={4000}
             />
           </div>
@@ -318,15 +360,29 @@ function SourceCurationForm({
             <textarea
               id={`${listId}-sum`}
               rows={3}
-              value={summaryVal}
-              onChange={(e) => setSummaryVal(e.target.value)}
+              value={draft.summary}
+              onChange={(e) => onChange({ ...draft, summary: e.target.value, changed: { ...draft.changed, summary: true } })}
               maxLength={20000}
             />
           </div>
         </div>
-        <button className="button primary" type="submit">
-          {busy ? t("saving") : t("catalogSaveMeta")}
-        </button>
+        <div className="catalog-curation-actions">
+          <button className="button primary" type="submit">
+            {busy ? t("saving") : t("catalogSaveMeta")}
+          </button>
+          {dirty && (
+            <button
+              className="button secondary small"
+              type="button"
+              onClick={() => {
+                setError(null);
+                onDiscard();
+              }}
+            >
+              {t("catalogResetMeta")}
+            </button>
+          )}
+        </div>
       </fieldset>
       {error !== null && <ErrorMessage error={error} t={t} />}
       {saved && (
@@ -359,7 +415,6 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
 }) {
   const rawSourceById = new Map(rawSources.map((record) => [record.id, record]));
   const sources = applySourceCurations(rawSources, curations);
-  const curationVersion = curations?.length ?? 0;
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [organization, setOrganization] = useState<Organization>("all");
@@ -368,6 +423,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [curationOpen, setCurationOpen] = useState(false);
+  const [curationDrafts, setCurationDrafts] = useState<Record<string, CurationDraft>>({});
+  const [curationSavedId, setCurationSavedId] = useState<string | null>(null);
   const [openSummaryIds, setOpenSummaryIds] = useState<string[]>([]);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
@@ -1087,7 +1144,10 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                   {name:"rationale",label:t("rationale"),textarea:true},
                 ]} onSubmit={(data) => onScreen(selected.id, String(data.get("decision")), String(data.get("rationale")))} />
               </details>
-              {onCurate && (
+              {onCurate && (() => {
+                const selectedDraft = curationDrafts[selected.id] ?? baseCurationDraft(selected);
+                const selectedDraftDirty = isDraftDirty(curationDrafts[selected.id]);
+                return (
                 <details className="catalog-screening catalog-curation" open={curationOpen}>
                   <summary
                     onClick={(event) => {
@@ -1096,22 +1156,46 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     }}
                   >
                     <span>{t("catalogEditMeta")}</span>
-                    <span className="catalog-cat-pill">{categoryName(category(selected), t)}</span>
+                    <span className="catalog-curation-badges">
+                      {selectedDraftDirty && <span className="badge warn">{t("catalogMetaUnsaved")}</span>}
+                      <span className="catalog-cat-pill">{categoryName(category(selected), t)}</span>
+                    </span>
                   </summary>
                   {curationOpen && (
                     <>
                       <p className="small muted">{t("catalogEditMetaHelp")}</p>
                       <SourceCurationForm
-                        key={`${selected.id}:${curationVersion}`}
-                        record={selected}
+                        key={selected.id}
+                        draft={selectedDraft}
+                        dirty={selectedDraftDirty}
+                        saved={curationSavedId === selected.id && !selectedDraftDirty}
                         categories={categories}
                         t={t}
-                        onSave={(payload) => onCurate(selected.id, payload)}
+                        onChange={(next) => {
+                          setCurationSavedId((current) => (current === selected.id ? null : current));
+                          setCurationDrafts((prev) => ({ ...prev, [selected.id]: next }));
+                        }}
+                        onDiscard={() => {
+                          setCurationSavedId((current) => (current === selected.id ? null : current));
+                          setCurationDrafts((prev) => {
+                            const { [selected.id]: _, ...rest } = prev;
+                            return rest;
+                          });
+                        }}
+                        onSave={async (payload) => {
+                          await onCurate(selected.id, payload);
+                          setCurationDrafts((prev) => {
+                            const { [selected.id]: _, ...rest } = prev;
+                            return rest;
+                          });
+                          setCurationSavedId(selected.id);
+                        }}
                       />
                     </>
                   )}
                 </details>
-              )}
+                );
+              })()}
             </div>}
             {!note && registeredNativeSummary(selected) && (
               <NativeSummaryReader record={rawSourceById.get(selected.id) ?? selected} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
