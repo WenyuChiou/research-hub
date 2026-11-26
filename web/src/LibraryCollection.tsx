@@ -55,7 +55,9 @@ export function LibraryCollection(props: {
     const nonce = props.requestedView?.nonce ?? 0;
     if (nonce > lastViewNonce.current) {
       lastViewNonce.current = nonce;
-      setScope("workspace");
+      // Only leave read-only Obsidian scope; keep "all" mounted so unsaved
+      // workspace working-summary edits are never unmounted via key={scope}.
+      setScope((current) => (current === "obsidian" ? "workspace" : current));
       setPendingView(props.requestedView);
     }
   }, [props.requestedView]);
@@ -114,7 +116,7 @@ export function LibraryCollection(props: {
     <LiteratureLibrary
       key={scope}
       {...props}
-      requestedView={scope === "workspace" ? pendingView : undefined}
+      requestedView={scope !== "obsidian" ? pendingView : undefined}
       sources={visible}
       matches={identityMatches(all)}
     />
