@@ -528,6 +528,31 @@ describe("CommandPalette & Ctrl+K Shortcut", () => {
         m1.remove();
         m2.remove();
       }
+
+      // Archived full-text source retained in computeResearchBlindSpots preserves claim full-text grounding
+      const archivedFullSrc: ResearchRecord = {
+        id: "src-arch-ft",
+        kind: "source",
+        data: { title: "Archived Full Paper", reading_scope: "full-text", archived: true },
+      };
+      const activeAbsSrc: ResearchRecord = {
+        id: "src-act-abs",
+        kind: "source",
+        data: { title: "Active Abstract Paper", reading_scope: "abstract" },
+      };
+      const mixedClaim: ResearchRecord = {
+        id: "claim-mixed",
+        kind: "claim",
+        data: { text: "Grounded by archived full-text + active abstract", source_ids: ["src-arch-ft", "src-act-abs"] },
+      };
+      const archivedSpot = computeResearchBlindSpots(
+        [archivedFullSrc, activeAbsSrc],
+        [],
+        [mixedClaim],
+      );
+      expect(archivedSpot.unlinkedClaims).toHaveLength(0);
+      expect(archivedSpot.abstractOnlyClaims).toHaveLength(0);
+      expect(archivedSpot.singleSourceClaims).toHaveLength(0);
     } finally {
       // @ts-expect-error cleanup test prototype spy
       delete HTMLElement.prototype.scrollIntoView;

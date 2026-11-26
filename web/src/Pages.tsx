@@ -253,7 +253,8 @@ export function ProjectPages({
   const records = (kind: string) =>
     detail.records.filter((record) => record.kind === kind);
   const sources = records("source");
-  const curatedActiveSources = applySourceCurations(sources, records("source_curation")).filter(
+  const allCuratedSources = applySourceCurations(sources, records("source_curation"));
+  const curatedActiveSources = allCuratedSources.filter(
     (item) => item.data.archived !== true,
   );
   const titleCounts = new Map<string, number>();
@@ -520,7 +521,7 @@ export function ProjectPages({
         {page === "overview" &&
           (curatedActiveSources.length > 0 || records("claim").length > 0) && (
             <EvidenceBlindSpotRadar
-              sources={curatedActiveSources}
+              sources={allCuratedSources}
               screenings={records("screening")}
               claims={records("claim")}
               locale={locale}
@@ -1020,9 +1021,7 @@ export function ProjectPages({
       <div hidden={page !== "evidence"} className="page-content">
         {(() => {
           const claimRecords = records("claim");
-          const curatedById = new Map(
-            applySourceCurations(sources, records("source_curation")).map((s) => [s.id, s]),
-          );
+          const curatedById = new Map(allCuratedSources.map((s) => [s.id, s]));
           let linkedCount = 0;
           let cautionCount = 0;
           for (const cl of claimRecords) {
@@ -1051,7 +1050,7 @@ export function ProjectPages({
             <>
               {page === "evidence" && (
                 <EvidenceBlindSpotRadar
-                  sources={curatedActiveSources}
+                  sources={allCuratedSources}
                   screenings={records("screening")}
                   claims={claimRecords}
                   locale={locale}

@@ -51,6 +51,7 @@ export interface ZoteroSyncResponse {
   skipped_duplicates?: number;
   created_keys?: string[];
   failed_items?: ZoteroFailedItem[];
+  source_revisions?: Record<string, string>;
   items?: ZoteroSyncItemPlan[];
 }
 
@@ -306,15 +307,22 @@ export function SyncHooksPanel({
     return undefined;
   }, [explicitSelectedRecords]);
 
-  const selectionSignature = useMemo(
-    () =>
-      `${projectId || ""}|${
-        payloadSourceIds
-          ? `sel:${payloadSourceIds.join(",")}`
-          : `all:${targetSources.map((s) => s.id).join(",")}`
-      }`,
-    [projectId, payloadSourceIds, targetSources],
-  );
+  const selectionSignature = useMemo(() => {
+    const modePrefix = payloadSourceIds
+      ? `sel:${payloadSourceIds.join(",")}`
+      : `all:${targetSources.map((s) => s.id).join(",")}`;
+    const revToken = targetSources
+      .map((record) => {
+        const data = record.data ?? {};
+        const sortedEntries = Object.keys(data)
+          .sort()
+          .map((k) => [k, data[k]]);
+        const rev = (record as { revision?: string | number }).revision ?? "";
+        return `${record.id}@${rev}:${JSON.stringify(sortedEntries)}`;
+      })
+      .join(";");
+    return `${projectId || ""}|${modePrefix}|${revToken}`;
+  }, [projectId, payloadSourceIds, targetSources]);
   const selectionSigRef = useRef(selectionSignature);
   selectionSigRef.current = selectionSignature;
   const selectionEpochRef = useRef(0);
@@ -493,11 +501,13 @@ export function SyncHooksPanel({
     const reqSig = zotPreviewEntry.sig;
     const reqEpoch = selectionEpochRef.current;
     const previewedIds = zotPreviewEntry.payloadSourceIds;
+    const previewedRevisions = zotPreviewEntry.data.source_revisions;
     setZotWriteCount((count) => count + 1);
     setZotError(null);
     try {
       const payload: Record<string, unknown> = { dry_run: false };
       if (previewedIds) payload.selected_source_ids = previewedIds;
+      if (previewedRevisions) payload.expected_revisions = previewedRevisions;
       const response = await postIntegrationHook<ZoteroSyncResponse>("zotero/sync", payload);
       if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       if (response.status === "failed") {
@@ -509,6 +519,9 @@ export function SyncHooksPanel({
       }
     } catch (err) {
       if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
+      if ((err as { code?: string } | null)?.code === "stale_preview") {
+        setZotPreviewEntry(null);
+      }
       setZotError(formatErrorText(err));
     } finally {
       setZotWriteCount((count) => Math.max(0, count - 1));

@@ -1226,7 +1226,10 @@ export default function App() {
           navigate("literature");
         }}
         onNavigate={(targetPage) => navigate(targetPage)}
-        onOpenSettings={() => setSetupOpenRequest((value) => value + 1)}
+        onOpenSettings={() => {
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
+          setSetupOpenRequest((value) => value + 1);
+        }}
         onToggleTheme={() =>
           handleThemeModeChange(resolvedTheme === "dark" ? "light" : "dark")
         }

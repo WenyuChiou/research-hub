@@ -545,6 +545,51 @@ def test_zotero_failed_writes_lookup_errors_and_concurrent_exports(tmp_path: Pat
         assert fail_res["created_keys"] == []
         assert raw_secret not in json.dumps(fail_res)
 
+        # 2b. Preview returns source_revisions and write rejects stale_preview if metadata changed after dry-run
+        class _HealthyZotero:
+            created_batches: list[list[dict]] = []
+
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                pass
+
+            def items(self, q: str = "", limit: int = 5):
+                return []
+
+            def create_items(self, items_list: list[dict]):
+                self.created_batches.append(items_list)
+                return {"successful": {"0": {"key": "ZOK1"}}, "failed": {}}
+
+        monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _HealthyZotero)
+        code_prev, prev_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {"dry_run": True, "selected_source_ids": [ids["s1"]]},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_prev == 200
+        assert prev_res["status"] == "ready"
+        assert ids["s1"] in prev_res["source_revisions"]
+
+        # Curate s1 metadata after dry-run preview
+        ws.add_record(
+            "proj-alpha",
+            kind="source_curation",
+            data={"source_id": ids["s1"], "doi": "10.1029/updated-after-preview"},
+        )
+        code_stale, stale_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "selected_source_ids": [ids["s1"]],
+                "expected_revisions": prev_res["source_revisions"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_stale == 400
+        assert stale_res["code"] == "stale_preview"
+        assert _HealthyZotero.created_batches == []
+
         # 3. Concurrent Obsidian & NotebookLM exports serialize via file_lock without losing files
         errors: list[Exception] = []
 

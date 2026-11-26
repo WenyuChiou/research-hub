@@ -235,6 +235,14 @@ def _source_revision_sha256(record: dict[str, Any], screening: str) -> str:
     })
 
 
+def _zotero_source_fingerprint(record: dict[str, Any]) -> str:
+    return digest({
+        "id": _clean_line(record.get("id")),
+        "revision": record.get("revision"),
+        "data": record.get("data") if isinstance(record.get("data"), dict) else {},
+    })
+
+
 def _get_zotero_client(library_id: str, library_type: str, api_key: str):
     from pyzotero import zotero
 
@@ -837,7 +845,7 @@ class WorkspaceSyncHooks:
     def sync_zotero(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         integrations = self._require_enabled()
         body = dict(payload or {})
-        extra = set(body) - {"dry_run", "selected_source_ids"}
+        extra = set(body) - {"dry_run", "selected_source_ids", "expected_revisions"}
         if extra:
             raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
 
@@ -846,9 +854,24 @@ class WorkspaceSyncHooks:
             raise WorkspaceError("dry_run must be a boolean", "invalid_request")
         dry_run: bool = raw_dry_run
 
+        expected_revisions: dict[str, str] | None = None
+        raw_expected = body.get("expected_revisions")
+        if raw_expected is not None:
+            if not isinstance(raw_expected, dict) or any(
+                not isinstance(k, str) or not k.strip() or not isinstance(v, str) or not v.strip()
+                for k, v in raw_expected.items()
+            ):
+                raise WorkspaceError(
+                    "expected_revisions must be a mapping of source IDs to non-empty revision digests",
+                    "invalid_request",
+                )
+            expected_revisions = {k.strip(): v.strip() for k, v in raw_expected.items()}
+
+        selected_ids_arg = body.get("selected_source_ids")
         _, sources, _ = self._resolve_project_sources(
-            project_id, body.get("selected_source_ids")
+            project_id, selected_ids_arg
         )
+        source_revisions = {s["id"]: _zotero_source_fingerprint(s) for s in sources}
 
         cfg_path, cfg_data = integrations._read_config_dict()
         resolved = integrations._resolve_zotero_effective(cfg_data, cfg_path.parent)
@@ -864,6 +887,7 @@ class WorkspaceSyncHooks:
                 "candidate_count": len(sources),
                 "would_create": 0,
                 "duplicates": 0,
+                "source_revisions": source_revisions,
                 "items": [
                     {
                         "id": s["id"],
@@ -888,6 +912,17 @@ class WorkspaceSyncHooks:
         )
 
         with write_guard:
+            if not dry_run:
+                _, sources, _ = self._resolve_project_sources(
+                    project_id, selected_ids_arg
+                )
+                source_revisions = {s["id"]: _zotero_source_fingerprint(s) for s in sources}
+                if expected_revisions is not None and source_revisions != expected_revisions:
+                    raise WorkspaceError(
+                        "Source metadata changed after the Zotero dry-run preview; run Preview again before writing",
+                        "stale_preview",
+                    )
+
             try:
                 zot = _get_zotero_client(library_id, library_type, api_key)
             except Exception as exc:
@@ -943,6 +978,7 @@ class WorkspaceSyncHooks:
                     "candidate_count": len(sources),
                     "would_create": len(records_to_create),
                     "duplicates": duplicates,
+                    "source_revisions": source_revisions,
                     "items": items_plan,
                 }
 

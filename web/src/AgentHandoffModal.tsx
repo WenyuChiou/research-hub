@@ -687,13 +687,23 @@ export function AgentHandoffModal({
   }, [open, scope, selectedRecord]);
 
   // Background inertness + focus restoration on close/unmount (reference-counted with CommandPalette).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const suppressFocusRestoreRef = useRef(false);
   useEffect(() => {
     if (!open) return;
+    suppressFocusRestoreRef.current = false;
+    const handleDismissOverlays = () => {
+      suppressFocusRestoreRef.current = true;
+      onCloseRef.current();
+    };
+    window.addEventListener("research-hub:dismiss-overlays", handleDismissOverlays);
     const releaseBackground = acquireModalBackgroundLock(backdropRef.current);
     return () => {
+      window.removeEventListener("research-hub:dismiss-overlays", handleDismissOverlays);
       releaseBackground();
       const prev = previousFocusRef.current;
-      if (prev && prev.isConnected && !prev.closest("[inert]")) {
+      if (!suppressFocusRestoreRef.current && prev && prev.isConnected && !prev.closest("[inert]")) {
         prev.focus();
       }
     };

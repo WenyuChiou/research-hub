@@ -401,4 +401,97 @@ describe("SyncHooksPanel", () => {
       expect(screen.getByRole("button", { name: "Preview Sync (Dry-run)" })).not.toBeDisabled();
     });
   });
+
+  it("invalidates Zotero preview when curated source metadata changes and forwards expected_revisions", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "ready",
+            dry_run: true,
+            candidate_count: 1,
+            would_create: 1,
+            duplicates: 0,
+            source_revisions: { "src-1": "rev-hash-1" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "ready",
+            dry_run: true,
+            candidate_count: 1,
+            would_create: 1,
+            duplicates: 0,
+            source_revisions: { "src-1": "rev-hash-2" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "synced",
+            dry_run: false,
+            created_count: 1,
+            skipped_duplicates: 0,
+            created_keys: ["Z2"],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const { rerender } = render(
+      <SyncHooksPanel
+        projectId="proj-1"
+        projectTitle="Hydrology Agents"
+        sources={SAMPLE_SOURCES}
+        selectedIds={["src-1"]}
+        workspace={ENABLED_WORKSPACE}
+        locale="en"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview Sync (Dry-run)" }));
+    await screen.findByRole("button", { name: "Confirm Write to Zotero" });
+
+    // Same source ID, curated DOI changed in another tab -> preview must invalidate!
+    const curatedSources: ResearchRecord[] = [
+      {
+        ...SAMPLE_SOURCES[0],
+        data: { ...SAMPLE_SOURCES[0].data, doi: "10.1029/2025WR999999" },
+      },
+      SAMPLE_SOURCES[1],
+    ];
+    rerender(
+      <SyncHooksPanel
+        projectId="proj-1"
+        projectTitle="Hydrology Agents"
+        sources={curatedSources}
+        selectedIds={["src-1"]}
+        workspace={ENABLED_WORKSPACE}
+        locale="en"
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Confirm Write to Zotero" })).toBeNull();
+
+    // Re-preview and confirm -> forwards expected_revisions
+    fireEvent.click(screen.getByRole("button", { name: "Preview Sync (Dry-run)" }));
+    const confirmBtn = await screen.findByRole("button", { name: "Confirm Write to Zotero" });
+    fireEvent.click(confirmBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/✓ Synced 1 to Zotero/)).toBeTruthy();
+    });
+    expect(JSON.parse(String(fetchSpy.mock.calls[2][1]?.body))).toEqual({
+      dry_run: false,
+      selected_source_ids: ["src-1"],
+      expected_revisions: { "src-1": "rev-hash-2" },
+    });
+  });
 });
