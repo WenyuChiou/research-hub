@@ -247,6 +247,10 @@
   background: var(--white);
 }
 
+.settings-content-pane > * {
+  flex-shrink: 0;
+}
+
 .settings-pane-header {
   display: flex;
   align-items: flex-start;
@@ -393,6 +397,7 @@
   border-radius: 10px;
   background: var(--surface-tint);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .settings-sync-summary {
@@ -1015,14 +1020,14 @@
 }
 
 :root[data-theme="dark"] .settings-center .button.primary {
-  background: #0284c7;
+  background: #0369a1;
   border-color: #38bdf8;
   color: #f8fafc;
 }
 
 @media (hover: hover) and (pointer: fine) {
   :root[data-theme="dark"] .settings-center .button.primary:hover:not(:disabled) {
-    background: #0369a1;
+    background: #075985;
     border-color: #7dd3fc;
   }
 }

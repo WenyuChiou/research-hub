@@ -789,7 +789,7 @@ h1:focus {
   gap: 8px;
 }
 .empty-mark {
-  color: #718e7d;
+  color: #3d6352;
   font-size: 1.125rem;
   display: grid;
   place-items: center;
