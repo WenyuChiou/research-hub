@@ -66,3 +66,22 @@ it("matches only saved identity, never title or absent identifiers, and keeps bo
   expect(map.get(sameTitle.id)).toEqual([]);
   expect(map.get(unsafe.id)).toEqual([]);
 });
+
+it("does not replay an earlier overview category request after switching to Obsidian and back to Workspace", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot))));
+  const user = userEvent.setup();
+  const llmItem: ResearchRecord = { id: "ws-llm", kind: "source", data: { title: "LLM item", category: "llm", reading_scope: "abstract" } };
+  const humanItem: ResearchRecord = { id: "ws-human", kind: "source", data: { title: "Human item", category: "human", reading_scope: "abstract" } };
+  const base = { ...props(), sources: [llmItem, humanItem] };
+  const { rerender } = render(<LibraryCollection {...base} requestedView={{ mode: "split", nonce: 0 }} />);
+  rerender(<LibraryCollection {...base} requestedView={{ mode: "table", category: "human", nonce: 1 }} />);
+  expect(screen.getByRole("button", { name: t("catalogViewTable") })).toHaveAttribute("aria-pressed", "true");
+  expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(1);
+
+  await user.click(screen.getByRole("button", { name: t("libraryLoad") }));
+  expect(await screen.findByRole("heading", { name: "Saved Obsidian note" })).toBeVisible();
+
+  await user.selectOptions(screen.getByLabelText(t("libraryScope")), "workspace");
+  expect(screen.getByRole("button", { name: t("catalogViewSplit") })).toHaveAttribute("aria-pressed", "true");
+  expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(2);
+});

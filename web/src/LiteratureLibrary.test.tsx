@@ -343,6 +343,36 @@ describe("master literature table, category summary, and clean status tooltips",
     // Click paper title to jump into Split Desk reading that exact paper
     await user.click(screen.getByRole("button", { name: "Newer LLM Study" }));
     expect(screen.getByRole("heading", { name: "Newer LLM Study" })).toHaveFocus();
+
+    // Switching back to Master Table and clicking the ALREADY-selected paper still restores heading focus
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    await user.click(screen.getByRole("button", { name: "Newer LLM Study" }));
+    expect(screen.getByRole("heading", { name: "Newer LLM Study" })).toHaveFocus();
+  });
+
+  it("places records without numeric years at the bottom in both descending and ascending year sorts", async () => {
+    const user = userEvent.setup();
+    const yearSources: ResearchRecord[] = [
+      { id: "no-year-1", kind: "source", data: { title: "Undated First", category: "human", identity_status: "unverified" } },
+      { id: "yr-2021", kind: "source", data: { title: "Dated 2021", category: "human", year: 2021, identity_status: "unverified" } },
+      { id: "no-year-2", kind: "source", data: { title: "Undated Second", category: "llm", year: "n/a", identity_status: "unverified" } },
+      { id: "yr-2024", kind: "source", data: { title: "Dated 2024", category: "llm", year: 2024, identity_status: "unverified" } },
+    ];
+    render(<LiteratureLibrary sources={yearSources} screenings={[]} t={t} onScreen={vi.fn()} onPrepare={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    const yearSort = within(screen.getByRole("table")).getByRole("button", { name: new RegExp(t("catalogYear")) });
+    await user.click(yearSort);
+    let rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Dated 2024");
+    expect(rows[1]).toHaveTextContent("Dated 2021");
+    expect(rows[2]).toHaveTextContent("Undated First");
+    expect(rows[3]).toHaveTextContent("Undated Second");
+    await user.click(yearSort);
+    rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Dated 2021");
+    expect(rows[1]).toHaveTextContent("Dated 2024");
+    expect(rows[2]).toHaveTextContent("Undated First");
+    expect(rows[3]).toHaveTextContent("Undated Second");
   });
 
   it("summarizes literature categories cleanly and avoids raw source ID labels in both locales", () => {
@@ -357,5 +387,113 @@ describe("master literature table, category summary, and clean status tooltips",
     expect(t("sourceIds")).toBe("Supporting sources");
     expect(zh("sourceIds")).toBe("支持文獻");
     expect(zh("sourceId")).toBe("對應文獻");
+  });
+
+  it("clears prior search query when an overview category request arrives", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <LiteratureLibrary sources={sources} screenings={[]} t={t} onScreen={vi.fn()} onPrepare={vi.fn()} />,
+    );
+    await user.type(screen.getByLabelText(t("catalogSearch")), "opinions");
+    expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(1);
+    rerender(
+      <LiteratureLibrary
+        sources={sources}
+        screenings={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onPrepare={vi.fn()}
+        requestedView={{ mode: "table", category: "human", nonce: 1 }}
+      />,
+    );
+    expect(screen.getByLabelText(t("catalogSearch"))).toHaveValue("");
+    expect(within(screen.getByRole("table")).getAllByRole("row").slice(1).length).toBeGreaterThan(1);
+  });
+
+  it("preserves unsaved working-summary edits while toggling to master table and back to reader", async () => {
+    const user = userEvent.setup();
+    const sha = "a".repeat(64);
+    const artifact = {
+      id: "art-1",
+      project_id: "proj-1",
+      source_record_id: "src-1",
+      role: "evidence",
+      path: "reports/draft.md",
+      sha256: sha,
+      current: true,
+    };
+    const record: ResearchRecord = {
+      id: "src-1",
+      kind: "source",
+      data: {
+        id: "src-1",
+        title: "Editable Summary Paper",
+        category: "llm",
+        identity_status: "unverified",
+        source_records: [
+          {
+            observation_id: "obs-1",
+            work_id: "work-1",
+            source_id: "src-1",
+            evidence_level: "generated-summary",
+            status: "available",
+            text_path: "reports/draft.md",
+            text_sha256: sha,
+          },
+        ],
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (inputUrl) => {
+      const url = String(inputUrl);
+      if (url.includes("/working-summary")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            context: {
+              source_record_id: "src-1",
+              artifact_id: "art-1",
+              artifact_sha256: sha,
+              revision: "b".repeat(64),
+              draft_text: "Initial draft text.",
+              working_summary: null,
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          preview: {
+            artifact_id: "art-1",
+            sha256: sha,
+            path: "reports/draft.md",
+            text: "Initial draft text.",
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    });
+    render(
+      <LiteratureLibrary
+        sources={[record]}
+        screenings={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onPrepare={vi.fn()}
+        observationRead={{ projectId: "proj-1", artifacts: [artifact], active: true, revision: 0 }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: `${t("workingSummaryReview")} art-1` }));
+    const editor = await screen.findByRole("textbox", { name: t("workingSummaryText") });
+    await user.type(editor, " Unsaved human edit.");
+    expect(editor).toHaveValue("Initial draft text. Unsaved human edit.");
+
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    expect(screen.getByRole("table")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
+    expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+      "Initial draft text. Unsaved human edit.",
+    );
   });
 });

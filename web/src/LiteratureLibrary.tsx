@@ -190,6 +190,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
     if (!requestedView || requestedView.nonce <= handledRequestNonce.current) return;
     handledRequestNonce.current = requestedView.nonce;
     setViewMode(requestedView.mode);
+    setQuery("");
     if (requestedView.category === "__unclassified__") {
       setSelectedCategory("");
       setOrganization("unclassified");
@@ -229,12 +230,12 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   const active = observationRead?.active !== false;
   const focusRequested = useRef(false);
   useEffect(() => {
-    if (focusRequested.current) {
+    if (focusRequested.current && viewMode === "split") {
       focusRequested.current = false;
       detailHeading.current?.focus();
       if (openDraftRequested.current) { openDraftRequested.current = false; openDrafts(false); }
     }
-  }, [selectedId, readerOpen]);
+  }, [selectedId, readerOpen, viewMode]);
   const latestScreenings = latestScreeningMap(screenings);
   const screenedDecision = (record: ResearchRecord): "include" | "exclude" | null =>
     screeningDecisionFor(record, latestScreenings);
@@ -301,7 +302,14 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   const selectedAuthors = selected ? formatAuthors(selected.data.authors) : "";
   const selectedVenue = selected ? (text(selected.data.venue) || text(selected.data.journal)) : "";
   const sortedVisible = sortBy === "default" ? visible : [...visible].sort((a, b) => {
-    if (sortBy === "year-desc") return numericYear(b.data.year) - numericYear(a.data.year);
+    if (sortBy === "year-desc") {
+      const ay = numericYear(a.data.year);
+      const by = numericYear(b.data.year);
+      if (ay === -Infinity && by === -Infinity) return 0;
+      if (ay === -Infinity) return 1;
+      if (by === -Infinity) return -1;
+      return by - ay;
+    }
     if (sortBy === "year-asc") {
       const ay = numericYear(a.data.year);
       const by = numericYear(b.data.year);
@@ -508,7 +516,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       </div>
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
       </div>
-      {viewMode === "table" ? (
+      {viewMode === "table" && (
         <div className="catalog-master-view">
           {summaryStats.groups.length > 0 && (
             <div className="catalog-category-strip" role="group" aria-label={t("catalogTableCategorySummary")}>
@@ -731,8 +739,8 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
           )}
         </div>
-      ) : (
-      <div className="catalog-workspace">
+      )}
+      <div className="catalog-workspace" hidden={viewMode === "table"}>
         {!categoryHost && categoryFilters}
         <div className="catalog-list" ref={list} hidden={compact && readerOpen}>
           {visible.length ? (
@@ -838,7 +846,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               </details>
             </div>}
             {!note && registeredNativeSummary(selected) && (
-              <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && (!compact || readerOpen)} : undefined} t={t} exportable />
+              <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
             )}
             <section>
               <h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>
@@ -848,9 +856,9 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
               <button type="button" className="button secondary small" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
             {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
-              <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && (!compact || readerOpen)} : undefined} t={t} />}</div>}
-            {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && (!compact || readerOpen)} : undefined}
-              suspended={Boolean(pageSuspended && draftScope?.active === false && (!compact || readerOpen))}
+              <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} />}</div>}
+            {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined}
+              suspended={Boolean((!compact || readerOpen) && (viewMode === "table" || (pageSuspended && draftScope?.active === false)))}
               onOpen={() => {setSelectedId(selected.id); setReaderOpen(true);}}
               t={t} onSaved={onWorkingSummarySaved}/>}
             <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="small muted">{t("catalogNoRelevance")}</p>}</section>
@@ -923,7 +931,6 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
           </div> : <p>{t("catalogSelectSource")}</p>}
         </aside>
       </div>
-      )}
     </section>
   );
 }
