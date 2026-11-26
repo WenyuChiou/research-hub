@@ -453,7 +453,7 @@ class TaskService:
         if not isinstance(instructions, str) or len(instructions) > 20000:
             raise WorkspaceError("Task instructions must be text of at most 20000 characters")
         normalized_source_ids: list[str] | None = None
-        all_records = self.workspace.records(project_id)
+        all_records: list[dict] | None = None
         if selected_source_ids is not None:
             if mode != "handoff" or operation not in {"synthesize", "frame"}:
                 raise WorkspaceError(
@@ -462,6 +462,7 @@ class TaskService:
                 )
             if not isinstance(selected_source_ids, list) or not selected_source_ids or len(selected_source_ids) > 500:
                 raise WorkspaceError("selected_source_ids must be a non-empty list of up to 500 source IDs")
+            all_records = self.workspace.records(project_id)
             seen_ids: set[str] = set()
             normalized_source_ids = []
             valid_sources = {r["id"] for r in all_records if r.get("kind") == "source"}
@@ -494,6 +495,7 @@ class TaskService:
         if research_draft:
             scoped_records = []
         elif normalized_source_ids is not None:
+            assert all_records is not None
             selected_set = set(normalized_source_ids)
             scoped_records = project_records([
                 r for r in all_records
@@ -501,7 +503,7 @@ class TaskService:
                 or (r.get("kind") in {"screening", "source_curation"} and isinstance(r.get("data"), dict) and r["data"].get("source_id") in selected_set)
             ])
         else:
-            scoped_records = project_records(all_records)
+            scoped_records = project_records(self.workspace.records(project_id))
         request = {"schema_version": 1, "task_id": task_id, "operation": operation,
                    "project": project, "instructions": instructions, "artifacts": artifacts,
                    "records": scoped_records, "allowed_changes": "proposal-only",
@@ -518,7 +520,7 @@ class TaskService:
             request["records"] = []
         elif source_selection is not None:
             raise WorkspaceError("Source selection is only supported for the abstract draft profile", "unsupported_capability")
-        elif os.environ.get("RESEARCH_HUB_WRITING_ADAPTER", "").strip():
+        elif normalized_source_ids is None and os.environ.get("RESEARCH_HUB_WRITING_ADAPTER", "").strip():
             adapter = WritingAdapter()
             state = adapter.bind(self.workspace, project_id)
             request.update(adapter_sha256=adapter.sha256, manuscript_state_path=state.relative_to(self.workspace.root).as_posix(), manuscript_state_sha256=file_hash(state), manuscript_state=json.loads(state.read_text(encoding="utf-8")))

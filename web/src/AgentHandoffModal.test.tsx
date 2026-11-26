@@ -171,11 +171,13 @@ describe("semantic labels, tag curation, and AI agent handoff exports", () => {
     expect(promptBox.value).toContain("reading_scope=abstract");
     expect(promptBox.value).toContain("labels=[multi-agent, simulation, memory]");
 
-    // Switch to NotebookLM preset & verify --cluster flag + cluster creation step
+    // Switch to NotebookLM preset & verify --cluster flag + cluster creation + research-hub doctor (no nonexistent status subcommand)
     await user.click(within(dialog).getByRole("button", { name: new RegExp(tEn("handoffPresetNlmTitle")) }));
     expect(promptBox.value).toContain("research-hub clusters new --query");
     expect(promptBox.value).toContain("research-hub notebooklm bundle --cluster demo-20");
     expect(promptBox.value).toContain("research-hub notebooklm upload --cluster demo-20 --dry-run");
+    expect(promptBox.value).toContain("research-hub doctor");
+    expect(promptBox.value).not.toContain("notebooklm status");
 
     // Switch to 7-Section summary preset & verify --root / --project / --path CLI flags
     await user.click(within(dialog).getByRole("button", { name: new RegExp(tEn("handoffPresetSummaryTitle")) }));
@@ -272,9 +274,10 @@ describe("semantic labels, tag curation, and AI agent handoff exports", () => {
     expect(singleMd).toContain("## Working Summary (Unverified Draft)");
     expect(singleMd).toContain("memory reflection drives emergent planning");
 
-    const nlmPack = buildNotebookLmSourcePack(sampleSources, "Demo", "demo-20");
+    const nlmPack = buildNotebookLmSourcePack(sampleSources, "Study $(printf evil) $HOME 'x'", "demo-20");
     expect(nlmPack).toContain("Full-Text Declared Sources (1)");
     expect(nlmPack).toContain("Abstract-Only & Metadata Sources (2)");
+    expect(nlmPack).toContain("research-hub clusters new --query 'Study $(printf evil) $HOME '\\''x'\\''' --slug demo-20");
     expect(nlmPack).toContain("research-hub notebooklm bundle --cluster demo-20");
     expect(nlmPack).toContain("#### Working Summary (Unverified Draft)");
 

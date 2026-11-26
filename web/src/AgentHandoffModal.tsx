@@ -138,6 +138,11 @@ function inlineMarkdown(value: string): string {
     .trim();
 }
 
+export function shellQuote(value: string): string {
+  const cleaned = value.replace(/[\r\n\u0085\u2028\u2029]+/g, " ").trim();
+  return `'${cleaned.replace(/'/g, "'\\''")}'`;
+}
+
 const BIBTEX_SPECIAL: Record<string, string> = {
   "\\": "\\textbackslash{}",
   "{": "\\{",
@@ -326,7 +331,7 @@ export function buildNotebookLmSourcePack(
     "> Upload this `.md` file directly to NotebookLM, or prepare a dedicated pipeline cluster for ONLY these papers before bundling:",
     "```bash",
     `# 1. Create (or reuse) a dedicated pipeline cluster for this selection:`,
-    `research-hub clusters new --query ${JSON.stringify(projectTitle || slug)} --slug ${slug}`,
+    `research-hub clusters new --query ${shellQuote(projectTitle || slug)} --slug ${slug}`,
     `# 2. Preview ingesting ONLY the selected papers JSON, then re-run without --dry-run on approval:`,
     `research-hub ingest --input <papers.json> --cluster ${slug} --dry-run`,
     `# 3. Bundle the ingested cluster and preview NotebookLM upload:`,
@@ -481,7 +486,7 @@ export function buildAgentHandoffPrompt({
           "3. 確認該 Cluster 僅含選定文獻後，執行打包與乾跑預覽：",
           `   \`research-hub notebooklm bundle --cluster ${clusterSlug}\``,
           `   \`research-hub notebooklm upload --cluster ${clusterSlug} --dry-run\``,
-          "4. 檢查 NotebookLM 登入狀態（`research-hub notebooklm status`）；經我確認後才加上 `--create-if-missing` 上傳並產生簡報，最後用 `notebooklm-brief-verifier` 核對每條引用。",
+          "4. 檢查 NotebookLM 登入狀態（`research-hub doctor`）；經我確認後才加上 `--create-if-missing` 上傳並產生簡報，最後用 `notebooklm-brief-verifier` 核對每條引用。",
         ]
       : [
           "## Task: Prepare NotebookLM Bundle & Verify Brief",
@@ -492,7 +497,7 @@ export function buildAgentHandoffPrompt({
           "3. After confirming the cluster holds only the intended papers, bundle and preview upload first (never upload without showing dry-run output):",
           `   \`research-hub notebooklm bundle --cluster ${clusterSlug}\``,
           `   \`research-hub notebooklm upload --cluster ${clusterSlug} --dry-run\``,
-          "4. Check `research-hub notebooklm status`; after my approval, upload with `--create-if-missing`, generate the brief, and audit every citation with `notebooklm-brief-verifier`.",
+          "4. Check NotebookLM session health via `research-hub doctor`; after my approval, upload with `--create-if-missing`, generate the brief, and audit every citation with `notebooklm-brief-verifier`.",
         ];
   } else if (preset === "seven-section-summary") {
     instructions = isZh
@@ -706,7 +711,7 @@ export function AgentHandoffModal({
         const last = focusables[focusables.length - 1];
         const active = document.activeElement as HTMLElement | null;
         if (event.shiftKey) {
-          if (!active || active === first || !modalRef.current.contains(active)) {
+          if (!active || active === first || active === headingRef.current || !modalRef.current.contains(active)) {
             event.preventDefault();
             last.focus();
           }

@@ -638,8 +638,10 @@ def test_scenario_4_multi_persona_zotero_and_notebooklm_integration_probes(tmp_p
         mock_zot_thread.join(timeout=5)
 
 
-def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path: Path):
+def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """End-to-end AI Agent Handoff button flow: scoped selected_source_ids -> packet -> import result -> review gate."""
+    # Even if RESEARCH_HUB_WRITING_ADAPTER is configured, scoped selected_source_ids handoffs MUST NOT bind whole-project manuscript_state.
+    monkeypatch.setenv("RESEARCH_HUB_WRITING_ADAPTER", str(tmp_path / "nonexistent-adapter"))
     ws = Workspace(tmp_path / "ws")
     project = ws.create_project(
         id="handoff-20",
@@ -720,6 +722,8 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
         assert task["request"]["selected_source_ids"] == chosen_ids
         assert [r["id"] for r in task["request"]["records"]] == chosen_ids
         assert task["request"]["artifacts"] == []
+        assert "manuscript_state" not in task["request"]
+        assert task["request"]["adapter_sha256"] is None
 
         # Export handoff packet — verify only the 2 selected sources are exported, never the other 18 or private draft
         code, packet = _http_json(
