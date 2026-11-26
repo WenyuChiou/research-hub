@@ -622,9 +622,6 @@ h1:focus {
   [data-tooltip-pos="top"]:hover::after {
     transform: translate(-50%, 0) scale(1);
   }
-  .tooltip-group:has([data-tooltip]:hover) [data-tooltip]:hover::after {
-    transition-delay: 30ms;
-  }
 }
 [data-tooltip]:focus-visible::after {
   opacity: 1;

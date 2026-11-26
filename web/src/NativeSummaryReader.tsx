@@ -132,7 +132,7 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
         {summary && <span className="badge warn">{t("nativePending")}</span>}
       </div>
       {exportable && summary && scope?.projectId && (
-        <div className="native-export-actions tooltip-group">
+        <div className="native-export-actions">
           <button
             type="button"
             className="button secondary small icon-btn"

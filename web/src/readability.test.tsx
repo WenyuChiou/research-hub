@@ -354,13 +354,17 @@ it("enforces design-engineering micro-interaction and scroll containment craft r
   ).toContain("contain");
   expect(values("button", "touch-action")).toContain("manipulation");
   expect(values("[data-tooltip]::after", "pointer-events")).toContain("none");
-  expect(
-    combinedRules
-      .filter(
-        (rule) =>
-          rule.selectors.includes(".icon-btn") &&
-          rule.media === "(max-width: 760px)",
-      )
-      .map((rule) => Number.parseFloat(rule.style.getPropertyValue("min-height"))),
-  ).toContain(44);
+  for (const selector of [".icon-btn", ".sidebar .new-project", ".integration-entry .button"]) {
+    expect(
+      combinedRules
+        .filter(
+          (rule) =>
+            rule.selectors.includes(selector) &&
+            rule.media === "(max-width: 760px)",
+        )
+        .map((rule) => Number.parseFloat(rule.style.getPropertyValue("min-width")))
+        .filter((value) => !Number.isNaN(value)),
+      selector,
+    ).toContain(44);
+  }
 });

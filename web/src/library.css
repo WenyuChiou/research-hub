@@ -514,7 +514,9 @@
   .integration-form-fields select {
     min-height: 44px;
   }
-  .icon-btn {
+  .icon-btn,
+  .sidebar .new-project,
+  .integration-entry .button {
     min-width: 44px;
   }
 }
