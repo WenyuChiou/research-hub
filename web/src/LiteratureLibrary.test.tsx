@@ -881,6 +881,7 @@ describe("master literature table, category summary, and clean status tooltips",
       data: {
         title: "Structured Authors Study",
         locator: "https://example.org/struct",
+        sub_category: "llm",
         authors: [
           { family: "Smith", given: "John" },
           { family: "Doe", given: "Jane" },
@@ -905,16 +906,19 @@ describe("master literature table, category summary, and clean status tooltips",
     expect(within(form).getByLabelText(t("catalogMetaAuthors"))).toHaveValue("Smith, John; Doe, Jane");
 
     // Editing only category must not overwrite structured authors with broken comma splits.
+    await user.clear(within(form).getByLabelText(t("catalogCategory")));
     await user.type(within(form).getByLabelText(t("catalogCategory")), "human");
     await user.click(within(form).getByRole("button", { name: t("catalogSaveMeta") }));
     expect(onCurate).toHaveBeenLastCalledWith("src-struct-1", { category: "human" });
 
-    // Editing authors with semicolon keeps internal commas intact, and clearing venue/summary overrides journal/abstract.
+    // Editing authors with semicolon keeps internal commas intact, and clearing category/venue/summary overrides sub_category/journal/abstract.
+    await user.clear(within(form).getByLabelText(t("catalogCategory")));
     await user.type(within(form).getByLabelText(t("catalogMetaAuthors")), "; Lee, Amy");
     await user.clear(within(form).getByLabelText(t("catalogMetaVenue")));
     await user.clear(within(form).getByLabelText(t("catalogMetaSummary")));
     await user.click(within(form).getByRole("button", { name: t("catalogSaveMeta") }));
     expect(onCurate).toHaveBeenLastCalledWith("src-struct-1", {
+      category: "",
       authors: ["Smith, John", "Doe, Jane", "Lee, Amy"],
       venue: "",
       summary: "",
@@ -926,6 +930,7 @@ describe("master literature table, category summary, and clean status tooltips",
         kind: "source_curation",
         data: {
           source_id: "src-struct-1",
+          category: "",
           authors: ["Smith, John", "Doe, Jane", "Lee, Amy"],
           venue: "",
           summary: "",
@@ -945,6 +950,9 @@ describe("master literature table, category summary, and clean status tooltips",
     );
     expect(screen.queryByText("Original abstract from import.")).toBeNull();
     expect(screen.queryByText(/Nature Methods/)).toBeNull();
+    expect(within(form).getByLabelText(t("catalogCategory"))).toHaveValue("");
+    expect(screen.getAllByText(t("catalogUnclassified")).length).toBeGreaterThan(0);
+    expect(structured.data.sub_category).toBe("llm");
     expect(structured.data.abstract).toBe("Original abstract from import.");
     expect(structured.data.journal).toBe("Nature Methods");
   });

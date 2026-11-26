@@ -1,5 +1,5 @@
 import { NativeSummaryReader } from "./NativeSummaryReader";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
 import { useCompactReadingLayout } from "./readingLayout";
@@ -191,6 +191,9 @@ export function applySourceCurations(
     const overlay = overlays.get(record.id);
     if (!overlay) return record;
     const nextData: Record<string, unknown> = { ...record.data, ...overlay };
+    if ("category" in overlay && !text(overlay.category).trim()) {
+      nextData.sub_category = "";
+    }
     if ("summary" in overlay && !text(overlay.summary).trim()) {
       nextData.abstract = "";
     }
@@ -247,12 +250,14 @@ function isDraftDirty(draft: CurationDraft | undefined): boolean {
   return Boolean(draft && Object.values(draft.changed).some(Boolean));
 }
 
-interface CurationStateEntry {
+export interface CurationStateEntry {
   draft?: CurationDraft;
   saving?: boolean;
   saved?: boolean;
   error?: unknown;
 }
+
+export type CurationStateMap = Record<string, CurationStateEntry>;
 
 function SourceCurationForm({
   draft,
@@ -393,7 +398,7 @@ function SourceCurationForm({
   );
 }
 
-export function LiteratureLibrary({ sources: rawSources, screenings, curations, t, onScreen, onCurate, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView }: {
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, t, onScreen, onCurate, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   curations?: ResearchRecord[];
@@ -411,6 +416,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
   requestedView?: { mode: ViewMode; category?: string; nonce: number };
+  curationState?: CurationStateMap;
+  onCurationStateChange?: Dispatch<SetStateAction<CurationStateMap>>;
 }) {
   const rawSourceById = new Map(rawSources.map((record) => [record.id, record]));
   const sources = applySourceCurations(rawSources, curations);
@@ -422,7 +429,9 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [curationOpen, setCurationOpen] = useState(false);
-  const [curationState, setCurationState] = useState<Record<string, CurationStateEntry>>({});
+  const [localCurationState, setLocalCurationState] = useState<CurationStateMap>({});
+  const curationState = externalCurationState ?? localCurationState;
+  const setCurationState = onCurationStateChange ?? setLocalCurationState;
   const [openSummaryIds, setOpenSummaryIds] = useState<string[]>([]);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
