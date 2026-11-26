@@ -59,96 +59,121 @@ export function ReturningWork({
     <Panel
       title={t("recentActivity")}
       meta={<a href="#review">{t("viewReview")}</a>}
+      className="returning-panel"
     >
-      <p className="tool-intro">
-        {t("returnScope")} <strong>{detail.project.title}</strong>
-      </p>
-      <p className="small muted">{t("returnNotResume")}</p>
+      <div className="returning-header-box">
+        <p className="returning-scope-line">
+          {t("returnScope")} <strong>{detail.project.title}</strong>
+        </p>
+        <p className="small muted returning-subnote">{t("returnNotResume")}</p>
+      </div>
+
       {recent.length ? (
-        <>
-          <p>
-            {t("returnPending")}: {pending} · {t("returnAccepted")}: {accepted}
-          </p>
-          <p className="small muted">{t("returnAcceptanceNote")}</p>
+        <div className="returning-section">
+          <div className="returning-kpi-row">
+            <span className="returning-kpi-pill">
+              {t("returnPending")}: <strong>{pending}</strong>
+            </span>
+            <span aria-hidden="true" className="muted">·</span>
+            <span className="returning-kpi-pill">
+              {t("returnAccepted")}: <strong>{accepted}</strong>
+            </span>
+          </div>
+          <p className="small muted returning-subnote">{t("returnAcceptanceNote")}</p>
           <div className="returning-list">
             {recent.map((task) => (
-              <article key={task.id} className="research-record">
-                <div className="record-title">
-                  <strong>{t(operationLabel(task.operation))}</strong>
-                  <StatusBadge status={task.status} t={t} />
+              <article key={task.id} className="returning-task-card">
+                <div className="returning-task-main">
+                  <div className="record-title">
+                    <strong>{t(operationLabel(task.operation))}</strong>
+                    <StatusBadge status={task.status} t={t} />
+                  </div>
+                  <div className="returning-task-meta">
+                    <code className="task-id-chip">{task.id}</code>
+                    <span className="small muted">
+                      {t("returnTaskUpdated")}:{" "}
+                      {Number.isFinite(savedTime(task)) ? (
+                        <time dateTime={task.updated_at}>{task.updated_at}</time>
+                      ) : (
+                        t("returnUnknown")
+                      )}
+                    </span>
+                  </div>
                 </div>
-                <code>{task.id}</code>
-                <p className="small muted">
-                  {t("returnTaskUpdated")}:{" "}
-                  {Number.isFinite(savedTime(task)) ? (
-                    <time dateTime={task.updated_at}>{task.updated_at}</time>
-                  ) : (
-                    t("returnUnknown")
-                  )}
-                </p>
                 <button
-                  className="button secondary"
+                  type="button"
+                  className="button secondary small returning-open-btn"
+                  aria-label={`${t("returnOpenTask")} ${task.id}`}
                   onClick={() => navigate("review", `review-task-${task.id}`)}
                 >
-                  {t("returnOpenTask")} {task.id}
+                  <span>{t("returnOpenTask")}</span>
+                  <span aria-hidden="true">→</span>
                 </button>
               </article>
             ))}
           </div>
-          <p className="small muted">{t("returnBoundedTasks")}</p>
-        </>
+          <p className="small muted returning-subnote">{t("returnBoundedTasks")}</p>
+        </div>
       ) : (
-        <EmptyState>
+        <EmptyState compact>
           <p>{t("returnEmpty")}</p>
           <button
-            className="button secondary"
+            className="button secondary small"
             onClick={() => navigate("literature")}
           >
             {t("viewLiterature")}
           </button>
         </EmptyState>
       )}
-      <h3>{t("returnLocalBundles")}</h3>
-      <p className="small muted">{t("returnDeliveryScope")}</p>
-      {actions.length ? (
-        <div className="returning-list">
-          {actions.slice(0, 5).map((action) => (
-            <article key={action.id} className="research-record">
-              <strong>{localActionLabel(action, t)}</strong>
-              <p>
-                <code>{action.id}</code>
-              </p>
-              {action.receipt ? (
-                <>
-                  <p className="file-path">{action.receipt.path}</p>
-                  <p className="small muted">
-                    {t("receiptVerifiedAt")}:{" "}
-                    <time dateTime={action.receipt.verified_at}>
-                      {action.receipt.verified_at}
-                    </time>
-                  </p>
-                  <p className="small muted">{t("returnReceiptHistory")}</p>
-                </>
-              ) : (
-                <p className="small muted">{t("returnNoReceipt")}</p>
-              )}
-            </article>
-          ))}
+
+      <div className="returning-bundles-section">
+        <div className="returning-bundles-header">
+          <h3>{t("returnLocalBundles")}</h3>
+          {actions.length > 0 && (
+            <button
+              type="button"
+              className="button secondary small"
+              onClick={() => navigate("review", "review-local-delivery")}
+            >
+              {t("returnInspectBundles")}
+            </button>
+          )}
         </div>
-      ) : (
-        <p>{t("returnNoBundles")}</p>
-      )}
-      {actions.length > 0 && (
-        <>
-          <p className="small muted">{t("returnBoundedBundles")}</p>
-          <button
-            className="button secondary"
-            onClick={() => navigate("review", "review-local-delivery")}
-          >
-            {t("returnInspectBundles")}
-          </button>
-        </>
-      )}
+        <p className="small muted returning-subnote">{t("returnDeliveryScope")}</p>
+        {actions.length ? (
+          <>
+            <div className="returning-list">
+              {actions.slice(0, 5).map((action) => (
+                <article key={action.id} className="returning-task-card returning-bundle-card">
+                  <div className="returning-task-main">
+                    <div className="record-title">
+                      <strong>{localActionLabel(action, t)}</strong>
+                      <code className="task-id-chip">{action.id}</code>
+                    </div>
+                    {action.receipt ? (
+                      <>
+                        <p className="file-path">{action.receipt.path}</p>
+                        <p className="small muted returning-subnote">
+                          {t("receiptVerifiedAt")}:{" "}
+                          <time dateTime={action.receipt.verified_at}>
+                            {action.receipt.verified_at}
+                          </time>
+                        </p>
+                        <p className="small muted returning-subnote">{t("returnReceiptHistory")}</p>
+                      </>
+                    ) : (
+                      <p className="small muted returning-subnote">{t("returnNoReceipt")}</p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+            <p className="small muted returning-subnote">{t("returnBoundedBundles")}</p>
+          </>
+        ) : (
+          <p className="small muted returning-empty-bundles">{t("returnNoBundles")}</p>
+        )}
+      </div>
     </Panel>
   );
 }

@@ -193,7 +193,11 @@ export function EmptyState({
       <span className="empty-mark" aria-hidden="true">
         ＋
       </span>
-      <p>{children}</p>
+      {typeof children === "string" || typeof children === "number" ? (
+        <p>{children}</p>
+      ) : (
+        <div className="empty-state-body">{children}</div>
+      )}
     </div>
   );
 }

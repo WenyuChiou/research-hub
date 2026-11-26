@@ -770,3 +770,244 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+MULTI_TOPIC_COHORTS: dict[str, dict] = {
+    "llm-social-sim": {
+        "title": "LLM Multi-Agent & Behavioral Simulation",
+        "query": "LLM multi-agent social simulation behavioral fidelity",
+        "zotero_key": "COLL_LLM",
+        "papers": [
+            {"slug": "park-2023-agents", "title": "Generative Agents: Interactive Simulacra", "authors": ["Joon Sung Park"], "year": 2023, "venue": "UIST", "doi": "10.1145/3586183.3606763", "category": "llm-agents", "scope": "full-text", "tags": ["multi-agent", "simulation"]},
+            {"slug": "argyle-2023-silicon", "title": "Out of One, Many: Silicon Sampling", "authors": ["Lisa P. Argyle"], "year": 2023, "venue": "Political Analysis", "doi": "10.1017/pan.2023.2", "category": "human-simulation", "scope": "full-text", "tags": ["silicon-sampling", "validation"]},
+            {"slug": "bisbee-2024-perils", "title": "Synthetic Replacements for Human Survey Data", "authors": ["James Bisbee"], "year": 2024, "venue": "Political Analysis", "doi": "10.1017/pan.2024.5", "category": "evaluation-methods", "scope": "abstract", "tags": ["bias", "validation"]},
+            {"slug": "li-2024-econagent", "title": "EconAgent: Macroeconomic Activities Simulation", "authors": ["Nian Li"], "year": 2024, "venue": "ACL", "doi": "10.18653/v1/2024.acl-long.829", "category": "human-simulation", "scope": "abstract", "tags": ["economics", "multi-agent"]},
+        ],
+    },
+    "hydro-climate-abm": {
+        "title": "Basin Hydrology & Climate Adaptation ABM",
+        "query": "river basin hydrology drought adaptation agent-based modeling",
+        "zotero_key": "COLL_HYDRO",
+        "papers": [
+            {"slug": "du-2024-hydro-llm", "title": "Coupling LLMs with Hydrological Water Allocation", "authors": ["Hao Du", "Lin Wei"], "year": 2024, "venue": "Water Resources Research", "doi": "10.1029/2024wr037001", "category": "water-abm", "scope": "full-text", "tags": ["hydrology", "drought"]},
+            {"slug": "castilla-2024-basin", "title": "Behavioral Heterogeneity in Transboundary River Basins", "authors": ["Elena Castilla"], "year": 2024, "venue": "Env Modelling & Software", "doi": "10.1016/j.envsoft.2024.105912", "category": "water-abm", "scope": "full-text", "tags": ["hydrology", "policy"]},
+            {"slug": "kim-2024-irrigation", "title": "Adaptive Farmer Irrigation Under Drought", "authors": ["Minjun Kim"], "year": 2024, "venue": "Journal of Hydrology", "doi": "10.1016/j.jhydrol.2024.131044", "category": "climate-adaptation", "scope": "abstract", "tags": ["irrigation", "drought"]},
+            {"slug": "torres-2025-reservoir", "title": "Multi-Reservoir Operating Rules Under Climate Shift", "authors": ["Carlos Torres"], "year": 2025, "venue": "Water Resources Management", "doi": "10.1007/s11269-025-04110-2", "category": "reservoir-ops", "scope": "metadata", "tags": ["reservoir", "policy"]},
+        ],
+    },
+    "clinical-ai-trials": {
+        "title": "Clinical AI Decision Support & Medical Trials",
+        "query": "clinical AI decision support randomized controlled trials",
+        "zotero_key": "COLL_CLINICAL",
+        "papers": [
+            {"slug": "vance-2025-sepsis-rct", "title": "Randomized Trial of Bedside Clinical AI Sepsis Alerts", "authors": ["Elena Vance", "Marcus Chen"], "year": 2025, "venue": "Nature Medicine", "doi": "10.1038/s41591-025-00111-2", "category": "clinical-trials", "scope": "full-text", "tags": ["rct", "sepsis", "validation"]},
+            {"slug": "patel-2024-radiology-cds", "title": "Diagnostic Calibration in Chest Radiography AI", "authors": ["Priya Patel"], "year": 2024, "venue": "The Lancet Digital Health", "doi": "10.1016/s2589-7500(24)00045-8", "category": "diagnostic-ai", "scope": "full-text", "tags": ["radiology", "calibration"]},
+            {"slug": "gomez-2024-ehr-triage", "title": "Prospective Evaluation of Emergency Triage LLMs", "authors": ["Sofia Gomez"], "year": 2024, "venue": "JAMA Network Open", "doi": "10.1001/jamanetworkopen.2024.11892", "category": "clinical-triage", "scope": "abstract", "tags": ["ehr", "triage"]},
+            {"slug": "okafor-2025-fda-audit", "title": "Post-Market Surveillance of Cleared Medical AI Devices", "authors": ["Chidi Okafor"], "year": 2025, "venue": "NEJM AI", "doi": "10.1056/aics20250042", "category": "regulatory-audit", "scope": "metadata", "tags": ["fda", "safety"]},
+        ],
+    },
+}
+
+
+def test_scenario_6_multi_topic_three_domain_e2e_crud_obsidian_bases_and_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """3 distinct academic topics: ingest + Obsidian .base views + multi-collection snapshot + HTTP CRUD + isolation."""
+    from research_hub.obsidian_bases import write_cluster_base
+
+    cfg, config_path = _make_cfg(tmp_path, monkeypatch)
+    fake_zotero = _FakeZoteroClient()
+    registry = ClusterRegistry(cfg.clusters_file)
+
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: fake_zotero)
+    monkeypatch.setattr(
+        pipeline,
+        "check_duplicate",
+        lambda _zot, doi, _title: bool(doi and doi.lower() in fake_zotero.dois_seen),
+    )
+    monkeypatch.setattr(pipeline, "add_note", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        pipeline,
+        "_load_or_build_dedup",
+        lambda *_a, **_k: _build_obsidian_dedup_index(cfg.raw),
+    )
+
+    for slug, topic in MULTI_TOPIC_COHORTS.items():
+        registry.create(
+            query=topic["query"],
+            name=topic["title"],
+            slug=slug,
+            zotero_collection_key=topic["zotero_key"],
+        )
+        topic_inputs = []
+        for p_spec in topic["papers"]:
+            item = paper_input(p_spec["title"], p_spec["slug"], p_spec["doi"])
+            item.update(
+                {
+                    "authors": p_spec["authors"],
+                    "year": p_spec["year"],
+                    "journal": p_spec["venue"],
+                    "tags": list(p_spec["tags"]),
+                    "abstract": (
+                        f"Empirical study on {p_spec['title']}."
+                        if p_spec["scope"] != "metadata"
+                        else "TBD"
+                    ),
+                    "summary": f"Summary for {p_spec['title']}.",
+                    "reading_level": p_spec["scope"],
+                    "url": f"https://doi.org/{p_spec['doi']}",
+                }
+            )
+            topic_inputs.append(item)
+        (cfg.root / "papers_input.json").write_text(
+            json.dumps({"papers": topic_inputs}, ensure_ascii=False), encoding="utf-8"
+        )
+        assert pipeline.run_pipeline(cluster_slug=slug, query=topic["query"], verify=False) == 0
+        base_file, _ = write_cluster_base(hub_root=cfg.hub, cluster_slug=slug, cluster_name=topic["title"], force=True)
+        assert base_file.is_file()
+        assert "views:" in base_file.read_text(encoding="utf-8")
+
+    assert len(fake_zotero.created) == 12
+    for slug in MULTI_TOPIC_COHORTS:
+        assert len(list((cfg.raw / slug).glob("*.md"))) == 4
+
+    # Multi-collection Obsidian snapshot across all 3 topics (12 notes total)
+    (cfg.root / ".obsidian").mkdir(exist_ok=True)
+    snapshot_path = tmp_path / "library-snapshot-multi.json"
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "library_snapshot.py"
+    collection_flags = [arg for slug in MULTI_TOPIC_COHORTS for arg in ("--collection", slug)]
+    proc = subprocess.run(
+        [sys.executable, str(script_path), "--vault", str(cfg.root), *collection_flags, "--output", str(snapshot_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    snap_json = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert len(snap_json["collections"]) == 3
+    assert len(snap_json["notes"]) == 12
+    snap_collection_ids = {n["data"]["collection_id"] for n in snap_json["notes"]}
+    assert snap_collection_ids == set(MULTI_TOPIC_COHORTS.keys())
+
+    # Create 3 isolated projects on WorkspaceServer and test CRUD + isolation
+    ws = Workspace(tmp_path / "ws-multi")
+    first_source_by_topic: dict[str, str] = {}
+    for slug, topic in MULTI_TOPIC_COHORTS.items():
+        ws.create_project(id=slug, title=topic["title"], archetype="review", goal=topic["query"])
+        for p_spec in topic["papers"]:
+            rec = ws.add_record(
+                slug,
+                kind="source",
+                data={
+                    "title": p_spec["title"],
+                    "locator": f"https://doi.org/{p_spec['doi']}",
+                    "doi": p_spec["doi"],
+                    "authors": p_spec["authors"],
+                    "year": p_spec["year"],
+                    "venue": p_spec["venue"],
+                    "category": p_spec["category"],
+                    "tags": p_spec["tags"],
+                    "reading_scope": p_spec["scope"],
+                },
+            )
+            first_source_by_topic.setdefault(slug, rec["id"])
+
+    server = WorkspaceServer(
+        ws.root,
+        port=0,
+        obsidian_vault=cfg.root,
+        library_snapshot=snapshot_path,
+        integrations_config=config_path,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        csrf = _fetch_csrf(base)
+
+        # Verify workspace capability exposes vault basename only (never full filesystem path)
+        code, ws_info = _http_json(f"{base}/api/v1/workspace")
+        assert code == 200
+        local_cap = ws_info["capabilities"]["local_integrations"]
+        assert local_cap["obsidian_vault_configured"] is True
+        assert local_cap["obsidian_vault_name"] == "vault"
+        assert str(cfg.root) not in json.dumps(local_cap)
+
+        # 1. Add a 5th source to clinical-ai-trials via HTTP
+        code, added = _http_json(
+            f"{base}/api/v1/projects/clinical-ai-trials/records",
+            method="POST",
+            payload={
+                "kind": "source",
+                "data": {
+                    "title": "Multi-Center Cardiology AI Alert Trial",
+                    "locator": "https://doi.org/10.1056/nejmoa2025991",
+                    "doi": "10.1056/nejmoa2025991",
+                    "authors": ["Hannah Lin", "David Cho"],
+                    "year": "2025",
+                    "venue": "NEJM",
+                    "category": "clinical-trials",
+                    "tags": ["cardiology", "rct"],
+                    "reading_scope": "full-text",
+                },
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code == 200 and added["ok"] is True
+        added_id = added["record"]["id"]
+
+        # 2. Edit DOI/tags, Archive, and Restore via source_curation
+        for patch in (
+            {"source_id": added_id, "doi": "10.1056/nejmoa2025999", "tags": ["cardiology", "rct", "fda"], "archived": True},
+            {"source_id": added_id, "archived": False},
+        ):
+            code, cur_resp = _http_json(
+                f"{base}/api/v1/projects/clinical-ai-trials/records",
+                method="POST",
+                payload={"kind": "source_curation", "data": patch},
+                csrf=csrf,
+                origin=base,
+            )
+            assert code == 200 and cur_resp["ok"] is True
+
+        # 3. Bind an Evidence claim in clinical-ai-trials
+        code, claim_resp = _http_json(
+            f"{base}/api/v1/projects/clinical-ai-trials/records",
+            method="POST",
+            payload={
+                "kind": "claim",
+                "data": {
+                    "text": "Bedside sepsis and cardiology AI alerts reduce time-to-intervention.",
+                    "source_ids": [first_source_by_topic["clinical-ai-trials"], added_id],
+                    "uncertainty": "Requires external hospital validation.",
+                },
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code == 200 and claim_resp["ok"] is True
+
+        # 4. Cross-project isolation: curating a clinical source inside hydro-climate-abm MUST fail with 400
+        code, cross_err = _http_json(
+            f"{base}/api/v1/projects/hydro-climate-abm/records",
+            method="POST",
+            payload={"kind": "source_curation", "data": {"source_id": added_id, "category": "tampered"}},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code == 400 and cross_err["ok"] is False
+
+        # Verify llm-social-sim and hydro-climate-abm still have exactly 4 sources each, while clinical-ai-trials has 5
+        for slug, expected_count in (("llm-social-sim", 4), ("hydro-climate-abm", 4), ("clinical-ai-trials", 5)):
+            code, detail = _http_json(f"{base}/api/v1/projects/{slug}")
+            assert code == 200
+            topic_sources = [r for r in detail["records"] if r["kind"] == "source"]
+            assert len(topic_sources) == expected_count
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+

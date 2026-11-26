@@ -1,5 +1,5 @@
 import { LibraryCollection } from "./LibraryCollection";
-import { applySourceCurations, buildLiteratureSummaryStats, categoryName } from "./LiteratureLibrary";
+import { applySourceCurations, buildLiteratureSummaryStats, categoryName, readingScopeTone } from "./LiteratureLibrary";
 import { DiscoveryPanel } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { artifactReference } from "./sourceStorage";
@@ -150,12 +150,23 @@ export function ProjectPages({
   const [literatureViewRequest, setLiteratureViewRequest] = useState<{
     mode: "split" | "table";
     category?: string;
+    sourceId?: string;
+    archived?: boolean;
     nonce: number;
   }>({ mode: "split", nonce: 0 });
   function openLiteratureTable(category = "") {
     setLiteratureViewRequest((prev) => ({
       mode: "table",
       category,
+      nonce: prev.nonce + 1,
+    }));
+    navigate("literature");
+  }
+  function openLiteratureSource(source: ResearchRecord) {
+    setLiteratureViewRequest((prev) => ({
+      mode: "split",
+      sourceId: source.id,
+      archived: source.data.archived === true,
       nonce: prev.nonce + 1,
     }));
     navigate("literature");
@@ -195,12 +206,15 @@ export function ProjectPages({
   const records = (kind: string) =>
     detail.records.filter((record) => record.kind === kind);
   const sources = records("source");
+  const curatedActiveSources = applySourceCurations(sources, records("source_curation")).filter(
+    (item) => item.data.archived !== true,
+  );
   const titleCounts = new Map<string, number>();
-  for (const source of sources) {
+  for (const source of curatedActiveSources) {
     const label = textValue(source.data.title).trim();
     titleCounts.set(label, (titleCounts.get(label) ?? 0) + 1);
   }
-  const baseSourceOptions = sources.map((source) => {
+  const baseSourceOptions = curatedActiveSources.map((source) => {
     const title = textValue(source.data.title).trim();
     const fallback = textValue(source.data.year || source.data.doi || source.data.locator).trim() || source.id.slice(0, 6);
     const label = !title ? source.id : (titleCounts.get(title) ?? 0) > 1 ? `${title} (${fallback})` : title;
@@ -470,7 +484,7 @@ export function ProjectPages({
             >
               {(() => {
                 const stats = buildLiteratureSummaryStats(
-                  applySourceCurations(sources, records("source_curation")),
+                  curatedActiveSources,
                   records("screening"),
                 );
                 if (!stats.total) {
@@ -552,7 +566,7 @@ export function ProjectPages({
                 <div>
                   <dt>{t("literature")}</dt>
                   <dd>
-                    {sources.length}
+                    {curatedActiveSources.length}
                     <span>{t("sourceCount")}</span>
                   </dd>
                 </div>
@@ -588,6 +602,7 @@ export function ProjectPages({
           observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}
           onScreen={(sourceId, decision, rationale) => saveRecord("screening", {source_id:sourceId, decision, rationale})}
           onCurate={(sourceId, curation) => saveRecord("source_curation", {source_id:sourceId, ...curation})}
+          onAddSource={(source) => saveRecord("source", {...source, identity_status: "unverified"})}
           onCreateHandoffTask={createHandoffTask}
           onNavigateReview={(taskId) => navigate("review", taskId ? `review-task-${taskId}` : undefined)}
           onOpenSetup={onOpenSetup}
@@ -645,8 +660,8 @@ export function ProjectPages({
                 : "";
             const normalizeLocator = (value: unknown) =>
               typeof value === "string" ? value.trim().replace(/\/+$/, "").toLowerCase() : "";
-            const savedDois = new Set(sources.map((s) => normalizeDoi(s.data.doi)).filter(Boolean));
-            const savedLocators = new Set(sources.map((s) => normalizeLocator(s.data.locator)).filter(Boolean));
+            const savedDois = new Set(curatedActiveSources.map((s) => normalizeDoi(s.data.doi)).filter(Boolean));
+            const savedLocators = new Set(curatedActiveSources.map((s) => normalizeLocator(s.data.locator)).filter(Boolean));
             return (
             <section className="search-results">
               <h3>{t("searchResults")}</h3>
@@ -891,7 +906,7 @@ export function ProjectPages({
                 t={t}
                 submit={t("screenSource")}
                 note={t("sourceHelp")}
-                disabled={!sources.length}
+                disabled={!curatedActiveSources.length}
                 fields={[
                   {
                     name: "source_id",
@@ -918,76 +933,187 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "evidence"} className="page-content">
-        <div className="page-grid">
-          <Panel
-            title={t("claims")}
-            meta={<span className="count">{records("claim").length}</span>}
-          >
-            {recordList(records("claim"), "noClaims", (record) => (
-              <>
-                <ReadText value={record.data.text} />
-                <div className="evidence-links">
-                  <SmallLabel>{t("sourceIds")}</SmallLabel>
-                  {Array.isArray(record.data.source_ids) &&
-                  record.data.source_ids.length ? (
-                    record.data.source_ids.map((id) => {
-                      const source = sources.find((item) => item.id === id);
-                      return (
-                        <div key={String(id)}>
-                          {source ? (
-                            <SourceLink
-                              locator={source.data.locator}
-                              title={textValue(source.data.title)}
-                            />
-                          ) : (
-                            <span className="missing-evidence">
-                              {t("screeningSourceUnavailable")}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })
+        {(() => {
+          const claimRecords = records("claim");
+          const curatedById = new Map(
+            applySourceCurations(sources, records("source_curation")).map((s) => [s.id, s]),
+          );
+          let linkedCount = 0;
+          let cautionCount = 0;
+          for (const cl of claimRecords) {
+            const ids = Array.isArray(cl.data.source_ids) ? cl.data.source_ids : [];
+            if (ids.length > 0) {
+              linkedCount++;
+              const hasNonFullText = ids.some((id) => {
+                const s = curatedById.get(String(id));
+                return !s || readingScopeTone(s) !== "full";
+              });
+              if (hasNonFullText) cautionCount++;
+            }
+          }
+          const unlinkedCount = claimRecords.length - linkedCount;
+          const scopeLabelFor = (s: ResearchRecord) => {
+            const tone = readingScopeTone(s);
+            return tone === "full"
+              ? t("catalogFullTextDeclared")
+              : tone === "abstract"
+                ? t("catalogAbstractOnly")
+                : tone === "metadata"
+                  ? t("catalogMetadataOnly")
+                  : t("catalogUnknownScope");
+          };
+          return (
+            <>
+              <dl className="overview-lit-metrics evidence-kpi-strip">
+                <div>
+                  <dt>{t("evidenceTotalClaims")}</dt>
+                  <dd>{claimRecords.length}</dd>
+                </div>
+                <div>
+                  <dt>{t("evidenceSupportedClaims")}</dt>
+                  <dd>{linkedCount}</dd>
+                </div>
+                <div>
+                  <dt>{t("evidenceAbstractCaution")}</dt>
+                  <dd>{cautionCount}</dd>
+                </div>
+                <div>
+                  <dt>{t("evidenceUnsupportedClaims")}</dt>
+                  <dd>{unlinkedCount}</dd>
+                </div>
+              </dl>
+              <div className="page-grid">
+                <Panel
+                  title={t("claims")}
+                  meta={<span className="count">{claimRecords.length}</span>}
+                >
+                  {claimRecords.length ? (
+                    <div className="record-list evidence-claim-list">
+                      {claimRecords.map((record, index) => {
+                        const linkedIds = Array.isArray(record.data.source_ids)
+                          ? record.data.source_ids
+                          : [];
+                        return (
+                          <article
+                            className="research-record evidence-claim-card"
+                            key={record.id}
+                            id={`record-${record.id}`}
+                            tabIndex={-1}
+                          >
+                            <div className="evidence-claim-header">
+                              <span className="evidence-claim-num">
+                                {t("evidenceClaimLabel")} #{index + 1}
+                              </span>
+                              <StatusBadge
+                                status={textValue(record.data.verification_status || "unverified")}
+                                t={t}
+                              />
+                            </div>
+                            <ReadText value={record.data.text} />
+                            <div className="evidence-links">
+                              <SmallLabel>{t("sourceIds")}</SmallLabel>
+                              {linkedIds.length ? (
+                                <div className="evidence-source-list">
+                                  {linkedIds.map((id) => {
+                                    const source = curatedById.get(String(id));
+                                    return source ? (
+                                      <div key={String(id)} className="evidence-source-card">
+                                        <div className="evidence-source-main">
+                                          <SourceLink
+                                            locator={source.data.locator}
+                                            title={textValue(source.data.title)}
+                                          />
+                                          <div className="evidence-source-badges">
+                                            {textValue(source.data.year) && (
+                                              <span className="catalog-year-pill">
+                                                {textValue(source.data.year)}
+                                              </span>
+                                            )}
+                                            <span className={`scope-pill scope-${readingScopeTone(source)}`}>
+                                              {scopeLabelFor(source)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          className="button secondary small evidence-source-jump"
+                                          onClick={() => openLiteratureSource(source)}
+                                        >
+                                          {t("evidenceJumpToPaper")}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span key={String(id)} className="missing-evidence">
+                                        {t("screeningSourceUnavailable")}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <span className="missing-evidence">{t("unsupported")}</span>
+                              )}
+                            </div>
+                            <div className="limitation">
+                              <SmallLabel>{t("uncertainty")}</SmallLabel>
+                              <ReadText value={record.data.uncertainty} />
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <span className="missing-evidence">{t("unsupported")}</span>
+                    <EmptyState>{t("noClaims")}</EmptyState>
                   )}
-                </div>
-                <div className="limitation">
-                  <SmallLabel>{t("uncertainty")}</SmallLabel>
-                  <ReadText value={record.data.uncertainty} />
-                </div>
-              </>
-            ))}
-          </Panel>
-          <Panel title={t("addClaim")}>
-            <MutationForm
-              t={t}
-              submit={t("addClaim")}
-              fields={[
-                { name: "text", label: t("claim"), textarea: true },
-                {
-                  name: "source_ids",
-                  label: t("sourceIds"),
-                  hint: t("sourceIdsHelp"),
-                  required: false,
-                  multiple: true,
-                  options: sourceOptions,
-                },
-                {
-                  name: "uncertainty",
-                  label: t("uncertainty"),
-                  textarea: true,
-                },
-              ]}
-              onSubmit={async (data) =>
-                saveRecord("claim", {
-                  text: data.get("text"),
-                  source_ids: data.getAll("source_ids"),
-                  uncertainty: data.get("uncertainty"),
-                })
-              }
-            />
-          </Panel>
-        </div>
+                </Panel>
+                <Panel title={t("addClaim")}>
+                  <MutationForm
+                    t={t}
+                    submit={t("addClaim")}
+                    fields={[
+                      { name: "text", label: t("claim"), textarea: true },
+                      {
+                        name: "uncertainty",
+                        label: t("uncertainty"),
+                        textarea: true,
+                      },
+                    ]}
+                    onSubmit={async (data) =>
+                      saveRecord("claim", {
+                        text: data.get("text"),
+                        source_ids: data.getAll("source_ids"),
+                        uncertainty: data.get("uncertainty"),
+                      })
+                    }
+                  >
+                    <div className="field field-wide">
+                      <span className="evidence-picker-label">{t("sourceIds")}</span>
+                      <small>{t("evidenceSelectSourcesHint")}</small>
+                      {curatedActiveSources.length ? (
+                        <div className="evidence-source-picker" role="group" aria-label={t("sourceIds")}>
+                          {curatedActiveSources.map((src) => (
+                            <label key={src.id} className="evidence-picker-item">
+                              <input type="checkbox" name="source_ids" value={src.id} />
+                              <span className="evidence-picker-title">
+                                {sourceOptions.find((option) => option.value === src.id)?.label ||
+                                  textValue(src.data.title) ||
+                                  src.id}
+                              </span>
+                              <span className={`scope-pill scope-${readingScopeTone(src)}`}>
+                                {scopeLabelFor(src)}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="small muted">{t("noSources")}</p>
+                      )}
+                    </div>
+                  </MutationForm>
+                </Panel>
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       <div hidden={page !== "design"} className="page-content">

@@ -387,9 +387,9 @@
 .catalog-toolbar label { position: relative; display: flex; align-items: center; min-width: 0; font-size: var(--text-meta); color: var(--muted); }
 .catalog-toolbar .catalog-search { flex: 1 1 220px; max-width: 380px; }
 .catalog-search-icon { position: absolute; left: 9px; color: var(--muted); pointer-events: none; }
-.catalog-toolbar input { min-height: 30px; min-width: 0; width: 100%; border: 1px solid var(--line-strong); border-radius: 7px; padding: 3px 10px 3px 28px; background: var(--white); color: var(--ink); font-size: var(--text-control); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03); }
+.catalog-toolbar input { min-height: 30px; min-width: 0; width: 100%; border: 1px solid #7d8b9f; border-radius: 7px; padding: 3px 10px 3px 28px; background: var(--white); color: var(--ink); font-size: var(--text-control); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03); }
 .catalog-toolbar input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--accent-soft); }
-.catalog-toolbar select { min-height: 30px; min-width: 0; width: 100%; border: 1px solid var(--line-strong); border-radius: 7px; padding: 3px 8px; background: var(--white); color: var(--ink); font-size: var(--text-control); }
+.catalog-toolbar select { min-height: 30px; min-width: 0; width: 100%; border: 1px solid #7d8b9f; border-radius: 7px; padding: 3px 8px; background: var(--white); color: var(--ink); font-size: var(--text-control); }
 .catalog-match { font-size: var(--text-meta); font-variant-numeric: tabular-nums; color: var(--muted); margin: 0; white-space: nowrap; }
 .catalog-workspace {
   display: grid;
@@ -1837,6 +1837,290 @@ button.scope-pill[aria-pressed="true"] {
   font-weight: 500;
 }
 
+/* Quick Add Source Drawer, Citation Bar, ReturningWork Panel & Evidence Ledger */
+.catalog-quick-add-card {
+  margin-bottom: 12px;
+  background: var(--white);
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px -4px rgba(14, 90, 114, 0.12);
+  overflow: hidden;
+}
+.catalog-quick-add-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface-tint);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-control);
+}
+.catalog-quick-add-form {
+  padding: 14px 16px;
+}
+.catalog-cite-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+.catalog-cite-kicker {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--muted);
+}
+.catalog-cite-kicker code {
+  font-family: var(--mono-font);
+  font-size: var(--text-2xs);
+  color: var(--ink);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.catalog-cite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.cite-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 23px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--white);
+  color: var(--ink);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+.cite-bar-btn:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cite-bar-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--teal);
+    color: var(--teal-hover);
+  }
+}
+
+/* Structured ReturningWork ("Task activity") panel */
+.returning-header-box {
+  padding: 12px 18px;
+  background: var(--surface-tint);
+  border-bottom: 1px solid var(--line);
+}
+.returning-scope-line {
+  margin: 0 0 3px;
+  font-size: var(--text-control);
+  color: var(--ink);
+}
+.returning-subnote {
+  margin: 0;
+  line-height: 1.48;
+}
+.returning-section {
+  padding: 14px 18px;
+  display: grid;
+  gap: 10px;
+}
+.returning-kpi-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-meta);
+  color: var(--muted);
+}
+.returning-kpi-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+}
+.returning-list {
+  display: grid;
+  gap: 8px;
+}
+.returning-task-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--white);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+.returning-task-main {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.returning-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.task-id-chip {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono-font);
+  font-size: var(--text-2xs);
+}
+.returning-open-btn {
+  flex-shrink: 0;
+}
+.returning-bundles-section {
+  padding: 14px 18px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-tint);
+  display: grid;
+  gap: 8px;
+}
+.returning-bundles-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.returning-bundles-header h3 {
+  margin: 0;
+  font-size: var(--text-list);
+  font-weight: 600;
+}
+.returning-empty-bundles {
+  margin: 2px 0 0;
+  padding: 8px 11px;
+  border-radius: 7px;
+  background: var(--white);
+  border: 1px dashed var(--line-strong);
+}
+
+/* Evidence Claim-Source Ledger */
+.evidence-kpi-strip {
+  margin-bottom: 14px;
+}
+.evidence-claim-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.evidence-claim-num {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  font-family: var(--mono-font);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--teal);
+}
+.evidence-source-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.evidence-source-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: var(--surface-tint);
+  border: 1px solid var(--line);
+}
+.evidence-source-main {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.evidence-source-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.evidence-picker-label {
+  color: #334155;
+  font-size: var(--text-meta);
+  font-weight: 600;
+}
+.evidence-source-picker {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-tint);
+}
+.evidence-picker-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-size: var(--text-meta);
+}
+.evidence-picker-item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  min-height: 15px;
+  margin: 0;
+  accent-color: var(--teal);
+}
+.evidence-picker-title {
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .catalog-health-strip {
     grid-template-columns: minmax(0, 1fr);
@@ -1879,6 +2163,8 @@ button.scope-pill[aria-pressed="true"] {
   button.scope-pill,
   .tag-chip-btn,
   .tag-edit-link,
+  .cite-bar-btn,
+  .evidence-source-jump,
   .secondary-navigation summary,
   .handoff-scope-switch button {
     min-height: 44px;

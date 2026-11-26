@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import threading
 from typing import Any
@@ -253,6 +254,7 @@ class LocalIntegrationsManager:
 
         effective_lib_id = resolved_zot["library_id"]
         effective_zot_key = bool(resolved_zot["api_key"])
+        vault_root = self.default_vault_root()
 
         return {
             "version": 1,
@@ -266,6 +268,9 @@ class LocalIntegrationsManager:
             "s2_api_key_present": bool(raw_s2_key) or env_s2_key,
             "s2_api_key_encrypted": bool(raw_s2_key and is_encrypted(raw_s2_key)),
             "nlm_state_present": nlm_present,
+            "obsidian_cli_present": bool(shutil.which("obsidian")),
+            "obsidian_vault_configured": vault_root is not None,
+            "obsidian_vault_name": vault_root.name if vault_root is not None else "",
         }
 
     def status(self) -> dict[str, Any]:
