@@ -1029,6 +1029,7 @@ export default function App() {
                       page={page}
                       observationRevision={refreshCount}
                       categoryHost={categoryHost}
+                      locale={locale}
                       t={t}
                       onSaved={onSaved}
                       onOpenSetup={() => setSetupOpenRequest((value) => value + 1)}

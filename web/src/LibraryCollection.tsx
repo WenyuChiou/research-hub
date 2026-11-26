@@ -4,6 +4,7 @@ import { identityMatches } from "./libraryIdentity";
 import type { Translate } from "./i18n";
 import type {
   IntegrationLiveState,
+  Locale,
   ResearchRecord,
   Workspace,
 } from "./types";
@@ -31,12 +32,12 @@ function validateSnapshot(value: unknown): LibrarySnapshot {
 }
 
 export function LibraryCollection(props: {
-  sources: ResearchRecord[]; screenings: ResearchRecord[]; curations?: ResearchRecord[]; t: Translate;
+  sources: ResearchRecord[]; screenings: ResearchRecord[]; curations?: ResearchRecord[]; locale?: Locale; t: Translate;
   projectId?: string;
   projectTitle?: string;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
-  onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string }) => Promise<{ id: string }>;
+  onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string; selected_source_ids?: string[] }) => Promise<{ id: string }>;
   onNavigateReview?: (taskId?: string) => void;
   onOpenSetup?: () => void;
   onPrepare: (record: ResearchRecord) => void;

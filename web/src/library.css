@@ -930,6 +930,18 @@ button.pipeline-dot-chip:active {
   background: #edf9f2;
   color: #0d5c3d;
 }
+.pipeline-dot-chip.is-configured::before { background: var(--teal); }
+.pipeline-dot-chip.is-configured {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--teal-hover);
+}
+.pipeline-dot-chip.is-error::before { background: #b42318; }
+.pipeline-dot-chip.is-error {
+  border-color: #f3c1bc;
+  background: #fef1f0;
+  color: #991b1b;
+}
 .pipeline-dot-chip.is-idle::before { background: #94a3b8; }
 
 /* Semantic reading-scope label pills */
@@ -993,7 +1005,7 @@ button.scope-pill[aria-pressed="true"] {
   box-shadow: 0 0 0 2px var(--white), 0 0 0 3.5px var(--teal);
 }
 .pill-count {
-  opacity: 0.72;
+  opacity: 0.92;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -1022,6 +1034,9 @@ button.scope-pill[aria-pressed="true"] {
   gap: 4px;
   padding: 1px 7px;
   min-height: 20px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border-radius: 5px;
   background: var(--tag-bg);
   border: 1px solid var(--tag-border);
@@ -1408,15 +1423,28 @@ button.scope-pill[aria-pressed="true"] {
     margin: 0 0 12px;
   }
 }
+@media (max-width: 760px) {
+  button.pipeline-dot-chip,
+  button.scope-pill,
+  .tag-chip-btn,
+  .tag-edit-link,
+  .handoff-scope-switch button {
+    min-height: 44px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .handoff-modal,
   .catalog-detail-body {
     animation: none;
   }
+  .meter-seg,
   .scope-pill,
   .tag-chip-btn,
+  .tag-edit-link,
   .pipeline-dot-chip,
-  .handoff-preset-card {
+  .handoff-preset-card,
+  .handoff-scope-switch button,
+  .handoff-tabs button {
     transition: none;
   }
 }

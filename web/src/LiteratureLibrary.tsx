@@ -1,12 +1,16 @@
 import { NativeSummaryReader } from "./NativeSummaryReader";
-import { AgentHandoffModal, type HandoffScope } from "./AgentHandoffModal";
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  AgentHandoffModal,
+  computeDestinationStatuses,
+  type HandoffScope,
+} from "./AgentHandoffModal";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
 import { useCompactReadingLayout } from "./readingLayout";
 import { MutationForm, ReadText, SourceLink, ErrorMessage } from "./components";
 import { obsidianStatusLabel, statusLabel, type Translate } from "./i18n";
-import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
+import type { IntegrationLiveState, Locale, ResearchRecord, Workspace } from "./types";
 import { SourceObservations } from "./ObservationHistory";
 import type { ObservationTextContext } from "./sourceObservations";
 import { ObservationPreview, observationArtifacts, type ObservationReadScope } from "./ObservationPreview";
@@ -154,7 +158,7 @@ export function categoryName(value: string, t: Translate) {
 export type ScopeTone = "full" | "abstract" | "metadata" | "unknown";
 
 export function readingScopeTone(record: ResearchRecord): ScopeTone {
-  const scope = text(record.data.reading_level) || text(record.data.reading_scope);
+  const scope = text(record.data.reading_level).trim() || text(record.data.reading_scope).trim();
   if (scope === "full-text") return "full";
   if (scope === "abstract" || scope === "abstract-snippet") return "abstract";
   if (scope === "metadata" || scope === "note-metadata") return "metadata";
@@ -162,7 +166,7 @@ export function readingScopeTone(record: ResearchRecord): ScopeTone {
 }
 
 function readingScope(record: ResearchRecord, t: Translate) {
-  const scope = text(record.data.reading_level) || text(record.data.reading_scope);
+  const scope = text(record.data.reading_level).trim() || text(record.data.reading_scope).trim();
   if (scope === "abstract-snippet") return t("catalogAbstractSnippet");
   if (scope === "abstract") return t("catalogAbstractOnly");
   if (scope === "metadata") return t("catalogMetadataOnly");
@@ -183,7 +187,7 @@ export function sourceTags(record: ResearchRecord): string[] {
   const seen = new Set<string>();
   const tags: string[] = [];
   for (const raw of [...strings(record.data.tags), ...strings(record.data.labels)]) {
-    const cleaned = raw.trim().replace(/^#+/, "");
+    const cleaned = raw.trim().replace(/^#+/, "").trim();
     if (!cleaned) continue;
     const key = cleaned.toLocaleLowerCase();
     if (!seen.has(key)) {
@@ -197,8 +201,8 @@ export function sourceTags(record: ResearchRecord): string[] {
 function parseTagsInput(value: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const part of value.split(/[;；,\n]+/)) {
-    const cleaned = part.trim().replace(/^#+/, "");
+  for (const part of value.split(/[;；,，\n]+/)) {
+    const cleaned = part.trim().replace(/^#+/, "").trim();
     if (!cleaned) continue;
     const key = cleaned.toLocaleLowerCase();
     if (!seen.has(key)) {
@@ -466,16 +470,17 @@ function SourceCurationForm({
   );
 }
 
-export function LiteratureLibrary({ sources: rawSources, screenings, curations, t, projectId, projectTitle, onScreen, onCurate, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, locale, t, projectId, projectTitle, onScreen, onCurate, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   curations?: ResearchRecord[];
+  locale?: Locale;
   t: Translate;
   projectId?: string;
   projectTitle?: string;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
-  onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string }) => Promise<{ id: string }>;
+  onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string; selected_source_ids?: string[] }) => Promise<{ id: string }>;
   onNavigateReview?: (taskId?: string) => void;
   onOpenSetup?: () => void;
   onPrepare: (record: ResearchRecord) => void;
@@ -492,8 +497,14 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   curationState?: CurationStateMap;
   onCurationStateChange?: Dispatch<SetStateAction<CurationStateMap>>;
 }) {
-  const rawSourceById = new Map(rawSources.map((record) => [record.id, record]));
-  const sources = applySourceCurations(rawSources, curations);
+  const rawSourceById = useMemo(
+    () => new Map(rawSources.map((record) => [record.id, record])),
+    [rawSources],
+  );
+  const sources = useMemo(
+    () => applySourceCurations(rawSources, curations),
+    [rawSources, curations],
+  );
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedScope, setSelectedScope] = useState<ScopeTone | "">("");
@@ -505,6 +516,9 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [handoffScope, setHandoffScope] = useState<HandoffScope>("filtered");
+  useEffect(() => {
+    if (pageSuspended) setHandoffOpen(false);
+  }, [pageSuspended]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [curationOpen, setCurationOpen] = useState(false);
   const [localCurationState, setLocalCurationState] = useState<CurationStateMap>({});
@@ -703,7 +717,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     return t("catalogNeedsSummary");
   }
 
-  function buildMarkdownTable(): string {
+  function buildMarkdownTable(records: ResearchRecord[] = sortedVisible): string {
     const header = [
       t("title"),
       t("catalogCategory"),
@@ -717,7 +731,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
       `| ${header.map(escapeMarkdownCell).join(" | ")} |`,
       `| ${header.map(() => "---").join(" | ")} |`,
     ];
-    for (const record of sortedVisible) {
+    for (const record of records) {
       const authors = formatAuthors(record.data.authors);
       const titleCell = authors ? `${text(record.data.title)} (${authors})` : text(record.data.title);
       const safeUrl = record.data.locator_kind !== "local-copy" ? safeSourceUrl(record.data.locator) : null;
@@ -736,20 +750,22 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     return lines.join("\n");
   }
 
-  async function copyMasterMarkdown() {
+  async function copyMasterMarkdown(records: ResearchRecord[] = sortedVisible): Promise<boolean> {
     if (!navigator.clipboard?.writeText) {
       setExportNotice({ tone: "bad", text: t("catalogTableCopyFailed") });
-      return;
+      return false;
     }
     try {
-      await navigator.clipboard.writeText(buildMarkdownTable());
+      await navigator.clipboard.writeText(buildMarkdownTable(records));
       setExportNotice({ tone: "good", text: t("catalogTableCopied") });
+      return true;
     } catch {
       setExportNotice({ tone: "bad", text: t("catalogTableCopyFailed") });
+      return false;
     }
   }
 
-  function exportMasterCsv() {
+  function exportMasterCsv(records: ResearchRecord[] = sortedVisible) {
     const header = [
       t("title"),
       t("catalogCategory"),
@@ -761,7 +777,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
       t("catalogTableLink"),
     ];
     const rows = [header.map(escapeCsvCell).join(",")];
-    for (const record of sortedVisible) {
+    for (const record of records) {
       const authors = formatAuthors(record.data.authors);
       const venue = text(record.data.venue) || text(record.data.journal);
       const titleText = [text(record.data.title), authors, venue].filter(Boolean).join(" — ");
@@ -787,7 +803,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   return (
@@ -808,7 +824,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           <button
             type="button"
             className="button primary small catalog-handoff-trigger"
-            disabled={!sources.length}
+            disabled={!sortedVisible.length}
             onClick={() => {
               setHandoffScope("filtered");
               setHandoffOpen(true);
@@ -855,14 +871,13 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
       {sources.length > 0 && (() => {
         const total = sources.length;
         const pct = (count: number) => `${Math.round((count / total) * 1000) / 10}%`;
-        const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
-        const obsidianOk = liveIntegrations?.obsidian?.status === "valid" || workspace?.capabilities?.obsidian_validation?.status === "available";
-        const zoteroOk = liveIntegrations?.zotero
-          ? ["connected_local_and_web", "connected_web", "connected_local"].includes(liveIntegrations.zotero.status)
-          : Boolean(localCap?.zotero_configured);
-        const nlmOk = liveIntegrations?.notebooklm
-          ? liveIntegrations.notebooklm.status === "authenticated"
-          : Boolean(localCap?.nlm_state_present);
+        const dest = computeDestinationStatuses(workspace, liveIntegrations);
+        const destTip = (state: "ok" | "configured" | "error" | "idle") =>
+          state === "configured"
+            ? t("pipelineStatusConfigured")
+            : state === "error"
+              ? t("pipelineStatusError")
+              : undefined;
         const scopeButtons: [ScopeTone, string, number][] = [
           ["full", t("catalogFullTextDeclared"), scopeCounts.full],
           ["abstract", t("catalogAbstractOnly"), scopeCounts.abstract],
@@ -906,15 +921,15 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
               <div className="catalog-pipeline-dots">
                 {onOpenSetup ? (
                   <>
-                    <button type="button" className={`pipeline-dot-chip ${obsidianOk ? "is-ok" : "is-idle"}`} onClick={onOpenSetup}>Obsidian</button>
-                    <button type="button" className={`pipeline-dot-chip ${zoteroOk ? "is-ok" : "is-idle"}`} onClick={onOpenSetup}>Zotero</button>
-                    <button type="button" className={`pipeline-dot-chip ${nlmOk ? "is-ok" : "is-idle"}`} onClick={onOpenSetup}>NotebookLM</button>
+                    <button type="button" className={`pipeline-dot-chip is-${dest.obsidian}`} title={destTip(dest.obsidian)} onClick={onOpenSetup}>Obsidian</button>
+                    <button type="button" className={`pipeline-dot-chip is-${dest.zotero}`} title={destTip(dest.zotero)} onClick={onOpenSetup}>Zotero</button>
+                    <button type="button" className={`pipeline-dot-chip is-${dest.notebooklm}`} title={destTip(dest.notebooklm)} onClick={onOpenSetup}>NotebookLM</button>
                   </>
                 ) : (
                   <>
-                    <span className={`pipeline-dot-chip ${obsidianOk ? "is-ok" : "is-idle"}`}>Obsidian</span>
-                    <span className={`pipeline-dot-chip ${zoteroOk ? "is-ok" : "is-idle"}`}>Zotero</span>
-                    <span className={`pipeline-dot-chip ${nlmOk ? "is-ok" : "is-idle"}`}>NotebookLM</span>
+                    <span className={`pipeline-dot-chip is-${dest.obsidian}`} title={destTip(dest.obsidian)}>Obsidian</span>
+                    <span className={`pipeline-dot-chip is-${dest.zotero}`} title={destTip(dest.zotero)}>Zotero</span>
+                    <span className={`pipeline-dot-chip is-${dest.notebooklm}`} title={destTip(dest.notebooklm)}>NotebookLM</span>
                   </>
                 )}
               </div>
@@ -1121,7 +1136,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 type="button"
                 className="button secondary small icon-btn"
                 disabled={!sortedVisible.length}
-                onClick={exportMasterCsv}
+                onClick={() => exportMasterCsv()}
                 aria-label={t("catalogTableExportCsv")}
                 data-tooltip={t("catalogTableExportCsv")}
                 data-tooltip-pos="bottom-end"
@@ -1654,7 +1669,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           )}
         </aside>
       </div>
-      {handoffOpen && (
+      {handoffOpen && !pageSuspended && (
         <AgentHandoffModal
           open={handoffOpen}
           initialScope={handoffScope}
@@ -1665,6 +1680,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           projectTitle={projectTitle}
           workspace={workspace}
           liveIntegrations={liveIntegrations}
+          locale={locale}
           t={t}
           onClose={() => setHandoffOpen(false)}
           onCreateHandoffTask={onCreateHandoffTask}

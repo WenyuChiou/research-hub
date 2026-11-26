@@ -42,6 +42,7 @@ import {
 } from "./PrepareRecovery";
 import type {
   IntegrationLiveState,
+  Locale,
   Operation,
   Page,
   ProjectDetail,
@@ -73,6 +74,7 @@ export interface PagesProps {
   page: Page;
   observationRevision?: number;
   categoryHost?: HTMLElement | null;
+  locale?: Locale;
   t: Translate;
   onSaved: (message: string, recovered?: RecoveredWork) => Promise<void>;
   onOpenSetup?: () => void;
@@ -91,6 +93,7 @@ export function ProjectPages({
   page,
   observationRevision = 0,
   categoryHost = null,
+  locale,
   t,
   onSaved,
   onOpenSetup,
@@ -248,14 +251,19 @@ export function ProjectPages({
   async function createHandoffTask(payload: {
     operation: "synthesize" | "frame";
     instructions: string;
+    selected_source_ids?: string[];
   }) {
+    const body: Record<string, unknown> = {
+      operation: payload.operation,
+      mode: "handoff",
+      instructions: payload.instructions,
+    };
+    if (payload.selected_source_ids?.length) {
+      body.selected_source_ids = payload.selected_source_ids;
+    }
     const response = await api<{ ok: true; task: Task }>(
       `/projects/${segment(detail.project.id)}/tasks`,
-      {
-        operation: payload.operation,
-        mode: "handoff",
-        instructions: payload.instructions,
-      },
+      body,
     );
     await onSaved(t("taskCreated"));
     return { id: response.task.id };
@@ -570,7 +578,7 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
-        <LibraryCollection sources={sources} screenings={records("screening")} curations={records("source_curation")} t={t} categoryHost={categoryHost}
+        <LibraryCollection sources={sources} screenings={records("screening")} curations={records("source_curation")} locale={locale} t={t} categoryHost={categoryHost}
           projectId={detail.project.id}
           projectTitle={detail.project.title}
           workspace={workspace} liveIntegrations={liveIntegrations}

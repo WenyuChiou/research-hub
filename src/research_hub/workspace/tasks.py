@@ -95,6 +95,12 @@ class TaskService:
             if request.get("operation") == "paper-abstract-draft":
                 from .research_draft import selected_artifact
                 current_artifacts = [selected_artifact(self.workspace, project_id, request["research_draft"]["source_selection"]["artifact_id"])]
+            elif isinstance(request.get("selected_source_ids"), list):
+                selected_set = set(request["selected_source_ids"])
+                current_artifacts = [
+                    a for a in self.workspace.artifacts(project_id)
+                    if a.get("source_record_id") in selected_set
+                ]
             else:
                 current_artifacts = self.workspace.artifacts(project_id)
             expected_identity = identity(requested_artifacts)
@@ -178,7 +184,17 @@ class TaskService:
 
             from .native_summary import project_records
             expected_records = scientific(request.get("records", []))
-            observed_records = [] if request.get("operation") == "paper-abstract-draft" else scientific(project_records(self.workspace.records(project_id)))
+            if request.get("operation") == "paper-abstract-draft":
+                observed_records = []
+            elif isinstance(request.get("selected_source_ids"), list):
+                selected_set = set(request["selected_source_ids"])
+                observed_records = scientific(project_records([
+                    r for r in self.workspace.records(project_id)
+                    if (r.get("kind") == "source" and r.get("id") in selected_set)
+                    or (r.get("kind") in {"screening", "source_curation"} and isinstance(r.get("data"), dict) and r["data"].get("source_id") in selected_set)
+                ]))
+            else:
+                observed_records = scientific(project_records(self.workspace.records(project_id)))
             expected_hash = digest(expected_records)
             observed_hash = digest(observed_records)
             records_status = "current" if expected_hash == observed_hash else "stale"
@@ -361,8 +377,8 @@ class TaskService:
         task["updated_at"] = now()
         db.execute("UPDATE tasks SET body=? WHERE id=?", (encoded(task), task["id"]))
 
-    def create(self, project_id: str, *, operation: str, mode: str = "handoff", instructions: str = "", source_selection=None) -> dict:
-        task = self._build_task(project_id, operation=operation, mode=mode, instructions=instructions, source_selection=source_selection)
+    def create(self, project_id: str, *, operation: str, mode: str = "handoff", instructions: str = "", source_selection=None, selected_source_ids=None) -> dict:
+        task = self._build_task(project_id, operation=operation, mode=mode, instructions=instructions, source_selection=source_selection, selected_source_ids=selected_source_ids)
         with self.workspace.db(write=True) as db:
             db.execute("INSERT INTO tasks VALUES (?,?,?)", (task["id"], project_id, encoded(task)))
         return task
@@ -430,27 +446,68 @@ class TaskService:
             result["task"] = self._with_freshness(task)
         return result
 
-    def _build_task(self, project_id: str, *, operation: str, mode: str = "handoff", instructions: str = "", source_selection=None) -> dict:
+    def _build_task(self, project_id: str, *, operation: str, mode: str = "handoff", instructions: str = "", source_selection=None, selected_source_ids=None) -> dict:
         project = self.workspace.project(project_id)
         if operation not in OPERATIONS or mode not in {"connected", "handoff"}:
             raise WorkspaceError("Unsupported task operation or executor mode")
         if not isinstance(instructions, str) or len(instructions) > 20000:
             raise WorkspaceError("Task instructions must be text of at most 20000 characters")
+        normalized_source_ids: list[str] | None = None
+        all_records = self.workspace.records(project_id)
+        if selected_source_ids is not None:
+            if mode != "handoff" or operation not in {"synthesize", "frame"}:
+                raise WorkspaceError(
+                    "Selected source scoping is supported only for synthesize/frame handoff tasks",
+                    "unsupported_capability",
+                )
+            if not isinstance(selected_source_ids, list) or not selected_source_ids or len(selected_source_ids) > 500:
+                raise WorkspaceError("selected_source_ids must be a non-empty list of up to 500 source IDs")
+            seen_ids: set[str] = set()
+            normalized_source_ids = []
+            valid_sources = {r["id"] for r in all_records if r.get("kind") == "source"}
+            for sid in selected_source_ids:
+                if not isinstance(sid, str) or not sid.strip():
+                    raise WorkspaceError("selected_source_ids entries must be non-empty strings")
+                cleaned = sid.strip()
+                if cleaned not in valid_sources:
+                    raise WorkspaceError("selected_source_ids references an unknown project source", "invalid_source")
+                if cleaned not in seen_ids:
+                    seen_ids.add(cleaned)
+                    normalized_source_ids.append(cleaned)
         research_draft = None
         if operation == "paper-abstract-draft":
             from .research_draft import prepare, selected_artifact
             research_draft = prepare(self.workspace, project_id, source_selection)
             artifacts = [{**selected_artifact(self.workspace, project_id, source_selection["artifact_id"]), "current": True}]
+        elif normalized_source_ids is not None:
+            selected_set = set(normalized_source_ids)
+            artifacts = [
+                a for a in self.workspace.artifacts(project_id)
+                if a.get("source_record_id") in selected_set
+            ]
         else:
             artifacts = self.workspace.artifacts(project_id)
         if any(not a["current"] for a in artifacts):
             raise WorkspaceError("Registered input changed; register the intended revision before creating a task", "stale_input")
         task_id = uuid.uuid4().hex
         from .native_summary import project_records
+        if research_draft:
+            scoped_records = []
+        elif normalized_source_ids is not None:
+            selected_set = set(normalized_source_ids)
+            scoped_records = project_records([
+                r for r in all_records
+                if (r.get("kind") == "source" and r.get("id") in selected_set)
+                or (r.get("kind") in {"screening", "source_curation"} and isinstance(r.get("data"), dict) and r["data"].get("source_id") in selected_set)
+            ])
+        else:
+            scoped_records = project_records(all_records)
         request = {"schema_version": 1, "task_id": task_id, "operation": operation,
                    "project": project, "instructions": instructions, "artifacts": artifacts,
-                   "records": [] if research_draft else project_records(self.workspace.records(project_id)), "allowed_changes": "proposal-only",
+                   "records": scoped_records, "allowed_changes": "proposal-only",
                    "skill": "paper-review" if operation == "review" else "academic-writing-skills"}
+        if normalized_source_ids is not None:
+            request["selected_source_ids"] = normalized_source_ids
         from .writing import WritingAdapter
         import os
         request["adapter_sha256"] = None

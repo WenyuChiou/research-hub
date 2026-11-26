@@ -2,8 +2,9 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
 import { ErrorMessage } from "./components";
-import type { Translate } from "./i18n";
-import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
+import { zhTW, type Translate } from "./i18n";
+import type { IntegrationLiveState, Locale, ResearchRecord, Workspace } from "./types";
+import { workingSummary } from "./WorkingSummaryEditor";
 
 export type HandoffPresetId =
   | "zotero-obsidian"
@@ -13,9 +14,47 @@ export type HandoffPresetId =
 
 export type HandoffScope = "selected" | "filtered";
 export type HandoffTab = "agent" | "export";
+export type DestinationState = "ok" | "configured" | "error" | "idle";
 
 export interface HandoffTaskResult {
   id: string;
+}
+
+export const MAX_HANDOFF_TASK_CHARS = 20000;
+
+export function computeDestinationStatuses(
+  workspace?: Workspace | null,
+  liveIntegrations?: IntegrationLiveState,
+): { obsidian: DestinationState; zotero: DestinationState; notebooklm: DestinationState } {
+  const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
+
+  const obsidian: DestinationState = liveIntegrations?.obsidian
+    ? liveIntegrations.obsidian.status === "valid"
+      ? "ok"
+      : "error"
+    : workspace?.capabilities?.obsidian_validation?.status === "available"
+      ? "configured"
+      : "idle";
+
+  const zotero: DestinationState = liveIntegrations?.zotero
+    ? ["connected_local_and_web", "connected_web", "connected_local"].includes(
+        liveIntegrations.zotero.status,
+      )
+      ? "ok"
+      : "error"
+    : localCap?.zotero_configured
+      ? "configured"
+      : "idle";
+
+  const notebooklm: DestinationState = liveIntegrations?.notebooklm
+    ? liveIntegrations.notebooklm.status === "authenticated"
+      ? "ok"
+      : "error"
+    : localCap?.nlm_state_present
+      ? "configured"
+      : "idle";
+
+  return { obsidian, zotero, notebooklm };
 }
 
 const text = (value: unknown) =>
@@ -48,11 +87,11 @@ function collectAuthors(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function collectTags(record: ResearchRecord): string[] {
+function dedupeCaseInsensitive(values: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of [...strings(record.data.tags), ...strings(record.data.labels)]) {
-    const cleaned = raw.trim().replace(/^#+/, "");
+  for (const raw of values) {
+    const cleaned = raw.trim().replace(/^#+/, "").trim();
     if (!cleaned) continue;
     const key = cleaned.toLocaleLowerCase();
     if (!seen.has(key)) {
@@ -63,8 +102,16 @@ function collectTags(record: ResearchRecord): string[] {
   return out;
 }
 
+function collectTags(record: ResearchRecord): string[] {
+  return dedupeCaseInsensitive([...strings(record.data.tags), ...strings(record.data.labels)]);
+}
+
 function rawScope(record: ResearchRecord): string {
-  return (text(record.data.reading_level) || text(record.data.reading_scope) || "unknown").trim();
+  return (
+    text(record.data.reading_level).trim() ||
+    text(record.data.reading_scope).trim() ||
+    "unknown"
+  );
 }
 
 function savedSummary(record: ResearchRecord): string {
@@ -80,23 +127,51 @@ function categorySlug(record: ResearchRecord): string {
 }
 
 function yamlQuote(value: string): string {
-  const cleaned = value.replace(/\r?\n/g, " ").trim();
+  const cleaned = value.replace(/[\r\n\u0085\u2028\u2029]+/g, " ").trim();
   return JSON.stringify(cleaned);
 }
 
-function bibtexEscape(value: string): string {
-  return value.replace(/\r?\n/g, " ").replace(/[{}]/g, "").trim();
+function inlineMarkdown(value: string): string {
+  return value
+    .replace(/[\r\n\u0085\u2028\u2029]+/g, " ")
+    .replace(/`/g, "'")
+    .trim();
+}
+
+const BIBTEX_SPECIAL: Record<string, string> = {
+  "\\": "\\textbackslash{}",
+  "{": "\\{",
+  "}": "\\}",
+  "%": "\\%",
+  "&": "\\&",
+  "#": "\\#",
+  $: "\\$",
+  _: "\\_",
+  "~": "\\textasciitilde{}",
+  "^": "\\textasciicircum{}",
+};
+
+export function bibtexEscape(value: string): string {
+  return value
+    .replace(/[\r\n\u0085\u2028\u2029]+/g, " ")
+    .trim()
+    .replace(/[\\{}%&#$_~^]/g, (ch) => BIBTEX_SPECIAL[ch] ?? ch);
+}
+
+function bibtexVerbatim(value: string): string {
+  return value
+    .replace(/[\r\n\u0085\u2028\u2029]+/g, " ")
+    .replace(/[{}\\]/g, "")
+    .trim();
 }
 
 function makeCiteKey(record: ResearchRecord, index: number): string {
   const authors = collectAuthors(record.data.authors);
   const firstAuthor = authors[0] || "source";
-  const surname = firstAuthor
-    .split(/[\s,]+/)
-    .filter(Boolean)
-    .pop()
-    ?.toLowerCase()
-    .replace(/[^a-z0-9]/g, "") || "source";
+  const surnameRaw = firstAuthor.includes(",")
+    ? firstAuthor.split(",")[0]
+    : firstAuthor.split(/\s+/).filter(Boolean).pop() || "source";
+  const surname = surnameRaw.toLowerCase().replace(/[^a-z0-9]/g, "") || "source";
   const year = text(record.data.year).replace(/[^0-9]/g, "").slice(0, 4) || "nd";
   const titleWord =
     text(record.data.title)
@@ -128,6 +203,7 @@ export function buildObsidianMarkdown(
     const decision = screenings.get(record.id) ?? "unscreened";
     const identity = text(record.data.identity_status).trim() || "unverified";
     const summary = savedSummary(record);
+    const working = workingSummary(record)?.text ?? "";
     const relevance = text(record.data.relevance).trim();
 
     const frontmatter = [
@@ -147,12 +223,15 @@ export function buildObsidianMarkdown(
     ].join("\n");
 
     const sections = [
-      `# ${text(record.data.title)}`,
+      `# ${inlineMarkdown(text(record.data.title))}`,
       "",
-      `> Reading scope: \`${scope}\` · Screening: \`${decision}\` · Identity: \`${identity}\``,
+      `> Reading scope: \`${inlineMarkdown(scope)}\` · Screening: \`${inlineMarkdown(decision)}\` · Identity: \`${inlineMarkdown(identity)}\``,
       "",
       "## Summary",
       summary || "_No summary recorded yet._",
+      ...(working
+        ? ["", "## Working Summary (Unverified Draft)", working]
+        : []),
       "",
       "## Relevance",
       relevance || "_No relevance note recorded yet._",
@@ -160,7 +239,7 @@ export function buildObsidianMarkdown(
     return `${frontmatter}\n\n${sections.join("\n")}\n`;
   }
 
-  const allTags = [...new Set(records.flatMap(collectTags))];
+  const allTags = dedupeCaseInsensitive(records.flatMap(collectTags));
   const frontmatter = [
     "---",
     `title: ${yamlQuote(`${projectTitle || "Research Hub"} — Literature Export (${records.length})`)}`,
@@ -182,22 +261,24 @@ export function buildObsidianMarkdown(
     const scope = rawScope(record);
     const decision = screenings.get(record.id) ?? "unscreened";
     const summary = savedSummary(record);
+    const working = workingSummary(record)?.text ?? "";
     const relevance = text(record.data.relevance).trim();
     return [
-      `## ${index + 1}. ${text(record.data.title)} (${year})`,
-      `- **Authors**: ${authors || "—"}`,
-      `- **Category**: \`${cat}\` · **Reading scope**: \`${scope}\` · **Screening**: \`${decision}\``,
-      tags.length ? `- **Tags**: ${tags.map((tag) => `#${tag.replace(/\s+/g, "-")}`).join(" ")}` : null,
-      doi ? `- **DOI**: \`${doi}\`` : null,
+      `## ${index + 1}. ${inlineMarkdown(text(record.data.title))} (${inlineMarkdown(year)})`,
+      `- **Authors**: ${inlineMarkdown(authors) || "—"}`,
+      `- **Category**: \`${inlineMarkdown(cat)}\` · **Reading scope**: \`${inlineMarkdown(scope)}\` · **Screening**: \`${inlineMarkdown(decision)}\``,
+      tags.length ? `- **Tags**: ${tags.map((tag) => `#${inlineMarkdown(tag).replace(/\s+/g, "-")}`).join(" ")}` : null,
+      doi ? `- **DOI**: \`${inlineMarkdown(doi)}\`` : null,
       url ? `- **Source**: ${url}` : null,
       summary ? `\n${summary}` : null,
+      working ? `\n### Working Summary (Unverified Draft)\n${working}` : null,
       relevance ? `\n**Relevance**: ${relevance}` : null,
     ]
       .filter(Boolean)
       .join("\n");
   });
 
-  return `${frontmatter}\n\n# ${projectTitle || "Research Hub"} — Literature Bundle (${records.length})\n\n${blocks.join("\n\n---\n\n")}\n`;
+  return `${frontmatter}\n\n# ${inlineMarkdown(projectTitle || "Research Hub")} — Literature Bundle (${records.length})\n\n${blocks.join("\n\n---\n\n")}\n`;
 }
 
 export function buildNotebookLmSourcePack(
@@ -216,15 +297,17 @@ export function buildNotebookLmSourcePack(
     const scope = rawScope(record);
     const tags = collectTags(record);
     const summary = savedSummary(record);
+    const working = workingSummary(record)?.text ?? "";
     const relevance = text(record.data.relevance).trim();
     return [
-      `### ${index + 1}. ${text(record.data.title)} (${year})`,
-      `- Authors: ${authors || "Unknown"}`,
-      `- Reading Scope: ${scope}`,
-      `- Category: ${categorySlug(record) || "unclassified"}`,
-      tags.length ? `- Keywords/Labels: ${tags.join(", ")}` : null,
-      doi ? `- DOI: ${doi}` : null,
+      `### ${index + 1}. ${inlineMarkdown(text(record.data.title))} (${inlineMarkdown(year)})`,
+      `- Authors: ${inlineMarkdown(authors) || "Unknown"}`,
+      `- Reading Scope: ${inlineMarkdown(scope)}`,
+      `- Category: ${inlineMarkdown(categorySlug(record) || "unclassified")}`,
+      tags.length ? `- Keywords/Labels: ${tags.map(inlineMarkdown).join(", ")}` : null,
+      doi ? `- DOI: ${inlineMarkdown(doi)}` : null,
       summary ? `\n${summary}` : "\n[No abstract or summary saved locally.]",
+      working ? `\n#### Working Summary (Unverified Draft)\n${working}` : null,
       relevance ? `\nRelevance note: ${relevance}` : null,
     ]
       .filter(Boolean)
@@ -232,19 +315,25 @@ export function buildNotebookLmSourcePack(
   };
 
   return [
-    `# NotebookLM Source Pack: ${projectTitle || "Research Hub Literature"}`,
+    `# NotebookLM Source Pack: ${inlineMarkdown(projectTitle || "Research Hub Literature")}`,
     "",
     "> **Evidence-Boundary Notice for NotebookLM**:",
     `> - Full-text declared sources: ${fullText.length}`,
     `> - Abstract / metadata-only / unknown-scope sources: ${abstractOrPartial.length}`,
     "> - Do NOT attribute detailed experimental methods, sample sizes, or p-values to abstract-only or metadata-only items unless verified in full text.",
     "",
-    "## CLI Bundle & Upload Commands",
+    "## CLI Cluster & NotebookLM Commands",
+    "> Upload this `.md` file directly to NotebookLM, or prepare a dedicated pipeline cluster for ONLY these papers before bundling:",
     "```bash",
-    `research-hub notebooklm bundle ${slug}`,
-    `research-hub notebooklm upload ${slug} --dry-run`,
+    `# 1. Create (or reuse) a dedicated pipeline cluster for this selection:`,
+    `research-hub clusters new --query ${JSON.stringify(projectTitle || slug)} --slug ${slug}`,
+    `# 2. Preview ingesting ONLY the selected papers JSON, then re-run without --dry-run on approval:`,
+    `research-hub ingest --input <papers.json> --cluster ${slug} --dry-run`,
+    `# 3. Bundle the ingested cluster and preview NotebookLM upload:`,
+    `research-hub notebooklm bundle --cluster ${slug}`,
+    `research-hub notebooklm upload --cluster ${slug} --dry-run`,
     `# After inspecting dry-run output:`,
-    `research-hub notebooklm upload ${slug} --create-if-missing`,
+    `research-hub notebooklm upload --cluster ${slug} --create-if-missing`,
     "```",
     "",
     `## Full-Text Declared Sources (${fullText.length})`,
@@ -278,20 +367,20 @@ export function buildBibtexExport(records: ResearchRecord[]): string {
           record.data.locator_kind !== "local-copy"
             ? safeSourceUrl(record.data.locator) || ""
             : "";
-        const tags = [...new Set([categorySlug(record), ...collectTags(record)].filter(Boolean))];
+        const tags = dedupeCaseInsensitive([categorySlug(record), ...collectTags(record)].filter(Boolean));
         const summary = savedSummary(record);
         const scope = rawScope(record);
         const identity = text(record.data.identity_status).trim() || "unverified";
         const fields: [string, string][] = [
           ["title", bibtexEscape(text(record.data.title))],
           authors ? ["author", bibtexEscape(authors)] : ["", ""],
-          year ? ["year", bibtexEscape(year)] : ["", ""],
+          year ? ["year", bibtexVerbatim(year)] : ["", ""],
           venue ? ["journal", bibtexEscape(venue)] : ["", ""],
-          doi ? ["doi", bibtexEscape(doi)] : ["", ""],
-          url ? ["url", bibtexEscape(url)] : ["", ""],
+          doi ? ["doi", bibtexVerbatim(doi)] : ["", ""],
+          url ? ["url", bibtexVerbatim(url)] : ["", ""],
           tags.length ? ["keywords", bibtexEscape(tags.join(", "))] : ["", ""],
           summary ? ["abstract", bibtexEscape(summary)] : ["", ""],
-          ["note", `Reading scope: ${scope}; Identity: ${identity}`],
+          ["note", bibtexEscape(`Reading scope: ${scope}; Identity: ${identity}`)],
         ].filter(([k, v]) => Boolean(k && v)) as [string, string][];
 
         return `@article{${key},\n${fields.map(([k, v]) => `  ${k} = {${v}}`).join(",\n")}\n}`;
@@ -307,15 +396,18 @@ export function buildAgentHandoffPrompt({
   projectId,
   projectTitle,
   locale,
+  maxChars,
 }: {
   preset: HandoffPresetId;
   records: ResearchRecord[];
   screenings: Map<string, "include" | "exclude" | null>;
   projectId?: string;
   projectTitle?: string;
-  locale: "en" | "zh-TW";
-}): { operation: "synthesize" | "frame"; prompt: string } {
+  locale: Locale;
+  maxChars?: number;
+}): { operation: "synthesize" | "frame"; prompt: string; truncatedCount: number } {
   const pid = projectId || "<project-id>";
+  const clusterSlug = (projectId || "selected-cluster").replace(/[^a-z0-9-]/gi, "-").toLowerCase();
   const fullTextCount = records.filter((r) => rawScope(r) === "full-text").length;
   const abstractCount = records.length - fullTextCount;
   const paperLines = records.map((record, index) => {
@@ -330,13 +422,13 @@ export function buildAgentHandoffPrompt({
     const tags = collectTags(record);
     const decision = screenings.get(record.id) ?? "unscreened";
     const parts = [
-      `${index + 1}. "${text(record.data.title)}" (${year})`,
+      `${index + 1}. "${inlineMarkdown(text(record.data.title))}" (${inlineMarkdown(year)})`,
       `source_id=${record.id}`,
-      `category=${cat}`,
-      `reading_scope=${scope}`,
+      `category=${inlineMarkdown(cat)}`,
+      `reading_scope=${inlineMarkdown(scope)}`,
       `screening=${decision}`,
-      tags.length ? `labels=[${tags.join(", ")}]` : null,
-      doi ? `doi=${doi}` : null,
+      tags.length ? `labels=[${tags.map(inlineMarkdown).join(", ")}]` : null,
+      doi ? `doi=${inlineMarkdown(doi)}` : null,
       url ? `url=${url}` : null,
     ].filter(Boolean);
     return parts.join(" | ");
@@ -346,13 +438,13 @@ export function buildAgentHandoffPrompt({
   const header = isZh
     ? [
         `# Research Hub AI 助理交接指令`,
-        `- 專案：${projectTitle || pid} (\`${pid}\`)`,
+        `- 專案：${inlineMarkdown(projectTitle || pid)} (\`${pid}\`)`,
         `- 目標文獻：${records.length} 篇（全文宣告：${fullTextCount}，僅摘要／書目／未知：${abstractCount}）`,
         "",
       ]
     : [
         `# Research Hub AI Agent Handoff`,
-        `- Project: ${projectTitle || pid} (\`${pid}\`)`,
+        `- Project: ${inlineMarkdown(projectTitle || pid)} (\`${pid}\`)`,
         `- Target sources: ${records.length} (${fullTextCount} full-text declared, ${abstractCount} abstract/metadata/unknown)`,
         "",
       ];
@@ -365,36 +457,42 @@ export function buildAgentHandoffPrompt({
       ? [
           "## 任務目標：轉換並同步至 Zotero 與 Obsidian",
           "1. 先為下列文獻驗證 DOI / 書目身分，保留 `category`、`labels`（關鍵字標籤）與 `reading_scope`（切勿將 `abstract` 或 `metadata` 誤標為 `full-text`）。",
-          "2. 產出標準 ingest JSON，**先執行 dry-run 預覽**：",
-          `   \`research-hub ingest <papers.json> --cluster ${pid} --dry-run\``,
-          "3. 將 dry-run 差異（新增／略過／標籤／分類）回報給我確認；**獲得明確核准後**才執行正式寫入 Zotero 與 Obsidian Vault。",
-          "4. 同步完成後，可協助執行 `scripts/library_snapshot.py` 更新 Research Hub 唯讀快照。",
+          "2. 確認或建立目標群組（`research-hub clusters new --query \"<topic>\" --slug <cluster-slug>`），產出標準 ingest JSON 後**先執行 dry-run 預覽**：",
+          `   \`research-hub ingest --input <papers.json> --cluster ${clusterSlug} --dry-run\``,
+          "3. 將 dry-run 差異（新增／略過／標籤／分類）回報給我確認；**獲得明確核准後**才移除 `--dry-run` 寫入 Zotero 與 Obsidian Vault。",
+          "4. 同步完成後，可協助執行 `scripts/library_snapshot.py --vault <vault> --collection <cluster-slug> --output <snapshot.json>` 更新唯讀快照。",
         ]
       : [
           "## Task: Convert & Sync to Zotero + Obsidian",
           "1. Verify DOI / bibliographic identity for the sources below while preserving `category`, `labels`, and `reading_scope` (NEVER promote `abstract` or `metadata` items to `full-text`).",
-          "2. Build an ingest payload and run a **dry-run preview first**:",
-          `   \`research-hub ingest <papers.json> --cluster ${pid} --dry-run\``,
-          "3. Report the dry-run diff (adds / skips / categories / labels) and **wait for my explicit approval** before writing to Zotero or Obsidian.",
-          "4. After approval and ingest, refresh the read-only UI snapshot via `scripts/library_snapshot.py`.",
+          "2. Create or confirm the target cluster (`research-hub clusters new --query \"<topic>\" --slug <cluster-slug>`), prepare the ingest JSON, and run a **dry-run preview first**:",
+          `   \`research-hub ingest --input <papers.json> --cluster ${clusterSlug} --dry-run\``,
+          "3. Report the dry-run diff (adds / skips / categories / labels) and **wait for my explicit approval** before re-running without `--dry-run` to write to Zotero or Obsidian.",
+          "4. After approval and ingest, refresh the read-only UI snapshot via `scripts/library_snapshot.py --vault <vault> --collection <cluster-slug> --output <snapshot.json>`.",
         ];
   } else if (preset === "notebooklm-brief") {
     instructions = isZh
       ? [
           "## 任務目標：打包送進 NotebookLM 並驗證簡報",
-          "1. 針對下列文獻先檢查哪些已有全文 PDF、哪些僅有摘要（Abstract only）。對僅摘要文獻明確標示證據邊界，不可將摘要推論當作全文方法。",
-          "2. 依序執行打包與乾跑預覽：",
-          `   \`research-hub notebooklm bundle ${pid}\``,
-          `   \`research-hub notebooklm upload ${pid} --dry-run\``,
-          "3. 確認清單與 NotebookLM 登入狀態（`research-hub notebooklm status`）無誤，經我確認後再上傳並產生簡報，最後用 `notebooklm-brief-verifier` 核對每條引用。",
+          "1. 先區分下列文獻哪些已有全文 PDF、哪些僅有摘要（Abstract only）；對僅摘要文獻明確標示證據邊界，不可將摘要推論當作全文方法。",
+          "2. 注意工作區專案不等於管線 Cluster：請先建立或指定專用 Cluster，並將**僅限此次選定的文獻**透過 dry-run 審核後匯入該 Cluster（或直接上傳匯出的 NotebookLM 來源包 `.md`）：",
+          `   \`research-hub clusters new --query "<topic>" --slug ${clusterSlug}\``,
+          `   \`research-hub ingest --input <papers.json> --cluster ${clusterSlug} --dry-run\``,
+          "3. 確認該 Cluster 僅含選定文獻後，執行打包與乾跑預覽：",
+          `   \`research-hub notebooklm bundle --cluster ${clusterSlug}\``,
+          `   \`research-hub notebooklm upload --cluster ${clusterSlug} --dry-run\``,
+          "4. 檢查 NotebookLM 登入狀態（`research-hub notebooklm status`）；經我確認後才加上 `--create-if-missing` 上傳並產生簡報，最後用 `notebooklm-brief-verifier` 核對每條引用。",
         ]
       : [
           "## Task: Prepare NotebookLM Bundle & Verify Brief",
           "1. Separate full-text PDF sources from abstract-only / metadata-only sources below and explicitly mark evidence boundaries.",
-          "2. Bundle and preview upload first (never upload without showing dry-run output):",
-          `   \`research-hub notebooklm bundle ${pid}\``,
-          `   \`research-hub notebooklm upload ${pid} --dry-run\``,
-          "3. Check `research-hub notebooklm status`; after my approval, upload, generate the brief, and verify every claim with `notebooklm-brief-verifier`.",
+          "2. Workspace projects are separate from pipeline clusters: create or pick a dedicated cluster for ONLY these selected papers (or upload the exported NotebookLM Source Pack `.md` directly):",
+          `   \`research-hub clusters new --query "<topic>" --slug ${clusterSlug}\``,
+          `   \`research-hub ingest --input <papers.json> --cluster ${clusterSlug} --dry-run\``,
+          "3. After confirming the cluster holds only the intended papers, bundle and preview upload first (never upload without showing dry-run output):",
+          `   \`research-hub notebooklm bundle --cluster ${clusterSlug}\``,
+          `   \`research-hub notebooklm upload --cluster ${clusterSlug} --dry-run\``,
+          "4. Check `research-hub notebooklm status`; after my approval, upload with `--create-if-missing`, generate the brief, and audit every citation with `notebooklm-brief-verifier`.",
         ];
   } else if (preset === "seven-section-summary") {
     instructions = isZh
@@ -402,13 +500,15 @@ export function buildAgentHandoffPrompt({
           "## 任務目標：精讀並產出 7 段結構化摘要（paper-summarize）",
           "1. 依據每篇文獻的實際可讀範圍（`reading_scope`）使用 `paper-summarize` 產出 7 段結構化摘要（研究緣由／目的／方法／發現／結論／重點／限制），並附上原文引句與 `supported` / `inference` / `unknown` 標記。",
           "2. 若文獻僅為 `abstract` 或 `metadata`，未提及的方法／限制必須誠實標記為 `unknown`，不可腦補。",
-          `3. 產出 JSON 後，透過 \`research-hub project native-summary-import --project ${pid} --source-id <source_id> --file <summary.json>\` 匯入 Research Hub 供我人工審閱。`,
+          `3. 產出符合規格的摘要封包 JSON（內含對應 \`source_id\`）後，透過以下指令匯入 Research Hub 供我人工審閱：`,
+          `   \`research-hub project native-summary-import --root <workspace-root> --project ${pid} --path <relative-envelope.json>\``,
         ]
       : [
           "## Task: Generate 7-Section Structured Summaries (`paper-summarize`)",
           "1. Using each paper's true `reading_scope`, run `paper-summarize` to draft a 7-section structured summary with verbatim evidence quotes and `supported` / `inference` / `unknown` labels.",
           "2. For `abstract` or `metadata` items, mark unstated methods/limitations honestly as `unknown`—never invent full-text claims.",
-          `3. Import the draft for human review via \`research-hub project native-summary-import --project ${pid} --source-id <source_id> --file <summary.json>\`.`,
+          `3. Write the authored summary envelope JSON (binding each target \`source_id\`) under the workspace root and import for human review via:`,
+          `   \`research-hub project native-summary-import --root <workspace-root> --project ${pid} --path <relative-envelope.json>\``,
         ];
   } else {
     operation = "frame";
@@ -428,10 +528,36 @@ export function buildAgentHandoffPrompt({
   }
 
   const listHeading = isZh ? "## 文獻清單" : "## Selected Sources";
-  return {
-    operation,
-    prompt: [...header, ...instructions, "", listHeading, ...paperLines].join("\n"),
-  };
+  const prefix = [...header, ...instructions, "", listHeading].join("\n");
+
+  if (maxChars === undefined) {
+    return {
+      operation,
+      prompt: [prefix, ...paperLines].join("\n"),
+      truncatedCount: 0,
+    };
+  }
+
+  const fullText = [prefix, ...paperLines].join("\n");
+  if (fullText.length <= maxChars) {
+    return { operation, prompt: fullText, truncatedCount: 0 };
+  }
+
+  const reserve = 220;
+  const budget = Math.max(prefix.length + 1, maxChars - reserve);
+  const kept: string[] = [];
+  let currentLen = prefix.length;
+  for (const line of paperLines) {
+    if (currentLen + 1 + line.length > budget) break;
+    kept.push(line);
+    currentLen += 1 + line.length;
+  }
+  const omitted = paperLines.length - kept.length;
+  const suffix = isZh
+    ? `\n…（為符合 20,000 字元上限，略去其餘 ${omitted} 篇摘要列；所有選定的工作區文獻紀錄仍完整綁定於 packet.json 的 records 與 selected_source_ids。）`
+    : `\n… (${omitted} additional source line(s) omitted to stay within the 20,000-char limit; all selected workspace source records remain bound in packet.json records & selected_source_ids.)`;
+  const bounded = ([prefix, ...kept].join("\n") + suffix).slice(0, maxChars);
+  return { operation, prompt: bounded, truncatedCount: omitted };
 }
 
 function downloadTextFile(filename: string, content: string, mime: string) {
@@ -443,8 +569,11 @@ function downloadTextFile(filename: string, content: string, mime: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 export function AgentHandoffModal({
   open,
@@ -456,6 +585,7 @@ export function AgentHandoffModal({
   projectTitle,
   workspace,
   liveIntegrations,
+  locale: explicitLocale,
   t,
   onClose,
   onCreateHandoffTask,
@@ -473,21 +603,30 @@ export function AgentHandoffModal({
   projectTitle?: string;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
+  locale?: Locale;
   t: Translate;
   onClose: () => void;
   onCreateHandoffTask?: (payload: {
     operation: "synthesize" | "frame";
     instructions: string;
+    selected_source_ids?: string[];
   }) => Promise<HandoffTaskResult>;
   onNavigateReview?: (taskId?: string) => void;
   onOpenSetup?: () => void;
-  onCopyMasterMarkdown?: () => Promise<void>;
-  onExportMasterCsv?: () => void;
+  onCopyMasterMarkdown?: (records?: ResearchRecord[]) => Promise<boolean>;
+  onExportMasterCsv?: (records?: ResearchRecord[]) => void;
 }) {
   const dialogId = useId();
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
+
   const [tab, setTab] = useState<HandoffTab>("agent");
-  const [scope, setScope] = useState<HandoffScope>(initialScope);
+  const [scope, setScope] = useState<HandoffScope>(
+    initialScope === "selected" && selectedRecord ? "selected" : "filtered",
+  );
   const [preset, setPreset] = useState<HandoffPresetId>("zotero-obsidian");
   const [customPrompt, setCustomPrompt] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
@@ -495,25 +634,86 @@ export function AgentHandoffModal({
   const [createError, setCreateError] = useState<unknown>(null);
   const [createdTaskId, setCreatedTaskId] = useState<string | null>(null);
 
-  const locale: "en" | "zh-TW" =
-    t("catalogTitle") === "文獻目錄" ? "zh-TW" : "en";
+  const locale: Locale =
+    explicitLocale ?? (t("handoffModalTitle") === zhTW.handoffModalTitle ? "zh-TW" : "en");
 
+  // Initialize state and capture trigger focus ONLY on closed -> open transition (never on background refreshes).
   useEffect(() => {
-    if (!open) return;
+    const justOpened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!justOpened) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setScope(initialScope === "selected" && selectedRecord ? "selected" : "filtered");
     setCustomPrompt(null);
     setStatusNote(null);
     setCreateError(null);
     setCreatedTaskId(null);
-    requestAnimationFrame(() => headingRef.current?.focus());
-  }, [open, initialScope, selectedRecord]);
+    const frame = requestAnimationFrame(() => headingRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open, initialScope, selectedRecord?.id]);
 
+  // If the currently selected paper disappears while open, fall back cleanly to filtered set.
+  useEffect(() => {
+    if (open && scope === "selected" && !selectedRecord) {
+      setScope("filtered");
+    }
+  }, [open, scope, selectedRecord]);
+
+  // Background inertness + focus restoration on close/unmount.
+  useEffect(() => {
+    if (!open) return;
+    const backdrop = backdropRef.current;
+    const altered: { el: HTMLElement; prevAriaHidden: string | null; prevInert: boolean }[] = [];
+    for (const child of Array.from(document.body.children)) {
+      if (child === backdrop || !(child instanceof HTMLElement)) continue;
+      altered.push({
+        el: child,
+        prevAriaHidden: child.getAttribute("aria-hidden"),
+        prevInert: Boolean((child as HTMLElement & { inert?: boolean }).inert),
+      });
+      child.setAttribute("aria-hidden", "true");
+      (child as HTMLElement & { inert?: boolean }).inert = true;
+    }
+    return () => {
+      for (const { el, prevAriaHidden, prevInert } of altered) {
+        if (prevAriaHidden === null) el.removeAttribute("aria-hidden");
+        else el.setAttribute("aria-hidden", prevAriaHidden);
+        (el as HTMLElement & { inert?: boolean }).inert = prevInert;
+      }
+      const prev = previousFocusRef.current;
+      if (prev && prev.isConnected) {
+        prev.focus();
+      }
+    };
+  }, [open]);
+
+  // Escape dismissal & Tab/Shift+Tab focus containment inside modal.
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
         onClose();
+        return;
+      }
+      if (event.key === "Tab" && modalRef.current) {
+        const focusables = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (event.shiftKey) {
+          if (!active || active === first || !modalRef.current.contains(active)) {
+            event.preventDefault();
+            last.focus();
+          }
+        } else if (!active || active === last || !modalRef.current.contains(active)) {
+          event.preventDefault();
+          first.focus();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -524,6 +724,11 @@ export function AgentHandoffModal({
     if (scope === "selected" && selectedRecord) return [selectedRecord];
     return filteredRecords;
   }, [scope, selectedRecord, filteredRecords]);
+
+  const workspaceSourceIds = useMemo(
+    () => targetRecords.filter((r) => r.kind === "source").map((r) => r.id),
+    [targetRecords],
+  );
 
   const generated = useMemo(
     () =>
@@ -538,29 +743,31 @@ export function AgentHandoffModal({
     [preset, targetRecords, screenings, projectId, projectTitle, locale],
   );
 
+  const boundedTaskPrompt = useMemo(
+    () =>
+      buildAgentHandoffPrompt({
+        preset,
+        records: targetRecords,
+        screenings,
+        projectId,
+        projectTitle,
+        locale,
+        maxChars: MAX_HANDOFF_TASK_CHARS,
+      }),
+    [preset, targetRecords, screenings, projectId, projectTitle, locale],
+  );
+
   const effectivePrompt = customPrompt ?? generated.prompt;
+  const userEditedTooLong =
+    customPrompt !== null && customPrompt.length > MAX_HANDOFF_TASK_CHARS;
+  const autoWillTruncate =
+    customPrompt === null && generated.prompt.length > MAX_HANDOFF_TASK_CHARS;
   const fullTextCount = targetRecords.filter((r) => rawScope(r) === "full-text").length;
   const abstractOnlyCount = targetRecords.length - fullTextCount;
 
   if (!open) return null;
 
-  const obsidianOk =
-    liveIntegrations?.obsidian?.status === "valid" ||
-    workspace?.capabilities?.obsidian_validation?.status === "available";
-  const zoteroOk = liveIntegrations?.zotero
-    ? ["connected_local_and_web", "connected_web", "connected_local"].includes(
-        liveIntegrations.zotero.status,
-      )
-    : Boolean(
-        (liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations)
-          ?.zotero_configured,
-      );
-  const nlmOk = liveIntegrations?.notebooklm
-    ? liveIntegrations.notebooklm.status === "authenticated"
-    : Boolean(
-        (liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations)
-          ?.nlm_state_present,
-      );
+  const dest = computeDestinationStatuses(workspace, liveIntegrations);
 
   async function copyText(content: string, successMessage: string) {
     if (!navigator.clipboard?.writeText) {
@@ -576,14 +783,24 @@ export function AgentHandoffModal({
   }
 
   async function handleCreateTask() {
-    if (!onCreateHandoffTask || creating || !targetRecords.length) return;
+    if (
+      !onCreateHandoffTask ||
+      creating ||
+      !workspaceSourceIds.length ||
+      userEditedTooLong
+    ) {
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     setStatusNote(null);
     try {
+      const instructions =
+        customPrompt !== null ? customPrompt : boundedTaskPrompt.prompt;
       const created = await onCreateHandoffTask({
         operation: generated.operation,
-        instructions: effectivePrompt,
+        instructions,
+        selected_source_ids: workspaceSourceIds,
       });
       setCreatedTaskId(created.id);
       setStatusNote({ tone: "good", text: t("handoffTaskCreated") });
@@ -619,8 +836,16 @@ export function AgentHandoffModal({
     },
   ];
 
+  const statusTip = (state: DestinationState) =>
+    state === "configured"
+      ? t("pipelineStatusConfigured")
+      : state === "error"
+        ? t("pipelineStatusError")
+        : undefined;
+
   return createPortal(
     <div
+      ref={backdropRef}
       className="handoff-backdrop"
       role="presentation"
       onMouseDown={(event) => {
@@ -628,6 +853,7 @@ export function AgentHandoffModal({
       }}
     >
       <section
+        ref={modalRef}
         id={dialogId}
         role="dialog"
         aria-modal="true"
@@ -728,9 +954,9 @@ export function AgentHandoffModal({
 
         <div className="handoff-modal-body">
           <div className="handoff-dest-bar" aria-label={t("handoffPipelineReadiness")}>
-            <span className={`pipeline-dot-chip ${obsidianOk ? "is-ok" : "is-idle"}`}>Obsidian</span>
-            <span className={`pipeline-dot-chip ${zoteroOk ? "is-ok" : "is-idle"}`}>Zotero</span>
-            <span className={`pipeline-dot-chip ${nlmOk ? "is-ok" : "is-idle"}`}>NotebookLM</span>
+            <span className={`pipeline-dot-chip is-${dest.obsidian}`} title={statusTip(dest.obsidian)}>Obsidian</span>
+            <span className={`pipeline-dot-chip is-${dest.zotero}`} title={statusTip(dest.zotero)}>Zotero</span>
+            <span className={`pipeline-dot-chip is-${dest.notebooklm}`} title={statusTip(dest.notebooklm)}>NotebookLM</span>
             {onOpenSetup && (
               <button
                 type="button"
@@ -777,6 +1003,17 @@ export function AgentHandoffModal({
                   value={effectivePrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
                 />
+                {userEditedTooLong && (
+                  <p role="alert" className="small bad-text">
+                    {t("handoffTaskTooLong")} ({effectivePrompt.length.toLocaleString()} / {MAX_HANDOFF_TASK_CHARS.toLocaleString()})
+                  </p>
+                )}
+                {autoWillTruncate && (
+                  <p className="small muted">{t("handoffTaskTruncatedNote")}</p>
+                )}
+                {onCreateHandoffTask && targetRecords.length > 0 && workspaceSourceIds.length === 0 && (
+                  <p className="small muted">{t("handoffReadOnlyNoTask")}</p>
+                )}
               </div>
               <div className="handoff-actions">
                 <button
@@ -791,7 +1028,7 @@ export function AgentHandoffModal({
                   <button
                     type="button"
                     className="button secondary"
-                    disabled={creating || !targetRecords.length}
+                    disabled={creating || !workspaceSourceIds.length || userEditedTooLong}
                     onClick={() => void handleCreateTask()}
                   >
                     {creating ? t("saving") : t("handoffCreateTask")}
@@ -938,8 +1175,15 @@ export function AgentHandoffModal({
                       <button
                         type="button"
                         className="button secondary small"
-                        disabled={!filteredRecords.length}
-                        onClick={() => void onCopyMasterMarkdown()}
+                        disabled={!targetRecords.length}
+                        onClick={() => {
+                          void onCopyMasterMarkdown(targetRecords).then((ok) => {
+                            setStatusNote({
+                              tone: ok ? "good" : "bad",
+                              text: ok ? t("catalogTableCopied") : t("handoffCopyFailed"),
+                            });
+                          });
+                        }}
                       >
                         {t("catalogTableCopyMd")}
                       </button>
@@ -948,9 +1192,9 @@ export function AgentHandoffModal({
                       <button
                         type="button"
                         className="button secondary small"
-                        disabled={!filteredRecords.length}
+                        disabled={!targetRecords.length}
                         onClick={() => {
-                          onExportMasterCsv();
+                          onExportMasterCsv(targetRecords);
                           setStatusNote({ tone: "good", text: t("handoffFileDownloaded") });
                         }}
                       >

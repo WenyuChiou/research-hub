@@ -80,13 +80,13 @@ def test_add_source_normalizes_optional_authors_and_year(tmp_path):
             "authors": "Patrick Lewis, Ethan Perez",
             "year": "2020",
             "category": "llm",
-            "tags": "retrieval, benchmark, llm",
+            "tags": "#retrieval, benchmark; LLM，#Benchmark",
         },
     )
     assert source["data"]["authors"] == ["Patrick Lewis", "Ethan Perez"]
     assert source["data"]["year"] == "2020"
     assert source["data"]["category"] == "llm"
-    assert source["data"]["tags"] == ["retrieval", "benchmark", "llm"]
+    assert source["data"]["tags"] == ["retrieval", "benchmark", "LLM"]
     assert source["data"]["identity_status"] == "unverified"
 
     blank_tags_source = ws.add_record(

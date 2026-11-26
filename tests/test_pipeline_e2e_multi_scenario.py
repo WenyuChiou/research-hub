@@ -123,8 +123,8 @@ def _make_cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     import research_hub.config as cfg_mod
 
-    cfg_mod._config = None
-    cfg_mod._config_path = None
+    monkeypatch.setattr(cfg_mod, "_config", None)
+    monkeypatch.setattr(cfg_mod, "_config_path", None)
     cfg = cfg_mod.get_config()
     (cfg.research_hub_dir / "dedup_index.json").write_text("{}", encoding="utf-8")
     (cfg.research_hub_dir / "manifest.jsonl").write_text("", encoding="utf-8")
@@ -504,149 +504,152 @@ def test_scenario_4_multi_persona_zotero_and_notebooklm_integration_probes(tmp_p
     mock_zot = ThreadingHTTPServer(("127.0.0.1", 0), _MockZoteroHandler)
     mock_zot_thread = threading.Thread(target=mock_zot.serve_forever, daemon=True)
     mock_zot_thread.start()
-    mock_zot_base = f"http://127.0.0.1:{mock_zot.server_port}"
-
-    import research_hub.workspace.integrations as integ_mod
-
-    monkeypatch.setattr(integ_mod, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(OSError("No local Zotero desktop")))
-
-    class _MockPyzoteroClient:
-        def __init__(self, lib_id: str, lib_type: str, api_key: str):
-            self.lib_id = lib_id
-            self.lib_type = lib_type
-            self.api_key = api_key
-
-        def top(self, limit: int = 1):
-            req = Request(
-                f"{mock_zot_base}/users/{self.lib_id}/items/top?limit={limit}",
-                headers={"Zotero-API-Key": self.api_key},
-            )
-            with urlopen(req, timeout=5) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-
-    monkeypatch.setitem(
-        sys.modules,
-        "pyzotero",
-        SimpleNamespace(zotero=SimpleNamespace(Zotero=_MockPyzoteroClient)),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "pyzotero.zotero",
-        SimpleNamespace(Zotero=_MockPyzoteroClient),
-    )
-
-    def _offline_nlm_health(state_file: Path, auto_refresh: bool = True) -> dict:
-        del auto_refresh
-        if not state_file.exists():
-            return {"ok": False, "reason": "missing"}
-        payload = json.loads(state_file.read_text(encoding="utf-8"))
-        cookies = payload.get("cookies") or []
-        now_ts = time.time()
-        valid = any(c.get("name") == "SID" and float(c.get("expires", 0)) > now_ts for c in cookies)
-        return {"ok": valid, "refreshed": False}
-
-    monkeypatch.setattr("research_hub.notebooklm.auth.ensure_session_health", _offline_nlm_health)
-
-    ws = Workspace(tmp_path / "ws")
-    server = WorkspaceServer(ws.root, port=0, integrations_config=config_path)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
     try:
-        base = f"http://127.0.0.1:{server.server_port}"
-        csrf = _fetch_csrf(base)
+        mock_zot_base = f"http://127.0.0.1:{mock_zot.server_port}"
 
-        # Persona A: Offline zero-account user
-        code, zot_missing = _http_json(f"{base}/api/v1/integrations/zotero/check", method="POST", payload={}, csrf=csrf, origin=base)
-        assert code == 200 and zot_missing["probe"]["status"] == "missing_credentials"
+        import research_hub.workspace.integrations as integ_mod
 
-        code, nlm_missing = _http_json(f"{base}/api/v1/integrations/notebooklm/check", method="POST", payload={}, csrf=csrf, origin=base)
-        assert code == 200 and nlm_missing["probe"]["status"] == "missing"
+        monkeypatch.setattr(integ_mod, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(OSError("No local Zotero desktop")))
 
-        # Persona B: Save valid Zotero credentials -> encrypted on disk, never echoed, live probe -> connected_web
-        code, saved = _http_json(
-            f"{base}/api/v1/integrations/credentials",
-            method="POST",
-            payload={
-                "zotero_library_id": "554433",
-                "zotero_library_type": "user",
-                "zotero_api_key": "VALID_TEST_ZOTERO_KEY_2026",
-            },
-            csrf=csrf,
-            origin=base,
+        class _MockPyzoteroClient:
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                self.lib_id = lib_id
+                self.lib_type = lib_type
+                self.api_key = api_key
+
+            def top(self, limit: int = 1):
+                req = Request(
+                    f"{mock_zot_base}/users/{self.lib_id}/items/top?limit={limit}",
+                    headers={"Zotero-API-Key": self.api_key},
+                )
+                with urlopen(req, timeout=5) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+
+        monkeypatch.setitem(
+            sys.modules,
+            "pyzotero",
+            SimpleNamespace(zotero=SimpleNamespace(Zotero=_MockPyzoteroClient)),
         )
-        assert code == 200 and saved["ok"] is True
-        assert "VALID_TEST_ZOTERO_KEY_2026" not in json.dumps(saved)
-        raw_disk_cfg = config_path.read_text(encoding="utf-8")
-        assert "VALID_TEST_ZOTERO_KEY_2026" not in raw_disk_cfg
-        stored_key = json.loads(raw_disk_cfg)["zotero"]["api_key"]
-        assert is_encrypted(stored_key)
-
-        code, zot_ok = _http_json(f"{base}/api/v1/integrations/zotero/check", method="POST", payload={}, csrf=csrf, origin=base)
-        assert code == 200 and zot_ok["probe"]["status"] == "connected_web"
-
-        # Invalid API key -> auth_failed (403)
-        code, _ = _http_json(
-            f"{base}/api/v1/integrations/credentials",
-            method="POST",
-            payload={"zotero_api_key": "INVALID_KEY_403"},
-            csrf=csrf,
-            origin=base,
+        monkeypatch.setitem(
+            sys.modules,
+            "pyzotero.zotero",
+            SimpleNamespace(Zotero=_MockPyzoteroClient),
         )
-        assert code == 200
-        code, zot_bad = _http_json(f"{base}/api/v1/integrations/zotero/check", method="POST", payload={}, csrf=csrf, origin=base)
-        assert code == 200 and zot_bad["probe"]["status"] == "auth_failed"
 
-        # Persona C: NotebookLM session state checks (valid future cookie vs expired cookie)
-        nlm_state = default_state_file(cfg.research_hub_dir)
-        nlm_state.parent.mkdir(parents=True, exist_ok=True)
-        future_exp = time.time() + 86400 * 7
-        nlm_state.write_text(
-            json.dumps(
-                {
-                    "cookies": [
-                        {"name": "SID", "value": "fake-sid", "domain": ".google.com", "expires": future_exp},
-                        {"name": "HSID", "value": "fake-hsid", "domain": ".google.com", "expires": future_exp},
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        code, nlm_auth = _http_json(f"{base}/api/v1/integrations/notebooklm/check", method="POST", payload={}, csrf=csrf, origin=base)
-        assert code == 200 and nlm_auth["probe"]["status"] == "authenticated"
+        def _offline_nlm_health(state_file: Path, auto_refresh: bool = True) -> dict:
+            del auto_refresh
+            if not state_file.exists():
+                return {"ok": False, "reason": "missing"}
+            payload = json.loads(state_file.read_text(encoding="utf-8"))
+            cookies = payload.get("cookies") or []
+            now_ts = time.time()
+            valid = any(c.get("name") == "SID" and float(c.get("expires", 0)) > now_ts for c in cookies)
+            return {"ok": valid, "refreshed": False}
 
-        past_exp = time.time() - 3600
-        nlm_state.write_text(
-            json.dumps(
-                {
-                    "cookies": [
-                        {"name": "SID", "value": "expired-sid", "domain": ".google.com", "expires": past_exp},
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        code, nlm_exp = _http_json(f"{base}/api/v1/integrations/notebooklm/check", method="POST", payload={}, csrf=csrf, origin=base)
-        assert code == 200 and nlm_exp["probe"]["status"] == "expired"
+        monkeypatch.setattr("research_hub.notebooklm.auth.ensure_session_health", _offline_nlm_health)
+
+        ws = Workspace(tmp_path / "ws")
+        server = WorkspaceServer(ws.root, port=0, integrations_config=config_path)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_port}"
+            csrf = _fetch_csrf(base)
+
+            # Persona A: Offline zero-account user
+            code, zot_missing = _http_json(f"{base}/api/v1/integrations/zotero/check", method="POST", payload={}, csrf=csrf, origin=base)
+            assert code == 200 and zot_missing["probe"]["status"] == "missing_credentials"
+
+            code, nlm_missing = _http_json(f"{base}/api/v1/integrations/notebooklm/check", method="POST", payload={}, csrf=csrf, origin=base)
+            assert code == 200 and nlm_missing["probe"]["status"] == "missing"
+
+            # Persona B: Save valid Zotero credentials -> encrypted on disk, never echoed, live probe -> connected_web
+            code, saved = _http_json(
+                f"{base}/api/v1/integrations/credentials",
+                method="POST",
+                payload={
+                    "zotero_library_id": "554433",
+                    "zotero_library_type": "user",
+                    "zotero_api_key": "VALID_TEST_ZOTERO_KEY_2026",
+                },
+                csrf=csrf,
+                origin=base,
+            )
+            assert code == 200 and saved["ok"] is True
+            assert "VALID_TEST_ZOTERO_KEY_2026" not in json.dumps(saved)
+            raw_disk_cfg = config_path.read_text(encoding="utf-8")
+            assert "VALID_TEST_ZOTERO_KEY_2026" not in raw_disk_cfg
+            stored_key = json.loads(raw_disk_cfg)["zotero"]["api_key"]
+            assert is_encrypted(stored_key)
+
+            code, zot_ok = _http_json(f"{base}/api/v1/integrations/zotero/check", method="POST", payload={}, csrf=csrf, origin=base)
+            assert code == 200 and zot_ok["probe"]["status"] == "connected_web"
+
+            # Invalid API key -> auth_failed (403)
+            code, _ = _http_json(
+                f"{base}/api/v1/integrations/credentials",
+                method="POST",
+                payload={"zotero_api_key": "INVALID_KEY_403"},
+                csrf=csrf,
+                origin=base,
+            )
+            assert code == 200
+            code, zot_bad = _http_json(f"{base}/api/v1/integrations/zotero/check", method="POST", payload={}, csrf=csrf, origin=base)
+            assert code == 200 and zot_bad["probe"]["status"] == "auth_failed"
+
+            # Persona C: NotebookLM session state checks (valid future cookie vs expired cookie)
+            nlm_state = default_state_file(cfg.research_hub_dir)
+            nlm_state.parent.mkdir(parents=True, exist_ok=True)
+            future_exp = time.time() + 86400 * 7
+            nlm_state.write_text(
+                json.dumps(
+                    {
+                        "cookies": [
+                            {"name": "SID", "value": "fake-sid", "domain": ".google.com", "expires": future_exp},
+                            {"name": "HSID", "value": "fake-hsid", "domain": ".google.com", "expires": future_exp},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            code, nlm_auth = _http_json(f"{base}/api/v1/integrations/notebooklm/check", method="POST", payload={}, csrf=csrf, origin=base)
+            assert code == 200 and nlm_auth["probe"]["status"] == "authenticated"
+
+            past_exp = time.time() - 3600
+            nlm_state.write_text(
+                json.dumps(
+                    {
+                        "cookies": [
+                            {"name": "SID", "value": "expired-sid", "domain": ".google.com", "expires": past_exp},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            code, nlm_exp = _http_json(f"{base}/api/v1/integrations/notebooklm/check", method="POST", payload={}, csrf=csrf, origin=base)
+            assert code == 200 and nlm_exp["probe"]["status"] == "expired"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
         mock_zot.shutdown()
         mock_zot.server_close()
         mock_zot_thread.join(timeout=5)
 
 
 def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path: Path):
-    """End-to-end AI Agent Handoff button flow: create task -> download handoff packet -> import host result -> review gate."""
+    """End-to-end AI Agent Handoff button flow: scoped selected_source_ids -> packet -> import result -> review gate."""
     ws = Workspace(tmp_path / "ws")
     project = ws.create_project(
         id="handoff-20",
         title="20-Paper AI Agent Handoff Test",
         archetype="review",
-        goal="Verify AI agent handoff task creation and human review boundary.",
+        goal="Verify AI agent handoff task creation, source scoping, and human review boundary.",
     )
+    source_ids: list[str] = []
     for spec in COHORT_SPECS:
-        ws.add_record(
+        rec = ws.add_record(
             project["id"],
             kind="source",
             data={
@@ -658,6 +661,11 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
                 "reading_scope": spec["reading_scope"],
             },
         )
+        source_ids.append(rec["id"])
+    # Also register an unrelated private manuscript file to prove selected_source_ids excludes it
+    private_draft = ws.root / "private_manuscript.md"
+    private_draft.write_text("# Private Draft\nDo not leak into single-paper handoff.\n", encoding="utf-8")
+    ws.register_artifact(project["id"], path="private_manuscript.md", role="main_manuscript")
 
     server = WorkspaceServer(ws.root, port=0, human=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -666,12 +674,29 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
         base = f"http://127.0.0.1:{server.server_port}"
         csrf = _fetch_csrf(base)
 
+        # Reject unknown source IDs in selected_source_ids
+        code, bad_scope = _http_json(
+            f"{base}/api/v1/projects/handoff-20/tasks",
+            method="POST",
+            payload={
+                "operation": "synthesize",
+                "mode": "handoff",
+                "instructions": "Invalid scope test",
+                "selected_source_ids": ["nonexistent-source-id"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code == 400 and bad_scope["ok"] is False
+
+        # Scoped 2-paper handoff must capture ONLY those 2 sources and ZERO unrelated private artifacts
+        chosen_ids = source_ids[:2]
         handoff_instructions = (
             "# Research Hub AI Agent Handoff\n"
             "- Project: 20-Paper AI Agent Handoff Test (`handoff-20`)\n"
-            "- Target sources: 20 (8 full-text declared, 12 abstract/metadata)\n"
+            "- Target sources: 2 (2 full-text declared, 0 abstract/metadata)\n"
             "## Task: Convert & Sync to Zotero + Obsidian\n"
-            "1. Run `research-hub ingest papers.json --cluster handoff-20 --dry-run`.\n"
+            "1. Run `research-hub ingest --input papers.json --cluster handoff-20 --dry-run`.\n"
             "2. Wait for explicit human approval before writing."
         )
         code, created = _http_json(
@@ -681,6 +706,7 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
                 "operation": "synthesize",
                 "mode": "handoff",
                 "instructions": handoff_instructions,
+                "selected_source_ids": chosen_ids,
             },
             csrf=csrf,
             origin=base,
@@ -691,8 +717,11 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
         assert task["mode"] == "handoff"
         assert task["operation"] == "synthesize"
         assert task["status"] == "awaiting_agent"
+        assert task["request"]["selected_source_ids"] == chosen_ids
+        assert [r["id"] for r in task["request"]["records"]] == chosen_ids
+        assert task["request"]["artifacts"] == []
 
-        # Export handoff packet (what the user or external AI agent consumes)
+        # Export handoff packet — verify only the 2 selected sources are exported, never the other 18 or private draft
         code, packet = _http_json(
             f"{base}/api/v1/tasks/{task_id}/handoff",
             method="POST",
@@ -702,6 +731,8 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
         )
         assert code == 200 and packet["ok"] is True
         assert packet["packet"]["task_id"] == task_id
+        assert [r["id"] for r in packet["packet"]["records"]] == chosen_ids
+        assert packet["packet"]["artifacts"] == []
 
         # Import AI agent's dry-run report back into Research Hub — must wait for human review, never auto-accept!
         code, imported = _http_json(
@@ -709,7 +740,7 @@ def test_scenario_5_ai_agent_handoff_hook_task_lifecycle_for_20_papers(tmp_path:
             method="POST",
             payload={
                 "status": "completed",
-                "prose": "Dry-run prepared for 20 papers (8 full-text PDFs, 10 abstracts, 2 metadata-only). Awaiting human approval before Zotero/Obsidian writes.",
+                "prose": "Dry-run prepared for 2 selected papers. Awaiting human approval before Zotero/Obsidian writes.",
                 "artifacts": [],
                 "input_hash": task["action_hash"],
             },
