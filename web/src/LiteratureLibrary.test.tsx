@@ -496,4 +496,102 @@ describe("master literature table, category summary, and clean status tooltips",
       "Initial draft text. Unsaved human edit.",
     );
   });
+
+  it("preserves unsaved working-summary edits even when overview opens a different category", async () => {
+    const user = userEvent.setup();
+    const sha = "c".repeat(64);
+    const artifact = {
+      id: "art-cat",
+      project_id: "proj-cat",
+      source_record_id: "src-llm",
+      role: "evidence",
+      path: "reports/llm.md",
+      sha256: sha,
+      current: true,
+    };
+    const llmRecord: ResearchRecord = {
+      id: "src-llm",
+      kind: "source",
+      data: {
+        id: "src-llm",
+        title: "LLM Paper Being Edited",
+        category: "llm",
+        identity_status: "unverified",
+        source_records: [
+          {
+            observation_id: "obs-llm",
+            work_id: "work-llm",
+            source_id: "src-llm",
+            evidence_level: "generated-summary",
+            status: "available",
+            text_path: "reports/llm.md",
+            text_sha256: sha,
+          },
+        ],
+      },
+    };
+    const humanRecord: ResearchRecord = {
+      id: "src-human",
+      kind: "source",
+      data: {
+        id: "src-human",
+        title: "Human Study In Other Category",
+        category: "human",
+        identity_status: "unverified",
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (inputUrl) => {
+      const url = String(inputUrl);
+      if (url.includes("/working-summary")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            context: {
+              source_record_id: "src-llm",
+              artifact_id: "art-cat",
+              artifact_sha256: sha,
+              revision: "d".repeat(64),
+              draft_text: "LLM draft.",
+              working_summary: null,
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          preview: { artifact_id: "art-cat", sha256: sha, path: "reports/llm.md", text: "LLM draft." },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const base = {
+      sources: [llmRecord, humanRecord],
+      screenings: [],
+      t,
+      onScreen: vi.fn(),
+      onPrepare: vi.fn(),
+      observationRead: { projectId: "proj-cat", artifacts: [artifact], active: true, revision: 0 },
+    };
+    const { rerender } = render(<LiteratureLibrary {...base} requestedView={{ mode: "split", nonce: 0 }} />);
+    await user.click(screen.getByRole("button", { name: `${t("workingSummaryReview")} art-cat` }));
+    const editor = await screen.findByRole("textbox", { name: t("workingSummaryText") });
+    await user.type(editor, " Unsaved cross-category edit.");
+
+    // Overview jumps to a DIFFERENT category ("human") that excludes src-llm from visible
+    rerender(<LiteratureLibrary {...base} requestedView={{ mode: "table", category: "human", nonce: 1 }} />);
+    expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(1);
+    expect(within(screen.getByRole("table")).getByText("Human Study In Other Category")).toBeVisible();
+
+    // Returning to Reader preserves src-llm's unsaved working summary instead of discarding it
+    await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
+    expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+      "LLM draft. Unsaved cross-category edit.",
+    );
+
+    // Closing the working summary releases the reader back to the active filter's selection
+    await user.click(screen.getByRole("button", { name: t("cancel") }));
+    expect(screen.getByRole("heading", { name: "Human Study In Other Category" })).toBeVisible();
+  });
 });

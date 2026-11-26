@@ -148,9 +148,14 @@ it("keeps combined 'all' scope mounted on overview master-table request so unsav
     );
   }));
   const user = userEvent.setup();
+  const humanSource: ResearchRecord = {
+    id: "ws-human-other",
+    kind: "source",
+    data: { id: "ws-human-other", title: "Human Other Category Source", category: "human", reading_scope: "abstract" },
+  };
   const base = {
     ...props(),
-    sources: [editableSource],
+    sources: [editableSource, humanSource],
     observationRead: { projectId: "proj-all", artifacts: [artifact], active: true, revision: 0 },
   };
   const { rerender } = render(<LibraryCollection {...base} requestedView={{ mode: "split", nonce: 0 }} />);
@@ -163,9 +168,11 @@ it("keeps combined 'all' scope mounted on overview master-table request so unsav
   await user.type(editor, " Kept across overview jump.");
   expect(editor).toHaveValue("Base draft. Kept across overview jump.");
 
-  rerender(<LibraryCollection {...base} requestedView={{ mode: "table", category: "", nonce: 1 }} />);
+  // Jump from overview to a DIFFERENT category ("human") while editing an "llm" paper in "all" scope
+  rerender(<LibraryCollection {...base} requestedView={{ mode: "table", category: "human", nonce: 1 }} />);
   expect(screen.getByLabelText(t("libraryScope"))).toHaveValue("all");
   expect(screen.getByRole("button", { name: t("catalogViewTable") })).toHaveAttribute("aria-pressed", "true");
+  expect(within(screen.getByRole("table")).getByText("Human Other Category Source")).toBeVisible();
 
   await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
   expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(

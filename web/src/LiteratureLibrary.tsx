@@ -1,5 +1,5 @@
 import { NativeSummaryReader } from "./NativeSummaryReader";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
 import { useCompactReadingLayout } from "./readingLayout";
@@ -183,8 +183,14 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   const [sortBy, setSortBy] = useState<SortKey>("default");
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [summarySessionOpen, setSummarySessionOpen] = useState(false);
+  const [summarySessionRecordId, setSummarySessionRecordId] = useState<string | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
+  const handleSummarySessionChange = useCallback((open: boolean) => {
+    setSummarySessionOpen(open);
+    if (!open) setSummarySessionRecordId(null);
+  }, []);
   const handledRequestNonce = useRef(0);
   useEffect(() => {
     if (!requestedView || requestedView.nonce <= handledRequestNonce.current) return;
@@ -259,11 +265,15 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   );
   const exactSelected = visible.find((record) => record.id === selectedId);
   const selected = compact && readerOpen ? exactSelected : exactSelected ?? visible[0];
+  const activeSummaryRecord = summarySessionOpen && summarySessionRecordId
+    ? sources.find((record) => record.id === summarySessionRecordId)
+    : undefined;
+  const readerRecord = activeSummaryRecord ?? selected;
   useEffect(() => {
-    if (compact && readerOpen && !exactSelected) {
+    if (compact && readerOpen && !exactSelected && !activeSummaryRecord) {
       setSelectionMissing(true); returnRequested.current = true; setReaderOpen(false);
     }
-  }, [compact, readerOpen, exactSelected]);
+  }, [compact, readerOpen, exactSelected, activeSummaryRecord]);
   useEffect(() => {
     if (!active) return;
     if (moveFilterFocus.current === "select" && compact) categorySelect.current?.focus();
@@ -278,10 +288,10 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       } else searchInput.current?.focus();
     }
   }, [readerOpen, compact, active, exactSelected]);
-  const latest = selected ? latestScreenings.get(selected.id) : undefined;
-  const selectedDecision = selected ? screenedDecision(selected) : null;
-  const summary = selected && savedSummary(selected);
-  const note = selected?.kind === "library-note";
+  const latest = readerRecord ? latestScreenings.get(readerRecord.id) : undefined;
+  const selectedDecision = readerRecord ? screenedDecision(readerRecord) : null;
+  const summary = readerRecord && savedSummary(readerRecord);
+  const note = readerRecord?.kind === "library-note";
   // Registered references are discoverable without fetching every row. They do
   // not assert that the report body is readable or that a summary was accepted.
   const draftScope = observationRead ?? (observationText ? {
@@ -299,8 +309,8 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
     {categories.map(value => <button type="button" key={value} aria-pressed={selectedCategory === value} onClick={() => setSelectedCategory(value)}>{categoryName(value,t)} <span>{sources.filter(record => category(record) === value).length}</span></button>)}
   </div>;
 
-  const selectedAuthors = selected ? formatAuthors(selected.data.authors) : "";
-  const selectedVenue = selected ? (text(selected.data.venue) || text(selected.data.journal)) : "";
+  const selectedAuthors = readerRecord ? formatAuthors(readerRecord.data.authors) : "";
+  const selectedVenue = readerRecord ? (text(readerRecord.data.venue) || text(readerRecord.data.journal)) : "";
   const sortedVisible = sortBy === "default" ? visible : [...visible].sort((a, b) => {
     if (sortBy === "year-desc") {
       const ay = numericYear(a.data.year);
@@ -787,21 +797,21 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               event.stopPropagation(); returnRequested.current = true; setReaderOpen(false);
             }
           }}>
-          {selected ? <div key={selected.id} className="catalog-detail-body">
+          {readerRecord ? <div key={readerRecord.id} className="catalog-detail-body">
             <div className="catalog-detail-top">
               <div className="catalog-meta">
-                <span>{text(selected.data.year) || "—"}</span>
+                <span>{text(readerRecord.data.year) || "—"}</span>
                 <span>·</span>
-                <span>{categoryName(category(selected), t)}</span>
+                <span>{categoryName(category(readerRecord), t)}</span>
                 <span>·</span>
-                <span>{readingScope(selected, t)}</span>
+                <span>{readingScope(readerRecord, t)}</span>
                 <span
-                  className={`badge neutral${(text(selected.data.identity_status) || "unverified") === "unverified" ? " tooltip-rich" : ""}`}
-                  tabIndex={(text(selected.data.identity_status) || "unverified") === "unverified" ? 0 : undefined}
-                  data-tooltip={(text(selected.data.identity_status) || "unverified") === "unverified" ? t("unverifiedTip") : undefined}
-                  data-tooltip-pos={(text(selected.data.identity_status) || "unverified") === "unverified" ? "bottom-end" : undefined}
+                  className={`badge neutral${(text(readerRecord.data.identity_status) || "unverified") === "unverified" ? " tooltip-rich" : ""}`}
+                  tabIndex={(text(readerRecord.data.identity_status) || "unverified") === "unverified" ? 0 : undefined}
+                  data-tooltip={(text(readerRecord.data.identity_status) || "unverified") === "unverified" ? t("unverifiedTip") : undefined}
+                  data-tooltip-pos={(text(readerRecord.data.identity_status) || "unverified") === "unverified" ? "bottom-end" : undefined}
                 >
-                  {statusLabel(text(selected.data.identity_status) || "unverified", t)}
+                  {statusLabel(text(readerRecord.data.identity_status) || "unverified", t)}
                 </span>
               </div>
               <button
@@ -820,12 +830,12 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 </svg>
               </button>
             </div>
-            <h3 ref={detailHeading} tabIndex={-1}>{text(selected.data.title)}</h3>
-            {(selectedAuthors || selectedVenue || selected.data.locator_kind !== "local-copy") && (
+            <h3 ref={detailHeading} tabIndex={-1}>{text(readerRecord.data.title)}</h3>
+            {(selectedAuthors || selectedVenue || readerRecord.data.locator_kind !== "local-copy") && (
               <p className="catalog-authors-line">
                 {[selectedAuthors, selectedVenue].filter(Boolean).join(" · ")}
-                {(selectedAuthors || selectedVenue) && selected.data.locator_kind !== "local-copy" && selected.data.locator ? " · " : ""}
-                {selected.data.locator_kind !== "local-copy" && <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
+                {(selectedAuthors || selectedVenue) && readerRecord.data.locator_kind !== "local-copy" && readerRecord.data.locator ? " · " : ""}
+                {readerRecord.data.locator_kind !== "local-copy" && <SourceLink locator={readerRecord.data.locator} title={t("catalogOriginalSource")} />}
               </p>
             )}
             {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
@@ -839,46 +849,47 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 </summary>
                 <p className="small muted">{t("catalogScreeningHelp")}</p>
                 {latest && <div className="catalog-saved-screening" role="status"><strong>{statusLabel(text(latest.data.decision), t)}</strong><ReadText value={text(latest.data.rationale)} /></div>}
-                <MutationForm key={selected.id} t={t} submit={t("catalogSaveScreening")} fields={[
+                <MutationForm key={readerRecord.id} t={t} submit={t("catalogSaveScreening")} fields={[
                   {name:"decision",label:t("decision"),options:[{value:"include",label:t("include")},{value:"exclude",label:t("exclude")}]},
                   {name:"rationale",label:t("rationale"),textarea:true},
-                ]} onSubmit={(data) => onScreen(selected.id, String(data.get("decision")), String(data.get("rationale")))} />
+                ]} onSubmit={(data) => onScreen(readerRecord.id, String(data.get("decision")), String(data.get("rationale")))} />
               </details>
             </div>}
-            {!note && registeredNativeSummary(selected) && (
-              <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
+            {!note && registeredNativeSummary(readerRecord) && (
+              <NativeSummaryReader record={readerRecord} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
             )}
             <section>
               <h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>
-              {summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t(registeredNativeSummary(selected) ? "catalogNoSeparateSummary" : "catalogNoSummary")}</p>}
+              {summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t(registeredNativeSummary(readerRecord) ? "catalogNoSeparateSummary" : "catalogNoSummary")}</p>}
             </section>
-            <SavedWorkingSummary record={selected} t={t}/>
-            {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
+            <SavedWorkingSummary record={readerRecord} t={t}/>
+            {registeredDrafts.has(readerRecord.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
               <button type="button" className="button secondary small" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
-            {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
-              <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} />}</div>}
-            {!note && <WorkingSummaryEditor record={selected} scope={draftScope ? {...draftScope, active:draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined}
+            {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={readerRecord} context={observationText} t={t} /> :
+              <ObservationPreview record={readerRecord} scope={observationRead ? {...observationRead, active: observationRead.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} />}</div>}
+            {!note && <WorkingSummaryEditor record={readerRecord} scope={draftScope ? {...draftScope, active:draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined}
               suspended={Boolean((!compact || readerOpen) && (viewMode === "table" || (pageSuspended && draftScope?.active === false)))}
-              onOpen={() => {setSelectedId(selected.id); setReaderOpen(true);}}
+              onOpen={() => {setSelectedId(readerRecord.id); setSummarySessionRecordId(readerRecord.id); setSummarySessionOpen(true); setReaderOpen(true);}}
+              onSessionChange={handleSummarySessionChange}
               t={t} onSaved={onWorkingSummarySaved}/>}
-            <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="small muted">{t("catalogNoRelevance")}</p>}</section>
+            <section><h4>{t("catalogRelevance")}</h4>{text(readerRecord.data.relevance) ? <ReadText value={text(readerRecord.data.relevance)} /> : <p className="small muted">{t("catalogNoRelevance")}</p>}</section>
             <section aria-label={t("catalogOrganizationState")}>
               <h4>{t("catalogOrganizationState")}</h4>
               <ul className="catalog-state-pills">
-                {!category(selected) && <li className="badge warn">{t("catalogNeedsCategory")}</li>}
-                {registeredNativeSummary(selected) && <li className="badge good">{t("catalogNativeRegistered")}</li>}
-                {missingSummary(selected) && <li className="badge neutral">{t("catalogNeedsSummary")}</li>}
-                <li className="badge neutral">{note ? t("catalogReadOnlyItem") : screened(selected) ? t("catalogScreeningRecorded") : t("catalogNeedsScreening")}</li>
+                {!category(readerRecord) && <li className="badge warn">{t("catalogNeedsCategory")}</li>}
+                {registeredNativeSummary(readerRecord) && <li className="badge good">{t("catalogNativeRegistered")}</li>}
+                {missingSummary(readerRecord) && <li className="badge neutral">{t("catalogNeedsSummary")}</li>}
+                <li className="badge neutral">{note ? t("catalogReadOnlyItem") : screened(readerRecord) ? t("catalogScreeningRecorded") : t("catalogNeedsScreening")}</li>
               </ul>
             </section>
             <section><h4>{t("catalogSource")}</h4>
-              <p className="small muted">{text(selected.data.reading_level_note) || t("catalogScopeHelp")}</p>
-              {selected.data.locator_kind === "local-copy" && <p className="small">{t("intakeLocalLocator")}</p>}
-              {text(selected.data.doi) && <p className="small">DOI: {text(selected.data.doi)}</p>}
-              {note && <><p className="small">{t("libraryNotePath")}: <code>{text(selected.data.note_path)}</code></p><p className="small">{t("libraryMetadataStatus")}: {selected.data.metadata_status === "available" ? t("libraryAvailable") : t("libraryUnavailableMetadata")}</p>{text(selected.data.saved_reading_status) && <p className="small">{t("librarySavedStatus")}: {text(selected.data.saved_reading_status)}</p>}</>}
-              {Boolean(matches?.get(selected.id)?.length) && <div className="catalog-missing"><strong>{t("libraryIdentityMatch")}</strong><p>{t("libraryMatchHelp")}</p><ul>{matches!.get(selected.id)!.map((other) => <li key={other.id}>{text(other.data.title)} · {other.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}{other.kind === "library-note" && <><br /><code>{text(other.data.note_path)}</code></>}</li>)}</ul></div>}
-              {text(selected.data.publication_version) && <p className="small">{text(selected.data.publication_version)}</p>}
-              <details className="catalog-provenance"><summary>{t("catalogProvenance")}</summary><p>{note ? t("libraryNoteOrigin") : text(selected.data.batch_id) || t("catalogUnknownOrigin")}</p>{Array.isArray(selected.data.prior_batch_matches) && selected.data.prior_batch_matches.length > 0 && <p>{t("catalogPriorMatch")}</p>}</details>
+              <p className="small muted">{text(readerRecord.data.reading_level_note) || t("catalogScopeHelp")}</p>
+              {readerRecord.data.locator_kind === "local-copy" && <p className="small">{t("intakeLocalLocator")}</p>}
+              {text(readerRecord.data.doi) && <p className="small">DOI: {text(readerRecord.data.doi)}</p>}
+              {note && <><p className="small">{t("libraryNotePath")}: <code>{text(readerRecord.data.note_path)}</code></p><p className="small">{t("libraryMetadataStatus")}: {readerRecord.data.metadata_status === "available" ? t("libraryAvailable") : t("libraryUnavailableMetadata")}</p>{text(readerRecord.data.saved_reading_status) && <p className="small">{t("librarySavedStatus")}: {text(readerRecord.data.saved_reading_status)}</p>}</>}
+              {Boolean(matches?.get(readerRecord.id)?.length) && <div className="catalog-missing"><strong>{t("libraryIdentityMatch")}</strong><p>{t("libraryMatchHelp")}</p><ul>{matches!.get(readerRecord.id)!.map((other) => <li key={other.id}>{text(other.data.title)} · {other.kind === "library-note" ? t("libraryNoteOrigin") : t("libraryWorkspaceOrigin")}{other.kind === "library-note" && <><br /><code>{text(other.data.note_path)}</code></>}</li>)}</ul></div>}
+              {text(readerRecord.data.publication_version) && <p className="small">{text(readerRecord.data.publication_version)}</p>}
+              <details className="catalog-provenance"><summary>{t("catalogProvenance")}</summary><p>{note ? t("libraryNoteOrigin") : text(readerRecord.data.batch_id) || t("catalogUnknownOrigin")}</p>{Array.isArray(readerRecord.data.prior_batch_matches) && readerRecord.data.prior_batch_matches.length > 0 && <p>{t("catalogPriorMatch")}</p>}</details>
             </section>
             <details className="catalog-tool-use"><summary>{t("catalogToolUse")}</summary><dl>
               <dt>Zotero</dt><dd>{(() => {
@@ -927,7 +938,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 return t(localCap?.nlm_state_present ? "catalogNlmStatePresent" : "catalogNlmUnavailable");
               })()}</dd>
             </dl></details>
-            {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(selected)}>{t("catalogSourceTools")}</button>}
+            {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(readerRecord)}>{t("catalogSourceTools")}</button>}
           </div> : <p>{t("catalogSelectSource")}</p>}
         </aside>
       </div>
