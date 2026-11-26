@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { readingScopeTone, type ScopeTone } from "./LiteratureLibrary";
-import type { DeliveryAction, Locale, Page, ResearchRecord, Task } from "./types";
+import type { Artifact, DeliveryAction, Locale, Page, ResearchRecord, Task } from "./types";
 import { workingSummary } from "./WorkingSummaryEditor";
 
 export type StageLedState = "ok" | "active" | "idle";
@@ -72,6 +72,7 @@ function claimSourceIdList(claim: ResearchRecord): string[] {
 }
 
 export interface ResearchBlindSpots {
+  unlinkedClaims: ResearchRecord[];
   abstractOnlyClaims: ResearchRecord[];
   singleSourceClaims: ResearchRecord[];
   uncitedIncludedSources: ResearchRecord[];
@@ -101,26 +102,29 @@ export function computeResearchBlindSpots(
     (s) => effectiveScreeningDecision(s, screeningMap) === "include",
   );
 
+  const unlinkedClaims: ResearchRecord[] = [];
   const abstractOnlyClaims: ResearchRecord[] = [];
   const singleSourceClaims: ResearchRecord[] = [];
   const citedSourceIds = new Set<string>();
 
   for (const claim of claims) {
     const ids = claimSourceIdList(claim);
+    const linkedSources = ids
+      .map((id) => sourceById.get(id))
+      .filter((s): s is ResearchRecord => Boolean(s));
     for (const id of ids) {
       citedSourceIds.add(id);
+    }
+    if (linkedSources.length === 0) {
+      unlinkedClaims.push(claim);
+      continue;
     }
     if (ids.length === 1) {
       singleSourceClaims.push(claim);
     }
-    if (ids.length >= 1) {
-      const hasFullText = ids.some((id) => {
-        const linked = sourceById.get(id);
-        return Boolean(linked && readingScopeTone(linked) === "full");
-      });
-      if (!hasFullText) {
-        abstractOnlyClaims.push(claim);
-      }
+    const hasFullText = linkedSources.some((linked) => readingScopeTone(linked) === "full");
+    if (!hasFullText) {
+      abstractOnlyClaims.push(claim);
     }
   }
 
@@ -131,6 +135,7 @@ export function computeResearchBlindSpots(
 
   let robustnessScore = 0;
   if (activeSources.length > 0 || claims.length > 0) {
+    const rUnlinked = claims.length > 0 ? unlinkedClaims.length / claims.length : 0;
     const rAbstract = claims.length > 0 ? abstractOnlyClaims.length / claims.length : 0;
     const rSingle = claims.length > 0 ? singleSourceClaims.length / claims.length : 0;
     const rUncited =
@@ -142,12 +147,14 @@ export function computeResearchBlindSpots(
       const litPenalty = rUncited * 25 + rMeta * 25;
       robustnessScore = Math.max(0, Math.min(100, Math.round(60 - litPenalty)));
     } else {
-      const penalty = rAbstract * 35 + rSingle * 20 + rUncited * 25 + rMeta * 20;
+      const penalty =
+        rUnlinked * 65 + rAbstract * 35 + rSingle * 20 + rUncited * 25 + rMeta * 20;
       robustnessScore = Math.max(0, Math.min(100, Math.round(100 - penalty)));
     }
   }
 
   return {
+    unlinkedClaims,
     abstractOnlyClaims,
     singleSourceClaims,
     uncitedIncludedSources,
@@ -174,6 +181,9 @@ const COPY = {
     includedRatio: (inc: number, total: number) => `納入 ${inc}/${total}`,
     claimsRatio: (grounded: number, total: number) => `${grounded}/${total} 條`,
     manuscriptReady: "已就緒",
+    manuscriptDraftBound: "已綁定文稿",
+    manuscriptAuthorityBound: "已綁定權威",
+    manuscriptNeedsReview: "權威待檢核",
     manuscriptSections: (n: number) => `${n} 節大綱`,
     manuscriptPending: "待起草",
     chartsAria: "文獻年份與覆蓋率視覺分析",
@@ -190,6 +200,7 @@ const COPY = {
     scopeFull: "全文",
     scopeAbstract: "僅摘要",
     scopeMeta: "僅書目",
+    scopeUnknown: "未知範圍",
     triageIncluded: "納入",
     triagePending: "待審",
     triageExcluded: "排除",
@@ -227,6 +238,9 @@ const COPY = {
     includedRatio: (inc: number, total: number) => `${inc}/${total} in`,
     claimsRatio: (grounded: number, total: number) => `${grounded}/${total} claims`,
     manuscriptReady: "Ready",
+    manuscriptDraftBound: "Draft bound",
+    manuscriptAuthorityBound: "Authority bound",
+    manuscriptNeedsReview: "Needs review",
     manuscriptSections: (n: number) => `${n} sections`,
     manuscriptPending: "Pending",
     chartsAria: "Literature publication year and coverage analytics",
@@ -243,6 +257,7 @@ const COPY = {
     scopeFull: "Full-text",
     scopeAbstract: "Abstract",
     scopeMeta: "Metadata",
+    scopeUnknown: "Unknown",
     triageIncluded: "Included",
     triagePending: "Awaiting",
     triageExcluded: "Excluded",
@@ -273,6 +288,8 @@ export interface ResearchStageStepperProps {
   claims: ResearchRecord[];
   outlines?: ResearchRecord[];
   manuscript?: Record<string, unknown> | null;
+  artifacts?: Artifact[];
+  warnings?: string[];
   actions?: DeliveryAction[];
   tasks?: Task[];
   currentPage?: Page;
@@ -280,12 +297,16 @@ export interface ResearchStageStepperProps {
   onNavigate: (page: Page) => void;
 }
 
+const MANUSCRIPT_ROLES = new Set(["main_manuscript", "supplement", "reviewer_response"]);
+
 export function ResearchStageStepper({
   sources,
   screenings,
   claims,
   outlines = [],
   manuscript = null,
+  artifacts,
+  warnings = [],
   actions = [],
   tasks = [],
   currentPage,
@@ -316,7 +337,23 @@ export function ResearchStageStepper({
   const totalClaims = claims.length;
   const groundedClaims = claims.filter((cl) => claimSourceIdList(cl).length > 0).length;
 
-  const hasManuscript = Boolean(manuscript && Object.keys(manuscript).length > 0);
+  const hasBoundState = Boolean(manuscript && Object.keys(manuscript).length > 0);
+  const authorityStale = warnings.some((w) =>
+    w.startsWith("Manuscript authority needs review:"),
+  );
+  const authorityBound = hasBoundState && !authorityStale;
+  const activeManuscriptArtifacts = artifacts
+    ? artifacts.filter((a) => MANUSCRIPT_ROLES.has(a.role) && a.current !== false).length
+    : Array.isArray(manuscript?.artifacts)
+      ? manuscript.artifacts.filter(
+          (a) =>
+            Boolean(
+              a &&
+                typeof a === "object" &&
+                (a as Record<string, unknown>).status === "ACTIVE",
+            ),
+        ).length
+      : 0;
   const completedDeliveries = actions.filter(
     (a) => a.status === "completed" || a.status === "approved",
   ).length;
@@ -352,19 +389,43 @@ export function ResearchStageStepper({
     totalClaims === 0 ? 0 : Math.min(100, Math.round((groundedClaims / totalClaims) * 100));
 
   const stage4Led: StageLedState =
-    hasManuscript || completedDeliveries > 0
+    completedDeliveries > 0
       ? "ok"
-      : outlines.length > 0 || draftTasks > 0 || groundedClaims > 0
+      : activeManuscriptArtifacts > 0 ||
+          hasBoundState ||
+          outlines.length > 0 ||
+          draftTasks > 0 ||
+          groundedClaims > 0
         ? "active"
         : "idle";
   const stage4Progress =
-    hasManuscript || completedDeliveries > 0
+    completedDeliveries > 0
       ? 100
-      : outlines.length > 0
-        ? 65
-        : draftTasks > 0
-          ? 35
-          : 0;
+      : activeManuscriptArtifacts > 0 && authorityBound
+        ? 80
+        : activeManuscriptArtifacts > 0
+          ? 65
+          : authorityBound
+            ? 50
+            : outlines.length > 0
+              ? 40
+              : draftTasks > 0 || authorityStale
+                ? 25
+                : 0;
+  const stage4Pill =
+    completedDeliveries > 0
+      ? c.manuscriptReady
+      : authorityStale
+        ? c.manuscriptNeedsReview
+        : activeManuscriptArtifacts > 0 && authorityBound
+          ? c.manuscriptDraftBound
+          : activeManuscriptArtifacts > 0
+            ? c.manuscriptDraftBound
+            : authorityBound
+              ? c.manuscriptAuthorityBound
+              : outlines.length > 0
+                ? c.manuscriptSections(outlines.length)
+                : c.manuscriptPending;
 
   const stages: {
     key: string;
@@ -411,12 +472,7 @@ export function ResearchStageStepper({
       page: "manuscript",
       title: c.stage4,
       sub: c.stage4Sub,
-      pill:
-        hasManuscript || completedDeliveries > 0
-          ? c.manuscriptReady
-          : outlines.length > 0
-            ? c.manuscriptSections(outlines.length)
-            : c.manuscriptPending,
+      pill: stage4Pill,
       detail: `${stage4Progress}%`,
       led: stage4Led,
       progress: stage4Progress,
@@ -485,7 +541,7 @@ export function LiteratureVisualCharts({
   onNavigateLiterature,
 }: LiteratureVisualChartsProps) {
   const c = COPY[locale === "zh-TW" ? "zh-TW" : "en"];
-  const [activeScopeSlice, setActiveScopeSlice] = useState<"full" | "abstract" | "metadata" | null>(
+  const [activeScopeSlice, setActiveScopeSlice] = useState<ScopeTone | null>(
     null,
   );
   const activeSources = sources.filter((s) => s.data.archived !== true);
@@ -504,6 +560,7 @@ export function LiteratureVisualCharts({
   let fullCount = 0;
   let abstractCount = 0;
   let metaCount = 0;
+  let unknownCount = 0;
   let includedCount = 0;
   let excludedCount = 0;
   let awaitingCount = 0;
@@ -512,7 +569,8 @@ export function LiteratureVisualCharts({
     const tone = readingScopeTone(src);
     if (tone === "full") fullCount++;
     else if (tone === "abstract") abstractCount++;
-    else metaCount++;
+    else if (tone === "metadata") metaCount++;
+    else unknownCount++;
 
     const dec = effectiveScreeningDecision(src, screeningMap);
     if (dec === "include") includedCount++;
@@ -544,7 +602,7 @@ export function LiteratureVisualCharts({
   const circumference = 2 * Math.PI * radius;
 
   const segments: {
-    key: "full" | "abstract" | "metadata";
+    key: ScopeTone;
     label: string;
     count: number;
     strokeVar: string;
@@ -557,6 +615,16 @@ export function LiteratureVisualCharts({
       strokeVar: "var(--scope-abstract-dot)",
     },
     { key: "metadata", label: c.scopeMeta, count: metaCount, strokeVar: "var(--scope-meta-dot)" },
+    ...(unknownCount > 0
+      ? [
+          {
+            key: "unknown" as const,
+            label: c.scopeUnknown,
+            count: unknownCount,
+            strokeVar: "var(--scope-unknown-dot)",
+          },
+        ]
+      : []),
   ];
 
   let cumulativeLength = 0;

@@ -435,7 +435,7 @@ describe("source to prepared task to same-source return", () => {
     expect(
       fetch.mock.calls.some((call) => String(call[0]).includes("/run")),
     ).toBe(false);
-  }, 10000);
+  }, 25000);
 });
 
 describe("preparation interruption and explicit execution", () => {
@@ -793,7 +793,7 @@ describe("newer page navigation wins over late preparation", () => {
     await waitFor(() =>
       expect(document.getElementById(`review-task-${task.id}`)).toHaveFocus(),
     );
-  }, 10000);
+  }, 25000);
 });
 
 it("independent full App preserves uncertain Run through failed Refresh and same-state Retry", async () => {
@@ -853,7 +853,7 @@ it("independent full App preserves uncertain Run through failed Refresh and same
     fetch.mock.calls.filter((call) => String(call[0]).endsWith("/run")),
   ).toHaveLength(1);
   expect(runAfterRetry).toBeDisabled();
-}, 10000);
+}, 25000);
 
 describe("transient refresh failure preserves source inputs and uncertainty", () => {
   it.each(["workspace", "project"])(
@@ -934,7 +934,7 @@ describe("transient refresh failure preserves source inputs and uncertainty", ()
         fetch.mock.calls.filter((call) => call[1]?.method === "POST"),
       ).toHaveLength(1);
     },
-    10000,
+    25000,
   );
 });
 

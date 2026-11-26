@@ -10,15 +10,18 @@ Security invariants:
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import re
 import tempfile
+import threading
 from typing import Any
 from urllib.parse import urlsplit
 
+from research_hub.locks import file_lock
 from .core import Workspace, WorkspaceError, atomic_json, safe_path
 from .integrations import LocalIntegrationsManager
 
@@ -230,6 +233,56 @@ def _get_zotero_client(library_id: str, library_type: str, api_key: str):
     return zotero.Zotero(library_id, library_type, api_key)
 
 
+def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
+    """Lookup existing Zotero item by DOI or title, raising WorkspaceError on API failure."""
+    from research_hub.utils.doi import normalize_doi
+
+    norm_doi = normalize_doi(doi) if doi else ""
+    norm_title = (title or "").lower()
+
+    def _matches(items: object) -> bool:
+        if not isinstance(items, list):
+            return False
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            edata = entry.get("data")
+            if not isinstance(edata, dict):
+                continue
+            if norm_title and str(edata.get("title") or "").lower() == norm_title:
+                return True
+            if norm_doi and normalize_doi(str(edata.get("DOI") or "")) == norm_doi:
+                return True
+        return False
+
+    query = doi or (title or "")[:50]
+    try:
+        existing = zot.items(q=query, limit=5)
+        if _matches(existing):
+            return True
+        if not existing and doi and title:
+            fallback = zot.items(q=title[:50], limit=5)
+            return _matches(fallback)
+    except Exception as exc:
+        raise WorkspaceError(
+            "Zotero duplicate lookup failed; verify API credentials, connection, or rate limits before syncing",
+            "zotero_lookup_failed",
+        ) from exc
+    return False
+
+
+def _sanitize_zotero_failure(err_val: object, secret: str) -> str:
+    if isinstance(err_val, dict):
+        msg = _clean_line(err_val.get("message") or err_val.get("error") or "")
+        code = _clean_line(err_val.get("code"))
+        text = f"HTTP {code}: {msg}" if code and msg else (msg or (f"HTTP {code}" if code else ""))
+    else:
+        text = _clean_line(err_val)
+    if secret:
+        text = text.replace(secret, "[REDACTED]")
+    return (text[:160] if text else "Rejected by Zotero API")
+
+
 def _build_obsidian_base_yaml(project_id: str, project_title: str) -> str:
     safe_slug = re.sub(r"[^a-z0-9-_]", "-", project_id.lower()) or "research-hub"
     safe_title = _clean_line(project_title or safe_slug).replace('"', '\\"')
@@ -314,7 +367,7 @@ def _render_obsidian_note(
         f"title: {_yaml_quote(title)}",
         f"topic_cluster: {_yaml_quote(project_id)}",
         f"authors: [{', '.join(_yaml_quote(a) for a in authors)}]",
-        f"year: {_yaml_quote(year) if year else '\"\"'}",
+        f"year: {_yaml_quote(year)}",
         f"venue: {_yaml_quote(venue)}",
         f"doi: {_yaml_quote(doi)}",
         f"url: {_yaml_quote(url)}",
@@ -486,6 +539,22 @@ class WorkspaceSyncHooks:
         self.workspace = workspace
         self.integrations = integrations
         self.obsidian_validation = obsidian_validation
+        self._lock_guard = threading.Lock()
+        self._export_locks: dict[str, threading.Lock] = {}
+
+    @contextlib.contextmanager
+    def _export_lock(self, key: str, lock_name: str):
+        with self._lock_guard:
+            exports_root = safe_path(self.workspace.root, ".research/exports")
+            exports_root.mkdir(parents=True, exist_ok=True)
+            lock_target = safe_path(self.workspace.root, f".research/exports/{lock_name}")
+            thread_lock = self._export_locks.get(key)
+            if thread_lock is None:
+                thread_lock = threading.Lock()
+                self._export_locks[key] = thread_lock
+        with thread_lock:
+            with file_lock(lock_target):
+                yield
 
     def _require_enabled(self) -> LocalIntegrationsManager:
         if self.integrations is None or not self.integrations.enabled:
@@ -639,56 +708,13 @@ class WorkspaceSyncHooks:
             project_id, body.get("selected_source_ids")
         )
         export_rel = f".research/exports/notebooklm-{project_id}"
-        export_dir = safe_path(self.workspace.root, export_rel)
-        sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
-        export_dir.mkdir(parents=True, exist_ok=True)
-        sources_dir.mkdir(parents=True, exist_ok=True)
-        self._clean_stale_files(sources_dir, (".md",))
+        pack_rel = f"{export_rel}/00-notebooklm-source-pack.md"
+        manifest_rel = f"{export_rel}/manifest.json"
 
         full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
         abstract_only_count = len(sources) - full_text_count
         generated_at = _utc_now()
 
-        used_names: set[str] = set()
-        source_files: list[str] = []
-        for index, rec in enumerate(sources, start=1):
-            slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"source-{index}")
-            stem = f"{index:02d}-{slug}"
-            candidate_name = f"{stem}.md"
-            collision = 2
-            while candidate_name in used_names:
-                candidate_name = f"{stem}-{collision}.md"
-                collision += 1
-            used_names.add(candidate_name)
-
-            file_rel = f"{export_rel}/sources/{candidate_name}"
-            file_path = safe_path(self.workspace.root, file_rel)
-            decision = screenings.get(rec["id"], "unscreened")
-            _atomic_text(
-                file_path,
-                _render_nlm_individual_source(
-                    rec,
-                    index=index,
-                    project_id=project_id,
-                    project_title=project["title"],
-                    screening=decision,
-                ),
-            )
-            source_files.append(file_rel)
-
-        pack_rel = f"{export_rel}/00-notebooklm-source-pack.md"
-        pack_path = safe_path(self.workspace.root, pack_rel)
-        _atomic_text(
-            pack_path,
-            _render_nlm_pack_markdown(
-                sources,
-                project_id=project_id,
-                project_title=project["title"],
-            ),
-        )
-
-        manifest_rel = f"{export_rel}/manifest.json"
-        manifest_path = safe_path(self.workspace.root, manifest_rel)
         manifest = {
             "project_id": project_id,
             "project_title": project["title"],
@@ -697,7 +723,52 @@ class WorkspaceSyncHooks:
             "abstract_only_count": abstract_only_count,
             "generated_at": generated_at,
         }
-        atomic_json(manifest_path, manifest)
+
+        used_names: set[str] = set()
+        source_files: list[str] = []
+        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            export_dir = safe_path(self.workspace.root, export_rel)
+            sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
+            pack_path = safe_path(self.workspace.root, pack_rel)
+            manifest_path = safe_path(self.workspace.root, manifest_rel)
+            export_dir.mkdir(parents=True, exist_ok=True)
+            sources_dir.mkdir(parents=True, exist_ok=True)
+            self._clean_stale_files(sources_dir, (".md",))
+
+            for index, rec in enumerate(sources, start=1):
+                slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"source-{index}")
+                stem = f"{index:02d}-{slug}"
+                candidate_name = f"{stem}.md"
+                collision = 2
+                while candidate_name in used_names:
+                    candidate_name = f"{stem}-{collision}.md"
+                    collision += 1
+                used_names.add(candidate_name)
+
+                file_rel = f"{export_rel}/sources/{candidate_name}"
+                file_path = safe_path(self.workspace.root, file_rel)
+                decision = screenings.get(rec["id"], "unscreened")
+                _atomic_text(
+                    file_path,
+                    _render_nlm_individual_source(
+                        rec,
+                        index=index,
+                        project_id=project_id,
+                        project_title=project["title"],
+                        screening=decision,
+                    ),
+                )
+                source_files.append(file_rel)
+
+            _atomic_text(
+                pack_path,
+                _render_nlm_pack_markdown(
+                    sources,
+                    project_id=project_id,
+                    project_title=project["title"],
+                ),
+            )
+            atomic_json(manifest_path, manifest)
 
         nlm_status = self._safe_nlm_status(integrations)
         return {
@@ -755,7 +826,6 @@ class WorkspaceSyncHooks:
             }
 
         from research_hub.utils.doi import normalize_doi
-        from research_hub.zotero.client import check_duplicate
 
         try:
             zot = _get_zotero_client(library_id, library_type, api_key)
@@ -782,7 +852,7 @@ class WorkspaceSyncHooks:
                 (norm_doi and norm_doi in seen_dois)
                 or (norm_title and norm_title in seen_titles)
             )
-            remote_dup = False if in_batch_dup else check_duplicate(zot, title, doi)
+            remote_dup = False if in_batch_dup else _check_zotero_duplicate_strict(zot, title, doi)
             if in_batch_dup or remote_dup:
                 duplicates += 1
                 items_plan.append({
@@ -866,43 +936,108 @@ class WorkspaceSyncHooks:
             })
             zotero_payloads.append(entry)
 
+        confirmed_created = 0
         created_keys: list[str] = []
+        failed_items: list[dict[str, Any]] = []
+        failed_source_ids: set[str] = set()
         if zotero_payloads:
             try:
                 for offset in range(0, len(zotero_payloads), 50):
                     batch = zotero_payloads[offset:offset + 50]
+                    batch_records = records_to_create[offset:offset + 50]
                     response = zot.create_items(batch)
-                    if isinstance(response, dict):
-                        successful = response.get("successful")
-                        if isinstance(successful, dict):
-                            for val in successful.values():
-                                if isinstance(val, dict):
-                                    key = val.get("key") or (
-                                        val.get("data", {}).get("key")
-                                        if isinstance(val.get("data"), dict)
-                                        else None
-                                    )
-                                    if isinstance(key, str) and key:
-                                        created_keys.append(key)
-                                elif isinstance(val, str) and val:
-                                    created_keys.append(val)
-                        elif isinstance(response.get("success"), dict):
-                            for val in response["success"].values():
-                                if isinstance(val, str) and val:
-                                    created_keys.append(val)
+                    if not isinstance(response, dict):
+                        raise WorkspaceError(
+                            "Unexpected Zotero write response; could not confirm item creation",
+                            "zotero_sync_failed",
+                        )
+
+                    batch_ok_indices: set[int] = set()
+                    successful = response.get("successful")
+                    success_legacy = response.get("success")
+                    failed_map = response.get("failed")
+
+                    if isinstance(successful, dict):
+                        for seq_idx, (raw_idx, val) in enumerate(successful.items()):
+                            try:
+                                parsed_idx = int(raw_idx)
+                            except (TypeError, ValueError):
+                                parsed_idx = seq_idx
+                            batch_ok_indices.add(parsed_idx)
+                            if isinstance(val, dict):
+                                key = val.get("key") or (
+                                    val.get("data", {}).get("key")
+                                    if isinstance(val.get("data"), dict)
+                                    else None
+                                )
+                                if isinstance(key, str) and key:
+                                    created_keys.append(key)
+                            elif isinstance(val, str) and val:
+                                created_keys.append(val)
+                    elif isinstance(success_legacy, dict):
+                        for seq_idx, (raw_idx, val) in enumerate(success_legacy.items()):
+                            try:
+                                parsed_idx = int(raw_idx)
+                            except (TypeError, ValueError):
+                                parsed_idx = seq_idx
+                            batch_ok_indices.add(parsed_idx)
+                            if isinstance(val, str) and val:
+                                created_keys.append(val)
+
+                    batch_failed_reasons: dict[int, str] = {}
+                    if isinstance(failed_map, dict):
+                        for seq_idx, (raw_idx, err_val) in enumerate(failed_map.items()):
+                            try:
+                                parsed_idx = int(raw_idx)
+                            except (TypeError, ValueError):
+                                parsed_idx = seq_idx
+                            batch_failed_reasons[parsed_idx] = _sanitize_zotero_failure(
+                                err_val, api_key
+                            )
+
+                    for local_idx, rec in enumerate(batch_records):
+                        if local_idx in batch_ok_indices and local_idx not in batch_failed_reasons:
+                            confirmed_created += 1
+                        else:
+                            reason = batch_failed_reasons.get(
+                                local_idx, "Rejected or unconfirmed by Zotero API"
+                            )
+                            failed_source_ids.add(rec["id"])
+                            failed_items.append({
+                                "id": rec["id"],
+                                "title": _clean_line(rec["data"].get("title")) or "Untitled source",
+                                "doi": _clean_bare_doi(rec["data"].get("doi")),
+                                "reason": reason,
+                            })
+            except WorkspaceError:
+                raise
             except Exception as exc:
                 raise WorkspaceError(
                     "Zotero item creation failed; verify API write permissions and connection",
                     "zotero_sync_failed",
                 ) from exc
 
+        if failed_source_ids:
+            for plan_entry in items_plan:
+                if plan_entry["id"] in failed_source_ids:
+                    plan_entry["action"] = "failed"
+
+        failed_count = len(failed_items)
+        sync_status = (
+            "synced"
+            if failed_count == 0
+            else ("partial_failure" if confirmed_created > 0 else "failed")
+        )
+
         return {
             "ok": True,
-            "status": "synced",
+            "status": sync_status,
             "dry_run": False,
-            "created_count": len(created_keys) if created_keys else len(zotero_payloads),
+            "created_count": confirmed_created,
+            "failed_count": failed_count,
             "skipped_duplicates": duplicates,
             "created_keys": created_keys,
+            "failed_items": failed_items,
             "items": items_plan,
         }
 
@@ -917,37 +1052,39 @@ class WorkspaceSyncHooks:
             project_id, body.get("selected_source_ids")
         )
         export_rel = f".research/exports/obsidian-{project_id}"
-        export_dir = safe_path(self.workspace.root, export_rel)
-        export_dir.mkdir(parents=True, exist_ok=True)
-        self._clean_stale_files(export_dir, (".md", ".base"))
+        base_rel = f"{export_rel}/{project_id}.base"
 
         used_names: set[str] = set()
         note_files: list[str] = []
-        for index, rec in enumerate(sources, start=1):
-            slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"note-{index}")
-            stem = f"{index:02d}-{slug}"
-            candidate_name = f"{stem}.md"
-            collision = 2
-            while candidate_name in used_names:
-                candidate_name = f"{stem}-{collision}.md"
-                collision += 1
-            used_names.add(candidate_name)
+        with self._export_lock(f"obsidian:{project_id}", f".obsidian-{project_id}"):
+            export_dir = safe_path(self.workspace.root, export_rel)
+            base_path = safe_path(self.workspace.root, base_rel)
+            export_dir.mkdir(parents=True, exist_ok=True)
+            self._clean_stale_files(export_dir, (".md", ".base"))
 
-            note_rel = f"{export_rel}/{candidate_name}"
-            note_path = safe_path(self.workspace.root, note_rel)
-            decision = screenings.get(rec["id"], "unscreened")
+            for index, rec in enumerate(sources, start=1):
+                slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"note-{index}")
+                stem = f"{index:02d}-{slug}"
+                candidate_name = f"{stem}.md"
+                collision = 2
+                while candidate_name in used_names:
+                    candidate_name = f"{stem}-{collision}.md"
+                    collision += 1
+                used_names.add(candidate_name)
+
+                note_rel = f"{export_rel}/{candidate_name}"
+                note_path = safe_path(self.workspace.root, note_rel)
+                decision = screenings.get(rec["id"], "unscreened")
+                _atomic_text(
+                    note_path,
+                    _render_obsidian_note(rec, project_id=project_id, screening=decision),
+                )
+                note_files.append(note_rel)
+
             _atomic_text(
-                note_path,
-                _render_obsidian_note(rec, project_id=project_id, screening=decision),
+                base_path,
+                _build_obsidian_base_yaml(project_id, project["title"]),
             )
-            note_files.append(note_rel)
-
-        base_rel = f"{export_rel}/{project_id}.base"
-        base_path = safe_path(self.workspace.root, base_rel)
-        _atomic_text(
-            base_path,
-            _build_obsidian_base_yaml(project_id, project["title"]),
-        )
 
         return {
             "ok": True,

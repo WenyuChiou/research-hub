@@ -243,4 +243,94 @@ describe("SyncHooksPanel", () => {
     const openLink = screen.getByRole("link", { name: /Open in Obsidian/ });
     expect(openLink.getAttribute("href")).toBe("obsidian://open?vault=HydroVault");
   });
+
+  it("discards stale Zotero dry-run preview when selection changes in flight and surfaces failed writes", async () => {
+    let resolvePreview!: (res: Response) => void;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePreview = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "ready",
+            dry_run: true,
+            candidate_count: 2,
+            would_create: 2,
+            duplicates: 0,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "failed",
+            dry_run: false,
+            created_count: 0,
+            failed_count: 2,
+            created_keys: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const { rerender } = render(
+      <SyncHooksPanel
+        projectId="proj-1"
+        projectTitle="Hydrology Agents"
+        sources={SAMPLE_SOURCES}
+        selectedIds={["src-1"]}
+        workspace={ENABLED_WORKSPACE}
+        locale="en"
+      />,
+    );
+
+    // Start preview for src-1, then switch scope to project-wide before it resolves
+    fireEvent.click(screen.getByRole("button", { name: "Preview Sync (Dry-run)" }));
+    rerender(
+      <SyncHooksPanel
+        projectId="proj-1"
+        projectTitle="Hydrology Agents"
+        sources={SAMPLE_SOURCES}
+        workspace={ENABLED_WORKSPACE}
+        locale="en"
+      />,
+    );
+
+    resolvePreview(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          status: "ready",
+          dry_run: true,
+          candidate_count: 1,
+          would_create: 1,
+          duplicates: 0,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Confirm Write to Zotero" })).toBeNull();
+    });
+
+    // Fresh preview on new selection succeeds, then rejected write reports failure instead of success
+    fireEvent.click(screen.getByRole("button", { name: "Preview Sync (Dry-run)" }));
+    const confirmBtn = await screen.findByRole("button", { name: "Confirm Write to Zotero" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Zotero write failed/);
+    });
+    expect(screen.queryByText(/✓ Synced/)).toBeNull();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
 });

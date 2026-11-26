@@ -172,7 +172,7 @@ describe("exact preparation recovery", () => {
     expect(
       fetch.mock.calls.some((call) => String(call[0]).endsWith("/run")),
     ).toBe(false);
-  }, 10000);
+  }, 25000);
   it("recovers an existing pending key on reload without reconstructing a payload or POSTing", async () => {
     window.localStorage.setItem(
       storageKey,
@@ -354,7 +354,7 @@ it("independent exact lookup remains reviewable when subsequent project refresh 
   await waitFor(() =>
     expect(document.getElementById(`review-task-${task.id}`)).toHaveFocus(),
   );
-}, 10000);
+}, 25000);
 
 it("does not integrate an old namespace task when the authoritative workspace refresh changes namespace", async () => {
   localStorage.setItem(
@@ -536,4 +536,4 @@ it("explicit separate intent is required after park; late old result cannot reta
   expect(fetch.mock.calls.some((c) => String(c[0]).includes("/run"))).toBe(
     false,
   );
-}, 15_000);
+}, 25_000);

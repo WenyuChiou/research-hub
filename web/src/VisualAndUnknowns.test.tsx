@@ -417,4 +417,93 @@ describe("CommandPalette & Ctrl+K Shortcut", () => {
     expect(visualsCss).toMatch(/scale\(0\.97\)/);
     expect(visualsCss).toMatch(/@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/);
   });
+
+  it("penalizes unlinked claims, separates unknown reading scopes from metadata, distinguishes authority binding from delivery readiness, and traps Tab in CommandPalette", async () => {
+    const user = userEvent.setup();
+
+    // 1. Unlinked claims never produce 100% robustness or inflate score
+    const unlinkedOnly = computeResearchBlindSpots(
+      [],
+      [],
+      [makeClaim("c-empty", "Unsupported claim", [])],
+    );
+    expect(unlinkedOnly.robustnessScore).toBeLessThanOrEqual(35);
+
+    const solidSource = makeSource("s-full", { reading_scope: "full-text" });
+    const inc = [makeScreening("sc-full", "s-full", "include")];
+    const allGrounded = computeResearchBlindSpots(
+      [solidSource],
+      inc,
+      [makeClaim("c-ok-1", "Claim 1", ["s-full"]), makeClaim("c-ok-2", "Claim 2", ["s-full"])],
+    );
+    const withUnsupported = computeResearchBlindSpots(
+      [solidSource],
+      inc,
+      [
+        makeClaim("c-ok-1", "Claim 1", ["s-full"]),
+        makeClaim("c-ok-2", "Claim 2", ["s-full"]),
+        makeClaim("c-unlinked", "Unsupported", []),
+      ],
+    );
+    expect(withUnsupported.robustnessScore).toBeLessThan(allGrounded.robustnessScore);
+
+    // 2. Unknown scope stays distinct from metadata in LiteratureVisualCharts & SynthesisMatrix,
+    //    and bound manuscript authority stays distinct from Ready delivery in ResearchStageStepper
+    const onSelectScope = vi.fn();
+    const unknownSrc = makeSource("s-unk", { reading_scope: "" });
+    render(
+      <>
+        <ResearchStageStepper
+          sources={[unknownSrc]}
+          screenings={[]}
+          claims={[]}
+          manuscript={{ project: { id: "proj-alpha" }, artifacts: [] }}
+          locale="en"
+          onNavigate={vi.fn()}
+        />
+        <LiteratureVisualCharts
+          sources={[unknownSrc]}
+          screenings={[]}
+          locale="en"
+          onSelectScope={onSelectScope}
+        />
+        <SynthesisMatrix
+          sources={[unknownSrc]}
+          screenings={[]}
+          locale="en"
+          onSelectPaper={vi.fn()}
+        />
+      </>,
+    );
+
+    expect(screen.getByText("Authority bound")).toBeVisible();
+    expect(screen.queryByText("Ready")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Metadata.*0.*\(0%\)/ })).toBeVisible();
+    const unknownScopeBtn = screen.getByRole("button", { name: /Unknown.*1.*\(100%\)/ });
+    await user.click(unknownScopeBtn);
+    expect(onSelectScope).toHaveBeenCalledWith("unknown");
+    expect(within(screen.getByRole("table")).getByText(/Unknown/)).toBeVisible();
+
+    // 3. CommandPalette traps Tab focus inside modal and calls scrollIntoView on active option
+    const scrollSpy = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollSpy,
+    });
+    try {
+      render(<PaletteHarness />);
+      const triggerBtn = screen.getByRole("button", { name: "Trigger Palette" });
+      triggerBtn.focus();
+      await user.click(triggerBtn);
+      const searchBox = screen.getByRole("textbox", { name: "全域指令面板" });
+      expect(searchBox).toHaveFocus();
+      await user.keyboard("{Tab}");
+      expect(searchBox).toHaveFocus();
+      await user.keyboard("{ArrowDown}");
+      expect(scrollSpy).toHaveBeenCalled();
+    } finally {
+      // @ts-expect-error cleanup test prototype spy
+      delete HTMLElement.prototype.scrollIntoView;
+    }
+  });
 });

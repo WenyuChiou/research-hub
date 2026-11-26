@@ -66,6 +66,7 @@ const MATRIX_COPY = {
     scopeFull: "全文",
     scopeAbstract: "摘要",
     scopeMeta: "書目",
+    scopeUnknown: "未知",
     screenInclude: "已納入",
     screenExclude: "已排除",
     screenPending: "待篩選",
@@ -86,6 +87,7 @@ const MATRIX_COPY = {
     scopeFull: "Full-text",
     scopeAbstract: "Abstract",
     scopeMeta: "Metadata",
+    scopeUnknown: "Unknown",
     screenInclude: "Included",
     screenExclude: "Excluded",
     screenPending: "Unscreened",
@@ -226,7 +228,9 @@ export function SynthesisMatrix({
                   ? c.scopeFull
                   : tone === "abstract"
                     ? c.scopeAbstract
-                    : c.scopeMeta;
+                    : tone === "metadata"
+                      ? c.scopeMeta
+                      : c.scopeUnknown;
               const scopeGlyph = tone === "full" || tone === "abstract" ? "●" : "○";
 
               return (

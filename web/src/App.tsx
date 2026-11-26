@@ -173,6 +173,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   useCommandPaletteShortcut(() => setPaletteOpen((open) => !open));
   const [externalPaperRequest, setExternalPaperRequest] = useState<{
+    projectId: string;
     sourceId: string;
     archived?: boolean;
     nonce: number;
@@ -310,6 +311,9 @@ export default function App() {
       }
       const route = discoveryRoute();
       setDiscovery(route);
+      if (route.project && route.project !== selectedRef.current) {
+        setExternalPaperRequest(null);
+      }
       if (route.project) setProjectId(route.project);
       setPage(currentPage());
       if (navigationTarget.current?.page !== currentPage())
@@ -809,6 +813,7 @@ export default function App() {
                 artifact: null,
               });
               window.history.replaceState({}, "", "#" + page);
+              setExternalPaperRequest(null);
               setProjectId(event.target.value);
               setNewProject(false);
               setNotice(null);
@@ -1039,6 +1044,7 @@ export default function App() {
                                 res.projects?.[0]?.id ||
                                 "";
                               await onSaved(t("saved"));
+                              setExternalPaperRequest(null);
                               if (preferred) setProjectId(preferred);
                               setNewProject(false);
                             })
@@ -1101,6 +1107,7 @@ export default function App() {
                         }>("/projects", payload);
                         const id = created.project?.id || payload.id;
                         await onSaved(t("saved"));
+                        setExternalPaperRequest(null);
                         setProjectId(id);
                         setNewProject(false);
                       }}
@@ -1195,13 +1202,16 @@ export default function App() {
             artifact: null,
           });
           window.history.replaceState({}, "", "#" + page);
+          setExternalPaperRequest(null);
           setProjectId(nextProjectId);
           setNewProject(false);
           setNotice(null);
         }}
         sources={activeCuratedSources}
         onOpenPaper={(paper) => {
+          if (!projectId) return;
           setExternalPaperRequest((prev) => ({
+            projectId,
             sourceId: paper.id,
             archived: paper.data.archived === true,
             nonce: (prev?.nonce ?? 0) + 1,

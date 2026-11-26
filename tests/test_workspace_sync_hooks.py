@@ -457,3 +457,119 @@ def test_zotero_sync_missing_credentials_and_dry_run_to_live_write(tmp_path: Pat
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_zotero_failed_writes_lookup_errors_and_concurrent_exports(tmp_path: Path, monkeypatch):
+    ws, ids = _seed_workspace(tmp_path / "ws")
+    cfg_path = tmp_path / "cfg" / "config.json"
+    cfg_path.parent.mkdir(parents=True)
+    cfg_path.write_text("{}", encoding="utf-8")
+
+    server = WorkspaceServer(ws.root, port=0, integrations_config=cfg_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        csrf = _fetch_csrf(base)
+
+        raw_secret = "zot-secret-999"
+        code_save, _ = _post_json(
+            f"{base}/api/v1/integrations/credentials",
+            {
+                "zotero_library_id": "99999",
+                "zotero_library_type": "user",
+                "zotero_api_key": raw_secret,
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_save == 200
+
+        # 1. Lookup failure aborts sync with 400 zotero_lookup_failed instead of assuming non-duplicate
+        class _LookupFailingZotero:
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                pass
+
+            def items(self, q: str = "", limit: int = 5):
+                raise RuntimeError("HTTP 429 rate limited")
+
+            def create_items(self, items_list: list[dict]):
+                raise AssertionError("create_items must not run when duplicate check fails")
+
+        monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _LookupFailingZotero)
+        code_err, err_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {"dry_run": False},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_err == 400
+        assert err_res["ok"] is False
+        assert err_res["code"] == "zotero_lookup_failed"
+
+        # 2. All-rejected create_items reports status="failed" and created_count=0 (never len(batch))
+        class _AllRejectedZotero:
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                pass
+
+            def items(self, q: str = "", limit: int = 5):
+                return []
+
+            def create_items(self, items_list: list[dict]):
+                return {
+                    "successful": {},
+                    "failed": {
+                        str(idx): {"code": 400, "message": f"Invalid creator ({raw_secret})"}
+                        for idx in range(len(items_list))
+                    },
+                }
+
+        monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _AllRejectedZotero)
+        code_fail, fail_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {"dry_run": False, "selected_source_ids": [ids["s1"]]},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_fail == 200
+        assert fail_res["status"] == "failed"
+        assert fail_res["created_count"] == 0
+        assert fail_res["failed_count"] == 1
+        assert fail_res["created_keys"] == []
+        assert raw_secret not in json.dumps(fail_res)
+
+        # 3. Concurrent Obsidian & NotebookLM exports serialize via file_lock without losing files
+        errors: list[Exception] = []
+
+        def _worker(idx: int) -> None:
+            try:
+                route = (
+                    "obsidian/pack"
+                    if idx % 2 == 0
+                    else "notebooklm/bundle"
+                )
+                status_code, body = _post_json(
+                    f"{base}/api/v1/projects/proj-alpha/integrations/{route}",
+                    {},
+                    csrf=csrf,
+                    origin=base,
+                )
+                assert status_code == 200 and body["ok"] is True, (status_code, body)
+            except Exception as exc:  # pragma: no cover
+                errors.append(exc)
+
+        workers = [threading.Thread(target=_worker, args=(i,)) for i in range(6)]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join(timeout=10)
+        assert errors == []
+        obs_dir = ws.root / ".research" / "exports" / "obsidian-proj-alpha"
+        nlm_dir = ws.root / ".research" / "exports" / "notebooklm-proj-alpha" / "sources"
+        assert len(list(obs_dir.glob("*.md"))) == 2
+        assert (obs_dir / "proj-alpha.base").is_file()
+        assert len(list(nlm_dir.glob("*.md"))) == 2
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

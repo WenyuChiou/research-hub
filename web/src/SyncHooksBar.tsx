@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildBibtexExport, buildNotebookLmSourcePack } from "./AgentHandoffModal";
 import { ApiError, api, recoverCsrfIfForbidden, segment } from "./api";
 import { BibtexIcon, BrandMark, CslJsonIcon, RisEndnoteIcon } from "./BrandIcons";
@@ -29,19 +29,28 @@ export interface ZoteroSyncItemPlan {
   id: string;
   title: string;
   doi: string;
-  action: "create" | "skip_duplicate" | "missing_credentials";
+  action: "create" | "skip_duplicate" | "missing_credentials" | "failed";
+}
+
+export interface ZoteroFailedItem {
+  id: string;
+  title: string;
+  doi: string;
+  reason: string;
 }
 
 export interface ZoteroSyncResponse {
   ok: true;
-  status: "missing_credentials" | "ready" | "synced";
+  status: "missing_credentials" | "ready" | "synced" | "partial_failure" | "failed";
   dry_run: boolean;
   candidate_count?: number;
   would_create?: number;
   duplicates?: number;
   created_count?: number;
+  failed_count?: number;
   skipped_duplicates?: number;
   created_keys?: string[];
+  failed_items?: ZoteroFailedItem[];
   items?: ZoteroSyncItemPlan[];
 }
 
@@ -98,6 +107,10 @@ const LABELS = {
       skipped > 0
         ? `✓ 已同步 ${created} 篇至 Zotero · 略過 ${skipped} 篇`
         : `✓ 已同步 ${created} 篇至 Zotero`,
+    zotPartialReceipt: (created: number, failed: number) =>
+      `⚠ 已同步 ${created} 篇 · ${failed} 篇被 Zotero 拒絕（請重試）`,
+    zotFailedReceipt: (failed: number) =>
+      `✕ Zotero 同步失敗（${failed} 篇被拒絕，未寫入任何項目）`,
     zotAllDuplicates: "所選文獻皆已存在於 Zotero",
     zotMissingCredsHint: "尚未設定 Zotero API 金鑰，可直接下載 .ris 匯入檔",
     zotRisFallbackBtn: "下載 .ris 匯入檔",
@@ -147,6 +160,10 @@ const LABELS = {
       skipped > 0
         ? `✓ Synced ${created} to Zotero · ${skipped} skipped`
         : `✓ Synced ${created} to Zotero`,
+    zotPartialReceipt: (created: number, failed: number) =>
+      `⚠ Synced ${created} to Zotero · ${failed} rejected (retry failed items)`,
+    zotFailedReceipt: (failed: number) =>
+      `✕ Zotero write failed (${failed} item(s) rejected; 0 created)`,
     zotAllDuplicates: "All selected items already exist in Zotero",
     zotMissingCredsHint: "Zotero API key not configured — use 1-click .ris export",
     zotRisFallbackBtn: "Download .ris",
@@ -290,16 +307,28 @@ export function SyncHooksPanel({
   }, [explicitSelectedRecords]);
 
   const selectionSignature = useMemo(
-    () => `${projectId || ""}|${(payloadSourceIds ?? targetSources.map((s) => s.id)).join(",")}`,
+    () =>
+      `${projectId || ""}|${
+        payloadSourceIds
+          ? `sel:${payloadSourceIds.join(",")}`
+          : `all:${targetSources.map((s) => s.id).join(",")}`
+      }`,
     [projectId, payloadSourceIds, targetSources],
   );
+  const selectionSigRef = useRef(selectionSignature);
+  selectionSigRef.current = selectionSignature;
+  const selectionEpochRef = useRef(0);
 
   const [nlmBusy, setNlmBusy] = useState(false);
   const [nlmResult, setNlmResult] = useState<NotebookLmBundleResponse | null>(null);
   const [nlmError, setNlmError] = useState<string | null>(null);
 
   const [zotBusy, setZotBusy] = useState<"preview" | "sync" | null>(null);
-  const [zotPreview, setZotPreview] = useState<ZoteroSyncResponse | null>(null);
+  const [zotPreviewEntry, setZotPreviewEntry] = useState<{
+    sig: string;
+    payloadSourceIds: string[] | undefined;
+    data: ZoteroSyncResponse;
+  } | null>(null);
   const [zotSynced, setZotSynced] = useState<ZoteroSyncResponse | null>(null);
   const [zotError, setZotError] = useState<string | null>(null);
 
@@ -310,15 +339,22 @@ export function SyncHooksPanel({
   const [refReceipt, setRefReceipt] = useState<string | null>(null);
 
   useEffect(() => {
+    selectionEpochRef.current += 1;
+    setNlmBusy(false);
     setNlmResult(null);
     setNlmError(null);
-    setZotPreview(null);
+    setZotBusy(null);
+    setZotPreviewEntry(null);
     setZotSynced(null);
     setZotError(null);
+    setObsBusy(false);
     setObsResult(null);
     setObsError(null);
     setRefReceipt(null);
   }, [selectionSignature]);
+
+  const zotPreview =
+    zotPreviewEntry && zotPreviewEntry.sig === selectionSignature ? zotPreviewEntry.data : null;
 
   const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
   // Enabled unless an explicit Workspace object omits local_integrations and no live credentials exist.
@@ -352,7 +388,8 @@ export function SyncHooksPanel({
     (localCap != null && localCap.zotero_configured === false);
 
   const zoteroConnectedLive =
-    Boolean(zotSynced) ||
+    zotSynced?.status === "synced" ||
+    zotSynced?.status === "partial_failure" ||
     (liveIntegrations?.zotero != null &&
       ["connected_local_and_web", "connected_web", "connected_local"].includes(
         liveIntegrations.zotero.status,
@@ -398,70 +435,104 @@ export function SyncHooksPanel({
 
   async function handleNotebookLmBundle() {
     if (!projectId || targetSources.length === 0 || nlmBusy) return;
+    const reqSig = selectionSignature;
+    const reqEpoch = selectionEpochRef.current;
+    const reqIds = payloadSourceIds ? [...payloadSourceIds] : undefined;
     setNlmBusy(true);
     setNlmError(null);
     try {
       const payload: Record<string, unknown> = {};
-      if (payloadSourceIds) payload.selected_source_ids = payloadSourceIds;
+      if (reqIds) payload.selected_source_ids = reqIds;
       const response = await postIntegrationHook<NotebookLmBundleResponse>(
         "notebooklm/bundle",
         payload,
       );
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setNlmResult(response);
     } catch (err) {
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setNlmError(formatErrorText(err));
     } finally {
-      setNlmBusy(false);
+      if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
+        setNlmBusy(false);
+      }
     }
   }
 
   async function handleZoteroDryRun() {
     if (!projectId || targetSources.length === 0 || zotBusy) return;
+    const reqSig = selectionSignature;
+    const reqEpoch = selectionEpochRef.current;
+    const reqIds = payloadSourceIds ? [...payloadSourceIds] : undefined;
     setZotBusy("preview");
     setZotError(null);
     setZotSynced(null);
     try {
       const payload: Record<string, unknown> = { dry_run: true };
-      if (payloadSourceIds) payload.selected_source_ids = payloadSourceIds;
+      if (reqIds) payload.selected_source_ids = reqIds;
       const response = await postIntegrationHook<ZoteroSyncResponse>("zotero/sync", payload);
-      setZotPreview(response);
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
+      setZotPreviewEntry({ sig: reqSig, payloadSourceIds: reqIds, data: response });
     } catch (err) {
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setZotError(formatErrorText(err));
     } finally {
-      setZotBusy(null);
+      if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
+        setZotBusy(null);
+      }
     }
   }
 
   async function handleZoteroConfirm() {
     if (!projectId || targetSources.length === 0 || zotBusy) return;
+    if (!zotPreviewEntry || zotPreviewEntry.sig !== selectionSignature) return;
+    const reqSig = zotPreviewEntry.sig;
+    const reqEpoch = selectionEpochRef.current;
+    const previewedIds = zotPreviewEntry.payloadSourceIds;
     setZotBusy("sync");
     setZotError(null);
     try {
       const payload: Record<string, unknown> = { dry_run: false };
-      if (payloadSourceIds) payload.selected_source_ids = payloadSourceIds;
+      if (previewedIds) payload.selected_source_ids = previewedIds;
       const response = await postIntegrationHook<ZoteroSyncResponse>("zotero/sync", payload);
-      setZotSynced(response);
-      setZotPreview(null);
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
+      if (response.status === "failed") {
+        setZotError(copy.zotFailedReceipt(response.failed_count ?? 1));
+        setZotSynced(null);
+      } else {
+        setZotSynced(response);
+        setZotPreviewEntry(null);
+      }
     } catch (err) {
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setZotError(formatErrorText(err));
     } finally {
-      setZotBusy(null);
+      if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
+        setZotBusy(null);
+      }
     }
   }
 
   async function handleObsidianPack() {
     if (!projectId || targetSources.length === 0 || obsBusy) return;
+    const reqSig = selectionSignature;
+    const reqEpoch = selectionEpochRef.current;
+    const reqIds = payloadSourceIds ? [...payloadSourceIds] : undefined;
     setObsBusy(true);
     setObsError(null);
     try {
       const payload: Record<string, unknown> = {};
-      if (payloadSourceIds) payload.selected_source_ids = payloadSourceIds;
+      if (reqIds) payload.selected_source_ids = reqIds;
       const response = await postIntegrationHook<ObsidianPackResponse>("obsidian/pack", payload);
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setObsResult(response);
     } catch (err) {
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setObsError(formatErrorText(err));
     } finally {
-      setObsBusy(false);
+      if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
+        setObsBusy(false);
+      }
     }
   }
 
@@ -679,12 +750,20 @@ export function SyncHooksPanel({
           )}
 
           {zotSynced && (
-            <div className="sync-receipt is-ok" role="status">
+            <div
+              className={`sync-receipt ${zotSynced.status === "partial_failure" ? "is-warn" : "is-ok"}`}
+              role="status"
+            >
               <span className="sync-receipt-text">
-                {copy.zotSyncedReceipt(
-                  zotSynced.created_count ?? 0,
-                  zotSynced.skipped_duplicates ?? 0,
-                )}
+                {zotSynced.status === "partial_failure"
+                  ? copy.zotPartialReceipt(
+                      zotSynced.created_count ?? 0,
+                      zotSynced.failed_count ?? 0,
+                    )
+                  : copy.zotSyncedReceipt(
+                      zotSynced.created_count ?? 0,
+                      zotSynced.skipped_duplicates ?? 0,
+                    )}
               </span>
             </div>
           )}

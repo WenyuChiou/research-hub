@@ -407,6 +407,9 @@ section.vr-matrix-empty {
 .vr-scope-dot.is-abstract {
   background: var(--scope-abstract-dot);
 }
+.vr-scope-dot.is-unknown {
+  background: var(--scope-unknown-dot);
+}
 .vr-scope-dot.is-metadata {
   background: var(--scope-meta-dot);
 }
@@ -765,11 +768,15 @@ section.vr-matrix-empty {
   color: var(--scope-abstract-fg);
   border-color: var(--scope-abstract-border);
 }
-.vr-matrix-scope.is-metadata,
-.vr-matrix-scope.is-unknown {
+.vr-matrix-scope.is-metadata {
   background: var(--scope-meta-bg);
   color: var(--scope-meta-fg);
   border-color: var(--scope-meta-border);
+}
+.vr-matrix-scope.is-unknown {
+  background: var(--scope-unknown-bg);
+  color: var(--scope-unknown-fg);
+  border-color: var(--scope-unknown-border);
 }
 .vr-matrix-screen {
   display: inline-flex;

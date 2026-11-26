@@ -156,6 +156,7 @@ export function CommandPalette({
   const c = PALETTE_COPY[locale === "zh-TW" ? "zh-TW" : "en"];
   const titleId = useId();
   const listboxId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -169,6 +170,28 @@ export function CommandPalette({
     setQuery("");
     setActiveIndex(0);
     inputRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const root = document.getElementById("root");
+    const hadInert = root?.hasAttribute("inert") ?? false;
+    if (root && !hadInert) {
+      root.setAttribute("inert", "");
+    }
+    const onFocusIn = (event: FocusEvent) => {
+      const dialogEl = dialogRef.current;
+      if (dialogEl && event.target instanceof Node && !dialogEl.contains(event.target)) {
+        inputRef.current?.focus();
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      if (root && !hadInert) {
+        root.removeAttribute("inert");
+      }
+    };
   }, [open]);
 
   const closeAndRestoreFocus = () => {
@@ -193,7 +216,7 @@ export function CommandPalette({
         searchText: `${c.toggleDark} ${c.toggleLight} theme dark light mode 深色 淺色 主題 外觀`.toLocaleLowerCase(),
         onSelect: () => {
           onToggleTheme();
-          onClose();
+          closeAndRestoreFocus();
         },
       });
     }
@@ -316,7 +339,44 @@ export function CommandPalette({
   const safeIndex =
     filteredEntries.length === 0 ? -1 : Math.min(activeIndex, filteredEntries.length - 1);
 
+  const activeItemId =
+    safeIndex >= 0 && filteredEntries[safeIndex]
+      ? `${listboxId}-opt-${filteredEntries[safeIndex].id}`
+      : undefined;
+
+  useEffect(() => {
+    if (!open || !activeItemId) return;
+    const activeEl = document.getElementById(activeItemId);
+    if (activeEl && typeof activeEl.scrollIntoView === "function") {
+      activeEl.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, activeItemId]);
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Tab") {
+      const container = dialogRef.current;
+      if (!container) return;
+      const focusables = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          'input:not([disabled]), button:not([disabled]), [href], select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusables.length <= 1) {
+        event.preventDefault();
+        (focusables[0] ?? inputRef.current)?.focus();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -353,11 +413,6 @@ export function CommandPalette({
     { key: "papers", label: c.groupPapers },
   ];
 
-  const activeItemId =
-    safeIndex >= 0 && filteredEntries[safeIndex]
-      ? `${listboxId}-opt-${filteredEntries[safeIndex].id}`
-      : undefined;
-
   return createPortal(
     <div
       className="vr-cmd-backdrop"
@@ -368,6 +423,7 @@ export function CommandPalette({
       }}
     >
       <div
+        ref={dialogRef}
         className="vr-cmd-dialog"
         role="dialog"
         aria-modal="true"

@@ -80,7 +80,12 @@ export interface PagesProps {
   observationRevision?: number;
   categoryHost?: HTMLElement | null;
   locale?: Locale;
-  externalPaperRequest?: { sourceId: string; archived?: boolean; nonce: number } | null;
+  externalPaperRequest?: {
+    projectId: string;
+    sourceId: string;
+    archived?: boolean;
+    nonce: number;
+  } | null;
   t: Translate;
   onSaved: (message: string, recovered?: RecoveredWork) => Promise<void>;
   onOpenSetup?: () => void;
@@ -165,7 +170,13 @@ export function ProjectPages({
   }>({ mode: "split", nonce: 0 });
   const lastExternalPaperNonce = useRef(0);
   useEffect(() => {
-    if (!externalPaperRequest || externalPaperRequest.nonce <= lastExternalPaperNonce.current) return;
+    if (
+      !externalPaperRequest ||
+      externalPaperRequest.projectId !== detail.project.id ||
+      externalPaperRequest.nonce <= lastExternalPaperNonce.current
+    ) {
+      return;
+    }
     lastExternalPaperNonce.current = externalPaperRequest.nonce;
     setLiteratureViewRequest((prev) => ({
       mode: "split",
@@ -173,7 +184,7 @@ export function ProjectPages({
       archived: externalPaperRequest.archived === true,
       nonce: prev.nonce + 1,
     }));
-  }, [externalPaperRequest]);
+  }, [detail.project.id, externalPaperRequest]);
   function openLiteratureTable(category = "") {
     setLiteratureViewRequest((prev) => ({
       mode: "table",
@@ -443,18 +454,22 @@ export function ProjectPages({
         onReview={(taskId) => navigate("review", `review-task-${taskId}`)}
       />
       <div hidden={page !== "overview"} className="page-content">
-        <ResearchStageStepper
-          sources={curatedActiveSources}
-          screenings={records("screening")}
-          claims={records("claim")}
-          outlines={records("outline")}
-          manuscript={detail.manuscript}
-          actions={detail.actions}
-          tasks={detail.tasks}
-          currentPage={page}
-          locale={locale}
-          onNavigate={(targetPage) => navigate(targetPage)}
-        />
+        {page === "overview" && (
+          <ResearchStageStepper
+            sources={curatedActiveSources}
+            screenings={records("screening")}
+            claims={records("claim")}
+            outlines={records("outline")}
+            manuscript={detail.manuscript}
+            artifacts={detail.artifacts}
+            warnings={detail.warnings}
+            actions={detail.actions}
+            tasks={detail.tasks}
+            currentPage={page}
+            locale={locale}
+            onNavigate={(targetPage) => navigate(targetPage)}
+          />
+        )}
         <section className="next-step">
           <div>
             <SmallLabel>{t("nextStep")}</SmallLabel>
@@ -491,7 +506,7 @@ export function ProjectPages({
             </button>
           </div>
         </section>
-        {curatedActiveSources.length > 0 && (
+        {page === "overview" && curatedActiveSources.length > 0 && (
           <LiteratureVisualCharts
             sources={curatedActiveSources}
             screenings={records("screening")}
@@ -502,16 +517,17 @@ export function ProjectPages({
             onNavigateLiterature={() => navigate("literature")}
           />
         )}
-        {(curatedActiveSources.length > 0 || records("claim").length > 0) && (
-          <EvidenceBlindSpotRadar
-            sources={curatedActiveSources}
-            screenings={records("screening")}
-            claims={records("claim")}
-            locale={locale}
-            onNavigate={navigate}
-            onOpenPaper={openLiteratureSource}
-          />
-        )}
+        {page === "overview" &&
+          (curatedActiveSources.length > 0 || records("claim").length > 0) && (
+            <EvidenceBlindSpotRadar
+              sources={curatedActiveSources}
+              screenings={records("screening")}
+              claims={records("claim")}
+              locale={locale}
+              onNavigate={navigate}
+              onOpenPaper={openLiteratureSource}
+            />
+          )}
         <div className="page-grid">
           <div className="main-column">
             <Panel title={t("projectBrief")}>
@@ -1033,15 +1049,17 @@ export function ProjectPages({
           };
           return (
             <>
-              <EvidenceBlindSpotRadar
-                sources={curatedActiveSources}
-                screenings={records("screening")}
-                claims={claimRecords}
-                locale={locale}
-                compact
-                onNavigate={navigate}
-                onOpenPaper={openLiteratureSource}
-              />
+              {page === "evidence" && (
+                <EvidenceBlindSpotRadar
+                  sources={curatedActiveSources}
+                  screenings={records("screening")}
+                  claims={claimRecords}
+                  locale={locale}
+                  compact
+                  onNavigate={navigate}
+                  onOpenPaper={openLiteratureSource}
+                />
+              )}
               <dl className="overview-lit-metrics evidence-kpi-strip">
                 <div>
                   <dt>{t("evidenceTotalClaims")}</dt>
