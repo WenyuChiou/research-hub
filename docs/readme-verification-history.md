@@ -8,7 +8,7 @@ Source revision `45c5fcc` (merging PRs #299–#304, covering the light-surface R
 
 - Verified on Windows 11 with Python 3.14 from an installed source-built wheel (`research-hub-pipeline` built from `45c5fcc`) against a brand-new empty workspace directory.
 - Exercised end-to-end in a real browser (`1440×900`): clicked **Load sample project**, opened `review-demo` Literature, edited categories (`Foundations`, `Algorithms`) and relevance notes via **Category & details**, verified **Master table** category summary strip and table rows, toggled `中` (`zh-TW`) and verified persistence across reload, created a fresh project with blank Project ID (auto-generated slug, zero HTML5 regex errors), and verified the empty-state **Add or search your first paper** CTA. Observed **0 console/page errors** and **0 HTTP ≥ 400 responses**.
-- Captured fresh authentic bilingual screenshots (`docs/images/workspace-ui.en.png` and `docs/images/workspace-ui.zh-TW.png`) directly from the offline account-free `review-demo` teaching project at `1440×900` (no user-private files or provider credentials).
+- Captured fresh authentic bilingual screenshots (`docs/images/workspace-ui.en.png` and `docs/images/workspace-ui.zh-TW.png`, `1024×640` PNGs captured from a `1440×900` browser viewport) directly from the offline account-free `review-demo` teaching project (no user-private files or provider credentials).
 - Cross-platform automated test matrix (`ubuntu-latest` Python 3.10–3.14, `macos-latest` Python 3.12, `windows-latest` Python 3.12, and installed-wheel Playwright browser checks) passed on `45c5fcc`.
 - This is bounded UI and local-workspace engineering verification, not live provider verification, scientific validation, or a new PyPI release claim.
 
