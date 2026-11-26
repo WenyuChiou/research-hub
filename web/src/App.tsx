@@ -150,6 +150,11 @@ export default function App() {
     if (next && page === "literature" && sidebar.current?.contains(document.activeElement)) setNavigationOpen(true);
   });
   const [refreshCount, setRefreshCount] = useState(0);
+  const [refreshSpinning, setRefreshSpinning] = useState(false);
+  const refreshSpinTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (refreshSpinTimer.current !== null) window.clearTimeout(refreshSpinTimer.current);
+  }, []);
   const selectedRef = useRef(projectId);
   selectedRef.current = projectId;
   const detailRef = useRef(detail);
@@ -550,6 +555,12 @@ export default function App() {
     setDetailError(null);
     setError(null);
     setRefreshCount((count) => count + 1);
+    setRefreshSpinning(true);
+    if (refreshSpinTimer.current !== null) window.clearTimeout(refreshSpinTimer.current);
+    refreshSpinTimer.current = window.setTimeout(() => {
+      setRefreshSpinning(false);
+      refreshSpinTimer.current = null;
+    }, 450);
   }
 
   const isRetryableConnectionError = (failure: unknown) =>
@@ -637,7 +648,22 @@ export default function App() {
           aria-expanded={navigationOpen} aria-controls="workspace-navigation"
           onClick={() => setNavigationOpen(open => !open)}>{t("readingNavigation")}</button>}
         <div className="project-control">
-          <label htmlFor="project-switcher">{t("projects")}</label>
+          <div className="project-control-header">
+            <label htmlFor="project-switcher">{t("projects")}</label>
+            <button
+              type="button"
+              className="new-project icon-btn"
+              onClick={() => setNewProject(true)}
+              aria-label={t("newProject")}
+              data-tooltip={t("newProject")}
+              data-tooltip-pos="top-end"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" focusable="false">
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+            </button>
+          </div>
           <select
             id="project-switcher"
             value={projectId}
@@ -670,10 +696,6 @@ export default function App() {
           {selectedProjectTitle && selectedProjectTitle.length > 28 && (
             <p className="selected-project-title">{selectedProjectTitle}</p>
           )}
-          <button className="new-project" onClick={() => setNewProject(true)}>
-            <span aria-hidden="true">＋</span>
-            {t("newProject")}
-          </button>
         </div>
         <nav id="workspace-navigation" aria-label={t("navigation")} hidden={page === "literature" && compact && !navigationOpen}>
           <p className="nav-group-label">{t("catalogResearchNav")}</p>
@@ -727,12 +749,17 @@ export default function App() {
             <strong>{activeDetail?.project.title || t("projects")}</strong>
           </div>
           <button
-            className="button text-button"
+            type="button"
+            className={`button text-button icon-btn${refreshSpinning ? " is-spinning" : ""}`}
             onClick={refresh}
             aria-label={t("refresh")}
+            data-tooltip={t("refresh")}
+            data-tooltip-pos="bottom-end"
           >
-            <span aria-hidden="true">↻</span>
-            <span>{t("refresh")}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <path d="M21 3v6h-6" />
+            </svg>
           </button>
         </header>
         <div className={`content-wrap workspace-${page}`}>

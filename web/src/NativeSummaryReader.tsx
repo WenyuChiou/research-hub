@@ -133,11 +133,40 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
       </div>
       {exportable && summary && scope?.projectId && (
         <div className="native-export-actions">
-          <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void copyMarkdown()}>
-            {t("nativeCopyMarkdown")}
+          <button
+            type="button"
+            className="button secondary small icon-btn"
+            disabled={exportBusy}
+            onClick={() => void copyMarkdown()}
+            aria-label={t("nativeCopyMarkdown")}
+            data-tooltip={exportStatus?.tone === "good" ? exportStatus.text : t("nativeCopyMarkdown")}
+            data-tooltip-pos="bottom-end"
+          >
+            {exportStatus?.tone === "good" ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0d6846" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
           </button>
-          <button type="button" className="button secondary small" disabled={exportBusy} onClick={() => void downloadMarkdown()}>
-            {t("nativeDownloadMarkdown")}
+          <button
+            type="button"
+            className="button secondary small icon-btn"
+            disabled={exportBusy}
+            onClick={() => void downloadMarkdown()}
+            aria-label={t("nativeDownloadMarkdown")}
+            data-tooltip={t("nativeDownloadMarkdown")}
+            data-tooltip-pos="bottom-end"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
           </button>
           {exportStatus && (
             <span role="status" className={exportStatus.tone === "good" ? "small good-text" : "small bad-text"}>

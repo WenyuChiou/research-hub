@@ -236,8 +236,21 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
             </select>
           </label>
           <p className="catalog-match" role="status">{visible.length} / {sources.length} {t("catalogItems")}</p>
-          {(query || selectedCategory || organization !== "all") && <button type="button" className="button text-button small"
-            onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all"); searchInput.current?.focus();}}>{t("catalogClearFilters")}</button>}
+          {(query || selectedCategory || organization !== "all") && (
+            <button
+              type="button"
+              className="button text-button small icon-btn"
+              aria-label={t("catalogClearFilters")}
+              data-tooltip={t("catalogClearFilters")}
+              data-tooltip-pos="bottom-end"
+              onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all"); searchInput.current?.focus();}}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" aria-hidden="true" focusable="false">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
@@ -289,7 +302,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               event.stopPropagation(); returnRequested.current = true; setReaderOpen(false);
             }
           }}>
-          {selected ? <>
+          {selected ? <div key={selected.id} className="catalog-detail-body">
             <div className="catalog-detail-top">
               <div className="catalog-meta">
                 <span>{text(selected.data.year) || "—"}</span>
@@ -299,10 +312,21 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 <span>{readingScope(selected, t)}</span>
                 <span className="badge neutral">{statusLabel(text(selected.data.identity_status) || "unverified", t)}</span>
               </div>
-              <button type="button" className="button text-button small catalog-back" aria-label={t("catalogBackToList")} onClick={() => {
-                if (compact) { returnRequested.current = true; setReaderOpen(false); }
-                else { selectedButton.current?.focus(); }
-              }}>← {t("catalogBackShort")}</button>
+              <button
+                type="button"
+                className="button text-button small icon-btn catalog-back"
+                aria-label={t("catalogBackToList")}
+                data-tooltip={t("catalogBackToList")}
+                data-tooltip-pos="bottom-end"
+                onClick={() => {
+                  if (compact) { returnRequested.current = true; setReaderOpen(false); }
+                  else { selectedButton.current?.focus(); }
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </button>
             </div>
             <h3 ref={detailHeading} tabIndex={-1}>{text(selected.data.title)}</h3>
             {(selectedAuthors || selectedVenue || selected.data.locator_kind !== "local-copy") && (
@@ -412,7 +436,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               })()}</dd>
             </dl></details>
             {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(selected)}>{t("catalogSourceTools")}</button>}
-          </> : <p>{t("catalogSelectSource")}</p>}
+          </div> : <p>{t("catalogSelectSource")}</p>}
         </aside>
       </div>
     </section>
