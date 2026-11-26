@@ -2,6 +2,15 @@
 
 This page preserves the bounded rehearsal and installation context referenced by the README. It is evidence for the dated runs described below, not a statement that every current installation or scientific workflow has been accepted.
 
+## Workstation Light/Dark showcase & sync-hub captures (2026-11-26)
+
+Source revision `b2ca1ad` (merging PR #309 on top of `45c5fcc`, adding HD brand emblems and status LEDs, Light/Dark/System themes, the 4-tab Settings Center, Connected Software Sync & Export Hub, 4-stage pipeline stepper, year/coverage analytics, Evidence Blind-Spot Radar, Literature × Theme/Evidence Synthesis Matrix, and `Ctrl+K` / `⌘K` Command Palette):
+
+- Captured 10 bilingual Retina screenshots (`2880×1800` PNGs at `2×` scale from a `1440×900` Chromium viewport) on Windows 11 against an isolated `WorkspaceServer` on ephemeral port `8791` with **0 console errors**, **0 page errors**, and **0 HTTP ≥ 400 responses**:
+  - `docs/images/workspace-ui.{en,zh-TW}.png`: offline `review-demo` teaching project in Light Mode with example `Foundations`/`Algorithms` curations and scoped `#domain:*`/`#method:*`/`#risk:*` labels; Goldberg (1991) retains its authentic demo limits (`Unverified`, `Coverage unknown`, `No summary saved`).
+  - `docs/images/showcase-overview-radar.{en,zh-TW}.png`, `docs/images/showcase-dark-desk.{en,zh-TW}.png`, `docs/images/showcase-dark-matrix.{en,zh-TW}.png`, and `docs/images/showcase-settings-sync.{en,zh-TW}.png`: isolated 7-paper offline showcase fixture (`llm-decision-showcase`, using real public bibliographic metadata with illustrative reading-scope, screening, and claim records plus exercised local NotebookLM `.md` pack and Obsidian `.md + .base` exports inside a temporary directory).
+- No private user files, external Zotero API writes, or live NotebookLM cloud sessions were used during capture; showcase fixtures illustrate UI capabilities rather than completed scientific reviews or live external provider acceptance.
+
 ## Redesigned workspace UI captures & cold-start E2E (2026-11-26)
 
 Source revision `45c5fcc` (merging PRs #299–#304, covering the light-surface Reading Desk, Master Literature Table with category summary cards and Markdown/CSV export, collapsible Settings modal, compact `EN`/`中` toggle with `localStorage` persistence, append-only `source_curation` category/metadata editing, and 1-click **Load sample project**):
