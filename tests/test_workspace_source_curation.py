@@ -80,12 +80,25 @@ def test_add_source_normalizes_optional_authors_and_year(tmp_path):
             "authors": "Patrick Lewis, Ethan Perez",
             "year": "2020",
             "category": "llm",
+            "tags": "retrieval, benchmark, llm",
         },
     )
     assert source["data"]["authors"] == ["Patrick Lewis", "Ethan Perez"]
     assert source["data"]["year"] == "2020"
     assert source["data"]["category"] == "llm"
+    assert source["data"]["tags"] == ["retrieval", "benchmark", "llm"]
     assert source["data"]["identity_status"] == "unverified"
+
+    blank_tags_source = ws.add_record(
+        project["id"],
+        kind="source",
+        data={
+            "title": "Blank Tags Paper",
+            "locator": "https://example.org/blank-tags",
+            "tags": "  ,  ",
+        },
+    )
+    assert "tags" not in blank_tags_source["data"]
 
     csl_source = ws.add_record(
         project["id"],
@@ -118,6 +131,7 @@ def test_add_source_normalizes_optional_authors_and_year(tmp_path):
         {"title": "Bad Year Text", "locator": "https://example.org/2", "year": "twenty"},
         {"title": "Bad Authors Num", "locator": "https://example.org/3", "authors": 123},
         {"title": "Bad Authors List", "locator": "https://example.org/4", "authors": [42]},
+        {"title": "Bad Tags Num", "locator": "https://example.org/5", "tags": 999},
     ):
         with pytest.raises(WorkspaceError):
             ws.add_record(project["id"], kind="source", data=invalid_source)

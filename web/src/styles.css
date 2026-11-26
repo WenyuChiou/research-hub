@@ -381,16 +381,19 @@ h1:focus {
   min-width: 0;
   background: var(--white);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(19, 23, 32, 0.03);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 4px 12px -4px rgba(15, 23, 42, 0.04);
 }
 .panel-heading {
-  padding: 10px 16px;
+  padding: 12px 16px;
   display: flex;
   gap: 12px;
   justify-content: space-between;
   align-items: center;
+  background: var(--surface-tint);
   border-bottom: 1px solid var(--line);
 }
 .panel-heading a {
@@ -417,12 +420,13 @@ h1:focus {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  background: #edf3f6;
-  border: 1px solid #cddce3;
-  border-radius: 8px;
-  padding: 14px 18px;
+  background: var(--surface-tint);
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  padding: 16px 20px;
   margin-bottom: 16px;
   overflow: hidden;
+  box-shadow: 0 2px 8px -2px rgba(14, 90, 114, 0.08);
 }
 .next-step .small-label {
   font-size: var(--text-meta);
@@ -1991,11 +1995,32 @@ select option {
   margin: 0 0 12px;
 }
 .overview-lit-metrics > div {
-  background: var(--paper);
+  background: var(--surface-tint);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   min-width: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.overview-cat-count {
+  display: inline-block;
+  min-width: 22px;
+}
+.overview-cat-bar {
+  display: inline-block;
+  vertical-align: middle;
+  width: 44px;
+  height: 5px;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: var(--wash);
+  overflow: hidden;
+}
+.overview-cat-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--teal);
 }
 .overview-lit-metrics dt {
   font-size: var(--text-2xs);

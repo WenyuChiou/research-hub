@@ -412,6 +412,12 @@ class Workspace:
                     data["year"] = cleaned_year
                 else:
                     data.pop("year", None)
+            if "tags" in data and data["tags"] is not None:
+                cleaned_tags = _clean_list_field(data["tags"], name="tags", max_items=30, item_limit=80)
+                if cleaned_tags:
+                    data["tags"] = cleaned_tags
+                else:
+                    data.pop("tags", None)
         if kind == "source_curation":
             data = _validate_source_curation(data)
             if not any(r["id"] == data["source_id"] and r["kind"] == "source" for r in self.records(project_id)):

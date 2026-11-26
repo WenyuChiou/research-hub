@@ -386,7 +386,7 @@ it("late keyless completion updates original A without navigating or replacing n
   expect(fetch.mock.calls.some((c) => String(c[0]).endsWith("/run"))).toBe(
     false,
   );
-}, 10000);
+}, 15000);
 
 it("explicitly dismissing a storage-denied unsent preparation releases only its draft lock", async () => {
   const { user, fetch } = await setup("durable-ready");

@@ -1,4 +1,5 @@
 import { NativeSummaryReader } from "./NativeSummaryReader";
+import { AgentHandoffModal, type HandoffScope } from "./AgentHandoffModal";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
@@ -150,6 +151,16 @@ export function categoryName(value: string, t: Translate) {
   return value || t("catalogUnclassified");
 }
 
+export type ScopeTone = "full" | "abstract" | "metadata" | "unknown";
+
+export function readingScopeTone(record: ResearchRecord): ScopeTone {
+  const scope = text(record.data.reading_level) || text(record.data.reading_scope);
+  if (scope === "full-text") return "full";
+  if (scope === "abstract" || scope === "abstract-snippet") return "abstract";
+  if (scope === "metadata" || scope === "note-metadata") return "metadata";
+  return "unknown";
+}
+
 function readingScope(record: ResearchRecord, t: Translate) {
   const scope = text(record.data.reading_level) || text(record.data.reading_scope);
   if (scope === "abstract-snippet") return t("catalogAbstractSnippet");
@@ -160,6 +171,44 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
+function readingScopeTip(record: ResearchRecord, t: Translate) {
+  const tone = readingScopeTone(record);
+  if (tone === "full") return t("catalogScopeFullTip");
+  if (tone === "abstract") return t("catalogScopeAbstractTip");
+  if (tone === "metadata") return t("catalogScopeMetaTip");
+  return t("catalogScopeUnknownTip");
+}
+
+export function sourceTags(record: ResearchRecord): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const raw of [...strings(record.data.tags), ...strings(record.data.labels)]) {
+    const cleaned = raw.trim().replace(/^#+/, "");
+    if (!cleaned) continue;
+    const key = cleaned.toLocaleLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      tags.push(cleaned);
+    }
+  }
+  return tags;
+}
+
+function parseTagsInput(value: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of value.split(/[;；,\n]+/)) {
+    const cleaned = part.trim().replace(/^#+/, "");
+    if (!cleaned) continue;
+    const key = cleaned.toLocaleLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(cleaned);
+    }
+  }
+  return out;
+}
+
 export interface SourceCurationInput {
   category?: string;
   year?: string;
@@ -167,6 +216,7 @@ export interface SourceCurationInput {
   venue?: string;
   relevance?: string;
   summary?: string;
+  tags?: string[];
 }
 
 const CURATION_KEYS = ["category", "year", "authors", "venue", "relevance", "summary", "tags"] as const;
@@ -200,6 +250,9 @@ export function applySourceCurations(
     if ("venue" in overlay && !text(overlay.venue).trim()) {
       nextData.journal = "";
     }
+    if ("tags" in overlay) {
+      nextData.labels = [];
+    }
     return { ...record, data: nextData };
   });
 }
@@ -222,6 +275,7 @@ interface CurationDraft {
   year: string;
   authors: string;
   venue: string;
+  tags: string;
   relevance: string;
   summary: string;
   changed: {
@@ -229,6 +283,7 @@ interface CurationDraft {
     year?: boolean;
     authors?: boolean;
     venue?: boolean;
+    tags?: boolean;
     relevance?: boolean;
     summary?: boolean;
   };
@@ -240,6 +295,7 @@ function baseCurationDraft(record: ResearchRecord): CurationDraft {
     year: text(record.data.year),
     authors: formatAuthorsInput(record.data.authors),
     venue: text(record.data.venue) || text(record.data.journal),
+    tags: sourceTags(record).join(", "),
     relevance: text(record.data.relevance),
     summary: savedSummary(record),
     changed: {},
@@ -297,6 +353,7 @@ function SourceCurationForm({
         if (draft.changed.year) payload.year = draft.year.trim();
         if (draft.changed.authors) payload.authors = parseAuthorsInput(draft.authors);
         if (draft.changed.venue) payload.venue = draft.venue.trim();
+        if (draft.changed.tags) payload.tags = parseTagsInput(draft.tags);
         if (draft.changed.relevance) payload.relevance = draft.relevance.trim();
         if (draft.changed.summary) payload.summary = draft.summary.trim();
         if (!Object.keys(payload).length) return;
@@ -353,6 +410,17 @@ function SourceCurationForm({
             />
           </div>
           <div className="field field-wide">
+            <label htmlFor={`${listId}-tags`}>{t("catalogMetaTags")}</label>
+            <input
+              id={`${listId}-tags`}
+              value={draft.tags}
+              onChange={(e) => onChange({ ...draft, tags: e.target.value, changed: { ...draft.changed, tags: true } })}
+              placeholder="multi-agent, benchmark"
+              maxLength={800}
+            />
+            <small>{t("catalogMetaTagsHint")}</small>
+          </div>
+          <div className="field field-wide">
             <label htmlFor={`${listId}-rel`}>{t("catalogRelevance")}</label>
             <textarea
               id={`${listId}-rel`}
@@ -398,13 +466,18 @@ function SourceCurationForm({
   );
 }
 
-export function LiteratureLibrary({ sources: rawSources, screenings, curations, t, onScreen, onCurate, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, t, projectId, projectTitle, onScreen, onCurate, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   curations?: ResearchRecord[];
   t: Translate;
+  projectId?: string;
+  projectTitle?: string;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
+  onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string }) => Promise<{ id: string }>;
+  onNavigateReview?: (taskId?: string) => void;
+  onOpenSetup?: () => void;
   onPrepare: (record: ResearchRecord) => void;
   onOpenAddTools?: () => void;
   matches?: Map<string, ResearchRecord[]>;
@@ -423,10 +496,15 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const sources = applySourceCurations(rawSources, curations);
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedScope, setSelectedScope] = useState<ScopeTone | "">("");
+  const [selectedTag, setSelectedTag] = useState("");
+  const [showAllTags, setShowAllTags] = useState(false);
   const [organization, setOrganization] = useState<Organization>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [sortBy, setSortBy] = useState<SortKey>("default");
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffScope, setHandoffScope] = useState<HandoffScope>("filtered");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [curationOpen, setCurationOpen] = useState(false);
   const [localCurationState, setLocalCurationState] = useState<CurationStateMap>({});
@@ -448,6 +526,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     handledRequestNonce.current = requestedView.nonce;
     setViewMode(requestedView.mode);
     setQuery("");
+    setSelectedScope("");
+    setSelectedTag("");
     if (requestedView.category === "__unclassified__") {
       setSelectedCategory("");
       setOrganization("unclassified");
@@ -507,11 +587,29 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     ["missing-summary", "catalogNeedsSummary"], ["unscreened", "catalogNeedsScreening"],
   ] as const;
   const categories = [...new Set(sources.map(category).filter(Boolean))].sort();
+  const scopeCounts: Record<ScopeTone, number> = { full: 0, abstract: 0, metadata: 0, unknown: 0 };
+  const tagMap = new Map<string, { label: string; count: number }>();
+  for (const record of sources) {
+    scopeCounts[readingScopeTone(record)]++;
+    for (const tag of sourceTags(record)) {
+      const key = tag.toLocaleLowerCase();
+      const existing = tagMap.get(key);
+      if (existing) existing.count++;
+      else tagMap.set(key, { label: tag, count: 1 });
+    }
+  }
+  const allTags = [...tagMap.values()].sort(
+    (a, b) => b.count - a.count || a.label.localeCompare(b.label),
+  );
+  const visibleTagChips = showAllTags ? allTags : allTags.slice(0, 8);
   const search = query.trim().toLocaleLowerCase();
+  const selectedTagLower = selectedTag.toLocaleLowerCase();
   const visible = sources.filter((record) =>
     matchesOrganization(record, organization) &&
     (!selectedCategory || category(record) === selectedCategory) &&
-    (!search || [record.data.title, ...authorNames(record.data.authors), record.data.year, record.data.doi, record.data.venue, record.data.journal, record.data.relevance, category(record), ...strings(record.data.tags), ...strings(record.data.labels)]
+    (!selectedScope || readingScopeTone(record) === selectedScope) &&
+    (!selectedTagLower || sourceTags(record).some((tag) => tag.toLocaleLowerCase() === selectedTagLower)) &&
+    (!search || [record.data.title, ...authorNames(record.data.authors), record.data.year, record.data.doi, record.data.venue, record.data.journal, record.data.relevance, category(record), ...sourceTags(record)]
       .map(text).join(" ").toLocaleLowerCase().includes(search)),
   );
   const exactSelected = visible.find((record) => record.id === selectedId);
@@ -707,6 +805,21 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
         <h2>{t("catalogTitle")}</h2>
         <div className="catalog-heading-actions">
           <span className="catalog-total">{sources.length} {t("catalogItems")}</span>
+          <button
+            type="button"
+            className="button primary small catalog-handoff-trigger"
+            disabled={!sources.length}
+            onClick={() => {
+              setHandoffScope("filtered");
+              setHandoffOpen(true);
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M22 2 11 13" />
+              <path d="m22 2-7 20-4-9-9-4Z" />
+            </svg>
+            <span>{t("handoffOpenButton")}</span>
+          </button>
           <div className="catalog-view-switch" role="group" aria-label={t("catalogViewMode")}>
             <button
               type="button"
@@ -739,6 +852,76 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           </div>
         </div>
       </div>
+      {sources.length > 0 && (() => {
+        const total = sources.length;
+        const pct = (count: number) => `${Math.round((count / total) * 1000) / 10}%`;
+        const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
+        const obsidianOk = liveIntegrations?.obsidian?.status === "valid" || workspace?.capabilities?.obsidian_validation?.status === "available";
+        const zoteroOk = liveIntegrations?.zotero
+          ? ["connected_local_and_web", "connected_web", "connected_local"].includes(liveIntegrations.zotero.status)
+          : Boolean(localCap?.zotero_configured);
+        const nlmOk = liveIntegrations?.notebooklm
+          ? liveIntegrations.notebooklm.status === "authenticated"
+          : Boolean(localCap?.nlm_state_present);
+        const scopeButtons: [ScopeTone, string, number][] = [
+          ["full", t("catalogFullTextDeclared"), scopeCounts.full],
+          ["abstract", t("catalogAbstractOnly"), scopeCounts.abstract],
+          ["metadata", t("catalogMetadataOnly"), scopeCounts.metadata],
+          ["unknown", t("catalogUnknownScope"), scopeCounts.unknown],
+        ];
+        return (
+          <div className="catalog-health-strip">
+            <div className="catalog-health-coverage">
+              <div className="catalog-health-header">
+                <span className="catalog-health-label">{t("catalogHealthCoverage")}</span>
+                <span className="catalog-health-kpis">
+                  <span>{t("catalogHealthIncluded")} <strong>{summaryStats.included}/{total}</strong></span>
+                  <span aria-hidden="true">·</span>
+                  <span>{t("catalogHealthSummary")} <strong>{summaryStats.withSummary}/{total}</strong></span>
+                </span>
+              </div>
+              <div className="catalog-coverage-meter" aria-hidden="true">
+                {scopeCounts.full > 0 && <span className="meter-seg scope-full" style={{ width: pct(scopeCounts.full) }} />}
+                {scopeCounts.abstract > 0 && <span className="meter-seg scope-abstract" style={{ width: pct(scopeCounts.abstract) }} />}
+                {scopeCounts.metadata > 0 && <span className="meter-seg scope-metadata" style={{ width: pct(scopeCounts.metadata) }} />}
+                {scopeCounts.unknown > 0 && <span className="meter-seg scope-unknown" style={{ width: pct(scopeCounts.unknown) }} />}
+              </div>
+              <div className="catalog-scope-filters" role="group" aria-label={t("catalogFilterByScope")}>
+                {scopeButtons.filter(([, , count]) => count > 0).map(([tone, label, count]) => (
+                  <button
+                    key={tone}
+                    type="button"
+                    className={`scope-pill scope-${tone}`}
+                    aria-pressed={selectedScope === tone}
+                    onClick={() => setSelectedScope((prev) => (prev === tone ? "" : tone))}
+                  >
+                    <span>{label}</span>
+                    <span className="pill-count">{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="catalog-health-pipeline" aria-label={t("catalogHealthPipeline")}>
+              <span className="catalog-health-label">{t("catalogHealthPipeline")}</span>
+              <div className="catalog-pipeline-dots">
+                {onOpenSetup ? (
+                  <>
+                    <button type="button" className={`pipeline-dot-chip ${obsidianOk ? "is-ok" : "is-idle"}`} onClick={onOpenSetup}>Obsidian</button>
+                    <button type="button" className={`pipeline-dot-chip ${zoteroOk ? "is-ok" : "is-idle"}`} onClick={onOpenSetup}>Zotero</button>
+                    <button type="button" className={`pipeline-dot-chip ${nlmOk ? "is-ok" : "is-idle"}`} onClick={onOpenSetup}>NotebookLM</button>
+                  </>
+                ) : (
+                  <>
+                    <span className={`pipeline-dot-chip ${obsidianOk ? "is-ok" : "is-idle"}`}>Obsidian</span>
+                    <span className={`pipeline-dot-chip ${zoteroOk ? "is-ok" : "is-idle"}`}>Zotero</span>
+                    <span className={`pipeline-dot-chip ${nlmOk ? "is-ok" : "is-idle"}`}>NotebookLM</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div className="catalog-control-bar">
         <div className="catalog-organize" role="group" aria-label={t("catalogOrganize")}>
           {organizationViews.map(([value, label]) => <button key={value} type="button" className="button secondary"
@@ -762,14 +945,14 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
             </select>
           </label>
           <p className="catalog-match" role="status">{visible.length} / {sources.length} {t("catalogItems")}</p>
-          {(query || selectedCategory || organization !== "all") && (
+          {(query || selectedCategory || selectedScope || selectedTag || organization !== "all") && (
             <button
               type="button"
               className="button text-button small icon-btn"
               aria-label={t("catalogClearFilters")}
               data-tooltip={t("catalogClearFilters")}
               data-tooltip-pos="bottom-end"
-              onClick={() => {setQuery(""); setSelectedCategory(""); setOrganization("all"); searchInput.current?.focus();}}
+              onClick={() => {setQuery(""); setSelectedCategory(""); setSelectedScope(""); setSelectedTag(""); setOrganization("all"); searchInput.current?.focus();}}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" aria-hidden="true" focusable="false">
                 <path d="M18 6 6 18" />
@@ -779,6 +962,35 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           )}
         </div>
       </div>
+      {allTags.length > 0 && (
+        <div className="catalog-label-bar" role="group" aria-label={t("catalogFilterByTag")}>
+          <span className="catalog-label-heading">{t("catalogLabelsHeading")}</span>
+          {visibleTagChips.map(({ label, count }) => {
+            const pressed = selectedTagLower === label.toLocaleLowerCase();
+            return (
+              <button
+                key={label}
+                type="button"
+                className="tag-chip tag-chip-btn"
+                aria-pressed={pressed}
+                onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === label.toLocaleLowerCase() ? "" : label))}
+              >
+                <span>#{label}</span>
+                <span className="pill-count">{count}</span>
+              </button>
+            );
+          })}
+          {allTags.length > 8 && (
+            <button
+              type="button"
+              className="button text-button small"
+              onClick={() => setShowAllTags((open) => !open)}
+            >
+              {showAllTags ? t("catalogFewerTags") : `${t("catalogMoreTags")} (+${allTags.length - 8})`}
+            </button>
+          )}
+        </div>
+      )}
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
       </div>
       {bannerDraftRecords.length > 0 && (
@@ -793,6 +1005,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 if (!visible.some((item) => item.id === draftRecord.id)) {
                   setQuery("");
                   setSelectedCategory("");
+                  setSelectedScope("");
+                  setSelectedTag("");
                   setOrganization("all");
                 }
                 setSelectionMissing(false);
@@ -868,6 +1082,21 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                   {exportNotice.text}
                 </span>
               )}
+              <button
+                type="button"
+                className="button secondary small"
+                disabled={!sortedVisible.length}
+                onClick={() => {
+                  setHandoffScope("filtered");
+                  setHandoffOpen(true);
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M22 2 11 13" />
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                </svg>
+                <span>{t("handoffOpenButton")}</span>
+              </button>
               <button
                 type="button"
                 className="button secondary small icon-btn"
@@ -975,12 +1204,41 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                               {[authors, venue, record.kind === "library-note" ? t("libraryNoteOrigin") : null].filter(Boolean).join(" · ")}
                             </span>
                           )}
+                          {sourceTags(record).length > 0 && (
+                            <div className="catalog-row-tags">
+                              {sourceTags(record).slice(0, 4).map((tag) => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  className="tag-chip tag-chip-btn"
+                                  aria-pressed={selectedTagLower === tag.toLocaleLowerCase()}
+                                  onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === tag.toLocaleLowerCase() ? "" : tag))}
+                                >
+                                  #{tag}
+                                </button>
+                              ))}
+                              {sourceTags(record).length > 4 && (
+                                <span className="tag-chip tag-chip-more">+{sourceTags(record).length - 4}</span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td>
                           <span className="catalog-cat-pill">{categoryName(category(record), t)}</span>
                         </td>
                         <td className="catalog-master-year">{text(record.data.year) || "—"}</td>
-                        <td><span className="catalog-meta-text">{readingScope(record, t)}</span></td>
+                        <td>
+                          <button
+                            type="button"
+                            className={`scope-pill scope-${readingScopeTone(record)}`}
+                            aria-pressed={selectedScope === readingScopeTone(record)}
+                            data-tooltip={readingScopeTip(record, t)}
+                            data-tooltip-pos="top-start"
+                            onClick={() => setSelectedScope((prev) => (prev === readingScopeTone(record) ? "" : readingScopeTone(record)))}
+                          >
+                            {readingScope(record, t)}
+                          </button>
+                        </td>
                         <td>
                           {record.kind === "source" ? (
                             decision === "include" ? <span className="badge good">✓ {t("include")}</span>
@@ -1065,7 +1323,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                   <td>{text(record.data.year) || "—"}</td>
                   <td><span className="catalog-meta-text catalog-category">{categoryName(category(record), t)}</span></td>
                   <td>
-                    <span className="catalog-meta-text catalog-scope">{readingScope(record, t)}</span>
+                    <span className={`scope-pill scope-${readingScopeTone(record)} catalog-scope`}>{readingScope(record, t)}</span>
                     {record.kind === "source" && (
                       decision === "include" ? <span className="badge good catalog-item-state">✓ {t("include")}</span>
                         : decision === "exclude" ? <span className="badge danger catalog-item-state">✕ {t("exclude")}</span>
@@ -1073,6 +1331,12 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     )}
                     {registeredNativeSummary(record) && <span className="catalog-indicator good">{t("catalogNativeRegistered")}</span>}
                     {missingSummary(record) && <span className="catalog-indicator muted">{t("catalogNeedsSummary")}</span>}
+                    {sourceTags(record).slice(0, 3).map((tag) => (
+                      <span key={tag} className="tag-chip">#{tag}</span>
+                    ))}
+                    {sourceTags(record).length > 3 && (
+                      <span className="tag-chip tag-chip-more">+{sourceTags(record).length - 3}</span>
+                    )}
                   </td>
                 </tr>
               );})}</tbody>
@@ -1095,13 +1359,19 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
             }
           }}>
           {selected ? <div key={selected.id} className="catalog-detail-body">
+            <div className="catalog-detail-header">
             <div className="catalog-detail-top">
               <div className="catalog-meta">
                 <span>{text(selected.data.year) || "—"}</span>
-                <span>·</span>
-                <span>{categoryName(category(selected), t)}</span>
-                <span>·</span>
-                <span>{readingScope(selected, t)}</span>
+                <span className="catalog-cat-pill">{categoryName(category(selected), t)}</span>
+                <span
+                  className={`scope-pill scope-${readingScopeTone(selected)} tooltip-rich`}
+                  tabIndex={0}
+                  data-tooltip={readingScopeTip(selected, t)}
+                  data-tooltip-pos="bottom-start"
+                >
+                  {readingScope(selected, t)}
+                </span>
                 <span
                   className={`badge neutral${(text(selected.data.identity_status) || "unverified") === "unverified" ? " tooltip-rich" : ""}`}
                   tabIndex={(text(selected.data.identity_status) || "unverified") === "unverified" ? 0 : undefined}
@@ -1111,21 +1381,37 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                   {statusLabel(text(selected.data.identity_status) || "unverified", t)}
                 </span>
               </div>
-              <button
-                type="button"
-                className="button text-button small icon-btn catalog-back"
-                aria-label={t("catalogBackToList")}
-                data-tooltip={t("catalogBackToList")}
-                data-tooltip-pos="bottom-end"
-                onClick={() => {
-                  if (compact) { returnRequested.current = true; setReaderOpen(false); }
-                  else { selectedButton.current?.focus(); }
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-                  <path d="m15 18-6-6 6-6" />
-                </svg>
-              </button>
+              <div className="catalog-detail-actions">
+                <button
+                  type="button"
+                  className="button secondary small"
+                  onClick={() => {
+                    setHandoffScope("selected");
+                    setHandoffOpen(true);
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M22 2 11 13" />
+                    <path d="m22 2-7 20-4-9-9-4Z" />
+                  </svg>
+                  <span>{t("handoffOpenPaperButton")}</span>
+                </button>
+                <button
+                  type="button"
+                  className="button text-button small icon-btn catalog-back"
+                  aria-label={t("catalogBackToList")}
+                  data-tooltip={t("catalogBackToList")}
+                  data-tooltip-pos="bottom-end"
+                  onClick={() => {
+                    if (compact) { returnRequested.current = true; setReaderOpen(false); }
+                    else { selectedButton.current?.focus(); }
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <h3 ref={detailHeading} tabIndex={-1}>{text(selected.data.title)}</h3>
             {(selectedAuthors || selectedVenue || selected.data.locator_kind !== "local-copy") && (
@@ -1135,6 +1421,31 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 {selected.data.locator_kind !== "local-copy" && <SourceLink locator={selected.data.locator} title={t("catalogOriginalSource")} />}
               </p>
             )}
+            {(sourceTags(selected).length > 0 || (onCurate && !note)) && (
+              <div className="catalog-detail-tags">
+                {sourceTags(selected).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="tag-chip tag-chip-btn"
+                    aria-pressed={selectedTagLower === tag.toLocaleLowerCase()}
+                    onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === tag.toLocaleLowerCase() ? "" : tag))}
+                  >
+                    #{tag}
+                  </button>
+                ))}
+                {onCurate && !note && (
+                  <button
+                    type="button"
+                    className="tag-edit-link"
+                    onClick={() => setCurationOpen(true)}
+                  >
+                    + {t("catalogEditLabels")}
+                  </button>
+                )}
+              </div>
+            )}
+            </div>
             {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
             {!note && <div className="catalog-triage-bar">
               <details className="catalog-screening">
@@ -1343,6 +1654,26 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           )}
         </aside>
       </div>
+      {handoffOpen && (
+        <AgentHandoffModal
+          open={handoffOpen}
+          initialScope={handoffScope}
+          selectedRecord={selected}
+          filteredRecords={sortedVisible}
+          screenings={new Map(sources.map((record) => [record.id, screenedDecision(record)]))}
+          projectId={projectId}
+          projectTitle={projectTitle}
+          workspace={workspace}
+          liveIntegrations={liveIntegrations}
+          t={t}
+          onClose={() => setHandoffOpen(false)}
+          onCreateHandoffTask={onCreateHandoffTask}
+          onNavigateReview={onNavigateReview}
+          onOpenSetup={onOpenSetup}
+          onCopyMasterMarkdown={copyMasterMarkdown}
+          onExportMasterCsv={exportMasterCsv}
+        />
+      )}
     </section>
   );
 }

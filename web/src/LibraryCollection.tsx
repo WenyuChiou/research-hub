@@ -32,8 +32,13 @@ function validateSnapshot(value: unknown): LibrarySnapshot {
 
 export function LibraryCollection(props: {
   sources: ResearchRecord[]; screenings: ResearchRecord[]; curations?: ResearchRecord[]; t: Translate;
+  projectId?: string;
+  projectTitle?: string;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
+  onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string }) => Promise<{ id: string }>;
+  onNavigateReview?: (taskId?: string) => void;
+  onOpenSetup?: () => void;
   onPrepare: (record: ResearchRecord) => void;
   onOpenAddTools?: () => void;
   observationRead?: ObservationReadScope;

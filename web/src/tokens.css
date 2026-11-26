@@ -1,23 +1,44 @@
 :root {
-  /* Calibrated Nordic cool-slate & deep ocean-sapphire palette (60-30-10 tonal depth). */
+  /* Calibrated archival cool-slate & deep ocean-teal workstation palette (unslop 60-30-10 tonal depth). */
   --navy: #121826;
-  --paper: #f4f6fa;
-  --white: #fdfeff;
-  --sidebar-bg: #ebeff5;
-  --ink: #131a26;
-  --muted: #4b576b;
-  --line: #dde3ee;
-  --line-strong: #c5cedd;
+  --paper: #f1f4f9;
+  --surface-tint: #f8fafd;
+  --white: #ffffff;
+  --sidebar-bg: #e9eef6;
+  --ink: #111827;
+  --muted: #4b586e;
+  --line: #dbe2ee;
+  --line-strong: #c2ccdc;
   --teal: #0e5a72;
   --teal-hover: #0a4457;
   --accent-soft: #e6f3f7;
   --accent-border: #b4d8e4;
   --focus: #2563eb;
-  --wash: #e8edf5;
+  --wash: #e6ecf5;
   --selection-bg: #e8f3f7;
   --selection-border: #b8d8e4;
   --tooltip-bg: #141b26;
   --tooltip-fg: #f8fafc;
+  /* Semantic label tokens for reading scope & keyword chips. */
+  --scope-full-bg: #e7f6ee;
+  --scope-full-fg: #0c5f3f;
+  --scope-full-border: #a7dec2;
+  --scope-full-dot: #10925e;
+  --scope-abstract-bg: #fef4e2;
+  --scope-abstract-fg: #8c4d08;
+  --scope-abstract-border: #f0cc8b;
+  --scope-abstract-dot: #d97706;
+  --scope-meta-bg: #edf1f7;
+  --scope-meta-fg: #3b4b63;
+  --scope-meta-border: #cbd5e4;
+  --scope-meta-dot: #64748b;
+  --scope-unknown-bg: #f3f5f8;
+  --scope-unknown-fg: #526075;
+  --scope-unknown-border: #d8e0ec;
+  --scope-unknown-dot: #94a3b8;
+  --tag-bg: #f3f6fb;
+  --tag-fg: #2b4560;
+  --tag-border: #cfdbe9;
   /* Modular desktop reference-manager scale in rem (respects browser root zoom). */
   --text-2xs: 0.6875rem;
   --text-meta: 0.75rem;
