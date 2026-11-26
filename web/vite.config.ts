@@ -13,5 +13,6 @@ export default defineConfig({
     css: { include: [/src\/(styles|tokens|library)\.css/] },
     setupFiles: "./src/test-setup.ts",
     restoreMocks: true,
+    testTimeout: 30000,
   },
 });

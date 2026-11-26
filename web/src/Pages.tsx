@@ -1,10 +1,15 @@
 import { LibraryCollection } from "./LibraryCollection";
-import { applySourceCurations, buildLiteratureSummaryStats, categoryName, readingScopeTone } from "./LiteratureLibrary";
+import { applySourceCurations, buildLiteratureSummaryStats, categoryName, readingScopeTone, type ScopeTone } from "./LiteratureLibrary";
+import {
+  EvidenceBlindSpotRadar,
+  LiteratureVisualCharts,
+  ResearchStageStepper,
+} from "./VisualInsights";
 import { DiscoveryPanel } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { artifactReference } from "./sourceStorage";
 import { linkedSourceArtifact, sourceArtifactLabels } from "./sourceArtifact";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, segment } from "./api";
 import {
   Disclosure,
@@ -75,6 +80,12 @@ export interface PagesProps {
   observationRevision?: number;
   categoryHost?: HTMLElement | null;
   locale?: Locale;
+  externalPaperRequest?: {
+    projectId: string;
+    sourceId: string;
+    archived?: boolean;
+    nonce: number;
+  } | null;
   t: Translate;
   onSaved: (message: string, recovered?: RecoveredWork) => Promise<void>;
   onOpenSetup?: () => void;
@@ -94,6 +105,7 @@ export function ProjectPages({
   observationRevision = 0,
   categoryHost = null,
   locale,
+  externalPaperRequest = null,
   t,
   onSaved,
   onOpenSetup,
@@ -148,16 +160,51 @@ export function ProjectPages({
   const [prepareIntent, setPrepareIntent] = useState(0);
   const [sourceOpenVersion, setSourceOpenVersion] = useState(0);
   const [literatureViewRequest, setLiteratureViewRequest] = useState<{
-    mode: "split" | "table";
+    mode: "split" | "table" | "matrix";
     category?: string;
+    year?: string;
+    scope?: ScopeTone;
     sourceId?: string;
     archived?: boolean;
     nonce: number;
   }>({ mode: "split", nonce: 0 });
+  const lastExternalPaperNonce = useRef(0);
+  useEffect(() => {
+    if (
+      !externalPaperRequest ||
+      externalPaperRequest.projectId !== detail.project.id ||
+      externalPaperRequest.nonce <= lastExternalPaperNonce.current
+    ) {
+      return;
+    }
+    lastExternalPaperNonce.current = externalPaperRequest.nonce;
+    setLiteratureViewRequest((prev) => ({
+      mode: "split",
+      sourceId: externalPaperRequest.sourceId,
+      archived: externalPaperRequest.archived === true,
+      nonce: prev.nonce + 1,
+    }));
+  }, [detail.project.id, externalPaperRequest]);
   function openLiteratureTable(category = "") {
     setLiteratureViewRequest((prev) => ({
       mode: "table",
       category,
+      nonce: prev.nonce + 1,
+    }));
+    navigate("literature");
+  }
+  function openLiteratureByYear(year: string) {
+    setLiteratureViewRequest((prev) => ({
+      mode: "split",
+      year,
+      nonce: prev.nonce + 1,
+    }));
+    navigate("literature");
+  }
+  function openLiteratureByScope(scope: ScopeTone) {
+    setLiteratureViewRequest((prev) => ({
+      mode: "split",
+      scope,
       nonce: prev.nonce + 1,
     }));
     navigate("literature");
@@ -206,7 +253,8 @@ export function ProjectPages({
   const records = (kind: string) =>
     detail.records.filter((record) => record.kind === kind);
   const sources = records("source");
-  const curatedActiveSources = applySourceCurations(sources, records("source_curation")).filter(
+  const allCuratedSources = applySourceCurations(sources, records("source_curation"));
+  const curatedActiveSources = allCuratedSources.filter(
     (item) => item.data.archived !== true,
   );
   const titleCounts = new Map<string, number>();
@@ -407,6 +455,22 @@ export function ProjectPages({
         onReview={(taskId) => navigate("review", `review-task-${taskId}`)}
       />
       <div hidden={page !== "overview"} className="page-content">
+        {page === "overview" && (
+          <ResearchStageStepper
+            sources={curatedActiveSources}
+            screenings={records("screening")}
+            claims={records("claim")}
+            outlines={records("outline")}
+            manuscript={detail.manuscript}
+            artifacts={detail.artifacts}
+            warnings={detail.warnings}
+            actions={detail.actions}
+            tasks={detail.tasks}
+            currentPage={page}
+            locale={locale}
+            onNavigate={(targetPage) => navigate(targetPage)}
+          />
+        )}
         <section className="next-step">
           <div>
             <SmallLabel>{t("nextStep")}</SmallLabel>
@@ -443,6 +507,28 @@ export function ProjectPages({
             </button>
           </div>
         </section>
+        {page === "overview" && curatedActiveSources.length > 0 && (
+          <LiteratureVisualCharts
+            sources={curatedActiveSources}
+            screenings={records("screening")}
+            locale={locale}
+            selectedYear={literatureViewRequest.year}
+            onSelectYear={openLiteratureByYear}
+            onSelectScope={openLiteratureByScope}
+            onNavigateLiterature={() => navigate("literature")}
+          />
+        )}
+        {page === "overview" &&
+          (curatedActiveSources.length > 0 || records("claim").length > 0) && (
+            <EvidenceBlindSpotRadar
+              sources={allCuratedSources}
+              screenings={records("screening")}
+              claims={records("claim")}
+              locale={locale}
+              onNavigate={navigate}
+              onOpenPaper={openLiteratureSource}
+            />
+          )}
         <div className="page-grid">
           <div className="main-column">
             <Panel title={t("projectBrief")}>
@@ -592,7 +678,7 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
-        <LibraryCollection sources={sources} screenings={records("screening")} curations={records("source_curation")} locale={locale} t={t} categoryHost={categoryHost}
+        <LibraryCollection sources={sources} screenings={records("screening")} curations={records("source_curation")} claims={records("claim")} locale={locale} t={t} categoryHost={categoryHost}
           projectId={detail.project.id}
           projectTitle={detail.project.title}
           workspace={workspace} liveIntegrations={liveIntegrations}
@@ -935,9 +1021,7 @@ export function ProjectPages({
       <div hidden={page !== "evidence"} className="page-content">
         {(() => {
           const claimRecords = records("claim");
-          const curatedById = new Map(
-            applySourceCurations(sources, records("source_curation")).map((s) => [s.id, s]),
-          );
+          const curatedById = new Map(allCuratedSources.map((s) => [s.id, s]));
           let linkedCount = 0;
           let cautionCount = 0;
           for (const cl of claimRecords) {
@@ -964,6 +1048,17 @@ export function ProjectPages({
           };
           return (
             <>
+              {page === "evidence" && (
+                <EvidenceBlindSpotRadar
+                  sources={allCuratedSources}
+                  screenings={records("screening")}
+                  claims={claimRecords}
+                  locale={locale}
+                  compact
+                  onNavigate={navigate}
+                  onOpenPaper={openLiteratureSource}
+                />
+              )}
               <dl className="overview-lit-metrics evidence-kpi-strip">
                 <div>
                   <dt>{t("evidenceTotalClaims")}</dt>

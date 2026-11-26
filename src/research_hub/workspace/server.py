@@ -19,6 +19,7 @@ from .service import WorkspaceService, call_workspace
 from .tasks import _LOCAL_HUMAN
 from .obsidian_validation import ObsidianValidation
 from .library_snapshot import LibrarySnapshot
+from .sync_hooks import WorkspaceSyncHooks
 
 
 class WorkspaceServer(ThreadingHTTPServer):
@@ -42,6 +43,11 @@ class WorkspaceServer(ThreadingHTTPServer):
         self.obsidian_validation.assert_storage_outside(root)
         self.service = self._service_type(root)
         self.service.workspace.initialize_preparations()
+        self.sync_hooks = WorkspaceSyncHooks(
+            self.service.workspace,
+            self.integrations,
+            obsidian_validation=self.obsidian_validation,
+        )
         self.csrf = secrets.token_urlsafe(32)
         self.human = secrets.token_urlsafe(32) if human else None
         self.static = Path(__file__).resolve().parents[1] / "workspace_static"
@@ -276,6 +282,23 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 except WorkspaceError as exc:
                     status = 403 if exc.code == "integrations_unavailable" else 409 if exc.code == "login_in_progress" else 400
                     return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
+            if len(parts) == 7 and parts[:3] == ["api", "v1", "projects"] and parts[4] == "integrations":
+                sync_hooks = getattr(self.server, "sync_hooks", None)
+                integrations = getattr(self.server, "integrations", None)
+                if sync_hooks is None or integrations is None or not integrations.enabled:
+                    return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
+                hook_route = (parts[5], parts[6])
+                hook_fn = {
+                    ("notebooklm", "bundle"): sync_hooks.bundle_notebooklm,
+                    ("zotero", "sync"): sync_hooks.sync_zotero,
+                    ("obsidian", "pack"): sync_hooks.pack_obsidian,
+                }.get(hook_route)
+                if hook_fn is not None:
+                    try:
+                        return self._reply(200, hook_fn(parts[3], data))
+                    except WorkspaceError as exc:
+                        status = 403 if exc.code == "integrations_unavailable" else 400
+                        return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
             resource = operation = None
             proof = None
             if parts == ["api", "v1", "projects"]:

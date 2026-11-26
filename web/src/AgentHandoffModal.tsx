@@ -1,7 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
-import { BrandMark, DestinationBrandChip } from "./BrandIcons";
+import {
+  BibtexIcon,
+  BrandMark,
+  CslJsonIcon,
+  DestinationBrandChip,
+  RisEndnoteIcon,
+} from "./BrandIcons";
+import { acquireModalBackgroundLock } from "./CommandPalette";
+import { SyncHooksPanel } from "./SyncHooksBar";
 import {
   buildApaBibliography,
   buildCiteKeyMap,
@@ -25,7 +33,7 @@ export type HandoffPresetId =
   | "triage-gap";
 
 export type HandoffScope = "selected" | "filtered";
-export type HandoffTab = "agent" | "export";
+export type HandoffTab = "agent" | "sync" | "export";
 export type DestinationState = "ok" | "configured" | "error" | "idle";
 
 export interface HandoffTaskResult {
@@ -678,29 +686,24 @@ export function AgentHandoffModal({
     }
   }, [open, scope, selectedRecord]);
 
-  // Background inertness + focus restoration on close/unmount.
+  // Background inertness + focus restoration on close/unmount (reference-counted with CommandPalette).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const suppressFocusRestoreRef = useRef(false);
   useEffect(() => {
     if (!open) return;
-    const backdrop = backdropRef.current;
-    const altered: { el: HTMLElement; prevAriaHidden: string | null; prevInert: boolean }[] = [];
-    for (const child of Array.from(document.body.children)) {
-      if (child === backdrop || !(child instanceof HTMLElement)) continue;
-      altered.push({
-        el: child,
-        prevAriaHidden: child.getAttribute("aria-hidden"),
-        prevInert: Boolean((child as HTMLElement & { inert?: boolean }).inert),
-      });
-      child.setAttribute("aria-hidden", "true");
-      (child as HTMLElement & { inert?: boolean }).inert = true;
-    }
+    suppressFocusRestoreRef.current = false;
+    const handleDismissOverlays = () => {
+      suppressFocusRestoreRef.current = true;
+      onCloseRef.current();
+    };
+    window.addEventListener("research-hub:dismiss-overlays", handleDismissOverlays);
+    const releaseBackground = acquireModalBackgroundLock(backdropRef.current);
     return () => {
-      for (const { el, prevAriaHidden, prevInert } of altered) {
-        if (prevAriaHidden === null) el.removeAttribute("aria-hidden");
-        else el.setAttribute("aria-hidden", prevAriaHidden);
-        (el as HTMLElement & { inert?: boolean }).inert = prevInert;
-      }
+      window.removeEventListener("research-hub:dismiss-overlays", handleDismissOverlays);
+      releaseBackground();
       const prev = previousFocusRef.current;
-      if (prev && prev.isConnected) {
+      if (!suppressFocusRestoreRef.current && prev && prev.isConnected && !prev.closest("[inert]")) {
         prev.focus();
       }
     };
@@ -710,6 +713,7 @@ export function AgentHandoffModal({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      if (backdropRef.current?.hasAttribute("inert")) return;
       if (event.key === "Escape") {
         event.stopPropagation();
         onClose();
@@ -968,6 +972,18 @@ export function AgentHandoffModal({
           <button
             type="button"
             role="tab"
+            aria-selected={tab === "sync"}
+            onClick={() => setTab("sync")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span>{t("handoffTabSync")}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={tab === "export"}
             onClick={() => setTab("export")}
           >
@@ -1118,13 +1134,31 @@ export function AgentHandoffModal({
                 <ErrorMessage error={createError} t={t} />
               )}
             </div>
+          ) : tab === "sync" ? (
+            <SyncHooksPanel
+              projectId={projectId}
+              projectTitle={projectTitle}
+              sources={targetRecords}
+              selectedIds={workspaceSourceIds}
+              workspace={workspace}
+              liveIntegrations={liveIntegrations}
+              locale={locale}
+              onOpenSetup={
+                onOpenSetup
+                  ? () => {
+                      onClose();
+                      onOpenSetup();
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <div className="handoff-export-grid">
               <article className="handoff-export-card">
                 <div>
                   <h3 className="handoff-export-heading">
                     <span className="handoff-export-icon brand-obsidian" aria-hidden="true">
-                      <BrandMark brand="obsidian" size={15} />
+                      <BrandMark brand="obsidian" size={17} />
                     </span>
                     <span>{t("handoffExportObsidianTitle")}</span>
                   </h3>
@@ -1180,6 +1214,7 @@ export function AgentHandoffModal({
                     <a
                       className="button secondary small"
                       href={obsidianAppUri}
+                      rel="noopener noreferrer"
                     >
                       {t("obsidianOpenApp")} <span aria-hidden="true">↗</span>
                     </a>
@@ -1191,7 +1226,7 @@ export function AgentHandoffModal({
                 <div>
                   <h3 className="handoff-export-heading">
                     <span className="handoff-export-icon brand-notebooklm" aria-hidden="true">
-                      <BrandMark brand="notebooklm" size={15} />
+                      <BrandMark brand="notebooklm" size={17} />
                     </span>
                     <span>{t("handoffExportNlmTitle")}</span>
                   </h3>
@@ -1234,7 +1269,7 @@ export function AgentHandoffModal({
                 <div>
                   <h3 className="handoff-export-heading">
                     <span className="handoff-export-icon brand-zotero" aria-hidden="true">
-                      <BrandMark brand="zotero" size={15} />
+                      <BrandMark brand="zotero" size={17} />
                     </span>
                     <span>{t("handoffExportCitationsTitle")}</span>
                   </h3>
@@ -1255,7 +1290,8 @@ export function AgentHandoffModal({
                       setStatusNote({ tone: "good", text: t("handoffFileDownloaded") });
                     }}
                   >
-                    {t("handoffDownloadBib")}
+                    <BibtexIcon size={14} />
+                    <span>{t("handoffDownloadBib")}</span>
                   </button>
                   <button
                     type="button"
@@ -1271,7 +1307,8 @@ export function AgentHandoffModal({
                       setStatusNote({ tone: "good", text: t("handoffFileDownloaded") });
                     }}
                   >
-                    {t("handoffDownloadRis")}
+                    <RisEndnoteIcon size={14} />
+                    <span>{t("handoffDownloadRis")}</span>
                   </button>
                   <button
                     type="button"
@@ -1287,7 +1324,8 @@ export function AgentHandoffModal({
                       setStatusNote({ tone: "good", text: t("handoffFileDownloaded") });
                     }}
                   >
-                    {t("handoffDownloadCsl")}
+                    <CslJsonIcon size={14} />
+                    <span>{t("handoffDownloadCsl")}</span>
                   </button>
                   <button
                     type="button"

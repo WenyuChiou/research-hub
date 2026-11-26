@@ -1,8 +1,20 @@
+import { CommandPalette, useCommandPaletteShortcut } from "./CommandPalette";
 import { discoveryRoute } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { IntegrationsSetup } from "./IntegrationsSetup";
 import { useCompactReadingLayout } from "./readingLayout";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { SyncHooksPanel } from "./SyncHooksBar";
+import { ThemeQuickButton } from "./ThemeToggle";
+import {
+  applyThemeToDocument,
+  persistAndApplyTheme,
+  readStoredTheme,
+  resolveThemeMode,
+  subscribeSystemTheme,
+  type ResolvedTheme,
+  type ThemeMode,
+} from "./theme";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, refreshSessionTokens, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
 import { applySourceCurations } from "./LiteratureLibrary";
@@ -14,9 +26,13 @@ import type {
   Page,
   Project,
   ProjectDetail,
+  ResearchRecord,
   Task,
   Workspace,
 } from "./types";
+import "./settings.css";
+import "./syncHooks.css";
+import "./visuals.css";
 
 const pages: Page[] = [
   "overview",
@@ -138,6 +154,31 @@ export default function App() {
       // Ignore storage failures when private mode or tests block localStorage.
     }
   }, []);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(readStoredTheme);
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    resolveThemeMode(readStoredTheme()),
+  );
+  useEffect(() => {
+    setResolvedTheme(applyThemeToDocument(themeMode));
+    if (themeMode !== "system") return;
+    return subscribeSystemTheme(() => {
+      setResolvedTheme(applyThemeToDocument("system"));
+    });
+  }, [themeMode]);
+  const handleThemeModeChange = useCallback((next: ThemeMode) => {
+    const resolved = persistAndApplyTheme(next);
+    setThemeMode(next);
+    setResolvedTheme(resolved);
+  }, []);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useCommandPaletteShortcut(() => setPaletteOpen((open) => !open));
+  const externalPaperNonceRef = useRef(0);
+  const [externalPaperRequest, setExternalPaperRequest] = useState<{
+    projectId: string;
+    sourceId: string;
+    archived?: boolean;
+    nonce: number;
+  } | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoError, setDemoError] = useState<unknown>(null);
   const [page, setPage] = useState<Page>(currentPage);
@@ -271,6 +312,9 @@ export default function App() {
       }
       const route = discoveryRoute();
       setDiscovery(route);
+      if (route.project && route.project !== selectedRef.current) {
+        setExternalPaperRequest(null);
+      }
       if (route.project) setProjectId(route.project);
       setPage(currentPage());
       if (navigationTarget.current?.page !== currentPage())
@@ -649,6 +693,16 @@ export default function App() {
     };
   }, [connectionLost, browserOffline, reconnectAttempts]);
   const activeDetail = detail?.project.id === projectId ? detail : null;
+  const activeCuratedSources = useMemo<ResearchRecord[]>(
+    () =>
+      activeDetail
+        ? applySourceCurations(
+            activeDetail.records.filter((r) => r.kind === "source"),
+            activeDetail.records.filter((r) => r.kind === "source_curation"),
+          ).filter((r) => r.data.archived !== true)
+        : [],
+    [activeDetail],
+  );
   const pageCount = (item: Page): number => {
     if (!activeDetail) return 0;
     if (item === "literature") {
@@ -760,6 +814,7 @@ export default function App() {
                 artifact: null,
               });
               window.history.replaceState({}, "", "#" + page);
+              setExternalPaperRequest(null);
               setProjectId(event.target.value);
               setNewProject(false);
               setNotice(null);
@@ -789,14 +844,53 @@ export default function App() {
           <div ref={setCategoryHost} hidden={page !== "literature"} />
         </nav>
         <div className="sidebar-footer">
-          <IntegrationsSetup
-            workspace={workspace}
-            projectId={projectId}
-            liveState={liveIntegrations}
-            onLiveStateChange={setLiveIntegrations}
-            openRequest={setupOpenRequest}
-            t={t}
-          />
+          <div className="sidebar-footer-tools">
+            <IntegrationsSetup
+              workspace={workspace}
+              projectId={projectId}
+              liveState={liveIntegrations}
+              onLiveStateChange={setLiveIntegrations}
+              openRequest={setupOpenRequest}
+              themeMode={themeMode}
+              onThemeModeChange={handleThemeModeChange}
+              locale={locale}
+              onLocaleChange={setLocale}
+              syncSlot={
+                activeDetail ? (
+                  <SyncHooksPanel
+                    projectId={activeDetail.project.id}
+                    projectTitle={activeDetail.project.title}
+                    sources={activeCuratedSources}
+                    workspace={workspace}
+                    liveIntegrations={liveIntegrations}
+                    locale={locale}
+                    compact
+                  />
+                ) : undefined
+              }
+              t={t}
+            />
+            <ThemeQuickButton
+              mode={themeMode}
+              onChange={handleThemeModeChange}
+              locale={locale}
+              tooltipPos="top"
+            />
+            <button
+              type="button"
+              className="button secondary icon-btn cmd-palette-btn"
+              aria-label={t("commandPaletteOpen")}
+              data-tooltip={t("commandPaletteOpen")}
+              data-tooltip-pos="top"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <span className="cmd-palette-kbd" aria-hidden="true">⌘K</span>
+            </button>
+          </div>
           <div
             className="language-switch"
             role="group"
@@ -951,6 +1045,7 @@ export default function App() {
                                 res.projects?.[0]?.id ||
                                 "";
                               await onSaved(t("saved"));
+                              setExternalPaperRequest(null);
                               if (preferred) setProjectId(preferred);
                               setNewProject(false);
                             })
@@ -1013,6 +1108,7 @@ export default function App() {
                         }>("/projects", payload);
                         const id = created.project?.id || payload.id;
                         await onSaved(t("saved"));
+                        setExternalPaperRequest(null);
                         setProjectId(id);
                         setNewProject(false);
                       }}
@@ -1074,6 +1170,7 @@ export default function App() {
                       observationRevision={refreshCount}
                       categoryHost={categoryHost}
                       locale={locale}
+                      externalPaperRequest={externalPaperRequest}
                       t={t}
                       onSaved={onSaved}
                       onOpenSetup={() => setSetupOpenRequest((value) => value + 1)}
@@ -1090,6 +1187,60 @@ export default function App() {
           )}
         </div>
       </main>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        projects={workspace?.projects ?? []}
+        currentProjectId={projectId}
+        onSelectProject={(nextProjectId) => {
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
+          if (nextProjectId === projectId) {
+            setNewProject(false);
+            setNotice(null);
+            return;
+          }
+          navigationEpoch.current++;
+          navigationTarget.current = null;
+          cancelHeadingFocus();
+          setDiscovery({
+            requested: false,
+            valid: false,
+            project: null,
+            artifact: null,
+          });
+          window.history.replaceState({}, "", "#" + page);
+          setExternalPaperRequest(null);
+          setProjectId(nextProjectId);
+          setNewProject(false);
+          setNotice(null);
+        }}
+        sources={activeCuratedSources}
+        onOpenPaper={(paper) => {
+          if (!projectId) return;
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
+          const nonce = ++externalPaperNonceRef.current;
+          setExternalPaperRequest({
+            projectId,
+            sourceId: paper.id,
+            archived: paper.data.archived === true,
+            nonce,
+          });
+          navigate("literature");
+        }}
+        onNavigate={(targetPage) => {
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
+          navigate(targetPage);
+        }}
+        onOpenSettings={() => {
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
+          setSetupOpenRequest((value) => value + 1);
+        }}
+        onToggleTheme={() =>
+          handleThemeModeChange(resolvedTheme === "dark" ? "light" : "dark")
+        }
+        resolvedTheme={resolvedTheme}
+        locale={locale}
+      />
     </div>
   );
 }

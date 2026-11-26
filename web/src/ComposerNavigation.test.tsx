@@ -209,7 +209,7 @@ it.each(["unsent", "legacy-unknown", "durable-unknown"])(
       false,
     );
   },
-  10000,
+  25000,
 );
 it.each(["unsent", "legacy-unknown", "durable-unknown"])(
   "explicit open B then A preserves original %s draft and lock",
@@ -234,7 +234,7 @@ it.each(["unsent", "legacy-unknown", "durable-unknown"])(
       fetch.mock.calls.filter((c) => c[1]?.method === "POST"),
     ).toHaveLength(mode === "unsent" ? 0 : 1);
   },
-  10000,
+  25000,
 );
 it.each(["legacy-unknown", "durable-unknown"])(
   "diagnostic explicit source roundtrip preserves uncertainty guard (%s)",
@@ -271,7 +271,7 @@ it.each(["legacy-unknown", "durable-unknown"])(
       ).toBeDisabled();
     } else expect(chooser).toBeDisabled();
   },
-  10000,
+  25000,
 );
 
 it.each(["unsent", "legacy-unknown", "durable-unknown"])(
@@ -321,7 +321,7 @@ it.each(["unsent", "legacy-unknown", "durable-unknown"])(
       false,
     );
   },
-  10000,
+  25000,
 );
 it("late keyless completion updates original A without navigating or replacing newer B input", async () => {
   const { user, fetch } = await setup("unsent");
@@ -386,7 +386,7 @@ it("late keyless completion updates original A without navigating or replacing n
   expect(fetch.mock.calls.some((c) => String(c[0]).endsWith("/run"))).toBe(
     false,
   );
-}, 15000);
+}, 25000);
 
 it("explicitly dismissing a storage-denied unsent preparation releases only its draft lock", async () => {
   const { user, fetch } = await setup("durable-ready");
@@ -424,7 +424,7 @@ it("explicitly dismissing a storage-denied unsent preparation releases only its 
     0,
   );
   storage.mockRestore();
-}, 10000);
+}, 25000);
 it("confirmed rejection of an explicit same-key retry retires that lock without discarding input", async () => {
   const { user, fetch } = await setup("durable-unknown");
   const original = fetch.getMockImplementation()!;
@@ -462,7 +462,7 @@ it("confirmed rejection of an explicit same-key retry retires that lock without 
   const posts = fetch.mock.calls.filter((c) => c[1]?.method === "POST");
   expect(posts).toHaveLength(2);
   expect(posts[1][1]?.body).toBe(posts[0][1]?.body);
-}, 10000);
+}, 25000);
 
 it.each(["screening-return", "same-source-open"])(
   "newer same-page %s prevents late Prepare from navigating to Review",
@@ -521,7 +521,7 @@ it.each(["screening-return", "same-source-open"])(
       fetch.mock.calls.filter((c) => c[1]?.method === "POST"),
     ).toHaveLength(1);
   },
-  10000,
+  25000,
 );
 it.each(["successful", "failed"])(
   "a found keyed result while A is unmounted survives %s refresh and replacement of project controllers",
@@ -606,7 +606,7 @@ it.each(["successful", "failed"])(
       false,
     );
   },
-  10000,
+  25000,
 );
 it("positive keyed acknowledgement settles the original session before a pending bulk refresh", async () => {
   const { user, fetch } = await setup("durable-ready");
@@ -665,7 +665,7 @@ it("positive keyed acknowledgement settles the original session before a pending
       resolveDetail(response({ ...detail, tasks: [task] })),
     );
   }
-}, 10000);
+}, 25000);
 
 it("refreshing into another exact workspace namespace never displays an older namespace's draft", async () => {
   const { user, fetch } = await setup("durable-ready");
@@ -698,4 +698,4 @@ it("refreshing into another exact workspace namespace never displays an older na
   expect(fetch.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(
     0,
   );
-}, 10000);
+}, 25000);

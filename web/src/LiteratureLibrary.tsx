@@ -31,6 +31,7 @@ import { SourceObservations } from "./ObservationHistory";
 import type { ObservationTextContext } from "./sourceObservations";
 import { ObservationPreview, observationArtifacts, type ObservationReadScope } from "./ObservationPreview";
 import { SavedWorkingSummary, WorkingSummaryEditor, workingSummary } from "./WorkingSummaryEditor";
+import { SynthesisMatrix } from "./SynthesisMatrix";
 
 const text = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
 export const sourceCategory = (record: ResearchRecord) => text(record.data.category).trim() || text(record.data.sub_category).trim();
@@ -52,7 +53,7 @@ type Organization =
   | "missing-summary"
   | "unscreened"
   | "archived";
-type ViewMode = "split" | "table";
+type ViewMode = "split" | "table" | "matrix";
 type SortKey = "default" | "year-desc" | "year-asc" | "title-asc" | "category-asc";
 
 export interface CategorySummaryGroup {
@@ -679,10 +680,11 @@ function QuickAddSourceDrawer({
   );
 }
 
-export function LiteratureLibrary({ sources: rawSources, screenings, curations, locale, t, projectId, projectTitle, onScreen, onCurate, onAddSource, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, snapshotVaultLabel, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, claims, locale, t, projectId, projectTitle, onScreen, onCurate, onAddSource, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, snapshotVaultLabel, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   curations?: ResearchRecord[];
+  claims?: ResearchRecord[];
   locale?: Locale;
   t: Translate;
   projectId?: string;
@@ -704,7 +706,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   onWorkingSummarySaved?: () => Promise<void>;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
-  requestedView?: { mode: ViewMode; category?: string; sourceId?: string; archived?: boolean; nonce: number };
+  requestedView?: { mode: ViewMode; category?: string; year?: string; scope?: ScopeTone; sourceId?: string; archived?: boolean; nonce: number };
   curationState?: CurationStateMap;
   onCurationStateChange?: Dispatch<SetStateAction<CurationStateMap>>;
 }) {
@@ -773,9 +775,9 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     handledRequestNonce.current = requestedView.nonce;
     setViewMode(requestedView.mode);
     setQuery("");
-    setSelectedScope("");
+    setSelectedScope(requestedView.scope ?? "");
     setSelectedTags([]);
-    setSelectedYear("");
+    setSelectedYear(requestedView.year ?? "");
     if (requestedView.sourceId) {
       setSelectedCategory("");
       setOrganization(requestedView.archived ? "archived" : "all");
@@ -788,6 +790,9 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
       setOrganization("unclassified");
     } else if (typeof requestedView.category === "string") {
       setSelectedCategory(requestedView.category);
+      setOrganization("all");
+    } else {
+      setSelectedCategory("");
       setOrganization("all");
     }
   }, [requestedView]);
@@ -900,7 +905,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     .map((id) => allCuratedSources.find((record) => record.id === id))
     .filter((record): record is ResearchRecord => Boolean(record && record.kind !== "library-note"));
   const hiddenDraftRecords = openSummaryRecords.filter((record) => record.id !== selected?.id);
-  const bannerDraftRecords = viewMode === "table" || (compact && !readerOpen) ? openSummaryRecords : hiddenDraftRecords;
+  const bannerDraftRecords = viewMode !== "split" || (compact && !readerOpen) ? openSummaryRecords : hiddenDraftRecords;
   const editorRecords: ResearchRecord[] = [];
   if (selected && selected.kind !== "library-note") editorRecords.push(selected);
   for (const draftRecord of hiddenDraftRecords) editorRecords.push(draftRecord);
@@ -1195,6 +1200,22 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 <line x1="10" y1="10" x2="10" y2="20" />
               </svg>
               <span>{t("catalogViewTable")}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={viewMode === "matrix"}
+              data-tooltip={t("catalogViewMatrixTip")}
+              data-tooltip-pos="bottom-end"
+              onClick={() => setViewMode("matrix")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <circle cx="8" cy="10" r="1.4" fill="currentColor" stroke="none" />
+                <circle cx="14" cy="10" r="1.4" fill="currentColor" stroke="none" />
+                <circle cx="8" cy="15" r="1.4" fill="currentColor" stroke="none" />
+                <circle cx="18" cy="15" r="1.4" fill="currentColor" stroke="none" />
+              </svg>
+              <span>{t("catalogViewMatrix")}</span>
             </button>
           </div>
         </div>
@@ -1701,7 +1722,25 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           )}
         </div>
       )}
-      <div className="catalog-workspace" hidden={viewMode === "table"}>
+      {viewMode === "matrix" && (
+        <SynthesisMatrix
+          sources={sortedVisible}
+          screenings={screenings}
+          claims={claims}
+          locale={locale}
+          selectedId={selected?.id}
+          selectedTags={selectedTags}
+          onToggleTag={toggleTag}
+          onSelectPaper={(record) => {
+            setSelectionMissing(false);
+            setSelectedId(record.id);
+            setReaderOpen(true);
+            focusRequested.current = true;
+            setViewMode("split");
+          }}
+        />
+      )}
+      <div className="catalog-workspace" hidden={viewMode !== "split"}>
         {!categoryHost && categoryFilters}
         <div className="catalog-list" ref={list} hidden={compact && readerOpen}>
           {visible.length ? (
@@ -1942,7 +1981,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                       );
                       const uri = buildObsidianUri(vName, text(selected.data.note_path));
                       return uri ? (
-                        <a className="cite-bar-btn" href={uri}>
+                        <a className="cite-bar-btn" href={uri} rel="noopener noreferrer">
                           {t("obsidianOpenApp")} ↗
                         </a>
                       ) : null;
@@ -2162,7 +2201,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 const editorSuspended = Boolean(
                   !isCurrent ||
                     ((!compact || readerOpen) &&
-                      (viewMode === "table" || (pageSuspended && draftScope?.active === false))),
+                      (viewMode !== "split" || (pageSuspended && draftScope?.active === false))),
                 );
                 return (
                   <div key={rec.id} hidden={!isCurrent}>
