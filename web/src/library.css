@@ -499,6 +499,22 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .catalog-detail-body { animation: reading-fade-in var(--duration-panel) var(--ease-out-quint); }
+.catalog-unsaved-drafts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 12px;
+  padding: 8px 11px;
+  background: #fef5e4;
+  border: 1px solid #f3d194;
+  border-radius: 8px;
+  font-size: var(--text-meta);
+  color: #955209;
+}
+.catalog-working-summaries {
+  margin-top: 12px;
+}
 .catalog-detail-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 6px; }
 .catalog-detail h3 { font-family: var(--display-font); font-size: 1.1875rem; font-weight: 600; line-height: 1.35; margin: 0 0 6px; letter-spacing: -0.02em; }
 .catalog-authors-line { font-size: var(--text-meta); color: var(--muted); margin: 0 0 8px; }

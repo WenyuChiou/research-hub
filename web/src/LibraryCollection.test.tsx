@@ -174,7 +174,10 @@ it("keeps combined 'all' scope mounted on overview master-table request so unsav
   expect(screen.getByRole("button", { name: t("catalogViewTable") })).toHaveAttribute("aria-pressed", "true");
   expect(within(screen.getByRole("table")).getByText("Human Other Category Source")).toBeVisible();
 
+  // Switch back to Reader: honors human category while keeping LLM draft intact via Return to draft
   await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
+  expect(screen.getByRole("heading", { name: "Human Other Category Source" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: `${t("catalogReturnDraft")}: Editable All-Scope Source` }));
   expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
     "Base draft. Kept across overview jump.",
   );

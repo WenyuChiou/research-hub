@@ -584,14 +584,25 @@ describe("master literature table, category summary, and clean status tooltips",
     expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(1);
     expect(within(screen.getByRole("table")).getByText("Human Study In Other Category")).toBeVisible();
 
-    // Returning to Reader preserves src-llm's unsaved working summary instead of discarding it
-    await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
+    // Clicking the human paper in Master Table honors the selection immediately AND exposes a safe return to the unsaved draft
+    await user.click(screen.getByRole("button", { name: "Human Study In Other Category" }));
+    expect(screen.getByRole("heading", { name: "Human Study In Other Category" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: `${t("catalogReturnDraft")}: LLM Paper Being Edited` }));
     expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
       "LLM draft. Unsaved cross-category edit.",
     );
 
-    // Closing the working summary releases the reader back to the active filter's selection
-    await user.click(screen.getByRole("button", { name: t("cancel") }));
+    // Clicking another paper in the split list still switches cleanly without destroying the draft
+    await user.click(screen.getByRole("button", { name: "Human Study In Other Category" }));
     expect(screen.getByRole("heading", { name: "Human Study In Other Category" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "LLM Paper Being Edited" }));
+    expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+      "LLM draft. Unsaved cross-category edit.",
+    );
+
+    // Closing the working summary removes the unsaved-draft banner
+    await user.click(screen.getByRole("button", { name: t("cancel") }));
+    await user.click(screen.getByRole("button", { name: "Human Study In Other Category" }));
+    expect(screen.queryByRole("button", { name: new RegExp(t("catalogReturnDraft")) })).not.toBeInTheDocument();
   });
 });

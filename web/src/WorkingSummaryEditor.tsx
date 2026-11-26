@@ -58,7 +58,7 @@ interface Props {
   suspended?: boolean;
   t: Translate;
   onOpen?: () => void;
-  onSessionChange?: (open: boolean) => void;
+  onSessionChange?: (open: boolean, sourceRecordId: string) => void;
   onSaved?: () => Promise<void>;
 }
 
@@ -77,9 +77,9 @@ function SummarySelection({record, scope, t, onOpen, onSessionChange, onSaved, a
   const active = useRef(Boolean(scope?.active));
   active.current = Boolean(scope?.active);
   useEffect(() => {
-    onSessionChange?.(Boolean(selected));
-  }, [selected, onSessionChange]);
-  useEffect(() => () => onSessionChange?.(false), [onSessionChange]);
+    onSessionChange?.(Boolean(selected), record.id);
+  }, [selected, record.id, onSessionChange]);
+  useEffect(() => () => onSessionChange?.(false, record.id), [record.id, onSessionChange]);
   if (!scope || !artifacts.length) return null;
   return <section className="working-summary-editor" hidden={!scope.active} aria-label={t("workingSummaryReview")}>
     <p className="small muted">{t("workingSummaryReviewHelp")}</p>
