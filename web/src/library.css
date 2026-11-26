@@ -525,7 +525,33 @@
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
+  display: grid;
+  gap: 8px;
   transition: border-color var(--duration-fast) var(--ease-out-quart), background-color var(--duration-fast) var(--ease-out-quart);
+}
+.catalog-curation {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.catalog-curation-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.catalog-curation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.catalog-empty-state {
+  padding: 20px 16px;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.catalog-empty-state .catalog-empty {
+  padding: 0;
 }
 @media (hover: hover) and (pointer: fine) {
   .catalog-triage-bar:hover { border-color: var(--line-strong); }

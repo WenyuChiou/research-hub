@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LiteratureLibrary } from "./LiteratureLibrary";
+import { LiteratureLibrary, type CurationStateMap, type SourceCurationInput } from "./LiteratureLibrary";
 import { identityMatches } from "./libraryIdentity";
 import type { Translate } from "./i18n";
 import type {
@@ -31,9 +31,11 @@ function validateSnapshot(value: unknown): LibrarySnapshot {
 }
 
 export function LibraryCollection(props: {
-  sources: ResearchRecord[]; screenings: ResearchRecord[]; t: Translate;
+  sources: ResearchRecord[]; screenings: ResearchRecord[]; curations?: ResearchRecord[]; t: Translate;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
+  onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
   onPrepare: (record: ResearchRecord) => void;
+  onOpenAddTools?: () => void;
   observationRead?: ObservationReadScope;
   pageSuspended?: boolean;
   categoryHost?: HTMLElement | null;
@@ -46,6 +48,7 @@ export function LibraryCollection(props: {
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);
   const [scope, setScope] = useState("workspace");
   const [pendingView, setPendingView] = useState(props.requestedView);
+  const [curationState, setCurationState] = useState<CurationStateMap>({});
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const pending = useRef<AbortController | null>(null);
@@ -116,6 +119,8 @@ export function LibraryCollection(props: {
     <LiteratureLibrary
       key={scope}
       {...props}
+      curationState={curationState}
+      onCurationStateChange={setCurationState}
       requestedView={scope !== "obsidian" ? pendingView : undefined}
       sources={visible}
       matches={identityMatches(all)}

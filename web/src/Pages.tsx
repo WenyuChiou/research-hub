@@ -1,5 +1,5 @@
 import { LibraryCollection } from "./LibraryCollection";
-import { buildLiteratureSummaryStats, categoryName } from "./LiteratureLibrary";
+import { applySourceCurations, buildLiteratureSummaryStats, categoryName } from "./LiteratureLibrary";
 import { DiscoveryPanel } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { artifactReference } from "./sourceStorage";
@@ -136,6 +136,8 @@ export function ProjectPages({
     },
   );
   const [catalogToolsOpen, setCatalogToolsOpen] = useState(false);
+  const catalogAdvancedRef = useRef<HTMLDetailsElement>(null);
+  const [addedSearchIds, setAddedSearchIds] = useState<string[]>([]);
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [intakeIntent, setIntakeIntent] = useState(0);
   const [prepareIntent, setPrepareIntent] = useState(0);
@@ -152,6 +154,13 @@ export function ProjectPages({
       nonce: prev.nonce + 1,
     }));
     navigate("literature");
+  }
+  function openAddSourceTools() {
+    setCatalogToolsOpen(true);
+    requestAnimationFrame(() => {
+      catalogAdvancedRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      catalogAdvancedRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    });
   }
   function openSavedText(saved: SavedText) {
     setCatalogToolsOpen(true);
@@ -436,7 +445,7 @@ export function ProjectPages({
             >
               {(() => {
                 const stats = buildLiteratureSummaryStats(
-                  sources,
+                  applySourceCurations(sources, records("source_curation")),
                   records("screening"),
                 );
                 if (!stats.total) {
@@ -539,13 +548,15 @@ export function ProjectPages({
       </div>
 
       <div hidden={page !== "literature"} className="page-content">
-        <LibraryCollection sources={sources} screenings={records("screening")} t={t} categoryHost={categoryHost}
+        <LibraryCollection sources={sources} screenings={records("screening")} curations={records("source_curation")} t={t} categoryHost={categoryHost}
           workspace={workspace} liveIntegrations={liveIntegrations}
           requestedView={literatureViewRequest}
           pageSuspended={page !== "literature"}
           onWorkingSummarySaved={() => onSaved(t("workingSummarySaved"))}
           observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}
           onScreen={(sourceId, decision, rationale) => saveRecord("screening", {source_id:sourceId, decision, rationale})}
+          onCurate={(sourceId, curation) => saveRecord("source_curation", {source_id:sourceId, ...curation})}
+          onOpenAddTools={openAddSourceTools}
           onPrepare={(record) => {
             setCatalogToolsOpen(true);
             setIntakeOpen(false);
@@ -554,7 +565,7 @@ export function ProjectPages({
             navigate("literature", "record-" + record.id);
           }} />
         {selectedDiscovery && discoveryPanel}
-        <details className="catalog-advanced" open={catalogToolsOpen} onToggle={(event) => setCatalogToolsOpen(event.currentTarget.open)}>
+        <details ref={catalogAdvancedRef} className="catalog-advanced" open={catalogToolsOpen} onToggle={(event) => setCatalogToolsOpen(event.currentTarget.open)}>
           <summary>{t("catalogAdvanced")}</summary>
 
         <Panel
@@ -582,6 +593,7 @@ export function ProjectPages({
                 limit: 5,
               });
               setResults(value.results);
+              setAddedSearchIds([]);
               setSearchWarnings(value.warnings ?? []);
               await onSaved(t("saved"));
             }}
@@ -591,37 +603,62 @@ export function ProjectPages({
               {warning}
             </p>
           ))}
-          {results !== null && (
+          {results !== null && (() => {
+            const normalizeDoi = (value: unknown) =>
+              typeof value === "string"
+                ? value.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "").toLowerCase()
+                : "";
+            const normalizeLocator = (value: unknown) =>
+              typeof value === "string" ? value.trim().replace(/\/+$/, "").toLowerCase() : "";
+            const savedDois = new Set(sources.map((s) => normalizeDoi(s.data.doi)).filter(Boolean));
+            const savedLocators = new Set(sources.map((s) => normalizeLocator(s.data.locator)).filter(Boolean));
+            return (
             <section className="search-results">
               <h3>{t("searchResults")}</h3>
               {results.length ? (
-                results.map((result) => (
+                results.map((result) => {
+                  const resultDoi = normalizeDoi(result.doi);
+                  const resultLocator = normalizeLocator(result.locator);
+                  const alreadyAdded =
+                    addedSearchIds.includes(result.source_id) ||
+                    (Boolean(resultDoi) && savedDois.has(resultDoi)) ||
+                    (Boolean(resultLocator) && savedLocators.has(resultLocator));
+                  return (
                   <div key={result.source_id} className="search-result">
                     <div>
                       <h4>{result.title}</h4>
                       <SourceLink locator={result.locator} />
                       <p className="small muted">{result.doi}</p>
                     </div>
-                    <MutationForm
-                      t={t}
-                      fields={[]}
-                      submit={t("addSource")}
-                      onSubmit={async () => {
-                        await saveRecord("source", {
-                          title: result.title,
-                          locator: result.locator ?? "",
-                          doi: result.doi ?? "",
-                          identity_status: "unverified",
-                        });
-                      }}
-                    />
+                    {alreadyAdded ? (
+                      <span className="badge good">✓ {t("searchAdded")}</span>
+                    ) : (
+                      <MutationForm
+                        t={t}
+                        fields={[]}
+                        submit={t("addSource")}
+                        onSubmit={async () => {
+                          await saveRecord("source", {
+                            title: result.title,
+                            locator: result.locator ?? "",
+                            doi: result.doi ?? "",
+                            identity_status: "unverified",
+                          });
+                          setAddedSearchIds((prev) =>
+                            prev.includes(result.source_id) ? prev : [...prev, result.source_id],
+                          );
+                        }}
+                      />
+                    )}
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <EmptyState compact>{t("noResults")}</EmptyState>
               )}
             </section>
-          )}
+            );
+          })()}
         </Panel>
         {!selectedDiscovery && discoveryPanel}
         <div>
@@ -755,6 +792,12 @@ export function ProjectPages({
                   { name: "title", label: t("title") },
                   { name: "locator", label: t("locator") },
                   { name: "doi", label: t("doi"), required: false },
+                  { name: "category", label: t("catalogCategory"), hint: t("catalogMetaCategoryHint"), required: false },
+                  { name: "year", label: t("catalogYear"), hint: t("catalogMetaYearHint"), pattern: "[0-9]{4}", required: false },
+                  { name: "authors", label: t("catalogMetaAuthors"), hint: t("catalogMetaAuthorsHint"), required: false },
+                  { name: "venue", label: t("catalogMetaVenue"), required: false },
+                  { name: "relevance", label: t("catalogRelevance"), textarea: true, required: false },
+                  { name: "summary", label: t("catalogMetaSummary"), textarea: true, required: false },
                 ],
                 "addSource",
                 { identity_status: "unverified" },

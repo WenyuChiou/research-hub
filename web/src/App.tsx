@@ -97,11 +97,48 @@ function currentPage(): Page {
 const aborted = (error: unknown) =>
   error instanceof Error && error.name === "AbortError";
 
+const LOCALE_STORAGE_KEY = "research-hub:locale";
+
+function readSavedLocale(): Locale {
+  try {
+    return window.localStorage?.getItem(LOCALE_STORAGE_KEY) === "zh-TW"
+      ? "zh-TW"
+      : "en";
+  } catch {
+    return "en";
+  }
+}
+
+function deriveProjectId(title: string, existingIds: string[]): string {
+  const ascii = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 56);
+  const base = ascii || `project-${Date.now().toString(36).slice(-6)}`;
+  if (!existingIds.includes(base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base.slice(0, 58)}-${i}`;
+    if (!existingIds.includes(candidate)) return candidate;
+  }
+  return `project-${Date.now().toString(36)}`;
+}
+
 /** Mounted by main.tsx. All data comes from the local Research Hub API. */
 export default function App() {
   const navigationEpoch = useRef(0);
   const [composerSessions] = useState(() => new ComposerSessions());
-  const [locale, setLocale] = useState<Locale>("en");
+  const [locale, setLocaleState] = useState<Locale>(readSavedLocale);
+  const setLocale = useCallback((next: Locale) => {
+    setLocaleState(next);
+    try {
+      window.localStorage?.setItem(LOCALE_STORAGE_KEY, next);
+    } catch {
+      // Ignore storage failures when private mode or tests block localStorage.
+    }
+  }, []);
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoError, setDemoError] = useState<unknown>(null);
   const [page, setPage] = useState<Page>(currentPage);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [projectId, setProjectId] = useState(
@@ -853,6 +890,33 @@ export default function App() {
                     <h2>{t("startTitle")}</h2>
                     <p>{t("startBody")}</p>
                     <p>{t("integrationFirstUse")}</p>
+                    <div className="onboarding-demo">
+                      <button
+                        type="button"
+                        className="button secondary"
+                        disabled={demoBusy}
+                        onClick={() => {
+                          setDemoBusy(true);
+                          setDemoError(null);
+                          void api<{ ok: true; projects: Project[] }>("/workspace/demo", {})
+                            .then(async (res) => {
+                              const preferred =
+                                res.projects?.find((p) => p.id === "review-demo")?.id ||
+                                res.projects?.[0]?.id ||
+                                "";
+                              await onSaved(t("saved"));
+                              if (preferred) setProjectId(preferred);
+                              setNewProject(false);
+                            })
+                            .catch((failure) => setDemoError(failure))
+                            .finally(() => setDemoBusy(false));
+                        }}
+                      >
+                        {demoBusy ? t("loadingDemo") : t("loadDemo")}
+                      </button>
+                      <p className="small muted">{t("loadDemoHelp")}</p>
+                      {demoError !== null && <ErrorMessage error={demoError} t={t} />}
+                    </div>
                   </div>}
                   <div className="onboarding-form">
                     <div className="panel-heading">
@@ -875,7 +939,8 @@ export default function App() {
                           name: "id",
                           label: t("projectId"),
                           hint: t("projectIdHint"),
-                          pattern: "[a-z0-9][a-z0-9-]{0,62}",
+                          required: false,
+                          pattern: "[a-z0-9][a-z0-9\\-]{0,62}",
                         },
                         {
                           name: "archetype",
@@ -888,12 +953,19 @@ export default function App() {
                         { name: "goal", label: t("goal"), textarea: true },
                       ]}
                       onSubmit={async (data) => {
+                        const payload = Object.fromEntries(data) as Record<string, string>;
+                        const suppliedId = (payload.id ?? "").trim();
+                        payload.id =
+                          suppliedId ||
+                          deriveProjectId(
+                            payload.title ?? "",
+                            workspace.projects.map((p) => p.id),
+                          );
                         const created = await api<{
                           ok: true;
                           project?: Project;
-                        }>("/projects", Object.fromEntries(data));
-                        const id =
-                          created.project?.id || String(data.get("id"));
+                        }>("/projects", payload);
+                        const id = created.project?.id || payload.id;
                         await onSaved(t("saved"));
                         setProjectId(id);
                         setNewProject(false);

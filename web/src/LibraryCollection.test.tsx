@@ -182,3 +182,24 @@ it("keeps combined 'all' scope mounted on overview master-table request so unsav
     "Base draft. Kept across overview jump.",
   );
 });
+
+it("retains unsaved curation drafts across loading the Obsidian library and changing scope", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify(snapshot), { headers: { "Content-Type": "application/json" } })),
+  );
+  const user = userEvent.setup();
+  render(<LibraryCollection {...props()} onCurate={vi.fn().mockResolvedValue(undefined)} />);
+  await user.click(screen.getByText(t("catalogEditMeta")));
+  await user.type(screen.getByLabelText(t("catalogRelevance")), "Keep across library scope switch");
+
+  // Load Obsidian library (switches scope to "obsidian" and remounts LiteratureLibrary).
+  await user.click(screen.getByRole("button", { name: t("libraryLoad") }));
+  await screen.findByRole("heading", { name: "Saved Obsidian note" });
+
+  // Switch back to workspace scope: unsaved curation note and indicator must still be present.
+  await user.selectOptions(screen.getByLabelText(t("libraryScope")), "workspace");
+  expect(screen.getByText(t("catalogMetaUnsaved"))).toBeVisible();
+  await user.click(screen.getByText(t("catalogEditMeta")));
+  expect(screen.getByLabelText(t("catalogRelevance"))).toHaveValue("Keep across library scope switch");
+});

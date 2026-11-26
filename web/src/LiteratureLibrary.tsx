@@ -1,9 +1,9 @@
 import { NativeSummaryReader } from "./NativeSummaryReader";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
 import { useCompactReadingLayout } from "./readingLayout";
-import { MutationForm, ReadText, SourceLink } from "./components";
+import { MutationForm, ReadText, SourceLink, ErrorMessage } from "./components";
 import { obsidianStatusLabel, statusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
 import { SourceObservations } from "./ObservationHistory";
@@ -160,12 +160,253 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView }: {
+export interface SourceCurationInput {
+  category?: string;
+  year?: string;
+  authors?: string[];
+  venue?: string;
+  relevance?: string;
+  summary?: string;
+}
+
+const CURATION_KEYS = ["category", "year", "authors", "venue", "relevance", "summary", "tags"] as const;
+
+export function applySourceCurations(
+  sources: ResearchRecord[],
+  curations?: ResearchRecord[],
+): ResearchRecord[] {
+  if (!curations?.length) return sources;
+  const overlays = new Map<string, Record<string, unknown>>();
+  for (const record of curations) {
+    if (record.kind !== "source_curation" || typeof record.data.source_id !== "string") continue;
+    const current = overlays.get(record.data.source_id) ?? {};
+    for (const key of CURATION_KEYS) {
+      if (key in record.data) current[key] = record.data[key];
+    }
+    overlays.set(record.data.source_id, current);
+  }
+  if (!overlays.size) return sources;
+  return sources.map((record) => {
+    if (record.kind !== "source") return record;
+    const overlay = overlays.get(record.id);
+    if (!overlay) return record;
+    const nextData: Record<string, unknown> = { ...record.data, ...overlay };
+    if ("category" in overlay && !text(overlay.category).trim()) {
+      nextData.sub_category = "";
+    }
+    if ("summary" in overlay && !text(overlay.summary).trim()) {
+      nextData.abstract = "";
+    }
+    if ("venue" in overlay && !text(overlay.venue).trim()) {
+      nextData.journal = "";
+    }
+    return { ...record, data: nextData };
+  });
+}
+
+function formatAuthorsInput(value: unknown): string {
+  const names = authorNames(value);
+  return names.some((name) => /[,，]/.test(name)) ? names.join("; ") : names.join(", ");
+}
+
+function parseAuthorsInput(value: string): string[] {
+  const delimiter = /[;；\n]/.test(value) ? /[;；\n]+/ : /[,，]+/;
+  return value
+    .split(delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+interface CurationDraft {
+  category: string;
+  year: string;
+  authors: string;
+  venue: string;
+  relevance: string;
+  summary: string;
+  changed: {
+    category?: boolean;
+    year?: boolean;
+    authors?: boolean;
+    venue?: boolean;
+    relevance?: boolean;
+    summary?: boolean;
+  };
+}
+
+function baseCurationDraft(record: ResearchRecord): CurationDraft {
+  return {
+    category: sourceCategory(record),
+    year: text(record.data.year),
+    authors: formatAuthorsInput(record.data.authors),
+    venue: text(record.data.venue) || text(record.data.journal),
+    relevance: text(record.data.relevance),
+    summary: savedSummary(record),
+    changed: {},
+  };
+}
+
+function isDraftDirty(draft: CurationDraft | undefined): boolean {
+  return Boolean(draft && Object.values(draft.changed).some(Boolean));
+}
+
+export interface CurationStateEntry {
+  draft?: CurationDraft;
+  saving?: boolean;
+  saved?: boolean;
+  error?: unknown;
+}
+
+export type CurationStateMap = Record<string, CurationStateEntry>;
+
+function SourceCurationForm({
+  draft,
+  dirty,
+  busy,
+  saved,
+  error,
+  categories,
+  t,
+  onChange,
+  onDiscard,
+  onSave,
+}: {
+  draft: CurationDraft;
+  dirty: boolean;
+  busy: boolean;
+  saved: boolean;
+  error: unknown;
+  categories: string[];
+  t: Translate;
+  onChange: (next: CurationDraft) => void;
+  onDiscard: () => void;
+  onSave: (curation: SourceCurationInput) => Promise<void>;
+}) {
+  const listId = useId();
+  const suggestions = [...new Set(["llm", "human", "human-review", ...categories])];
+
+  return (
+    <form
+      className="record-form catalog-curation-form"
+      aria-busy={busy}
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (busy) return;
+        const payload: SourceCurationInput = {};
+        if (draft.changed.category) payload.category = draft.category.trim();
+        if (draft.changed.year) payload.year = draft.year.trim();
+        if (draft.changed.authors) payload.authors = parseAuthorsInput(draft.authors);
+        if (draft.changed.venue) payload.venue = draft.venue.trim();
+        if (draft.changed.relevance) payload.relevance = draft.relevance.trim();
+        if (draft.changed.summary) payload.summary = draft.summary.trim();
+        if (!Object.keys(payload).length) return;
+        await onSave(payload);
+      }}
+    >
+      <fieldset disabled={busy}>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor={`${listId}-cat`}>{t("catalogCategory")}</label>
+            <input
+              id={`${listId}-cat`}
+              list={listId}
+              value={draft.category}
+              onChange={(e) => onChange({ ...draft, category: e.target.value, changed: { ...draft.changed, category: true } })}
+              maxLength={120}
+            />
+            <datalist id={listId}>
+              {suggestions.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
+            <small>{t("catalogMetaCategoryHint")}</small>
+          </div>
+          <div className="field">
+            <label htmlFor={`${listId}-year`}>{t("catalogYear")}</label>
+            <input
+              id={`${listId}-year`}
+              value={draft.year}
+              onChange={(e) => onChange({ ...draft, year: e.target.value, changed: { ...draft.changed, year: true } })}
+              pattern="[0-9]{4}"
+              maxLength={4}
+              placeholder="2024"
+            />
+            <small>{t("catalogMetaYearHint")}</small>
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-authors`}>{t("catalogMetaAuthors")}</label>
+            <input
+              id={`${listId}-authors`}
+              value={draft.authors}
+              onChange={(e) => onChange({ ...draft, authors: e.target.value, changed: { ...draft.changed, authors: true } })}
+              maxLength={1000}
+            />
+            <small>{t("catalogMetaAuthorsHint")}</small>
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-venue`}>{t("catalogMetaVenue")}</label>
+            <input
+              id={`${listId}-venue`}
+              value={draft.venue}
+              onChange={(e) => onChange({ ...draft, venue: e.target.value, changed: { ...draft.changed, venue: true } })}
+              maxLength={300}
+            />
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-rel`}>{t("catalogRelevance")}</label>
+            <textarea
+              id={`${listId}-rel`}
+              rows={2}
+              value={draft.relevance}
+              onChange={(e) => onChange({ ...draft, relevance: e.target.value, changed: { ...draft.changed, relevance: true } })}
+              maxLength={4000}
+            />
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-sum`}>{t("catalogMetaSummary")}</label>
+            <textarea
+              id={`${listId}-sum`}
+              rows={3}
+              value={draft.summary}
+              onChange={(e) => onChange({ ...draft, summary: e.target.value, changed: { ...draft.changed, summary: true } })}
+              maxLength={20000}
+            />
+          </div>
+        </div>
+        <div className="catalog-curation-actions">
+          <button className="button primary" type="submit">
+            {busy ? t("saving") : t("catalogSaveMeta")}
+          </button>
+          {dirty && (
+            <button
+              className="button secondary small"
+              type="button"
+              onClick={onDiscard}
+            >
+              {t("catalogResetMeta")}
+            </button>
+          )}
+        </div>
+      </fieldset>
+      {error !== undefined && error !== null && <ErrorMessage error={error} t={t} />}
+      {saved && (
+        <p role="status" className="saved-note">
+          ✓ {t("saved")}
+        </p>
+      )}
+    </form>
+  );
+}
+
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, t, onScreen, onCurate, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
+  curations?: ResearchRecord[];
   t: Translate;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
+  onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
   onPrepare: (record: ResearchRecord) => void;
+  onOpenAddTools?: () => void;
   matches?: Map<string, ResearchRecord[]>;
   observationText?: ObservationTextContext;
   observationRead?: ObservationReadScope;
@@ -175,7 +416,11 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
   requestedView?: { mode: ViewMode; category?: string; nonce: number };
+  curationState?: CurationStateMap;
+  onCurationStateChange?: Dispatch<SetStateAction<CurationStateMap>>;
 }) {
+  const rawSourceById = new Map(rawSources.map((record) => [record.id, record]));
+  const sources = applySourceCurations(rawSources, curations);
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [organization, setOrganization] = useState<Organization>("all");
@@ -183,6 +428,10 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   const [sortBy, setSortBy] = useState<SortKey>("default");
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [curationOpen, setCurationOpen] = useState(false);
+  const [localCurationState, setLocalCurationState] = useState<CurationStateMap>({});
+  const curationState = externalCurationState ?? localCurationState;
+  const setCurationState = onCurationStateChange ?? setLocalCurationState;
   const [openSummaryIds, setOpenSummaryIds] = useState<string[]>([]);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
@@ -778,7 +1027,14 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               </table>
             </div>
           ) : (
-            <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
+            <div className="catalog-empty-state">
+              <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
+              {!sources.length && onOpenAddTools && (
+                <button type="button" className="button primary" onClick={onOpenAddTools}>
+                  {t("catalogAddFirstSource")}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -821,7 +1077,16 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 </tr>
               );})}</tbody>
             </table>
-          ) : <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>}
+          ) : (
+            <div className="catalog-empty-state">
+              <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
+              {!sources.length && onOpenAddTools && (
+                <button type="button" className="button primary" onClick={onOpenAddTools}>
+                  {t("catalogAddFirstSource")}
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <aside id={detailId} ref={reader} className="catalog-detail" aria-label={t("catalogDetail")} hidden={compact && !readerOpen}
           onKeyDown={event => {
@@ -886,19 +1151,97 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                   {name:"rationale",label:t("rationale"),textarea:true},
                 ]} onSubmit={(data) => onScreen(selected.id, String(data.get("decision")), String(data.get("rationale")))} />
               </details>
+              {onCurate && (() => {
+                const sourceId = selected.id;
+                const entry = curationState[sourceId];
+                const selectedDraft = entry?.draft ?? baseCurationDraft(selected);
+                const selectedDraftDirty = isDraftDirty(entry?.draft);
+                const selectedSaving = Boolean(entry?.saving);
+                return (
+                <details className="catalog-screening catalog-curation" open={curationOpen}>
+                  <summary
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setCurationOpen((open) => !open);
+                    }}
+                  >
+                    <span>{t("catalogEditMeta")}</span>
+                    <span className="catalog-curation-badges">
+                      {selectedDraftDirty && <span className="badge warn">{t("catalogMetaUnsaved")}</span>}
+                      <span className="catalog-cat-pill">{categoryName(category(selected), t)}</span>
+                    </span>
+                  </summary>
+                  {curationOpen && (
+                    <>
+                      <p className="small muted">{t("catalogEditMetaHelp")}</p>
+                      <SourceCurationForm
+                        key={sourceId}
+                        draft={selectedDraft}
+                        dirty={selectedDraftDirty}
+                        busy={selectedSaving}
+                        saved={Boolean(entry?.saved) && !selectedDraftDirty}
+                        error={entry?.error}
+                        categories={categories}
+                        t={t}
+                        onChange={(next) => {
+                          setCurationState((prev) => {
+                            if (prev[sourceId]?.saving) return prev;
+                            return {
+                              ...prev,
+                              [sourceId]: { ...prev[sourceId], draft: next, saved: false, error: undefined },
+                            };
+                          });
+                        }}
+                        onDiscard={() => {
+                          setCurationState((prev) => {
+                            const current = prev[sourceId];
+                            if (current?.saving) return prev;
+                            const { [sourceId]: _, ...rest } = prev;
+                            return rest;
+                          });
+                        }}
+                        onSave={async (payload) => {
+                          if (entry?.saving) return;
+                          const submittedDraft = entry?.draft;
+                          setCurationState((prev) => ({
+                            ...prev,
+                            [sourceId]: { ...prev[sourceId], saving: true, saved: false, error: undefined },
+                          }));
+                          try {
+                            await onCurate(sourceId, payload);
+                            setCurationState((prev) => {
+                              const current = prev[sourceId];
+                              if (current?.draft === submittedDraft) {
+                                return { ...prev, [sourceId]: { saving: false, saved: true } };
+                              }
+                              return { ...prev, [sourceId]: { ...current, saving: false, saved: false } };
+                            });
+                          } catch (failure) {
+                            setCurationState((prev) => ({
+                              ...prev,
+                              [sourceId]: { ...prev[sourceId], saving: false, saved: false, error: failure },
+                            }));
+                          }
+                        }}
+                      />
+                    </>
+                  )}
+                </details>
+                );
+              })()}
             </div>}
             {!note && registeredNativeSummary(selected) && (
-              <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
+              <NativeSummaryReader record={rawSourceById.get(selected.id) ?? selected} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
             )}
             <section>
               <h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>
               {summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t(registeredNativeSummary(selected) ? "catalogNoSeparateSummary" : "catalogNoSummary")}</p>}
             </section>
-            <SavedWorkingSummary record={selected} t={t}/>
+            <SavedWorkingSummary record={rawSourceById.get(selected.id) ?? selected} t={t}/>
             {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
               <button type="button" className="button secondary small" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
-            {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
-              <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} />}</div>}
+            {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={rawSourceById.get(selected.id) ?? selected} context={observationText} t={t} /> :
+              <ObservationPreview record={rawSourceById.get(selected.id) ?? selected} scope={observationRead ? {...observationRead, active: observationRead.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} />}</div>}
             <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="small muted">{t("catalogNoRelevance")}</p>}</section>
             <section aria-label={t("catalogOrganizationState")}>
               <h4>{t("catalogOrganizationState")}</h4>
@@ -965,11 +1308,12 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 return t(localCap?.nlm_state_present ? "catalogNlmStatePresent" : "catalogNlmUnavailable");
               })()}</dd>
             </dl></details>
-            {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(selected)}>{t("catalogSourceTools")}</button>}
+            {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(rawSourceById.get(selected.id) ?? selected)}>{t("catalogSourceTools")}</button>}
           </div> : <p>{t("catalogSelectSource")}</p>}
           {editorRecords.length > 0 && (
             <div className="catalog-working-summaries">
               {editorRecords.map((rec) => {
+                const rawRec = rawSourceById.get(rec.id) ?? rec;
                 const isCurrent = rec.id === selected?.id;
                 const editorActive = Boolean(draftScope?.active && viewMode === "split" && (!compact || readerOpen) && isCurrent);
                 const editorSuspended = Boolean(
@@ -980,7 +1324,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 return (
                   <div key={rec.id} hidden={!isCurrent}>
                     <WorkingSummaryEditor
-                      record={rec}
+                      record={rawRec}
                       scope={draftScope ? { ...draftScope, active: editorActive } : undefined}
                       suspended={editorSuspended}
                       onOpen={() => {
