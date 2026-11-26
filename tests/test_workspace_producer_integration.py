@@ -20,12 +20,12 @@ PIN = json.loads((ROOT / "docs/workspace-writing-source.json").read_text(encodin
 def test_bilingual_installation_uses_immutable_sources():
     assert PIN["source_status"] == "merged-main"
     assert PIN["runtime_dependency"] is False
-    # The front-page demo uses a newer, independently verified source pin;
-    # the historical guide and producer manifest retain their original pin.
+    # The front-page quickstart uses current source + one-command launcher while linking
+    # the historical rehearsal pin; the historical guide and producer manifest retain their original pins.
     for name, guide in (("README.md", "docs/workspace-guide.md"),
                         ("README.zh-TW.md", "docs/workspace-guide.zh-TW.md")):
         text = (ROOT / name).read_text(encoding="utf-8")
-        assert "git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f" in text
+        assert "docs/readme-verification-history.md#source-demo-first-task-2026-11-07" in text
         assert f"{guide}#writing-adapter-preview" in text
         assert "git clone -b codex/" not in text
         assert "-b codex/writing-workspace-adapter" not in text

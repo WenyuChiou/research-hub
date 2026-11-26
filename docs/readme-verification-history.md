@@ -1,6 +1,16 @@
 # README verification and historical evidence
 
-This page preserves the bounded rehearsal and installation context previously displayed on the README. It is evidence for the dated runs described below, not a statement that every current installation or scientific workflow has been accepted.
+This page preserves the bounded rehearsal and installation context referenced by the README. It is evidence for the dated runs described below, not a statement that every current installation or scientific workflow has been accepted.
+
+## Redesigned workspace UI captures & cold-start E2E (2026-11-26)
+
+Source revision `45c5fcc` (merging PRs #299–#304, covering the light-surface Reading Desk, Master Literature Table with category summary cards and Markdown/CSV export, collapsible Settings modal, compact `EN`/`中` toggle with `localStorage` persistence, append-only `source_curation` category/metadata editing, and 1-click **Load sample project**):
+
+- Verified on Windows 11 with Python 3.14 from an installed source-built wheel (`research-hub-pipeline` built from `45c5fcc`) against a brand-new empty workspace directory.
+- Exercised end-to-end in a real browser (`1440×900`): clicked **Load sample project**, opened `review-demo` Literature, edited categories (`Foundations`, `Algorithms`) and relevance notes via **Category & details**, verified **Master table** category summary strip and table rows, toggled `中` (`zh-TW`) and verified persistence across reload, created a fresh project with blank Project ID (auto-generated slug, zero HTML5 regex errors), and verified the empty-state **Add or search your first paper** CTA. Observed **0 console/page errors** and **0 HTTP ≥ 400 responses**.
+- Captured fresh authentic bilingual screenshots (`docs/images/workspace-ui.en.png` and `docs/images/workspace-ui.zh-TW.png`, `1024×640` PNGs captured from a `1440×900` browser viewport) directly from the offline account-free `review-demo` teaching project (no user-private files or provider credentials).
+- Cross-platform automated test matrix (`ubuntu-latest` Python 3.10–3.14, `macos-latest` Python 3.12, `windows-latest` Python 3.12, and installed-wheel Playwright browser checks) passed on `45c5fcc`.
+- This is bounded UI and local-workspace engineering verification, not live provider verification, scientific validation, or a new PyPI release claim.
 
 ## Source demo first task (2026-11-07)
 

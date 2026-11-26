@@ -42,11 +42,11 @@ def test_researcher_first_visuals_and_preview_install_are_bilingual():
         writing = f"docs/images/workspace-writing.{locale}.png"
         assert lifecycle in text[:2500]
         assert text.index(lifecycle) < text.index(screenshot) < text.index(writing)
-        # README uses a newer source snapshot; the producer manifest retains
-        # its historical preview pin and must not be silently rewritten.
-        assert "git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f" in text
+        # Main quickstart uses the current source clone + one-command launcher;
+        # historical detached-checkout pins live in docs/readme-verification-history.md.
+        assert "git checkout --detach 1f0726a7e92a1231e633963f17236a2f5c1eab8f" not in text
         for executable in ("./.venv/bin/python", r".\.venv\Scripts\python.exe"):
-            assert f"{executable} -m research_hub project demo --root ./workspace-demo --json" in text
+            assert f"{executable} -m research_hub open --demo" in text
         assert "docs/workspace-architecture.md" in text
         for relative in (lifecycle, screenshot, writing):
             assert (root / relative).is_file()
@@ -86,16 +86,16 @@ def test_readme_command_blocks_and_compatibility_anchors_match():
         assert english.count(marker) == chinese.count(marker) == 1
 
 
-def test_readme_source_pin_matches_fetch_checkout_and_verification_history():
+def test_readme_historical_pin_is_linked_in_verification_history():
     root = Path(__file__).resolve().parents[1]
     revision = "1f0726a7e92a1231e633963f17236a2f5c1eab8f"
     history = (root / "docs/readme-verification-history.md").read_text(encoding="utf-8")
     assert revision in history
+    assert "45c5fcc" in history
     for filename in ("README.md", "README.zh-TW.md"):
         text = (root / filename).read_text(encoding="utf-8")
-        assert re.findall(r"^git fetch origin ([0-9a-f]{40})$", text, re.M) == [revision]
-        assert re.findall(r"^git checkout --detach ([0-9a-f]{40})$", text, re.M) == [revision]
         assert "docs/readme-verification-history.md#source-demo-first-task-2026-11-07" in text
+        assert "45c5fcc" in text
 
 
 def test_readme_first_task_matches_populated_demo_and_visible_limits(tmp_path):

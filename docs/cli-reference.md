@@ -385,6 +385,17 @@ research-hub notebooklm read-briefing --cluster SLUG
 
 ## AI integration
 
+### `open`
+Open the local visual researcher workspace in your default browser with zero legacy vault configuration required.
+
+```bash
+research-hub open --demo          # creates ~/research-hub-workspace and seeds offline sample projects if empty
+research-hub open                 # opens ~/research-hub-workspace (or creates an empty workspace)
+research-hub open --root ./my-ws --port 8766 --no-browser
+```
+
+`--demo` only populates a new or empty directory and never overwrites an existing workspace. Optional read-only integration flags `--obsidian-vault PATH` and `--library-snapshot PATH` behave identically to `serve --workspace`.
+
 ### `serve`
 Start MCP stdio server for Claude Desktop / Cursor / Claude.ai.
 
