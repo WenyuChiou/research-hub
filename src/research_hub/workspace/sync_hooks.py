@@ -22,7 +22,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from research_hub.locks import file_lock
-from .core import Workspace, WorkspaceError, atomic_json, safe_path
+from .core import Workspace, WorkspaceError, atomic_json, digest, safe_path
 from .integrations import LocalIntegrationsManager
 
 _PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -225,6 +225,14 @@ def _working_summary_text(data: dict[str, Any]) -> str:
 
 def _category_slug(data: dict[str, Any]) -> str:
     return _clean_line(data.get("category")) or _clean_line(data.get("sub_category"))
+
+
+def _source_revision_sha256(record: dict[str, Any], screening: str) -> str:
+    return digest({
+        "id": _clean_line(record.get("id")),
+        "data": record.get("data") if isinstance(record.get("data"), dict) else {},
+        "screening": screening,
+    })
 
 
 def _get_zotero_client(library_id: str, library_type: str, api_key: str):
@@ -464,17 +472,26 @@ def _render_nlm_pack_markdown(
     *,
     project_id: str,
     project_title: str,
+    screenings: dict[str, str] | None = None,
 ) -> str:
     full_text = [s for s in sources if _reading_scope(s["data"]) == "full-text"]
     abstract_or_meta = [s for s in sources if _reading_scope(s["data"]) != "full-text"]
+    screening_map = screenings or {}
 
     def _entry(record: dict[str, Any], idx: int) -> str:
         data = record["data"]
+        source_id = _clean_line(record.get("id"))
+        decision = screening_map.get(source_id, "unscreened")
+        rev_sha256 = _source_revision_sha256(record, decision)
         title = _clean_line(data.get("title")) or f"Source {idx}"
         authors = ", ".join(_collect_authors(data.get("authors"))) or "Unknown"
         year = _clean_line(data.get("year")) or "n.d."
         doi = _clean_bare_doi(data.get("doi"))
+        url = _safe_http_url(data.get("locator"), data.get("locator_kind"))
         scope = _reading_scope(data)
+        identity = _clean_line(data.get("identity_status")) or "unverified"
+        pub_version = _clean_line(data.get("publication_version"))
+        recorded_at = _clean_line(data.get("recorded_at"))
         cat = _category_slug(data) or "unclassified"
         tags = _collect_tags(data)
         summary = _saved_summary(data)
@@ -483,14 +500,23 @@ def _render_nlm_pack_markdown(
 
         parts = [
             f"### {idx}. {_inline_md(title)} ({_inline_md(year)})",
+            f"- Source ID: `{_inline_md(source_id)}`",
+            f"- Source Revision SHA-256: `{rev_sha256}`",
             f"- Authors: {_inline_md(authors)}",
             f"- Reading Scope: {_inline_md(scope)}",
+            f"- Screening: {_inline_md(decision)} · Identity: {_inline_md(identity)}",
             f"- Category: {_inline_md(cat)}",
         ]
+        if pub_version:
+            parts.append(f"- Publication Version: {_inline_md(pub_version)}")
+        if recorded_at:
+            parts.append(f"- Recorded At: {_inline_md(recorded_at)}")
         if tags:
             parts.append(f"- Keywords/Labels: {', '.join(_inline_md(t) for t in tags)}")
         if doi:
             parts.append(f"- DOI: {_inline_md(doi)}")
+        if url:
+            parts.append(f"- Locator: {url}")
         parts.append(f"\n{summary}" if summary else "\n[No abstract or summary saved locally.]")
         if working:
             parts.append(f"\n#### Working Summary (Unverified Draft)\n{working}")
@@ -544,15 +570,20 @@ class WorkspaceSyncHooks:
 
     @contextlib.contextmanager
     def _export_lock(self, key: str, lock_name: str):
+        lock_base_rel = f".research/exports/{lock_name}"
+        lock_file_rel = f"{lock_base_rel}.lock"
         with self._lock_guard:
             exports_root = safe_path(self.workspace.root, ".research/exports")
             exports_root.mkdir(parents=True, exist_ok=True)
-            lock_target = safe_path(self.workspace.root, f".research/exports/{lock_name}")
+            lock_target = safe_path(self.workspace.root, lock_base_rel)
+            safe_path(self.workspace.root, lock_file_rel)
             thread_lock = self._export_locks.get(key)
             if thread_lock is None:
                 thread_lock = threading.Lock()
                 self._export_locks[key] = thread_lock
         with thread_lock:
+            lock_target = safe_path(self.workspace.root, lock_base_rel)
+            safe_path(self.workspace.root, lock_file_rel)
             with file_lock(lock_target):
                 yield
 
@@ -726,6 +757,7 @@ class WorkspaceSyncHooks:
 
         used_names: set[str] = set()
         source_files: list[str] = []
+        manifest_sources: list[dict[str, Any]] = []
         with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
             export_dir = safe_path(self.workspace.root, export_rel)
             sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
@@ -759,6 +791,22 @@ class WorkspaceSyncHooks:
                     ),
                 )
                 source_files.append(file_rel)
+                manifest_sources.append({
+                    "index": index,
+                    "source_id": _clean_line(rec.get("id")),
+                    "title": _clean_line(rec["data"].get("title")) or f"Source {index}",
+                    "doi": _clean_bare_doi(rec["data"].get("doi")),
+                    "locator": _safe_http_url(
+                        rec["data"].get("locator"), rec["data"].get("locator_kind")
+                    ),
+                    "reading_scope": _reading_scope(rec["data"]),
+                    "screening": decision,
+                    "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
+                    "publication_version": _clean_line(rec["data"].get("publication_version")),
+                    "recorded_at": _clean_line(rec["data"].get("recorded_at")),
+                    "revision_sha256": _source_revision_sha256(rec, decision),
+                    "source_file": file_rel,
+                })
 
             _atomic_text(
                 pack_path,
@@ -766,8 +814,10 @@ class WorkspaceSyncHooks:
                     sources,
                     project_id=project_id,
                     project_title=project["title"],
+                    screenings=screenings,
                 ),
             )
+            manifest["sources"] = manifest_sources
             atomic_json(manifest_path, manifest)
 
         nlm_status = self._safe_nlm_status(integrations)
@@ -827,219 +877,230 @@ class WorkspaceSyncHooks:
 
         from research_hub.utils.doi import normalize_doi
 
-        try:
-            zot = _get_zotero_client(library_id, library_type, api_key)
-        except Exception as exc:
-            raise WorkspaceError(
-                "Could not initialize Zotero client; verify Zotero library configuration",
-                "zotero_unavailable",
-            ) from exc
-
-        items_plan: list[dict[str, Any]] = []
-        records_to_create: list[dict[str, Any]] = []
-        seen_dois: set[str] = set()
-        seen_titles: set[str] = set()
-        duplicates = 0
-
-        for src in sources:
-            sdata = src["data"]
-            title = _clean_line(sdata.get("title")) or "Untitled source"
-            doi = _clean_bare_doi(sdata.get("doi"))
-            norm_doi = normalize_doi(doi) if doi else ""
-            norm_title = title.casefold()
-
-            in_batch_dup = bool(
-                (norm_doi and norm_doi in seen_dois)
-                or (norm_title and norm_title in seen_titles)
+        safe_lib_slug = _slugify(f"{library_type}-{library_id}", fallback=project_id)
+        write_guard = (
+            contextlib.nullcontext()
+            if dry_run
+            else self._export_lock(
+                f"zotero:{library_type}:{library_id}",
+                f".zotero-{safe_lib_slug}",
             )
-            remote_dup = False if in_batch_dup else _check_zotero_duplicate_strict(zot, title, doi)
-            if in_batch_dup or remote_dup:
-                duplicates += 1
-                items_plan.append({
-                    "id": src["id"],
-                    "title": title,
-                    "doi": doi,
-                    "action": "skip_duplicate",
-                })
-            else:
-                if norm_doi:
-                    seen_dois.add(norm_doi)
-                if norm_title:
-                    seen_titles.add(norm_title)
-                records_to_create.append(src)
-                items_plan.append({
-                    "id": src["id"],
-                    "title": title,
-                    "doi": doi,
-                    "action": "create",
-                })
-
-        if dry_run:
-            return {
-                "ok": True,
-                "status": "ready",
-                "dry_run": True,
-                "candidate_count": len(sources),
-                "would_create": len(records_to_create),
-                "duplicates": duplicates,
-                "items": items_plan,
-            }
-
-        zotero_payloads: list[dict[str, Any]] = []
-        template_base: dict[str, Any] = {}
-        if hasattr(zot, "item_template"):
-            try:
-                tpl = zot.item_template("journalArticle")
-                if isinstance(tpl, dict):
-                    template_base = dict(tpl)
-            except Exception:
-                template_base = {}
-
-        for src in records_to_create:
-            sdata = src["data"]
-            title = _clean_line(sdata.get("title")) or "Untitled source"
-            doi = _clean_bare_doi(sdata.get("doi"))
-            year = _clean_line(sdata.get("year"))
-            venue = _clean_line(sdata.get("venue")) or _clean_line(sdata.get("journal"))
-            url = _safe_http_url(sdata.get("locator"), sdata.get("locator_kind"))
-            summary = _saved_summary(sdata)
-            scope = _reading_scope(sdata)
-            cat = _category_slug(sdata)
-
-            raw_tags = ["research-hub", f"cluster/{project_id}"]
-            if cat:
-                raw_tags.append(cat)
-            raw_tags.extend(_collect_tags(sdata))
-            deduped_tags: list[str] = []
-            seen_tag_keys: set[str] = set()
-            for t in raw_tags:
-                cleaned_tag = _clean_line(t)
-                if not cleaned_tag:
-                    continue
-                tk = cleaned_tag.casefold()
-                if tk not in seen_tag_keys:
-                    seen_tag_keys.add(tk)
-                    deduped_tags.append(cleaned_tag)
-
-            entry = dict(template_base)
-            entry.update({
-                "itemType": "journalArticle",
-                "title": title,
-                "creators": _zotero_creators(sdata.get("authors")),
-                "date": year,
-                "publicationTitle": venue,
-                "DOI": doi,
-                "url": url,
-                "abstractNote": summary,
-                "extra": f"Research Hub project: {project_id}; Reading scope: {scope}",
-                "tags": [{"tag": tag} for tag in deduped_tags],
-            })
-            zotero_payloads.append(entry)
-
-        confirmed_created = 0
-        created_keys: list[str] = []
-        failed_items: list[dict[str, Any]] = []
-        failed_source_ids: set[str] = set()
-        if zotero_payloads:
-            try:
-                for offset in range(0, len(zotero_payloads), 50):
-                    batch = zotero_payloads[offset:offset + 50]
-                    batch_records = records_to_create[offset:offset + 50]
-                    response = zot.create_items(batch)
-                    if not isinstance(response, dict):
-                        raise WorkspaceError(
-                            "Unexpected Zotero write response; could not confirm item creation",
-                            "zotero_sync_failed",
-                        )
-
-                    batch_ok_indices: set[int] = set()
-                    successful = response.get("successful")
-                    success_legacy = response.get("success")
-                    failed_map = response.get("failed")
-
-                    if isinstance(successful, dict):
-                        for seq_idx, (raw_idx, val) in enumerate(successful.items()):
-                            try:
-                                parsed_idx = int(raw_idx)
-                            except (TypeError, ValueError):
-                                parsed_idx = seq_idx
-                            batch_ok_indices.add(parsed_idx)
-                            if isinstance(val, dict):
-                                key = val.get("key") or (
-                                    val.get("data", {}).get("key")
-                                    if isinstance(val.get("data"), dict)
-                                    else None
-                                )
-                                if isinstance(key, str) and key:
-                                    created_keys.append(key)
-                            elif isinstance(val, str) and val:
-                                created_keys.append(val)
-                    elif isinstance(success_legacy, dict):
-                        for seq_idx, (raw_idx, val) in enumerate(success_legacy.items()):
-                            try:
-                                parsed_idx = int(raw_idx)
-                            except (TypeError, ValueError):
-                                parsed_idx = seq_idx
-                            batch_ok_indices.add(parsed_idx)
-                            if isinstance(val, str) and val:
-                                created_keys.append(val)
-
-                    batch_failed_reasons: dict[int, str] = {}
-                    if isinstance(failed_map, dict):
-                        for seq_idx, (raw_idx, err_val) in enumerate(failed_map.items()):
-                            try:
-                                parsed_idx = int(raw_idx)
-                            except (TypeError, ValueError):
-                                parsed_idx = seq_idx
-                            batch_failed_reasons[parsed_idx] = _sanitize_zotero_failure(
-                                err_val, api_key
-                            )
-
-                    for local_idx, rec in enumerate(batch_records):
-                        if local_idx in batch_ok_indices and local_idx not in batch_failed_reasons:
-                            confirmed_created += 1
-                        else:
-                            reason = batch_failed_reasons.get(
-                                local_idx, "Rejected or unconfirmed by Zotero API"
-                            )
-                            failed_source_ids.add(rec["id"])
-                            failed_items.append({
-                                "id": rec["id"],
-                                "title": _clean_line(rec["data"].get("title")) or "Untitled source",
-                                "doi": _clean_bare_doi(rec["data"].get("doi")),
-                                "reason": reason,
-                            })
-            except WorkspaceError:
-                raise
-            except Exception as exc:
-                raise WorkspaceError(
-                    "Zotero item creation failed; verify API write permissions and connection",
-                    "zotero_sync_failed",
-                ) from exc
-
-        if failed_source_ids:
-            for plan_entry in items_plan:
-                if plan_entry["id"] in failed_source_ids:
-                    plan_entry["action"] = "failed"
-
-        failed_count = len(failed_items)
-        sync_status = (
-            "synced"
-            if failed_count == 0
-            else ("partial_failure" if confirmed_created > 0 else "failed")
         )
 
-        return {
-            "ok": True,
-            "status": sync_status,
-            "dry_run": False,
-            "created_count": confirmed_created,
-            "failed_count": failed_count,
-            "skipped_duplicates": duplicates,
-            "created_keys": created_keys,
-            "failed_items": failed_items,
-            "items": items_plan,
-        }
+        with write_guard:
+            try:
+                zot = _get_zotero_client(library_id, library_type, api_key)
+            except Exception as exc:
+                raise WorkspaceError(
+                    "Could not initialize Zotero client; verify Zotero library configuration",
+                    "zotero_unavailable",
+                ) from exc
+
+            items_plan: list[dict[str, Any]] = []
+            records_to_create: list[dict[str, Any]] = []
+            seen_dois: set[str] = set()
+            seen_titles: set[str] = set()
+            duplicates = 0
+
+            for src in sources:
+                sdata = src["data"]
+                title = _clean_line(sdata.get("title")) or "Untitled source"
+                doi = _clean_bare_doi(sdata.get("doi"))
+                norm_doi = normalize_doi(doi) if doi else ""
+                norm_title = title.casefold()
+
+                in_batch_dup = bool(
+                    (norm_doi and norm_doi in seen_dois)
+                    or (norm_title and norm_title in seen_titles)
+                )
+                remote_dup = False if in_batch_dup else _check_zotero_duplicate_strict(zot, title, doi)
+                if in_batch_dup or remote_dup:
+                    duplicates += 1
+                    items_plan.append({
+                        "id": src["id"],
+                        "title": title,
+                        "doi": doi,
+                        "action": "skip_duplicate",
+                    })
+                else:
+                    if norm_doi:
+                        seen_dois.add(norm_doi)
+                    if norm_title:
+                        seen_titles.add(norm_title)
+                    records_to_create.append(src)
+                    items_plan.append({
+                        "id": src["id"],
+                        "title": title,
+                        "doi": doi,
+                        "action": "create",
+                    })
+
+            if dry_run:
+                return {
+                    "ok": True,
+                    "status": "ready",
+                    "dry_run": True,
+                    "candidate_count": len(sources),
+                    "would_create": len(records_to_create),
+                    "duplicates": duplicates,
+                    "items": items_plan,
+                }
+
+            zotero_payloads: list[dict[str, Any]] = []
+            template_base: dict[str, Any] = {}
+            if hasattr(zot, "item_template"):
+                try:
+                    tpl = zot.item_template("journalArticle")
+                    if isinstance(tpl, dict):
+                        template_base = dict(tpl)
+                except Exception:
+                    template_base = {}
+
+            for src in records_to_create:
+                sdata = src["data"]
+                title = _clean_line(sdata.get("title")) or "Untitled source"
+                doi = _clean_bare_doi(sdata.get("doi"))
+                year = _clean_line(sdata.get("year"))
+                venue = _clean_line(sdata.get("venue")) or _clean_line(sdata.get("journal"))
+                url = _safe_http_url(sdata.get("locator"), sdata.get("locator_kind"))
+                summary = _saved_summary(sdata)
+                scope = _reading_scope(sdata)
+                cat = _category_slug(sdata)
+
+                raw_tags = ["research-hub", f"cluster/{project_id}"]
+                if cat:
+                    raw_tags.append(cat)
+                raw_tags.extend(_collect_tags(sdata))
+                deduped_tags: list[str] = []
+                seen_tag_keys: set[str] = set()
+                for t in raw_tags:
+                    cleaned_tag = _clean_line(t)
+                    if not cleaned_tag:
+                        continue
+                    tk = cleaned_tag.casefold()
+                    if tk not in seen_tag_keys:
+                        seen_tag_keys.add(tk)
+                        deduped_tags.append(cleaned_tag)
+
+                entry = dict(template_base)
+                entry.update({
+                    "itemType": "journalArticle",
+                    "title": title,
+                    "creators": _zotero_creators(sdata.get("authors")),
+                    "date": year,
+                    "publicationTitle": venue,
+                    "DOI": doi,
+                    "url": url,
+                    "abstractNote": summary,
+                    "extra": f"Research Hub project: {project_id}; Reading scope: {scope}",
+                    "tags": [{"tag": tag} for tag in deduped_tags],
+                })
+                zotero_payloads.append(entry)
+
+            confirmed_created = 0
+            created_keys: list[str] = []
+            failed_items: list[dict[str, Any]] = []
+            failed_source_ids: set[str] = set()
+            if zotero_payloads:
+                try:
+                    for offset in range(0, len(zotero_payloads), 50):
+                        batch = zotero_payloads[offset:offset + 50]
+                        batch_records = records_to_create[offset:offset + 50]
+                        response = zot.create_items(batch)
+                        if not isinstance(response, dict):
+                            raise WorkspaceError(
+                                "Unexpected Zotero write response; could not confirm item creation",
+                                "zotero_sync_failed",
+                            )
+
+                        batch_ok_indices: set[int] = set()
+                        successful = response.get("successful")
+                        success_legacy = response.get("success")
+                        failed_map = response.get("failed")
+
+                        if isinstance(successful, dict):
+                            for seq_idx, (raw_idx, val) in enumerate(successful.items()):
+                                try:
+                                    parsed_idx = int(raw_idx)
+                                except (TypeError, ValueError):
+                                    parsed_idx = seq_idx
+                                batch_ok_indices.add(parsed_idx)
+                                if isinstance(val, dict):
+                                    key = val.get("key") or (
+                                        val.get("data", {}).get("key")
+                                        if isinstance(val.get("data"), dict)
+                                        else None
+                                    )
+                                    if isinstance(key, str) and key:
+                                        created_keys.append(key)
+                                elif isinstance(val, str) and val:
+                                    created_keys.append(val)
+                        elif isinstance(success_legacy, dict):
+                            for seq_idx, (raw_idx, val) in enumerate(success_legacy.items()):
+                                try:
+                                    parsed_idx = int(raw_idx)
+                                except (TypeError, ValueError):
+                                    parsed_idx = seq_idx
+                                batch_ok_indices.add(parsed_idx)
+                                if isinstance(val, str) and val:
+                                    created_keys.append(val)
+
+                        batch_failed_reasons: dict[int, str] = {}
+                        if isinstance(failed_map, dict):
+                            for seq_idx, (raw_idx, err_val) in enumerate(failed_map.items()):
+                                try:
+                                    parsed_idx = int(raw_idx)
+                                except (TypeError, ValueError):
+                                    parsed_idx = seq_idx
+                                batch_failed_reasons[parsed_idx] = _sanitize_zotero_failure(
+                                    err_val, api_key
+                                )
+
+                        for local_idx, rec in enumerate(batch_records):
+                            if local_idx in batch_ok_indices and local_idx not in batch_failed_reasons:
+                                confirmed_created += 1
+                            else:
+                                reason = batch_failed_reasons.get(
+                                    local_idx, "Rejected or unconfirmed by Zotero API"
+                                )
+                                failed_source_ids.add(rec["id"])
+                                failed_items.append({
+                                    "id": rec["id"],
+                                    "title": _clean_line(rec["data"].get("title")) or "Untitled source",
+                                    "doi": _clean_bare_doi(rec["data"].get("doi")),
+                                    "reason": reason,
+                                })
+                except WorkspaceError:
+                    raise
+                except Exception as exc:
+                    raise WorkspaceError(
+                        "Zotero item creation failed; verify API write permissions and connection",
+                        "zotero_sync_failed",
+                    ) from exc
+
+            if failed_source_ids:
+                for plan_entry in items_plan:
+                    if plan_entry["id"] in failed_source_ids:
+                        plan_entry["action"] = "failed"
+
+            failed_count = len(failed_items)
+            sync_status = (
+                "synced"
+                if failed_count == 0
+                else ("partial_failure" if confirmed_created > 0 else "failed")
+            )
+
+            return {
+                "ok": True,
+                "status": sync_status,
+                "dry_run": False,
+                "created_count": confirmed_created,
+                "failed_count": failed_count,
+                "skipped_duplicates": duplicates,
+                "created_keys": created_keys,
+                "failed_items": failed_items,
+                "items": items_plan,
+            }
 
     def pack_obsidian(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         integrations = self._require_enabled()

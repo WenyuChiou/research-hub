@@ -323,7 +323,10 @@ export function SyncHooksPanel({
   const [nlmResult, setNlmResult] = useState<NotebookLmBundleResponse | null>(null);
   const [nlmError, setNlmError] = useState<string | null>(null);
 
-  const [zotBusy, setZotBusy] = useState<"preview" | "sync" | null>(null);
+  const [zotPreviewBusy, setZotPreviewBusy] = useState(false);
+  const [zotWriteCount, setZotWriteCount] = useState(0);
+  const zotBusy: "preview" | "sync" | null =
+    zotWriteCount > 0 ? "sync" : zotPreviewBusy ? "preview" : null;
   const [zotPreviewEntry, setZotPreviewEntry] = useState<{
     sig: string;
     payloadSourceIds: string[] | undefined;
@@ -343,7 +346,8 @@ export function SyncHooksPanel({
     setNlmBusy(false);
     setNlmResult(null);
     setNlmError(null);
-    setZotBusy(null);
+    // Keep zotWriteCount intact across scope switches so an in-flight Zotero write cannot overlap!
+    setZotPreviewBusy(false);
     setZotPreviewEntry(null);
     setZotSynced(null);
     setZotError(null);
@@ -464,7 +468,7 @@ export function SyncHooksPanel({
     const reqSig = selectionSignature;
     const reqEpoch = selectionEpochRef.current;
     const reqIds = payloadSourceIds ? [...payloadSourceIds] : undefined;
-    setZotBusy("preview");
+    setZotPreviewBusy(true);
     setZotError(null);
     setZotSynced(null);
     try {
@@ -478,7 +482,7 @@ export function SyncHooksPanel({
       setZotError(formatErrorText(err));
     } finally {
       if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
-        setZotBusy(null);
+        setZotPreviewBusy(false);
       }
     }
   }
@@ -489,7 +493,7 @@ export function SyncHooksPanel({
     const reqSig = zotPreviewEntry.sig;
     const reqEpoch = selectionEpochRef.current;
     const previewedIds = zotPreviewEntry.payloadSourceIds;
-    setZotBusy("sync");
+    setZotWriteCount((count) => count + 1);
     setZotError(null);
     try {
       const payload: Record<string, unknown> = { dry_run: false };
@@ -507,9 +511,7 @@ export function SyncHooksPanel({
       if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setZotError(formatErrorText(err));
     } finally {
-      if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
-        setZotBusy(null);
-      }
+      setZotWriteCount((count) => Math.max(0, count - 1));
     }
   }
 

@@ -156,6 +156,7 @@ export function CommandPalette({
   const c = PALETTE_COPY[locale === "zh-TW" ? "zh-TW" : "en"];
   const titleId = useId();
   const listboxId = useId();
+  const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -174,10 +175,19 @@ export function CommandPalette({
 
   useEffect(() => {
     if (!open) return;
-    const root = document.getElementById("root");
-    const hadInert = root?.hasAttribute("inert") ?? false;
-    if (root && !hadInert) {
-      root.setAttribute("inert", "");
+    const backdropEl = backdropRef.current;
+    const inertRestorers: Array<() => void> = [];
+    for (const sibling of Array.from(document.body.children)) {
+      if (sibling === backdropEl || !(sibling instanceof HTMLElement)) continue;
+      const hadInert = sibling.hasAttribute("inert");
+      const prevAriaHidden = sibling.getAttribute("aria-hidden");
+      if (!hadInert) sibling.setAttribute("inert", "");
+      if (prevAriaHidden !== "true") sibling.setAttribute("aria-hidden", "true");
+      inertRestorers.push(() => {
+        if (!hadInert) sibling.removeAttribute("inert");
+        if (prevAriaHidden === null) sibling.removeAttribute("aria-hidden");
+        else sibling.setAttribute("aria-hidden", prevAriaHidden);
+      });
     }
     const onFocusIn = (event: FocusEvent) => {
       const dialogEl = dialogRef.current;
@@ -188,18 +198,36 @@ export function CommandPalette({
     document.addEventListener("focusin", onFocusIn);
     return () => {
       document.removeEventListener("focusin", onFocusIn);
-      if (root && !hadInert) {
-        root.removeAttribute("inert");
+      for (const restore of inertRestorers) {
+        restore();
       }
     };
   }, [open]);
 
   const closeAndRestoreFocus = () => {
-    onClose();
     const prev = previousFocusRef.current;
+    onClose();
     if (prev && prev.isConnected) {
       queueMicrotask(() => prev.focus());
     }
+  };
+
+  const runSelectionAndClose = (action: () => void) => {
+    const prev = previousFocusRef.current;
+    const backdropEl = backdropRef.current;
+    action();
+    onClose();
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      const lostFocus =
+        !active ||
+        active === document.body ||
+        active === document.documentElement ||
+        Boolean(backdropEl?.contains(active));
+      if (lostFocus && prev && prev.isConnected) {
+        prev.focus();
+      }
+    });
   };
 
   const allEntries = useMemo<CommandEntry[]>(() => {
@@ -215,8 +243,7 @@ export function CommandPalette({
         badge: toDark ? "Dark" : "Light",
         searchText: `${c.toggleDark} ${c.toggleLight} theme dark light mode 深色 淺色 主題 外觀`.toLocaleLowerCase(),
         onSelect: () => {
-          onToggleTheme();
-          closeAndRestoreFocus();
+          runSelectionAndClose(() => onToggleTheme());
         },
       });
     }
@@ -228,8 +255,7 @@ export function CommandPalette({
         label: c.openSettings,
         searchText: `${c.openSettings} settings integrations obsidian zotero notebooklm sync 設定 連線 同步`.toLocaleLowerCase(),
         onSelect: () => {
-          onClose();
-          onOpenSettings();
+          runSelectionAndClose(() => onOpenSettings());
         },
       });
     }
@@ -249,8 +275,7 @@ export function CommandPalette({
         label,
         searchText: `${label} ${extraKeywords}`.toLocaleLowerCase(),
         onSelect: () => {
-          onNavigate(page);
-          onClose();
+          runSelectionAndClose(() => onNavigate(page));
         },
       });
     }
@@ -265,8 +290,7 @@ export function CommandPalette({
         badge: isCurrent ? c.activeBadge : undefined,
         searchText: `${proj.title} ${proj.id} ${proj.goal} project 主題 專案`.toLocaleLowerCase(),
         onSelect: () => {
-          onSelectProject(proj.id);
-          onClose();
+          runSelectionAndClose(() => onSelectProject(proj.id));
         },
       });
     }
@@ -294,8 +318,7 @@ export function CommandPalette({
             .join(" ")
             .toLocaleLowerCase(),
           onSelect: () => {
-            onOpenPaper(paper);
-            onClose();
+            runSelectionAndClose(() => onOpenPaper(paper));
           },
         });
       }
@@ -415,6 +438,7 @@ export function CommandPalette({
 
   return createPortal(
     <div
+      ref={backdropRef}
       className="vr-cmd-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
@@ -424,6 +448,7 @@ export function CommandPalette({
     >
       <div
         ref={dialogRef}
+        tabIndex={-1}
         className="vr-cmd-dialog"
         role="dialog"
         aria-modal="true"

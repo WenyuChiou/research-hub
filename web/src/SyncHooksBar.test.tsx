@@ -333,4 +333,72 @@ describe("SyncHooksPanel", () => {
     expect(screen.queryByText(/✓ Synced/)).toBeNull();
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
+
+  it("keeps Zotero buttons locked across scope changes while a live Zotero write is in flight", async () => {
+    let resolveWrite!: (res: Response) => void;
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "ready",
+            dry_run: true,
+            candidate_count: 1,
+            would_create: 1,
+            duplicates: 0,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+
+    const { rerender } = render(
+      <SyncHooksPanel
+        projectId="proj-1"
+        projectTitle="Hydrology Agents"
+        sources={SAMPLE_SOURCES}
+        selectedIds={["src-1"]}
+        workspace={ENABLED_WORKSPACE}
+        locale="en"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview Sync (Dry-run)" }));
+    const confirmBtn = await screen.findByRole("button", { name: "Confirm Write to Zotero" });
+    fireEvent.click(confirmBtn);
+
+    // Switch scope while dry_run=false write is still pending: preview button must stay disabled!
+    rerender(
+      <SyncHooksPanel
+        projectId="proj-1"
+        projectTitle="Hydrology Agents"
+        sources={SAMPLE_SOURCES}
+        workspace={ENABLED_WORKSPACE}
+        locale="en"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Preview Sync (Dry-run)" })).toBeDisabled();
+
+    resolveWrite(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          status: "synced",
+          dry_run: false,
+          created_count: 1,
+          skipped_duplicates: 0,
+          created_keys: ["Z1"],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Preview Sync (Dry-run)" })).not.toBeDisabled();
+    });
+  });
 });

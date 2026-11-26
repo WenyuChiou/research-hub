@@ -448,9 +448,10 @@ describe("CommandPalette & Ctrl+K Shortcut", () => {
     expect(withUnsupported.robustnessScore).toBeLessThan(allGrounded.robustnessScore);
 
     // 2. Unknown scope stays distinct from metadata in LiteratureVisualCharts & SynthesisMatrix,
+    //    caller-supplied data.screening is NOT promoted to Included without a saved screening record,
     //    and bound manuscript authority stays distinct from Ready delivery in ResearchStageStepper
     const onSelectScope = vi.fn();
-    const unknownSrc = makeSource("s-unk", { reading_scope: "" });
+    const unknownSrc = makeSource("s-unk", { reading_scope: "", screening: "include" });
     render(
       <>
         <ResearchStageStepper
@@ -476,6 +477,7 @@ describe("CommandPalette & Ctrl+K Shortcut", () => {
       </>,
     );
 
+    expect(screen.getByText("0/1 in")).toBeVisible();
     expect(screen.getByText("Authority bound")).toBeVisible();
     expect(screen.queryByText("Ready")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Metadata.*0.*\(0%\)/ })).toBeVisible();

@@ -1,27 +1,14 @@
 import { classifyLabelTone, GitHubLabelText } from "./BrandIcons";
-import { readingScopeTone, sourceTags } from "./LiteratureLibrary";
+import {
+  latestScreeningMap,
+  readingScopeTone,
+  screeningDecisionFor,
+  sourceTags,
+} from "./LiteratureLibrary";
 import type { Locale, ResearchRecord } from "./types";
-import { effectiveScreeningDecision } from "./VisualInsights";
 
 const asText = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" ? String(value) : "";
-
-function buildScreeningLookup(screenings: ResearchRecord[]): Map<string, "include" | "exclude"> {
-  const map = new Map<string, "include" | "exclude">();
-  for (const record of screenings) {
-    if (record.kind !== "screening" || typeof record.data.source_id !== "string") continue;
-    const raw = record.data.decision;
-    const hasValidRationale =
-      record.data.rationale === undefined ||
-      (typeof record.data.rationale === "string" && record.data.rationale.trim().length > 0);
-    if (hasValidRationale && (raw === "include" || raw === "exclude")) {
-      map.set(record.data.source_id, raw);
-    } else {
-      map.delete(record.data.source_id);
-    }
-  }
-  return map;
-}
 
 function buildClaimCitationCounts(claims: ResearchRecord[]): Map<string, number> {
   const counts = new Map<string, number>();
@@ -129,7 +116,7 @@ export function SynthesisMatrix({
     );
   }
 
-  const screeningMap = buildScreeningLookup(screenings);
+  const screeningMap = latestScreeningMap(screenings);
   const claimCounts = buildClaimCitationCounts(claims);
 
   const tagFreq = new Map<string, { label: string; count: number }>();
@@ -218,7 +205,7 @@ export function SynthesisMatrix({
               const year = asText(record.data.year).trim();
               const author = firstAuthorShort(record.data.authors);
               const tone = readingScopeTone(record);
-              const decision = effectiveScreeningDecision(record, screeningMap);
+              const decision = screeningDecisionFor(record, screeningMap);
               const citeCount = claimCounts.get(record.id) ?? 0;
               const paperTags = rowTagSets.get(record.id) ?? new Set<string>();
               const isSelected = selectedId === record.id;

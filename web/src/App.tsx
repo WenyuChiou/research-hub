@@ -172,6 +172,7 @@ export default function App() {
   }, []);
   const [paletteOpen, setPaletteOpen] = useState(false);
   useCommandPaletteShortcut(() => setPaletteOpen((open) => !open));
+  const externalPaperNonceRef = useRef(0);
   const [externalPaperRequest, setExternalPaperRequest] = useState<{
     projectId: string;
     sourceId: string;
@@ -1192,6 +1193,11 @@ export default function App() {
         projects={workspace?.projects ?? []}
         currentProjectId={projectId}
         onSelectProject={(nextProjectId) => {
+          if (nextProjectId === projectId) {
+            setNewProject(false);
+            setNotice(null);
+            return;
+          }
           navigationEpoch.current++;
           navigationTarget.current = null;
           cancelHeadingFocus();
@@ -1210,12 +1216,13 @@ export default function App() {
         sources={activeCuratedSources}
         onOpenPaper={(paper) => {
           if (!projectId) return;
-          setExternalPaperRequest((prev) => ({
+          const nonce = ++externalPaperNonceRef.current;
+          setExternalPaperRequest({
             projectId,
             sourceId: paper.id,
             archived: paper.data.archived === true,
-            nonce: (prev?.nonce ?? 0) + 1,
-          }));
+            nonce,
+          });
           navigate("literature");
         }}
         onNavigate={(targetPage) => navigate(targetPage)}

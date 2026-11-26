@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { readingScopeTone, type ScopeTone } from "./LiteratureLibrary";
+import {
+  latestScreeningMap,
+  readingScopeTone,
+  screeningDecisionFor,
+  type ScopeTone,
+} from "./LiteratureLibrary";
 import type { Artifact, DeliveryAction, Locale, Page, ResearchRecord, Task } from "./types";
 import { workingSummary } from "./WorkingSummaryEditor";
 
@@ -9,32 +14,15 @@ export type RiskSeverity = "ok" | "warn" | "danger";
 const asText = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" ? String(value) : "";
 
-function resolveScreeningMap(screenings: ResearchRecord[]): Map<string, "include" | "exclude"> {
-  const map = new Map<string, "include" | "exclude">();
-  for (const record of screenings) {
-    if (record.kind !== "screening" || typeof record.data.source_id !== "string") continue;
-    const rawDecision = record.data.decision;
-    const hasValidRationale =
-      record.data.rationale === undefined ||
-      (typeof record.data.rationale === "string" && record.data.rationale.trim().length > 0);
-    if (hasValidRationale && (rawDecision === "include" || rawDecision === "exclude")) {
-      map.set(record.data.source_id, rawDecision);
-    } else {
-      map.delete(record.data.source_id);
-    }
-  }
-  return map;
+function resolveScreeningMap(screenings: ResearchRecord[]): Map<string, ResearchRecord> {
+  return latestScreeningMap(screenings);
 }
 
 export function effectiveScreeningDecision(
   source: ResearchRecord,
-  screeningMap: Map<string, "include" | "exclude">,
+  screeningMap: Map<string, ResearchRecord>,
 ): "include" | "exclude" | null {
-  const mapped = screeningMap.get(source.id);
-  if (mapped) return mapped;
-  const inline = source.data.screening;
-  if (inline === "include" || inline === "exclude") return inline;
-  return null;
+  return screeningDecisionFor(source, screeningMap);
 }
 
 export function hasSavedSummaryOrAbstract(source: ResearchRecord): boolean {

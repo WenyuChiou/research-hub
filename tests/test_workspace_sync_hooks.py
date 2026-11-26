@@ -279,9 +279,16 @@ def test_notebooklm_bundle_and_obsidian_pack_stay_inside_workspace_never_touchin
         assert manifest["source_count"] == 2
         assert manifest["full_text_count"] == 1
         assert manifest["abstract_only_count"] == 1
+        assert len(manifest["sources"]) == 2
+        assert manifest["sources"][0]["source_id"] == ids["s1"]
+        assert manifest["sources"][0]["revision_sha256"]
+        assert manifest["sources"][0]["locator"] == "https://doi.org/10.1029/2025WR000001"
         pack_md = (nlm_dir / "00-notebooklm-source-pack.md").read_text(encoding="utf-8")
         assert "Full-Text Declared Sources (1)" in pack_md
         assert "Abstract-Only & Metadata Sources (1)" in pack_md
+        assert f"Source ID: `{ids['s1']}`" in pack_md
+        assert "Locator: https://arxiv.org/abs/2409.12345" in pack_md
+        assert "Source Revision SHA-256:" in pack_md
         assert "Archived Legacy Paper" not in pack_md
         individual_files = sorted((nlm_dir / "sources").glob("*.md"))
         assert len(individual_files) == 2
