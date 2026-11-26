@@ -428,6 +428,7 @@ describe("SyncHooksPanel", () => {
             candidate_count: 1,
             would_create: 1,
             duplicates: 0,
+            destination_library: "user:12345",
             source_revisions: { "src-1": "rev-hash-2" },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -491,6 +492,7 @@ describe("SyncHooksPanel", () => {
     expect(JSON.parse(String(fetchSpy.mock.calls[2][1]?.body))).toEqual({
       dry_run: false,
       selected_source_ids: ["src-1"],
+      expected_library: "user:12345",
       expected_revisions: { "src-1": "rev-hash-2" },
     });
   });

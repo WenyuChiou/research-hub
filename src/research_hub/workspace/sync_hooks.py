@@ -230,6 +230,7 @@ def _category_slug(data: dict[str, Any]) -> str:
 def _source_revision_sha256(record: dict[str, Any], screening: str) -> str:
     return digest({
         "id": _clean_line(record.get("id")),
+        "revision": record.get("revision"),
         "data": record.get("data") if isinstance(record.get("data"), dict) else {},
         "screening": screening,
     })
@@ -254,7 +255,7 @@ def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
     from research_hub.utils.doi import normalize_doi
 
     norm_doi = normalize_doi(doi) if doi else ""
-    norm_title = (title or "").lower()
+    norm_title = (title or "").casefold()
 
     def _matches(items: object) -> bool:
         if not isinstance(items, list):
@@ -265,9 +266,12 @@ def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
             edata = entry.get("data")
             if not isinstance(edata, dict):
                 continue
-            if norm_title and str(edata.get("title") or "").lower() == norm_title:
-                return True
-            if norm_doi and normalize_doi(str(edata.get("DOI") or "")) == norm_doi:
+            entry_doi = normalize_doi(str(edata.get("DOI") or ""))
+            if norm_doi and entry_doi:
+                if norm_doi == entry_doi:
+                    return True
+                continue
+            if norm_title and str(edata.get("title") or "").casefold() == norm_title:
                 return True
         return False
 
@@ -362,8 +366,12 @@ def _render_obsidian_note(
     *,
     project_id: str,
     screening: str,
+    artifact_ref: dict[str, str] | None = None,
 ) -> str:
     data = record["data"]
+    source_id = _clean_line(record.get("id"))
+    source_rev = _clean_line(record.get("revision") or 1)
+    rev_sha256 = _source_revision_sha256(record, screening)
     title = _clean_line(data.get("title")) or "Untitled source"
     authors = _collect_authors(data.get("authors"))
     tags = _collect_tags(data)
@@ -374,13 +382,20 @@ def _render_obsidian_note(
     year = _clean_line(data.get("year"))
     scope = _reading_scope(data)
     identity = _clean_line(data.get("identity_status")) or "unverified"
+    pub_version = _clean_line(data.get("publication_version"))
+    art_id = _clean_line((artifact_ref or {}).get("artifact_id"))
+    art_path = _clean_line((artifact_ref or {}).get("artifact_path"))
+    art_sha = _clean_line((artifact_ref or {}).get("artifact_sha256"))
     summary = _saved_summary(data)
     working = _working_summary_text(data)
     relevance = str(data.get("relevance") or "").strip()
 
-    frontmatter = "\n".join([
+    fm_lines = [
         "---",
         f"title: {_yaml_quote(title)}",
+        f"source_id: {_yaml_quote(source_id)}",
+        f"source_revision: {_yaml_quote(source_rev)}",
+        f"source_revision_sha256: {_yaml_quote(rev_sha256)}",
         f"topic_cluster: {_yaml_quote(project_id)}",
         f"authors: [{', '.join(_yaml_quote(a) for a in authors)}]",
         f"year: {_yaml_quote(year)}",
@@ -392,12 +407,23 @@ def _render_obsidian_note(
         f"reading_scope: {_yaml_quote(scope)}",
         f"screening: {_yaml_quote(screening)}",
         f"identity_status: {_yaml_quote(identity)}",
-        "---",
-    ])
+    ]
+    if pub_version:
+        fm_lines.append(f"publication_version: {_yaml_quote(pub_version)}")
+    if art_id:
+        fm_lines.append(f"artifact_id: {_yaml_quote(art_id)}")
+    if art_path:
+        fm_lines.append(f"artifact_path: {_yaml_quote(art_path)}")
+    if art_sha:
+        fm_lines.append(f"artifact_sha256: {_yaml_quote(art_sha)}")
+    fm_lines.append("---")
+    frontmatter = "\n".join(fm_lines)
 
+    prov_suffix = f" · Workspace artifact: `{_inline_md(art_path)}`" if art_path else ""
     body_lines = [
         f"# {_inline_md(title)}",
         "",
+        f"> Source ID: `{_inline_md(source_id)}` · Revision SHA-256: `{rev_sha256}`{prov_suffix}",
         f"> Reading scope: `{_inline_md(scope)}` · Screening: `{_inline_md(screening)}` · Identity: `{_inline_md(identity)}`",
         "",
         "## Summary",
@@ -420,14 +446,18 @@ def _render_nlm_individual_source(
     project_id: str,
     project_title: str,
     screening: str,
+    artifact_ref: dict[str, str] | None = None,
 ) -> str:
     data = record["data"]
+    source_id = _clean_line(record.get("id"))
+    rev_sha256 = _source_revision_sha256(record, screening)
     title = _clean_line(data.get("title")) or f"Source {index}"
     authors = ", ".join(_collect_authors(data.get("authors"))) or "Unknown"
     year = _clean_line(data.get("year")) or "n.d."
     venue = _clean_line(data.get("venue")) or _clean_line(data.get("journal"))
     doi = _clean_bare_doi(data.get("doi"))
     url = _safe_http_url(data.get("locator"), data.get("locator_kind"))
+    art_path = _clean_line((artifact_ref or {}).get("artifact_path"))
     scope = _reading_scope(data)
     category = _category_slug(data) or "unclassified"
     tags = _collect_tags(data)
@@ -446,6 +476,8 @@ def _render_nlm_individual_source(
         f"# {_inline_md(title)} ({_inline_md(year)})",
         "",
         f"- **Project**: {_inline_md(project_title)} (`{_inline_md(project_id)}`)",
+        f"- **Source ID**: `{_inline_md(source_id)}`",
+        f"- **Source Revision SHA-256**: `{rev_sha256}`",
         f"- **Authors**: {_inline_md(authors)}",
         f"- **Year**: {_inline_md(year)}",
     ]
@@ -455,6 +487,8 @@ def _render_nlm_individual_source(
         lines.append(f"- **DOI**: {_inline_md(doi)}")
     if url:
         lines.append(f"- **URL**: {url}")
+    if art_path:
+        lines.append(f"- **Workspace Artifact**: `{_inline_md(art_path)}`")
     lines.extend([
         f"- **Category**: {_inline_md(category)}",
         f"- **Screening**: {_inline_md(screening)}",
@@ -736,6 +770,48 @@ class WorkspaceSyncHooks:
             pass
         return ""
 
+    def _resolve_source_artifacts(self, project_id: str, sources: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+        try:
+            items = self.workspace.artifacts(project_id)
+        except Exception:
+            return {}
+        by_id: dict[str, dict[str, Any]] = {}
+        by_source: dict[str, dict[str, Any]] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            aid = _clean_line(item.get("id"))
+            if aid:
+                by_id[aid] = item
+            sid = _clean_line(item.get("source_record_id"))
+            if sid:
+                by_source[sid] = item
+
+        resolved_map: dict[str, dict[str, str]] = {}
+        for rec in sources:
+            sid = _clean_line(rec.get("id"))
+            if not sid:
+                continue
+            explicit_aid = _clean_line(rec.get("data", {}).get("artifact_id"))
+            art = by_id.get(explicit_aid) if explicit_aid else by_source.get(sid)
+            if not art:
+                continue
+            raw_rel = _clean_line(art.get("path"))
+            if not raw_rel:
+                continue
+            try:
+                safe_rel = safe_path(self.workspace.root, raw_rel).relative_to(self.workspace.root).as_posix()
+            except (WorkspaceError, ValueError, OSError):
+                continue
+            if safe_rel.startswith(".research/"):
+                continue
+            resolved_map[sid] = {
+                "artifact_id": _clean_line(art.get("id")),
+                "artifact_path": safe_rel,
+                "artifact_sha256": _clean_line(art.get("sha256")),
+            }
+        return resolved_map
+
     def bundle_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         integrations = self._require_enabled()
         body = dict(payload or {})
@@ -746,6 +822,7 @@ class WorkspaceSyncHooks:
         project, sources, screenings = self._resolve_project_sources(
             project_id, body.get("selected_source_ids")
         )
+        artifact_refs = self._resolve_source_artifacts(project_id, sources)
         export_rel = f".research/exports/notebooklm-{project_id}"
         pack_rel = f"{export_rel}/00-notebooklm-source-pack.md"
         manifest_rel = f"{export_rel}/manifest.json"
@@ -788,6 +865,7 @@ class WorkspaceSyncHooks:
                 file_rel = f"{export_rel}/sources/{candidate_name}"
                 file_path = safe_path(self.workspace.root, file_rel)
                 decision = screenings.get(rec["id"], "unscreened")
+                art_ref = artifact_refs.get(rec["id"])
                 _atomic_text(
                     file_path,
                     _render_nlm_individual_source(
@@ -796,6 +874,7 @@ class WorkspaceSyncHooks:
                         project_id=project_id,
                         project_title=project["title"],
                         screening=decision,
+                        artifact_ref=art_ref,
                     ),
                 )
                 source_files.append(file_rel)
@@ -807,6 +886,7 @@ class WorkspaceSyncHooks:
                     "locator": _safe_http_url(
                         rec["data"].get("locator"), rec["data"].get("locator_kind")
                     ),
+                    "artifact_path": (art_ref or {}).get("artifact_path", ""),
                     "reading_scope": _reading_scope(rec["data"]),
                     "screening": decision,
                     "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
@@ -845,7 +925,7 @@ class WorkspaceSyncHooks:
     def sync_zotero(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         integrations = self._require_enabled()
         body = dict(payload or {})
-        extra = set(body) - {"dry_run", "selected_source_ids", "expected_revisions"}
+        extra = set(body) - {"dry_run", "selected_source_ids", "expected_revisions", "expected_library"}
         if extra:
             raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
 
@@ -867,19 +947,39 @@ class WorkspaceSyncHooks:
                 )
             expected_revisions = {k.strip(): v.strip() for k, v in raw_expected.items()}
 
+        expected_library: str | None = None
+        raw_expected_lib = body.get("expected_library")
+        if raw_expected_lib is not None:
+            if not isinstance(raw_expected_lib, str) or not raw_expected_lib.strip():
+                raise WorkspaceError(
+                    "expected_library must be a non-empty string when provided",
+                    "invalid_request",
+                )
+            expected_library = raw_expected_lib.strip()
+
+        def _read_zotero_target() -> tuple[str, str, str, str]:
+            c_path, c_data = integrations._read_config_dict()
+            res = integrations._resolve_zotero_effective(c_data, c_path.parent)
+            a_key = str(res.get("api_key") or "").strip()
+            l_id = str(res.get("library_id") or "").strip()
+            l_type = str(res.get("library_type") or "user").strip() or "user"
+            dest = f"{l_type}:{l_id}" if (a_key and l_id) else ""
+            return a_key, l_id, l_type, dest
+
         selected_ids_arg = body.get("selected_source_ids")
         _, sources, _ = self._resolve_project_sources(
             project_id, selected_ids_arg
         )
         source_revisions = {s["id"]: _zotero_source_fingerprint(s) for s in sources}
 
-        cfg_path, cfg_data = integrations._read_config_dict()
-        resolved = integrations._resolve_zotero_effective(cfg_data, cfg_path.parent)
-        api_key = str(resolved.get("api_key") or "").strip()
-        library_id = str(resolved.get("library_id") or "").strip()
-        library_type = str(resolved.get("library_type") or "user").strip() or "user"
+        api_key, library_id, library_type, destination_library = _read_zotero_target()
 
         if not api_key or not library_id:
+            if not dry_run and expected_library is not None:
+                raise WorkspaceError(
+                    "Zotero destination library changed after the dry-run preview; run Preview again before writing",
+                    "stale_preview",
+                )
             return {
                 "ok": True,
                 "status": "missing_credentials",
@@ -899,6 +999,12 @@ class WorkspaceSyncHooks:
                 ],
             }
 
+        if not dry_run and expected_library is not None and destination_library != expected_library:
+            raise WorkspaceError(
+                "Zotero destination library changed after the dry-run preview; run Preview again before writing",
+                "stale_preview",
+            )
+
         from research_hub.utils.doi import normalize_doi
 
         safe_lib_slug = _slugify(f"{library_type}-{library_id}", fallback=project_id)
@@ -913,6 +1019,14 @@ class WorkspaceSyncHooks:
 
         with write_guard:
             if not dry_run:
+                api_key, library_id, library_type, destination_library = _read_zotero_target()
+                if not api_key or not library_id or (
+                    expected_library is not None and destination_library != expected_library
+                ):
+                    raise WorkspaceError(
+                        "Zotero destination library changed after the dry-run preview; run Preview again before writing",
+                        "stale_preview",
+                    )
                 _, sources, _ = self._resolve_project_sources(
                     project_id, selected_ids_arg
                 )
@@ -934,7 +1048,8 @@ class WorkspaceSyncHooks:
             items_plan: list[dict[str, Any]] = []
             records_to_create: list[dict[str, Any]] = []
             seen_dois: set[str] = set()
-            seen_titles: set[str] = set()
+            seen_doiless_titles: set[str] = set()
+            seen_all_titles: set[str] = set()
             duplicates = 0
 
             for src in sources:
@@ -944,10 +1059,13 @@ class WorkspaceSyncHooks:
                 norm_doi = normalize_doi(doi) if doi else ""
                 norm_title = title.casefold()
 
-                in_batch_dup = bool(
-                    (norm_doi and norm_doi in seen_dois)
-                    or (norm_title and norm_title in seen_titles)
-                )
+                if norm_doi:
+                    in_batch_dup = bool(
+                        norm_doi in seen_dois
+                        or (norm_title and norm_title in seen_doiless_titles)
+                    )
+                else:
+                    in_batch_dup = bool(norm_title and norm_title in seen_all_titles)
                 remote_dup = False if in_batch_dup else _check_zotero_duplicate_strict(zot, title, doi)
                 if in_batch_dup or remote_dup:
                     duplicates += 1
@@ -960,8 +1078,10 @@ class WorkspaceSyncHooks:
                 else:
                     if norm_doi:
                         seen_dois.add(norm_doi)
+                    elif norm_title:
+                        seen_doiless_titles.add(norm_title)
                     if norm_title:
-                        seen_titles.add(norm_title)
+                        seen_all_titles.add(norm_title)
                     records_to_create.append(src)
                     items_plan.append({
                         "id": src["id"],
@@ -978,6 +1098,7 @@ class WorkspaceSyncHooks:
                     "candidate_count": len(sources),
                     "would_create": len(records_to_create),
                     "duplicates": duplicates,
+                    "destination_library": destination_library,
                     "source_revisions": source_revisions,
                     "items": items_plan,
                 }
@@ -1148,14 +1269,19 @@ class WorkspaceSyncHooks:
         project, sources, screenings = self._resolve_project_sources(
             project_id, body.get("selected_source_ids")
         )
+        artifact_refs = self._resolve_source_artifacts(project_id, sources)
         export_rel = f".research/exports/obsidian-{project_id}"
         base_rel = f"{export_rel}/{project_id}.base"
+        manifest_rel = f"{export_rel}/manifest.json"
+        generated_at = _utc_now()
 
         used_names: set[str] = set()
         note_files: list[str] = []
+        manifest_notes: list[dict[str, Any]] = []
         with self._export_lock(f"obsidian:{project_id}", f".obsidian-{project_id}"):
             export_dir = safe_path(self.workspace.root, export_rel)
             base_path = safe_path(self.workspace.root, base_rel)
+            manifest_path = safe_path(self.workspace.root, manifest_rel)
             export_dir.mkdir(parents=True, exist_ok=True)
             self._clean_stale_files(export_dir, (".md", ".base"))
 
@@ -1172,21 +1298,57 @@ class WorkspaceSyncHooks:
                 note_rel = f"{export_rel}/{candidate_name}"
                 note_path = safe_path(self.workspace.root, note_rel)
                 decision = screenings.get(rec["id"], "unscreened")
+                art_ref = artifact_refs.get(rec["id"])
                 _atomic_text(
                     note_path,
-                    _render_obsidian_note(rec, project_id=project_id, screening=decision),
+                    _render_obsidian_note(
+                        rec,
+                        project_id=project_id,
+                        screening=decision,
+                        artifact_ref=art_ref,
+                    ),
                 )
                 note_files.append(note_rel)
+                manifest_notes.append({
+                    "index": index,
+                    "source_id": _clean_line(rec.get("id")),
+                    "source_revision": rec.get("revision", 1),
+                    "revision_sha256": _source_revision_sha256(rec, decision),
+                    "title": _clean_line(rec["data"].get("title")) or f"Note {index}",
+                    "doi": _clean_bare_doi(rec["data"].get("doi")),
+                    "locator": _safe_http_url(
+                        rec["data"].get("locator"), rec["data"].get("locator_kind")
+                    ),
+                    "artifact_id": (art_ref or {}).get("artifact_id", ""),
+                    "artifact_path": (art_ref or {}).get("artifact_path", ""),
+                    "artifact_sha256": (art_ref or {}).get("artifact_sha256", ""),
+                    "reading_scope": _reading_scope(rec["data"]),
+                    "screening": decision,
+                    "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
+                    "publication_version": _clean_line(rec["data"].get("publication_version")),
+                    "note_file": note_rel,
+                })
 
             _atomic_text(
                 base_path,
                 _build_obsidian_base_yaml(project_id, project["title"]),
+            )
+            atomic_json(
+                manifest_path,
+                {
+                    "project_id": project_id,
+                    "project_title": project["title"],
+                    "note_count": len(sources),
+                    "generated_at": generated_at,
+                    "notes": manifest_notes,
+                },
             )
 
         return {
             "ok": True,
             "export_dir": export_rel,
             "base_file": base_rel,
+            "manifest_file": manifest_rel,
             "note_files": note_files,
             "note_count": len(sources),
             "obsidian_vault_name": self._resolve_vault_name(integrations),

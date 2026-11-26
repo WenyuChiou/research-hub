@@ -424,6 +424,9 @@ export function CommandPalette({
   }, [open, activeItemId]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      return;
+    }
     if (event.key === "Tab") {
       const container = dialogRef.current;
       if (!container) return;

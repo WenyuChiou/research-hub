@@ -1193,6 +1193,7 @@ export default function App() {
         projects={workspace?.projects ?? []}
         currentProjectId={projectId}
         onSelectProject={(nextProjectId) => {
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
           if (nextProjectId === projectId) {
             setNewProject(false);
             setNotice(null);
@@ -1216,6 +1217,7 @@ export default function App() {
         sources={activeCuratedSources}
         onOpenPaper={(paper) => {
           if (!projectId) return;
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
           const nonce = ++externalPaperNonceRef.current;
           setExternalPaperRequest({
             projectId,
@@ -1225,7 +1227,10 @@ export default function App() {
           });
           navigate("literature");
         }}
-        onNavigate={(targetPage) => navigate(targetPage)}
+        onNavigate={(targetPage) => {
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
+          navigate(targetPage);
+        }}
         onOpenSettings={() => {
           window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
           setSetupOpenRequest((value) => value + 1);

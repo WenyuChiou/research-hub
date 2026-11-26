@@ -508,6 +508,16 @@ describe("CommandPalette & Ctrl+K Shortcut", () => {
       await user.keyboard("{ArrowDown}");
       expect(scrollSpy).toHaveBeenCalled();
 
+      // IME composition events must not select/close or navigate CommandPalette entries
+      const imeEnter = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+        isComposing: true,
+      });
+      searchBox.dispatchEvent(imeEnter);
+      expect(screen.getByRole("textbox", { name: "全域指令面板" })).toBeInTheDocument();
+
       // Out-of-order release of nested modal locks cleanly restores document.body children
       const host = document.createElement("div");
       const m1 = document.createElement("div");

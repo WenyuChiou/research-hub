@@ -51,6 +51,7 @@ export interface ZoteroSyncResponse {
   skipped_duplicates?: number;
   created_keys?: string[];
   failed_items?: ZoteroFailedItem[];
+  destination_library?: string;
   source_revisions?: Record<string, string>;
   items?: ZoteroSyncItemPlan[];
 }
@@ -307,6 +308,8 @@ export function SyncHooksPanel({
     return undefined;
   }, [explicitSelectedRecords]);
 
+  const zotTargetSig = `${liveIntegrations?.credentials?.zotero_library_type ?? ""}:${liveIntegrations?.credentials?.zotero_library_id ?? ""}`;
+
   const selectionSignature = useMemo(() => {
     const modePrefix = payloadSourceIds
       ? `sel:${payloadSourceIds.join(",")}`
@@ -321,8 +324,8 @@ export function SyncHooksPanel({
         return `${record.id}@${rev}:${JSON.stringify(sortedEntries)}`;
       })
       .join(";");
-    return `${projectId || ""}|${modePrefix}|${revToken}`;
-  }, [projectId, payloadSourceIds, targetSources]);
+    return `${projectId || ""}|${zotTargetSig}|${modePrefix}|${revToken}`;
+  }, [projectId, zotTargetSig, payloadSourceIds, targetSources]);
   const selectionSigRef = useRef(selectionSignature);
   selectionSigRef.current = selectionSignature;
   const selectionEpochRef = useRef(0);
@@ -502,12 +505,14 @@ export function SyncHooksPanel({
     const reqEpoch = selectionEpochRef.current;
     const previewedIds = zotPreviewEntry.payloadSourceIds;
     const previewedRevisions = zotPreviewEntry.data.source_revisions;
+    const previewedLibrary = zotPreviewEntry.data.destination_library;
     setZotWriteCount((count) => count + 1);
     setZotError(null);
     try {
       const payload: Record<string, unknown> = { dry_run: false };
       if (previewedIds) payload.selected_source_ids = previewedIds;
       if (previewedRevisions) payload.expected_revisions = previewedRevisions;
+      if (previewedLibrary) payload.expected_library = previewedLibrary;
       const response = await postIntegrationHook<ZoteroSyncResponse>("zotero/sync", payload);
       if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       if (response.status === "failed") {

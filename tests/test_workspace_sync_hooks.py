@@ -315,9 +315,16 @@ def test_notebooklm_bundle_and_obsidian_pack_stay_inside_workspace_never_touchin
         assert len(notes) == 2
         first_note = notes[0].read_text(encoding="utf-8")
         assert 'topic_cluster: "proj-alpha"' in first_note
+        assert f'source_id: "{ids["s1"]}"' in first_note
+        assert "source_revision_sha256:" in first_note
+        assert f"Source ID: `{ids['s1']}`" in first_note
         assert 'reading_scope: "full-text"' in first_note
         assert 'screening: "include"' in first_note
         assert 'doi: "10.1029/2025WR000001"' in first_note
+        obs_manifest = json.loads((obs_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert obs_manifest["note_count"] == 2
+        assert obs_manifest["notes"][0]["source_id"] == ids["s1"]
+        assert obs_manifest["notes"][0]["revision_sha256"]
 
         # Re-packing with 1 selected source removes stale 2nd note
         code_sub, obs_sub = _post_json(
@@ -589,6 +596,86 @@ def test_zotero_failed_writes_lookup_errors_and_concurrent_exports(tmp_path: Pat
         assert code_stale == 400
         assert stale_res["code"] == "stale_preview"
         assert _HealthyZotero.created_batches == []
+
+        # 2c. Destination library change between preview and confirmation is rejected (stale_preview)
+        assert prev_res["destination_library"] == "user:99999"
+        code_reconf, _ = _post_json(
+            f"{base}/api/v1/integrations/credentials",
+            {
+                "zotero_library_id": "77777",
+                "zotero_library_type": "group",
+                "zotero_api_key": raw_secret,
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_reconf == 200
+        code_lib_stale, lib_stale_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "selected_source_ids": [ids["s1"]],
+                "expected_library": prev_res["destination_library"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_lib_stale == 400
+        assert lib_stale_res["code"] == "stale_preview"
+        assert _HealthyZotero.created_batches == []
+
+        # 2d. Same-title works with distinct DOIs are preserved as distinct identities + Obsidian local artifact ref
+        ws.create_project(id="proj-eds", title="Editorials", archetype="review", goal="Distinct DOIs")
+        ed1 = ws.add_record(
+            "proj-eds",
+            kind="source",
+            data={
+                "title": "Editorial",
+                "locator": "local-copy:ed1",
+                "locator_kind": "local-copy",
+                "doi": "10.1000/editorial-2025-a",
+                "reading_scope": "full-text",
+            },
+        )
+        ed2 = ws.add_record(
+            "proj-eds",
+            kind="source",
+            data={
+                "title": "Editorial",
+                "locator": "https://doi.org/10.1000/editorial-2025-b",
+                "doi": "10.1000/editorial-2025-b",
+                "reading_scope": "abstract",
+            },
+        )
+        local_art_file = ws.root / "sources" / "ed1.txt"
+        local_art_file.parent.mkdir(parents=True, exist_ok=True)
+        local_art_file.write_text("Full text of editorial A.\n", encoding="utf-8")
+        ws.register_artifact(
+            "proj-eds",
+            path="sources/ed1.txt",
+            role="evidence",
+            source_record_id=ed1["id"],
+        )
+        code_eds, eds_res = _post_json(
+            f"{base}/api/v1/projects/proj-eds/integrations/zotero/sync",
+            {"dry_run": True, "selected_source_ids": [ed1["id"], ed2["id"]]},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_eds == 200
+        assert eds_res["would_create"] == 2
+        assert eds_res["duplicates"] == 0
+
+        code_eds_obs, eds_obs = _post_json(
+            f"{base}/api/v1/projects/proj-eds/integrations/obsidian/pack",
+            {"selected_source_ids": [ed1["id"]]},
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_eds_obs == 200
+        ed1_note = (ws.root / eds_obs["note_files"][0]).read_text(encoding="utf-8")
+        assert 'artifact_path: "sources/ed1.txt"' in ed1_note
+        assert str(ws.root) not in ed1_note
 
         # 3. Concurrent Obsidian & NotebookLM exports serialize via file_lock without losing files
         errors: list[Exception] = []
