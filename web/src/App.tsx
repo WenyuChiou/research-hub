@@ -666,10 +666,13 @@ export default function App() {
     <>
       {items.map((item) => {
         const count = pageCount(item);
+        const countId = `nav-count-${item}`;
         return (
           <a
             key={item}
             href={"#" + item}
+            aria-label={t(item)}
+            aria-describedby={count > 0 ? countId : undefined}
             onClick={() => {
               navigationEpoch.current++;
             }}
@@ -680,7 +683,7 @@ export default function App() {
             </span>
             <span className="nav-label-text">{t(item)}</span>
             {count > 0 && (
-              <span className="nav-number" aria-hidden="true">
+              <span id={countId} className="nav-number">
                 {count}
               </span>
             )}

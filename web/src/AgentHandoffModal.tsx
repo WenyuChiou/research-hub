@@ -849,7 +849,9 @@ export function AgentHandoffModal({
         ? t("pipelineStatusConfigured")
         : state === "error"
           ? t("pipelineStatusError")
-          : t("pipelineStatusIdle");
+          : onOpenSetup
+            ? t("pipelineStatusIdle")
+            : t("pipelineStatusIdleReadOnly");
 
   return createPortal(
     <div

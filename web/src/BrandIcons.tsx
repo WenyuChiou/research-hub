@@ -281,6 +281,7 @@ export function DestinationBrandChip({
       role="img"
       tabIndex={0}
       className={className}
+      title={fullLabel}
       aria-label={fullLabel}
       data-tooltip={fullLabel}
       data-tooltip-pos={tooltipPos}

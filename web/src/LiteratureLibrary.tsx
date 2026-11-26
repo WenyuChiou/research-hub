@@ -892,7 +892,9 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
               ? t("pipelineStatusConfigured")
               : state === "error"
                 ? t("pipelineStatusError")
-                : t("pipelineStatusIdle");
+                : onOpenSetup
+                  ? t("pipelineStatusIdle")
+                  : t("pipelineStatusIdleReadOnly");
         const scopeButtons: [ScopeTone, string, number][] = [
           ["full", t("catalogFullTextDeclared"), scopeCounts.full],
           ["abstract", t("catalogAbstractOnly"), scopeCounts.abstract],
@@ -925,7 +927,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     aria-pressed={selectedScope === tone}
                     onClick={() => setSelectedScope((prev) => (prev === tone ? "" : tone))}
                   >
-                    <span>{label}</span>
+                    <span>{label}</span>{" "}
                     <span className="pill-count">{count}</span>
                   </button>
                 ))}
@@ -1017,7 +1019,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 aria-pressed={pressed}
                 onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === label.toLocaleLowerCase() ? "" : label))}
               >
-                <GitHubLabelText label={label} />
+                <GitHubLabelText label={label} />{" "}
                 <span className="pill-count">{count}</span>
               </button>
             );

@@ -295,6 +295,17 @@ describe("workspace readability source contract", () => {
     expect(contrast(token("--focus"), token("--navy"))).toBeGreaterThanOrEqual(
       3,
     );
+    expect(contrast(token("--ide-fg"), token("--ide-bg"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token("--ide-muted"), token("--ide-bg"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token("--ide-muted"), token("--ide-surface"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token("--ide-accent"), token("--ide-active"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token("--ide-border-strong"), token("--ide-surface"))).toBeGreaterThanOrEqual(3);
+    for (const family of ["blue", "teal", "emerald", "indigo", "plum", "amber", "coral", "cyan", "slate"]) {
+      expect(
+        contrast(token(`--lbl-${family}-fg`), token(`--lbl-${family}-bg`)),
+        `label-${family}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
   it.each([
     [
