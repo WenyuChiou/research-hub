@@ -463,6 +463,15 @@ describe("CommandPalette & Ctrl+K Shortcut", () => {
           screenings={[]}
           claims={[]}
           manuscript={{ project: { id: "proj-alpha" }, artifacts: [] }}
+          actions={[
+            {
+              id: "act-approved",
+              kind: "delivery_bundle",
+              status: "approved",
+              action_hash: "h-approved",
+              packet: {},
+            },
+          ]}
           locale="en"
           onNavigate={vi.fn()}
         />

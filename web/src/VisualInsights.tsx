@@ -342,8 +342,12 @@ export function ResearchStageStepper({
             ),
         ).length
       : 0;
-  const completedDeliveries = actions.filter(
-    (a) => a.status === "completed" || a.status === "approved",
+  const completedDeliveries = actions.filter((a) => a.status === "completed").length;
+  const inProgressDeliveries = actions.filter(
+    (a) =>
+      a.status === "approved" ||
+      a.status === "pending_external_action" ||
+      a.status === "awaiting_human",
   ).length;
   const draftTasks = tasks.filter((tk) =>
     ["outline", "draft", "revise"].includes(tk.operation),
@@ -379,7 +383,8 @@ export function ResearchStageStepper({
   const stage4Led: StageLedState =
     completedDeliveries > 0
       ? "ok"
-      : activeManuscriptArtifacts > 0 ||
+      : inProgressDeliveries > 0 ||
+          activeManuscriptArtifacts > 0 ||
           hasBoundState ||
           outlines.length > 0 ||
           draftTasks > 0 ||
@@ -389,17 +394,19 @@ export function ResearchStageStepper({
   const stage4Progress =
     completedDeliveries > 0
       ? 100
-      : activeManuscriptArtifacts > 0 && authorityBound
-        ? 80
-        : activeManuscriptArtifacts > 0
-          ? 65
-          : authorityBound
-            ? 50
-            : outlines.length > 0
-              ? 40
-              : draftTasks > 0 || authorityStale
-                ? 25
-                : 0;
+      : inProgressDeliveries > 0
+        ? 85
+        : activeManuscriptArtifacts > 0 && authorityBound
+          ? 80
+          : activeManuscriptArtifacts > 0
+            ? 65
+            : authorityBound
+              ? 50
+              : outlines.length > 0
+                ? 40
+                : draftTasks > 0 || authorityStale
+                  ? 25
+                  : 0;
   const stage4Pill =
     completedDeliveries > 0
       ? c.manuscriptReady
