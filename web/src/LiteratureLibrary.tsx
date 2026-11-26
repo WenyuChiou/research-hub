@@ -11,12 +11,14 @@ import {
   GitHubLabelText,
 } from "./BrandIcons";
 import {
+  buildCiteKeyMap,
   buildObsidianUri,
   buildRisExport,
-  extractVaultName,
   formatApaReference,
   formatInTextCitation,
   formatPandocCite,
+  makeCiteKey,
+  resolveObsidianVaultName,
 } from "./citations";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -521,17 +523,20 @@ function SourceCurationForm({
 }
 
 function QuickAddSourceDrawer({
+  drawerId,
   categories,
   t,
   onAdd,
   onClose,
 }: {
+  drawerId: string;
   categories: string[];
   t: Translate;
   onAdd: (source: QuickAddSourceInput) => Promise<void>;
   onClose: () => void;
 }) {
   const formId = useId();
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [locator, setLocator] = useState("");
   const [doi, setDoi] = useState("");
@@ -545,14 +550,30 @@ function QuickAddSourceDrawer({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
 
+  useEffect(() => {
+    titleInputRef.current?.focus();
+  }, []);
+
   return (
-    <div className="catalog-quick-add-card" role="region" aria-label={t("catalogQuickAddTitle")}>
+    <div
+      id={drawerId}
+      className="catalog-quick-add-card"
+      role="region"
+      aria-label={t("catalogQuickAddTitle")}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !busy) {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
       <div className="catalog-quick-add-header">
         <strong>{t("catalogQuickAddTitle")}</strong>
         <button
           type="button"
           className="button text-button small icon-btn"
           aria-label={t("catalogQuickAddClose")}
+          disabled={busy}
           onClick={onClose}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
@@ -597,7 +618,7 @@ function QuickAddSourceDrawer({
           <div className="form-grid">
             <div className="field field-wide">
               <label htmlFor={`${formId}-title`}>{t("title")} <span aria-hidden="true" className="required-dot">·</span></label>
-              <input id={`${formId}-title`} required value={title} onChange={(e) => setTitle(e.target.value)} maxLength={500} />
+              <input ref={titleInputRef} id={`${formId}-title`} required value={title} onChange={(e) => setTitle(e.target.value)} maxLength={500} />
             </div>
             <div className="field">
               <label htmlFor={`${formId}-locator`}>{t("locator")} <span aria-hidden="true" className="required-dot">·</span></label>
@@ -658,7 +679,7 @@ function QuickAddSourceDrawer({
   );
 }
 
-export function LiteratureLibrary({ sources: rawSources, screenings, curations, locale, t, projectId, projectTitle, onScreen, onCurate, onAddSource, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, locale, t, projectId, projectTitle, onScreen, onCurate, onAddSource, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, snapshotVaultLabel, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   curations?: ResearchRecord[];
@@ -675,6 +696,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   onPrepare: (record: ResearchRecord) => void;
   onOpenAddTools?: () => void;
   matches?: Map<string, ResearchRecord[]>;
+  snapshotVaultLabel?: string | null;
   observationText?: ObservationTextContext;
   observationRead?: ObservationReadScope;
   pageSuspended?: boolean;
@@ -682,7 +704,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   onWorkingSummarySaved?: () => Promise<void>;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
-  requestedView?: { mode: ViewMode; category?: string; nonce: number };
+  requestedView?: { mode: ViewMode; category?: string; sourceId?: string; archived?: boolean; nonce: number };
   curationState?: CurationStateMap;
   onCurationStateChange?: Dispatch<SetStateAction<CurationStateMap>>;
 }) {
@@ -693,6 +715,10 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const allCuratedSources = useMemo(
     () => applySourceCurations(rawSources, curations),
     [rawSources, curations],
+  );
+  const citeKeyMap = useMemo(
+    () => buildCiteKeyMap(allCuratedSources),
+    [allCuratedSources],
   );
   const sources = useMemo(
     () => allCuratedSources.filter((record) => record.data.archived !== true),
@@ -709,7 +735,14 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const [selectedYear, setSelectedYear] = useState("");
   const [showAllTags, setShowAllTags] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const quickAddDrawerId = useId();
+  const quickAddTriggerRef = useRef<HTMLButtonElement>(null);
+  const closeQuickAdd = useCallback(() => {
+    setQuickAddOpen(false);
+    requestAnimationFrame(() => quickAddTriggerRef.current?.focus());
+  }, []);
   const [citeCopiedText, setCiteCopiedText] = useState<string | null>(null);
+  const [citeCopyError, setCiteCopyError] = useState<string | null>(null);
   const [organization, setOrganization] = useState<Organization>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [sortBy, setSortBy] = useState<SortKey>("default");
@@ -743,7 +776,14 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     setSelectedScope("");
     setSelectedTags([]);
     setSelectedYear("");
-    if (requestedView.category === "__unclassified__") {
+    if (requestedView.sourceId) {
+      setSelectedCategory("");
+      setOrganization(requestedView.archived ? "archived" : "all");
+      setSelectionMissing(false);
+      setSelectedId(requestedView.sourceId);
+      setReaderOpen(true);
+      focusRequested.current = true;
+    } else if (requestedView.category === "__unclassified__") {
       setSelectedCategory("");
       setOrganization("unclassified");
     } else if (typeof requestedView.category === "string") {
@@ -809,11 +849,19 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     ["unscreened", "catalogNeedsScreening"],
     ...(archivedSources.length > 0 || organization === "archived" ? ([["archived", "catalogArchivedTab"]] as const) : []),
   ] as const;
-  const categories = [...new Set(sources.map(category).filter(Boolean))].sort();
-  const distinctYears = [...new Set(sources.map((r) => text(r.data.year).trim()).filter((y) => /^\d{4}$/.test(y)))].sort((a, b) => Number(b) - Number(a));
+  const poolSources = organization === "archived" ? archivedSources : sources;
+  const categories = [...new Set(poolSources.map(category).filter(Boolean))].sort();
+  const distinctYears = [...new Set([
+    ...poolSources.map((r) => text(r.data.year).trim()).filter((y) => /^\d{4}$/.test(y)),
+    ...(selectedYear ? [selectedYear] : []),
+  ])].sort((a, b) => Number(b) - Number(a));
   const scopeCounts: Record<ScopeTone, number> = { full: 0, abstract: 0, metadata: 0, unknown: 0 };
-  const tagMap = new Map<string, { label: string; count: number }>();
+  const activeScopeCounts: Record<ScopeTone, number> = { full: 0, abstract: 0, metadata: 0, unknown: 0 };
   for (const record of sources) {
+    activeScopeCounts[readingScopeTone(record)]++;
+  }
+  const tagMap = new Map<string, { label: string; count: number }>();
+  for (const record of poolSources) {
     scopeCounts[readingScopeTone(record)]++;
     for (const tag of sourceTags(record)) {
       const key = tag.toLocaleLowerCase();
@@ -837,7 +885,6 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     );
   };
   const isTagSelected = (tagLabel: string) => selectedTagSet.has(tagLabel.toLocaleLowerCase());
-  const poolSources = organization === "archived" ? archivedSources : sources;
   const visible = poolSources.filter((record) =>
     matchesOrganization(record, organization) &&
     (!selectedCategory || category(record) === selectedCategory) &&
@@ -850,7 +897,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const exactSelected = visible.find((record) => record.id === selectedId);
   const selected = compact && readerOpen ? exactSelected : exactSelected ?? visible[0];
   const openSummaryRecords = openSummaryIds
-    .map((id) => sources.find((record) => record.id === id))
+    .map((id) => allCuratedSources.find((record) => record.id === id))
     .filter((record): record is ResearchRecord => Boolean(record && record.kind !== "library-note"));
   const hiddenDraftRecords = openSummaryRecords.filter((record) => record.id !== selected?.id);
   const bannerDraftRecords = viewMode === "table" || (compact && !readerOpen) ? openSummaryRecords : hiddenDraftRecords;
@@ -885,7 +932,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const draftScope = observationRead ?? (observationText ? {
     projectId: observationText.projectId, artifacts: observationText.artifacts, active: true,
   } : undefined);
-  const registeredDrafts = new Set(sources.filter(record => observationArtifacts(record, draftScope).length > 0).map(record => record.id));
+  const registeredDrafts = new Set(allCuratedSources.filter(record => observationArtifacts(record, draftScope).length > 0).map(record => record.id));
   function openDrafts(focus = true) {
     const entries = observationReader.current?.querySelectorAll<HTMLDetailsElement>('.source-observation[data-generated="true"]');
     entries?.forEach(entry => { entry.open = true; });
@@ -895,15 +942,54 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     <h3>{t("catalogCategories")}</h3>
     <button type="button" aria-pressed={!selectedCategory} onClick={() => setSelectedCategory("")}>
       <span className="cat-nav-item"><span className="cat-nav-dot label-tone-slate" aria-hidden="true" />{t("catalogAllCategories")}</span>{" "}
-      <span className="cat-nav-count">{sources.length}</span>
+      <span className="cat-nav-count">{poolSources.length}</span>
     </button>
     {categories.map(value => (
       <button type="button" key={value} aria-pressed={selectedCategory === value} onClick={() => setSelectedCategory(value)}>
         <span className="cat-nav-item"><span className={`cat-nav-dot label-tone-${classifyLabelTone(value)}`} aria-hidden="true" />{categoryName(value,t)}</span>{" "}
-        <span className="cat-nav-count">{sources.filter(record => category(record) === value).length}</span>
+        <span className="cat-nav-count">{poolSources.filter(record => category(record) === value).length}</span>
       </button>
     ))}
   </div>;
+
+  async function copyCitationText(sourceId: string, kind: string, value: string) {
+    setCiteCopyError(null);
+    if (!navigator.clipboard?.writeText) {
+      setCiteCopyError(t("handoffCopyFailed"));
+      return;
+    }
+    try {
+      const token = `${sourceId}:${kind}`;
+      await navigator.clipboard.writeText(value);
+      setCiteCopiedText(token);
+      setTimeout(() => setCiteCopiedText((c) => (c === token ? null : c)), 1800);
+    } catch {
+      setCiteCopyError(t("handoffCopyFailed"));
+    }
+  }
+
+  async function runArchiveToggle(sourceId: string, archived: boolean) {
+    if (!onCurate || curationState[sourceId]?.saving) return;
+    setCurationState((prev) => ({
+      ...prev,
+      [sourceId]: { ...prev[sourceId], saving: true, saved: false, error: undefined },
+    }));
+    try {
+      await onCurate(sourceId, { archived });
+      setCurationState((prev) => ({
+        ...prev,
+        [sourceId]: { ...prev[sourceId], saving: false, error: undefined },
+      }));
+      if (!archived && archivedSources.length <= 1) {
+        setOrganization("all");
+      }
+    } catch (failure) {
+      setCurationState((prev) => ({
+        ...prev,
+        [sourceId]: { ...prev[sourceId], saving: false, saved: false, error: failure },
+      }));
+    }
+  }
 
   const selectedAuthors = selected ? formatAuthors(selected.data.authors) : "";
   const selectedVenue = selected ? (text(selected.data.venue) || text(selected.data.journal)) : "";
@@ -1052,9 +1138,11 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           <span className="catalog-total">{sources.length} {t("catalogItems")}</span>
           {onAddSource && (
             <button
+              ref={quickAddTriggerRef}
               type="button"
               className="button secondary small catalog-quick-add-trigger"
               aria-expanded={quickAddOpen}
+              aria-controls={quickAddOpen ? quickAddDrawerId : undefined}
               onClick={() => setQuickAddOpen((open) => !open)}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" aria-hidden="true" focusable="false">
@@ -1113,14 +1201,15 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
       </div>
       {quickAddOpen && onAddSource && (
         <QuickAddSourceDrawer
+          drawerId={quickAddDrawerId}
           categories={categories}
           t={t}
           onAdd={onAddSource}
-          onClose={() => setQuickAddOpen(false)}
+          onClose={closeQuickAdd}
         />
       )}
-      {sources.length > 0 && (() => {
-        const total = sources.length;
+      {allCuratedSources.length > 0 && (() => {
+        const total = Math.max(1, sources.length);
         const pct = (count: number) => `${Math.round((count / total) * 1000) / 10}%`;
         const dest = computeDestinationStatuses(workspace, liveIntegrations);
         const destStatusText = (state: "ok" | "configured" | "error" | "idle") =>
@@ -1145,19 +1234,19 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
               <div className="catalog-health-header">
                 <span className="catalog-health-label">{t("catalogHealthCoverage")}</span>
                 <span className="catalog-health-kpis">
-                  <span>{t("catalogHealthIncluded")} <strong>{summaryStats.included}/{total}</strong></span>
+                  <span>{t("catalogHealthIncluded")} <strong>{summaryStats.included}/{sources.length}</strong></span>
                   <span aria-hidden="true">·</span>
-                  <span>{t("catalogHealthSummary")} <strong>{summaryStats.withSummary}/{total}</strong></span>
+                  <span>{t("catalogHealthSummary")} <strong>{summaryStats.withSummary}/{sources.length}</strong></span>
                 </span>
               </div>
               <div className="catalog-coverage-meter" aria-hidden="true">
-                {scopeCounts.full > 0 && <span className="meter-seg scope-full" style={{ width: pct(scopeCounts.full) }} />}
-                {scopeCounts.abstract > 0 && <span className="meter-seg scope-abstract" style={{ width: pct(scopeCounts.abstract) }} />}
-                {scopeCounts.metadata > 0 && <span className="meter-seg scope-metadata" style={{ width: pct(scopeCounts.metadata) }} />}
-                {scopeCounts.unknown > 0 && <span className="meter-seg scope-unknown" style={{ width: pct(scopeCounts.unknown) }} />}
+                {activeScopeCounts.full > 0 && <span className="meter-seg scope-full" style={{ width: pct(activeScopeCounts.full) }} />}
+                {activeScopeCounts.abstract > 0 && <span className="meter-seg scope-abstract" style={{ width: pct(activeScopeCounts.abstract) }} />}
+                {activeScopeCounts.metadata > 0 && <span className="meter-seg scope-metadata" style={{ width: pct(activeScopeCounts.metadata) }} />}
+                {activeScopeCounts.unknown > 0 && <span className="meter-seg scope-unknown" style={{ width: pct(activeScopeCounts.unknown) }} />}
               </div>
               <div className="catalog-scope-filters" role="group" aria-label={t("catalogFilterByScope")}>
-                {scopeButtons.filter(([, , count]) => count > 0).map(([tone, label, count]) => (
+                {scopeButtons.filter(([tone, , count]) => count > 0 || selectedScope === tone).map(([tone, label, count]) => (
                   <button
                     key={tone}
                     type="button"
@@ -1229,10 +1318,10 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           <label className="catalog-category-select"><span className="sr-only">{t("catalogCategory")}</span>
             <select ref={categorySelect} aria-label={t("catalogCategory")} value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
               <option value="">{t("catalogAllCategories")}</option>
-              {categories.map((value) => <option key={value} value={value}>{categoryName(value, t)} ({sources.filter((record) => category(record) === value).length})</option>)}
+              {categories.map((value) => <option key={value} value={value}>{categoryName(value, t)} ({poolSources.filter((record) => category(record) === value).length})</option>)}
             </select>
           </label>
-          {distinctYears.length > 1 && (
+          {(distinctYears.length > 1 || Boolean(selectedYear)) && (
             <label className="catalog-year-select">
               <span className="sr-only">{t("catalogFilterYear")}</span>
               <select
@@ -1243,7 +1332,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 <option value="">{t("catalogAllYears")}</option>
                 {distinctYears.map((yr) => (
                   <option key={yr} value={yr}>
-                    {yr} ({sources.filter((r) => text(r.data.year).trim() === yr).length})
+                    {yr} ({poolSources.filter((r) => text(r.data.year).trim() === yr).length})
                   </option>
                 ))}
               </select>
@@ -1320,7 +1409,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                   setSelectedScope("");
                   setSelectedTags([]);
                   setSelectedYear("");
-                  setOrganization("all");
+                  setOrganization(draftRecord.data.archived === true ? "archived" : "all");
                 }
                 setSelectionMissing(false);
                 setSelectedId(draftRecord.id);
@@ -1602,8 +1691,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
             </div>
           ) : (
             <div className="catalog-empty-state">
-              <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
-              {!sources.length && onOpenAddTools && (
+              <p className="catalog-empty">{poolSources.length ? t("catalogNoMatches") : t("noSources")}</p>
+              {!allCuratedSources.length && onOpenAddTools && (
                 <button type="button" className="button primary" onClick={onOpenAddTools}>
                   {t("catalogAddFirstSource")}
                 </button>
@@ -1659,8 +1748,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
             </table>
           ) : (
             <div className="catalog-empty-state">
-              <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
-              {!sources.length && onOpenAddTools && (
+              <p className="catalog-empty">{poolSources.length ? t("catalogNoMatches") : t("noSources")}</p>
+              {!allCuratedSources.length && onOpenAddTools && (
                 <button type="button" className="button primary" onClick={onOpenAddTools}>
                   {t("catalogAddFirstSource")}
                 </button>
@@ -1708,8 +1797,9 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     aria-label={t("catalogArchiveSource")}
                     data-tooltip={t("catalogArchiveSource")}
                     data-tooltip-pos="bottom-end"
+                    disabled={Boolean(curationState[selected.id]?.saving)}
                     onClick={() => {
-                      void onCurate(selected.id, { archived: true });
+                      void runArchiveToggle(selected.id, true);
                     }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
@@ -1781,94 +1871,94 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 )}
               </div>
             )}
-            <div className="catalog-cite-bar" role="group" aria-label={t("citeQuickLabel")}>
-              <span className="catalog-cite-kicker">
-                {t("citeQuickLabel")}: <code>{formatInTextCitation(selected)}</code>
-              </span>
-              <div className="catalog-cite-actions">
-                <button
-                  type="button"
-                  className="cite-bar-btn"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText?.(formatApaReference(selected)).then(() => {
-                      setCiteCopiedText("apa");
-                      setTimeout(() => setCiteCopiedText((c) => (c === "apa" ? null : c)), 1800);
-                    });
-                  }}
-                >
-                  {citeCopiedText === "apa" ? `✓ ${t("citeCopied")}` : t("citeCopyApa")}
-                </button>
-                <button
-                  type="button"
-                  className="cite-bar-btn"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText?.(buildBibtexExport([selected])).then(() => {
-                      setCiteCopiedText("bib");
-                      setTimeout(() => setCiteCopiedText((c) => (c === "bib" ? null : c)), 1800);
-                    });
-                  }}
-                >
-                  {citeCopiedText === "bib" ? `✓ ${t("citeCopied")}` : t("citeCopyBib")}
-                </button>
-                <button
-                  type="button"
-                  className="cite-bar-btn"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText?.(formatPandocCite(selected, 0)).then(() => {
-                      setCiteCopiedText("key");
-                      setTimeout(() => setCiteCopiedText((c) => (c === "key" ? null : c)), 1800);
-                    });
-                  }}
-                >
-                  {citeCopiedText === "key" ? `✓ ${t("citeCopied")}` : t("citeCopyKey")}
-                </button>
-                <button
-                  type="button"
-                  className="cite-bar-btn"
-                  onClick={() => {
-                    const blob = new Blob([buildBibtexExport([selected])], { type: "application/x-bibtex;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `${formatPandocCite(selected, 0).replace(/[^a-z0-9_-]/gi, "") || "citation"}.bib`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                  }}
-                >
-                  ↓ {t("citeDownloadBib")}
-                </button>
-                <button
-                  type="button"
-                  className="cite-bar-btn"
-                  onClick={() => {
-                    const blob = new Blob([buildRisExport([selected])], { type: "application/x-research-info-systems;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `${formatPandocCite(selected, 0).replace(/[^a-z0-9_-]/gi, "") || "citation"}.ris`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                  }}
-                >
-                  ↓ {t("citeDownloadRis")}
-                </button>
-                {note && (() => {
-                  const vName =
-                    (liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations)?.obsidian_vault_name ||
-                    extractVaultName(workspace?.capabilities?.obsidian_validation?.authorized_vault);
-                  const uri = buildObsidianUri(vName, text(selected.data.note_path));
-                  return uri ? (
-                    <a className="cite-bar-btn" href={uri}>
-                      {t("obsidianOpenApp")} ↗
-                    </a>
-                  ) : null;
-                })()}
-              </div>
-            </div>
+            {(() => {
+              const selectedCiteKey = citeKeyMap.get(selected.id) ?? makeCiteKey(selected, 0);
+              return (
+                <div className="catalog-cite-bar" role="group" aria-label={t("citeQuickLabel")}>
+                  <span className="catalog-cite-kicker">
+                    {t("citeQuickLabel")}: <code>{formatInTextCitation(selected)}</code>
+                  </span>
+                  <div className="catalog-cite-actions">
+                    <button
+                      type="button"
+                      className="cite-bar-btn"
+                      onClick={() => void copyCitationText(selected.id, "apa", formatApaReference(selected))}
+                    >
+                      {citeCopiedText === `${selected.id}:apa` ? `✓ ${t("citeCopied")}` : t("citeCopyApa")}
+                    </button>
+                    <button
+                      type="button"
+                      className="cite-bar-btn"
+                      onClick={() => void copyCitationText(selected.id, "bib", buildBibtexExport([selected], citeKeyMap))}
+                    >
+                      {citeCopiedText === `${selected.id}:bib` ? `✓ ${t("citeCopied")}` : t("citeCopyBib")}
+                    </button>
+                    <button
+                      type="button"
+                      className="cite-bar-btn"
+                      onClick={() => void copyCitationText(selected.id, "key", formatPandocCite(selected, 0, selectedCiteKey))}
+                    >
+                      {citeCopiedText === `${selected.id}:key` ? `✓ ${t("citeCopied")}` : t("citeCopyKey")}
+                    </button>
+                    <button
+                      type="button"
+                      className="cite-bar-btn"
+                      onClick={() => {
+                        const blob = new Blob([buildBibtexExport([selected], citeKeyMap)], { type: "application/x-bibtex;charset=utf-8" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${selectedCiteKey.replace(/[^a-z0-9_-]/gi, "") || "citation"}.bib`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      }}
+                    >
+                      ↓ {t("citeDownloadBib")}
+                    </button>
+                    <button
+                      type="button"
+                      className="cite-bar-btn"
+                      onClick={() => {
+                        const blob = new Blob([buildRisExport([selected])], { type: "application/x-research-info-systems;charset=utf-8" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${selectedCiteKey.replace(/[^a-z0-9_-]/gi, "") || "citation"}.ris`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      }}
+                    >
+                      ↓ {t("citeDownloadRis")}
+                    </button>
+                    {note && (() => {
+                      const vName = resolveObsidianVaultName(
+                        workspace,
+                        liveIntegrations,
+                        snapshotVaultLabel !== undefined ? snapshotVaultLabel : text(selected.data.vault_label) || null,
+                      );
+                      const uri = buildObsidianUri(vName, text(selected.data.note_path));
+                      return uri ? (
+                        <a className="cite-bar-btn" href={uri}>
+                          {t("obsidianOpenApp")} ↗
+                        </a>
+                      ) : null;
+                    })()}
+                  </div>
+                  {citeCopyError && (
+                    <span role="alert" className="small bad-text">
+                      {citeCopyError}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+            {!curationOpen && curationState[selected.id]?.error !== undefined && curationState[selected.id]?.error !== null && (
+              <ErrorMessage error={curationState[selected.id]!.error} t={t} />
+            )}
             </div>
             {selected.data.archived === true && onCurate && (
               <div className="catalog-unsaved-drafts" role="status">
@@ -1876,10 +1966,9 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 <button
                   type="button"
                   className="button primary small"
+                  disabled={Boolean(curationState[selected.id]?.saving)}
                   onClick={() => {
-                    void onCurate(selected.id, { archived: false }).then(() => {
-                      if (archivedSources.length <= 1) setOrganization("all");
-                    });
+                    void runArchiveToggle(selected.id, false);
                   }}
                 >
                   {t("catalogRestoreSource")}
@@ -2103,7 +2192,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           initialScope={handoffScope}
           selectedRecord={selected}
           filteredRecords={sortedVisible}
-          screenings={new Map(sources.map((record) => [record.id, screenedDecision(record)]))}
+          screenings={new Map(allCuratedSources.map((record) => [record.id, screenedDecision(record)]))}
           projectId={projectId}
           projectTitle={projectTitle}
           workspace={workspace}

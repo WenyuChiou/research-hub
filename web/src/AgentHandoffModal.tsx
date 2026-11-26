@@ -4,12 +4,14 @@ import { safeSourceUrl } from "./api";
 import { BrandMark, DestinationBrandChip } from "./BrandIcons";
 import {
   buildApaBibliography,
+  buildCiteKeyMap,
   buildCslJsonExport,
   buildObsidianBaseYaml,
   buildObsidianUri,
   buildRisExport,
-  extractVaultName,
+  cleanBareDoi,
   makeCiteKey,
+  resolveObsidianVaultName,
 } from "./citations";
 import { ErrorMessage } from "./components";
 import { zhTW, type Translate } from "./i18n";
@@ -184,13 +186,18 @@ export function buildObsidianMarkdown(
   records: ResearchRecord[],
   screenings: Map<string, "include" | "exclude" | null>,
   projectTitle?: string,
+  clusterSlug?: string,
 ): string {
+  const safeCluster =
+    (clusterSlug || "research-hub")
+      .replace(/[^a-z0-9-_]/gi, "-")
+      .toLowerCase() || "research-hub";
   if (records.length === 1) {
     const record = records[0];
     const authors = collectAuthors(record.data.authors);
     const tags = collectTags(record);
     const cat = categorySlug(record);
-    const doi = text(record.data.doi).trim();
+    const doi = cleanBareDoi(record.data.doi);
     const url =
       record.data.locator_kind !== "local-copy"
         ? safeSourceUrl(record.data.locator) || ""
@@ -207,6 +214,7 @@ export function buildObsidianMarkdown(
     const frontmatter = [
       "---",
       `title: ${yamlQuote(text(record.data.title))}`,
+      `topic_cluster: ${yamlQuote(safeCluster)}`,
       `authors: [${authors.map(yamlQuote).join(", ")}]`,
       `year: ${year ? yamlQuote(year) : '""'}`,
       `venue: ${yamlQuote(venue)}`,
@@ -238,9 +246,15 @@ export function buildObsidianMarkdown(
   }
 
   const allTags = dedupeCaseInsensitive(records.flatMap(collectTags));
+  const decisions = new Set(records.map((r) => screenings.get(r.id) ?? "unscreened"));
+  const bundleScreening = decisions.size === 1 ? [...decisions][0] : "mixed";
   const frontmatter = [
     "---",
     `title: ${yamlQuote(`${projectTitle || "Research Hub"} — Literature Export (${records.length})`)}`,
+    `topic_cluster: ${yamlQuote(safeCluster)}`,
+    `category: "bundle"`,
+    `reading_scope: "bundle"`,
+    `screening: ${yamlQuote(bundleScreening)}`,
     `paper_count: ${records.length}`,
     `tags: [${allTags.map(yamlQuote).join(", ")}]`,
     "---",
@@ -347,20 +361,26 @@ export function buildNotebookLmSourcePack(
   ].join("\n");
 }
 
-export function buildBibtexExport(records: ResearchRecord[]): string {
+export function buildBibtexExport(
+  records: ResearchRecord[],
+  citeKeyMap?: ReadonlyMap<string, string>,
+): string {
+  const resolvedKeys = citeKeyMap ?? buildCiteKeyMap(records);
   const usedKeys = new Set<string>();
   return (
     records
       .map((record, index) => {
-        let key = makeCiteKey(record, index);
+        let key = resolvedKeys.get(record.id) || makeCiteKey(record, index);
         if (usedKeys.has(key)) {
-          key = `${key}_${index + 1}`;
+          let suffix = 2;
+          while (usedKeys.has(`${key}_${suffix}`)) suffix++;
+          key = `${key}_${suffix}`;
         }
         usedKeys.add(key);
         const authors = collectAuthors(record.data.authors).join(" and ");
         const venue = text(record.data.venue).trim() || text(record.data.journal).trim();
         const year = text(record.data.year).trim();
-        const doi = text(record.data.doi).trim();
+        const doi = cleanBareDoi(record.data.doi);
         const url =
           record.data.locator_kind !== "local-copy"
             ? safeSourceUrl(record.data.locator) || ""
@@ -810,11 +830,12 @@ export function AgentHandoffModal({
   }
 
   const slugBase = (projectId || "research-hub").replace(/[^a-z0-9-_]/gi, "-");
-  const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
-  const obsidianVaultName =
-    localCap?.obsidian_vault_name ||
-    extractVaultName(workspace?.capabilities?.obsidian_validation?.authorized_vault);
+  const obsidianVaultName = resolveObsidianVaultName(workspace, liveIntegrations);
   const obsidianAppUri = buildObsidianUri(obsidianVaultName);
+  const exportKeyMap = useMemo(
+    () => buildCiteKeyMap(filteredRecords.length ? filteredRecords : targetRecords),
+    [filteredRecords, targetRecords],
+  );
 
   const presets: { id: HandoffPresetId; title: string; desc: string }[] = [
     {
@@ -1115,7 +1136,7 @@ export function AgentHandoffModal({
                     className="button primary small"
                     disabled={!targetRecords.length}
                     onClick={() => {
-                      const md = buildObsidianMarkdown(targetRecords, screenings, projectTitle);
+                      const md = buildObsidianMarkdown(targetRecords, screenings, projectTitle, slugBase);
                       downloadTextFile(
                         `${slugBase}-obsidian-${targetRecords.length === 1 ? "note" : "bundle"}.md`,
                         md,
@@ -1131,7 +1152,7 @@ export function AgentHandoffModal({
                     className="button secondary small"
                     disabled={!targetRecords.length}
                     onClick={() => {
-                      const baseYaml = buildObsidianBaseYaml(slugBase, projectTitle);
+                      const baseYaml = buildObsidianBaseYaml(slugBase, projectTitle, targetRecords);
                       downloadTextFile(
                         `${slugBase}.base`,
                         baseYaml,
@@ -1148,7 +1169,7 @@ export function AgentHandoffModal({
                     disabled={!targetRecords.length}
                     onClick={() =>
                       void copyText(
-                        buildObsidianMarkdown(targetRecords, screenings, projectTitle),
+                        buildObsidianMarkdown(targetRecords, screenings, projectTitle, slugBase),
                         t("handoffCopiedFile"),
                       )
                     }
@@ -1225,7 +1246,7 @@ export function AgentHandoffModal({
                     className="button primary small"
                     disabled={!targetRecords.length}
                     onClick={() => {
-                      const bib = buildBibtexExport(targetRecords);
+                      const bib = buildBibtexExport(targetRecords, exportKeyMap);
                       downloadTextFile(
                         `${slugBase}-citations.bib`,
                         bib,
@@ -1257,7 +1278,7 @@ export function AgentHandoffModal({
                     className="button secondary small"
                     disabled={!targetRecords.length}
                     onClick={() => {
-                      const csl = buildCslJsonExport(targetRecords);
+                      const csl = buildCslJsonExport(targetRecords, exportKeyMap);
                       downloadTextFile(
                         `${slugBase}-csl.json`,
                         csl,
@@ -1273,7 +1294,7 @@ export function AgentHandoffModal({
                     className="button secondary small"
                     disabled={!targetRecords.length}
                     onClick={() =>
-                      void copyText(buildBibtexExport(targetRecords), t("handoffCopiedFile"))
+                      void copyText(buildBibtexExport(targetRecords, exportKeyMap), t("handoffCopiedFile"))
                     }
                   >
                     {t("handoffCopyBib")}

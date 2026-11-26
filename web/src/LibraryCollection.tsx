@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildObsidianUri } from "./citations";
-import { LiteratureLibrary, type CurationStateMap, type QuickAddSourceInput, type SourceCurationInput } from "./LiteratureLibrary";
+import { LiteratureLibrary, applySourceCurations, type CurationStateMap, type QuickAddSourceInput, type SourceCurationInput } from "./LiteratureLibrary";
 import { identityMatches } from "./libraryIdentity";
 import type { Translate } from "./i18n";
 import type {
@@ -50,7 +50,7 @@ export function LibraryCollection(props: {
   onWorkingSummarySaved?: () => Promise<void>;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
-  requestedView?: { mode: "split" | "table"; category?: string; nonce: number };
+  requestedView?: { mode: "split" | "table"; category?: string; sourceId?: string; archived?: boolean; nonce: number };
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);
@@ -92,6 +92,10 @@ export function LibraryCollection(props: {
     }
   }
   const all = [...props.sources, ...(snapshot?.notes ?? [])];
+  const curatedAll = useMemo(
+    () => [...applySourceCurations(props.sources, props.curations), ...(snapshot?.notes ?? [])],
+    [props.sources, props.curations, snapshot?.notes],
+  );
   const visible = scope === "obsidian" ? snapshot?.notes ?? [] : scope === "all" ? all : props.sources;
   return <>
     <section className="library-connection" aria-label={t("libraryConnection")}>
@@ -139,7 +143,8 @@ export function LibraryCollection(props: {
       onCurationStateChange={setCurationState}
       requestedView={scope !== "obsidian" ? pendingView : undefined}
       sources={visible}
-      matches={identityMatches(all)}
+      snapshotVaultLabel={snapshot?.vault_label ?? null}
+      matches={identityMatches(curatedAll)}
     />
   </>;
 }

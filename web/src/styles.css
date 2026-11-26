@@ -887,7 +887,7 @@ input,
 textarea,
 select {
   width: 100%;
-  border: 1px solid var(--line-strong);
+  border: 1px solid #7d8b9f;
   border-radius: 6px;
   background: var(--white);
   color: var(--ink);

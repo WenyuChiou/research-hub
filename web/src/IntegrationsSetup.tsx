@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { BrandMark, type BrandDestination } from "./BrandIcons";
-import { buildObsidianUri, extractVaultName } from "./citations";
+import { buildObsidianUri, resolveObsidianVaultName } from "./citations";
 import { obsidianStatusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, Workspace } from "./types";
 import { NotebookLmAuthControls } from "./NotebookLmAuthControls";
@@ -308,9 +308,7 @@ export function IntegrationsSetup({
                             {t(localCap?.obsidian_cli_present ? "obsidianCliDetected" : "obsidianCliNotDetected")}
                           </span>
                           {(() => {
-                            const vName =
-                              localCap?.obsidian_vault_name ||
-                              extractVaultName(workspace?.capabilities?.obsidian_validation?.authorized_vault);
+                            const vName = resolveObsidianVaultName(workspace, liveState);
                             const uri = buildObsidianUri(vName);
                             return uri ? (
                               <a className="button secondary small" href={uri}>

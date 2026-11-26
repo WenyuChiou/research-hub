@@ -150,12 +150,23 @@ export function ProjectPages({
   const [literatureViewRequest, setLiteratureViewRequest] = useState<{
     mode: "split" | "table";
     category?: string;
+    sourceId?: string;
+    archived?: boolean;
     nonce: number;
   }>({ mode: "split", nonce: 0 });
   function openLiteratureTable(category = "") {
     setLiteratureViewRequest((prev) => ({
       mode: "table",
       category,
+      nonce: prev.nonce + 1,
+    }));
+    navigate("literature");
+  }
+  function openLiteratureSource(source: ResearchRecord) {
+    setLiteratureViewRequest((prev) => ({
+      mode: "split",
+      sourceId: source.id,
+      archived: source.data.archived === true,
       nonce: prev.nonce + 1,
     }));
     navigate("literature");
@@ -649,8 +660,8 @@ export function ProjectPages({
                 : "";
             const normalizeLocator = (value: unknown) =>
               typeof value === "string" ? value.trim().replace(/\/+$/, "").toLowerCase() : "";
-            const savedDois = new Set(sources.map((s) => normalizeDoi(s.data.doi)).filter(Boolean));
-            const savedLocators = new Set(sources.map((s) => normalizeLocator(s.data.locator)).filter(Boolean));
+            const savedDois = new Set(curatedActiveSources.map((s) => normalizeDoi(s.data.doi)).filter(Boolean));
+            const savedLocators = new Set(curatedActiveSources.map((s) => normalizeLocator(s.data.locator)).filter(Boolean));
             return (
             <section className="search-results">
               <h3>{t("searchResults")}</h3>
@@ -895,7 +906,7 @@ export function ProjectPages({
                 t={t}
                 submit={t("screenSource")}
                 note={t("sourceHelp")}
-                disabled={!sources.length}
+                disabled={!curatedActiveSources.length}
                 fields={[
                   {
                     name: "source_id",
@@ -1026,7 +1037,7 @@ export function ProjectPages({
                                         <button
                                           type="button"
                                           className="button secondary small evidence-source-jump"
-                                          onClick={() => navigate("literature")}
+                                          onClick={() => openLiteratureSource(source)}
                                         >
                                           {t("evidenceJumpToPaper")}
                                         </button>
@@ -1082,7 +1093,11 @@ export function ProjectPages({
                           {curatedActiveSources.map((src) => (
                             <label key={src.id} className="evidence-picker-item">
                               <input type="checkbox" name="source_ids" value={src.id} />
-                              <span className="evidence-picker-title">{textValue(src.data.title)}</span>
+                              <span className="evidence-picker-title">
+                                {sourceOptions.find((option) => option.value === src.id)?.label ||
+                                  textValue(src.data.title) ||
+                                  src.id}
+                              </span>
                               <span className={`scope-pill scope-${readingScopeTone(src)}`}>
                                 {scopeLabelFor(src)}
                               </span>

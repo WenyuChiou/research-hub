@@ -387,9 +387,9 @@
 .catalog-toolbar label { position: relative; display: flex; align-items: center; min-width: 0; font-size: var(--text-meta); color: var(--muted); }
 .catalog-toolbar .catalog-search { flex: 1 1 220px; max-width: 380px; }
 .catalog-search-icon { position: absolute; left: 9px; color: var(--muted); pointer-events: none; }
-.catalog-toolbar input { min-height: 30px; min-width: 0; width: 100%; border: 1px solid var(--line-strong); border-radius: 7px; padding: 3px 10px 3px 28px; background: var(--white); color: var(--ink); font-size: var(--text-control); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03); }
+.catalog-toolbar input { min-height: 30px; min-width: 0; width: 100%; border: 1px solid #7d8b9f; border-radius: 7px; padding: 3px 10px 3px 28px; background: var(--white); color: var(--ink); font-size: var(--text-control); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03); }
 .catalog-toolbar input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--accent-soft); }
-.catalog-toolbar select { min-height: 30px; min-width: 0; width: 100%; border: 1px solid var(--line-strong); border-radius: 7px; padding: 3px 8px; background: var(--white); color: var(--ink); font-size: var(--text-control); }
+.catalog-toolbar select { min-height: 30px; min-width: 0; width: 100%; border: 1px solid #7d8b9f; border-radius: 7px; padding: 3px 8px; background: var(--white); color: var(--ink); font-size: var(--text-control); }
 .catalog-match { font-size: var(--text-meta); font-variant-numeric: tabular-nums; color: var(--muted); margin: 0; white-space: nowrap; }
 .catalog-workspace {
   display: grid;

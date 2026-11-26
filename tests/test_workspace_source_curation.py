@@ -132,7 +132,7 @@ def test_add_source_normalizes_optional_authors_and_year(tmp_path):
         {"title": "Bad Authors Num", "locator": "https://example.org/3", "authors": 123},
         {"title": "Bad Authors List", "locator": "https://example.org/4", "authors": [42]},
         {"title": "Bad Tags Num", "locator": "https://example.org/5", "tags": 999},
-        {"title": "Bad Scope Text", "locator": "https://example.org/6", "reading_scope": "peer-reviewed"},
+        {"title": "Bad Scope Control", "locator": "https://example.org/6", "reading_scope": "bad\x00scope"},
         {"title": "Bad Scope Num", "locator": "https://example.org/7", "reading_scope": 123},
     ):
         with pytest.raises(WorkspaceError):

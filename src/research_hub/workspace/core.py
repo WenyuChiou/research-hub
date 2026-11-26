@@ -104,7 +104,6 @@ RECORD_FIELDS = {
     "review": ("comment", "severity"),
 }
 SOURCE_CURATION_FIELDS = frozenset({"source_id", "category", "year", "authors", "venue", "relevance", "summary", "tags", "doi", "archived"})
-ALLOWED_READING_SCOPES = frozenset({"full-text", "abstract", "abstract-snippet", "metadata"})
 
 
 def _clean_text_field(value: object, *, name: str, limit: int) -> str:
@@ -437,26 +436,32 @@ class Workspace:
                         raise WorkspaceError("authors must be a list of strings or author objects")
                 else:
                     raise WorkspaceError("authors must be a string or list of authors")
+            elif "authors" in data:
+                data.pop("authors", None)
             if "year" in data and data["year"] is not None:
                 cleaned_year = _clean_year_field(data["year"])
                 if cleaned_year:
                     data["year"] = cleaned_year
                 else:
                     data.pop("year", None)
+            elif "year" in data:
+                data.pop("year", None)
             if "tags" in data and data["tags"] is not None:
                 cleaned_tags = _clean_tags_field(data["tags"], max_items=30, item_limit=80)
                 if cleaned_tags:
                     data["tags"] = cleaned_tags
                 else:
                     data.pop("tags", None)
+            elif "tags" in data:
+                data.pop("tags", None)
             if "reading_scope" in data and data["reading_scope"] is not None:
-                cleaned_scope = _clean_text_field(data["reading_scope"], name="reading_scope", limit=32)
+                cleaned_scope = _clean_text_field(data["reading_scope"], name="reading_scope", limit=200)
                 if not cleaned_scope:
                     data.pop("reading_scope", None)
-                elif cleaned_scope not in ALLOWED_READING_SCOPES:
-                    raise WorkspaceError(f"reading_scope must be one of {', '.join(sorted(ALLOWED_READING_SCOPES))}")
                 else:
                     data["reading_scope"] = cleaned_scope
+            elif "reading_scope" in data:
+                data.pop("reading_scope", None)
         if kind == "source_curation":
             data = _validate_source_curation(data)
             if not any(r["id"] == data["source_id"] and r["kind"] == "source" for r in self.records(project_id)):

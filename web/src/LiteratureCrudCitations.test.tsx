@@ -337,20 +337,55 @@ describe("Literature CRUD, multi-dimensional filters, academic citations, Obsidi
     expect(csl[0].issued).toEqual({ "date-parts": [[2023]] });
     expect(csl[2].author).toEqual([{ family: "Bisbee", given: "James" }]);
 
-    const baseYaml = buildObsidianBaseYaml("llm-social-sim", "LLM Social Simulation");
+    const baseYaml = buildObsidianBaseYaml("llm-social-sim", "LLM Social Simulation", initialSources.slice(0, 2));
+    expect(baseYaml).toContain('topic_cluster == "llm-social-sim"');
+    expect(baseYaml).toContain('doi == "10.1145/3586183.3606763"');
+    expect(baseYaml).toContain('LLM Social Simulation — Literature Export (2)');
     expect(baseYaml).toContain('name: "All Literature"');
     expect(baseYaml).toContain('name: "Included Cohort"');
     expect(baseYaml).toContain('name: "Needs Full-Text or Triage"');
 
+    // 20-author APA must retain all 20 authors including author #19
+    const twentyAuthorRecord: ResearchRecord = {
+      id: "src-20a",
+      kind: "source",
+      data: {
+        title: "Twenty Author Consortium Study.",
+        authors: Array.from({ length: 20 }, (_, i) => `Jane Author${i + 1}`),
+        year: "2025",
+        venue: "Science",
+        doi: "doi: 10.1126/science.2025.20",
+      },
+    };
+    const twentyApa = formatApaReference(twentyAuthorRecord);
+    expect(twentyApa).toContain("Author19, J., & Author20, J. (2025).");
+    expect(twentyApa).toContain("https://doi.org/10.1126/science.2025.20");
+
     expect(extractVaultName("C:\\temp\\ag-runs\\user-e2e-20\\vault\\")).toBe("vault");
+    expect(extractVaultName("C:\\")).toBe("");
     expect(extractVaultName("/Users/researcher/knowledge-base")).toBe("knowledge-base");
     expect(buildObsidianUri("vault", "raw/llm-sim/park-2023.md")).toBe(
       "obsidian://open?vault=vault&file=raw%2Fllm-sim%2Fpark-2023.md",
     );
-    // Reject parent traversal in file parameter
+    // Reject parent traversal, encoded traversal, and Windows paths in file parameter
     expect(buildObsidianUri("vault", "../secret.md")).toBe("obsidian://open?vault=vault");
+    expect(buildObsidianUri("vault", "raw/%2e%2e/secret.md")).toBe("obsidian://open?vault=vault");
+    expect(buildObsidianUri("vault", "C:\\Users\\secret.md")).toBe("obsidian://open?vault=vault");
 
-    // Interactive Reader Desk citation bar & Vault note Obsidian deep link
+    // Duplicate citekey disambiguation + snapshotVaultLabel binding
+    const dupPark: ResearchRecord = {
+      id: "src-park-2",
+      kind: "source",
+      data: {
+        title: "Generative Agents Follow-up Benchmark",
+        authors: ["Joon Sung Park"],
+        year: "2023",
+        category: "llm-agents",
+        reading_scope: "abstract",
+        locator: "https://example.org/park-2",
+      },
+    };
+
     const vaultNote: ResearchRecord = {
       id: "note-park",
       kind: "library-note",
@@ -367,9 +402,10 @@ describe("Literature CRUD, multi-dimensional filters, academic citations, Obsidi
 
     render(
       <LiteratureLibrary
-        sources={[initialSources[0], vaultNote]}
+        sources={[initialSources[0], dupPark, vaultNote]}
         screenings={initialScreenings}
         workspace={mockWorkspace}
+        snapshotVaultLabel="snapshot-kb"
         projectId="llm-social-sim"
         projectTitle="LLM Social Simulation"
         t={tEn}
@@ -385,12 +421,18 @@ describe("Literature CRUD, multi-dimensional filters, academic citations, Obsidi
     await user.click(within(citeBar).getByRole("button", { name: tEn("citeCopyKey") }));
     expect(writeText).toHaveBeenLastCalledWith("[@park2023generative]");
 
-    // Select read-only Obsidian note and verify deep link without full filesystem path leak
+    // Select second Park 2023 Generative paper -> must copy disambiguated [@park2023generative_2]
+    await user.click(within(screen.getByRole("table")).getByRole("button", { name: "Generative Agents Follow-up Benchmark" }));
+    const citeBar2 = screen.getByRole("group", { name: tEn("citeQuickLabel") });
+    await user.click(within(citeBar2).getByRole("button", { name: tEn("citeCopyKey") }));
+    expect(writeText).toHaveBeenLastCalledWith("[@park2023generative_2]");
+
+    // Select read-only Obsidian note -> must use snapshotVaultLabel ("snapshot-kb"), not workspace vault ("vault")
     await user.click(within(screen.getByRole("table")).getByRole("button", { name: "Vault Note: Generative Agents" }));
     const obsidianLink = screen.getByRole("link", { name: /Open in Obsidian/i });
     expect(obsidianLink).toHaveAttribute(
       "href",
-      "obsidian://open?vault=vault&file=raw%2Fllm-sim%2Fpark-2023.md",
+      "obsidian://open?vault=snapshot-kb&file=raw%2Fllm-sim%2Fpark-2023.md",
     );
     expect(obsidianLink.getAttribute("href")).not.toContain("C:");
 
@@ -469,16 +511,20 @@ describe("Literature CRUD, multi-dimensional filters, academic citations, Obsidi
       };
 
       const onSaved = vi.fn().mockResolvedValue(undefined);
-      render(
-        <ProjectPages
-          detail={detail}
-          workspace={mockWorkspace}
-          page="evidence"
-          t={tEn}
-          onSaved={onSaved}
-          navigate={vi.fn()}
-        />,
-      );
+      function StatefulPagesHarness() {
+        const [activePage, setActivePage] = useState<"evidence" | "literature" | "overview" | "design" | "manuscript" | "review">("evidence");
+        return (
+          <ProjectPages
+            detail={detail}
+            workspace={mockWorkspace}
+            page={activePage}
+            t={tEn}
+            onSaved={onSaved}
+            navigate={(nextPage) => setActivePage(nextPage)}
+          />
+        );
+      }
+      render(<StatefulPagesHarness />);
 
       // KPI checks: 3 claims total, 2 linked, 1 abstract-only caution, 1 unlinked
       expect(screen.getByText(tEn("evidenceTotalClaims")).nextElementSibling).toHaveTextContent("3");
@@ -513,6 +559,12 @@ describe("Literature CRUD, multi-dimensional filters, academic citations, Obsidi
         },
       });
       expect(onSaved).toHaveBeenCalledTimes(1);
+
+      // Clicking "Open in Reader" on Claim #2 (src-3) switches to Literature and selects src-3 in Reader Desk!
+      const openReaderBtns = screen.getAllByRole("button", { name: tEn("evidenceJumpToPaper") });
+      await user.click(openReaderBtns[1]);
+      const detailPane = screen.getByRole("complementary", { name: tEn("catalogDetail") });
+      expect(within(detailPane).getByRole("heading", { name: /Synthetic Replacements for Human Survey Data/ })).toBeVisible();
     } finally {
       fetchSpy.mockRestore();
     }
