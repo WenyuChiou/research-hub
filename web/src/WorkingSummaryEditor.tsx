@@ -58,6 +58,7 @@ interface Props {
   suspended?: boolean;
   t: Translate;
   onOpen?: () => void;
+  onSessionChange?: (open: boolean, sourceRecordId: string) => void;
   onSaved?: () => Promise<void>;
 }
 
@@ -70,11 +71,15 @@ export function WorkingSummaryEditor(props: Props) {
     props.record.id, artifacts.map(a => [a.id, a.sha256, a.path, a.current])]);
   return <SummarySelection key={identity} {...props} artifacts={artifacts}/>;
 }
-function SummarySelection({record, scope, t, onOpen, onSaved, artifacts}: Props & {artifacts: Artifact[]}) {
+function SummarySelection({record, scope, t, onOpen, onSessionChange, onSaved, artifacts}: Props & {artifacts: Artifact[]}) {
   const [selected, setSelected] = useState<Artifact>();
   const opener = useRef<HTMLButtonElement | null>(null);
   const active = useRef(Boolean(scope?.active));
   active.current = Boolean(scope?.active);
+  useEffect(() => {
+    onSessionChange?.(Boolean(selected), record.id);
+  }, [selected, record.id, onSessionChange]);
+  useEffect(() => () => onSessionChange?.(false, record.id), [record.id, onSessionChange]);
   if (!scope || !artifacts.length) return null;
   return <section className="working-summary-editor" hidden={!scope.active} aria-label={t("workingSummaryReview")}>
     <p className="small muted">{t("workingSummaryReviewHelp")}</p>

@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { LiteratureLibrary } from "./LiteratureLibrary";
+import { buildLiteratureSummaryStats, LiteratureLibrary } from "./LiteratureLibrary";
 import { translator } from "./i18n";
 import input from "./test-fixtures/catalog-synthetic20.json";
 import type { ResearchRecord } from "./types";
@@ -280,5 +280,429 @@ describe("opening selected material", () => {
     const titleCell = container.querySelector("tbody td:first-child")!;
     expect(titleCell.querySelector(".catalog-submeta")).toBeNull();
     expect(titleCell.textContent).toBe("Bare Paper Title");
+  });
+});
+
+describe("master literature table, category summary, and clean status tooltips", () => {
+  it("switches to master table, filters by category cards, sorts by year, copies Markdown, and jumps back to reader", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const tableSources: ResearchRecord[] = [
+      { id: "src-old-id", kind: "source", data: { title: "Older Human Study | Pipe", category: "human", year: 2019, authors: ["Alice Lin"], reading_level: "abstract", summary: "Saved summary.", locator: "https://example.org/human-2019", identity_status: "unverified" } },
+      { id: "src-new-id", kind: "source", data: { title: "Newer LLM Study", category: "llm", year: 2025, authors: ["Bob Chen", "Carol Wu", "Dan Li"], reading_level: "full-text", locator: "https://example.org/llm-2025", identity_status: "unverified" } },
+      { id: "src-unclass-id", kind: "source", data: { title: "Unclassified Note", category: "", year: 2022, reading_level: "metadata", locator: "javascript:alert(1)", identity_status: "unverified" } },
+    ];
+    const tableScreenings: ResearchRecord[] = [
+      { id: "scr-1", kind: "screening", data: { source_id: "src-old-id", decision: "include", rationale: "Relevant comparator." } },
+    ];
+    render(<LiteratureLibrary sources={tableSources} screenings={tableScreenings} t={t} onScreen={vi.fn()} onPrepare={vi.fn()} />);
+
+    // Unverified badge carries plain-language tooltip in split desk
+    expect(screen.getByText(t("unverified"))).toHaveAttribute("data-tooltip", t("unverifiedTip"));
+
+    // Switch to Master Table view
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    const categoryStrip = screen.getByRole("group", { name: t("catalogTableCategorySummary") });
+    expect(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogAllCategories")) })).toHaveAttribute("aria-pressed", "true");
+    expect(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogLlm")) })).toBeVisible();
+    expect(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogUnclassified")) })).toBeVisible();
+
+    // Unsafe javascript: locator is never rendered as an anchor
+    const masterTable = screen.getByRole("table");
+    expect(within(masterTable).getAllByRole("link")).toHaveLength(2);
+    expect(masterTable.textContent).not.toContain("src-old-id");
+
+    // Sort by Year descending then ascending
+    const yearSort = within(masterTable).getByRole("button", { name: new RegExp(t("catalogYear")) });
+    await user.click(yearSort);
+    let rows = within(masterTable).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Newer LLM Study");
+    expect(rows[2]).toHaveTextContent("Older Human Study | Pipe");
+    await user.click(yearSort);
+    rows = within(masterTable).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Older Human Study | Pipe");
+    expect(rows[2]).toHaveTextContent("Newer LLM Study");
+
+    // Copy Markdown table escapes pipes and excludes raw record IDs
+    await user.click(screen.getByRole("button", { name: t("catalogTableCopyMd") }));
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const md = writeText.mock.calls[0][0] as string;
+    expect(md).toContain("Older Human Study \\| Pipe");
+    expect(md).toContain("https://example.org/llm-2025");
+    expect(md).not.toContain("javascript:alert");
+    expect(md).not.toContain("src-old-id");
+
+    // Filter by category card
+    await user.click(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogLlm")) }));
+    expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(1);
+
+    // Click paper title to jump into Split Desk reading that exact paper
+    await user.click(screen.getByRole("button", { name: "Newer LLM Study" }));
+    expect(screen.getByRole("heading", { name: "Newer LLM Study" })).toHaveFocus();
+
+    // Switching back to Master Table and clicking the ALREADY-selected paper still restores heading focus
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    await user.click(screen.getByRole("button", { name: "Newer LLM Study" }));
+    expect(screen.getByRole("heading", { name: "Newer LLM Study" })).toHaveFocus();
+  });
+
+  it("places records without numeric years at the bottom in both descending and ascending year sorts", async () => {
+    const user = userEvent.setup();
+    const yearSources: ResearchRecord[] = [
+      { id: "no-year-1", kind: "source", data: { title: "Undated First", category: "human", identity_status: "unverified" } },
+      { id: "yr-2021", kind: "source", data: { title: "Dated 2021", category: "human", year: 2021, identity_status: "unverified" } },
+      { id: "no-year-2", kind: "source", data: { title: "Undated Second", category: "llm", year: "n/a", identity_status: "unverified" } },
+      { id: "yr-2024", kind: "source", data: { title: "Dated 2024", category: "llm", year: 2024, identity_status: "unverified" } },
+    ];
+    render(<LiteratureLibrary sources={yearSources} screenings={[]} t={t} onScreen={vi.fn()} onPrepare={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    const yearSort = within(screen.getByRole("table")).getByRole("button", { name: new RegExp(t("catalogYear")) });
+    await user.click(yearSort);
+    let rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Dated 2024");
+    expect(rows[1]).toHaveTextContent("Dated 2021");
+    expect(rows[2]).toHaveTextContent("Undated First");
+    expect(rows[3]).toHaveTextContent("Undated Second");
+    await user.click(yearSort);
+    rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Dated 2021");
+    expect(rows[1]).toHaveTextContent("Dated 2024");
+    expect(rows[2]).toHaveTextContent("Undated First");
+    expect(rows[3]).toHaveTextContent("Undated Second");
+  });
+
+  it("summarizes literature categories cleanly and avoids raw source ID labels in both locales", () => {
+    const stats = buildLiteratureSummaryStats(organizationSources, organizationScreenings);
+    expect(stats.total).toBe(4);
+    expect(stats.categorized).toBe(3);
+    expect(stats.included).toBe(1);
+    expect(stats.awaiting).toBe(2);
+    expect(stats.groups.at(-1)?.isUnclassified).toBe(true);
+
+    const zh = translator("zh-TW");
+    expect(t("sourceIds")).toBe("Supporting sources");
+    expect(zh("sourceIds")).toBe("支持文獻");
+    expect(zh("sourceId")).toBe("對應文獻");
+  });
+
+  it("clears prior search query when an overview category request arrives", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <LiteratureLibrary sources={sources} screenings={[]} t={t} onScreen={vi.fn()} onPrepare={vi.fn()} />,
+    );
+    await user.type(screen.getByLabelText(t("catalogSearch")), "opinions");
+    expect(within(screen.getByRole("table")).getAllByRole("button")).toHaveLength(1);
+    rerender(
+      <LiteratureLibrary
+        sources={sources}
+        screenings={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onPrepare={vi.fn()}
+        requestedView={{ mode: "table", category: "human", nonce: 1 }}
+      />,
+    );
+    expect(screen.getByLabelText(t("catalogSearch"))).toHaveValue("");
+    expect(within(screen.getByRole("table")).getAllByRole("row").slice(1).length).toBeGreaterThan(1);
+  });
+
+  it("preserves unsaved working-summary edits while toggling to master table and back to reader", async () => {
+    const user = userEvent.setup();
+    const sha = "a".repeat(64);
+    const artifact = {
+      id: "art-1",
+      project_id: "proj-1",
+      source_record_id: "src-1",
+      role: "evidence",
+      path: "reports/draft.md",
+      sha256: sha,
+      current: true,
+    };
+    const record: ResearchRecord = {
+      id: "src-1",
+      kind: "source",
+      data: {
+        id: "src-1",
+        title: "Editable Summary Paper",
+        category: "llm",
+        identity_status: "unverified",
+        source_records: [
+          {
+            observation_id: "obs-1",
+            work_id: "work-1",
+            source_id: "src-1",
+            evidence_level: "generated-summary",
+            status: "available",
+            text_path: "reports/draft.md",
+            text_sha256: sha,
+          },
+        ],
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (inputUrl) => {
+      const url = String(inputUrl);
+      if (url.includes("/working-summary")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            context: {
+              source_record_id: "src-1",
+              artifact_id: "art-1",
+              artifact_sha256: sha,
+              revision: "b".repeat(64),
+              draft_text: "Initial draft text.",
+              working_summary: null,
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          preview: {
+            artifact_id: "art-1",
+            sha256: sha,
+            path: "reports/draft.md",
+            text: "Initial draft text.",
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    });
+    render(
+      <LiteratureLibrary
+        sources={[record]}
+        screenings={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onPrepare={vi.fn()}
+        observationRead={{ projectId: "proj-1", artifacts: [artifact], active: true, revision: 0 }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: `${t("workingSummaryReview")} art-1` }));
+    const editor = await screen.findByRole("textbox", { name: t("workingSummaryText") });
+    await user.type(editor, " Unsaved human edit.");
+    expect(editor).toHaveValue("Initial draft text. Unsaved human edit.");
+
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    expect(screen.getByRole("table")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
+    expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+      "Initial draft text. Unsaved human edit.",
+    );
+  });
+
+  it("preserves unsaved working-summary edits even when overview opens a different category", async () => {
+    const user = userEvent.setup();
+    const sha = "c".repeat(64);
+    const artifact = {
+      id: "art-cat",
+      project_id: "proj-cat",
+      source_record_id: "src-llm",
+      role: "evidence",
+      path: "reports/llm.md",
+      sha256: sha,
+      current: true,
+    };
+    const llmRecord: ResearchRecord = {
+      id: "src-llm",
+      kind: "source",
+      data: {
+        id: "src-llm",
+        title: "LLM Paper Being Edited",
+        category: "llm",
+        identity_status: "unverified",
+        source_records: [
+          {
+            observation_id: "obs-llm",
+            work_id: "work-llm",
+            source_id: "src-llm",
+            evidence_level: "generated-summary",
+            status: "available",
+            text_path: "reports/llm.md",
+            text_sha256: sha,
+          },
+        ],
+      },
+    };
+    const humanRecord: ResearchRecord = {
+      id: "src-human",
+      kind: "source",
+      data: {
+        id: "src-human",
+        title: "Human Study In Other Category",
+        category: "human",
+        identity_status: "unverified",
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (inputUrl) => {
+      const url = String(inputUrl);
+      if (url.includes("/working-summary")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            context: {
+              source_record_id: "src-llm",
+              artifact_id: "art-cat",
+              artifact_sha256: sha,
+              revision: "d".repeat(64),
+              draft_text: "LLM draft.",
+              working_summary: null,
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          preview: { artifact_id: "art-cat", sha256: sha, path: "reports/llm.md", text: "LLM draft." },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const base = {
+      sources: [llmRecord, humanRecord],
+      screenings: [],
+      t,
+      onScreen: vi.fn(),
+      onPrepare: vi.fn(),
+      observationRead: { projectId: "proj-cat", artifacts: [artifact], active: true, revision: 0 },
+    };
+    const { rerender } = render(<LiteratureLibrary {...base} requestedView={{ mode: "split", nonce: 0 }} />);
+    await user.click(screen.getByRole("button", { name: `${t("workingSummaryReview")} art-cat` }));
+    const editor = await screen.findByRole("textbox", { name: t("workingSummaryText") });
+    await user.type(editor, " Unsaved cross-category edit.");
+
+    // Overview jumps to a DIFFERENT category ("human") that excludes src-llm from visible
+    rerender(<LiteratureLibrary {...base} requestedView={{ mode: "table", category: "human", nonce: 1 }} />);
+    expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(1);
+    expect(within(screen.getByRole("table")).getByText("Human Study In Other Category")).toBeVisible();
+
+    // Clicking the human paper in Master Table honors the selection immediately AND exposes a safe return to the unsaved draft
+    await user.click(screen.getByRole("button", { name: "Human Study In Other Category" }));
+    expect(screen.getByRole("heading", { name: "Human Study In Other Category" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: `${t("catalogReturnDraft")}: LLM Paper Being Edited` }));
+    expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+      "LLM draft. Unsaved cross-category edit.",
+    );
+
+    // Clicking another paper in the split list still switches cleanly without destroying the draft
+    await user.click(screen.getByRole("button", { name: "Human Study In Other Category" }));
+    expect(screen.getByRole("heading", { name: "Human Study In Other Category" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "LLM Paper Being Edited" }));
+    expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+      "LLM draft. Unsaved cross-category edit.",
+    );
+
+    // Closing the working summary removes the unsaved-draft banner
+    await user.click(screen.getByRole("button", { name: t("cancel") }));
+    await user.click(screen.getByRole("button", { name: "Human Study In Other Category" }));
+    expect(screen.queryByRole("button", { name: new RegExp(t("catalogReturnDraft")) })).not.toBeInTheDocument();
+  });
+
+  it("retains unsaved working-summary edits on compact viewports when overview opens another category and user returns to Reader", async () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      media: "(max-width: 1080px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    vi.stubGlobal("scrollTo", vi.fn());
+    const user = userEvent.setup();
+    const sha = "e".repeat(64);
+    const artifact = {
+      id: "art-compact",
+      project_id: "proj-compact",
+      source_record_id: "src-llm-c",
+      role: "evidence",
+      path: "reports/compact.md",
+      sha256: sha,
+      current: true,
+    };
+    const llmRecord: ResearchRecord = {
+      id: "src-llm-c",
+      kind: "source",
+      data: {
+        id: "src-llm-c",
+        title: "Compact LLM Draft",
+        category: "llm",
+        identity_status: "unverified",
+        source_records: [
+          {
+            observation_id: "obs-c",
+            work_id: "work-c",
+            source_id: "src-llm-c",
+            evidence_level: "generated-summary",
+            status: "available",
+            text_path: "reports/compact.md",
+            text_sha256: sha,
+          },
+        ],
+      },
+    };
+    const humanRecord: ResearchRecord = {
+      id: "src-human-c",
+      kind: "source",
+      data: { id: "src-human-c", title: "Compact Human Paper", category: "human", identity_status: "unverified" },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (inputUrl) => {
+      const url = String(inputUrl);
+      if (url.includes("/working-summary")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            context: {
+              source_record_id: "src-llm-c",
+              artifact_id: "art-compact",
+              artifact_sha256: sha,
+              revision: "f".repeat(64),
+              draft_text: "Compact base.",
+              working_summary: null,
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          preview: { artifact_id: "art-compact", sha256: sha, path: "reports/compact.md", text: "Compact base." },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    });
+    try {
+      const base = {
+        sources: [llmRecord, humanRecord],
+        screenings: [],
+        t,
+        onScreen: vi.fn(),
+        onPrepare: vi.fn(),
+        observationRead: { projectId: "proj-compact", artifacts: [artifact], active: true, revision: 0 },
+      };
+      const { rerender } = render(<LiteratureLibrary {...base} requestedView={{ mode: "split", nonce: 0 }} />);
+      await user.click(screen.getByRole("button", { name: "Compact LLM Draft" }));
+      await user.click(screen.getByRole("button", { name: `${t("workingSummaryReview")} art-compact` }));
+      const editor = await screen.findByRole("textbox", { name: t("workingSummaryText") });
+      await user.type(editor, " Unsaved compact text.");
+
+      // Overview jumps to a different category ("human"), then user clicks Reader (not a paper row)
+      rerender(<LiteratureLibrary {...base} requestedView={{ mode: "table", category: "human", nonce: 1 }} />);
+      await user.click(screen.getByRole("button", { name: t("catalogViewSplit") }));
+
+      // Return-to-draft banner is accessible right from compact list and restores exact unsaved text
+      await user.click(screen.getByRole("button", { name: `${t("catalogReturnDraft")}: Compact LLM Draft` }));
+      expect(screen.getByRole("textbox", { name: t("workingSummaryText") })).toHaveValue(
+        "Compact base. Unsaved compact text.",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

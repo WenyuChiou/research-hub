@@ -40,14 +40,27 @@ export function LibraryCollection(props: {
   onWorkingSummarySaved?: () => Promise<void>;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
+  requestedView?: { mode: "split" | "table"; category?: string; nonce: number };
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);
   const [scope, setScope] = useState("workspace");
+  const [pendingView, setPendingView] = useState(props.requestedView);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const pending = useRef<AbortController | null>(null);
+  const lastViewNonce = useRef(props.requestedView?.nonce ?? 0);
   useEffect(() => () => pending.current?.abort(), []);
+  useEffect(() => {
+    const nonce = props.requestedView?.nonce ?? 0;
+    if (nonce > lastViewNonce.current) {
+      lastViewNonce.current = nonce;
+      // Only leave read-only Obsidian scope; keep "all" mounted so unsaved
+      // workspace working-summary edits are never unmounted via key={scope}.
+      setScope((current) => (current === "obsidian" ? "workspace" : current));
+      setPendingView(props.requestedView);
+    }
+  }, [props.requestedView]);
   async function load() {
     if (loading) return;
     const controller = new AbortController();
@@ -59,7 +72,7 @@ export function LibraryCollection(props: {
       if (!response.ok) throw new Error("Snapshot unavailable");
       const result = validateSnapshot(await response.json());
       if (controller.signal.aborted) return;
-      setSnapshot(result); setScope("obsidian");
+      setSnapshot(result); setScope("obsidian"); setPendingView(undefined);
     } catch {
       if (pending.current === controller) setFailed(true);
     } finally {
@@ -74,7 +87,7 @@ export function LibraryCollection(props: {
       <div className="library-connection-info">
         <strong>{t("libraryConnection")}</strong>
         {snapshot && (
-          <select aria-label={t("libraryScope")} value={scope} onChange={(event) => setScope(event.target.value)}>
+          <select aria-label={t("libraryScope")} value={scope} onChange={(event) => { setPendingView(undefined); setScope(event.target.value); }}>
             <option value="workspace">{t("libraryWorkspace")} ({props.sources.length})</option>
             <option value="obsidian">{t("libraryObsidian")} ({snapshot.notes.length})</option>
             <option value="all">{t("libraryAll")} ({all.length})</option>
@@ -100,6 +113,12 @@ export function LibraryCollection(props: {
         </button>
       </div>
     </section>
-    <LiteratureLibrary key={scope} {...props} sources={visible} matches={identityMatches(all)} />
+    <LiteratureLibrary
+      key={scope}
+      {...props}
+      requestedView={scope !== "obsidian" ? pendingView : undefined}
+      sources={visible}
+      matches={identityMatches(all)}
+    />
   </>;
 }
