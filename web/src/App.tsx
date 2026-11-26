@@ -767,7 +767,9 @@ export default function App() {
             <div>
               <div className="eyebrow">
                 {activeDetail
-                  ? `${activeDetail.project.archetype === "review" ? t("reviewStudy") : t("empirical")} · ${activeDetail.project.id}`
+                  ? activeDetail.project.archetype === "review"
+                    ? t("reviewStudy")
+                    : t("empirical")
                   : t("local")}
               </div>
               <h1 ref={headingRef} tabIndex={-1}>

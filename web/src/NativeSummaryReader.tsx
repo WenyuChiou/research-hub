@@ -129,7 +129,16 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
       <div>
         <h4>{t("nativeTitle")}</h4>
         {summary && <span className="badge neutral">{t("nativeDeclaredScope")}: {summary.reading_scope}</span>}
-        {summary && <span className="badge warn">{t("nativePending")}</span>}
+        {summary && (
+          <span
+            className="badge warn tooltip-rich"
+            tabIndex={0}
+            data-tooltip={t("nativePendingTip")}
+            data-tooltip-pos="bottom-start"
+          >
+            {t("nativePending")}
+          </span>
+        )}
       </div>
       {exportable && summary && scope?.projectId && (
         <div className="native-export-actions">
@@ -179,7 +188,12 @@ export function NativeSummaryReader({ record, scope, t, exportable = false }: { 
     {!summary && <p className="small muted" role="status">{t(current?.status === "missing" ? "nativeMissing" : current?.status === "stale" ? "nativeStale" : current?.status === "unavailable" ? "nativeUnavailable" : "nativeLoading")}</p>}
     {summary && <>
       {sections.map((section, i) => <section key={section}><h5>{t(titles[i])}</h5>{summary.sections[section].map((claim, j) => <div className="native-claim" key={j}>
-        <span className={`badge ${claim.status === "supported" ? "good" : claim.status === "analyst_inference" ? "warn" : "neutral"}`}>
+        <span
+          className={`badge tooltip-rich ${claim.status === "supported" ? "good" : claim.status === "analyst_inference" ? "warn" : "neutral"}`}
+          tabIndex={0}
+          data-tooltip={t(claim.status === "supported" ? "nativeSupportedTip" : claim.status === "analyst_inference" ? "nativeInferenceTip" : "nativeUnknownTip")}
+          data-tooltip-pos="bottom-start"
+        >
           {t(claim.status === "supported" ? "nativeSupported" : claim.status === "analyst_inference" ? "nativeInference" : "nativeUnknown")}
         </span>
         {claim.text && <p className="native-prose">{claim.text}</p>}

@@ -213,4 +213,15 @@ describe("native summary selected-source reader", () => {
     expect(await screen.findByText(t("nativeExportFailed"))).toBeVisible();
     expect(screen.queryByText(t("nativeExportCopied"))).not.toBeInTheDocument();
   });
+  it.each(["en", "zh-TW"] as const)("attaches plain-language hover tooltips to status badges in %s without adding buttons", async (locale) => {
+    const tr = translator(locale);
+    const f = fixture();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response(f.body));
+    render(<NativeSummaryReader record={f.record} scope={f.scope} t={tr} />);
+    expect(await screen.findByText(tr("nativePending"))).toHaveAttribute("data-tooltip", tr("nativePendingTip"));
+    expect(screen.getAllByText(tr("nativeSupported"))[0]).toHaveAttribute("data-tooltip", tr("nativeSupportedTip"));
+    expect(screen.getByText(tr("nativeInference"))).toHaveAttribute("data-tooltip", tr("nativeInferenceTip"));
+    expect(screen.getByText(tr("nativeUnknown"))).toHaveAttribute("data-tooltip", tr("nativeUnknownTip"));
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
 });

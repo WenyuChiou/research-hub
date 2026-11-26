@@ -1,4 +1,5 @@
 import { LibraryCollection } from "./LibraryCollection";
+import { buildLiteratureSummaryStats, categoryName } from "./LiteratureLibrary";
 import { DiscoveryPanel } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
 import { artifactReference } from "./sourceStorage";
@@ -139,6 +140,19 @@ export function ProjectPages({
   const [intakeIntent, setIntakeIntent] = useState(0);
   const [prepareIntent, setPrepareIntent] = useState(0);
   const [sourceOpenVersion, setSourceOpenVersion] = useState(0);
+  const [literatureViewRequest, setLiteratureViewRequest] = useState<{
+    mode: "split" | "table";
+    category?: string;
+    nonce: number;
+  }>({ mode: "split", nonce: 0 });
+  function openLiteratureTable(category = "") {
+    setLiteratureViewRequest((prev) => ({
+      mode: "table",
+      category,
+      nonce: prev.nonce + 1,
+    }));
+    navigate("literature");
+  }
   function openSavedText(saved: SavedText) {
     setCatalogToolsOpen(true);
     setSourceOpenVersion((value) => value + 1);
@@ -408,6 +422,89 @@ export function ProjectPages({
                 )}
               </Disclosure>
             </Panel>
+            <Panel
+              title={t("overviewLiteratureTitle")}
+              meta={
+                <button
+                  type="button"
+                  className="button secondary small"
+                  onClick={() => openLiteratureTable("")}
+                >
+                  {t("overviewOpenMasterTable")} <span aria-hidden="true">→</span>
+                </button>
+              }
+            >
+              {(() => {
+                const stats = buildLiteratureSummaryStats(
+                  sources,
+                  records("screening"),
+                );
+                if (!stats.total) {
+                  return <EmptyState compact>{t("noSources")}</EmptyState>;
+                }
+                return (
+                  <div className="overview-literature-summary">
+                    <dl className="overview-lit-metrics">
+                      <div>
+                        <dt>{t("overviewTotalSources")}</dt>
+                        <dd>{stats.total}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("overviewCategorized")}</dt>
+                        <dd>{stats.categorized}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("overviewIncluded")}</dt>
+                        <dd>{stats.included}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("overviewWithSummary")}</dt>
+                        <dd>{stats.withSummary}</dd>
+                      </div>
+                    </dl>
+                    <div className="overview-category-wrap">
+                      <table className="overview-category-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">{t("catalogCategory")}</th>
+                            <th scope="col">{t("overviewTotalSources")}</th>
+                            <th scope="col">{t("overviewIncluded")}</th>
+                            <th scope="col">{t("catalogTableAwaiting")}</th>
+                            <th scope="col">{t("overviewWithSummary")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stats.groups.map((group) => (
+                            <tr key={group.key}>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="overview-cat-row-btn"
+                                  onClick={() => openLiteratureTable(group.key)}
+                                >
+                                  <span>
+                                    {group.isUnclassified
+                                      ? t("catalogUnclassified")
+                                      : categoryName(group.key, t)}
+                                  </span>
+                                  <span aria-hidden="true" className="overview-cat-arrow">
+                                    →
+                                  </span>
+                                </button>
+                              </td>
+                              <td className="num">{group.total}</td>
+                              <td className="num">{group.included}</td>
+                              <td className="num">{group.awaiting}</td>
+                              <td className="num">{group.withSummary}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+            </Panel>
             <ReturningWork detail={detail} t={t} navigate={navigate} />
           </div>
           <aside className="side-column">
@@ -444,6 +541,7 @@ export function ProjectPages({
       <div hidden={page !== "literature"} className="page-content">
         <LibraryCollection sources={sources} screenings={records("screening")} t={t} categoryHost={categoryHost}
           workspace={workspace} liveIntegrations={liveIntegrations}
+          requestedView={literatureViewRequest}
           pageSuspended={page !== "literature"}
           onWorkingSummarySaved={() => onSaved(t("workingSummarySaved"))}
           observationRead={{projectId:detail.project.id, artifacts:detail.artifacts, active:page === "literature", revision:observationRevision}}
@@ -763,7 +861,9 @@ export function ProjectPages({
                               title={textValue(source.data.title)}
                             />
                           ) : (
-                            <code>{String(id)}</code>
+                            <span className="missing-evidence">
+                              {t("screeningSourceUnavailable")}
+                            </span>
                           )}
                         </div>
                       );

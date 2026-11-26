@@ -1,6 +1,7 @@
 import { NativeSummaryReader } from "./NativeSummaryReader";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { safeSourceUrl } from "./api";
 import { useCompactReadingLayout } from "./readingLayout";
 import { MutationForm, ReadText, SourceLink } from "./components";
 import { obsidianStatusLabel, statusLabel, type Translate } from "./i18n";
@@ -11,7 +12,8 @@ import { ObservationPreview, observationArtifacts, type ObservationReadScope } f
 import { SavedWorkingSummary, WorkingSummaryEditor, workingSummary } from "./WorkingSummaryEditor";
 
 const text = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
-const category = (record: ResearchRecord) => text(record.data.category).trim() || text(record.data.sub_category).trim();
+export const sourceCategory = (record: ResearchRecord) => text(record.data.category).trim() || text(record.data.sub_category).trim();
+const category = sourceCategory;
 const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 const savedSummary = (record: ResearchRecord) => [record.data.summary, record.data.abstract]
   .find((value): value is string => typeof value === "string" && Boolean(value.trim())) || "";
@@ -22,6 +24,99 @@ const registeredNativeSummary = (record: ResearchRecord) => record.kind === "sou
 const missingSummary = (record: ResearchRecord) => !savedSummary(record) &&
   !workingSummary(record) && !registeredNativeSummary(record);
 type Organization = "all" | "unclassified" | "missing-summary" | "unscreened";
+type ViewMode = "split" | "table";
+type SortKey = "default" | "year-desc" | "year-asc" | "title-asc" | "category-asc";
+
+export interface CategorySummaryGroup {
+  key: string;
+  isUnclassified: boolean;
+  total: number;
+  included: number;
+  excluded: number;
+  awaiting: number;
+  withSummary: number;
+}
+
+export interface LiteratureSummaryStats {
+  total: number;
+  categorized: number;
+  included: number;
+  excluded: number;
+  awaiting: number;
+  withSummary: number;
+  groups: CategorySummaryGroup[];
+}
+
+export function latestScreeningMap(screenings: ResearchRecord[]): Map<string, ResearchRecord> {
+  const map = new Map<string, ResearchRecord>();
+  for (const screening of screenings) {
+    if (screening.kind === "screening" && typeof screening.data.source_id === "string") {
+      map.set(screening.data.source_id, screening);
+    }
+  }
+  return map;
+}
+
+export function screeningDecisionFor(record: ResearchRecord, latest: Map<string, ResearchRecord>): "include" | "exclude" | null {
+  const decision = latest.get(record.id)?.data;
+  if (decision && (decision.decision === "include" || decision.decision === "exclude") && typeof decision.rationale === "string" && decision.rationale.trim()) {
+    return decision.decision;
+  }
+  return null;
+}
+
+export function buildLiteratureSummaryStats(sources: ResearchRecord[], screenings: ResearchRecord[]): LiteratureSummaryStats {
+  const latest = latestScreeningMap(screenings);
+  const byKey = new Map<string, CategorySummaryGroup>();
+  let categorized = 0;
+  let included = 0;
+  let excluded = 0;
+  let awaiting = 0;
+  let withSummary = 0;
+  for (const record of sources) {
+    const cat = sourceCategory(record);
+    const key = cat || "__unclassified__";
+    const isUnclassified = !cat;
+    if (!isUnclassified) categorized++;
+    const decision = screeningDecisionFor(record, latest);
+    const hasSummary = !missingSummary(record);
+    if (decision === "include") included++;
+    else if (decision === "exclude") excluded++;
+    else if (record.kind === "source") awaiting++;
+    if (hasSummary) withSummary++;
+    let group = byKey.get(key);
+    if (!group) {
+      group = { key, isUnclassified, total: 0, included: 0, excluded: 0, awaiting: 0, withSummary: 0 };
+      byKey.set(key, group);
+    }
+    group.total++;
+    if (decision === "include") group.included++;
+    else if (decision === "exclude") group.excluded++;
+    else if (record.kind === "source") group.awaiting++;
+    if (hasSummary) group.withSummary++;
+  }
+  const groups = [...byKey.values()].sort((a, b) => {
+    if (a.isUnclassified !== b.isUnclassified) return a.isUnclassified ? 1 : -1;
+    if (b.total !== a.total) return b.total - a.total;
+    return a.key.localeCompare(b.key);
+  });
+  return { total: sources.length, categorized, included, excluded, awaiting, withSummary, groups };
+}
+
+function escapeMarkdownCell(value: string): string {
+  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim() || "—";
+}
+
+function escapeCsvCell(value: string): string {
+  const cleaned = value.replace(/\r?\n/g, " ").trim();
+  const safe = /^[=+\-@\t\r]/.test(cleaned) ? `'${cleaned}` : cleaned;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+function numericYear(value: unknown): number {
+  const parsed = Number.parseInt(text(value), 10);
+  return Number.isFinite(parsed) ? parsed : -Infinity;
+}
 
 function authorNames(value: unknown): string[] {
   if (typeof value === "string") {
@@ -48,7 +143,7 @@ function formatAuthors(value: unknown): string {
   return names.length > 2 ? `${names[0]} et al.` : names.join(", ");
 }
 
-function categoryName(value: string, t: Translate) {
+export function categoryName(value: string, t: Translate) {
   if (value === "human") return t("catalogHuman");
   if (value === "human-review") return t("catalogHumanReview");
   if (value === "llm") return t("catalogLlm");
@@ -65,7 +160,7 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations }: {
+export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   t: Translate;
@@ -79,13 +174,30 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   onWorkingSummarySaved?: () => Promise<void>;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
+  requestedView?: { mode: ViewMode; category?: string; nonce: number };
 }) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [organization, setOrganization] = useState<Organization>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("split");
+  const [sortBy, setSortBy] = useState<SortKey>("default");
+  const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
+  const handledRequestNonce = useRef(0);
+  useEffect(() => {
+    if (!requestedView || requestedView.nonce <= handledRequestNonce.current) return;
+    handledRequestNonce.current = requestedView.nonce;
+    setViewMode(requestedView.mode);
+    if (requestedView.category === "__unclassified__") {
+      setSelectedCategory("");
+      setOrganization("unclassified");
+    } else if (typeof requestedView.category === "string") {
+      setSelectedCategory(requestedView.category);
+      setOrganization("all");
+    }
+  }, [requestedView]);
   const detailId = useId();
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const selectedButton = useRef<HTMLButtonElement>(null);
@@ -123,20 +235,11 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       if (openDraftRequested.current) { openDraftRequested.current = false; openDrafts(false); }
     }
   }, [selectedId, readerOpen]);
-  const latestScreenings = new Map<string, ResearchRecord>();
-  for (const screening of screenings) {
-    if (screening.kind === "screening" && typeof screening.data.source_id === "string") {
-      latestScreenings.set(screening.data.source_id, screening);
-    }
-  }
-  const screenedDecision = (record: ResearchRecord): "include" | "exclude" | null => {
-    const decision = latestScreenings.get(record.id)?.data;
-    if (decision && (decision.decision === "include" || decision.decision === "exclude") && typeof decision.rationale === "string" && decision.rationale.trim()) {
-      return decision.decision;
-    }
-    return null;
-  };
+  const latestScreenings = latestScreeningMap(screenings);
+  const screenedDecision = (record: ResearchRecord): "include" | "exclude" | null =>
+    screeningDecisionFor(record, latestScreenings);
   const screened = (record: ResearchRecord) => screenedDecision(record) !== null;
+  const summaryStats = buildLiteratureSummaryStats(sources, screenings);
   const matchesOrganization = (record: ResearchRecord, value: Organization) =>
     value === "unclassified" ? !category(record)
       : value === "missing-summary" ? missingSummary(record)
@@ -197,9 +300,127 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
 
   const selectedAuthors = selected ? formatAuthors(selected.data.authors) : "";
   const selectedVenue = selected ? (text(selected.data.venue) || text(selected.data.journal)) : "";
+  const sortedVisible = sortBy === "default" ? visible : [...visible].sort((a, b) => {
+    if (sortBy === "year-desc") return numericYear(b.data.year) - numericYear(a.data.year);
+    if (sortBy === "year-asc") {
+      const ay = numericYear(a.data.year);
+      const by = numericYear(b.data.year);
+      if (ay === -Infinity && by === -Infinity) return 0;
+      if (ay === -Infinity) return 1;
+      if (by === -Infinity) return -1;
+      return ay - by;
+    }
+    if (sortBy === "category-asc") {
+      const ac = categoryName(category(a), t);
+      const bc = categoryName(category(b), t);
+      return ac.localeCompare(bc) || text(a.data.title).localeCompare(text(b.data.title));
+    }
+    return text(a.data.title).localeCompare(text(b.data.title));
+  });
+
+  function screeningLabelText(record: ResearchRecord): string {
+    if (record.kind !== "source") return t("catalogReadOnlyItem");
+    const decision = screenedDecision(record);
+    if (decision === "include") return t("include");
+    if (decision === "exclude") return t("exclude");
+    return t("catalogNeedsScreening");
+  }
+
+  function summaryLabelText(record: ResearchRecord): string {
+    if (registeredNativeSummary(record)) return t("catalogNativeRegistered");
+    if (!missingSummary(record)) return t("catalogTableHasSummary");
+    return t("catalogNeedsSummary");
+  }
+
+  function buildMarkdownTable(): string {
+    const header = [
+      t("title"),
+      t("catalogCategory"),
+      t("catalogYear"),
+      t("catalogCoverage"),
+      t("catalogTableScreening"),
+      t("catalogTableSummary"),
+      t("catalogTableLink"),
+    ];
+    const lines = [
+      `| ${header.map(escapeMarkdownCell).join(" | ")} |`,
+      `| ${header.map(() => "---").join(" | ")} |`,
+    ];
+    for (const record of sortedVisible) {
+      const authors = formatAuthors(record.data.authors);
+      const titleCell = authors ? `${text(record.data.title)} (${authors})` : text(record.data.title);
+      const safeUrl = record.data.locator_kind !== "local-copy" ? safeSourceUrl(record.data.locator) : null;
+      lines.push(
+        `| ${[
+          escapeMarkdownCell(titleCell),
+          escapeMarkdownCell(categoryName(category(record), t)),
+          escapeMarkdownCell(text(record.data.year) || "—"),
+          escapeMarkdownCell(readingScope(record, t)),
+          escapeMarkdownCell(screeningLabelText(record)),
+          escapeMarkdownCell(summaryLabelText(record)),
+          safeUrl ? escapeMarkdownCell(safeUrl) : "—",
+        ].join(" | ")} |`,
+      );
+    }
+    return lines.join("\n");
+  }
+
+  async function copyMasterMarkdown() {
+    if (!navigator.clipboard?.writeText) {
+      setExportNotice({ tone: "bad", text: t("catalogTableCopyFailed") });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(buildMarkdownTable());
+      setExportNotice({ tone: "good", text: t("catalogTableCopied") });
+    } catch {
+      setExportNotice({ tone: "bad", text: t("catalogTableCopyFailed") });
+    }
+  }
+
+  function exportMasterCsv() {
+    const header = [
+      t("title"),
+      t("catalogCategory"),
+      t("catalogYear"),
+      t("catalogCoverage"),
+      t("catalogTableScreening"),
+      t("catalogTableSummary"),
+      "DOI",
+      t("catalogTableLink"),
+    ];
+    const rows = [header.map(escapeCsvCell).join(",")];
+    for (const record of sortedVisible) {
+      const authors = formatAuthors(record.data.authors);
+      const venue = text(record.data.venue) || text(record.data.journal);
+      const titleText = [text(record.data.title), authors, venue].filter(Boolean).join(" — ");
+      const safeUrl = record.data.locator_kind !== "local-copy" ? safeSourceUrl(record.data.locator) : null;
+      rows.push(
+        [
+          titleText,
+          categoryName(category(record), t),
+          text(record.data.year),
+          readingScope(record, t),
+          screeningLabelText(record),
+          summaryLabelText(record),
+          text(record.data.doi),
+          safeUrl || "",
+        ].map(escapeCsvCell).join(","),
+      );
+    }
+    const blob = new Blob(["\uFEFF" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "literature-master-table.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 
   return (
-    <section className={`literature-library${compact && readerOpen ? " is-reading" : ""}`} aria-label={t("catalogTitle")}
+    <section className={`literature-library${compact && readerOpen && viewMode === "split" ? " is-reading" : ""}`} aria-label={t("catalogTitle")}
       onFocusCapture={event => { lastReadingFocus.current = event.target as Element; }}
       onBlurCapture={event => {
         const next = event.relatedTarget;
@@ -208,10 +429,42 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
         }
       }}>
       {categoryHost && active && !compact && createPortal(categoryFilters, categoryHost)}
-      <div className="catalog-browse-controls" hidden={compact && readerOpen}>
+      <div className="catalog-browse-controls" hidden={compact && readerOpen && viewMode === "split"}>
       <div className="catalog-heading">
         <h2>{t("catalogTitle")}</h2>
-        <span className="catalog-total">{sources.length} {t("catalogItems")}</span>
+        <div className="catalog-heading-actions">
+          <span className="catalog-total">{sources.length} {t("catalogItems")}</span>
+          <div className="catalog-view-switch" role="group" aria-label={t("catalogViewMode")}>
+            <button
+              type="button"
+              aria-pressed={viewMode === "split"}
+              data-tooltip={t("catalogViewSplitTip")}
+              data-tooltip-pos="bottom-end"
+              onClick={() => setViewMode("split")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="10" y1="4" x2="10" y2="20" />
+              </svg>
+              <span>{t("catalogViewSplit")}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={viewMode === "table"}
+              data-tooltip={t("catalogViewTableTip")}
+              data-tooltip-pos="bottom-end"
+              onClick={() => setViewMode("table")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+                <line x1="3" y1="15" x2="21" y2="15" />
+                <line x1="10" y1="10" x2="10" y2="20" />
+              </svg>
+              <span>{t("catalogViewTable")}</span>
+            </button>
+          </div>
+        </div>
       </div>
       <div className="catalog-control-bar">
         <div className="catalog-organize" role="group" aria-label={t("catalogOrganize")}>
@@ -255,6 +508,230 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
       </div>
       {selectionMissing && <p role="status">{t("catalogSelectionMissing")}</p>}
       </div>
+      {viewMode === "table" ? (
+        <div className="catalog-master-view">
+          {summaryStats.groups.length > 0 && (
+            <div className="catalog-category-strip" role="group" aria-label={t("catalogTableCategorySummary")}>
+              <button
+                type="button"
+                className="catalog-category-card"
+                aria-pressed={!selectedCategory && organization !== "unclassified"}
+                onClick={() => {
+                  setSelectedCategory("");
+                  if (organization === "unclassified") setOrganization("all");
+                }}
+              >
+                <span className="catalog-category-card-top">
+                  <strong>{t("catalogAllCategories")}</strong>
+                  <span className="count">{summaryStats.total}</span>
+                </span>
+                <span className="catalog-category-card-meta">
+                  {t("catalogTableIncluded")} {summaryStats.included} · {t("catalogTableAwaiting")} {summaryStats.awaiting}
+                </span>
+              </button>
+              {summaryStats.groups.map((group) => {
+                const pressed = group.isUnclassified
+                  ? organization === "unclassified" && !selectedCategory
+                  : selectedCategory === group.key;
+                return (
+                  <button
+                    type="button"
+                    key={group.key}
+                    className="catalog-category-card"
+                    aria-pressed={pressed}
+                    onClick={() => {
+                      if (group.isUnclassified) {
+                        setSelectedCategory("");
+                        setOrganization("unclassified");
+                      } else {
+                        setSelectedCategory(group.key);
+                        if (organization === "unclassified") setOrganization("all");
+                      }
+                    }}
+                  >
+                    <span className="catalog-category-card-top">
+                      <strong>{group.isUnclassified ? t("catalogUnclassified") : categoryName(group.key, t)}</strong>
+                      <span className="count">{group.total}</span>
+                    </span>
+                    <span className="catalog-category-card-meta">
+                      {t("catalogTableIncluded")} {group.included} · {t("catalogTableAwaiting")} {group.awaiting}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="catalog-master-bar">
+            <span className="catalog-master-label">{t("catalogViewTableTip")}</span>
+            <div className="catalog-master-actions">
+              {exportNotice && (
+                <span role="status" className={exportNotice.tone === "good" ? "small good-text" : "small bad-text"}>
+                  {exportNotice.text}
+                </span>
+              )}
+              <button
+                type="button"
+                className="button secondary small icon-btn"
+                disabled={!sortedVisible.length}
+                onClick={() => void copyMasterMarkdown()}
+                aria-label={t("catalogTableCopyMd")}
+                data-tooltip={exportNotice?.tone === "good" ? exportNotice.text : t("catalogTableCopyMd")}
+                data-tooltip-pos="bottom-end"
+              >
+                {exportNotice?.tone === "good" ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0d6846" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                )}
+              </button>
+              <button
+                type="button"
+                className="button secondary small icon-btn"
+                disabled={!sortedVisible.length}
+                onClick={exportMasterCsv}
+                aria-label={t("catalogTableExportCsv")}
+                data-tooltip={t("catalogTableExportCsv")}
+                data-tooltip-pos="bottom-end"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {sortedVisible.length ? (
+            <div className="catalog-master-wrap">
+              <table className="catalog-master-table">
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <button
+                        type="button"
+                        className="catalog-master-sort"
+                        aria-pressed={sortBy === "title-asc"}
+                        onClick={() => setSortBy(sortBy === "title-asc" ? "default" : "title-asc")}
+                      >
+                        {t("title")} {sortBy === "title-asc" ? "↑" : ""}
+                      </button>
+                    </th>
+                    <th scope="col">
+                      <button
+                        type="button"
+                        className="catalog-master-sort"
+                        aria-pressed={sortBy === "category-asc"}
+                        onClick={() => setSortBy(sortBy === "category-asc" ? "default" : "category-asc")}
+                      >
+                        {t("catalogCategory")} {sortBy === "category-asc" ? "↑" : ""}
+                      </button>
+                    </th>
+                    <th scope="col">
+                      <button
+                        type="button"
+                        className="catalog-master-sort"
+                        aria-pressed={sortBy === "year-desc" || sortBy === "year-asc"}
+                        onClick={() => setSortBy(sortBy === "year-desc" ? "year-asc" : "year-desc")}
+                      >
+                        {t("catalogYear")} {sortBy === "year-desc" ? "↓" : sortBy === "year-asc" ? "↑" : ""}
+                      </button>
+                    </th>
+                    <th scope="col">{t("catalogCoverage")}</th>
+                    <th scope="col">{t("catalogTableScreening")}</th>
+                    <th scope="col">{t("catalogTableSummary")}</th>
+                    <th scope="col">{t("catalogTableLink")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedVisible.map((record) => {
+                    const authors = formatAuthors(record.data.authors);
+                    const venue = text(record.data.venue) || text(record.data.journal);
+                    const decision = screenedDecision(record);
+                    const safeUrl = record.data.locator_kind !== "local-copy" ? safeSourceUrl(record.data.locator) : null;
+                    return (
+                      <tr key={record.id} className={selected?.id === record.id ? "is-selected" : undefined}>
+                        <td>
+                          <button
+                            type="button"
+                            className="catalog-master-title"
+                            data-tooltip={t("catalogTableOpenPaper")}
+                            data-tooltip-pos="top-start"
+                            onClick={() => {
+                              setSelectionMissing(false);
+                              setSelectedId(record.id);
+                              setReaderOpen(true);
+                              focusRequested.current = true;
+                              setViewMode("split");
+                            }}
+                          >
+                            {text(record.data.title)}
+                          </button>
+                          {Boolean(authors || venue || record.kind === "library-note") && (
+                            <span className="catalog-submeta">
+                              {[authors, venue, record.kind === "library-note" ? t("libraryNoteOrigin") : null].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="catalog-cat-pill">{categoryName(category(record), t)}</span>
+                        </td>
+                        <td className="catalog-master-year">{text(record.data.year) || "—"}</td>
+                        <td><span className="catalog-meta-text">{readingScope(record, t)}</span></td>
+                        <td>
+                          {record.kind === "source" ? (
+                            decision === "include" ? <span className="badge good">✓ {t("include")}</span>
+                              : decision === "exclude" ? <span className="badge danger">✕ {t("exclude")}</span>
+                                : <span className="badge warn">{t("catalogNeedsScreening")}</span>
+                          ) : (
+                            <span className="badge neutral">{t("catalogReadOnlyItem")}</span>
+                          )}
+                        </td>
+                        <td>
+                          {registeredNativeSummary(record) ? (
+                            <span className="catalog-indicator good">{t("catalogNativeRegistered")}</span>
+                          ) : !missingSummary(record) ? (
+                            <span className="catalog-indicator accent">{t("catalogTableHasSummary")}</span>
+                          ) : (
+                            <span className="catalog-indicator muted">{t("catalogNeedsSummary")}</span>
+                          )}
+                        </td>
+                        <td>
+                          {safeUrl ? (
+                            <a
+                              className="catalog-ext-link"
+                              href={safeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`${t("catalogOriginalSource")}: ${text(record.data.title)}`}
+                              data-tooltip={t("catalogOriginalSource")}
+                              data-tooltip-pos="bottom-end"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                                <path d="M15 3h6v6" />
+                                <path d="M10 14 21 3" />
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                              </svg>
+                            </a>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
+          )}
+        </div>
+      ) : (
       <div className="catalog-workspace">
         {!categoryHost && categoryFilters}
         <div className="catalog-list" ref={list} hidden={compact && readerOpen}>
@@ -310,7 +787,14 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 <span>{categoryName(category(selected), t)}</span>
                 <span>·</span>
                 <span>{readingScope(selected, t)}</span>
-                <span className="badge neutral">{statusLabel(text(selected.data.identity_status) || "unverified", t)}</span>
+                <span
+                  className={`badge neutral${(text(selected.data.identity_status) || "unverified") === "unverified" ? " tooltip-rich" : ""}`}
+                  tabIndex={(text(selected.data.identity_status) || "unverified") === "unverified" ? 0 : undefined}
+                  data-tooltip={(text(selected.data.identity_status) || "unverified") === "unverified" ? t("unverifiedTip") : undefined}
+                  data-tooltip-pos={(text(selected.data.identity_status) || "unverified") === "unverified" ? "bottom-end" : undefined}
+                >
+                  {statusLabel(text(selected.data.identity_status) || "unverified", t)}
+                </span>
               </div>
               <button
                 type="button"
@@ -439,6 +923,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
           </div> : <p>{t("catalogSelectSource")}</p>}
         </aside>
       </div>
+      )}
     </section>
   );
 }

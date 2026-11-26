@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { LiteratureLibrary } from "./LiteratureLibrary";
+import { buildLiteratureSummaryStats, LiteratureLibrary } from "./LiteratureLibrary";
 import { translator } from "./i18n";
 import input from "./test-fixtures/catalog-synthetic20.json";
 import type { ResearchRecord } from "./types";
@@ -280,5 +280,82 @@ describe("opening selected material", () => {
     const titleCell = container.querySelector("tbody td:first-child")!;
     expect(titleCell.querySelector(".catalog-submeta")).toBeNull();
     expect(titleCell.textContent).toBe("Bare Paper Title");
+  });
+});
+
+describe("master literature table, category summary, and clean status tooltips", () => {
+  it("switches to master table, filters by category cards, sorts by year, copies Markdown, and jumps back to reader", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const tableSources: ResearchRecord[] = [
+      { id: "src-old-id", kind: "source", data: { title: "Older Human Study | Pipe", category: "human", year: 2019, authors: ["Alice Lin"], reading_level: "abstract", summary: "Saved summary.", locator: "https://example.org/human-2019", identity_status: "unverified" } },
+      { id: "src-new-id", kind: "source", data: { title: "Newer LLM Study", category: "llm", year: 2025, authors: ["Bob Chen", "Carol Wu", "Dan Li"], reading_level: "full-text", locator: "https://example.org/llm-2025", identity_status: "unverified" } },
+      { id: "src-unclass-id", kind: "source", data: { title: "Unclassified Note", category: "", year: 2022, reading_level: "metadata", locator: "javascript:alert(1)", identity_status: "unverified" } },
+    ];
+    const tableScreenings: ResearchRecord[] = [
+      { id: "scr-1", kind: "screening", data: { source_id: "src-old-id", decision: "include", rationale: "Relevant comparator." } },
+    ];
+    render(<LiteratureLibrary sources={tableSources} screenings={tableScreenings} t={t} onScreen={vi.fn()} onPrepare={vi.fn()} />);
+
+    // Unverified badge carries plain-language tooltip in split desk
+    expect(screen.getByText(t("unverified"))).toHaveAttribute("data-tooltip", t("unverifiedTip"));
+
+    // Switch to Master Table view
+    await user.click(screen.getByRole("button", { name: t("catalogViewTable") }));
+    const categoryStrip = screen.getByRole("group", { name: t("catalogTableCategorySummary") });
+    expect(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogAllCategories")) })).toHaveAttribute("aria-pressed", "true");
+    expect(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogLlm")) })).toBeVisible();
+    expect(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogUnclassified")) })).toBeVisible();
+
+    // Unsafe javascript: locator is never rendered as an anchor
+    const masterTable = screen.getByRole("table");
+    expect(within(masterTable).getAllByRole("link")).toHaveLength(2);
+    expect(masterTable.textContent).not.toContain("src-old-id");
+
+    // Sort by Year descending then ascending
+    const yearSort = within(masterTable).getByRole("button", { name: new RegExp(t("catalogYear")) });
+    await user.click(yearSort);
+    let rows = within(masterTable).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Newer LLM Study");
+    expect(rows[2]).toHaveTextContent("Older Human Study | Pipe");
+    await user.click(yearSort);
+    rows = within(masterTable).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Older Human Study | Pipe");
+    expect(rows[2]).toHaveTextContent("Newer LLM Study");
+
+    // Copy Markdown table escapes pipes and excludes raw record IDs
+    await user.click(screen.getByRole("button", { name: t("catalogTableCopyMd") }));
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const md = writeText.mock.calls[0][0] as string;
+    expect(md).toContain("Older Human Study \\| Pipe");
+    expect(md).toContain("https://example.org/llm-2025");
+    expect(md).not.toContain("javascript:alert");
+    expect(md).not.toContain("src-old-id");
+
+    // Filter by category card
+    await user.click(within(categoryStrip).getByRole("button", { name: new RegExp(t("catalogLlm")) }));
+    expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(1);
+
+    // Click paper title to jump into Split Desk reading that exact paper
+    await user.click(screen.getByRole("button", { name: "Newer LLM Study" }));
+    expect(screen.getByRole("heading", { name: "Newer LLM Study" })).toHaveFocus();
+  });
+
+  it("summarizes literature categories cleanly and avoids raw source ID labels in both locales", () => {
+    const stats = buildLiteratureSummaryStats(organizationSources, organizationScreenings);
+    expect(stats.total).toBe(4);
+    expect(stats.categorized).toBe(3);
+    expect(stats.included).toBe(1);
+    expect(stats.awaiting).toBe(2);
+    expect(stats.groups.at(-1)?.isUnclassified).toBe(true);
+
+    const zh = translator("zh-TW");
+    expect(t("sourceIds")).toBe("Supporting sources");
+    expect(zh("sourceIds")).toBe("支持文獻");
+    expect(zh("sourceId")).toBe("對應文獻");
   });
 });

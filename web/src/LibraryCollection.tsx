@@ -40,6 +40,7 @@ export function LibraryCollection(props: {
   onWorkingSummarySaved?: () => Promise<void>;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
+  requestedView?: { mode: "split" | "table"; category?: string; nonce: number };
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);
@@ -47,7 +48,15 @@ export function LibraryCollection(props: {
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const pending = useRef<AbortController | null>(null);
+  const lastViewNonce = useRef(0);
   useEffect(() => () => pending.current?.abort(), []);
+  useEffect(() => {
+    const nonce = props.requestedView?.nonce ?? 0;
+    if (nonce > lastViewNonce.current) {
+      lastViewNonce.current = nonce;
+      setScope("workspace");
+    }
+  }, [props.requestedView?.nonce]);
   async function load() {
     if (loading) return;
     const controller = new AbortController();
@@ -100,6 +109,12 @@ export function LibraryCollection(props: {
         </button>
       </div>
     </section>
-    <LiteratureLibrary key={scope} {...props} sources={visible} matches={identityMatches(all)} />
+    <LiteratureLibrary
+      key={scope}
+      {...props}
+      requestedView={scope === "workspace" ? props.requestedView : undefined}
+      sources={visible}
+      matches={identityMatches(all)}
+    />
   </>;
 }
