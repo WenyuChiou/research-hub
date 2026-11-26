@@ -2146,3 +2146,150 @@ select option {
 .onboarding-demo p {
   margin: 0;
 }
+
+/* Dark Mode surface, badge, form, notice & panel calibration (WCAG AA >= 4.5:1) */
+[data-theme="dark"] .panel {
+  box-shadow:
+    0 1px 2px rgba(2, 6, 14, 0.45),
+    0 6px 16px -6px rgba(2, 6, 14, 0.4);
+}
+[data-theme="dark"] .next-step {
+  box-shadow: 0 2px 10px -2px rgba(2, 6, 14, 0.45);
+}
+[data-theme="dark"] .next-step p {
+  color: var(--muted);
+}
+[data-theme="dark"] .button.primary {
+  color: #04111d;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 3px rgba(2, 6, 14, 0.45);
+}
+[data-theme="dark"] .button.secondary {
+  color: #e7eef8;
+  border-color: #354968;
+  background: #1a2740;
+  box-shadow: 0 1px 2px rgba(2, 6, 14, 0.35);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="dark"] .button.secondary:hover:not(:disabled) {
+    background: #223352;
+    border-color: #4b6790;
+    color: #ffffff;
+  }
+}
+[data-theme="dark"] .field label {
+  color: #dce6f5;
+}
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  border-color: var(--line-strong);
+  background: var(--surface-tint);
+  color: var(--ink);
+}
+[data-theme="dark"] .capability-status {
+  color: #6ee7b7;
+}
+[data-theme="dark"] .empty-mark {
+  color: #6ee7b7;
+  border-color: #2c5949;
+}
+[data-theme="dark"] .saved-note,
+[data-theme="dark"] .good-text {
+  color: #34d399;
+}
+[data-theme="dark"] .bad-text {
+  color: #f87171;
+}
+[data-theme="dark"] .notice {
+  background: #251e10;
+  border-color: #5c461a;
+  color: #fde68a;
+}
+[data-theme="dark"] .notice-error {
+  background: #2d1519;
+  border-color: #6b2d34;
+  color: #fca5a5;
+}
+[data-theme="dark"] .notice-success {
+  background: #0f2922;
+  border-color: #1f5946;
+  color: #6ee7b7;
+}
+[data-theme="dark"] .badge {
+  background: #18253a;
+  border-color: #314663;
+  color: #cbd5e1;
+}
+[data-theme="dark"] .badge.good {
+  background: #0f2922;
+  border-color: #1f5946;
+  color: #6ee7b7;
+}
+[data-theme="dark"] .badge.warn {
+  background: #2b1f0e;
+  border-color: #634416;
+  color: #fcd34d;
+}
+[data-theme="dark"] .badge.danger {
+  background: #31171b;
+  border-color: #6b2d34;
+  color: #fca5a5;
+}
+[data-theme="dark"] .inspect > pre {
+  color: var(--ink);
+}
+[data-theme="dark"] .limitation {
+  background: #1f1a10;
+  border-color: #544018;
+}
+[data-theme="dark"] .limitation p {
+  color: #fde68a;
+}
+[data-theme="dark"] .missing-evidence {
+  color: #fcd34d;
+}
+[data-theme="dark"] .decision-box {
+  background: var(--surface-tint);
+  border-color: var(--line-strong);
+}
+[data-theme="dark"] .decision-box p {
+  color: var(--muted);
+}
+[data-theme="dark"] .cli-instruction,
+[data-theme="dark"] .onboarding-form {
+  background: var(--surface-tint);
+}
+[data-theme="dark"] .delivery-receipt {
+  background: #0f2922;
+  border-color: #1f5946;
+}
+[data-theme="dark"] .skip-link {
+  background: var(--white);
+  color: var(--ink);
+}
+[data-theme="dark"] .setup-brand-mark.brand-obsidian {
+  color: #c4b5fd;
+  background: #24173d;
+  border-color: #4c2f82;
+}
+[data-theme="dark"] .setup-brand-mark.brand-zotero {
+  color: #fca5a5;
+  background: #31171b;
+  border-color: #6b2d34;
+}
+[data-theme="dark"] .setup-brand-mark.brand-notebooklm {
+  color: #7dd3fc;
+  background: #0f2537;
+  border-color: #1f506b;
+}
+[data-theme="dark"] .overview-lit-metrics > div {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="dark"] .overview-category-table tbody tr:hover {
+    background: var(--wash);
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildObsidianUri } from "./citations";
-import { LiteratureLibrary, applySourceCurations, type CurationStateMap, type QuickAddSourceInput, type SourceCurationInput } from "./LiteratureLibrary";
+import { LiteratureLibrary, applySourceCurations, type CurationStateMap, type QuickAddSourceInput, type ScopeTone, type SourceCurationInput } from "./LiteratureLibrary";
 import { identityMatches } from "./libraryIdentity";
 import type { Translate } from "./i18n";
 import type {
@@ -33,7 +33,7 @@ function validateSnapshot(value: unknown): LibrarySnapshot {
 }
 
 export function LibraryCollection(props: {
-  sources: ResearchRecord[]; screenings: ResearchRecord[]; curations?: ResearchRecord[]; locale?: Locale; t: Translate;
+  sources: ResearchRecord[]; screenings: ResearchRecord[]; curations?: ResearchRecord[]; claims?: ResearchRecord[]; locale?: Locale; t: Translate;
   projectId?: string;
   projectTitle?: string;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
@@ -50,7 +50,7 @@ export function LibraryCollection(props: {
   onWorkingSummarySaved?: () => Promise<void>;
   workspace?: Workspace | null;
   liveIntegrations?: IntegrationLiveState;
-  requestedView?: { mode: "split" | "table"; category?: string; sourceId?: string; archived?: boolean; nonce: number };
+  requestedView?: { mode: "split" | "table" | "matrix"; category?: string; year?: string; scope?: ScopeTone; sourceId?: string; archived?: boolean; nonce: number };
 }) {
   const { t } = props;
   const [snapshot, setSnapshot] = useState<LibrarySnapshot | null>(null);
@@ -123,7 +123,7 @@ export function LibraryCollection(props: {
         {snapshot && (() => {
           const uri = buildObsidianUri(snapshot.vault_label);
           return uri ? (
-            <a className="button secondary small" href={uri}>
+            <a className="button secondary small" href={uri} rel="noopener noreferrer">
               {t("obsidianOpenApp")} <span aria-hidden="true">↗</span>
             </a>
           ) : null;

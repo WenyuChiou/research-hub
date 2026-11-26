@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { buildBibtexExport, buildNotebookLmSourcePack } from "./AgentHandoffModal";
 import { ApiError, api, recoverCsrfIfForbidden, segment } from "./api";
-import { BrandMark } from "./BrandIcons";
+import { BibtexIcon, BrandMark, CslJsonIcon, RisEndnoteIcon } from "./BrandIcons";
 import {
   buildApaBibliography,
   buildCiteKeyMap,
@@ -202,43 +202,13 @@ function formatErrorText(err: unknown): string {
 
 function FormatGlyph({ kind }: { kind: "bib" | "ris" | "csl" | "apa" | "refs" }) {
   if (kind === "bib") {
-    return (
-      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <rect x="2" y="2.5" width="16" height="15" rx="3.5" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M7.6 6.8c-.9 0-1.4.5-1.4 1.3v.9c0 .6-.3 1-.9 1 .6 0 .9.4.9 1v.9c0 .8.5 1.3 1.4 1.3M12.4 6.8c.9 0 1.4.5 1.4 1.3v.9c0 .6.3 1 .9 1-.6 0-.9.4-.9 1v.9c0 .8-.5 1.3-1.4 1.3"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
+    return <BibtexIcon size={15} />;
   }
   if (kind === "ris") {
-    return (
-      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path
-          d="M4.5 3.5h8l3 3v10a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 3 16.5V5a1.5 1.5 0 0 1 1.5-1.5Z"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-        />
-        <path d="M6.2 9h7.6M6.2 12h7.6M6.2 15h4.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    );
+    return <RisEndnoteIcon size={15} />;
   }
   if (kind === "csl") {
-    return (
-      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path
-          d="M7 4.5H4.8v11H7M13 4.5h2.2v11H13M8.8 10h2.4"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
+    return <CslJsonIcon size={15} />;
   }
   if (kind === "apa") {
     return (

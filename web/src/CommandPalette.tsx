@@ -180,6 +180,7 @@ export function CommandPalette({
   };
 
   const allEntries = useMemo<CommandEntry[]>(() => {
+    if (!open) return [];
     const items: CommandEntry[] = [];
 
     if (onToggleTheme) {
@@ -287,6 +288,7 @@ export function CommandPalette({
     onOpenSettings,
     onSelectProject,
     onToggleTheme,
+    open,
     projects,
     resolvedTheme,
     sources,

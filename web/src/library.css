@@ -250,7 +250,41 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 4px;
+}
+.sidebar-footer-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.sidebar .cmd-palette-btn {
+  background: var(--ide-surface);
+  border-color: var(--ide-border-strong);
+  color: #dbe6f5;
+  box-shadow: none;
+  width: auto;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 6px;
+  gap: 3px;
+  font-size: var(--text-2xs);
+}
+.cmd-palette-kbd {
+  font-family: var(--mono-font);
+  font-size: var(--text-2xs);
+  color: var(--ide-muted);
+  letter-spacing: -0.02em;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sidebar .cmd-palette-btn:hover:not(:disabled) {
+    background: var(--ide-active);
+    border-color: var(--ide-accent);
+    color: #ffffff;
+  }
+  .sidebar .cmd-palette-btn:hover:not(:disabled) .cmd-palette-kbd {
+    color: #e0f2fe;
+  }
 }
 .sidebar .integration-entry .button {
   background: var(--ide-surface);
@@ -2121,6 +2155,125 @@ button.scope-pill[aria-pressed="true"] {
   overflow-wrap: anywhere;
 }
 
+/* Dark Mode library, reader desk, pipeline chips, modals & Evidence ledger */
+[data-theme="dark"] .catalog-view-switch {
+  background: var(--surface-tint);
+  border-color: var(--line-strong);
+}
+[data-theme="dark"] .catalog-toolbar input,
+[data-theme="dark"] .catalog-toolbar select {
+  border-color: var(--line-strong);
+  background: var(--surface-tint);
+}
+[data-theme="dark"] .catalog-list {
+  scrollbar-color: #334663 transparent;
+}
+[data-theme="dark"] .catalog-list tr.is-selected .catalog-title {
+  color: #7dd3fc;
+}
+[data-theme="dark"] .catalog-indicator.good {
+  color: #34d399;
+}
+[data-theme="dark"] .catalog-unsaved-drafts {
+  background: #2b1f0e;
+  border-color: #634416;
+  color: #fcd34d;
+}
+[data-theme="dark"] .catalog-saved-screening {
+  background: #0f2922;
+  border-color: #1f5946;
+  color: #6ee7b7;
+}
+[data-theme="dark"] .catalog-categories > button {
+  color: var(--ink);
+}
+[data-theme="dark"] .catalog-health-strip,
+[data-theme="dark"] .catalog-detail-header {
+  box-shadow:
+    0 1px 3px rgba(2, 6, 14, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme="dark"] .pipeline-icon-chip.brand-obsidian {
+  color: #c4b5fd;
+}
+[data-theme="dark"] .pipeline-icon-chip.brand-zotero {
+  color: #fca5a5;
+}
+[data-theme="dark"] .pipeline-icon-chip.brand-notebooklm {
+  color: #7dd3fc;
+}
+[data-theme="dark"] .pipeline-icon-chip.is-ok {
+  border-color: #1f5946;
+  background: #0f2922;
+}
+[data-theme="dark"] .pipeline-icon-chip.is-ok .pipeline-icon-dot {
+  background: #34d399;
+}
+[data-theme="dark"] .pipeline-icon-chip.is-configured {
+  border-color: rgba(56, 189, 248, 0.42);
+  background: #0f2537;
+}
+[data-theme="dark"] .pipeline-icon-chip.is-error {
+  border-color: #6b2d34;
+  background: #2d1519;
+}
+[data-theme="dark"] .pipeline-icon-chip.is-error .pipeline-icon-dot {
+  background: #f87171;
+}
+[data-theme="dark"] .pill-count {
+  background: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .tag-chip-btn[aria-pressed="true"] {
+  background: #0e7490;
+  border-color: #38bdf8;
+  color: #f8fafc;
+}
+[data-theme="dark"] .handoff-backdrop {
+  background: rgba(2, 6, 14, 0.68);
+}
+[data-theme="dark"] .handoff-modal {
+  box-shadow:
+    0 24px 52px -12px rgba(2, 6, 14, 0.65),
+    0 8px 20px -6px rgba(2, 6, 14, 0.45);
+}
+[data-theme="dark"] .handoff-export-icon.brand-obsidian {
+  color: #c4b5fd;
+  background: #24173d;
+  border-color: #4c2f82;
+}
+[data-theme="dark"] .handoff-export-icon.brand-zotero {
+  color: #fca5a5;
+  background: #31171b;
+  border-color: #6b2d34;
+}
+[data-theme="dark"] .handoff-export-icon.brand-notebooklm {
+  color: #7dd3fc;
+  background: #0f2537;
+  border-color: #1f506b;
+}
+[data-theme="dark"] .evidence-picker-label {
+  color: #dce6f5;
+}
+[data-theme="dark"] .evidence-claim-card,
+[data-theme="dark"] .returning-panel,
+[data-theme="dark"] .readiness-panel {
+  border-color: var(--line);
+}
+[data-theme="dark"] .evidence-source-card,
+[data-theme="dark"] .evidence-picker-item,
+[data-theme="dark"] .returning-task-card {
+  background: var(--surface-tint);
+  border-color: var(--line);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="dark"] .catalog-list tr:hover,
+  [data-theme="dark"] .catalog-master-table tbody tr:hover,
+  [data-theme="dark"] .catalog-category-card:hover,
+  [data-theme="dark"] .catalog-categories > button:hover {
+    background: var(--wash);
+  }
+}
+
 @media (max-width: 900px) {
   .catalog-health-strip {
     grid-template-columns: minmax(0, 1fr);
@@ -2166,13 +2319,17 @@ button.scope-pill[aria-pressed="true"] {
   .cite-bar-btn,
   .evidence-source-jump,
   .secondary-navigation summary,
-  .handoff-scope-switch button {
+  .handoff-scope-switch button,
+  .cmd-palette-btn,
+  .sidebar .cmd-palette-btn {
     min-height: 44px;
   }
   .pipeline-icon-chip,
   button.pipeline-icon-chip,
   .language-switch button,
-  .reading-desk-shell .language-switch button {
+  .reading-desk-shell .language-switch button,
+  .cmd-palette-btn,
+  .sidebar .cmd-palette-btn {
     min-width: 44px;
   }
 }

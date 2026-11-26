@@ -219,7 +219,7 @@ const COPY = {
     stage2: "2. Screening",
     stage2Sub: "Inclusion",
     stage3: "3. Evidence",
-    stage3Sub: "Claims",
+    stage3Sub: "Grounding",
     stage4: "4. Manuscript",
     stage4Sub: "Delivery",
     papersUnit: (n: number) => `${n} papers`,
@@ -424,7 +424,7 @@ export function ResearchStageStepper({
   ];
 
   return (
-    <nav className="vr-stage-stepper" aria-label={c.stepperAria}>
+    <section className="vr-stage-stepper" role="group" aria-label={c.stepperAria}>
       {stages.map((stage, idx) => {
         const isCurrent = currentPage === stage.page && idx !== 1;
         return (
@@ -454,7 +454,7 @@ export function ResearchStageStepper({
           </button>
         );
       })}
-    </nav>
+    </section>
   );
 }
 
