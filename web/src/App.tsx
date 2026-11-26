@@ -5,6 +5,7 @@ import { useCompactReadingLayout } from "./readingLayout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, refreshSessionTokens, segment } from "./api";
 import { ErrorMessage, MutationForm } from "./components";
+import { applySourceCurations } from "./LiteratureLibrary";
 import { ProjectPages, type RecoveredWork } from "./Pages";
 import { en, projectWarningLabel, translator, type MessageKey } from "./i18n";
 import type {
@@ -650,7 +651,11 @@ export default function App() {
   const activeDetail = detail?.project.id === projectId ? detail : null;
   const pageCount = (item: Page): number => {
     if (!activeDetail) return 0;
-    if (item === "literature") return activeDetail.records.filter((r) => r.kind === "source").length;
+    if (item === "literature") {
+      const raw = activeDetail.records.filter((r) => r.kind === "source");
+      const cur = activeDetail.records.filter((r) => r.kind === "source_curation");
+      return applySourceCurations(raw, cur).filter((r) => r.data.archived !== true).length;
+    }
     if (item === "evidence") return activeDetail.records.filter((r) => r.kind === "claim").length;
     if (item === "design") return activeDetail.records.filter((r) => r.kind === "analysis").length;
     if (item === "manuscript") {

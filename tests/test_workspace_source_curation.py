@@ -132,6 +132,60 @@ def test_add_source_normalizes_optional_authors_and_year(tmp_path):
         {"title": "Bad Authors Num", "locator": "https://example.org/3", "authors": 123},
         {"title": "Bad Authors List", "locator": "https://example.org/4", "authors": [42]},
         {"title": "Bad Tags Num", "locator": "https://example.org/5", "tags": 999},
+        {"title": "Bad Scope Text", "locator": "https://example.org/6", "reading_scope": "peer-reviewed"},
+        {"title": "Bad Scope Num", "locator": "https://example.org/7", "reading_scope": 123},
     ):
         with pytest.raises(WorkspaceError):
             ws.add_record(project["id"], kind="source", data=invalid_source)
+
+
+def test_source_curation_supports_doi_and_archive_restore_without_mutating_identity(tmp_path):
+    ws = Workspace(tmp_path)
+    project = ws.create_project(id="curation-crud", title="CRUD Test", archetype="review")
+    source = ws.add_record(
+        project["id"],
+        kind="source",
+        data={
+            "title": "Clinical AI Triage Trial",
+            "locator": "https://doi.org/10.1038/s41591-025-00001-1",
+            "reading_scope": "full-text",
+        },
+    )
+    assert source["data"]["reading_scope"] == "full-text"
+    revision_before = native_base(source)
+
+    archived_curation = ws.add_record(
+        project["id"],
+        kind="source_curation",
+        data={
+            "source_id": source["id"],
+            "doi": "10.1038/s41591-025-00001-1",
+            "archived": True,
+        },
+    )
+    assert archived_curation["data"]["doi"] == "10.1038/s41591-025-00001-1"
+    assert archived_curation["data"]["archived"] is True
+
+    restored_curation = ws.add_record(
+        project["id"],
+        kind="source_curation",
+        data={
+            "source_id": source["id"],
+            "archived": False,
+        },
+    )
+    assert restored_curation["data"]["archived"] is False
+
+    stored_source = next(r for r in ws.records(project["id"]) if r["id"] == source["id"])
+    assert native_base(stored_source) == revision_before
+    assert stored_source["data"]["identity_status"] == "unverified"
+
+    for invalid_curation in (
+        {"source_id": source["id"], "archived": "yes"},
+        {"source_id": source["id"], "archived": 1},
+        {"source_id": source["id"], "archived": None},
+        {"source_id": source["id"], "doi": "x" * 201},
+    ):
+        with pytest.raises(WorkspaceError):
+            ws.add_record(project["id"], kind="source_curation", data=invalid_curation)
+

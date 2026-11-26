@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { LiteratureLibrary, type CurationStateMap, type SourceCurationInput } from "./LiteratureLibrary";
+import { buildObsidianUri } from "./citations";
+import { LiteratureLibrary, type CurationStateMap, type QuickAddSourceInput, type SourceCurationInput } from "./LiteratureLibrary";
 import { identityMatches } from "./libraryIdentity";
 import type { Translate } from "./i18n";
 import type {
@@ -37,6 +38,7 @@ export function LibraryCollection(props: {
   projectTitle?: string;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
+  onAddSource?: (source: QuickAddSourceInput) => Promise<void>;
   onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string; selected_source_ids?: string[] }) => Promise<{ id: string }>;
   onNavigateReview?: (taskId?: string) => void;
   onOpenSetup?: () => void;
@@ -114,6 +116,14 @@ export function LibraryCollection(props: {
         {failed && <p role="alert">{snapshot ? t("libraryRetained") : t("libraryUnavailable")}</p>}
       </div>
       <div className="library-connection-actions">
+        {snapshot && (() => {
+          const uri = buildObsidianUri(snapshot.vault_label);
+          return uri ? (
+            <a className="button secondary small" href={uri}>
+              {t("obsidianOpenApp")} <span aria-hidden="true">↗</span>
+            </a>
+          ) : null;
+        })()}
         <button className="button secondary small" disabled={loading} onClick={() => void load()}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />

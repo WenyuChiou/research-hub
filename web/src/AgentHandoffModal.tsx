@@ -2,6 +2,15 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
 import { BrandMark, DestinationBrandChip } from "./BrandIcons";
+import {
+  buildApaBibliography,
+  buildCslJsonExport,
+  buildObsidianBaseYaml,
+  buildObsidianUri,
+  buildRisExport,
+  extractVaultName,
+  makeCiteKey,
+} from "./citations";
 import { ErrorMessage } from "./components";
 import { zhTW, type Translate } from "./i18n";
 import type { IntegrationLiveState, Locale, ResearchRecord, Workspace } from "./types";
@@ -169,23 +178,6 @@ function bibtexVerbatim(value: string): string {
     .replace(/[\r\n\u0085\u2028\u2029]+/g, " ")
     .replace(/[{}\\]/g, "")
     .trim();
-}
-
-function makeCiteKey(record: ResearchRecord, index: number): string {
-  const authors = collectAuthors(record.data.authors);
-  const firstAuthor = authors[0] || "source";
-  const surnameRaw = firstAuthor.includes(",")
-    ? firstAuthor.split(",")[0]
-    : firstAuthor.split(/\s+/).filter(Boolean).pop() || "source";
-  const surname = surnameRaw.toLowerCase().replace(/[^a-z0-9]/g, "") || "source";
-  const year = text(record.data.year).replace(/[^0-9]/g, "").slice(0, 4) || "nd";
-  const titleWord =
-    text(record.data.title)
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .find((w) => w.length >= 4 && !["with", "from", "that", "this", "into", "over"].includes(w)) ||
-    `item${index + 1}`;
-  return `${surname}${year}${titleWord}`;
 }
 
 export function buildObsidianMarkdown(
@@ -818,6 +810,11 @@ export function AgentHandoffModal({
   }
 
   const slugBase = (projectId || "research-hub").replace(/[^a-z0-9-_]/gi, "-");
+  const localCap = liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations;
+  const obsidianVaultName =
+    localCap?.obsidian_vault_name ||
+    extractVaultName(workspace?.capabilities?.obsidian_validation?.authorized_vault);
+  const obsidianAppUri = buildObsidianUri(obsidianVaultName);
 
   const presets: { id: HandoffPresetId; title: string; desc: string }[] = [
     {
@@ -1133,6 +1130,22 @@ export function AgentHandoffModal({
                     type="button"
                     className="button secondary small"
                     disabled={!targetRecords.length}
+                    onClick={() => {
+                      const baseYaml = buildObsidianBaseYaml(slugBase, projectTitle);
+                      downloadTextFile(
+                        `${slugBase}.base`,
+                        baseYaml,
+                        "text/yaml;charset=utf-8",
+                      );
+                      setStatusNote({ tone: "good", text: t("handoffFileDownloaded") });
+                    }}
+                  >
+                    {t("handoffDownloadBase")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    disabled={!targetRecords.length}
                     onClick={() =>
                       void copyText(
                         buildObsidianMarkdown(targetRecords, screenings, projectTitle),
@@ -1142,6 +1155,14 @@ export function AgentHandoffModal({
                   >
                     {t("nativeCopyMarkdown")}
                   </button>
+                  {obsidianAppUri && (
+                    <a
+                      className="button secondary small"
+                      href={obsidianAppUri}
+                    >
+                      {t("obsidianOpenApp")} <span aria-hidden="true">↗</span>
+                    </a>
+                  )}
                 </div>
               </article>
 
@@ -1194,9 +1215,9 @@ export function AgentHandoffModal({
                     <span className="handoff-export-icon brand-zotero" aria-hidden="true">
                       <BrandMark brand="zotero" size={15} />
                     </span>
-                    <span>{t("handoffExportZoteroTitle")}</span>
+                    <span>{t("handoffExportCitationsTitle")}</span>
                   </h3>
-                  <p className="small muted">{t("handoffExportZoteroDesc")}</p>
+                  <p className="small muted">{t("handoffExportCitationsDesc")}</p>
                 </div>
                 <div className="handoff-export-actions">
                   <button
@@ -1206,7 +1227,7 @@ export function AgentHandoffModal({
                     onClick={() => {
                       const bib = buildBibtexExport(targetRecords);
                       downloadTextFile(
-                        `${slugBase}-zotero.bib`,
+                        `${slugBase}-citations.bib`,
                         bib,
                         "application/x-bibtex;charset=utf-8",
                       );
@@ -1219,11 +1240,53 @@ export function AgentHandoffModal({
                     type="button"
                     className="button secondary small"
                     disabled={!targetRecords.length}
+                    onClick={() => {
+                      const ris = buildRisExport(targetRecords);
+                      downloadTextFile(
+                        `${slugBase}-citations.ris`,
+                        ris,
+                        "application/x-research-info-systems;charset=utf-8",
+                      );
+                      setStatusNote({ tone: "good", text: t("handoffFileDownloaded") });
+                    }}
+                  >
+                    {t("handoffDownloadRis")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    disabled={!targetRecords.length}
+                    onClick={() => {
+                      const csl = buildCslJsonExport(targetRecords);
+                      downloadTextFile(
+                        `${slugBase}-csl.json`,
+                        csl,
+                        "application/json;charset=utf-8",
+                      );
+                      setStatusNote({ tone: "good", text: t("handoffFileDownloaded") });
+                    }}
+                  >
+                    {t("handoffDownloadCsl")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    disabled={!targetRecords.length}
                     onClick={() =>
                       void copyText(buildBibtexExport(targetRecords), t("handoffCopiedFile"))
                     }
                   >
                     {t("handoffCopyBib")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    disabled={!targetRecords.length}
+                    onClick={() =>
+                      void copyText(buildApaBibliography(targetRecords), t("handoffCopiedFile"))
+                    }
+                  >
+                    {t("handoffCopyApa")}
                   </button>
                 </div>
               </article>

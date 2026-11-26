@@ -798,12 +798,18 @@ h1:focus {
   border: 1px dashed #b5c8b9;
   border-radius: 50%;
 }
-.empty-state p {
+.empty-state p,
+.empty-state-body {
   color: var(--muted);
   font-size: var(--text-control);
   margin: 0;
-  max-width: 360px;
+  max-width: 380px;
   line-height: 1.6;
+}
+.empty-state-body {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
 }
 .empty-state.compact {
   padding: 14px;
@@ -1119,18 +1125,19 @@ select option {
   margin: 6px 0 0;
 }
 .limitation {
-  background: #f6f2e6;
-  border: 1px solid #d9cfb4;
-  border-radius: 4px;
-  padding: 12px 15px;
-  margin-top: 18px;
+  background: #fffaf0;
+  border: 1px solid #f1d49b;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 12px;
 }
 .limitation p {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   font-size: var(--text-control);
+  color: #5c3b09;
 }
 .evidence-links {
-  margin: 20px 0;
+  margin: 12px 0;
 }
 .evidence-links > div {
   display: grid;

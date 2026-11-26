@@ -89,6 +89,9 @@ export interface LocalIntegrationsCapability {
   s2_api_key_present?: boolean;
   s2_api_key_encrypted?: boolean;
   nlm_state_present?: boolean;
+  obsidian_cli_present?: boolean;
+  obsidian_vault_configured?: boolean;
+  obsidian_vault_name?: string;
 }
 export interface Workspace {
   ok: true;

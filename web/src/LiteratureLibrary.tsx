@@ -1,6 +1,7 @@
 import { NativeSummaryReader } from "./NativeSummaryReader";
 import {
   AgentHandoffModal,
+  buildBibtexExport,
   computeDestinationStatuses,
   type HandoffScope,
 } from "./AgentHandoffModal";
@@ -9,6 +10,14 @@ import {
   DestinationBrandChip,
   GitHubLabelText,
 } from "./BrandIcons";
+import {
+  buildObsidianUri,
+  buildRisExport,
+  extractVaultName,
+  formatApaReference,
+  formatInTextCitation,
+  formatPandocCite,
+} from "./citations";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
@@ -33,7 +42,14 @@ const registeredNativeSummary = (record: ResearchRecord) => record.kind === "sou
   "native_summary_available" in record && record.native_summary_available === true;
 const missingSummary = (record: ResearchRecord) => !savedSummary(record) &&
   !workingSummary(record) && !registeredNativeSummary(record);
-type Organization = "all" | "unclassified" | "missing-summary" | "unscreened";
+type Organization =
+  | "all"
+  | "included"
+  | "excluded"
+  | "unclassified"
+  | "missing-summary"
+  | "unscreened"
+  | "archived";
 type ViewMode = "split" | "table";
 type SortKey = "default" | "year-desc" | "year-asc" | "title-asc" | "category-asc";
 
@@ -223,12 +239,27 @@ export interface SourceCurationInput {
   year?: string;
   authors?: string[];
   venue?: string;
+  doi?: string;
   relevance?: string;
   summary?: string;
   tags?: string[];
+  archived?: boolean;
 }
 
-const CURATION_KEYS = ["category", "year", "authors", "venue", "relevance", "summary", "tags"] as const;
+export interface QuickAddSourceInput {
+  title: string;
+  locator: string;
+  doi?: string;
+  year?: string;
+  authors?: string[];
+  venue?: string;
+  category?: string;
+  reading_scope?: string;
+  tags?: string[];
+  summary?: string;
+}
+
+const CURATION_KEYS = ["category", "year", "authors", "venue", "doi", "relevance", "summary", "tags", "archived"] as const;
 
 export function applySourceCurations(
   sources: ResearchRecord[],
@@ -284,6 +315,7 @@ interface CurationDraft {
   year: string;
   authors: string;
   venue: string;
+  doi: string;
   tags: string;
   relevance: string;
   summary: string;
@@ -292,6 +324,7 @@ interface CurationDraft {
     year?: boolean;
     authors?: boolean;
     venue?: boolean;
+    doi?: boolean;
     tags?: boolean;
     relevance?: boolean;
     summary?: boolean;
@@ -304,6 +337,7 @@ function baseCurationDraft(record: ResearchRecord): CurationDraft {
     year: text(record.data.year),
     authors: formatAuthorsInput(record.data.authors),
     venue: text(record.data.venue) || text(record.data.journal),
+    doi: text(record.data.doi),
     tags: sourceTags(record).join(", "),
     relevance: text(record.data.relevance),
     summary: savedSummary(record),
@@ -362,6 +396,7 @@ function SourceCurationForm({
         if (draft.changed.year) payload.year = draft.year.trim();
         if (draft.changed.authors) payload.authors = parseAuthorsInput(draft.authors);
         if (draft.changed.venue) payload.venue = draft.venue.trim();
+        if (draft.changed.doi) payload.doi = draft.doi.trim();
         if (draft.changed.tags) payload.tags = parseTagsInput(draft.tags);
         if (draft.changed.relevance) payload.relevance = draft.relevance.trim();
         if (draft.changed.summary) payload.summary = draft.summary.trim();
@@ -409,13 +444,23 @@ function SourceCurationForm({
             />
             <small>{t("catalogMetaAuthorsHint")}</small>
           </div>
-          <div className="field field-wide">
+          <div className="field">
             <label htmlFor={`${listId}-venue`}>{t("catalogMetaVenue")}</label>
             <input
               id={`${listId}-venue`}
               value={draft.venue}
               onChange={(e) => onChange({ ...draft, venue: e.target.value, changed: { ...draft.changed, venue: true } })}
               maxLength={300}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${listId}-doi`}>{t("doi")}</label>
+            <input
+              id={`${listId}-doi`}
+              value={draft.doi}
+              onChange={(e) => onChange({ ...draft, doi: e.target.value, changed: { ...draft.changed, doi: true } })}
+              placeholder="10.1000/xyz123"
+              maxLength={200}
             />
           </div>
           <div className="field field-wide">
@@ -475,7 +520,145 @@ function SourceCurationForm({
   );
 }
 
-export function LiteratureLibrary({ sources: rawSources, screenings, curations, locale, t, projectId, projectTitle, onScreen, onCurate, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
+function QuickAddSourceDrawer({
+  categories,
+  t,
+  onAdd,
+  onClose,
+}: {
+  categories: string[];
+  t: Translate;
+  onAdd: (source: QuickAddSourceInput) => Promise<void>;
+  onClose: () => void;
+}) {
+  const formId = useId();
+  const [title, setTitle] = useState("");
+  const [locator, setLocator] = useState("");
+  const [doi, setDoi] = useState("");
+  const [year, setYear] = useState("");
+  const [authors, setAuthors] = useState("");
+  const [venue, setVenue] = useState("");
+  const [cat, setCat] = useState("");
+  const [scope, setScope] = useState("abstract");
+  const [tags, setTags] = useState("");
+  const [summaryText, setSummaryText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+
+  return (
+    <div className="catalog-quick-add-card" role="region" aria-label={t("catalogQuickAddTitle")}>
+      <div className="catalog-quick-add-header">
+        <strong>{t("catalogQuickAddTitle")}</strong>
+        <button
+          type="button"
+          className="button text-button small icon-btn"
+          aria-label={t("catalogQuickAddClose")}
+          onClick={onClose}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
+      </div>
+      <form
+        className="record-form catalog-quick-add-form"
+        aria-busy={busy}
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (busy || !title.trim() || !locator.trim()) return;
+          setBusy(true);
+          setErr(null);
+          try {
+            const payload: QuickAddSourceInput = {
+              title: title.trim(),
+              locator: locator.trim(),
+              reading_scope: scope,
+            };
+            if (doi.trim()) payload.doi = doi.trim();
+            if (year.trim()) payload.year = year.trim();
+            const parsedAuthors = parseAuthorsInput(authors);
+            if (parsedAuthors.length) payload.authors = parsedAuthors;
+            if (venue.trim()) payload.venue = venue.trim();
+            if (cat.trim()) payload.category = cat.trim();
+            const parsedTags = parseTagsInput(tags);
+            if (parsedTags.length) payload.tags = parsedTags;
+            if (summaryText.trim()) payload.summary = summaryText.trim();
+            await onAdd(payload);
+            onClose();
+          } catch (failure) {
+            setErr(failure);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <fieldset disabled={busy}>
+          <div className="form-grid">
+            <div className="field field-wide">
+              <label htmlFor={`${formId}-title`}>{t("title")} <span aria-hidden="true" className="required-dot">·</span></label>
+              <input id={`${formId}-title`} required value={title} onChange={(e) => setTitle(e.target.value)} maxLength={500} />
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-locator`}>{t("locator")} <span aria-hidden="true" className="required-dot">·</span></label>
+              <input id={`${formId}-locator`} required value={locator} onChange={(e) => setLocator(e.target.value)} placeholder="https://doi.org/..." maxLength={2000} />
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-doi`}>{t("doi")}</label>
+              <input id={`${formId}-doi`} value={doi} onChange={(e) => setDoi(e.target.value)} placeholder="10.1000/..." maxLength={200} />
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-scope`}>{t("catalogDeclareScope")}</label>
+              <select id={`${formId}-scope`} value={scope} onChange={(e) => setScope(e.target.value)}>
+                <option value="full-text">{t("catalogFullTextDeclared")}</option>
+                <option value="abstract">{t("catalogAbstractOnly")}</option>
+                <option value="metadata">{t("catalogMetadataOnly")}</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-cat`}>{t("catalogCategory")}</label>
+              <input id={`${formId}-cat`} list={`${formId}-cat-list`} value={cat} onChange={(e) => setCat(e.target.value)} maxLength={120} />
+              <datalist id={`${formId}-cat-list`}>
+                {categories.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-year`}>{t("catalogYear")}</label>
+              <input id={`${formId}-year`} value={year} onChange={(e) => setYear(e.target.value)} pattern="[0-9]{4}" maxLength={4} placeholder="2024" />
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-venue`}>{t("catalogMetaVenue")}</label>
+              <input id={`${formId}-venue`} value={venue} onChange={(e) => setVenue(e.target.value)} maxLength={300} />
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-authors`}>{t("catalogMetaAuthors")}</label>
+              <input id={`${formId}-authors`} value={authors} onChange={(e) => setAuthors(e.target.value)} placeholder="Park, Joon Sung; Bernstein, M." maxLength={1000} />
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-tags`}>{t("catalogMetaTags")}</label>
+              <input id={`${formId}-tags`} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="multi-agent, method:abm" maxLength={800} />
+            </div>
+            <div className="field field-wide">
+              <label htmlFor={`${formId}-sum`}>{t("catalogMetaSummary")}</label>
+              <textarea id={`${formId}-sum`} rows={2} value={summaryText} onChange={(e) => setSummaryText(e.target.value)} maxLength={20000} />
+            </div>
+          </div>
+          <div className="catalog-curation-actions" style={{ marginTop: "10px" }}>
+            <button type="submit" className="button primary">
+              {busy ? t("saving") : t("addSource")}
+            </button>
+            <button type="button" className="button secondary small" onClick={onClose}>
+              {t("cancel")}
+            </button>
+          </div>
+        </fieldset>
+        {err !== null && <ErrorMessage error={err} t={t} />}
+      </form>
+    </div>
+  );
+}
+
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, locale, t, projectId, projectTitle, onScreen, onCurate, onAddSource, onCreateHandoffTask, onNavigateReview, onOpenSetup, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView, curationState: externalCurationState, onCurationStateChange }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
   curations?: ResearchRecord[];
@@ -485,6 +668,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   projectTitle?: string;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
   onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
+  onAddSource?: (source: QuickAddSourceInput) => Promise<void>;
   onCreateHandoffTask?: (payload: { operation: "synthesize" | "frame"; instructions: string; selected_source_ids?: string[] }) => Promise<{ id: string }>;
   onNavigateReview?: (taskId?: string) => void;
   onOpenSetup?: () => void;
@@ -506,15 +690,26 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     () => new Map(rawSources.map((record) => [record.id, record])),
     [rawSources],
   );
-  const sources = useMemo(
+  const allCuratedSources = useMemo(
     () => applySourceCurations(rawSources, curations),
     [rawSources, curations],
+  );
+  const sources = useMemo(
+    () => allCuratedSources.filter((record) => record.data.archived !== true),
+    [allCuratedSources],
+  );
+  const archivedSources = useMemo(
+    () => allCuratedSources.filter((record) => record.data.archived === true),
+    [allCuratedSources],
   );
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedScope, setSelectedScope] = useState<ScopeTone | "">("");
-  const [selectedTag, setSelectedTag] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedYear, setSelectedYear] = useState("");
   const [showAllTags, setShowAllTags] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [citeCopiedText, setCiteCopiedText] = useState<string | null>(null);
   const [organization, setOrganization] = useState<Organization>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [sortBy, setSortBy] = useState<SortKey>("default");
@@ -546,7 +741,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
     setViewMode(requestedView.mode);
     setQuery("");
     setSelectedScope("");
-    setSelectedTag("");
+    setSelectedTags([]);
+    setSelectedYear("");
     if (requestedView.category === "__unclassified__") {
       setSelectedCategory("");
       setOrganization("unclassified");
@@ -598,14 +794,23 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const screened = (record: ResearchRecord) => screenedDecision(record) !== null;
   const summaryStats = buildLiteratureSummaryStats(sources, screenings);
   const matchesOrganization = (record: ResearchRecord, value: Organization) =>
-    value === "unclassified" ? !category(record)
-      : value === "missing-summary" ? missingSummary(record)
-        : value === "unscreened" ? record.kind === "source" && !screened(record) : true;
+    value === "included" ? screenedDecision(record) === "include"
+      : value === "excluded" ? screenedDecision(record) === "exclude"
+        : value === "unclassified" ? !category(record)
+          : value === "missing-summary" ? missingSummary(record)
+            : value === "unscreened" ? record.kind === "source" && !screened(record)
+              : value === "archived" ? record.data.archived === true : true;
   const organizationViews = [
-    ["all", "catalogAllMaterial"], ["unclassified", "catalogNeedsCategory"],
-    ["missing-summary", "catalogNeedsSummary"], ["unscreened", "catalogNeedsScreening"],
+    ["all", "catalogAllMaterial"],
+    ...(summaryStats.included > 0 || organization === "included" ? ([["included", "catalogIncludedTab"]] as const) : []),
+    ...(summaryStats.excluded > 0 || organization === "excluded" ? ([["excluded", "catalogExcludedTab"]] as const) : []),
+    ["unclassified", "catalogNeedsCategory"],
+    ["missing-summary", "catalogNeedsSummary"],
+    ["unscreened", "catalogNeedsScreening"],
+    ...(archivedSources.length > 0 || organization === "archived" ? ([["archived", "catalogArchivedTab"]] as const) : []),
   ] as const;
   const categories = [...new Set(sources.map(category).filter(Boolean))].sort();
+  const distinctYears = [...new Set(sources.map((r) => text(r.data.year).trim()).filter((y) => /^\d{4}$/.test(y)))].sort((a, b) => Number(b) - Number(a));
   const scopeCounts: Record<ScopeTone, number> = { full: 0, abstract: 0, metadata: 0, unknown: 0 };
   const tagMap = new Map<string, { label: string; count: number }>();
   for (const record of sources) {
@@ -622,12 +827,23 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   );
   const visibleTagChips = showAllTags ? allTags : allTags.slice(0, 8);
   const search = query.trim().toLocaleLowerCase();
-  const selectedTagLower = selectedTag.toLocaleLowerCase();
-  const visible = sources.filter((record) =>
+  const selectedTagSet = new Set(selectedTags.map((item) => item.toLocaleLowerCase()));
+  const toggleTag = (tagLabel: string) => {
+    const key = tagLabel.toLocaleLowerCase();
+    setSelectedTags((prev) =>
+      prev.some((item) => item.toLocaleLowerCase() === key)
+        ? prev.filter((item) => item.toLocaleLowerCase() !== key)
+        : [...prev, tagLabel],
+    );
+  };
+  const isTagSelected = (tagLabel: string) => selectedTagSet.has(tagLabel.toLocaleLowerCase());
+  const poolSources = organization === "archived" ? archivedSources : sources;
+  const visible = poolSources.filter((record) =>
     matchesOrganization(record, organization) &&
     (!selectedCategory || category(record) === selectedCategory) &&
     (!selectedScope || readingScopeTone(record) === selectedScope) &&
-    (!selectedTagLower || sourceTags(record).some((tag) => tag.toLocaleLowerCase() === selectedTagLower)) &&
+    (!selectedYear || text(record.data.year).trim() === selectedYear) &&
+    (selectedTagSet.size === 0 || [...selectedTagSet].every((sel) => sourceTags(record).some((tag) => tag.toLocaleLowerCase() === sel))) &&
     (!search || [record.data.title, ...authorNames(record.data.authors), record.data.year, record.data.doi, record.data.venue, record.data.journal, record.data.relevance, category(record), ...sourceTags(record)]
       .map(text).join(" ").toLocaleLowerCase().includes(search)),
   );
@@ -834,6 +1050,20 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
         <h2>{t("catalogTitle")}</h2>
         <div className="catalog-heading-actions">
           <span className="catalog-total">{sources.length} {t("catalogItems")}</span>
+          {onAddSource && (
+            <button
+              type="button"
+              className="button secondary small catalog-quick-add-trigger"
+              aria-expanded={quickAddOpen}
+              onClick={() => setQuickAddOpen((open) => !open)}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" aria-hidden="true" focusable="false">
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+              <span>{t("catalogQuickAdd")}</span>
+            </button>
+          )}
           <button
             type="button"
             className="button primary small catalog-handoff-trigger"
@@ -881,6 +1111,14 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
           </div>
         </div>
       </div>
+      {quickAddOpen && onAddSource && (
+        <QuickAddSourceDrawer
+          categories={categories}
+          t={t}
+          onAdd={onAddSource}
+          onClose={() => setQuickAddOpen(false)}
+        />
+      )}
       {sources.length > 0 && (() => {
         const total = sources.length;
         const pct = (count: number) => `${Math.round((count / total) * 1000) / 10}%`;
@@ -961,10 +1199,23 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
       })()}
       <div className="catalog-control-bar">
         <div className="catalog-organize" role="group" aria-label={t("catalogOrganize")}>
-          {organizationViews.map(([value, label]) => <button key={value} type="button" className="button secondary"
-            aria-pressed={organization === value} onClick={() => setOrganization(value)}>
-            {t(label)} ({sources.filter((record) => matchesOrganization(record, value)).length})
-          </button>)}
+          {organizationViews.map(([value, label]) => {
+            const count =
+              value === "archived"
+                ? archivedSources.length
+                : sources.filter((record) => matchesOrganization(record, value)).length;
+            return (
+              <button
+                key={value}
+                type="button"
+                className="button secondary"
+                aria-pressed={organization === value}
+                onClick={() => setOrganization(value)}
+              >
+                {t(label)} ({count})
+              </button>
+            );
+          })}
         </div>
         <div className="catalog-toolbar">
           <label className="catalog-search">
@@ -981,15 +1232,32 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
               {categories.map((value) => <option key={value} value={value}>{categoryName(value, t)} ({sources.filter((record) => category(record) === value).length})</option>)}
             </select>
           </label>
-          <p className="catalog-match" role="status">{visible.length} / {sources.length} {t("catalogItems")}</p>
-          {(query || selectedCategory || selectedScope || selectedTag || organization !== "all") && (
+          {distinctYears.length > 1 && (
+            <label className="catalog-year-select">
+              <span className="sr-only">{t("catalogFilterYear")}</span>
+              <select
+                aria-label={t("catalogFilterYear")}
+                value={selectedYear}
+                onChange={(event) => setSelectedYear(event.target.value)}
+              >
+                <option value="">{t("catalogAllYears")}</option>
+                {distinctYears.map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr} ({sources.filter((r) => text(r.data.year).trim() === yr).length})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <p className="catalog-match" role="status">{visible.length} / {poolSources.length} {t("catalogItems")}</p>
+          {(query || selectedCategory || selectedScope || selectedTags.length > 0 || selectedYear || organization !== "all") && (
             <button
               type="button"
               className="button text-button small icon-btn"
               aria-label={t("catalogClearFilters")}
               data-tooltip={t("catalogClearFilters")}
               data-tooltip-pos="bottom-end"
-              onClick={() => {setQuery(""); setSelectedCategory(""); setSelectedScope(""); setSelectedTag(""); setOrganization("all"); searchInput.current?.focus();}}
+              onClick={() => {setQuery(""); setSelectedCategory(""); setSelectedScope(""); setSelectedTags([]); setSelectedYear(""); setOrganization("all"); searchInput.current?.focus();}}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" aria-hidden="true" focusable="false">
                 <path d="M18 6 6 18" />
@@ -1009,7 +1277,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
             <span>{t("catalogLabelsHeading")}</span>
           </span>
           {visibleTagChips.map(({ label, count }) => {
-            const pressed = selectedTagLower === label.toLocaleLowerCase();
+            const pressed = isTagSelected(label);
             const tone = classifyLabelTone(label);
             return (
               <button
@@ -1017,7 +1285,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 type="button"
                 className={`tag-chip tag-chip-btn label-tone-${tone}`}
                 aria-pressed={pressed}
-                onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === label.toLocaleLowerCase() ? "" : label))}
+                onClick={() => toggleTag(label)}
               >
                 <GitHubLabelText label={label} />{" "}
                 <span className="pill-count">{count}</span>
@@ -1050,7 +1318,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                   setQuery("");
                   setSelectedCategory("");
                   setSelectedScope("");
-                  setSelectedTag("");
+                  setSelectedTags([]);
+                  setSelectedYear("");
                   setOrganization("all");
                 }
                 setSelectionMissing(false);
@@ -1255,8 +1524,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                                   key={tag}
                                   type="button"
                                   className={`tag-chip tag-chip-btn label-tone-${classifyLabelTone(tag)}`}
-                                  aria-pressed={selectedTagLower === tag.toLocaleLowerCase()}
-                                  onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === tag.toLocaleLowerCase() ? "" : tag))}
+                                  aria-pressed={isTagSelected(tag)}
+                                  onClick={() => toggleTag(tag)}
                                 >
                                   <GitHubLabelText label={tag} />
                                 </button>
@@ -1432,6 +1701,23 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 </span>
               </div>
               <div className="catalog-detail-actions">
+                {onCurate && !note && selected.data.archived !== true && (
+                  <button
+                    type="button"
+                    className="button text-button small icon-btn catalog-archive-btn"
+                    aria-label={t("catalogArchiveSource")}
+                    data-tooltip={t("catalogArchiveSource")}
+                    data-tooltip-pos="bottom-end"
+                    onClick={() => {
+                      void onCurate(selected.id, { archived: true });
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="button secondary small"
@@ -1478,8 +1764,8 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     key={tag}
                     type="button"
                     className={`tag-chip tag-chip-btn label-tone-${classifyLabelTone(tag)}`}
-                    aria-pressed={selectedTagLower === tag.toLocaleLowerCase()}
-                    onClick={() => setSelectedTag((prev) => (prev.toLocaleLowerCase() === tag.toLocaleLowerCase() ? "" : tag))}
+                    aria-pressed={isTagSelected(tag)}
+                    onClick={() => toggleTag(tag)}
                   >
                     <GitHubLabelText label={tag} />
                   </button>
@@ -1495,7 +1781,111 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 )}
               </div>
             )}
+            <div className="catalog-cite-bar" role="group" aria-label={t("citeQuickLabel")}>
+              <span className="catalog-cite-kicker">
+                {t("citeQuickLabel")}: <code>{formatInTextCitation(selected)}</code>
+              </span>
+              <div className="catalog-cite-actions">
+                <button
+                  type="button"
+                  className="cite-bar-btn"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText?.(formatApaReference(selected)).then(() => {
+                      setCiteCopiedText("apa");
+                      setTimeout(() => setCiteCopiedText((c) => (c === "apa" ? null : c)), 1800);
+                    });
+                  }}
+                >
+                  {citeCopiedText === "apa" ? `✓ ${t("citeCopied")}` : t("citeCopyApa")}
+                </button>
+                <button
+                  type="button"
+                  className="cite-bar-btn"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText?.(buildBibtexExport([selected])).then(() => {
+                      setCiteCopiedText("bib");
+                      setTimeout(() => setCiteCopiedText((c) => (c === "bib" ? null : c)), 1800);
+                    });
+                  }}
+                >
+                  {citeCopiedText === "bib" ? `✓ ${t("citeCopied")}` : t("citeCopyBib")}
+                </button>
+                <button
+                  type="button"
+                  className="cite-bar-btn"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText?.(formatPandocCite(selected, 0)).then(() => {
+                      setCiteCopiedText("key");
+                      setTimeout(() => setCiteCopiedText((c) => (c === "key" ? null : c)), 1800);
+                    });
+                  }}
+                >
+                  {citeCopiedText === "key" ? `✓ ${t("citeCopied")}` : t("citeCopyKey")}
+                </button>
+                <button
+                  type="button"
+                  className="cite-bar-btn"
+                  onClick={() => {
+                    const blob = new Blob([buildBibtexExport([selected])], { type: "application/x-bibtex;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${formatPandocCite(selected, 0).replace(/[^a-z0-9_-]/gi, "") || "citation"}.bib`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }}
+                >
+                  ↓ {t("citeDownloadBib")}
+                </button>
+                <button
+                  type="button"
+                  className="cite-bar-btn"
+                  onClick={() => {
+                    const blob = new Blob([buildRisExport([selected])], { type: "application/x-research-info-systems;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${formatPandocCite(selected, 0).replace(/[^a-z0-9_-]/gi, "") || "citation"}.ris`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }}
+                >
+                  ↓ {t("citeDownloadRis")}
+                </button>
+                {note && (() => {
+                  const vName =
+                    (liveIntegrations?.credentials ?? workspace?.capabilities?.local_integrations)?.obsidian_vault_name ||
+                    extractVaultName(workspace?.capabilities?.obsidian_validation?.authorized_vault);
+                  const uri = buildObsidianUri(vName, text(selected.data.note_path));
+                  return uri ? (
+                    <a className="cite-bar-btn" href={uri}>
+                      {t("obsidianOpenApp")} ↗
+                    </a>
+                  ) : null;
+                })()}
+              </div>
             </div>
+            </div>
+            {selected.data.archived === true && onCurate && (
+              <div className="catalog-unsaved-drafts" role="status">
+                <span>{t("catalogArchivedNotice")}</span>
+                <button
+                  type="button"
+                  className="button primary small"
+                  onClick={() => {
+                    void onCurate(selected.id, { archived: false }).then(() => {
+                      if (archivedSources.length <= 1) setOrganization("all");
+                    });
+                  }}
+                >
+                  {t("catalogRestoreSource")}
+                </button>
+              </div>
+            )}
             {note && <p className="catalog-missing">{t("libraryReadOnly")}</p>}
             {!note && <div className="catalog-triage-bar">
               <details className="catalog-screening">

@@ -103,7 +103,8 @@ RECORD_FIELDS = {
     "outline": ("section", "function", "claim", "evidence", "bridge"),
     "review": ("comment", "severity"),
 }
-SOURCE_CURATION_FIELDS = frozenset({"source_id", "category", "year", "authors", "venue", "relevance", "summary", "tags"})
+SOURCE_CURATION_FIELDS = frozenset({"source_id", "category", "year", "authors", "venue", "relevance", "summary", "tags", "doi", "archived"})
+ALLOWED_READING_SCOPES = frozenset({"full-text", "abstract", "abstract-snippet", "metadata"})
 
 
 def _clean_text_field(value: object, *, name: str, limit: int) -> str:
@@ -193,6 +194,12 @@ def _validate_source_curation(data: dict) -> dict:
         normalized["summary"] = _clean_text_field(data["summary"], name="summary", limit=20000)
     if "tags" in data:
         normalized["tags"] = _clean_tags_field(data["tags"], max_items=30, item_limit=80)
+    if "doi" in data:
+        normalized["doi"] = _clean_text_field(data["doi"], name="doi", limit=200)
+    if "archived" in data:
+        if not isinstance(data["archived"], bool):
+            raise WorkspaceError("archived must be a boolean")
+        normalized["archived"] = data["archived"]
     return normalized
 
 
@@ -442,6 +449,14 @@ class Workspace:
                     data["tags"] = cleaned_tags
                 else:
                     data.pop("tags", None)
+            if "reading_scope" in data and data["reading_scope"] is not None:
+                cleaned_scope = _clean_text_field(data["reading_scope"], name="reading_scope", limit=32)
+                if not cleaned_scope:
+                    data.pop("reading_scope", None)
+                elif cleaned_scope not in ALLOWED_READING_SCOPES:
+                    raise WorkspaceError(f"reading_scope must be one of {', '.join(sorted(ALLOWED_READING_SCOPES))}")
+                else:
+                    data["reading_scope"] = cleaned_scope
         if kind == "source_curation":
             data = _validate_source_curation(data)
             if not any(r["id"] == data["source_id"] and r["kind"] == "source" for r in self.records(project_id)):

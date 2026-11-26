@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { BrandMark, type BrandDestination } from "./BrandIcons";
+import { buildObsidianUri, extractVaultName } from "./citations";
 import { obsidianStatusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, Workspace } from "./types";
 import { NotebookLmAuthControls } from "./NotebookLmAuthControls";
@@ -289,18 +290,36 @@ export function IntegrationsSetup({
                       </a>
                     </p>
                     {key === "vault" && (
-                      <ObsidianValidationForm
-                        capability={
-                          workspace?.capabilities?.obsidian_validation
-                        }
-                        onValidated={(obsidian) =>
-                          onLiveStateChange?.((prev) => ({
-                            ...prev,
-                            obsidian,
-                          }))
-                        }
-                        t={t}
-                      />
+                      <>
+                        <ObsidianValidationForm
+                          capability={
+                            workspace?.capabilities?.obsidian_validation
+                          }
+                          onValidated={(obsidian) =>
+                            onLiveStateChange?.((prev) => ({
+                              ...prev,
+                              obsidian,
+                            }))
+                          }
+                          t={t}
+                        />
+                        <div className="integration-inline-row" style={{ marginTop: "6px" }}>
+                          <span className={`badge ${localCap?.obsidian_cli_present ? "good" : "neutral"}`}>
+                            {t(localCap?.obsidian_cli_present ? "obsidianCliDetected" : "obsidianCliNotDetected")}
+                          </span>
+                          {(() => {
+                            const vName =
+                              localCap?.obsidian_vault_name ||
+                              extractVaultName(workspace?.capabilities?.obsidian_validation?.authorized_vault);
+                            const uri = buildObsidianUri(vName);
+                            return uri ? (
+                              <a className="button secondary small" href={uri}>
+                                {t("obsidianOpenApp")} <span aria-hidden="true">↗</span>
+                              </a>
+                            ) : null;
+                          })()}
+                        </div>
+                      </>
                     )}
                     {key === "zotero" && (
                       <ZoteroLibraryForm
