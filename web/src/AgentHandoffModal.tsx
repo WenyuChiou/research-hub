@@ -8,6 +8,7 @@ import {
   DestinationBrandChip,
   RisEndnoteIcon,
 } from "./BrandIcons";
+import { acquireModalBackgroundLock } from "./CommandPalette";
 import { SyncHooksPanel } from "./SyncHooksBar";
 import {
   buildApaBibliography,
@@ -685,29 +686,14 @@ export function AgentHandoffModal({
     }
   }, [open, scope, selectedRecord]);
 
-  // Background inertness + focus restoration on close/unmount.
+  // Background inertness + focus restoration on close/unmount (reference-counted with CommandPalette).
   useEffect(() => {
     if (!open) return;
-    const backdrop = backdropRef.current;
-    const altered: { el: HTMLElement; prevAriaHidden: string | null; prevInert: boolean }[] = [];
-    for (const child of Array.from(document.body.children)) {
-      if (child === backdrop || !(child instanceof HTMLElement)) continue;
-      altered.push({
-        el: child,
-        prevAriaHidden: child.getAttribute("aria-hidden"),
-        prevInert: Boolean((child as HTMLElement & { inert?: boolean }).inert),
-      });
-      child.setAttribute("aria-hidden", "true");
-      (child as HTMLElement & { inert?: boolean }).inert = true;
-    }
+    const releaseBackground = acquireModalBackgroundLock(backdropRef.current);
     return () => {
-      for (const { el, prevAriaHidden, prevInert } of altered) {
-        if (prevAriaHidden === null) el.removeAttribute("aria-hidden");
-        else el.setAttribute("aria-hidden", prevAriaHidden);
-        (el as HTMLElement & { inert?: boolean }).inert = prevInert;
-      }
+      releaseBackground();
       const prev = previousFocusRef.current;
-      if (prev && prev.isConnected) {
+      if (prev && prev.isConnected && !prev.closest("[inert]")) {
         prev.focus();
       }
     };
@@ -717,6 +703,7 @@ export function AgentHandoffModal({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      if (backdropRef.current?.hasAttribute("inert")) return;
       if (event.key === "Escape") {
         event.stopPropagation();
         onClose();

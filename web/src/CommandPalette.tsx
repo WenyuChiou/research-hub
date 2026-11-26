@@ -26,6 +26,69 @@ function extractAuthorString(authors: unknown): string {
 }
 
 /**
+ * Reference-counted background isolation for stacked/nested portal dialogs
+ * (e.g. Ctrl+K CommandPalette opened on top of AgentHandoffModal) so closing
+ * multiple modals in any order deterministically restores document.body children.
+ */
+export function acquireModalBackgroundLock(excludeEl: HTMLElement | null): () => void {
+  const lockedElements: HTMLElement[] = [];
+  for (const child of Array.from(document.body.children)) {
+    if (child === excludeEl || !(child instanceof HTMLElement)) continue;
+    // Never mark another active modal portal backdrop inert when opening a top-most overlay,
+    // wait — hiding underlying modal + app shell while the top-most modal is open is desired,
+    // and reference counting guarantees exact restoration when each modal closes!
+    const count = Number.parseInt(child.dataset.hubModalLocks || "0", 10) || 0;
+    if (count === 0) {
+      const prevAria = child.getAttribute("aria-hidden");
+      child.dataset.hubPrevAriaHidden = prevAria === null ? "__none__" : prevAria;
+      const prevInert =
+        child.hasAttribute("inert") ||
+        Boolean((child as HTMLElement & { inert?: boolean }).inert);
+      child.dataset.hubPrevInert = prevInert ? "1" : "0";
+      child.setAttribute("aria-hidden", "true");
+      child.setAttribute("inert", "");
+      (child as HTMLElement & { inert?: boolean }).inert = true;
+    }
+    child.dataset.hubModalLocks = String(count + 1);
+    lockedElements.push(child);
+  }
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const el of lockedElements) {
+      const current = Number.parseInt(el.dataset.hubModalLocks || "1", 10) || 1;
+      const next = Math.max(0, current - 1);
+      if (next > 0) {
+        el.dataset.hubModalLocks = String(next);
+        el.setAttribute("aria-hidden", "true");
+        el.setAttribute("inert", "");
+        (el as HTMLElement & { inert?: boolean }).inert = true;
+      } else {
+        delete el.dataset.hubModalLocks;
+        const savedAria = el.dataset.hubPrevAriaHidden;
+        delete el.dataset.hubPrevAriaHidden;
+        if (!savedAria || savedAria === "__none__") {
+          el.removeAttribute("aria-hidden");
+        } else {
+          el.setAttribute("aria-hidden", savedAria);
+        }
+        const savedInert = el.dataset.hubPrevInert === "1";
+        delete el.dataset.hubPrevInert;
+        if (!savedInert) {
+          el.removeAttribute("inert");
+          (el as HTMLElement & { inert?: boolean }).inert = false;
+        } else {
+          el.setAttribute("inert", "");
+          (el as HTMLElement & { inert?: boolean }).inert = true;
+        }
+      }
+    }
+  };
+}
+
+/**
  * Global keyboard shortcut listener (`Ctrl+K` / `⌘K`).
  */
 export function useCommandPaletteShortcut(onToggle: () => void): void {
@@ -175,20 +238,7 @@ export function CommandPalette({
 
   useEffect(() => {
     if (!open) return;
-    const backdropEl = backdropRef.current;
-    const inertRestorers: Array<() => void> = [];
-    for (const sibling of Array.from(document.body.children)) {
-      if (sibling === backdropEl || !(sibling instanceof HTMLElement)) continue;
-      const hadInert = sibling.hasAttribute("inert");
-      const prevAriaHidden = sibling.getAttribute("aria-hidden");
-      if (!hadInert) sibling.setAttribute("inert", "");
-      if (prevAriaHidden !== "true") sibling.setAttribute("aria-hidden", "true");
-      inertRestorers.push(() => {
-        if (!hadInert) sibling.removeAttribute("inert");
-        if (prevAriaHidden === null) sibling.removeAttribute("aria-hidden");
-        else sibling.setAttribute("aria-hidden", prevAriaHidden);
-      });
-    }
+    const releaseBackground = acquireModalBackgroundLock(backdropRef.current);
     const onFocusIn = (event: FocusEvent) => {
       const dialogEl = dialogRef.current;
       if (dialogEl && event.target instanceof Node && !dialogEl.contains(event.target)) {
@@ -198,9 +248,7 @@ export function CommandPalette({
     document.addEventListener("focusin", onFocusIn);
     return () => {
       document.removeEventListener("focusin", onFocusIn);
-      for (const restore of inertRestorers) {
-        restore();
-      }
+      releaseBackground();
     };
   }, [open]);
 

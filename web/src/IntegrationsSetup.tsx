@@ -776,15 +776,6 @@ export function IntegrationsSetup({
                           {t("integrationsOptional")}
                         </p>
                       </div>
-                      <a
-                        className="settings-guide-chip setup-guide-link"
-                        href="https://github.com/WenyuChiou/research-hub/blob/master/docs/setup.md"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <span>{t("integrationGuide")}</span>
-                        <span aria-hidden="true">↗</span>
-                      </a>
                     </div>
 
                     <div className="settings-led-strip" role="status">
@@ -1092,6 +1083,15 @@ export function IntegrationsSetup({
                         )}
                       </p>
                     </details>
+                    <a
+                      className="settings-guide-chip setup-guide-link"
+                      href="https://github.com/WenyuChiou/research-hub/blob/master/docs/setup.md"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <span>{t("integrationGuide")}</span>
+                      <span aria-hidden="true">↗</span>
+                    </a>
                   </>
                 )}
 

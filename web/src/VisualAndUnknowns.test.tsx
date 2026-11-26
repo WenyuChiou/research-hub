@@ -2,7 +2,11 @@ import { useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { CommandPalette, useCommandPaletteShortcut } from "./CommandPalette";
+import {
+  acquireModalBackgroundLock,
+  CommandPalette,
+  useCommandPaletteShortcut,
+} from "./CommandPalette";
 import { SynthesisMatrix } from "./SynthesisMatrix";
 import type { Page, Project, ResearchRecord } from "./types";
 import {
@@ -503,6 +507,27 @@ describe("CommandPalette & Ctrl+K Shortcut", () => {
       expect(searchBox).toHaveFocus();
       await user.keyboard("{ArrowDown}");
       expect(scrollSpy).toHaveBeenCalled();
+
+      // Out-of-order release of nested modal locks cleanly restores document.body children
+      const host = document.createElement("div");
+      const m1 = document.createElement("div");
+      const m2 = document.createElement("div");
+      document.body.append(host, m1, m2);
+      try {
+        const rel1 = acquireModalBackgroundLock(m1);
+        const rel2 = acquireModalBackgroundLock(m2);
+        expect(host.getAttribute("aria-hidden")).toBe("true");
+        // Release outer modal first, then inner modal (same order as AgentHandoffModal + CommandPalette closing together)
+        rel1();
+        expect(host.getAttribute("aria-hidden")).toBe("true");
+        rel2();
+        expect(host.getAttribute("aria-hidden")).toBeNull();
+        expect(host.hasAttribute("inert")).toBe(false);
+      } finally {
+        host.remove();
+        m1.remove();
+        m2.remove();
+      }
     } finally {
       // @ts-expect-error cleanup test prototype spy
       delete HTMLElement.prototype.scrollIntoView;

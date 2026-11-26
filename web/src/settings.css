@@ -277,6 +277,7 @@
 .settings-guide-chip {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   gap: 4px;
   padding: 4px 9px;
   border-radius: 7px;
@@ -287,6 +288,8 @@
   font-weight: 500;
   text-decoration: none;
   flex-shrink: 0;
+  scroll-margin-top: 64px;
+  scroll-margin-bottom: 12px;
   transition:
     transform var(--duration-fast) var(--ease-out-quart),
     opacity var(--duration-fast) var(--ease-out-quart);
@@ -1068,14 +1071,37 @@
 @media (max-width: 720px) {
   .integrations-panel.settings-center {
     inset: 10px;
+    margin: 0;
     width: auto;
+    max-width: none;
     height: auto;
     max-height: calc(100dvh - 20px);
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-top: 68px;
+    scroll-padding-bottom: 16px;
+  }
+
+  .settings-center .integrations-panel-header {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+  }
+
+  .settings-center summary,
+  .settings-center .setup-guide-link {
+    scroll-margin-top: 68px;
+    scroll-margin-bottom: 16px;
   }
 
   .settings-center-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    display: block;
+    overflow: visible;
+  }
+
+  .settings-content-pane {
+    overflow: visible;
   }
 
   .settings-nav-rail {
