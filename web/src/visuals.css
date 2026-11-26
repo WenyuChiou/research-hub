@@ -143,7 +143,7 @@
   min-width: 0;
 }
 .vr-charts-empty,
-.vr-matrix-empty {
+section.vr-matrix-empty {
   padding: 14px 16px;
   border: 1px dashed var(--line-strong);
   border-radius: 10px;
@@ -829,7 +829,7 @@
   font-size: var(--text-2xs);
   line-height: 1;
 }
-.vr-matrix-empty {
+span.vr-matrix-empty {
   color: var(--muted);
   opacity: 0.45;
   font-size: var(--text-meta);
