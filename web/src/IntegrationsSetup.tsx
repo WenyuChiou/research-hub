@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
+import { BrandMark, type BrandDestination } from "./BrandIcons";
 import { obsidianStatusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, Workspace } from "./types";
 import { NotebookLmAuthControls } from "./NotebookLmAuthControls";
@@ -273,7 +274,12 @@ export function IntegrationsSetup({
                 return (
                   <li key={key} className="integration-tool">
                     <div className="setup-tool-header">
-                      <h3>{label}</h3>
+                      <h3 className="setup-tool-title">
+                        <span className={`setup-brand-mark brand-${key === "vault" ? "obsidian" : key === "zotero" ? "zotero" : "notebooklm"}`} aria-hidden="true">
+                          <BrandMark brand={(key === "vault" ? "obsidian" : key === "zotero" ? "zotero" : "notebooklm") as BrandDestination} size={15} />
+                        </span>
+                        <span>{label}</span>
+                      </h3>
                       <span className={`badge ${connTone}`}>{connText}</span>
                     </div>
                     <p className="small muted">

@@ -15,7 +15,9 @@ body {
   font-size: var(--text-body);
   line-height: var(--leading-body);
   font-kerning: normal;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 .sr-only {
   position: absolute;
@@ -118,7 +120,7 @@ p,
 }
 code,
 pre {
-  font-family: "Cascadia Code", "Consolas", monospace;
+  font-family: var(--mono-font);
   font-size: var(--text-meta);
   overflow-wrap: anywhere;
 }
@@ -1890,6 +1892,24 @@ select option {
 .setup-tool-header h3 {
   margin: 0;
 }
+.setup-tool-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.setup-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface-tint);
+}
+.setup-brand-mark.brand-obsidian { color: #6d28d9; background: #f5effb; border-color: #dcc3f0; }
+.setup-brand-mark.brand-zotero { color: #991b1b; background: #fef0ee; border-color: #f4bfb7; }
+.setup-brand-mark.brand-notebooklm { color: #0c5163; background: #e7f6f8; border-color: #a5dbe4; }
 .setup-guide-link {
   display: inline-block;
   margin-top: 10px;

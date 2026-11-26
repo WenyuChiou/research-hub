@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
+import { BrandMark, DestinationBrandChip } from "./BrandIcons";
 import { ErrorMessage } from "./components";
 import { zhTW, type Translate } from "./i18n";
 import type { IntegrationLiveState, Locale, ResearchRecord, Workspace } from "./types";
@@ -464,7 +465,7 @@ export function buildAgentHandoffPrompt({
           "1. 先為下列文獻驗證 DOI / 書目身分，保留 `category`、`labels`（關鍵字標籤）與 `reading_scope`（切勿將 `abstract` 或 `metadata` 誤標為 `full-text`）。",
           "2. 確認或建立目標群組（`research-hub clusters new --query \"<topic>\" --slug <cluster-slug>`），產出標準 ingest JSON 後**先執行 dry-run 預覽**：",
           `   \`research-hub ingest --input <papers.json> --cluster ${clusterSlug} --dry-run\``,
-          "3. 將 dry-run 差異（新增／略過／標籤／分類）回報給我確認；**獲得明確核准後**才移除 `--dry-run` 寫入 Zotero 與 Obsidian Vault。",
+          "3. 將 dry-run 差異（新增／略過／標籤／分類）回報給我確認；**獲得明確核准後**才移除 `--dry-run` 寫入 Zotero 與 Obsidian Vault（若本機已啟用 Obsidian v1.12+ 官方 CLI 或 `obsidianmd/obsidian-skills`，亦可在核准後透過官方 CLI 更新索引與 Bases 檢視）。",
           "4. 同步完成後，可協助執行 `scripts/library_snapshot.py --vault <vault> --collection <cluster-slug> --output <snapshot.json>` 更新唯讀快照。",
         ]
       : [
@@ -472,7 +473,7 @@ export function buildAgentHandoffPrompt({
           "1. Verify DOI / bibliographic identity for the sources below while preserving `category`, `labels`, and `reading_scope` (NEVER promote `abstract` or `metadata` items to `full-text`).",
           "2. Create or confirm the target cluster (`research-hub clusters new --query \"<topic>\" --slug <cluster-slug>`), prepare the ingest JSON, and run a **dry-run preview first**:",
           `   \`research-hub ingest --input <papers.json> --cluster ${clusterSlug} --dry-run\``,
-          "3. Report the dry-run diff (adds / skips / categories / labels) and **wait for my explicit approval** before re-running without `--dry-run` to write to Zotero or Obsidian.",
+          "3. Report the dry-run diff (adds / skips / categories / labels) and **wait for my explicit approval** before re-running without `--dry-run` to write to Zotero or Obsidian (if Obsidian v1.12+ official CLI or `obsidianmd/obsidian-skills` is enabled, use it after approval so Wikilinks and Obsidian Bases stay indexed).",
           "4. After approval and ingest, refresh the read-only UI snapshot via `scripts/library_snapshot.py --vault <vault> --collection <cluster-slug> --output <snapshot.json>`.",
         ];
   } else if (preset === "notebooklm-brief") {
@@ -841,12 +842,16 @@ export function AgentHandoffModal({
     },
   ];
 
-  const statusTip = (state: DestinationState) =>
-    state === "configured"
-      ? t("pipelineStatusConfigured")
-      : state === "error"
-        ? t("pipelineStatusError")
-        : undefined;
+  const statusText = (state: DestinationState) =>
+    state === "ok"
+      ? t("pipelineStatusOk")
+      : state === "configured"
+        ? t("pipelineStatusConfigured")
+        : state === "error"
+          ? t("pipelineStatusError")
+          : onOpenSetup
+            ? t("pipelineStatusIdle")
+            : t("pipelineStatusIdleReadOnly");
 
   return createPortal(
     <div
@@ -958,10 +963,49 @@ export function AgentHandoffModal({
         </div>
 
         <div className="handoff-modal-body">
-          <div className="handoff-dest-bar" aria-label={t("handoffPipelineReadiness")}>
-            <span className={`pipeline-dot-chip is-${dest.obsidian}`} title={statusTip(dest.obsidian)}>Obsidian</span>
-            <span className={`pipeline-dot-chip is-${dest.zotero}`} title={statusTip(dest.zotero)}>Zotero</span>
-            <span className={`pipeline-dot-chip is-${dest.notebooklm}`} title={statusTip(dest.notebooklm)}>NotebookLM</span>
+          <div className="handoff-dest-bar" role="group" aria-label={t("handoffPipelineReadiness")}>
+            <DestinationBrandChip
+              brand="obsidian"
+              state={dest.obsidian}
+              statusText={statusText(dest.obsidian)}
+              tooltipPos="bottom-start"
+              onClick={
+                onOpenSetup
+                  ? () => {
+                      onClose();
+                      onOpenSetup();
+                    }
+                  : undefined
+              }
+            />
+            <DestinationBrandChip
+              brand="zotero"
+              state={dest.zotero}
+              statusText={statusText(dest.zotero)}
+              tooltipPos="bottom-start"
+              onClick={
+                onOpenSetup
+                  ? () => {
+                      onClose();
+                      onOpenSetup();
+                    }
+                  : undefined
+              }
+            />
+            <DestinationBrandChip
+              brand="notebooklm"
+              state={dest.notebooklm}
+              statusText={statusText(dest.notebooklm)}
+              tooltipPos="bottom-start"
+              onClick={
+                onOpenSetup
+                  ? () => {
+                      onClose();
+                      onOpenSetup();
+                    }
+                  : undefined
+              }
+            />
             {onOpenSetup && (
               <button
                 type="button"
@@ -1060,7 +1104,12 @@ export function AgentHandoffModal({
             <div className="handoff-export-grid">
               <article className="handoff-export-card">
                 <div>
-                  <h3>{t("handoffExportObsidianTitle")}</h3>
+                  <h3 className="handoff-export-heading">
+                    <span className="handoff-export-icon brand-obsidian" aria-hidden="true">
+                      <BrandMark brand="obsidian" size={15} />
+                    </span>
+                    <span>{t("handoffExportObsidianTitle")}</span>
+                  </h3>
                   <p className="small muted">{t("handoffExportObsidianDesc")}</p>
                 </div>
                 <div className="handoff-export-actions">
@@ -1098,7 +1147,12 @@ export function AgentHandoffModal({
 
               <article className="handoff-export-card">
                 <div>
-                  <h3>{t("handoffExportNlmTitle")}</h3>
+                  <h3 className="handoff-export-heading">
+                    <span className="handoff-export-icon brand-notebooklm" aria-hidden="true">
+                      <BrandMark brand="notebooklm" size={15} />
+                    </span>
+                    <span>{t("handoffExportNlmTitle")}</span>
+                  </h3>
                   <p className="small muted">{t("handoffExportNlmDesc")}</p>
                 </div>
                 <div className="handoff-export-actions">
@@ -1136,7 +1190,12 @@ export function AgentHandoffModal({
 
               <article className="handoff-export-card">
                 <div>
-                  <h3>{t("handoffExportZoteroTitle")}</h3>
+                  <h3 className="handoff-export-heading">
+                    <span className="handoff-export-icon brand-zotero" aria-hidden="true">
+                      <BrandMark brand="zotero" size={15} />
+                    </span>
+                    <span>{t("handoffExportZoteroTitle")}</span>
+                  </h3>
                   <p className="small muted">{t("handoffExportZoteroDesc")}</p>
                 </div>
                 <div className="handoff-export-actions">

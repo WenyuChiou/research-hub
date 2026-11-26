@@ -4,8 +4,8 @@
   --paper: #f1f4f9;
   --surface-tint: #f8fafd;
   --white: #ffffff;
-  --sidebar-bg: #e9eef6;
-  --ink: #111827;
+  --sidebar-bg: #0f1623;
+  --ink: #0f172a;
   --muted: #4b586e;
   --line: #dbe2ee;
   --line-strong: #c2ccdc;
@@ -17,15 +17,31 @@
   --wash: #e6ecf5;
   --selection-bg: #e8f3f7;
   --selection-border: #b8d8e4;
-  --tooltip-bg: #141b26;
+  --tooltip-bg: #111827;
   --tooltip-fg: #f8fafc;
-  /* Semantic label tokens for reading scope & keyword chips. */
+
+  /* AI-IDE dark activity & explorer rail tokens (Cursor / Zed / Linear dark slate). */
+  --ide-bg: #0e1522;
+  --ide-surface: #141d2e;
+  --ide-card: #182338;
+  --ide-hover: #1b273d;
+  --ide-active: #1f2e47;
+  --ide-border: #233149;
+  --ide-border-strong: #567096;
+  --ide-fg: #eaf0f8;
+  --ide-muted: #97a6bd;
+  --ide-accent: #38bdf8;
+  --ide-accent-bg: rgba(56, 189, 248, 0.14);
+  --ide-count-bg: #182437;
+  --ide-count-fg: #b8c6db;
+
+  /* Semantic label tokens for reading scope. */
   --scope-full-bg: #e7f6ee;
   --scope-full-fg: #0c5f3f;
   --scope-full-border: #a7dec2;
   --scope-full-dot: #10925e;
   --scope-abstract-bg: #fef4e2;
-  --scope-abstract-fg: #8c4d08;
+  --scope-abstract-fg: #854907;
   --scope-abstract-border: #f0cc8b;
   --scope-abstract-dot: #d97706;
   --scope-meta-bg: #edf1f7;
@@ -36,9 +52,57 @@
   --scope-unknown-fg: #526075;
   --scope-unknown-border: #d8e0ec;
   --scope-unknown-dot: #94a3b8;
-  --tag-bg: #f3f6fb;
-  --tag-fg: #2b4560;
-  --tag-border: #cfdbe9;
+
+  /* GitHub-Issues / Primer inspired multi-hue semantic label tokens (WCAG AA >= 4.8:1). */
+  --tag-bg: #eef4fb;
+  --tag-fg: #1e4267;
+  --tag-border: #c5d7ec;
+
+  --lbl-blue-bg: #edf4ff;
+  --lbl-blue-fg: #1849a9;
+  --lbl-blue-border: #b8d3fe;
+  --lbl-blue-dot: #2563eb;
+
+  --lbl-teal-bg: #e7f6f8;
+  --lbl-teal-fg: #0c5163;
+  --lbl-teal-border: #a5dbe4;
+  --lbl-teal-dot: #0e7490;
+
+  --lbl-emerald-bg: #e8f7ef;
+  --lbl-emerald-fg: #0d5c3d;
+  --lbl-emerald-border: #a5dfc1;
+  --lbl-emerald-dot: #10925e;
+
+  --lbl-indigo-bg: #eef0ff;
+  --lbl-indigo-fg: #323ca3;
+  --lbl-indigo-border: #c2cafe;
+  --lbl-indigo-dot: #4f46e5;
+
+  --lbl-plum-bg: #f5effb;
+  --lbl-plum-fg: #5a277b;
+  --lbl-plum-border: #dcc3f0;
+  --lbl-plum-dot: #7c3aed;
+
+  --lbl-amber-bg: #fef5e5;
+  --lbl-amber-fg: #824706;
+  --lbl-amber-border: #f1cc8c;
+  --lbl-amber-dot: #d97706;
+
+  --lbl-coral-bg: #fef0ee;
+  --lbl-coral-fg: #93251b;
+  --lbl-coral-border: #f4bfb7;
+  --lbl-coral-dot: #dc2626;
+
+  --lbl-cyan-bg: #e6f6fb;
+  --lbl-cyan-fg: #0d5369;
+  --lbl-cyan-border: #a3ddee;
+  --lbl-cyan-dot: #0891b2;
+
+  --lbl-slate-bg: #eff3f8;
+  --lbl-slate-fg: #3e4e63;
+  --lbl-slate-border: #cdd7e5;
+  --lbl-slate-dot: #64748b;
+
   /* Modular desktop reference-manager scale in rem (respects browser root zoom). */
   --text-2xs: 0.6875rem;
   --text-meta: 0.75rem;
@@ -47,16 +111,23 @@
   --text-body: 0.9375rem;
   --text-subheading: 1.0625rem;
   --text-section: 1.1875rem;
-  --leading-body: 1.65;
+  --leading-body: 1.66;
   --leading-control: 1.4;
   --leading-help: 1.55;
-  /* Unified native grotesque stack for instant load and crisp Latin + CJK alignment. */
+
+  /* Precision neo-grotesque + CJK editorial stack + tabular monospace stack. */
   --body-font:
-    "Segoe UI Variable Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "PingFang TC", "Microsoft JhengHei", sans-serif;
+    "Inter Variable", "Inter", "Segoe UI Variable Text", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Noto Sans TC",
+    "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;
   --display-font:
-    "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "PingFang TC", "Microsoft JhengHei", sans-serif;
+    "Inter Variable", "Inter", "Segoe UI Variable Display", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Noto Sans TC",
+    "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;
+  --mono-font:
+    "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+
   /* Motion tokens (emil-design-eng & impeccable smooth physics). */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
@@ -64,5 +135,5 @@
   --duration-fast: 130ms;
   --duration-ui: 190ms;
   --duration-panel: 220ms;
-  --tooltip-delay: 150ms;
+  --tooltip-delay: 140ms;
 }

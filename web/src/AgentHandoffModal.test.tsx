@@ -9,6 +9,7 @@ import {
   computeDestinationStatuses,
   MAX_HANDOFF_TASK_CHARS,
 } from "./AgentHandoffModal";
+import { classifyLabelTone, splitScopedLabel } from "./BrandIcons";
 import { LiteratureLibrary } from "./LiteratureLibrary";
 import { translator } from "./i18n";
 import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
@@ -354,6 +355,77 @@ describe("semantic labels, tag curation, and AI agent handoff exports", () => {
       obsidian: "error",
       zotero: "error",
       notebooklm: "error",
+    });
+  });
+
+  it("renders icon-only brand badges for Obsidian, Zotero, and NotebookLM without visible text clutter while keeping ARIA and tooltips", async () => {
+    const user = userEvent.setup();
+    const onOpenSetup = vi.fn();
+    render(
+      <LiteratureLibrary
+        sources={sampleSources}
+        screenings={[]}
+        t={tEn}
+        onScreen={vi.fn()}
+        onPrepare={vi.fn()}
+        onOpenSetup={onOpenSetup}
+      />,
+    );
+
+    const destGroup = screen.getByRole("group", { name: tEn("catalogHealthPipeline") });
+    const buttons = within(destGroup).getAllByRole("button");
+    expect(buttons).toHaveLength(3);
+    expect(buttons[0]).toHaveAccessibleName(/Obsidian/i);
+    expect(buttons[1]).toHaveAccessibleName(/Zotero/i);
+    expect(buttons[2]).toHaveAccessibleName(/NotebookLM/i);
+    for (const btn of buttons) {
+      expect(btn.textContent).toBe("");
+      expect(btn.querySelector("svg")).not.toBeNull();
+      expect(btn.getAttribute("data-tooltip")).toMatch(/Obsidian|Zotero|NotebookLM/);
+    }
+
+    await user.click(buttons[0]);
+    expect(onOpenSetup).toHaveBeenCalledTimes(1);
+
+    // Modal destination strip also uses icon-only brand badges
+    await user.click(screen.getByRole("button", { name: tEn("handoffOpenButton") }));
+    const dialog = screen.getByRole("dialog", { name: tEn("handoffModalTitle") });
+    const modalDestGroup = within(dialog).getByRole("group", {
+      name: tEn("handoffPipelineReadiness"),
+    });
+    const modalBrandButtons = within(modalDestGroup)
+      .getAllByRole("button")
+      .filter((b) => b.classList.contains("pipeline-icon-chip"));
+    expect(modalBrandButtons).toHaveLength(3);
+    for (const btn of modalBrandButtons) {
+      expect(btn.textContent).toBe("");
+      expect(btn.querySelector("svg")).not.toBeNull();
+    }
+  });
+
+  it("classifies GitHub-style semantic label tones deterministically and splits scoped prefix:value labels", () => {
+    expect(classifyLabelTone("multi-agent")).toBe("blue");
+    expect(classifyLabelTone("benchmark")).toBe("indigo");
+    expect(classifyLabelTone("hydrology")).toBe("cyan");
+    expect(classifyLabelTone("bias")).toBe("coral");
+    expect(classifyLabelTone("human-simulation")).toBe("plum");
+    expect(classifyLabelTone("abm")).toBe("teal");
+    expect(classifyLabelTone("")).toBe("slate");
+    expect(classifyLabelTone("custom-topic-xyz")).toBe(
+      classifyLabelTone("#CUSTOM-TOPIC-XYZ"),
+    );
+
+    expect(splitScopedLabel("method:benchmark")).toEqual({
+      prefix: "method",
+      value: "benchmark",
+    });
+    expect(splitScopedLabel("領域：水資源")).toEqual({
+      prefix: "領域",
+      value: "水資源",
+    });
+    expect(splitScopedLabel("#multi-agent")).toEqual({
+      prefix: null,
+      value: "multi-agent",
     });
   });
 });
