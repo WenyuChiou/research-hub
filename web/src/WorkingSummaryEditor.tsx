@@ -78,8 +78,8 @@ function SummarySelection({record, scope, t, onOpen, onSessionChange, onSaved, a
   active.current = Boolean(scope?.active);
   useEffect(() => {
     onSessionChange?.(Boolean(selected));
-    return () => onSessionChange?.(false);
   }, [selected, onSessionChange]);
+  useEffect(() => () => onSessionChange?.(false), [onSessionChange]);
   if (!scope || !artifacts.length) return null;
   return <section className="working-summary-editor" hidden={!scope.active} aria-label={t("workingSummaryReview")}>
     <p className="small muted">{t("workingSummaryReviewHelp")}</p>
