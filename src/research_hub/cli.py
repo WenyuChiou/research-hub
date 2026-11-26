@@ -649,6 +649,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Answer detail level (default: gist)",
     )
 
+    open_parser = subparsers.add_parser(
+        "open",
+        help="Open the local visual research workspace in your browser (no vault config required)",
+    )
+    open_parser.add_argument(
+        "--root",
+        default=None,
+        help="Workspace directory (defaults to ~/research-hub-workspace)",
+    )
+    open_parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Create the two offline sample projects if the workspace directory is new or empty",
+    )
+    open_parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Localhost port for the workspace UI (default: 8765)",
+    )
+    open_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Print the workspace URL without opening a browser tab automatically",
+    )
+    open_parser.add_argument(
+        "--obsidian-vault",
+        default=None,
+        help="Authorize metadata-only validation of this exact existing local vault; no configuration is saved",
+    )
+    open_parser.add_argument(
+        "--library-snapshot",
+        default=None,
+        help="Read this exact existing local Library metadata JSON; no vault scan or configuration save",
+    )
+    open_parser.add_argument(
+        "--human-approvals",
+        action="store_true",
+        help="Enable local UI decisions after an interactive operator confirmation",
+    )
+
     serve_parser = subparsers.add_parser(
         "serve",
         help="Start MCP stdio server or live dashboard HTTP server",
@@ -2808,6 +2849,9 @@ def _main_dispatch(args, parser) -> int:
     if args.command in {"project", "manuscript", "task", "action"}:
         from research_hub.workspace.cli import dispatch_workspace
         return dispatch_workspace(args)
+    if args.command == "open":
+        from research_hub.workspace.open_cli import run_open_workspace
+        return run_open_workspace(args, parser)
     if args.command == "serve" and args.obsidian_vault is not None and not args.workspace:
         parser.error("--obsidian-vault requires --workspace")
     if args.command == "serve" and args.library_snapshot is not None and not args.workspace:

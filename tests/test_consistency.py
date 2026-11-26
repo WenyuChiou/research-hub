@@ -174,7 +174,7 @@ def test_mcp_tool_count_at_least_18():
 # fails test_every_agent_facing_cli_command_has_mcp_coverage below.
 CLI_ONLY_EXEMPT = frozenset({
     "init", "setup", "config", "ezproxy", "install", "where", "package-dxt",
-    "describe", "serve", "run", "ingest", "index", "dedup", "context",
+    "describe", "open", "serve", "run", "ingest", "index", "dedup", "context",
     "label-bulk", "status", "vault", "migrate-yaml", "synthesize", "sync",
     "pipeline", "zotero",
 })
