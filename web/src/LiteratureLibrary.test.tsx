@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { buildLiteratureSummaryStats, LiteratureLibrary } from "./LiteratureLibrary";
+import { applySourceCurations, buildLiteratureSummaryStats, LiteratureLibrary } from "./LiteratureLibrary";
 import { translator } from "./i18n";
 import input from "./test-fixtures/catalog-synthetic20.json";
 import type { ResearchRecord } from "./types";
@@ -704,5 +704,98 @@ describe("master literature table, category summary, and clean status tooltips",
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("curates category, year, authors, venue, relevance, and summary without mutating source identity", async () => {
+    const user = userEvent.setup();
+    const onCurate = vi.fn().mockResolvedValue(undefined);
+    const bare: ResearchRecord = {
+      id: "src-curate-1",
+      kind: "source",
+      data: {
+        title: "ReAct: Synergizing Reasoning and Acting",
+        locator: "https://arxiv.org/abs/2210.03629",
+        identity_status: "unverified",
+        human_acceptance: "pending",
+      },
+    };
+    const originalSnapshot = JSON.stringify(bare);
+    const { rerender } = render(
+      <LiteratureLibrary
+        sources={[bare]}
+        screenings={[]}
+        curations={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onCurate={onCurate}
+        onPrepare={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    const form = screen.getByRole("button", { name: t("catalogSaveMeta") }).closest("form")!;
+    await user.type(within(form).getByLabelText(t("catalogCategory")), "llm");
+    await user.type(within(form).getByLabelText(t("catalogYear")), "2023");
+    await user.type(within(form).getByLabelText(t("catalogMetaAuthors")), "Shunyu Yao, Jeffrey Zhao");
+    await user.type(within(form).getByLabelText(t("catalogMetaVenue")), "ICLR 2023");
+    await user.type(within(form).getByLabelText(t("catalogRelevance")), "Core agent reasoning baseline.");
+    await user.type(within(form).getByLabelText(t("catalogMetaSummary")), "Interleaves thought and action traces.");
+    await user.click(within(form).getByRole("button", { name: t("catalogSaveMeta") }));
+
+    expect(onCurate).toHaveBeenCalledWith("src-curate-1", {
+      category: "llm",
+      year: "2023",
+      authors: ["Shunyu Yao", "Jeffrey Zhao"],
+      venue: "ICLR 2023",
+      relevance: "Core agent reasoning baseline.",
+      summary: "Interleaves thought and action traces.",
+    });
+
+    const curations: ResearchRecord[] = [
+      {
+        id: "cur-1",
+        kind: "source_curation",
+        data: {
+          source_id: "src-curate-1",
+          category: "llm",
+          year: "2023",
+          authors: ["Shunyu Yao", "Jeffrey Zhao"],
+          venue: "ICLR 2023",
+          relevance: "Core agent reasoning baseline.",
+          summary: "Interleaves thought and action traces.",
+        },
+      },
+    ];
+    rerender(
+      <LiteratureLibrary
+        sources={[bare]}
+        screenings={[]}
+        curations={curations}
+        t={t}
+        onScreen={vi.fn()}
+        onCurate={onCurate}
+        onPrepare={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText("Shunyu Yao, Jeffrey Zhao · ICLR 2023").length).toBeGreaterThan(0);
+    expect(screen.getByText("Interleaves thought and action traces.", { selector: "p.preserve-lines" })).toBeVisible();
+    expect(JSON.stringify(bare)).toBe(originalSnapshot);
+    expect(applySourceCurations([bare], curations)[0].data.identity_status).toBe("unverified");
+  });
+
+  it("renders a primary CTA button in empty literature view that opens the add/search panel", async () => {
+    const user = userEvent.setup();
+    const onOpenAddTools = vi.fn();
+    render(
+      <LiteratureLibrary
+        sources={[]}
+        screenings={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onPrepare={vi.fn()}
+        onOpenAddTools={onOpenAddTools}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: t("catalogAddFirstSource") }));
+    expect(onOpenAddTools).toHaveBeenCalledTimes(1);
   });
 });

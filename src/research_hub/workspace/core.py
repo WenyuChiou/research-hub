@@ -98,10 +98,79 @@ ROLES = {"main_manuscript", "evidence", "figure", "table", "supplement", "analys
 RECORD_FIELDS = {
     "question": ("text",), "source": ("title", "locator"), "claim": ("text",),
     "screening": ("source_id", "decision", "rationale"),
+    "source_curation": ("source_id",),
     "analysis": ("question", "method", "result", "limitation"),
     "outline": ("section", "function", "claim", "evidence", "bridge"),
     "review": ("comment", "severity"),
 }
+SOURCE_CURATION_FIELDS = frozenset({"source_id", "category", "year", "authors", "venue", "relevance", "summary", "tags"})
+
+
+def _clean_text_field(value: object, *, name: str, limit: int) -> str:
+    if not isinstance(value, str) or "\x00" in value:
+        raise WorkspaceError(f"{name} must be valid UTF-8 text")
+    try:
+        value.encode("utf-8")
+    except UnicodeError as exc:
+        raise WorkspaceError(f"{name} must be valid UTF-8 text") from exc
+    cleaned = value.strip()
+    if len(cleaned) > limit:
+        raise WorkspaceError(f"{name} must be at most {limit} characters")
+    return cleaned
+
+
+def _clean_list_field(value: object, *, name: str, max_items: int, item_limit: int) -> list[str]:
+    if isinstance(value, str):
+        raw_items = [part for part in re.split(r"[,;，；\n]+", value)]
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raise WorkspaceError(f"{name} must be a list of strings")
+    items: list[str] = []
+    for entry in raw_items:
+        cleaned = _clean_text_field(entry, name=name, limit=item_limit)
+        if cleaned:
+            items.append(cleaned)
+    if len(items) > max_items:
+        raise WorkspaceError(f"{name} supports at most {max_items} entries")
+    return items
+
+
+def _clean_year_field(value: object) -> str:
+    if isinstance(value, bool):
+        raise WorkspaceError("year must be a 4-digit year or empty")
+    if isinstance(value, int):
+        if 1000 <= value <= 2100:
+            return str(value)
+        raise WorkspaceError("year must be a 4-digit year between 1000 and 2100")
+    cleaned = _clean_text_field(value, name="year", limit=16)
+    if not cleaned:
+        return ""
+    if not re.fullmatch(r"\d{4}", cleaned) or not (1000 <= int(cleaned) <= 2100):
+        raise WorkspaceError("year must be a 4-digit year between 1000 and 2100")
+    return cleaned
+
+
+def _validate_source_curation(data: dict) -> dict:
+    extra = set(data) - SOURCE_CURATION_FIELDS
+    if extra:
+        raise WorkspaceError(f"Unsupported source_curation fields: {', '.join(sorted(extra))}")
+    normalized: dict = {"source_id": _clean_text_field(data.get("source_id"), name="source_id", limit=128)}
+    if "category" in data:
+        normalized["category"] = _clean_text_field(data["category"], name="category", limit=120)
+    if "year" in data:
+        normalized["year"] = _clean_year_field(data["year"])
+    if "authors" in data:
+        normalized["authors"] = _clean_list_field(data["authors"], name="authors", max_items=50, item_limit=200)
+    if "venue" in data:
+        normalized["venue"] = _clean_text_field(data["venue"], name="venue", limit=300)
+    if "relevance" in data:
+        normalized["relevance"] = _clean_text_field(data["relevance"], name="relevance", limit=4000)
+    if "summary" in data:
+        normalized["summary"] = _clean_text_field(data["summary"], name="summary", limit=20000)
+    if "tags" in data:
+        normalized["tags"] = _clean_list_field(data["tags"], name="tags", max_items=30, item_limit=80)
+    return normalized
 
 
 class Workspace:
@@ -318,6 +387,22 @@ class Workspace:
         if kind == "source":
             # Identity claims from callers are not verifier evidence.
             data["identity_status"] = "unverified"
+            if isinstance(data.get("authors"), str):
+                cleaned_authors = _clean_list_field(data["authors"], name="authors", max_items=50, item_limit=200)
+                if cleaned_authors:
+                    data["authors"] = cleaned_authors
+                else:
+                    data.pop("authors", None)
+            if isinstance(data.get("year"), (str, int)) and not isinstance(data.get("year"), bool):
+                cleaned_year = _clean_year_field(data["year"])
+                if cleaned_year:
+                    data["year"] = cleaned_year
+                else:
+                    data.pop("year", None)
+        if kind == "source_curation":
+            data = _validate_source_curation(data)
+            if not any(r["id"] == data["source_id"] and r["kind"] == "source" for r in self.records(project_id)):
+                raise WorkspaceError("Source curation references an unknown source")
         if kind == "claim":
             links = data.get("source_ids", [])
             sources = {r["id"] for r in self.records(project_id) if r["kind"] == "source"}

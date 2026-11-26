@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { safeSourceUrl } from "./api";
 import { useCompactReadingLayout } from "./readingLayout";
-import { MutationForm, ReadText, SourceLink } from "./components";
+import { MutationForm, ReadText, SourceLink, ErrorMessage } from "./components";
 import { obsidianStatusLabel, statusLabel, type Translate } from "./i18n";
 import type { IntegrationLiveState, ResearchRecord, Workspace } from "./types";
 import { SourceObservations } from "./ObservationHistory";
@@ -160,12 +160,193 @@ function readingScope(record: ResearchRecord, t: Translate) {
   return t("catalogUnknownScope");
 }
 
-export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView }: {
+export interface SourceCurationInput {
+  category?: string;
+  year?: string;
+  authors?: string[];
+  venue?: string;
+  relevance?: string;
+  summary?: string;
+}
+
+const CURATION_KEYS = ["category", "year", "authors", "venue", "relevance", "summary", "tags"] as const;
+
+export function applySourceCurations(
+  sources: ResearchRecord[],
+  curations?: ResearchRecord[],
+): ResearchRecord[] {
+  if (!curations?.length) return sources;
+  const overlays = new Map<string, Record<string, unknown>>();
+  for (const record of curations) {
+    if (record.kind !== "source_curation" || typeof record.data.source_id !== "string") continue;
+    const current = overlays.get(record.data.source_id) ?? {};
+    for (const key of CURATION_KEYS) {
+      if (key in record.data) current[key] = record.data[key];
+    }
+    overlays.set(record.data.source_id, current);
+  }
+  if (!overlays.size) return sources;
+  return sources.map((record) => {
+    if (record.kind !== "source") return record;
+    const overlay = overlays.get(record.id);
+    if (!overlay) return record;
+    return { ...record, data: { ...record.data, ...overlay } };
+  });
+}
+
+function formatAuthorsInput(value: unknown): string {
+  return authorNames(value).join(", ");
+}
+
+function parseAuthorsInput(value: string): string[] {
+  return value
+    .split(/[,;，；\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function SourceCurationForm({
+  record,
+  categories,
+  t,
+  onSave,
+}: {
+  record: ResearchRecord;
+  categories: string[];
+  t: Translate;
+  onSave: (curation: SourceCurationInput) => Promise<void>;
+}) {
+  const listId = useId();
+  const [categoryVal, setCategoryVal] = useState(() => sourceCategory(record));
+  const [yearVal, setYearVal] = useState(() => text(record.data.year));
+  const [authorsVal, setAuthorsVal] = useState(() => formatAuthorsInput(record.data.authors));
+  const [venueVal, setVenueVal] = useState(() => text(record.data.venue) || text(record.data.journal));
+  const [relevanceVal, setRelevanceVal] = useState(() => text(record.data.relevance));
+  const [summaryVal, setSummaryVal] = useState(() => text(record.data.summary) || text(record.data.abstract));
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const suggestions = [...new Set(["llm", "human", "human-review", ...categories])];
+
+  return (
+    <form
+      className="record-form catalog-curation-form"
+      aria-busy={busy}
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setBusy(true);
+        setError(null);
+        setSaved(false);
+        try {
+          await onSave({
+            category: categoryVal.trim(),
+            year: yearVal.trim(),
+            authors: parseAuthorsInput(authorsVal),
+            venue: venueVal.trim(),
+            relevance: relevanceVal.trim(),
+            summary: summaryVal.trim(),
+          });
+          setSaved(true);
+        } catch (failure) {
+          setError(failure);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <fieldset disabled={busy}>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor={`${listId}-cat`}>{t("catalogCategory")}</label>
+            <input
+              id={`${listId}-cat`}
+              list={listId}
+              value={categoryVal}
+              onChange={(e) => setCategoryVal(e.target.value)}
+              maxLength={120}
+            />
+            <datalist id={listId}>
+              {suggestions.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
+            <small>{t("catalogMetaCategoryHint")}</small>
+          </div>
+          <div className="field">
+            <label htmlFor={`${listId}-year`}>{t("catalogYear")}</label>
+            <input
+              id={`${listId}-year`}
+              value={yearVal}
+              onChange={(e) => setYearVal(e.target.value)}
+              pattern="[0-9]{4}"
+              maxLength={4}
+              placeholder="2024"
+            />
+            <small>{t("catalogMetaYearHint")}</small>
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-authors`}>{t("catalogMetaAuthors")}</label>
+            <input
+              id={`${listId}-authors`}
+              value={authorsVal}
+              onChange={(e) => setAuthorsVal(e.target.value)}
+              maxLength={1000}
+            />
+            <small>{t("catalogMetaAuthorsHint")}</small>
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-venue`}>{t("catalogMetaVenue")}</label>
+            <input
+              id={`${listId}-venue`}
+              value={venueVal}
+              onChange={(e) => setVenueVal(e.target.value)}
+              maxLength={300}
+            />
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-rel`}>{t("catalogRelevance")}</label>
+            <textarea
+              id={`${listId}-rel`}
+              rows={2}
+              value={relevanceVal}
+              onChange={(e) => setRelevanceVal(e.target.value)}
+              maxLength={4000}
+            />
+          </div>
+          <div className="field field-wide">
+            <label htmlFor={`${listId}-sum`}>{t("catalogMetaSummary")}</label>
+            <textarea
+              id={`${listId}-sum`}
+              rows={3}
+              value={summaryVal}
+              onChange={(e) => setSummaryVal(e.target.value)}
+              maxLength={20000}
+            />
+          </div>
+        </div>
+        <button className="button primary" type="submit">
+          {busy ? t("saving") : t("catalogSaveMeta")}
+        </button>
+      </fieldset>
+      {error !== null && <ErrorMessage error={error} t={t} />}
+      {saved && (
+        <p role="status" className="saved-note">
+          ✓ {t("saved")}
+        </p>
+      )}
+    </form>
+  );
+}
+
+export function LiteratureLibrary({ sources: rawSources, screenings, curations, t, onScreen, onCurate, onPrepare, onOpenAddTools, matches, observationText, observationRead, pageSuspended, categoryHost, onWorkingSummarySaved, workspace, liveIntegrations, requestedView }: {
   sources: ResearchRecord[];
   screenings: ResearchRecord[];
+  curations?: ResearchRecord[];
   t: Translate;
   onScreen: (sourceId: string, decision: string, rationale: string) => Promise<void>;
+  onCurate?: (sourceId: string, curation: SourceCurationInput) => Promise<void>;
   onPrepare: (record: ResearchRecord) => void;
+  onOpenAddTools?: () => void;
   matches?: Map<string, ResearchRecord[]>;
   observationText?: ObservationTextContext;
   observationRead?: ObservationReadScope;
@@ -176,6 +357,9 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   liveIntegrations?: IntegrationLiveState;
   requestedView?: { mode: ViewMode; category?: string; nonce: number };
 }) {
+  const rawSourceById = new Map(rawSources.map((record) => [record.id, record]));
+  const sources = applySourceCurations(rawSources, curations);
+  const curationVersion = curations?.length ?? 0;
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [organization, setOrganization] = useState<Organization>("all");
@@ -183,6 +367,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
   const [sortBy, setSortBy] = useState<SortKey>("default");
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [curationOpen, setCurationOpen] = useState(false);
   const [openSummaryIds, setOpenSummaryIds] = useState<string[]>([]);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
@@ -778,7 +963,14 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
               </table>
             </div>
           ) : (
-            <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
+            <div className="catalog-empty-state">
+              <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
+              {!sources.length && onOpenAddTools && (
+                <button type="button" className="button primary" onClick={onOpenAddTools}>
+                  {t("catalogAddFirstSource")}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -821,7 +1013,16 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 </tr>
               );})}</tbody>
             </table>
-          ) : <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>}
+          ) : (
+            <div className="catalog-empty-state">
+              <p className="catalog-empty">{sources.length ? t("catalogNoMatches") : t("noSources")}</p>
+              {!sources.length && onOpenAddTools && (
+                <button type="button" className="button primary" onClick={onOpenAddTools}>
+                  {t("catalogAddFirstSource")}
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <aside id={detailId} ref={reader} className="catalog-detail" aria-label={t("catalogDetail")} hidden={compact && !readerOpen}
           onKeyDown={event => {
@@ -886,19 +1087,44 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                   {name:"rationale",label:t("rationale"),textarea:true},
                 ]} onSubmit={(data) => onScreen(selected.id, String(data.get("decision")), String(data.get("rationale")))} />
               </details>
+              {onCurate && (
+                <details className="catalog-screening catalog-curation" open={curationOpen}>
+                  <summary
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setCurationOpen((open) => !open);
+                    }}
+                  >
+                    <span>{t("catalogEditMeta")}</span>
+                    <span className="catalog-cat-pill">{categoryName(category(selected), t)}</span>
+                  </summary>
+                  {curationOpen && (
+                    <>
+                      <p className="small muted">{t("catalogEditMetaHelp")}</p>
+                      <SourceCurationForm
+                        key={`${selected.id}:${curationVersion}`}
+                        record={selected}
+                        categories={categories}
+                        t={t}
+                        onSave={(payload) => onCurate(selected.id, payload)}
+                      />
+                    </>
+                  )}
+                </details>
+              )}
             </div>}
             {!note && registeredNativeSummary(selected) && (
-              <NativeSummaryReader record={selected} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
+              <NativeSummaryReader record={rawSourceById.get(selected.id) ?? selected} scope={draftScope ? {...draftScope, active: draftScope.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} exportable />
             )}
             <section>
               <h4>{note ? t("librarySavedAbstract") : t("catalogSavedSummary")}</h4>
               {summary ? <ReadText value={summary} /> : <p className="catalog-missing">{t(registeredNativeSummary(selected) ? "catalogNoSeparateSummary" : "catalogNoSummary")}</p>}
             </section>
-            <SavedWorkingSummary record={selected} t={t}/>
+            <SavedWorkingSummary record={rawSourceById.get(selected.id) ?? selected} t={t}/>
             {registeredDrafts.has(selected.id) && <div className="catalog-draft-entry"><p className="small">{t("catalogDraftHelp")}</p>
               <button type="button" className="button secondary small" onClick={() => openDrafts()}>{t("catalogOpenDrafts")}</button></div>}
-            {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={selected} context={observationText} t={t} /> :
-              <ObservationPreview record={selected} scope={observationRead ? {...observationRead, active: observationRead.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} />}</div>}
+            {!note && <div ref={observationReader}>{observationText ? <SourceObservations record={rawSourceById.get(selected.id) ?? selected} context={observationText} t={t} /> :
+              <ObservationPreview record={rawSourceById.get(selected.id) ?? selected} scope={observationRead ? {...observationRead, active: observationRead.active && viewMode === "split" && (!compact || readerOpen)} : undefined} t={t} />}</div>}
             <section><h4>{t("catalogRelevance")}</h4>{text(selected.data.relevance) ? <ReadText value={text(selected.data.relevance)} /> : <p className="small muted">{t("catalogNoRelevance")}</p>}</section>
             <section aria-label={t("catalogOrganizationState")}>
               <h4>{t("catalogOrganizationState")}</h4>
@@ -965,11 +1191,12 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 return t(localCap?.nlm_state_present ? "catalogNlmStatePresent" : "catalogNlmUnavailable");
               })()}</dd>
             </dl></details>
-            {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(selected)}>{t("catalogSourceTools")}</button>}
+            {!note && <button className="button secondary small catalog-source-tools" onClick={() => onPrepare(rawSourceById.get(selected.id) ?? selected)}>{t("catalogSourceTools")}</button>}
           </div> : <p>{t("catalogSelectSource")}</p>}
           {editorRecords.length > 0 && (
             <div className="catalog-working-summaries">
               {editorRecords.map((rec) => {
+                const rawRec = rawSourceById.get(rec.id) ?? rec;
                 const isCurrent = rec.id === selected?.id;
                 const editorActive = Boolean(draftScope?.active && viewMode === "split" && (!compact || readerOpen) && isCurrent);
                 const editorSuspended = Boolean(
@@ -980,7 +1207,7 @@ export function LiteratureLibrary({ sources, screenings, t, onScreen, onPrepare,
                 return (
                   <div key={rec.id} hidden={!isCurrent}>
                     <WorkingSummaryEditor
-                      record={rec}
+                      record={rawRec}
                       scope={draftScope ? { ...draftScope, active: editorActive } : undefined}
                       suspended={editorSuspended}
                       onOpen={() => {

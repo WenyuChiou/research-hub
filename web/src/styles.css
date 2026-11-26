@@ -2083,3 +2083,14 @@ select option {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.onboarding-demo {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.onboarding-demo p {
+  margin: 0;
+}

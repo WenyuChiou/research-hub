@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import pytest
+
+from research_hub.workspace.core import Workspace, WorkspaceError
+from research_hub.workspace.native_summary import _base as native_base
+
+
+def test_source_curation_appends_without_mutating_source_revision(tmp_path):
+    ws = Workspace(tmp_path)
+    project = ws.create_project(id="curation-test", title="Curation Test", archetype="review")
+    source = ws.add_record(
+        project["id"],
+        kind="source",
+        data={
+            "title": "ReAct: Synergizing Reasoning and Acting",
+            "locator": "https://arxiv.org/abs/2210.03629",
+            "doi": "10.48550/arXiv.2210.03629",
+        },
+    )
+    revision_before = native_base(source)
+
+    curation = ws.add_record(
+        project["id"],
+        kind="source_curation",
+        data={
+            "source_id": source["id"],
+            "category": "llm",
+            "year": 2023,
+            "authors": "Shunyu Yao, Jeffrey Zhao, Dian Yu",
+            "venue": "ICLR 2023",
+            "relevance": "Core agent benchmark paper.",
+            "summary": "Combines reasoning traces and actions.",
+            "tags": "agents, reasoning",
+        },
+    )
+    assert curation["kind"] == "source_curation"
+    assert curation["data"]["category"] == "llm"
+    assert curation["data"]["year"] == "2023"
+    assert curation["data"]["authors"] == ["Shunyu Yao", "Jeffrey Zhao", "Dian Yu"]
+    assert curation["data"]["tags"] == ["agents", "reasoning"]
+
+    stored_source = next(r for r in ws.records(project["id"]) if r["id"] == source["id"])
+    assert native_base(stored_source) == revision_before
+    assert stored_source["data"]["identity_status"] == "unverified"
+
+
+def test_source_curation_rejects_protected_fields_and_unknown_sources(tmp_path):
+    ws = Workspace(tmp_path)
+    project = ws.create_project(id="curation-guard", title="Guard Test", archetype="review")
+    source = ws.add_record(
+        project["id"],
+        kind="source",
+        data={"title": "Test Paper", "locator": "https://example.org/paper"},
+    )
+
+    for forbidden in (
+        {"source_id": source["id"], "identity_status": "verified"},
+        {"source_id": source["id"], "human_acceptance": "accepted"},
+        {"source_id": source["id"], "reading_scope": "full-text"},
+        {"source_id": source["id"], "title": "Tampered"},
+        {"source_id": source["id"], "year": "not-a-year"},
+        {"source_id": source["id"], "year": True},
+        {"source_id": source["id"], "category": "bad\x00value"},
+        {"source_id": "nonexistent-source", "category": "llm"},
+    ):
+        with pytest.raises(WorkspaceError):
+            ws.add_record(project["id"], kind="source_curation", data=forbidden)
+
+
+def test_add_source_normalizes_optional_authors_and_year(tmp_path):
+    ws = Workspace(tmp_path)
+    project = ws.create_project(id="source-opt", title="Source Opt", archetype="review")
+    source = ws.add_record(
+        project["id"],
+        kind="source",
+        data={
+            "title": "RAG Paper",
+            "locator": "https://arxiv.org/abs/2005.11401",
+            "authors": "Patrick Lewis, Ethan Perez",
+            "year": "2020",
+            "category": "llm",
+        },
+    )
+    assert source["data"]["authors"] == ["Patrick Lewis", "Ethan Perez"]
+    assert source["data"]["year"] == "2020"
+    assert source["data"]["category"] == "llm"
+    assert source["data"]["identity_status"] == "unverified"

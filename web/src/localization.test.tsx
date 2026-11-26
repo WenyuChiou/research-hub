@@ -52,7 +52,10 @@ const workspace: Workspace = {
   protection_scope: "Synthetic scope; no data or connectors.",
 };
 const response = (value: unknown) => new Response(JSON.stringify(value));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.localStorage.clear();
+});
 
 describe("localized readiness and writing-authority warning", () => {
   it("keeps unrelated warnings visible and moves only the writing warning on literature", async () => {
@@ -146,5 +149,46 @@ describe("localized readiness and writing-authority warning", () => {
     ).toHaveLength(6);
     expect(JSON.stringify({ workspace, detail })).toBe(original);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists chosen language across reload without writing localStorage on initial default render", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => response(url.endsWith("/workspace") ? workspace : detail)));
+    const { unmount } = render(<App />);
+    await screen.findByText(writingWarning, { exact: true });
+    expect(window.localStorage.length).toBe(0);
+    const sidebar = screen.getByText("EN", { selector: "button" }).closest("aside")!;
+    await user.click(within(sidebar).getByRole("button", { name: "中" }));
+    expect(window.localStorage.getItem("research-hub:locale")).toBe("zh-TW");
+    unmount();
+
+    render(<App />);
+    expect(await screen.findByText(translatedWarning, { exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "研究總覽" })).toBeVisible();
+  });
+
+  it("supports 1-click sample project loading and optional auto-generated project ID on empty workspace", async () => {
+    const user = userEvent.setup();
+    const emptyWorkspace: Workspace = { ...workspace, projects: [] };
+    const demoProject = { id: "review-demo", title: "DEMO: floating-point reading", archetype: "review" as const, goal: "Demo" };
+    let created = false;
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/workspace/demo") && init?.method === "POST") {
+        created = true;
+        return response({ ok: true, projects: [demoProject] });
+      }
+      if (url.endsWith("/workspace")) {
+        return response(created ? { ...workspace, projects: [demoProject] } : emptyWorkspace);
+      }
+      return response({ ...detail, project: demoProject });
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App />);
+    const idInput = await screen.findByLabelText(/Project ID/i);
+    expect(idInput).not.toBeRequired();
+    expect(() => new RegExp(idInput.getAttribute("pattern")!, "v")).not.toThrow();
+
+    await user.click(screen.getByRole("button", { name: "Load sample project" }));
+    expect(await screen.findByRole("option", { name: "DEMO: floating-point reading" })).toBeInTheDocument();
   });
 });
