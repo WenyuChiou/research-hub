@@ -247,10 +247,19 @@ function isDraftDirty(draft: CurationDraft | undefined): boolean {
   return Boolean(draft && Object.values(draft.changed).some(Boolean));
 }
 
+interface CurationStateEntry {
+  draft?: CurationDraft;
+  saving?: boolean;
+  saved?: boolean;
+  error?: unknown;
+}
+
 function SourceCurationForm({
   draft,
   dirty,
+  busy,
   saved,
+  error,
   categories,
   t,
   onChange,
@@ -259,7 +268,9 @@ function SourceCurationForm({
 }: {
   draft: CurationDraft;
   dirty: boolean;
+  busy: boolean;
   saved: boolean;
+  error: unknown;
   categories: string[];
   t: Translate;
   onChange: (next: CurationDraft) => void;
@@ -267,8 +278,6 @@ function SourceCurationForm({
   onSave: (curation: SourceCurationInput) => Promise<void>;
 }) {
   const listId = useId();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
   const suggestions = [...new Set(["llm", "human", "human-review", ...categories])];
 
   return (
@@ -277,6 +286,7 @@ function SourceCurationForm({
       aria-busy={busy}
       onSubmit={async (event) => {
         event.preventDefault();
+        if (busy) return;
         const payload: SourceCurationInput = {};
         if (draft.changed.category) payload.category = draft.category.trim();
         if (draft.changed.year) payload.year = draft.year.trim();
@@ -285,15 +295,7 @@ function SourceCurationForm({
         if (draft.changed.relevance) payload.relevance = draft.relevance.trim();
         if (draft.changed.summary) payload.summary = draft.summary.trim();
         if (!Object.keys(payload).length) return;
-        setBusy(true);
-        setError(null);
-        try {
-          await onSave(payload);
-        } catch (failure) {
-          setError(failure);
-        } finally {
-          setBusy(false);
-        }
+        await onSave(payload);
       }}
     >
       <fieldset disabled={busy}>
@@ -374,17 +376,14 @@ function SourceCurationForm({
             <button
               className="button secondary small"
               type="button"
-              onClick={() => {
-                setError(null);
-                onDiscard();
-              }}
+              onClick={onDiscard}
             >
               {t("catalogResetMeta")}
             </button>
           )}
         </div>
       </fieldset>
-      {error !== null && <ErrorMessage error={error} t={t} />}
+      {error !== undefined && error !== null && <ErrorMessage error={error} t={t} />}
       {saved && (
         <p role="status" className="saved-note">
           ✓ {t("saved")}
@@ -423,8 +422,7 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
   const [exportNotice, setExportNotice] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [curationOpen, setCurationOpen] = useState(false);
-  const [curationDrafts, setCurationDrafts] = useState<Record<string, CurationDraft>>({});
-  const [curationSavedId, setCurationSavedId] = useState<string | null>(null);
+  const [curationState, setCurationState] = useState<Record<string, CurationStateEntry>>({});
   const [openSummaryIds, setOpenSummaryIds] = useState<string[]>([]);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectionMissing, setSelectionMissing] = useState(false);
@@ -1145,8 +1143,11 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                 ]} onSubmit={(data) => onScreen(selected.id, String(data.get("decision")), String(data.get("rationale")))} />
               </details>
               {onCurate && (() => {
-                const selectedDraft = curationDrafts[selected.id] ?? baseCurationDraft(selected);
-                const selectedDraftDirty = isDraftDirty(curationDrafts[selected.id]);
+                const sourceId = selected.id;
+                const entry = curationState[sourceId];
+                const selectedDraft = entry?.draft ?? baseCurationDraft(selected);
+                const selectedDraftDirty = isDraftDirty(entry?.draft);
+                const selectedSaving = Boolean(entry?.saving);
                 return (
                 <details className="catalog-screening catalog-curation" open={curationOpen}>
                   <summary
@@ -1165,30 +1166,53 @@ export function LiteratureLibrary({ sources: rawSources, screenings, curations, 
                     <>
                       <p className="small muted">{t("catalogEditMetaHelp")}</p>
                       <SourceCurationForm
-                        key={selected.id}
+                        key={sourceId}
                         draft={selectedDraft}
                         dirty={selectedDraftDirty}
-                        saved={curationSavedId === selected.id && !selectedDraftDirty}
+                        busy={selectedSaving}
+                        saved={Boolean(entry?.saved) && !selectedDraftDirty}
+                        error={entry?.error}
                         categories={categories}
                         t={t}
                         onChange={(next) => {
-                          setCurationSavedId((current) => (current === selected.id ? null : current));
-                          setCurationDrafts((prev) => ({ ...prev, [selected.id]: next }));
+                          setCurationState((prev) => {
+                            if (prev[sourceId]?.saving) return prev;
+                            return {
+                              ...prev,
+                              [sourceId]: { ...prev[sourceId], draft: next, saved: false, error: undefined },
+                            };
+                          });
                         }}
                         onDiscard={() => {
-                          setCurationSavedId((current) => (current === selected.id ? null : current));
-                          setCurationDrafts((prev) => {
-                            const { [selected.id]: _, ...rest } = prev;
+                          setCurationState((prev) => {
+                            const current = prev[sourceId];
+                            if (current?.saving) return prev;
+                            const { [sourceId]: _, ...rest } = prev;
                             return rest;
                           });
                         }}
                         onSave={async (payload) => {
-                          await onCurate(selected.id, payload);
-                          setCurationDrafts((prev) => {
-                            const { [selected.id]: _, ...rest } = prev;
-                            return rest;
-                          });
-                          setCurationSavedId(selected.id);
+                          if (entry?.saving) return;
+                          const submittedDraft = entry?.draft;
+                          setCurationState((prev) => ({
+                            ...prev,
+                            [sourceId]: { ...prev[sourceId], saving: true, saved: false, error: undefined },
+                          }));
+                          try {
+                            await onCurate(sourceId, payload);
+                            setCurationState((prev) => {
+                              const current = prev[sourceId];
+                              if (current?.draft === submittedDraft) {
+                                return { ...prev, [sourceId]: { saving: false, saved: true } };
+                              }
+                              return { ...prev, [sourceId]: { ...current, saving: false, saved: false } };
+                            });
+                          } catch (failure) {
+                            setCurationState((prev) => ({
+                              ...prev,
+                              [sourceId]: { ...prev[sourceId], saving: false, saved: false, error: failure },
+                            }));
+                          }
                         }}
                       />
                     </>

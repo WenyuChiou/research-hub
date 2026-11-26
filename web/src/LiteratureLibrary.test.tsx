@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { applySourceCurations, buildLiteratureSummaryStats, LiteratureLibrary } from "./LiteratureLibrary";
@@ -826,6 +826,50 @@ describe("master literature table, category summary, and clean status tooltips",
     await user.click(screen.getByRole("button", { name: t("catalogResetMeta") }));
     expect(screen.getByLabelText(t("catalogRelevance"))).toHaveValue("");
     expect(screen.queryByText(t("catalogMetaUnsaved"))).toBeNull();
+  });
+
+  it("keeps curation form locked across collapse and reopen while a save is pending", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: () => void;
+    const onCurate = vi.fn(
+      () => new Promise<void>((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    const paper: ResearchRecord = {
+      id: "src-pending-1",
+      kind: "source",
+      data: { title: "Pending Save Paper", locator: "https://example.org/p", year: "2024" },
+    };
+    render(
+      <LiteratureLibrary
+        sources={[paper]}
+        screenings={[]}
+        curations={[]}
+        t={t}
+        onScreen={vi.fn()}
+        onCurate={onCurate}
+        onPrepare={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    const form = screen.getByRole("button", { name: t("catalogSaveMeta") }).closest("form")!;
+    await user.type(within(form).getByLabelText(t("catalogRelevance")), "Initial pending note");
+    await user.click(within(form).getByRole("button", { name: t("catalogSaveMeta") }));
+
+    // Collapse and reopen while save is still pending: fieldset must stay disabled.
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    await user.click(screen.getByText(t("catalogEditMeta")));
+    const reopenedField = screen.getByLabelText(t("catalogRelevance"));
+    expect(reopenedField).toBeDisabled();
+    expect(reopenedField).toHaveValue("Initial pending note");
+    expect(screen.getByRole("button", { name: t("saving") })).toBeDisabled();
+
+    resolveSave();
+    await waitFor(() => {
+      expect(screen.getByLabelText(t("catalogRelevance"))).toBeEnabled();
+    });
+    expect(within(screen.getByRole("button", { name: t("catalogSaveMeta") }).closest("form")!).getByRole("status")).toHaveTextContent(t("saved"));
   });
 
   it("preserves structured author boundaries and allows clearing inherited abstract and journal", async () => {
