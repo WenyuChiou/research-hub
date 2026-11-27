@@ -158,20 +158,20 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 </details>
 
-<a id="credential-reference"></a>
-<a id="connect-your-ai-host"></a>
-
 ## 選用整合與憑證設定
+
+<a id="connect-your-ai-host"></a>
 
 | 整合項目 | 於「⚙ 設定」或 CLI 完成連接 | 連接後的一鍵同步與匯出 |
 |---|---|---|
-| **Zotero** | 於 **`⚙ 設定 → 連線與同步`** 加密儲存 `ZOTERO_API_KEY` 與 `ZOTERO_LIBRARY_ID`（或使用 `.env`）並測試 Web／本機 API 燈號 | **去重預覽（Dry-run）**（比對 DOI／標題）→ **確認寫入 Zotero**，或一鍵匯出 `.ris` |
-| **Obsidian（＋ Bases）** | 啟動時帶入 `--obsidian-vault` 或 `--library-snapshot`，於設定中心點擊 **純唯讀驗證** | 在 `.research/exports/` 產生結構化 `.md` 文獻筆記與 `.base` 資料庫檢視，並以 `obsidian://` 開啟 |
+| **Zotero** | 於 **`⚙ 設定 → 連線與同步`** 加密儲存 `ZOTERO_API_KEY` 與設定 `ZOTERO_LIBRARY_ID`（或使用 `.env`）並測試 Web／本機 API 燈號 | **去重預覽（Dry-run）**（比對 DOI／標題）→ **確認寫入 Zotero**，或一鍵匯出 `.ris` |
+| **Obsidian（＋ Bases）** | 啟動時帶入 `--obsidian-vault` 後於設定中心點擊 **驗證**（或帶入 `--library-snapshot` 於「文獻」瀏覽唯讀快照） | 在 `.research/exports/` 產生結構化 `.md` 文獻筆記與 `.base` 資料庫檢視，並以 `obsidian://` 開啟 |
 | **NotebookLM** | 匯入既有 `state.json` 或執行 `notebooklm login --auto-detect`，點擊 **檢查 NotebookLM 登入狀態** | 一鍵封裝標明「全文／僅摘要」界線的 **NotebookLM 來源包**（含 `manifest.json` 與個別 `.md`） |
 | **AI 主機與書目軟體** | 透過 [MCP／REST](docs/ai-integrations.md)（`[mcp]` 擴充）連接或載入[可攜式技能](docs/setup.md) | 單篇一鍵複製 **APA 7th**／**BibTeX**，或整批匯出 `.bib`、`.ris`、`CSL-JSON` 與 `.base` |
 
 執行 `./.venv/bin/python -m research_hub doctor`（macOS／Linux）或 `.\.venv\Scripts\python.exe -m research_hub doctor`（Windows PowerShell）可逐項檢查已設定的目的地。另見[本機檔案匯入](docs/import-folder.zh-TW.md)、[EZproxy](docs/ezproxy.md)與[實際連線檢查表](docs/live-smoke.md)。
 
+<a id="credential-reference"></a>
 <details>
 <summary>環境變數與選用套件擴充</summary>
 

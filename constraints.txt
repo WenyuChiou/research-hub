@@ -11,7 +11,7 @@
 # Keep in sync with pyproject.toml [project.dependencies]. The CI
 # matrix (3.10–3.14 × 3 OS) is the source of truth for "tested
 # against"; this file is the human-readable contract.
-cryptography>=42.0.0,<47.0.0
+cryptography>=42
 networkx>=3.0,<4.0
 notebooklm-py==0.8.6
 httpx>=0.28.1,<1.0
