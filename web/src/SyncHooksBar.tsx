@@ -42,7 +42,7 @@ export interface ZoteroSyncItemPlan {
   id: string;
   title: string;
   doi: string;
-  action: "create" | "skip_duplicate" | "missing_credentials" | "failed";
+  action: "create" | "attach_to_collection" | "skip_duplicate" | "missing_credentials" | "failed";
 }
 
 export interface ZoteroFailedItem {
@@ -58,10 +58,13 @@ export interface ZoteroSyncResponse {
   dry_run: boolean;
   candidate_count?: number;
   would_create?: number;
+  would_attach?: number;
   duplicates?: number;
   created_count?: number;
   failed_count?: number;
   skipped_duplicates?: number;
+  collection_added_count?: number;
+  collection_added_keys?: string[];
   created_keys?: string[];
   collection_key?: string | null;
   collection_name?: string;
@@ -130,13 +133,26 @@ const LABELS = {
     zotUnconfigured: "未設定 API",
     zotDryRunBtn: "預覽同步 (Dry-run)",
     zotPreviewing: "比對中…",
-    zotDiffPill: (add: number, dup: number) => `新增 ${add} 篇 · 略過重複 ${dup} 篇`,
+    zotDiffPill: (add: number, dup: number, attach = 0) =>
+      attach > 0
+        ? `新增 ${add} 篇 · 加入分類 ${attach} 篇 · 略過重複 ${Math.max(0, dup - attach)} 篇`
+        : `新增 ${add} 篇 · 略過重複 ${dup} 篇`,
     zotConfirmBtn: "確認寫入 Zotero",
     zotSyncing: "寫入中…",
-    zotSyncedReceipt: (created: number, skipped: number) =>
-      skipped > 0
+    zotSyncedReceipt: (created: number, skipped: number, attached = 0) => {
+      if (attached > 0 && created === 0) {
+        const restSkipped = Math.max(0, skipped - attached);
+        return restSkipped > 0
+          ? `✓ 已將 ${attached} 篇既有文獻加入 Zotero 分類 · 略過 ${restSkipped} 篇`
+          : `✓ 已將 ${attached} 篇既有文獻加入 Zotero 分類`;
+      }
+      if (attached > 0 && created > 0) {
+        return `✓ 已同步 ${created} 篇並將 ${attached} 篇加入分類`;
+      }
+      return skipped > 0
         ? `✓ 已同步 ${created} 篇至 Zotero · 略過 ${skipped} 篇`
-        : `✓ 已同步 ${created} 篇至 Zotero`,
+        : `✓ 已同步 ${created} 篇至 Zotero`;
+    },
     zotPartialReceipt: (created: number, failed: number) =>
       `⚠ 已同步 ${created} 篇 · ${failed} 篇被 Zotero 拒絕（請重試）`,
     zotFailedReceipt: (failed: number) =>
@@ -195,13 +211,26 @@ const LABELS = {
     zotUnconfigured: "API not set",
     zotDryRunBtn: "Preview Sync (Dry-run)",
     zotPreviewing: "Checking…",
-    zotDiffPill: (add: number, dup: number) => `+${add} new · ${dup} duplicate(s) skipped`,
+    zotDiffPill: (add: number, dup: number, attach = 0) =>
+      attach > 0
+        ? `+${add} new · +${attach} to collection · ${Math.max(0, dup - attach)} duplicate(s) skipped`
+        : `+${add} new · ${dup} duplicate(s) skipped`,
     zotConfirmBtn: "Confirm Write to Zotero",
     zotSyncing: "Writing…",
-    zotSyncedReceipt: (created: number, skipped: number) =>
-      skipped > 0
+    zotSyncedReceipt: (created: number, skipped: number, attached = 0) => {
+      if (attached > 0 && created === 0) {
+        const restSkipped = Math.max(0, skipped - attached);
+        return restSkipped > 0
+          ? `✓ Added ${attached} existing item(s) to Zotero collection · ${restSkipped} skipped`
+          : `✓ Added ${attached} existing item(s) to Zotero collection`;
+      }
+      if (attached > 0 && created > 0) {
+        return `✓ Synced ${created} new + ${attached} added to collection`;
+      }
+      return skipped > 0
         ? `✓ Synced ${created} to Zotero · ${skipped} skipped`
-        : `✓ Synced ${created} to Zotero`,
+        : `✓ Synced ${created} to Zotero`;
+    },
     zotPartialReceipt: (created: number, failed: number) =>
       `⚠ Synced ${created} to Zotero · ${failed} rejected (retry failed items)`,
     zotFailedReceipt: (failed: number) =>
@@ -861,7 +890,8 @@ export function SyncHooksPanel({
               </button>
             )}
 
-            {zotPreview?.status === "ready" && (zotPreview.would_create ?? 0) > 0 && (
+            {zotPreview?.status === "ready" &&
+              (zotPreview.would_create ?? 0) + (zotPreview.would_attach ?? 0) > 0 && (
               <button
                 type="button"
                 className="button primary small sync-action-btn"
@@ -887,9 +917,13 @@ export function SyncHooksPanel({
           {zotPreview?.status === "ready" && (
             <div className="sync-diff-pill" role="status">
               <span>
-                {copy.zotDiffPill(zotPreview.would_create ?? 0, zotPreview.duplicates ?? 0)}
+                {copy.zotDiffPill(
+                  zotPreview.would_create ?? 0,
+                  zotPreview.duplicates ?? 0,
+                  zotPreview.would_attach ?? 0,
+                )}
               </span>
-              {(zotPreview.would_create ?? 0) === 0 && (
+              {(zotPreview.would_create ?? 0) === 0 && (zotPreview.would_attach ?? 0) === 0 && (
                 <small className="sync-diff-note">{copy.zotAllDuplicates}</small>
               )}
             </div>
@@ -915,6 +949,7 @@ export function SyncHooksPanel({
                   : copy.zotSyncedReceipt(
                       zotSynced.created_count ?? 0,
                       zotSynced.skipped_duplicates ?? 0,
+                      zotSynced.collection_added_count ?? 0,
                     )}
               </span>
               {zotSynced.collection_name && (

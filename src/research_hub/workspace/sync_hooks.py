@@ -1355,9 +1355,36 @@ class WorkspaceSyncHooks:
                     "zotero_unavailable",
                 ) from exc
 
+            collection_attachment_supported = bool(
+                hasattr(zot, "collections")
+                and hasattr(zot, "create_collections")
+                and hasattr(zot, "update_item")
+            )
+            existing_collection_key: str | None = None
+            collections_checked = False
+            if collection_attachment_supported:
+                try:
+                    existing_cols = zot.collections() or []
+                    collections_checked = True
+                    for col in existing_cols:
+                        if not isinstance(col, dict):
+                            continue
+                        col_data = col.get("data") if isinstance(col.get("data"), dict) else col
+                        if _clean_line(col_data.get("name")) == collection_name:
+                            found_key = col.get("key") or col_data.get("key")
+                            if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
+                                existing_collection_key = found_key.strip()
+                                break
+                except Exception as exc:
+                    raise WorkspaceError(
+                        "Could not inspect Zotero collections before syncing",
+                        "zotero_lookup_failed",
+                    ) from exc
+
             items_plan: list[dict[str, Any]] = []
             records_to_create: list[dict[str, Any]] = []
-            remote_duplicate_items: list[tuple[dict[str, Any], dict[str, Any]]] = []
+            pending_collection_attachments: list[tuple[dict[str, Any], dict[str, Any], str]] = []
+            seen_remote_attach_keys: set[str] = set()
             seen_dois: set[str] = set()
             seen_doiless_titles: set[str] = set()
             seen_all_titles: set[str] = set()
@@ -1380,13 +1407,24 @@ class WorkspaceSyncHooks:
                 remote_match = None if in_batch_dup else _find_zotero_duplicate_item(zot, title, doi)
                 if in_batch_dup or remote_match is not None:
                     duplicates += 1
-                    if remote_match is not None:
-                        remote_duplicate_items.append((src, remote_match))
+                    needs_attach = False
+                    if remote_match is not None and collection_attachment_supported:
+                        rem_data = remote_match.get("data") if isinstance(remote_match.get("data"), dict) else {}
+                        rem_key = str(remote_match.get("key") or rem_data.get("key") or "").strip()
+                        rem_cols = rem_data.get("collections") if isinstance(rem_data.get("collections"), list) else []
+                        if (
+                            rem_key
+                            and rem_key not in seen_remote_attach_keys
+                            and (existing_collection_key is None or existing_collection_key not in rem_cols)
+                        ):
+                            seen_remote_attach_keys.add(rem_key)
+                            pending_collection_attachments.append((src, remote_match, rem_key))
+                            needs_attach = True
                     items_plan.append({
                         "id": src["id"],
                         "title": title,
                         "doi": doi,
-                        "action": "skip_duplicate",
+                        "action": "attach_to_collection" if needs_attach else "skip_duplicate",
                     })
                 else:
                     if norm_doi:
@@ -1424,6 +1462,7 @@ class WorkspaceSyncHooks:
                     "dry_run": True,
                     "candidate_count": len(sources),
                     "would_create": len(records_to_create),
+                    "would_attach": len(pending_collection_attachments),
                     "duplicates": duplicates,
                     "destination_library": destination_library,
                     "collection_name": collection_name,
@@ -1438,19 +1477,25 @@ class WorkspaceSyncHooks:
                     "stale_preview",
                 )
 
-            collection_key: str | None = None
-            if (records_to_create or remote_duplicate_items) and hasattr(zot, "collections") and hasattr(zot, "create_collections"):
+            collection_key: str | None = existing_collection_key
+            if (
+                collection_key is None
+                and (records_to_create or pending_collection_attachments)
+                and hasattr(zot, "collections")
+                and hasattr(zot, "create_collections")
+            ):
                 try:
-                    existing_cols = zot.collections() or []
-                    for col in existing_cols:
-                        if not isinstance(col, dict):
-                            continue
-                        col_data = col.get("data") if isinstance(col.get("data"), dict) else col
-                        if _clean_line(col_data.get("name")) == collection_name:
-                            found_key = col.get("key") or col_data.get("key")
-                            if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
-                                collection_key = found_key.strip()
-                                break
+                    if not collections_checked:
+                        existing_cols = zot.collections() or []
+                        for col in existing_cols:
+                            if not isinstance(col, dict):
+                                continue
+                            col_data = col.get("data") if isinstance(col.get("data"), dict) else col
+                            if _clean_line(col_data.get("name")) == collection_name:
+                                found_key = col.get("key") or col_data.get("key")
+                                if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
+                                    collection_key = found_key.strip()
+                                    break
                     if collection_key is None:
                         col_resp = zot.create_collections([{"name": collection_name}])
                         if isinstance(col_resp, dict):
@@ -1613,14 +1658,9 @@ class WorkspaceSyncHooks:
                     ) from exc
 
             collection_added_keys: list[str] = []
-            if collection_key and remote_duplicate_items and hasattr(zot, "update_item"):
-                seen_remote_keys: set[str] = set()
-                for src, rem in remote_duplicate_items:
+            if collection_key and pending_collection_attachments and hasattr(zot, "update_item"):
+                for src, rem, rem_key in pending_collection_attachments:
                     rem_data = rem.get("data") if isinstance(rem.get("data"), dict) else {}
-                    rem_key = str(rem.get("key") or rem_data.get("key") or "").strip()
-                    if not rem_key or rem_key in seen_remote_keys:
-                        continue
-                    seen_remote_keys.add(rem_key)
                     existing_cols = rem_data.get("collections")
                     if isinstance(existing_cols, list) and collection_key in existing_cols:
                         continue

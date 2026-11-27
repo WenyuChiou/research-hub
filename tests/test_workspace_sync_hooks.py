@@ -960,7 +960,10 @@ def test_zotero_sync_creates_project_collection_and_notebooklm_upload_writes_rec
 
         monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _DupCollectionZotero)
         _, dry_dup = _post_json(f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync", {"dry_run": True}, csrf=csrf, origin=base)
-        assert dry_dup["would_create"] == 0 and dry_dup["duplicates"] == 2
+        assert dry_dup["would_create"] == 0
+        assert dry_dup["would_attach"] == 2
+        assert dry_dup["duplicates"] == 2
+        assert [i["action"] for i in dry_dup["items"]] == ["attach_to_collection", "attach_to_collection"]
 
         dup_code, dup_res = _post_json(
             f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
@@ -981,15 +984,19 @@ def test_zotero_sync_creates_project_collection_and_notebooklm_upload_writes_rec
         assert set(dup_res["collection_added_keys"]) == {"EXIST_S1", "EXIST_S2"}
         assert all("COL999" in u["data"]["collections"] for u in updated_items)
 
-        # Re-running once COL999 is already present performs zero redundant update_item calls
+        # Fresh preview once COL999 is already present switches actions to skip_duplicate and performs 0 writes
         updated_items.clear()
+        _, dry_dup2 = _post_json(f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync", {"dry_run": True}, csrf=csrf, origin=base)
+        assert dry_dup2["would_create"] == 0
+        assert dry_dup2["would_attach"] == 0
+        assert [i["action"] for i in dry_dup2["items"]] == ["skip_duplicate", "skip_duplicate"]
         dup_code2, dup_res2 = _post_json(
             f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
             {
                 "dry_run": False,
-                "expected_library": dry_dup["destination_library"],
-                "expected_revisions": dry_dup["source_revisions"],
-                "expected_plan_digest": dry_dup["plan_digest"],
+                "expected_library": dry_dup2["destination_library"],
+                "expected_revisions": dry_dup2["source_revisions"],
+                "expected_plan_digest": dry_dup2["plan_digest"],
             },
             csrf=csrf,
             origin=base,

@@ -498,4 +498,65 @@ describe("SyncHooksPanel", () => {
       expected_plan_digest: "plan-hash-2",
     });
   });
+
+  it("allows confirming Zotero collection attachment when would_create is 0 and would_attach > 0", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "ready",
+            dry_run: true,
+            candidate_count: 2,
+            would_create: 0,
+            would_attach: 2,
+            duplicates: 2,
+            items: [
+              { id: "src-1", title: "Agentic Watershed Simulation", doi: "10.1029/2025WR000001", action: "attach_to_collection" },
+              { id: "src-2", title: "LLM Benchmark Drift Survey", doi: "10.48550/arXiv.2409.12345", action: "attach_to_collection" },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "synced",
+            dry_run: false,
+            created_count: 0,
+            skipped_duplicates: 2,
+            collection_added_count: 2,
+            collection_key: "COL999",
+            collection_name: "[Research Hub] Hydrology Agents",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    render(
+      <SyncHooksPanel
+        projectId="proj-1"
+        projectTitle="Hydrology Agents"
+        sources={SAMPLE_SOURCES}
+        workspace={ENABLED_WORKSPACE}
+        locale="zh-TW"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "預覽同步 (Dry-run)" }));
+    await waitFor(() => {
+      expect(screen.getByText("新增 0 篇 · 加入分類 2 篇 · 略過重複 0 篇")).toBeTruthy();
+    });
+
+    const confirmBtn = screen.getByRole("button", { name: "確認寫入 Zotero" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("✓ 已將 2 篇既有文獻加入 Zotero 分類")).toBeTruthy();
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
 });
