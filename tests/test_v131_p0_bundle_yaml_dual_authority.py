@@ -602,7 +602,8 @@ def test_yaml_list_quoting_verification_empty_block_comments_and_literal_plus(
 
     # Preserve |+ trailing blank lines when appending a new key under both LF and CRLF
     for nl in ("\n", "\r\n"):
-        note_plus = tmp_path / f"literal_plus_{'crlf' if nl == '\r\n' else 'lf'}.md"
+        nl_tag = "crlf" if nl == "\r\n" else "lf"
+        note_plus = tmp_path / f"literal_plus_{nl_tag}.md"
         note_plus.write_bytes(
             f"---{nl}notes: |+{nl}  Line 1{nl}{nl}{nl}---{nl}Body{nl}".encode("utf-8")
         )
