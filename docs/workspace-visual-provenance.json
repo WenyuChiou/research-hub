@@ -3,8 +3,8 @@
   "checked_on": "2026-11-26",
   "semantic_source": "workspace-visuals.json",
   "concept_generator": "Native Image 2 tool; no generated UI screenshots",
-  "visual_review": "Parent inspected conceptual labels, node order, forward/revision arrows, local human gate and disconnected legacy-tool boundary. Actual bilingual Literature Reading Desk captures (1024x640, downscaled from 1440x900 viewport on offline review-demo at source revision 45c5fcc) were visually reviewed for EN/zh-TW parity and absence of private data.",
-  "reproduction": "Regenerate concepts from workspace-visuals.json and the accepted images as style references; check node/edge parity before replacing. Recreate UI captures against actual bundled assets on offline review-demo data.",
+  "visual_review": "Parent inspected conceptual labels, node order, forward/revision arrows, local human gate and disconnected legacy-tool boundary. Actual bilingual Chromium captures (2880x1800 at 2x DPI from 1440x900 viewport on ephemeral loopback WorkspaceServer at source revision b2ca1ad, 0 console/page/HTTP errors) were visually reviewed for EN/zh-TW parity, Light/Dark contrast, and absence of private data: workspace-ui.{en,zh-TW}.png use offline review-demo with example curations; showcase-*.{en,zh-TW}.png use an isolated 7-paper offline showcase fixture (llm-decision-showcase) with local NLM/Obsidian pack exports.",
+  "reproduction": "Regenerate concepts from workspace-visuals.json and the accepted images as style references; check node/edge parity before replacing. Recreate UI captures against actual bundled assets on offline review-demo and seeded local showcase fixtures.",
   "assets": {
     "workspace-lifecycle.en.png": {"kind":"concept", "sha256":"a7d6448573364b76329789b754b68d691b6794f73590d5cf7a964056cc10ad03"},
     "workspace-lifecycle.zh-TW.png": {"kind":"concept", "sha256":"cdd237987a22e28955c53f95cd853133baba5e43c67745de33d24490bf56d12a"},
@@ -12,7 +12,15 @@
     "workspace-writing.zh-TW.png": {"kind":"concept", "sha256":"7a291f235a2d3bc1e5e77fc1b5c486e84172900df9c666cdd794a627daf77f63"},
     "workspace-technical.en.png": {"kind":"concept", "sha256":"2bf7de43fafd94dc91d235f1710771f6967d4731280e862bb11b4bb96b96c8f4"},
     "workspace-technical.zh-TW.png": {"kind":"concept", "sha256":"faa753bbb374e1e6b64007610983d676ba3c37e98b6bba4d67dcefc7bac5547a"},
-    "workspace-ui.en.png": {"kind":"actual-chromium-capture", "sha256":"205e60f2d06bf867e31ec263845fd594a836aafcfdd9594c515a8ad502a531ae"},
-    "workspace-ui.zh-TW.png": {"kind":"actual-chromium-capture", "sha256":"11623f71904e46e4ea5ceb8ac99bf8273aca07a57a63967f73432c486e769bdd"}
+    "workspace-ui.en.png": {"kind":"actual-chromium-capture", "sha256":"522dbb015346cbb8353c5d6dc47d0c9741fdad37f732fc907d26904e1973add7"},
+    "workspace-ui.zh-TW.png": {"kind":"actual-chromium-capture", "sha256":"e510316bb02a8f8efa2a8738e7ccef4bd21a053678a05e7e6ce542cbe33ee118"},
+    "showcase-overview-radar.en.png": {"kind":"actual-chromium-capture", "sha256":"8b8232a67fd49ecaa3ffc5d910da9bcb554c8e2aba6301350cb405f141e844d4"},
+    "showcase-overview-radar.zh-TW.png": {"kind":"actual-chromium-capture", "sha256":"62fe773902602b18ee48de6c7ed57a434c2dc25de187c41dba2a61f28cc87f84"},
+    "showcase-dark-desk.en.png": {"kind":"actual-chromium-capture", "sha256":"3ac503e72a8fc80ed027e490ea3008a1e733eace024bad22502062afb1eef701"},
+    "showcase-dark-desk.zh-TW.png": {"kind":"actual-chromium-capture", "sha256":"899df385724452713c0792d68a000b5368ffdc8b71ac046718df158c17fd6d74"},
+    "showcase-dark-matrix.en.png": {"kind":"actual-chromium-capture", "sha256":"80f4dcb2dae11f519fded06d39a64e2a2ac7ffc382203f887b1cef71cef03fed"},
+    "showcase-dark-matrix.zh-TW.png": {"kind":"actual-chromium-capture", "sha256":"a682f181814ecced0dd4f2c9ab70b8b845e365653631cefa72851f84f26b6c7c"},
+    "showcase-settings-sync.en.png": {"kind":"actual-chromium-capture", "sha256":"8c1c90495dee449d7afd332d57a9eb4cf1708032e6c312ab332feba271432c5b"},
+    "showcase-settings-sync.zh-TW.png": {"kind":"actual-chromium-capture", "sha256":"7304449e3de07734af4ee6edb9988538a4cbe8ee861658d5efa4c291c0ed5ea0"}
   }
 }
