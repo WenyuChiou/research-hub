@@ -12,79 +12,30 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-27
+
+Visual Research Workstation (`research-hub open`), Live 3-Way Integration Hub (`Zotero` · `Obsidian` · `NotebookLM`), and Human-Confirmed AI Assistant Console.
+
 ### Added
-- Opt-in researcher workspace (`serve --workspace`): six bilingual React pages,
-  bundled wheel assets, account-free empirical/review examples, shared
-  project/manuscript/task/action services across CLI, MCP and REST.
-- Public writing-bundle adapter preview, hash-bound proposal tasks, persistent
-  SQLite receipts, interactive human decisions, and separately approved local
-  proposal ZIPs. Originals stay in Word, LaTeX or Markdown editors.
-- Capability-checked no-tool Codex proposals and portable handoffs, retained
-  output, cancellation, explicit recovery, revision receipts and replay tests.
-- Researcher-first bilingual README, Image 2 concept diagrams, actual browser
-  captures, accessibility regressions and installed-wheel CI.
-
-- Optional `research-source-audit/1.0` sidecar at the existing evidence-packet
-  validator boundary: current packet/claim/source/verifier binding, explicit
-  publication version and source level, saved byte hashes and located quotes,
-  production source-fetch replay, and unassessed claim accounting. Strict
-  ResearchEvidencePacket v1 and packet-only callers remain unchanged. Local
-  binding passes do not certify semantic support or scientific adequacy.
-
-- Optional `--audit-output` on search, enrich, verify, references and cited-by:
-  versioned append-only attempt events, raw response/result references, exact
-  query variants and explicit backend failures. HTTP 404/429 and parse failures
-  remain distinct from successful empty results. See `docs/audit-output.md`.
+- **One-Command Visual Workstation (`research-hub open [--demo]`):** Launches the six-page bilingual (`EN` / `繁體中文`) React workstation backed by local SQLite, `Ctrl+K` (`⌘K`) command palette, calibrated Light / Dark / System themes, and bundled static wheel assets.
+- **Literature Desk, Master Table & Synthesis Matrix:** Switch across the Reading Desk, Master Literature Table (`Markdown` / `CSV` export), and 2D Literature × Theme/Evidence Matrix with GitHub-style scoped labels (`#domain:*`, `#method:*`, `#risk:*`), inline metadata/DOI editing, and 1-click **Overleaf `.bib`**, **EndNote `.ris`**, **Quarto CSL-JSON**, and **APA 7th** citation copy.
+- **Evidence Blind-Spot Radar & Provenance Guardrails:** Four-quadrant radar on Overview plus Evidence/Design/Manuscript/Review pages tracking abstract-only fragility, uncited included sources, and SHA-256 input freshness for external Word/LaTeX/Markdown manuscripts.
+- **Interactive AI Assistant Drawer (`✦ AI Assistant`, `Ctrl+J`):** Bilingual Fast Commander plus read-only isolated `Claude` / `Codex` / `Gemini` CLI planning with two-step human confirmation (`plan_digest` verification, explicit >50-action batch safety limit, fail-closed missing quoted titles, and hashtag add/remove support).
+- **Live 3-Way Connected Sync Hub:**
+  - **Zotero:** Encrypted settings storage overriding ambient `ZOTERO_*` env vars, Dry-run deduplication preview explicitly surfacing `attach_to_collection` (`would_attach`) alongside `create`, and automatic `[Research Hub] <Project>` collection creation & membership assignment.
+  - **Obsidian (+ Bases):** Unified `--obsidian-vault` / Settings Vault configuration powering strictly read-only Vault validation and incremental frontmatter snapshot browsing (no separate `--library-snapshot` required), plus bounded `.md` notes and `.base` views exported under `.research/exports/`.
+  - **NotebookLM:** Upgraded `notebooklm-py==0.8.6` dependency, evidence-bounded Markdown source pack exports, and 1-click **`☁ Upload to NotebookLM`** with `upload_receipt.json` revision deduplication and clean expired-session diagnostics (`400 nlm_auth_expired`).
+- **CLI & Schema Resilience:** Added `--no-zotero` on `run`/`ingest` (auto-enabled for `analyst`/`internal` personas without a Zotero collection), hardened missing fields in `_render_obsidian_note`, added optional `research-source-audit/1.0` sidecar and `--audit-output` search logs.
 
 ### Changed
-- Plugin `0.5.28` adds a native per-paper body-summary route with explicit
-  why/objective/methods/findings/conclusions/key-points/limitations, source
-  locators, reading scope and supported/inference/unknown distinctions. The
-  existing Hub summarize CLI and task profile remain abstract-only. Shared
-  research guidance distinguishes observed stage timing and reused versus new
-  work/source identities. These instructions do not establish scientific,
-  installed-host or notes-app acceptance; no runtime schema or release changes.
-- Plugin `0.5.2` strengthens shared native research instructions across Hub,
-  triage, NotebookLM verification, gap-to-topic and workflow orchestration:
-  preserved user scope, needs-to-query mapping, literature roles, version-aware
-  provenance and honest bounded completion. Missing Hub runtime blocks Hub
-  actions while available native-only research can continue. Package version
-  remains `1.2.0`; no release or architecture topology change is implied.
-- The `describe --filter` command now builds only the requested manifest
-  sections; repeated flags can select multiple sections while preserving the
-  existing full-manifest and single-filter output schemas.
+- **Redesigned Bilingual READMEs (`README.md`, `README.zh-TW.md`):** Concise UX-first onboarding, visual showcase gallery, and preserved two-path host/workstation structure.
+- **Agent & Skill Ecosystem:** Bundled `plugin 0.5.36`, strengthened native seven-section summary guidance (`paper-summarize`), and tightened workflow/audit determinism.
 
 ### Fixed
-- CLI skill installation now copies complete bundles, including references,
-  scripts and evals, without removing unrelated user files. `install --list`
-  detects missing support files; unsafe linked install paths fail before copying.
-- Serialize workflow initialization, decisions, resume and applied migrations
-  with external-action journaling so concurrent state updates cannot erase
-  recovery records. Migration previews remain read-only.
-- Doctor no longer silently encrypts configuration during diagnosis; it reports
-  explicit remediation and installed/source version drift.
-- Failed/null research results are filtered without discarding completed prose.
-- Fence abstract recovery explicitly in the enrichment resolver unit test;
-  swallowed network-fence warnings no longer stand in for a complete mock.
-- Reset audit context after an initial event-write failure and emit a
-  schema-valid, nonzero failure manifest instead of blocking later commands.
+- Tolerate Windows PowerShell UTF-8 BOM in `config.json` (`utf-8-sig`), preserve complete skill directories during `install`, prevent concurrent receipt overwrite races via `file_lock`, and enforce LF normalization for reproducible cross-platform Vite static bundles.
 
 ### Security
-- Loopback-only workspace server, origin/CSRF checks, bounded file inputs,
-  fail-closed configured policy, exact candidate acceptance and duplicate-write
-  prevention. Child lifetime is guarded without sandbox breakaway.
-- Existing direct-write tools remain outside workspace approval coverage. Local
-  operator assertions are not shared-host identity or publication authorization.
-- Strengthen cluster identifier validation and keep generated research and
-  Obsidian paths within their configured roots.
-
-### Migration
-- Preview is additive and not included in PyPI 1.2.0. No automatic migration of
-  existing vaults or workflow state. See [UPGRADE.md](UPGRADE.md) before adoption.
-- The optional writing adapter is pinned to merged public producer commit
-  `bc15e29e976cd6ade3484aeaa4f1230444697f8a`, with reproducible bundle and
-  manifest verification. It is explicitly configured, not a permanent runtime
-  dependency. Hub preview installation uses an immutable tested snapshot.
+- Loopback-only workspace server with Origin/CSRF enforcement, explicit digest-verified write confirmation (`stale_preview`), bidirectional workspace/vault non-overlap validation, and zero silent writes to `--obsidian-vault`.
 
 ## [1.2.0] - 2026-08-31
 

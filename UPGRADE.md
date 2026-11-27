@@ -15,39 +15,15 @@ backup checklist + a historical appendix for very old releases.
 
 > **Backup first.** Before any upgrade that crosses a major version: copy your `~/.research_hub/` config dir AND your vault's `.research_hub/` dir somewhere safe. The vault `.md` files don't need backup (they're never destructively modified by upgrades).
 
-## v1.1 -> v1.2
+## v1.2 -> v1.3
 
-### Opt-in workspace preview after v1.2 (merged in source, unreleased)
+### Released in v1.3.0 (Visual Research Workstation, Sync Hub & AI Assistant Console)
 
-- The historical immutable Hub preview snapshot
-  `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` is retained here for provenance.
-  Use the current pinned installation instructions in
-  [the workspace guide](docs/workspace-guide.md), not a feature-branch name.
-  The Hub workspace in
-  [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) is merged in
-  source, but is not included in PyPI 1.2.0. Source merge does not establish
-  installed-wheel or native-host readiness. Existing dashboard, vault,
-  citation and workflow interfaces remain available.
-- The optional public writing adapter was merged through
-  [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17).
-  Use the current guide to clone with `core.autocrlf=false`, detach at producer
-  `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`, and verify the manifest
-  before setting `RESEARCH_HUB_WRITING_ADAPTER`. The Hub snapshot retains its
-  original documentation; its older producer pin is historical. This is an
-  explicit source installation, not a new PyPI release or permanent dependency.
-- Choose a workspace root containing files you intend to register. Registration
-  never relocates or overwrites them. Back up the entire root, including
-  `.research/`, before adopting another preview revision.
-- SQLite stores task receipts; workflow YAML and public manuscript JSON remain
-  separate authorities. No existing state is silently migrated.
-- New manuscript binding registers manuscripts, supplements and reviewer-response
-  documents for writing checks. Analysis code, data, figures and tables stay
-  authority sources and frozen task inputs. Older preview bindings that included
-  these in the manuscript artifact list require an explicit alignment review;
-  existing manuscript state is not rewritten automatically.
-- Roll back by using the published dashboard command and keeping the workspace
-  root intact. PyPI 1.2.0 cannot operate the new workspace ledger; preserve it for
-  the preview, rather than deleting it or trying to downgrade its state.
+- Upgrade directly with `pip install -U research-hub-pipeline` (no automatic migration of existing vaults or workflow state).
+- Launch the interactive workstation with `research-hub open` (or `--demo` for offline sample projects), optionally passing `--obsidian-vault <vault>` or configuring Vault / Zotero / NotebookLM inside **`⚙ Settings → Connections & Sync`**.
+- **Explicit Zotero credential precedence (`1.3.0`):** Credentials saved inside `config.json` via the Settings panel now override ambient `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID` environment variables instead of being shadowed by them.
+- **NotebookLM upgrade (`notebooklm-py==0.8.6`):** Re-authenticate via **`⚙ Settings → Connections & Sync`** or `research-hub setup` / `notebooklm login --auto-detect` if an older `state.json` Google session has expired.
+- **Historical provenance retained:** Prior preview snapshot `dda3cee30f43e7eca658bfeb9b20aac35ec19ce8` ([PR #135](https://github.com/WenyuChiou/research-hub/pull/135)) and public writing adapter producer commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a` ([academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17), configured via `RESEARCH_HUB_WRITING_ADAPTER`) remain documented; SQLite workspace receipts and `.research_hub/` vaults remain independent authorities.
 
 ### Published v1.2 workflow migration
 
