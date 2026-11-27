@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from research_hub.paper import (
     _render_field,
@@ -213,7 +214,8 @@ def test_render_field_dedupes_repeated_query_blocks() -> None:
     # Header line + 5 unique entries (not 15)
     assert len(lines) == 6
     assert lines[0] == "cluster_queries:"
-    assert lines[1].endswith("water management")
+    assert lines[1] == '  - "LLMs and generative AI: water management"'
+    assert yaml.safe_load("\n".join(lines)) == {"cluster_queries": five_queries}
 
 
 # ---------------------------------------------------------------------------
