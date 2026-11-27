@@ -11,6 +11,7 @@ Security invariants:
 from __future__ import annotations
 
 import contextlib
+import copy
 from datetime import datetime, timezone
 import json
 import os
@@ -258,16 +259,16 @@ def _get_zotero_client(library_id: str, library_type: str, api_key: str):
     return zotero.Zotero(library_id, library_type, api_key)
 
 
-def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
-    """Lookup existing Zotero item by DOI or title, raising WorkspaceError on API failure."""
+def _find_zotero_duplicate_item(zot: Any, title: str, doi: str = "") -> dict[str, Any] | None:
+    """Lookup existing Zotero item by DOI or title, returning it or raising WorkspaceError on API failure."""
     from research_hub.utils.doi import normalize_doi
 
     norm_doi = normalize_doi(doi) if doi else ""
     norm_title = (title or "").casefold()
 
-    def _matches(items: object) -> bool:
+    def _find_match(items: object) -> dict[str, Any] | None:
         if not isinstance(items, list):
-            return False
+            return None
         for entry in items:
             if not isinstance(entry, dict):
                 continue
@@ -277,26 +278,32 @@ def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
             entry_doi = normalize_doi(str(edata.get("DOI") or ""))
             if norm_doi and entry_doi:
                 if norm_doi == entry_doi:
-                    return True
+                    return entry
                 continue
             if norm_title and str(edata.get("title") or "").casefold() == norm_title:
-                return True
-        return False
+                return entry
+        return None
 
     query = doi or (title or "")[:50]
     try:
         existing = zot.items(q=query, limit=5)
-        if _matches(existing):
-            return True
+        hit = _find_match(existing)
+        if hit is not None:
+            return hit
         if not existing and doi and title:
             fallback = zot.items(q=title[:50], limit=5)
-            return _matches(fallback)
+            return _find_match(fallback)
     except Exception as exc:
         raise WorkspaceError(
             "Zotero duplicate lookup failed; verify API credentials, connection, or rate limits before syncing",
             "zotero_lookup_failed",
         ) from exc
-    return False
+    return None
+
+
+def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
+    """Lookup existing Zotero item by DOI or title, raising WorkspaceError on API failure."""
+    return _find_zotero_duplicate_item(zot, title, doi) is not None
 
 
 def _sanitize_zotero_failure(err_val: object, secret: str) -> str:
@@ -1350,6 +1357,7 @@ class WorkspaceSyncHooks:
 
             items_plan: list[dict[str, Any]] = []
             records_to_create: list[dict[str, Any]] = []
+            remote_duplicate_items: list[tuple[dict[str, Any], dict[str, Any]]] = []
             seen_dois: set[str] = set()
             seen_doiless_titles: set[str] = set()
             seen_all_titles: set[str] = set()
@@ -1369,9 +1377,11 @@ class WorkspaceSyncHooks:
                     )
                 else:
                     in_batch_dup = bool(norm_title and norm_title in seen_all_titles)
-                remote_dup = False if in_batch_dup else _check_zotero_duplicate_strict(zot, title, doi)
-                if in_batch_dup or remote_dup:
+                remote_match = None if in_batch_dup else _find_zotero_duplicate_item(zot, title, doi)
+                if in_batch_dup or remote_match is not None:
                     duplicates += 1
+                    if remote_match is not None:
+                        remote_duplicate_items.append((src, remote_match))
                     items_plan.append({
                         "id": src["id"],
                         "title": title,
@@ -1429,7 +1439,7 @@ class WorkspaceSyncHooks:
                 )
 
             collection_key: str | None = None
-            if records_to_create and hasattr(zot, "collections") and hasattr(zot, "create_collections"):
+            if (records_to_create or remote_duplicate_items) and hasattr(zot, "collections") and hasattr(zot, "create_collections"):
                 try:
                     existing_cols = zot.collections() or []
                     for col in existing_cols:
@@ -1602,6 +1612,38 @@ class WorkspaceSyncHooks:
                         "zotero_sync_failed",
                     ) from exc
 
+            collection_added_keys: list[str] = []
+            if collection_key and remote_duplicate_items and hasattr(zot, "update_item"):
+                seen_remote_keys: set[str] = set()
+                for src, rem in remote_duplicate_items:
+                    rem_data = rem.get("data") if isinstance(rem.get("data"), dict) else {}
+                    rem_key = str(rem.get("key") or rem_data.get("key") or "").strip()
+                    if not rem_key or rem_key in seen_remote_keys:
+                        continue
+                    seen_remote_keys.add(rem_key)
+                    existing_cols = rem_data.get("collections")
+                    if isinstance(existing_cols, list) and collection_key in existing_cols:
+                        continue
+                    updated = copy.deepcopy(rem)
+                    if not isinstance(updated.get("data"), dict):
+                        updated["data"] = {}
+                    updated_cols = list(updated["data"].get("collections") or [])
+                    updated_cols.append(collection_key)
+                    updated["data"]["collections"] = updated_cols
+                    try:
+                        upd_ok = zot.update_item(updated)
+                        if upd_ok is False:
+                            raise WorkspaceError("Zotero collection attachment rejected", "zotero_sync_failed")
+                        collection_added_keys.append(rem_key)
+                    except Exception as exc:
+                        failed_source_ids.add(src["id"])
+                        failed_items.append({
+                            "id": src["id"],
+                            "title": _clean_line(src["data"].get("title")) or "Untitled source",
+                            "doi": _clean_bare_doi(src["data"].get("doi")),
+                            "reason": _sanitize_zotero_failure(str(exc), api_key),
+                        })
+
             if failed_source_ids:
                 for plan_entry in items_plan:
                     if plan_entry["id"] in failed_source_ids:
@@ -1611,7 +1653,7 @@ class WorkspaceSyncHooks:
             sync_status = (
                 "synced"
                 if failed_count == 0
-                else ("partial_failure" if confirmed_created > 0 else "failed")
+                else ("partial_failure" if (confirmed_created > 0 or len(collection_added_keys) > 0) else "failed")
             )
 
             prefix = "groups" if library_type == "group" else "users"
@@ -1631,6 +1673,8 @@ class WorkspaceSyncHooks:
                 "created_keys": created_keys,
                 "collection_key": collection_key,
                 "collection_name": collection_name,
+                "collection_added_count": len(collection_added_keys),
+                "collection_added_keys": collection_added_keys,
                 "library_url": library_url,
                 "failed_items": failed_items,
                 "items": items_plan,

@@ -12,6 +12,7 @@ from typing import Any
 from .core import Workspace, WorkspaceError, digest
 
 _ALLOWED_ENGINES = ("auto", "fast", "claude", "codex", "gemini")
+_MAX_ACTION_BATCH = 50
 _ALLOWED_ACTION_TYPES = frozenset({
     "archive_source",
     "restore_source",
@@ -27,10 +28,10 @@ _ALLOWED_ACTION_TYPES = frozenset({
 })
 
 _DELETE_VERBS_RE = re.compile(
-    r"(?:刪除|移除|移出|刪掉|封存|歸檔|delete|remove|archive|drop)\b", re.IGNORECASE
+    r"(?:刪除|移除|移出|刪掉|封存|歸檔|\b(?:delete|remove|archive|drop)\b)", re.IGNORECASE
 )
 _RESTORE_VERBS_RE = re.compile(
-    r"(?:復原|還原|取消封存|取消刪除|restore|unarchive|recover)\b", re.IGNORECASE
+    r"(?:復原|還原|取消封存|取消刪除|\b(?:restore|unarchive|recover)\b)", re.IGNORECASE
 )
 _INCLUDE_VERBS_RE = re.compile(r"(?:納入|保留|收錄|\binclude\b)", re.IGNORECASE)
 _EXCLUDE_VERBS_RE = re.compile(r"(?:排除|剔除|\bexclude\b)", re.IGNORECASE)
@@ -59,10 +60,16 @@ def _normalize_tag(tag: object) -> str:
     return tag.strip().lstrip("#").strip()[:80]
 
 
+def _format_scoped_titles(scoped: list[dict[str, Any]]) -> str:
+    names = "、".join(f"「{s['title'][:45]}」" for s in scoped[:3])
+    return f"{names} 等 {len(scoped)} 篇" if len(scoped) > 3 else f"{names}（共 {len(scoped)} 篇）"
+
+
 def _match_sources(message: str, catalog: list[dict[str, Any]], *, include_archived: bool = False) -> list[dict[str, Any]]:
     """Find sources referenced in natural language by ID, DOI, year, or title fragments."""
     candidates = [s for s in catalog if include_archived or not s["archived"]]
-    msg_lower = message.casefold()
+    msg_no_tags = _HASHTAG_RE.sub(" ", message)
+    msg_lower = msg_no_tags.casefold()
     matched: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -83,23 +90,26 @@ def _match_sources(message: str, catalog: list[dict[str, Any]], *, include_archi
     if matched:
         return matched
 
-    # Quoted title fragments: "..." or 「...」 or 『...』
-    quoted = re.findall(r"[\"“「『]([^\"”」』]{3,160})[\"”」』]", message)
-    for q in quoted:
-        ql = q.strip().casefold()
-        for s in candidates:
-            if ql in s["title"].casefold():
+    # Quoted title fragments: "..." or 「...」 or 『...』 — fail closed if any explicit quote misses.
+    quoted = re.findall(r"[\"“「『]([^\"”」』]{2,160})[\"”」』]", msg_no_tags)
+    if quoted:
+        for q in quoted:
+            ql = q.strip().casefold()
+            q_hits = [s for s in candidates if ql and ql in s["title"].casefold()]
+            if not q_hits:
+                return []
+            for s in q_hits:
                 _add(s)
-    if matched:
         return matched
 
     # Direct longest title-word overlap (>= 4 chars substring or >= 2 meaningful tokens)
     stop_tokens = {
         "幫我", "請", "刪除", "移除", "復原", "還原", "文獻", "論文", "這篇", "那篇",
         "加上", "標籤", "分類", "納入", "排除", "同步", "上傳", "產生", "匯出", "寫入",
-        "正式", "筆記", "雲端", "限定", "delete", "remove", "restore", "paper", "source",
-        "this", "that", "from", "with", "the", "and", "only", "upload", "bundle", "sync",
-        "pack", "notebooklm", "zotero", "obsidian", "nlm",
+        "正式", "筆記", "雲端", "限定", "delete", "remove", "restore", "paper", "papers",
+        "source", "sources", "items", "year", "years", "for", "from", "with", "the", "and",
+        "into", "all", "only", "upload", "bundle", "sync", "pack", "add", "archive",
+        "include", "exclude", "tag", "tags", "confirm", "notebooklm", "zotero", "obsidian", "nlm",
     }
     scored: list[tuple[int, dict[str, Any]]] = []
     msg_tokens = {
@@ -127,8 +137,14 @@ def _match_sources(message: str, catalog: list[dict[str, Any]], *, include_archi
                 _add(s)
         return matched
 
+    # Explicit scope with non-stop title tokens that matched nothing should not widen to a bare year filter.
+    if re.search(r"(?:只|僅|限定|\bonly\b)", msg_no_tags, re.IGNORECASE):
+        unmatched_alpha = {t for t in re.findall(r"[a-z]{3,}", msg_lower) if t not in stop_tokens}
+        if unmatched_alpha:
+            return []
+
     # Year filter if user specifically mentions a year alongside batch tag/archive
-    years = _YEAR_RE.findall(message)
+    years = _YEAR_RE.findall(msg_no_tags)
     if years:
         for s in candidates:
             if s["year"] in years:
@@ -227,24 +243,28 @@ class WorkspaceAgentBridge:
                 return "找不到符合指定條件的文獻，無法建立 scoped 上傳提案；請確認文獻標題或 DOI。", [], True
             act: dict[str, Any] = {"type": "upload_notebooklm", "summary": "產生並上傳專案文獻包至 NotebookLM 雲端筆記本"}
             if scoped:
+                scoped_label = _format_scoped_titles(scoped)
                 act["selected_source_ids"] = [s["id"] for s in scoped]
-                act["summary"] = f"產生並上傳已選 {len(scoped)} 篇文獻至 NotebookLM 雲端筆記本"
+                act["summary"] = f"產生並上傳已選文獻 {scoped_label} 至 NotebookLM 雲端筆記本"
+                reply_msg = f"已規劃將指定文獻 {scoped_label} 打包並上傳至 NotebookLM，請確認執行。"
+            else:
+                reply_msg = "已規劃將目前入選文獻打包並上傳至 NotebookLM 雲端筆記本，請確認執行。"
             actions.append(act)
-            return (
-                f"已規劃將指定的 {len(scoped)} 篇文獻打包並上傳至 NotebookLM，請確認執行。"
-                if scoped
-                else "已規劃將目前入選文獻打包並上傳至 NotebookLM 雲端筆記本，請確認執行。"
-            ), actions, True
+            return reply_msg, actions, True
         if any(k in msg_l for k in ("notebooklm", "nlm")) and any(k in msg_l for k in ("匯出", "產生", "打包", "bundle", "pack")):
             scoped = _match_sources(msg, catalog, include_archived=False)
             if explicitly_scoped and not scoped:
                 return "找不到符合指定條件的文獻，無法建立 scoped 匯出提案。", [], True
             act = {"type": "bundle_notebooklm", "summary": "更新 NotebookLM Markdown 匯出包"}
             if scoped:
+                scoped_label = _format_scoped_titles(scoped)
                 act["selected_source_ids"] = [s["id"] for s in scoped]
-                act["summary"] = f"更新已選 {len(scoped)} 篇的 NotebookLM Markdown 匯出包"
+                act["summary"] = f"更新已選 {scoped_label} 的 NotebookLM Markdown 匯出包"
+                reply_msg = f"已規劃重新產生 {scoped_label} 的 NotebookLM 來源包，請確認執行。"
+            else:
+                reply_msg = "已規劃重新產生 NotebookLM 來源包，請確認執行。"
             actions.append(act)
-            return "已規劃重新產生 NotebookLM 來源包，請確認執行。", actions, True
+            return reply_msg, actions, True
         if "zotero" in msg_l and any(k in msg_l for k in ("寫入", "同步", "push", "sync")):
             dry_run = "寫入" not in msg_l and "confirm" not in msg_l and "正式" not in msg_l
             scoped = _match_sources(msg, catalog, include_archived=False)
@@ -256,28 +276,40 @@ class WorkspaceAgentBridge:
                 "summary": "Zotero Dry-run 預覽比對" if dry_run else "正式同步專案文獻與 Collection 至 Zotero 雲端書目庫",
             }
             if scoped:
+                scoped_label = _format_scoped_titles(scoped)
                 act["selected_source_ids"] = [s["id"] for s in scoped]
                 act["summary"] = (
-                    f"Zotero Dry-run 預覽（已選 {len(scoped)} 篇）"
+                    f"Zotero Dry-run 預覽（已選 {scoped_label}）"
                     if dry_run
-                    else f"正式同步已選 {len(scoped)} 篇與 Collection 至 Zotero"
+                    else f"正式同步已選 {scoped_label} 與 Collection 至 Zotero"
+                )
+                reply_msg = (
+                    f"已規劃將 {scoped_label} 正式同步至 Zotero（含建立 `[Research Hub]` Collection），請確認執行。"
+                    if not dry_run
+                    else f"已規劃對 {scoped_label} 執行 Zotero Dry-run 預覽檢查，請確認執行。"
+                )
+            else:
+                reply_msg = (
+                    "已規劃 Zotero 同步作業（含建立 `[Research Hub]` Collection），請確認執行。"
+                    if not dry_run
+                    else "已規劃 Zotero Dry-run 預覽檢查，請確認執行。"
                 )
             actions.append(act)
-            return (
-                "已規劃 Zotero 同步作業（含建立 `[Research Hub]` Collection），請確認執行。"
-                if not dry_run
-                else "已規劃 Zotero Dry-run 預覽檢查，請確認執行。"
-            ), actions, True
+            return reply_msg, actions, True
         if "obsidian" in msg_l and any(k in msg_l for k in ("產生", "匯出", "打包", "pack")):
             scoped = _match_sources(msg, catalog, include_archived=False)
             if explicitly_scoped and not scoped:
                 return "找不到符合指定條件的文獻，無法建立 scoped Obsidian 匯出提案。", [], True
             act = {"type": "pack_obsidian", "summary": "產生 Obsidian 筆記與 .base 索引檢視"}
             if scoped:
+                scoped_label = _format_scoped_titles(scoped)
                 act["selected_source_ids"] = [s["id"] for s in scoped]
-                act["summary"] = f"產生已選 {len(scoped)} 篇的 Obsidian 筆記與 .base 索引檢視"
+                act["summary"] = f"產生已選 {scoped_label} 的 Obsidian 筆記與 .base 索引檢視"
+                reply_msg = f"已規劃產生 {scoped_label} 的 Obsidian 筆記與 `.base` 資料庫檢視，請確認執行。"
+            else:
+                reply_msg = "已規劃產生 Obsidian 筆記與 `.base` 資料庫檢視，請確認執行。"
             actions.append(act)
-            return "已規劃產生 Obsidian 筆記與 `.base` 資料庫檢視，請確認執行。", actions, True
+            return reply_msg, actions, True
 
         # 2. Add source
         add_match = _ADD_SOURCE_RE.match(msg)
@@ -307,7 +339,31 @@ class WorkspaceAgentBridge:
                     })
                 return f"已找到 {len(archived_hits)} 篇已封存／刪除文獻，準備復原至作用中書目庫，請確認執行。", actions, True
 
-        # 4. Archive / delete source
+        # 4. Tags add / remove (before archive_source so "Remove #tag from all papers" updates tags instead of archiving)
+        tags = [_normalize_tag(t) for t in _HASHTAG_RE.findall(msg)]
+        tags = [t for t in tags if t]
+        archive_by_tag_re = re.compile(
+            r"(?:封存|歸檔|\barchive\b|(?:delete|remove)\s+(?:all\s+)?(?:papers?|sources?)\s+(?:with|tagged)|(?:刪除|移除)(?:所有)?(?:含有?|帶有?)\s*#)",
+            re.IGNORECASE,
+        )
+        if tags and not archive_by_tag_re.search(msg):
+            hits = _match_sources(msg, catalog, include_archived=False)
+            if hits:
+                is_remove = bool(_TAG_REMOVE_RE.search(msg) or _DELETE_VERBS_RE.search(msg))
+                action_type = "remove_tags" if is_remove else "add_tags"
+                verb = "移除標籤" if action_type == "remove_tags" else "加上標籤"
+                for s in hits:
+                    actions.append({
+                        "type": action_type,
+                        "source_id": s["id"],
+                        "title": s["title"],
+                        "tags": tags,
+                        "summary": f"為「{s['title']}」{verb} {', '.join('#' + t for t in tags)}",
+                    })
+                return f"已為 {len(hits)} 篇文獻規劃{verb}（{', '.join('#' + t for t in tags)}），請確認執行。", actions, True
+            return "找不到符合條件的未封存文獻可更新標籤，請確認文獻標題或 DOI。", [], True
+
+        # 5. Archive / delete source
         if _DELETE_VERBS_RE.search(msg) and not _TAG_REMOVE_RE.search(msg):
             hits = _match_sources(msg, catalog, include_archived=False)
             if hits:
@@ -321,24 +377,6 @@ class WorkspaceAgentBridge:
                 names = "、".join(f"「{h['title'][:45]}」" for h in hits[:3])
                 return f"已比對到 {len(hits)} 篇文獻（{names}），將從作用中書目庫封存移除，請確認執行。", actions, True
             return "找不到符合的未刪除文獻可移出，請提供更精確的標題關鍵字或 DOI。", [], True
-
-        # 5. Tags add / remove
-        tags = [_normalize_tag(t) for t in _HASHTAG_RE.findall(msg)]
-        tags = [t for t in tags if t]
-        if tags:
-            hits = _match_sources(msg, catalog, include_archived=False)
-            if hits:
-                action_type = "remove_tags" if _TAG_REMOVE_RE.search(msg) else "add_tags"
-                verb = "移除標籤" if action_type == "remove_tags" else "加上標籤"
-                for s in hits:
-                    actions.append({
-                        "type": action_type,
-                        "source_id": s["id"],
-                        "title": s["title"],
-                        "tags": tags,
-                        "summary": f"為「{s['title']}」{verb} {', '.join('#' + t for t in tags)}",
-                    })
-                return f"已為 {len(hits)} 篇文獻規劃{verb}（{', '.join('#' + t for t in tags)}），請確認執行。", actions, True
 
         # 6. Category update
         cat_match = _CATEGORY_SET_RE.search(msg)
@@ -475,7 +513,7 @@ class WorkspaceAgentBridge:
             return []
         catalog_map = {s["id"]: s for s in catalog}
         clean: list[dict[str, Any]] = []
-        for entry in raw_actions[:50]:
+        for entry in raw_actions[:500]:
             if not isinstance(entry, dict):
                 continue
             atype = entry.get("type")
@@ -542,6 +580,18 @@ class WorkspaceAgentBridge:
             clean.append(item)
         return clean
 
+    def _enforce_batch_limit(
+        self, reply: str, actions: list[dict[str, Any]]
+    ) -> tuple[str, list[dict[str, Any]]]:
+        if len(actions) > _MAX_ACTION_BATCH:
+            return (
+                f"本次指令共比對到 {len(actions)} 項操作，超過單次安全上限（{_MAX_ACTION_BATCH} 項）。"
+                f"為避免部分文獻被靜默略過，已拒絕建立超額批次提案；請改以年份（如 2024）、#標籤或關鍵字分批執行。"
+                f" (Matched {len(actions)} actions > {_MAX_ACTION_BATCH} batch limit; narrow your filter to run in batches.)",
+                [],
+            )
+        return reply, actions
+
     def _bind_preview_targets(self, project_id: str, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Bind live sync_zotero proposals to read-only dry-run digests before user confirmation."""
         if self.sync_hooks is None:
@@ -589,9 +639,9 @@ class WorkspaceAgentBridge:
         if engine in {"fast", "auto"}:
             reply, actions, matched = self._plan_fast(project_id, message, catalog)
             if matched:
-                actions = self._bind_preview_targets(
-                    project_id, self._sanitize_proposed_actions(actions, catalog)
-                )
+                actions = self._sanitize_proposed_actions(actions, catalog)
+                reply, actions = self._enforce_batch_limit(reply, actions)
+                actions = self._bind_preview_targets(project_id, actions)
                 plan_digest = digest({"project_id": project_id, "actions": actions})
                 return {
                     "ok": True,
@@ -628,9 +678,9 @@ class WorkspaceAgentBridge:
                 "- 「上傳至 NotebookLM」或「寫入同步 Zotero」"
             )
 
-        actions = self._bind_preview_targets(
-            project_id, self._sanitize_proposed_actions(actions, catalog)
-        )
+        actions = self._sanitize_proposed_actions(actions, catalog)
+        reply, actions = self._enforce_batch_limit(reply, actions)
+        actions = self._bind_preview_targets(project_id, actions)
         plan_digest = digest({"project_id": project_id, "actions": actions})
         return {
             "ok": True,

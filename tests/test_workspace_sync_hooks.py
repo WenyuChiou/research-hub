@@ -911,6 +911,90 @@ def test_zotero_sync_creates_project_collection_and_notebooklm_upload_writes_rec
             origin=base,
         )
         assert ctor_code == 400 and ctor_res["ok"] is False and ctor_res["code"] == "nlm_auth_expired"
+
+        # Existing duplicate Zotero items (both mixed and all-duplicate sync) are attached to the project collection
+        updated_items: list[dict] = []
+        existing_remote_cols: list[str] = []
+
+        class _DupCollectionZotero:
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                pass
+
+            def items(self, q: str = "", limit: int = 5):
+                return [
+                    {
+                        "key": "EXIST_S1",
+                        "version": 4,
+                        "data": {
+                            "key": "EXIST_S1",
+                            "title": "Water ABM Multi-Agent Calibration",
+                            "DOI": "10.1029/2025WR000001",
+                            "collections": list(existing_remote_cols),
+                        },
+                    },
+                    {
+                        "key": "EXIST_S2",
+                        "version": 7,
+                        "data": {
+                            "key": "EXIST_S2",
+                            "title": "Abstract-Only LLM Benchmark Survey",
+                            "DOI": "10.48550/arXiv.2409.12345",
+                            "collections": list(existing_remote_cols),
+                        },
+                    },
+                ]
+
+            def collections(self):
+                return [{"key": "COL999", "data": {"key": "COL999", "name": "[Research Hub] Agentic Hydrology Review"}}]
+
+            def create_collections(self, cols: list[dict]):
+                raise AssertionError("Should reuse existing COL999")
+
+            def create_items(self, items_list: list[dict]):
+                raise AssertionError("All-duplicate sync must not call create_items")
+
+            def update_item(self, item: dict):
+                updated_items.append(item)
+                existing_remote_cols[:] = list(item.get("data", {}).get("collections") or [])
+                return True
+
+        monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _DupCollectionZotero)
+        _, dry_dup = _post_json(f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync", {"dry_run": True}, csrf=csrf, origin=base)
+        assert dry_dup["would_create"] == 0 and dry_dup["duplicates"] == 2
+
+        dup_code, dup_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "expected_library": dry_dup["destination_library"],
+                "expected_revisions": dry_dup["source_revisions"],
+                "expected_plan_digest": dry_dup["plan_digest"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert dup_code == 200 and dup_res["ok"] is True
+        assert dup_res["created_count"] == 0
+        assert dup_res["skipped_duplicates"] == 2
+        assert dup_res["collection_key"] == "COL999"
+        assert dup_res["collection_added_count"] == 2
+        assert set(dup_res["collection_added_keys"]) == {"EXIST_S1", "EXIST_S2"}
+        assert all("COL999" in u["data"]["collections"] for u in updated_items)
+
+        # Re-running once COL999 is already present performs zero redundant update_item calls
+        updated_items.clear()
+        dup_code2, dup_res2 = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "expected_library": dry_dup["destination_library"],
+                "expected_revisions": dry_dup["source_revisions"],
+                "expected_plan_digest": dry_dup["plan_digest"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert dup_code2 == 200 and dup_res2["collection_added_count"] == 0 and updated_items == []
     finally:
         server.shutdown()
         server.server_close()

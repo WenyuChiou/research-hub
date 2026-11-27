@@ -185,6 +185,64 @@ def test_agent_console_status_chat_read_only_and_confirm_apply(tmp_path: Path):
             },
         )
         assert bad_tags_code == 409 and bad_tags_body["code"] == "stale_preview"
+
+        # 7. Missing explicit title with year does NOT widen to other papers; matched sync displays title
+        miss_code, miss_chat = _http_call(
+            server,
+            "POST",
+            "/api/v1/projects/agent-proj/integrations/agent/chat",
+            {"message": 'Upload to NotebookLM only "Missing Paper" (2024)', "engine": "fast"},
+        )
+        assert miss_code == 200
+        assert miss_chat["proposed_actions"] == []
+        assert miss_chat["requires_confirmation"] is False
+
+        hit_code, hit_chat = _http_call(
+            server,
+            "POST",
+            "/api/v1/projects/agent-proj/integrations/agent/chat",
+            {"message": 'Upload to NotebookLM only "Calibration Limits" (2024)', "engine": "fast"},
+        )
+        assert hit_code == 200 and hit_chat["requires_confirmation"] is True
+        assert hit_chat["proposed_actions"][0]["selected_source_ids"] == [ids["s1"]]
+        assert "Calibration Limits of LLM Survey Agents" in hit_chat["reply"]
+        assert "Calibration Limits of LLM Survey Agents" in hit_chat["proposed_actions"][0]["summary"]
+
+        # 8. Hashtag removal is classified as remove_tags (never archive_source)
+        for rm_prompt in ("Remove #review from all papers", "移除所有文獻的 #review"):
+            rm_code, rm_chat = _http_call(
+                server,
+                "POST",
+                "/api/v1/projects/agent-proj/integrations/agent/chat",
+                {"message": rm_prompt, "engine": "fast"},
+            )
+            assert rm_code == 200 and rm_chat["requires_confirmation"] is True
+            assert len(rm_chat["proposed_actions"]) == 2
+            assert all(a["type"] == "remove_tags" and a["tags"] == ["review"] for a in rm_chat["proposed_actions"])
+
+        # 9. Batch > 50 actions is explicitly rejected instead of silently truncated to 50
+        ws.create_project(
+            id="agent-big",
+            title="Large Batch Project",
+            archetype="review",
+            goal="Verify 50-action batch safety rejection",
+        )
+        for idx in range(51):
+            ws.add_record(
+                "agent-big",
+                kind="source",
+                data={"title": f"Batch Paper Number {idx:02d}", "locator": f"https://example.org/p/{idx}", "year": "2024"},
+            )
+        big_code, big_chat = _http_call(
+            server,
+            "POST",
+            "/api/v1/projects/agent-big/integrations/agent/chat",
+            {"message": "Archive all papers", "engine": "fast"},
+        )
+        assert big_code == 200
+        assert big_chat["proposed_actions"] == []
+        assert big_chat["requires_confirmation"] is False
+        assert "51" in big_chat["reply"] and "50" in big_chat["reply"]
     finally:
         server.shutdown()
         server.server_close()
