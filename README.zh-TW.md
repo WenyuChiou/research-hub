@@ -165,7 +165,7 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 | 整合項目 | 於「⚙ 設定」或 CLI 完成連接 | 連接後的一鍵同步與匯出 |
 |---|---|---|
 | **Zotero** | 於 **`⚙ 設定 → 連線與同步`** 加密儲存 `ZOTERO_API_KEY` 與設定 `ZOTERO_LIBRARY_ID`（或使用 `.env`）並測試 Web／本機 API 燈號 | **去重預覽（Dry-run）**（比對 DOI／標題）→ **確認寫入 Zotero**，或一鍵匯出 `.ris` |
-| **Obsidian（＋ Bases）** | 啟動時帶入 `--obsidian-vault` 後於設定中心點擊 **驗證**（或帶入 `--library-snapshot` 於「文獻」瀏覽唯讀快照） | 在 `.research/exports/` 產生結構化 `.md` 文獻筆記與 `.base` 資料庫檢視，並以 `obsidian://` 開啟 |
+| **Obsidian（＋ Bases）** | 啟動時帶入 `--obsidian-vault` 後於設定中心點擊 **純唯讀驗證**（或帶入 `--library-snapshot` 於「文獻」瀏覽唯讀快照） | 在 `.research/exports/` 產生結構化 `.md` 文獻筆記與 `.base` 資料庫檢視，並以 `obsidian://` 開啟 |
 | **NotebookLM** | 匯入既有 `state.json` 或執行 `notebooklm login --auto-detect`，點擊 **檢查 NotebookLM 登入狀態** | 一鍵封裝標明「全文／僅摘要」界線的 **NotebookLM 來源包**（含 `manifest.json` 與個別 `.md`） |
 | **AI 主機與書目軟體** | 透過 [MCP／REST](docs/ai-integrations.md)（`[mcp]` 擴充）連接或載入[可攜式技能](docs/setup.md) | 單篇一鍵複製 **APA 7th**／**BibTeX**，或整批匯出 `.bib`、`.ris`、`CSL-JSON` 與 `.base` |
 

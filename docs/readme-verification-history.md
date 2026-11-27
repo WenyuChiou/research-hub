@@ -4,7 +4,7 @@ This page preserves the bounded rehearsal and installation context referenced by
 
 ## Cold-start fresh-venv install & three-integration E2E (2026-11-26)
 
-Source branch `docs/workstation-onboarding-and-cold-e2e` (on top of `dda5a4e`, adding base `cryptography>=42.0.0,<47.0.0` so clean `pip install -e .` installs support encrypted local credential saving out of the box, plus aligning `README.md`, `README.zh-TW.md`, `docs/setup.md`, and `docs/workspace-guide*.md` with the v2 workstation):
+Source branch `docs/workstation-onboarding-and-cold-e2e` (on top of `dda5a4e`, adding base `cryptography>=42` so clean `pip install -e .` installs support encrypted local API-key saving out of the box, plus aligning `README.md`, `README.zh-TW.md`, `docs/setup.md`, and `docs/workspace-guide*.md` with the v2 workstation):
 
 - **Isolated fresh-venv installation & CLI onboarding (Windows 11, Python 3.14):** Installed into a brand-new virtual environment via plain `pip install -e .` (no optional extras); `pip check` exited `0` with `cryptography` active. Verified `research-hub init --vault ... --persona analyst --non-interactive --no-browser`, `research-hub clusters new`, `research-hub import-folder`, `scripts/library_snapshot.py` (`2` Markdown notes indexed read-only, `body_read: false`, `vault_written: false`), and `research-hub doctor --json`. Observed CLI limitation during the rehearsal: `research-hub ingest` still requires `RESEARCH_HUB_NO_ZOTERO=1` (or a cluster collection key) when `persona` is `analyst`.
 - **Cold-start empty workspace & loopback three-integration browser E2E (`1440×900`, `0` console errors, `0` page errors, `0` HTTP ≥ 400 on the clean verification pass):**

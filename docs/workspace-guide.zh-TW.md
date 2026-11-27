@@ -55,7 +55,7 @@ research-hub serve --workspace --root ./workspace-demo
 | 整合軟體 | 連接設定方式 | 連接後一鍵同步動作 |
 |---|---|---|
 | **Zotero** | 填入 `ZOTERO_LIBRARY_ID`（個人或群組）並將 `ZOTERO_API_KEY` 加密寫入本機 `config.json`，再點擊 **測試 Zotero 連線** | 先執行 **預覽同步（Dry-run）** 檢查 DOI／標題去重，確認後 **確認寫入 Zotero** |
-| **Obsidian** | 啟動時帶入 `--obsidian-vault /vault/路徑` 並在設定中心點擊 **驗證**（帶入 `--library-snapshot` 則可於「文獻」瀏覽唯讀中繼資料快照） | 於 `.research/exports/` 產生 `.md` 文獻筆記與 `.base` 資料庫檢視，並支援 `obsidian://` 開啟 |
+| **Obsidian** | 啟動時帶入 `--obsidian-vault /vault/路徑` 並在設定中心點擊 **純唯讀驗證**（帶入 `--library-snapshot` 則可於「文獻」瀏覽唯讀中繼資料快照） | 於 `.research/exports/` 產生 `.md` 文獻筆記與 `.base` 資料庫檢視，並支援 `obsidian://` 開啟 |
 | **NotebookLM** | 點擊 **檢查 NotebookLM 登入狀態**、匯入 `state.json`，或執行 `research-hub notebooklm login --auto-detect` | 封裝標明「全文／僅摘要」界線的 **NotebookLM 來源包**（`manifest.json` ＋ 分層 `.md`） |
 
 ## 瀏覽已選 Obsidian 中繼資料快照
