@@ -170,3 +170,45 @@ def test_run_pipeline_errors_when_no_collection_available(tmp_path, monkeypatch)
 
     with pytest.raises(RuntimeError, match="cluster.zotero_collection_key.*RESEARCH_HUB_DEFAULT_COLLECTION"):
         run_pipeline(dry_run=False, cluster_slug="agents", verify=False)
+
+
+def test_run_pipeline_analyst_persona_and_missing_journal_fallback(tmp_path, monkeypatch):
+    from research_hub.pipeline import _render_obsidian_note
+
+    cfg = _cfg(tmp_path, default_collection=None)
+    cfg.persona = "analyst"
+    ClusterRegistry(cfg.clusters_file).create(query="agents", name="Agents", slug="agents")
+    minimal = [{
+        "title": "Venue-Only Paper Without Summary",
+        "authors": ["Alice"],
+        "year": 2024,
+        "venue": "NeurIPS",
+        "doi": "10.1000/venue-only",
+        "abstract": "Abstract text fallback.",
+    }]
+    (cfg.root / "papers_input.json").write_text(json.dumps(minimal), encoding="utf-8")
+    monkeypatch.setattr("research_hub.pipeline.get_config", lambda: cfg)
+
+    # _render_obsidian_note must tolerate missing journal/summary/key_findings/methodology/relevance
+    note_text = _render_obsidian_note(minimal[0], "Agentic Collection", "agents", "agents")
+    assert "Venue-Only Paper Without Summary" in note_text
+    assert "NeurIPS" in note_text
+
+    # persona=analyst skips Zotero automatically without RuntimeError
+    rc = run_pipeline(dry_run=False, cluster_slug="agents", verify=False)
+    assert rc == 0
+
+
+def test_cli_no_zotero_flag_forwarded_to_run_and_ingest(tmp_path, monkeypatch):
+    from research_hub import cli, cli_pipeline
+
+    captured: list[dict] = []
+    monkeypatch.setattr(cli, "run_pipeline", lambda **kw: (captured.append(kw), 0)[1])
+    monkeypatch.setattr(cli_pipeline, "run_pipeline", lambda **kw: (captured.append(kw), 0)[1])
+    cfg = _cfg(tmp_path, default_collection=None)
+    monkeypatch.setattr(cli_pipeline, "get_config", lambda: cfg)
+
+    assert cli.main(["ingest", "--cluster", "agents", "--no-zotero"]) == 0
+    assert captured[-1].get("no_zotero") is True
+    assert cli.main(["run", "--cluster", "agents", "--no-zotero"]) == 0
+    assert captured[-1].get("no_zotero") is True

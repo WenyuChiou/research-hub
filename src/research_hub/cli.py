@@ -765,6 +765,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Attach open-access PDFs from arXiv/Unpaywall after ingest",
     )
+    run_parser.add_argument(
+        "--no-zotero",
+        action="store_true",
+        help="Skip Zotero writes (Obsidian + NotebookLM only)",
+    )
 
     auto_parser = subparsers.add_parser(
         "auto",
@@ -940,6 +945,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--with-pdfs",
         action="store_true",
         help="Attach open-access PDFs from arXiv/Unpaywall after ingest",
+    )
+    ingest_parser.add_argument(
+        "--no-zotero",
+        action="store_true",
+        help="Skip Zotero writes (Obsidian + NotebookLM only)",
     )
     ingest_parser.add_argument(
         "--json",
@@ -2900,6 +2910,8 @@ def _main_dispatch(args, parser) -> int:
         }
         if getattr(args, "with_pdfs", False):
             run_kwargs["with_pdfs"] = True
+        if getattr(args, "no_zotero", False):
+            run_kwargs["no_zotero"] = True
         if getattr(args, "papers_json", None) is not None:
             run_kwargs["papers_json"] = args.papers_json
         rc = run_pipeline(**run_kwargs)

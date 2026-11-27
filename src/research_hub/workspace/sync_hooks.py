@@ -991,6 +991,143 @@ class WorkspaceSyncHooks:
             "notebook_url": "https://notebooklm.google.com/",
         }
 
+    def upload_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Bundle project sources and upload them to a real NotebookLM cloud notebook."""
+        integrations = self._require_enabled()
+        body = dict(payload or {})
+        extra = set(body) - {"selected_source_ids", "notebook_title"}
+        if extra:
+            raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
+
+        self._validate_project_id(project_id)
+        bundle_payload = (
+            {"selected_source_ids": body["selected_source_ids"]}
+            if "selected_source_ids" in body
+            else None
+        )
+        bundle = self.bundle_notebooklm(project_id, bundle_payload)
+        project = self.workspace.project(project_id)
+        custom_title = _clean_line(body.get("notebook_title"))
+        notebook_title = custom_title or f"[Research Hub] {_clean_line(project.get('title')) or project_id}"
+
+        try:
+            _, data = integrations._read_config_dict()
+            state_file = integrations._nlm_state_file(data)
+        except Exception as exc:
+            raise WorkspaceError(f"Could not resolve NotebookLM state file: {type(exc).__name__}", "nlm_auth_missing") from exc
+
+        if not state_file.is_file() or state_file.stat().st_size == 0:
+            raise WorkspaceError(
+                "NotebookLM session not found. Click 'Sign in to NotebookLM' in Setup first.",
+                "nlm_auth_missing",
+            )
+
+        from research_hub.notebooklm.auth import ensure_session_health
+        from research_hub.notebooklm.client import NotebookLMClient, NotebookLMError
+
+        try:
+            health = ensure_session_health(state_file)
+        except Exception as exc:
+            raise WorkspaceError(
+                f"NotebookLM session expired or invalid ({type(exc).__name__}). Sign in again in Setup.",
+                "nlm_auth_expired",
+            ) from exc
+        if isinstance(health, dict) and not health.get("ok", False):
+            raise WorkspaceError(
+                "NotebookLM Google session has expired. Open Setup -> Connections & Sync to sign in again before uploading.",
+                "nlm_auth_expired",
+            )
+
+        export_rel = f".research/exports/notebooklm-{project_id}"
+        manifest_path = safe_path(self.workspace.root, bundle["manifest_file"])
+        receipt_rel = f"{export_rel}/upload_receipt.json"
+        receipt_path = safe_path(self.workspace.root, receipt_rel)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        entries = list(manifest.get("sources") or [])
+
+        uploaded_sources: list[dict[str, Any]] = []
+        failed_sources: list[dict[str, Any]] = []
+        skipped_duplicates = 0
+
+        client: NotebookLMClient | None = None
+        try:
+            client = NotebookLMClient(state_file, headless=True, timeout_sec=120)
+            handle = client.find_or_create_notebook(notebook_title)
+            existing_titles: set[str] = set()
+            try:
+                for src in client.list_sources(handle.notebook_id):
+                    t = _clean_line(getattr(src, "title", "") or (src.get("title") if isinstance(src, dict) else ""))
+                    if t:
+                        existing_titles.add(t.casefold())
+            except Exception:
+                existing_titles = set()
+
+            for entry in entries:
+                src_rel = str(entry.get("source_file") or "").strip()
+                if not src_rel:
+                    continue
+                src_path = safe_path(self.workspace.root, src_rel, exists=True)
+                src_title = _clean_line(entry.get("title")) or Path(src_rel).stem
+                if src_title.casefold() in existing_titles:
+                    skipped_duplicates += 1
+                    continue
+                content = src_path.read_text(encoding="utf-8")
+                res = client.upload_source(handle.notebook_id, text=content, title=src_title)
+                if getattr(res, "ok", False):
+                    existing_titles.add(src_title.casefold())
+                    uploaded_sources.append({
+                        "source_id": entry.get("source_id", ""),
+                        "title": src_title,
+                        "nlm_source_id": getattr(res, "source_id", "") or "",
+                        "doi": entry.get("doi", ""),
+                    })
+                else:
+                    failed_sources.append({
+                        "source_id": entry.get("source_id", ""),
+                        "title": src_title,
+                        "error": _clean_line(getattr(res, "error", "")) or "NotebookLM upload failed",
+                    })
+        except WorkspaceError:
+            raise
+        except NotebookLMError as exc:
+            msg = str(exc)
+            low = msg.lower()
+            code = "nlm_auth_expired" if ("expired" in low or "auth" in low) else "nlm_upload_failed"
+            raise WorkspaceError(f"NotebookLM upload failed: {msg}", code) from exc
+        except Exception as exc:
+            raise WorkspaceError(f"NotebookLM upload failed: {type(exc).__name__}", "nlm_upload_failed") from exc
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+
+        uploaded_count = len(uploaded_sources)
+        failed_count = len(failed_sources)
+        status = (
+            "uploaded"
+            if failed_count == 0
+            else ("partial_failure" if uploaded_count > 0 else "failed")
+        )
+        receipt = {
+            "ok": True,
+            "status": status,
+            "project_id": project_id,
+            "notebook_id": handle.notebook_id,
+            "notebook_name": handle.name,
+            "notebook_url": handle.url,
+            "uploaded_count": uploaded_count,
+            "skipped_duplicates": skipped_duplicates,
+            "failed_count": failed_count,
+            "uploaded_sources": uploaded_sources,
+            "failed_sources": failed_sources,
+            "uploaded_at": _utc_now(),
+            "receipt_file": receipt_rel,
+        }
+        atomic_json(receipt_path, receipt)
+        return receipt
+
     def sync_zotero(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         integrations = self._require_enabled()
         body = dict(payload or {})
@@ -1052,10 +1189,11 @@ class WorkspaceSyncHooks:
             return a_key, l_id, l_type, dest
 
         selected_ids_arg = body.get("selected_source_ids")
-        _, sources, _ = self._resolve_project_sources(
+        project, sources, _ = self._resolve_project_sources(
             project_id, selected_ids_arg
         )
         source_revisions = {s["id"]: _zotero_source_fingerprint(s) for s in sources}
+        collection_name = f"[Research Hub] {_clean_line(project.get('title')) or project_id}"
 
         api_key, library_id, library_type, destination_library = _read_zotero_target()
 
@@ -1202,10 +1340,43 @@ class WorkspaceSyncHooks:
                     "would_create": len(records_to_create),
                     "duplicates": duplicates,
                     "destination_library": destination_library,
+                    "collection_name": collection_name,
                     "source_revisions": source_revisions,
                     "plan_digest": plan_digest,
                     "items": items_plan,
                 }
+
+            collection_key: str | None = None
+            if records_to_create and hasattr(zot, "collections") and hasattr(zot, "create_collections"):
+                try:
+                    existing_cols = zot.collections() or []
+                    for col in existing_cols:
+                        if not isinstance(col, dict):
+                            continue
+                        col_data = col.get("data") if isinstance(col.get("data"), dict) else col
+                        if _clean_line(col_data.get("name")) == collection_name:
+                            found_key = col.get("key") or col_data.get("key")
+                            if isinstance(found_key, str) and found_key.strip():
+                                collection_key = found_key.strip()
+                                break
+                    if collection_key is None:
+                        col_resp = zot.create_collections([{"name": collection_name}])
+                        if isinstance(col_resp, dict):
+                            col_succ = col_resp.get("successful") or col_resp.get("success") or {}
+                            if isinstance(col_succ, dict):
+                                first = next(iter(col_succ.values()), None)
+                                if isinstance(first, dict):
+                                    found_key = first.get("key") or (
+                                        first.get("data", {}).get("key")
+                                        if isinstance(first.get("data"), dict)
+                                        else None
+                                    )
+                                    if isinstance(found_key, str) and found_key.strip():
+                                        collection_key = found_key.strip()
+                                elif isinstance(first, str) and first.strip():
+                                    collection_key = first.strip()
+                except Exception:
+                    collection_key = None
 
             if expected_plan_digest is not None and plan_digest != expected_plan_digest:
                 raise WorkspaceError(
@@ -1262,6 +1433,8 @@ class WorkspaceSyncHooks:
                     "extra": f"Research Hub project: {project_id}; Reading scope: {scope}",
                     "tags": [{"tag": tag} for tag in deduped_tags],
                 })
+                if collection_key:
+                    entry["collections"] = [collection_key]
                 zotero_payloads.append(entry)
 
             confirmed_created = 0
@@ -1357,6 +1530,13 @@ class WorkspaceSyncHooks:
                 else ("partial_failure" if confirmed_created > 0 else "failed")
             )
 
+            prefix = "groups" if library_type == "group" else "users"
+            library_url = (
+                f"https://www.zotero.org/{prefix}/{library_id}/collections/{collection_key}/items"
+                if collection_key
+                else f"https://www.zotero.org/{prefix}/{library_id}/items"
+            )
+
             return {
                 "ok": True,
                 "status": sync_status,
@@ -1365,6 +1545,9 @@ class WorkspaceSyncHooks:
                 "failed_count": failed_count,
                 "skipped_duplicates": duplicates,
                 "created_keys": created_keys,
+                "collection_key": collection_key,
+                "collection_name": collection_name,
+                "library_url": library_url,
                 "failed_items": failed_items,
                 "items": items_plan,
             }

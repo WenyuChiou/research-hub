@@ -163,10 +163,10 @@ Pair the [research-hub skill](skills/research-hub/) and [AI Research Skills](htt
 
 | Integration | Setup in `⚙ Settings` or CLI | Connected UI Sync Hook |
 |---|---|---|
-| **Zotero** | Save `ZOTERO_LIBRARY_ID` + encrypted `ZOTERO_API_KEY` in **`⚙ Settings → Connections & Sync`** (or `.env`) and test Web / Local API status | **Dry-run dedup preview** (`DOI` + title match) → confirmed **Confirm Write to Zotero** or instant `.ris` export |
-| **Obsidian (+ Bases)** | Launch with `--obsidian-vault` and click **Validate read-only** in Settings (or pass `--library-snapshot` to browse snapshots in Literature) | Generate bounded `.md` literature notes + `.base` views under `.research/exports/` and open via `obsidian://` |
-| **NotebookLM** | Import an existing `state.json` or sign in via `notebooklm login --auto-detect`, then run **Check NotebookLM session** | Build evidence-bounded **NotebookLM source packs** (`manifest.json` + Markdown per full-text/abstract tier) |
-| **AI hosts & citations** | Attach [MCP/REST](docs/ai-integrations.md) (`[mcp]` extra) or install [portable skills](docs/setup.md) | Copy **APA 7th** / **BibTeX** citations per source or batch-export `.bib`, `.ris`, `CSL-JSON`, and `.base` |
+| **Zotero** | Save `ZOTERO_LIBRARY_ID` + encrypted `ZOTERO_API_KEY` in **`⚙ Settings → Connections & Sync`** (UI config overrides ambient `ZOTERO_*` env vars) and test Web / Local API status | **Dry-run dedup preview** → **Confirm Write to Zotero** (auto-creates `[Research Hub] <Project>` collection + direct Zotero URL) or `.ris` export |
+| **Obsidian (+ Bases)** | Launch with `--obsidian-vault` or save Vault path directly in **`⚙ Settings`** (unified read-only Vault validation + Literature Vault browsing without separate snapshot config; `--library-snapshot` optional) | Generate bounded `.md` literature notes + `.base` views under `.research/exports/` and open via `obsidian://` |
+| **NotebookLM** | Import an existing `state.json` or sign in via `notebooklm login --auto-detect`, then run **Check NotebookLM session** | Build evidence-bounded **NotebookLM source packs** and trigger **`☁ Upload to NotebookLM`** with `upload_receipt.json` verification |
+| **AI Assistant & citations** | Open **`✦ AI Assistant`** (`Ctrl+J` / `⌘J`, supporting Fast Commander + `Claude` / `Codex` / `Gemini`) or attach [MCP/REST](docs/ai-integrations.md) | Curate/delete/restore/tag papers via two-step human-confirmed chat plans, or copy **APA 7th** / **BibTeX** citations |
 
 Run `./.venv/bin/python -m research_hub doctor` (macOS/Linux) or `.\.venv\Scripts\python.exe -m research_hub doctor` (Windows PowerShell) to inspect configured destinations individually. See [local file import](docs/import-folder.md), [EZproxy](docs/ezproxy.md), and the [live smoke checklist](docs/live-smoke.md).
 

@@ -25,6 +25,18 @@ export interface NotebookLmBundleResponse {
   notebook_url: string;
 }
 
+export interface NotebookLmUploadResponse {
+  ok: true;
+  status: "uploaded" | "partial_failure" | "failed";
+  notebook_id: string;
+  notebook_name: string;
+  notebook_url: string;
+  uploaded_count: number;
+  skipped_duplicates: number;
+  failed_count: number;
+  receipt_file?: string;
+}
+
 export interface ZoteroSyncItemPlan {
   id: string;
   title: string;
@@ -50,6 +62,9 @@ export interface ZoteroSyncResponse {
   failed_count?: number;
   skipped_duplicates?: number;
   created_keys?: string[];
+  collection_key?: string | null;
+  collection_name?: string;
+  library_url?: string;
   failed_items?: ZoteroFailedItem[];
   destination_library?: string;
   source_revisions?: Record<string, string>;
@@ -93,9 +108,16 @@ const LABELS = {
     nlmLocalReady: "本機封裝就緒",
     nlmBuildBtn: "產生 NLM 匯入包",
     nlmBuilding: "封裝中…",
+    nlmUploadBtn: "☁ 上傳至 NotebookLM",
+    nlmUploading: "上傳中…",
+    nlmUploadReceipt: (uploaded: number, skipped: number) =>
+      skipped > 0
+        ? `✓ 已上傳 ${uploaded} 篇至 NotebookLM（略過 ${skipped} 篇重複）`
+        : `✓ 已上傳 ${uploaded} 篇至 NotebookLM`,
     nlmReceipt: (total: number, full: number, rest: number) =>
       `✓ ${total} 篇已封裝 · 全文 ${full} / 摘要 ${rest}`,
     nlmOpenBtn: "開啟 NotebookLM ↗",
+    nlmOpenNotebookBtn: "開啟此筆記本 ↗",
     nlmOfflineMdBtn: "下載 .md 來源包",
     zotConnected: "已連線",
     zotConfigured: "金鑰就緒",
@@ -115,6 +137,7 @@ const LABELS = {
     zotFailedReceipt: (failed: number) =>
       `✕ Zotero 同步失敗（${failed} 篇被拒絕，未寫入任何項目）`,
     zotAllDuplicates: "所選文獻皆已存在於 Zotero",
+    zotOpenCollectionBtn: "開啟 Collection ↗",
     zotMissingCredsHint: "尚未設定 Zotero API 金鑰，可直接下載 .ris 匯入檔",
     zotRisFallbackBtn: "下載 .ris 匯入檔",
     obsVerified: "Vault 已驗證",
@@ -146,9 +169,16 @@ const LABELS = {
     nlmLocalReady: "Local pack ready",
     nlmBuildBtn: "Build NLM Pack",
     nlmBuilding: "Bundling…",
+    nlmUploadBtn: "☁ Upload to NotebookLM",
+    nlmUploading: "Uploading…",
+    nlmUploadReceipt: (uploaded: number, skipped: number) =>
+      skipped > 0
+        ? `✓ Uploaded ${uploaded} to NotebookLM (${skipped} skipped)`
+        : `✓ Uploaded ${uploaded} to NotebookLM`,
     nlmReceipt: (total: number, full: number, rest: number) =>
       `✓ ${total} packed · Full-text ${full} / Abstract ${rest}`,
     nlmOpenBtn: "Open NotebookLM ↗",
+    nlmOpenNotebookBtn: "Open Notebook ↗",
     nlmOfflineMdBtn: "Download .md Pack",
     zotConnected: "Ready",
     zotConfigured: "API configured",
@@ -168,6 +198,7 @@ const LABELS = {
     zotFailedReceipt: (failed: number) =>
       `✕ Zotero write failed (${failed} item(s) rejected; 0 created)`,
     zotAllDuplicates: "All selected items already exist in Zotero",
+    zotOpenCollectionBtn: "Open Collection ↗",
     zotMissingCredsHint: "Zotero API key not configured — use 1-click .ris export",
     zotRisFallbackBtn: "Download .ris",
     obsVerified: "Vault verified",
@@ -332,7 +363,9 @@ export function SyncHooksPanel({
   const selectionEpochRef = useRef(0);
 
   const [nlmBusy, setNlmBusy] = useState(false);
+  const [nlmUploadBusy, setNlmUploadBusy] = useState(false);
   const [nlmResult, setNlmResult] = useState<NotebookLmBundleResponse | null>(null);
+  const [nlmUploadResult, setNlmUploadResult] = useState<NotebookLmUploadResponse | null>(null);
   const [nlmError, setNlmError] = useState<string | null>(null);
 
   const [zotPreviewBusy, setZotPreviewBusy] = useState(false);
@@ -450,7 +483,7 @@ export function SyncHooksPanel({
   }
 
   async function handleNotebookLmBundle() {
-    if (!projectId || targetSources.length === 0 || nlmBusy) return;
+    if (!projectId || targetSources.length === 0 || nlmBusy || nlmUploadBusy) return;
     const reqSig = selectionSignature;
     const reqEpoch = selectionEpochRef.current;
     const reqIds = payloadSourceIds ? [...payloadSourceIds] : undefined;
@@ -471,6 +504,33 @@ export function SyncHooksPanel({
     } finally {
       if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
         setNlmBusy(false);
+      }
+    }
+  }
+
+  async function handleNotebookLmUpload() {
+    if (!projectId || targetSources.length === 0 || nlmBusy || nlmUploadBusy) return;
+    const reqSig = selectionSignature;
+    const reqEpoch = selectionEpochRef.current;
+    const reqIds = payloadSourceIds ? [...payloadSourceIds] : undefined;
+    setNlmUploadBusy(true);
+    setNlmError(null);
+    setNlmUploadResult(null);
+    try {
+      const payload: Record<string, unknown> = {};
+      if (reqIds) payload.selected_source_ids = reqIds;
+      const response = await postIntegrationHook<NotebookLmUploadResponse>(
+        "notebooklm/upload",
+        payload,
+      );
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
+      setNlmUploadResult(response);
+    } catch (err) {
+      if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
+      setNlmError(formatErrorText(err));
+    } finally {
+      if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
+        setNlmUploadBusy(false);
       }
     }
   }
@@ -663,14 +723,24 @@ export function SyncHooksPanel({
 
           <div className="sync-card-actions">
             {backendHooksAvailable ? (
-              <button
-                type="button"
-                className="button primary small sync-action-btn"
-                disabled={actionsDisabled || nlmBusy}
-                onClick={handleNotebookLmBundle}
-              >
-                {nlmBusy ? copy.nlmBuilding : copy.nlmBuildBtn}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="button primary small sync-action-btn"
+                  disabled={actionsDisabled || nlmBusy || nlmUploadBusy}
+                  onClick={handleNotebookLmBundle}
+                >
+                  {nlmBusy ? copy.nlmBuilding : copy.nlmBuildBtn}
+                </button>
+                <button
+                  type="button"
+                  className="button secondary small sync-action-btn"
+                  disabled={actionsDisabled || nlmBusy || nlmUploadBusy}
+                  onClick={handleNotebookLmUpload}
+                >
+                  {nlmUploadBusy ? copy.nlmUploading : copy.nlmUploadBtn}
+                </button>
+              </>
             ) : (
               <button
                 type="button"
@@ -683,14 +753,27 @@ export function SyncHooksPanel({
             )}
             <a
               className="button secondary small sync-ext-link"
-              href={nlmResult?.notebook_url || "https://notebooklm.google.com/"}
+              href={nlmUploadResult?.notebook_url || nlmResult?.notebook_url || "https://notebooklm.google.com/"}
               target="_blank"
               rel="noopener noreferrer"
             >
-              {copy.nlmOpenBtn}
+              {nlmUploadResult?.notebook_url ? copy.nlmOpenNotebookBtn : copy.nlmOpenBtn}
             </a>
           </div>
 
+          {nlmUploadResult && (
+            <div className={`sync-receipt ${nlmUploadResult.status === "failed" ? "is-error" : "is-ok"}`} role="status">
+              <span className="sync-receipt-text">
+                {copy.nlmUploadReceipt(
+                  nlmUploadResult.uploaded_count,
+                  nlmUploadResult.skipped_duplicates,
+                )}
+              </span>
+              {nlmUploadResult.notebook_name && (
+                <code className="sync-path-chip">{nlmUploadResult.notebook_name}</code>
+              )}
+            </div>
+          )}
           {nlmResult && (
             <div className="sync-receipt is-ok" role="status">
               <span className="sync-receipt-text">
@@ -788,6 +871,19 @@ export function SyncHooksPanel({
                       zotSynced.skipped_duplicates ?? 0,
                     )}
               </span>
+              {zotSynced.collection_name && (
+                <code className="sync-path-chip">{zotSynced.collection_name}</code>
+              )}
+              {zotSynced.library_url && (
+                <a
+                  className="sync-ext-link small"
+                  href={zotSynced.library_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {copy.zotOpenCollectionBtn}
+                </a>
+              )}
             </div>
           )}
 

@@ -71,6 +71,8 @@ def _cmd_ingest(args, *, emit_json: bool = False) -> int:
     }
     if args.with_pdfs:
         run_kwargs["with_pdfs"] = True
+    if getattr(args, "no_zotero", False):
+        run_kwargs["no_zotero"] = True
     if getattr(args, "papers_json", None) is not None:
         run_kwargs["papers_json"] = args.papers_json
     with _stdout_to_stderr(emit_json):

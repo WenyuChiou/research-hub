@@ -18,8 +18,9 @@ from .integrations import LocalIntegrationsManager
 from .service import WorkspaceService, call_workspace
 from .tasks import _LOCAL_HUMAN
 from .obsidian_validation import ObsidianValidation
-from .library_snapshot import LibrarySnapshot
+from .library_snapshot import LibrarySnapshot, read_vault_snapshot
 from .sync_hooks import WorkspaceSyncHooks
+from .agent_chat import WorkspaceAgentBridge
 
 
 class WorkspaceServer(ThreadingHTTPServer):
@@ -47,6 +48,10 @@ class WorkspaceServer(ThreadingHTTPServer):
             self.service.workspace,
             self.integrations,
             obsidian_validation=self.obsidian_validation,
+        )
+        self.agent_bridge = WorkspaceAgentBridge(
+            self.service.workspace,
+            sync_hooks=self.sync_hooks,
         )
         self.csrf = secrets.token_urlsafe(32)
         self.human = secrets.token_urlsafe(32) if human else None
@@ -100,6 +105,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/workspace":
                 result = self.server.service.capabilities(human=bool(self.server.human))
                 result["capabilities"]["obsidian_validation"] = self.server.obsidian_validation.capability()
+                result["capabilities"]["obsidian_snapshot_available"] = bool(
+                    self.server.library_snapshot.path is not None
+                    or self.server.obsidian_validation.scope is not None
+                )
                 integrations = getattr(self.server, "integrations", None)
                 if integrations is not None and integrations.enabled:
                     result["capabilities"]["local_integrations"] = integrations.capability()
@@ -113,9 +122,17 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/library/snapshot":
                 if urlsplit(self.path).query:
                     return self._reply(400, {"ok": False, "code": "invalid_request", "error": "Snapshot requests accept no path parameters."})
-                result = self.server.library_snapshot.read()
+                if self.server.library_snapshot.path is not None:
+                    result = self.server.library_snapshot.read()
+                elif self.server.obsidian_validation.scope is not None:
+                    result = read_vault_snapshot(self.server.obsidian_validation.scope)
+                else:
+                    result = self.server.library_snapshot.read()
                 return self._reply(404 if result.get("ok") is False else 200, result)
             segments = path.strip("/").split("/")
+            if (len(segments) == 7 and segments[:3] == ["api", "v1", "projects"]
+                    and segments[4] == "integrations" and segments[5] == "agent" and segments[6] == "status"):
+                return self._reply(200, self.server.agent_bridge.status())
             if (len(segments) == 6 and segments[:3] == ["api", "v1", "projects"]
                     and segments[4] == "native-summary" and segments[5] == "markdown"):
                 from urllib.parse import parse_qs
@@ -245,7 +262,29 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 if integrations is None:
                     return self._reply(403, {"ok": False, "error": "Local integrations are unavailable in this server mode", "code": "integrations_unavailable"})
                 try:
+                    raw_vault = data.get("obsidian_vault_path")
+                    if isinstance(raw_vault, str) and raw_vault.strip():
+                        try:
+                            probe = ObsidianValidation(raw_vault.strip())
+                            probe.assert_storage_outside(self.server.service.workspace.root)
+                        except ValueError as exc:
+                            raise WorkspaceError(str(exc), "invalid_request") from exc
                     result = integrations.save_credentials(data)
+                    if result.get("obsidian_touched"):
+                        refreshed_vault = integrations.default_vault_root()
+                        try:
+                            new_validation = ObsidianValidation(refreshed_vault)
+                            new_validation.assert_storage_outside(self.server.service.workspace.root)
+                        except ValueError:
+                            new_validation = ObsidianValidation(None)
+                        self.server.obsidian_validation = new_validation
+                        if getattr(self.server, "sync_hooks", None) is not None:
+                            self.server.sync_hooks.obsidian_validation = new_validation
+                        result["obsidian_validation"] = new_validation.capability()
+                        result["obsidian_snapshot_available"] = bool(
+                            self.server.library_snapshot.path is not None
+                            or new_validation.scope is not None
+                        )
                     return self._reply(200, result)
                 except WorkspaceError as exc:
                     status = 403 if exc.code == "integrations_unavailable" else 400
@@ -283,6 +322,22 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                     status = 403 if exc.code == "integrations_unavailable" else 409 if exc.code == "login_in_progress" else 400
                     return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
             if len(parts) == 7 and parts[:3] == ["api", "v1", "projects"] and parts[4] == "integrations":
+                if parts[5] == "agent" and parts[6] in {"chat", "apply"}:
+                    agent_fn = (
+                        self.server.agent_bridge.chat
+                        if parts[6] == "chat"
+                        else self.server.agent_bridge.apply
+                    )
+                    try:
+                        return self._reply(200, agent_fn(parts[3], data))
+                    except WorkspaceError as exc:
+                        status = (
+                            404 if exc.code == "not_found"
+                            else 403 if exc.code == "integrations_unavailable"
+                            else 409 if exc.code == "stale_preview"
+                            else 400
+                        )
+                        return self._reply(status, {"ok": False, "error": str(exc), "code": exc.code})
                 sync_hooks = getattr(self.server, "sync_hooks", None)
                 integrations = getattr(self.server, "integrations", None)
                 if sync_hooks is None or integrations is None or not integrations.enabled:
@@ -290,6 +345,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 hook_route = (parts[5], parts[6])
                 hook_fn = {
                     ("notebooklm", "bundle"): sync_hooks.bundle_notebooklm,
+                    ("notebooklm", "upload"): sync_hooks.upload_notebooklm,
                     ("zotero", "sync"): sync_hooks.sync_zotero,
                     ("obsidian", "pack"): sync_hooks.pack_obsidian,
                 }.get(hook_route)

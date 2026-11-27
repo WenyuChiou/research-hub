@@ -197,6 +197,7 @@ export interface CommandPaletteProps {
   onOpenPaper?: (paper: ResearchRecord) => void;
   onNavigate: (page: Page) => void;
   onOpenSettings?: () => void;
+  onOpenAgent?: () => void;
   onToggleTheme?: () => void;
   resolvedTheme?: "light" | "dark";
   locale?: Locale;
@@ -212,6 +213,7 @@ export function CommandPalette({
   onOpenPaper,
   onNavigate,
   onOpenSettings,
+  onOpenAgent,
   onToggleTheme,
   resolvedTheme = "light",
   locale = "en",
@@ -308,6 +310,19 @@ export function CommandPalette({
       });
     }
 
+    if (onOpenAgent) {
+      const agentLabel = locale === "zh-TW" ? "✦ AI 研究助理主控台 (Ctrl+J)" : "✦ AI Research Assistant (Ctrl+J)";
+      items.push({
+        id: "quick-agent",
+        group: "quick",
+        label: agentLabel,
+        searchText: `${agentLabel} agent chat ai assistant delete restore tag sync ai助理 刪除 標籤`.toLocaleLowerCase(),
+        onSelect: () => {
+          runSelectionAndClose(() => onOpenAgent());
+        },
+      });
+    }
+
     const navTargets: [Page, string, string][] = [
       ["overview", c.navOverview, "overview dashboard stage radar 總覽 進度 雷達"],
       ["literature", c.navLiterature, "literature papers library matrix 文獻 閱讀 總表 矩陣"],
@@ -380,6 +395,7 @@ export function CommandPalette({
     onNavigate,
     onOpenPaper,
     onOpenSettings,
+    onOpenAgent,
     onSelectProject,
     onToggleTheme,
     open,

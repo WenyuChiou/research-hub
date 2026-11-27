@@ -1055,6 +1055,13 @@ export const en = {
   evidenceClaimLabel: "Claim",
   evidenceSelectSourcesHint: "Tick one or more sources that directly support this claim.",
   commandPaletteOpen: "Command palette (Ctrl+K)",
+  agentOpenBtn: "AI Assistant",
+  obsidianSaveVault: "Save Vault Path",
+  obsidianVaultSaved: "Obsidian vault path saved to local config.",
+  zoteroSourceConfig: "Source: Local config.json",
+  zoteroSourceEnv: "Source: Environment variable",
+  zoteroSourceLegacy: "Source: Legacy Zotero config",
+  zoteroEnvOverriddenNote: "UI config overrides ambient ZOTERO_* env vars",
 };
 export type MessageKey = keyof typeof en;
 export const zhTW: Record<MessageKey, string> = {
@@ -2068,6 +2075,13 @@ export const zhTW: Record<MessageKey, string> = {
   evidenceClaimLabel: "主張",
   evidenceSelectSourcesHint: "勾選一或多篇直接支撐此主張的專案文獻。",
   commandPaletteOpen: "快速指令面板 (Ctrl+K)",
+  agentOpenBtn: "AI 助理",
+  obsidianSaveVault: "儲存 Vault 路徑",
+  obsidianVaultSaved: "已將 Obsidian Vault 路徑儲存至本機設定。",
+  zoteroSourceConfig: "來源：本機 config.json",
+  zoteroSourceEnv: "來源：系統環境變數",
+  zoteroSourceLegacy: "來源：舊版 Zotero 設定",
+  zoteroEnvOverriddenNote: "UI 設定已優先覆蓋環境變數 ZOTERO_*",
 };
 export const dictionaries = { en, "zh-TW": zhTW };
 export type Translate = (key: MessageKey) => string;

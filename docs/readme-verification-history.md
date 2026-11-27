@@ -2,6 +2,15 @@
 
 This page preserves the bounded rehearsal and installation context referenced by the README. It is evidence for the dated runs described below, not a statement that every current installation or scientific workflow has been accepted.
 
+## Live three-integration sync, unified vault & Agent Console verification (2026-11-27)
+
+Verified on Windows 11 (Python 3.14, installed source wheel on port `8776`, viewport `1440×900`, `0` console errors, `0` page errors) against an isolated live project (`live-sync-demo`) connected to the user's real Obsidian Vault (`C:\Users\wenyu\knowledge-base`, strictly read-only) and real Zotero Web library (`user:14772686`):
+
+- **Unified Obsidian Vault browsing without `--library-snapshot`:** Starting `research-hub open --obsidian-vault <vault>` served `GET /api/v1/library/snapshot` directly from YAML frontmatter (`read_only: true`, `body_read: false`), loading **56** notes across **4** active clusters alongside `ObsidianValidation` (`valid`, `4` collections). Vault files remained unmodified.
+- **Interactive AI Agent Console (`✦ AI 助理`, `Ctrl+J`):** Proposed `archive_source` for `"幫我刪除 Calibration Limits 這篇文獻"` read-only, executed upon `✓ 確認執行` (`3 -> 2` active sources), and restored via `"復原 Calibration Limits 這篇文獻"` (`2 -> 3`).
+- **Real Zotero Collection Sync (`user:14772686`):** `預覽同步 (Dry-run)` (`3` new, `0` duplicates) -> `確認寫入 Zotero` created remote collection `[Research Hub] Research Hub Live Sync Demo` (`SGNJXZ4E`, `https://www.zotero.org/users/14772686/collections/SGNJXZ4E/items`) and 3 confirmed Zotero items (`UD7DE7T8`, `WKGWM83E`, `WTR3PNSM`), independently confirmed via `pyzotero`.
+- **NotebookLM SDK 0.8.6 & Upload Hook (`POST .../notebooklm/upload`):** Built 3-source Markdown pack (`.research/exports/notebooklm-live-sync-demo`), upgraded `notebooklm-py` to `0.8.6`, and verified clean `400 nlm_auth_expired` diagnostics when stored Google cookies in `state.json` had expired (cloud upload itself remains pending user interactive Google re-login).
+
 ## Cold-start fresh-venv install & three-integration E2E (2026-11-26)
 
 Source branch `docs/workstation-onboarding-and-cold-e2e` (on top of `dda5a4e`, adding base `cryptography>=42` so clean `pip install -e .` installs support encrypted local API-key saving out of the box, plus aligning `README.md`, `README.zh-TW.md`, `docs/setup.md`, and `docs/workspace-guide*.md` with the v2 workstation):
