@@ -351,6 +351,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                     ("notebooklm", "upload"): sync_hooks.upload_notebooklm,
                     ("zotero", "sync"): sync_hooks.sync_zotero,
                     ("obsidian", "pack"): sync_hooks.pack_obsidian,
+                    ("obsidian", "import"): sync_hooks.import_obsidian_notes,
                 }.get(hook_route)
                 if hook_fn is not None:
                     try:

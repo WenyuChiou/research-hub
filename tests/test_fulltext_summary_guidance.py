@@ -106,7 +106,30 @@ def test_installation_copies_the_full_native_contract(tmp_path, monkeypatch):
 
 def test_plugin_cache_version_changes_but_frozen_abstract_profile_does_not():
     plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-    assert plugin["version"] == "0.5.36"
+    assert plugin["version"] == "0.5.37"
     frozen = MIRROR / "_profiles/abstract-draft-instructions-v1/paper-summarize/SKILL.md"
     assert "abstract" in frozen.read_text(encoding="utf-8").lower()
     assert "## Native per-paper body summary" not in frozen.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("tree", [SOURCE, MIRROR], ids=["source", "packaged"])
+def test_study_type_summary_track_guidance_present(tree):
+    skill = (tree / "paper-summarize/SKILL.md").read_text(encoding="utf-8")
+    guide = (tree / REL).read_text(encoding="utf-8")
+    _require(skill, (
+        "### Study-Type Summary Track",
+        "Empirical Track (7-section contract)",
+        "Theoretical / Conceptual / Formal / Historical Track",
+        "native-source-summary-v1",
+    ))
+    _require(guide, (
+        "## Study-Type Summary Track",
+        "Empirical Track (7-section contract)",
+        "Theoretical / Conceptual / Formal / Historical Track",
+        "Core Thesis & Propositions",
+        "Definitions, Concepts & Premises",
+        "Derivation, Argumentation & Mechanism",
+        "Scope Conditions, Assumptions & Conclusions",
+        "Counterexamples, Tensions & Legacy",
+        "native-source-summary-v1",
+    ))

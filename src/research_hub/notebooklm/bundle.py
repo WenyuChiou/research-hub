@@ -119,10 +119,72 @@ def _extract_abstract(md_path: Path, meta: dict[str, str]) -> str:
     return (prefix + "Abstract\n" + abstract)[:8000]
 
 
+def _matches_token_boundary(text: str, token: str) -> bool:
+    if not token:
+        return False
+    pattern = re.compile(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", re.IGNORECASE)
+    return pattern.search(text) is not None
+
+
+def _match_pdf_for_note(
+    pdfs_dir: Path,
+    note_path: Path | None,
+    doi: str,
+    *,
+    pdf_index: list[Path] | None = None,
+) -> Path | None:
+    """Match a PDF for a note using strict DOI/stem token boundaries."""
+    normalized = _normalize_doi(doi) if doi else ""
+    if not pdfs_dir.exists() or (not normalized and note_path is None):
+        return None
+
+    if normalized:
+        exact = pdfs_dir / (re.sub(r"[^a-z0-9._-]", "_", normalized) + ".pdf")
+        if exact.exists():
+            return exact
+
+    candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
+
+    if normalized:
+        doi_underscore = re.sub(r"[^a-z0-9._-]", "_", normalized)
+        doi_hyphen = re.sub(r"[^a-z0-9._-]", "-", normalized)
+        doi_slash_hyphen = normalized.replace("/", "-")
+        variants = list(dict.fromkeys(v for v in (doi_underscore, doi_hyphen, doi_slash_hyphen) if v))
+        variant_lowers = {v.lower() for v in variants}
+        for candidate in candidates:
+            if candidate.stem.lower() in variant_lowers:
+                return candidate
+        for candidate in candidates:
+            if any(_matches_token_boundary(candidate.stem, variant) for variant in variants):
+                return candidate
+
+    if note_path is not None and note_path.stem:
+        stem_lower = note_path.stem.lower()
+        for candidate in candidates:
+            if candidate.stem.lower() == stem_lower:
+                return candidate
+
+    if normalized and "/" in normalized:
+        tail = normalized.rsplit("/", 1)[-1]
+        if len(tail) >= 4:
+            tail_matches = [
+                candidate
+                for candidate in candidates
+                if _matches_token_boundary(candidate.stem, tail)
+            ]
+            if len(tail_matches) == 1:
+                return tail_matches[0]
+            if len(tail_matches) >= 2:
+                return None
+
+    return None
+
+
 def _find_pdf_for_doi(
     pdfs_dir: Path,
     doi: str,
     *,
+    note_path: Path | None = None,
     pdf_index: list[Path] | None = None,
 ) -> Path | None:
     """Look for a PDF file matching the DOI.
@@ -134,27 +196,7 @@ def _find_pdf_for_doi(
     cluster-wide cost from O(P²) to O(P) — a 50× speedup at 49 papers
     and a 500× speedup at 500.
     """
-    normalized = _normalize_doi(doi)
-    if not pdfs_dir.exists() or not normalized:
-        return None
-
-    exact = pdfs_dir / (re.sub(r'[^a-z0-9._-]', '_', normalized) + '.pdf')
-    if exact.exists():
-        return exact
-
-    candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
-
-    tail = normalized.rsplit("/", 1)[-1]
-    if tail:
-        for candidate in candidates:
-            if tail.lower() in candidate.name.lower():
-                return candidate
-
-    doi_without_prefix = re.sub(r"[^a-z0-9._-]", "_", normalized)
-    for candidate in candidates:
-        if doi_without_prefix.lower() in candidate.name.lower():
-            return candidate
-    return None
+    return _match_pdf_for_note(pdfs_dir, note_path, doi, pdf_index=pdf_index)
 
 
 def _extract_first_author_surname(authors_str: str) -> str:
@@ -247,6 +289,7 @@ def bundle_cluster(
     # (was O(P²) — 49 papers × 49 file-system walks). At 49 papers this
     # already saves ~50× time; at 500 papers ~500×.
     pdf_index = sorted(pdfs_dir.rglob("*.pdf")) if pdfs_dir.exists() else []
+    copied_pdfs: dict[str, Path] = {}
     for note_path in notes:
         meta = _parse_note_metadata(note_path)
         entry = BundleEntry(
@@ -256,7 +299,7 @@ def bundle_cluster(
             action="skip",
         )
 
-        pdf = _find_pdf_for_doi(pdfs_dir, entry.doi, pdf_index=pdf_index)
+        pdf = _find_pdf_for_doi(pdfs_dir, entry.doi, note_path=note_path, pdf_index=pdf_index)
         if pdf is None:
             pdf = _find_pdf_by_author_year(
                 pdfs_dir, meta.get("authors", ""), meta.get("year", ""),
@@ -265,7 +308,7 @@ def bundle_cluster(
             if pdf is not None:
                 entry.pdf_source = "local-slug"
         elif pdf is not None:
-            entry.pdf_source = "local-doi"
+            entry.pdf_source = "local-doi" if entry.doi else "local-slug"
 
         fetch_result = None
         if pdf is None and download_pdfs:
@@ -310,7 +353,9 @@ def bundle_cluster(
             # page but no local PDF was found in the initial scan.  If a PDF
             # is already present (pdf is not None) it is handled below.
             if quality_result.quality == "likely_error_page" and pdf is None:
-                pdf_retry = _find_pdf_for_doi(pdfs_dir, entry.doi, pdf_index=pdf_index)
+                pdf_retry = _find_pdf_for_doi(
+                    pdfs_dir, entry.doi, note_path=note_path, pdf_index=pdf_index
+                )
                 if pdf_retry is None and meta.get("authors"):
                     pdf_retry = _find_pdf_by_author_year(
                         pdfs_dir,
@@ -320,10 +365,24 @@ def bundle_cluster(
                     )
                 if pdf_retry is not None:
                     pdf = pdf_retry
-                    entry.pdf_source = entry.pdf_source or "local-doi"
+                    entry.pdf_source = entry.pdf_source or ("local-doi" if entry.doi else "local-slug")
 
         if pdf is not None:
-            destination = bundle_pdfs / pdf.name
+            src_resolved = pdf.resolve()
+            dest_name = pdf.name
+            if dest_name in copied_pdfs and copied_pdfs[dest_name] != src_resolved:
+                candidate_name = f"{note_path.stem}_{pdf.name}"
+                if candidate_name in copied_pdfs and copied_pdfs[candidate_name] != src_resolved:
+                    counter = 2
+                    while True:
+                        numbered_name = f"{note_path.stem}_{pdf.stem}-{counter}{pdf.suffix}"
+                        if numbered_name not in copied_pdfs or copied_pdfs[numbered_name] == src_resolved:
+                            candidate_name = numbered_name
+                            break
+                        counter += 1
+                dest_name = candidate_name
+            copied_pdfs[dest_name] = src_resolved
+            destination = bundle_pdfs / dest_name
             shutil.copy2(pdf, destination)
             entry.action = "pdf"
             entry.pdf_path = str(destination)

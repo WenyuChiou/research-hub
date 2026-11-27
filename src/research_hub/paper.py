@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from research_hub.fsops import robust_move
+from research_hub.security import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -613,10 +617,7 @@ def _hub_cluster_dir(cfg, cluster_slug: str) -> Path:
     return Path(hub_root) / cluster_slug
 
 
-def _parse_frontmatter(text: str) -> dict[str, object]:
-    frontmatter = _extract_frontmatter(text)
-    if frontmatter is None:
-        return {}
+def _parse_frontmatter_legacy(frontmatter: str) -> dict[str, object]:
     meta: dict[str, object] = {}
     lines = frontmatter.splitlines()
     i = 0
@@ -645,6 +646,38 @@ def _parse_frontmatter(text: str) -> dict[str, object]:
     return meta
 
 
+class _NoTimestampSafeLoader(yaml.SafeLoader):
+    """YAML SafeLoader that keeps unquoted ISO-8601 timestamps/dates as str."""
+
+
+_NoTimestampSafeLoader.yaml_implicit_resolvers = {
+    first_char: [
+        (tag, regexp)
+        for tag, regexp in resolvers
+        if tag != "tag:yaml.org,2002:timestamp"
+    ]
+    for first_char, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
+
+def _parse_frontmatter(text: str) -> dict[str, object]:
+    frontmatter = _extract_frontmatter(text)
+    if frontmatter is None or not frontmatter.strip():
+        return {}
+    try:
+        loaded = yaml.load(frontmatter, Loader=_NoTimestampSafeLoader)
+    except yaml.YAMLError:
+        return _parse_frontmatter_legacy(frontmatter)
+    if loaded is None:
+        return {}
+    if isinstance(loaded, dict):
+        return loaded
+    return _parse_frontmatter_legacy(frontmatter)
+
+
+_read_paper_frontmatter = _parse_frontmatter
+
+
 def _parse_paper_label(note_path: Path, *, slug: str) -> PaperLabel:
     text = note_path.read_text(encoding="utf-8")
     meta = _parse_frontmatter(text)
@@ -659,7 +692,7 @@ def _parse_paper_label(note_path: Path, *, slug: str) -> PaperLabel:
 
     fit_score_raw = meta.get("fit_score")
     fit_score: int | None = None
-    if isinstance(fit_score_raw, int):
+    if isinstance(fit_score_raw, int) and not isinstance(fit_score_raw, bool):
         fit_score = fit_score_raw
     elif isinstance(fit_score_raw, str) and fit_score_raw.lstrip("-").isdigit():
         fit_score = int(fit_score_raw)
@@ -678,6 +711,126 @@ def _parse_paper_label(note_path: Path, *, slug: str) -> PaperLabel:
     )
 
 
+def _render_patch_field(key: str, value: object, newline: str) -> str:
+    if isinstance(value, list):
+        can_use_simple_list = all(
+            isinstance(item, (str, int, float, bool))
+            and "\n" not in str(item)
+            and "\r" not in str(item)
+            and not str(item).startswith(("-", "[", "{", "*", "&", "!", "|", ">", "%", "@", "`", "'", '"', "#"))
+            and str(item).strip() != ""
+            for item in value
+        )
+        if not value or can_use_simple_list:
+            return newline.join(_render_field(key, value))
+        dumped = yaml.safe_dump(
+            {key: value},
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ).rstrip("\r\n")
+        return dumped.replace("\n", newline)
+    if isinstance(value, dict):
+        dumped = yaml.safe_dump(
+            {key: value},
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ).rstrip("\r\n")
+        return dumped.replace("\n", newline)
+    if isinstance(value, bool):
+        return f"{key}: {'true' if value else 'false'}"
+    if isinstance(value, (int, float)):
+        return f"{key}: {value}"
+    return f"{key}: {json.dumps(str(value), ensure_ascii=False)}"
+
+
+def _patch_yaml_frontmatter_field(frontmatter_lf: str, key: str, value: object) -> str:
+    if not frontmatter_lf.strip():
+        if value is None:
+            return frontmatter_lf
+        return _render_patch_field(key, value, "\n")
+
+    document = yaml.compose(frontmatter_lf, Loader=yaml.SafeLoader)
+    if not isinstance(document, yaml.MappingNode):
+        raise ValueError("Paper note frontmatter must be a mapping")
+
+    matches = [(k_node, v_node) for k_node, v_node in document.value if k_node.value == key]
+    if len(matches) > 1:
+        raise ValueError(f"Paper note has duplicate '{key}' fields")
+
+    if not matches:
+        if value is None:
+            return frontmatter_lf
+        rendered = _render_patch_field(key, value, "\n")
+        return frontmatter_lf.rstrip("\n") + "\n" + rendered
+
+    k_node, v_node = matches[0]
+    start, end = k_node.start_mark.index, v_node.end_mark.index
+    if v_node.start_mark.index < k_node.end_mark.index:
+        raise ValueError(f"Cannot safely update aliased '{key}' metadata")
+    tokens = list(yaml.scan(frontmatter_lf, Loader=yaml.SafeLoader))
+    if any(
+        isinstance(token, (yaml.tokens.AnchorToken, yaml.tokens.AliasToken))
+        and start <= token.start_mark.index < end
+        for token in tokens
+    ):
+        raise ValueError(f"Cannot safely update anchored or aliased '{key}' metadata")
+
+    content_ends = [
+        token.end_mark.index
+        for token in tokens
+        if isinstance(
+            token,
+            (
+                yaml.tokens.ScalarToken,
+                yaml.tokens.FlowSequenceEndToken,
+                yaml.tokens.FlowMappingEndToken,
+                yaml.tokens.ValueToken,
+                yaml.tokens.BlockEntryToken,
+            ),
+        )
+        and v_node.start_mark.index <= token.start_mark.index < end
+    ]
+    if content_ends:
+        end = max(content_ends)
+
+    if value is None:
+        if frontmatter_lf[start:end].endswith("\n"):
+            return frontmatter_lf[:start] + frontmatter_lf[end:]
+        tail_match = re.match(r"[ \t]*(?:#[^\n]*)?(\n?)", frontmatter_lf[end:])
+        after = end + (tail_match.end() if tail_match else 0)
+        if tail_match and tail_match.group(1) == "\n":
+            return frontmatter_lf[:start] + frontmatter_lf[after:]
+        if start > 0 and frontmatter_lf[start - 1] == "\n":
+            return frontmatter_lf[: start - 1] + frontmatter_lf[after:]
+        return frontmatter_lf[:start] + frontmatter_lf[after:]
+
+    rendered = _render_patch_field(key, value, "\n")
+    if frontmatter_lf[start:end].endswith("\n"):
+        rendered += "\n"
+    return frontmatter_lf[:start] + rendered + frontmatter_lf[end:]
+
+
+def _atomic_write_preserving_newlines(path: Path, content: str) -> None:
+    if os.name != "nt" and "\r" not in content:
+        atomic_write_text(path, content, encoding="utf-8")
+        return
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
+    try:
+        with tmp.open("w", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+        os.replace(str(tmp), str(path))
+    except Exception:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
     text = _read_text_preserve_newlines(note_path)
     split = _split_frontmatter(text)
@@ -685,15 +838,44 @@ def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
         logger.warning("paper labels: malformed or missing frontmatter in %s", note_path)
         return
     opening, frontmatter, body, newline = split
-    parsed = _parse_frontmatter(opening + frontmatter + newline + "---" + newline)
-    ordered_keys = _frontmatter_key_order(frontmatter)
+    if not updates:
+        return
+
+    frontmatter_lf = frontmatter.replace("\r\n", "\n") if newline == "\r\n" else frontmatter
+    try:
+        if frontmatter_lf.strip():
+            initial = yaml.compose(frontmatter_lf, Loader=yaml.SafeLoader)
+            if not isinstance(initial, yaml.MappingNode):
+                raise yaml.YAMLError("frontmatter is not a mapping")
+    except yaml.YAMLError:
+        parsed = _parse_frontmatter_legacy(frontmatter)
+        ordered_keys = _frontmatter_key_order(frontmatter)
+        for key, value in updates.items():
+            if value is None:
+                parsed.pop(key, None)
+            else:
+                parsed[key] = value
+                if key not in ordered_keys:
+                    ordered_keys.append(key)
+        rendered = _render_frontmatter(parsed, ordered_keys, newline)
+        _atomic_write_preserving_newlines(
+            note_path, f"{opening}{rendered}{newline}---{newline}{body}"
+        )
+        return
+
+    patched_lf = frontmatter_lf
     for key, value in updates.items():
-        parsed[key] = value
-        if key not in ordered_keys:
-            ordered_keys.append(key)
-    rendered = _render_frontmatter(parsed, ordered_keys, newline)
-    with note_path.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(f"{opening}{rendered}{newline}---{newline}{body}")
+        patched_lf = _patch_yaml_frontmatter_field(patched_lf, key, value)
+
+    if patched_lf.strip():
+        verified = yaml.safe_load(patched_lf)
+        if not isinstance(verified, dict):
+            raise ValueError("Patched frontmatter must remain a YAML mapping")
+
+    patched = patched_lf.replace("\n", newline) if newline != "\n" else patched_lf
+    _atomic_write_preserving_newlines(
+        note_path, f"{opening}{patched}{newline}---{newline}{body}"
+    )
 
 
 def _split_frontmatter(text: str) -> tuple[str, str, str, str] | None:

@@ -206,10 +206,13 @@ class CrossrefVerifyCache:
             verified = value.get("verified")
             if not isinstance(verified, bool):
                 continue
-            results[str(key)] = {
+            entry: dict[str, Any] = {
                 "verified": verified,
                 "checked_at": str(value.get("checked_at", "") or ""),
             }
+            if isinstance(value.get("record"), dict):
+                entry["record"] = dict(value["record"])
+            results[str(key)] = entry
         return cls(results)
 
     def save(self, path: Path) -> None:
@@ -228,14 +231,35 @@ class CrossrefVerifyCache:
                 encoding="utf-8",
             )
 
-    def get(self, key: str) -> dict[str, Any] | None:
-        return self.results.get(key)
+    def get_entry(self, doi: str) -> dict[str, Any] | None:
+        raw = str(doi or "").strip()
+        if raw in self.results:
+            return self.results[raw]
+        if raw.lower().startswith("doi:"):
+            norm = normalize_doi(raw[4:])
+            candidates = (f"doi:{norm}", norm) if norm else ()
+        else:
+            norm = normalize_doi(raw)
+            candidates = (norm, f"doi:{norm}") if norm else ()
+        for candidate_key in candidates:
+            if candidate_key in self.results:
+                return self.results[candidate_key]
+        return None
 
-    def put(self, key: str, verified: bool) -> None:
-        self.results[key] = {
+    def get(self, key: str) -> dict[str, Any] | None:
+        return self.get_entry(key)
+
+    def put(self, key: str, verified: bool, record: dict[str, Any] | None = None) -> None:
+        entry: dict[str, Any] = {
             "verified": bool(verified),
             "checked_at": _utc_now_iso(),
         }
+        if record is not None:
+            entry["record"] = dict(record)
+        self.results[key] = entry
+
+    def set(self, doi: str, verified: bool, record: dict[str, Any] | None = None) -> None:
+        self.put(doi, verified, record=record)
 
 
 def verify_authenticity(
@@ -390,6 +414,18 @@ def verify_authenticity(
 
             # L2b: uncorroborated single-source gate — enforces already-computed signal
             corro = _corroboration_label(paper)
+            if corro == "conflict":
+                quarantined.append(
+                    quarantine_paper(
+                        cfg,
+                        paper,
+                        cluster_slug=cluster_slug,
+                        layer="L2",
+                        reason="corroboration_conflict",
+                        details={"corroboration": corro},
+                    )
+                )
+                continue
             if corro == "single-source":
                 # Exempt legitimate single-source cases that are inherently
                 # single-source by nature (fresh preprints, PMID-indexed papers):
@@ -873,6 +909,15 @@ def _metadata_integrity_reason(paper: dict) -> str:
     return ""
 
 
+def _paper_metadata_record(paper: dict, *, source: str = "candidate") -> dict[str, Any]:
+    return {
+        "source": source,
+        "title": str(paper.get("title", "") or ""),
+        "year": paper.get("year"),
+        "authors": _authors_as_list(paper.get("authors")),
+    }
+
+
 def _crossref_verify_corroboration(
     paper: dict,
     cache: "CrossrefVerifyCache",
@@ -902,18 +947,23 @@ def _crossref_verify_corroboration(
         (name for name in backend_names if name.casefold() != "crossref"),
         "candidate",
     )
-    paper_record = {
-        "source": existing_backend,
-        "title": str(paper.get("title", "") or ""),
-        "year": paper.get("year"),
-        "authors": _authors_as_list(paper.get("authors")),
-    }
+    paper_record = _paper_metadata_record(paper, source=existing_backend)
 
-    cached = cache.get(key)
+    cached = cache.get_entry(key)
     if cached is not None:
         if not bool(cached.get("verified")):
             return False
-        _append_crossref_corroboration(paper, _crossref_record_from_paper(paper))
+        cached_record = cached.get("record")
+        if isinstance(cached_record, dict):
+            crossref_record = {"source": "crossref", **cached_record}
+            if not _records_agree([paper_record, crossref_record]):
+                return False
+            _append_crossref_corroboration(paper, crossref_record)
+            return True
+        # Legacy v1.0 cache entry with verified=True and record=None:
+        # preserve pre-seeded cache tests that expect no HTTP call without
+        # forging metadata from the candidate paper itself.
+        _append_crossref_corroboration(paper, {"source": "crossref"})
         return True
 
     try:
@@ -938,19 +988,19 @@ def _crossref_verify_corroboration(
         cache.save(cache_path)
         return False
 
-    crossref_record = {
-        "source": "crossref",
+    cr_meta = {
         "title": str(result.title or ""),
         "year": result.year,
         "authors": _authors_as_list(result.authors),
     }
+    crossref_record = {"source": "crossref", **cr_meta}
     if not _records_agree([paper_record, crossref_record]):
-        cache.put(key, verified=False)
+        cache.put(key, verified=False, record=cr_meta)
         cache.save(cache_path)
         return False
 
     _append_crossref_corroboration(paper, crossref_record)
-    cache.put(key, verified=True)
+    cache.put(key, verified=True, record=cr_meta)
     cache.save(cache_path)
     return True
 
@@ -978,15 +1028,6 @@ def _crossref_get_paper_with_status(doi: str) -> tuple[Any, int | None, bool]:
         backend._request = tracked_request  # type: ignore[method-assign]
 
     return backend.get_paper(doi), status_code, response_missing
-
-
-def _crossref_record_from_paper(paper: dict) -> dict[str, Any]:
-    return {
-        "source": "crossref",
-        "title": str(paper.get("title", "") or ""),
-        "year": paper.get("year"),
-        "authors": _authors_as_list(paper.get("authors")),
-    }
 
 
 def _append_crossref_corroboration(paper: dict, crossref_record: dict[str, Any]) -> None:
@@ -1017,11 +1058,15 @@ def _authors_as_list(value: Any) -> list[Any]:
 
 
 def _corroboration_label(paper: dict) -> str:
-    records = _backend_records(paper)
-    if len(records) >= 2 and _records_agree(records):
-        return "corroborated"
+    records = [
+        record
+        for record in _backend_records(paper)
+        if str(record.get("source") or record.get("backend") or "").strip()
+    ]
+    if len(records) >= 2:
+        return "corroborated" if _records_agree(records) else "conflict"
     backends = _backend_names(paper)
-    if len(backends) >= 2 or "crossref" in backends:
+    if len(backends) >= 2 or any(name.casefold() == "crossref" for name in backends):
         return "corroborated"
     return "single-source"
 

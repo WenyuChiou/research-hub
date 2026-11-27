@@ -754,6 +754,152 @@ def _validate_paper_paths(cfg, paper: dict, cluster_slug: str | None, index: int
     return []
 
 
+_IN_BATCH_MARKER_RE = re.compile(
+    r"\b("
+    r"vol(?:ume)?\.?\s*(?:[ivxlcdm]+|\d+)"
+    r"|part\s*(?:[ivxlcdm]+|\d+|[a-z])"
+    r"|pt\.?\s*(?:[ivxlcdm]+|\d+|[a-z])"
+    r"|book\s*(?:[ivxlcdm]+|\d+)"
+    r"|erratum|corrigendum|retraction|retracted|comment|reply|rejoinder|addendum|correction"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_year_int(value: object) -> int | None:
+    try:
+        year = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return year if year > 0 else None
+
+
+def _author_surname_set(paper: dict) -> set[str]:
+    import unicodedata
+
+    surnames: set[str] = set()
+    authors = paper.get("authors") or []
+    if not isinstance(authors, list):
+        authors = [authors]
+    for author in authors:
+        raw = ""
+        if isinstance(author, dict):
+            raw = str(author.get("lastName") or "")
+            if not raw and author.get("name"):
+                name = str(author.get("name") or "").strip()
+                raw = name.split(",", 1)[0] if "," in name else (name.split()[-1] if name.split() else "")
+        elif isinstance(author, str):
+            text = author.strip()
+            raw = text.split(",", 1)[0] if "," in text else (text.split()[-1] if text.split() else "")
+        cleaned = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
+        token = re.sub(r"[^a-z0-9]+", "", cleaned.lower())
+        if token:
+            surnames.add(token)
+    return surnames
+
+
+def _title_markers(title: object) -> set[str]:
+    text = str(title or "")
+    markers: set[str] = set()
+    for match in _IN_BATCH_MARKER_RE.finditer(text):
+        token = re.sub(r"\s+", " ", match.group(1).lower().replace(".", "")).strip()
+        markers.add(token)
+    return markers
+
+
+def _normalized_real_doi(doi: object) -> str:
+    ndoi = normalize_doi(str(doi or ""))
+    return ndoi if (ndoi.startswith("10.") and "/" in ndoi) else ""
+
+
+def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
+    """Return True iff two in-batch title-matched papers represent the same work."""
+    existing_doi = _normalized_real_doi(existing.get("doi", ""))
+    incoming_doi = _normalized_real_doi(incoming.get("doi", ""))
+    if existing_doi and incoming_doi and existing_doi != incoming_doi:
+        y1 = _parse_year_int(existing.get("year"))
+        y2 = _parse_year_int(incoming.get("year"))
+        if y1 is not None and y2 is not None and abs(y1 - y2) > 2:
+            return False
+        a1 = _author_surname_set(existing)
+        a2 = _author_surname_set(incoming)
+        if a1 and a2 and not (a1 & a2):
+            return False
+        if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
+            return False
+        return True
+    if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
+        return False
+    return True
+
+
+def _read_note_identity(note_path: Path) -> tuple[str, str, str]:
+    """Read (normalized_doi, zotero_key, normalized_title) from an existing note."""
+    import yaml
+
+    try:
+        text = note_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return "", "", ""
+    if not text.startswith("---"):
+        return "", "", ""
+    end = text.find("\n---", 3)
+    if end < 0:
+        return "", "", ""
+    frontmatter = text[3:end]
+    try:
+        fm = yaml.safe_load(frontmatter)
+    except Exception:
+        fm = None
+    if not isinstance(fm, dict):
+        return "", "", ""
+    doi = normalize_doi(str(fm.get("doi") or ""))
+    zkey = str(fm.get("zotero-key") or fm.get("zotero_key") or "").strip()
+    title_norm = normalize_title(str(fm.get("title") or ""))
+    return doi, zkey, title_norm
+
+
+def _is_same_work_note(note_path: Path, pp: dict) -> bool:
+    """Return True if *note_path* on disk represents the same work as *pp*."""
+    existing_doi, existing_zkey, existing_title_norm = _read_note_identity(note_path)
+    incoming_doi = normalize_doi(str(pp.get("doi") or ""))
+    incoming_zkey = str(pp.get("zotero_key") or "").strip()
+    incoming_title_norm = normalize_title(str(pp.get("title") or ""))
+
+    if incoming_doi and existing_doi and incoming_doi == existing_doi:
+        return True
+    if incoming_zkey and existing_zkey and incoming_zkey == existing_zkey:
+        return True
+    conflicting_doi = bool(incoming_doi and existing_doi and incoming_doi != existing_doi)
+    if (
+        not conflicting_doi
+        and incoming_title_norm
+        and existing_title_norm
+        and incoming_title_norm == existing_title_norm
+    ):
+        return True
+    return False
+
+
+def _resolve_vault_note_path(folder: Path, pp: dict) -> Path:
+    """Resolve destination path for *pp*, allocating deterministic suffix on slug collisions."""
+    from research_hub.security import safe_join
+
+    base_slug = str(pp["slug"])
+    file_path = safe_join(folder, f"{base_slug}.md")
+    if not file_path.exists() or _is_same_work_note(file_path, pp):
+        return file_path
+
+    suffix = 2
+    while True:
+        candidate_slug = f"{base_slug}-{suffix}"
+        candidate_path = safe_join(folder, f"{candidate_slug}.md")
+        if not candidate_path.exists() or _is_same_work_note(candidate_path, pp):
+            pp["slug"] = candidate_slug
+            return candidate_path
+        suffix += 1
+
+
 def _load_or_build_dedup(cfg, zot=None, *, dry_run: bool) -> DedupIndex:
     dedup_path = cfg.research_hub_dir / "dedup_index.json"
     dedup = DedupIndex.load(dedup_path)
@@ -1179,25 +1325,25 @@ def run_pipeline(
         # Collapse them here, keeping the first occurrence.
         deduped_papers: list[dict] = []
         seen_dois: dict[str, dict] = {}
-        seen_titles: dict[str, dict] = {}
+        seen_titles: dict[str, list[dict]] = {}
         for pp in papers:
-            ndoi = normalize_doi(pp.get("doi", ""))
-            # A real DOI is "10.<registrant>/<suffix>". Sentinel placeholders
-            # some backends emit for an unknown DOI ("N/A", "none", "-") also
-            # normalize to a truthy string; keying on those would false-
-            # collapse genuinely distinct papers. Require the 10./ shape.
-            doi_key = ndoi if (ndoi.startswith("10.") and "/" in ndoi) else ""
+            doi_key = _normalized_real_doi(pp.get("doi", ""))
             ntitle = normalize_title(pp.get("title"))
             # Mirror DedupIndex.add(): only title-match on titles long enough
             # to be distinctive (>15 normalized chars) to avoid false merges.
             title_key = ntitle if len(ntitle) > 15 else ""
-            existing = seen_dois.get(doi_key) or seen_titles.get(title_key)
+            existing = seen_dois.get(doi_key) if doi_key else None
+            if existing is None and title_key:
+                for candidate in seen_titles.get(title_key, ()):
+                    if _in_batch_title_match_ok(candidate, pp):
+                        existing = candidate
+                        break
             if existing is not None:
                 merge_paper_evidence(existing, pp)
                 if doi_key:
                     seen_dois[doi_key] = existing
-                if title_key:
-                    seen_titles[title_key] = existing
+                if title_key and existing not in seen_titles.setdefault(title_key, []):
+                    seen_titles[title_key].append(existing)
                 p(
                     f"  [in-batch dup] {pp.get('title', '')[:55]}... "
                     "collapsed (matches an earlier candidate)"
@@ -1217,7 +1363,7 @@ def run_pipeline(
             if doi_key:
                 seen_dois[doi_key] = pp
             if title_key:
-                seen_titles[title_key] = pp
+                seen_titles.setdefault(title_key, []).append(pp)
         in_batch_collapsed = len(papers) - len(deduped_papers)
         if in_batch_collapsed:
             p(
@@ -1502,9 +1648,7 @@ def run_pipeline(
         for pp in papers_for_notes:
             folder = _folder_for_paper(cfg, pp, cluster_slug)
             folder.mkdir(parents=True, exist_ok=True)
-            from research_hub.security import safe_join
-
-            file_path = safe_join(folder, f"{pp['slug']}.md")
+            file_path = _resolve_vault_note_path(folder, pp)
             zotero_key = pp.get("zotero_key", "")
             try:
                 file_path.write_text(

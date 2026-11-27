@@ -253,6 +253,53 @@ def test_empty_claim_text_fails(validator):
     assert _has_errors(validator, data)
 
 
+@pytest.mark.parametrize("blank", ["   ", "\t\n ", "\r\n"])
+def test_whitespace_only_claim_text_fails(validator, blank):
+    data = {
+        "claims": [
+            {
+                "id": "C1",
+                "text": blank,
+                "evidence_artifacts": ["outputs/e2/data.csv"],
+                "status": "draft",
+            }
+        ]
+    }
+    assert _has_errors(validator, data)
+
+
+@pytest.mark.parametrize("status", ["draft", "supported"])
+@pytest.mark.parametrize("blank", ["   ", "\t\n "])
+def test_whitespace_only_evidence_artifact_fails(validator, status, blank):
+    data = {
+        "claims": [
+            {
+                "id": "C1",
+                "text": "Claim backed only by blank pointer.",
+                "evidence_artifacts": [blank],
+                "status": status,
+            }
+        ]
+    }
+    assert _has_errors(validator, data)
+
+
+@pytest.mark.parametrize("blank", ["   ", "\t\n "])
+def test_whitespace_only_gap_reason_fails(validator, blank):
+    data = {
+        "claims": [
+            {
+                "id": "C1",
+                "text": "Unsupported claim with blank reason.",
+                "evidence_artifacts": [],
+                "status": "gap",
+                "gap_reason": blank,
+            }
+        ]
+    }
+    assert _has_errors(validator, data)
+
+
 def test_top_level_missing_claims_field_fails(validator):
     data = {"figures": []}
     assert _has_errors(validator, data)

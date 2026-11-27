@@ -21,6 +21,7 @@ import tempfile
 import threading
 from typing import Any
 from urllib.parse import quote, urlsplit
+import uuid
 
 from research_hub.locks import file_lock
 from .core import Workspace, WorkspaceError, atomic_json, digest, safe_path
@@ -197,12 +198,43 @@ def _collect_tags(data: dict[str, Any]) -> list[str]:
     return out
 
 
+_SCOPE_RANK: dict[str, int] = {
+    "not-read": 0,
+    "note-metadata": 1,
+    "metadata": 1,
+    "abstract-snippet": 2,
+    "abstract-only": 3,
+    "abstract": 3,
+    "selected-sections": 4,
+    "excerpt": 4,
+    "full-text": 5,
+}
+
+
 def _reading_scope(data: dict[str, Any]) -> str:
-    return (
-        _clean_line(data.get("reading_level"))
-        or _clean_line(data.get("reading_scope"))
-        or "unknown"
-    )
+    scope = _clean_line(data.get("reading_scope"))
+    level = _clean_line(data.get("reading_level"))
+    scope_known = bool(scope and scope.casefold() != "unknown")
+    level_known = bool(level and level.casefold() != "unknown")
+    if scope_known and level_known:
+        if scope == level:
+            return scope
+        scope_rank = _SCOPE_RANK.get(scope.casefold())
+        level_rank = _SCOPE_RANK.get(level.casefold())
+        if scope_rank is not None and level_rank is not None:
+            if level_rank < scope_rank:
+                return level
+            return scope
+        if scope_rank == _SCOPE_RANK["full-text"]:
+            return level
+        if level_rank == _SCOPE_RANK["full-text"]:
+            return scope
+        return scope
+    if scope_known:
+        return scope
+    if level_known:
+        return level
+    return "unknown"
 
 
 def _saved_summary(data: dict[str, Any]) -> str:
@@ -677,23 +709,11 @@ class WorkspaceSyncHooks:
             raise WorkspaceError("Invalid project identifier", "invalid_request")
         return self.workspace.project(project_id)
 
-    def _resolve_project_sources(
+    def _load_curated_sources(
         self,
         project_id: str,
-        selected_source_ids: object,
-    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, str]]:
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, str]]:
         project = self._validate_project_id(project_id)
-        if selected_source_ids is not None:
-            if not isinstance(selected_source_ids, list):
-                raise WorkspaceError("selected_source_ids must be a list of strings", "invalid_request")
-            if not selected_source_ids:
-                raise WorkspaceError("selected_source_ids cannot be empty when provided", "invalid_request")
-            if len(selected_source_ids) > _MAX_SELECTED_IDS:
-                raise WorkspaceError(f"selected_source_ids exceeds maximum of {_MAX_SELECTED_IDS}", "invalid_request")
-            for sid in selected_source_ids:
-                if not isinstance(sid, str) or not sid.strip():
-                    raise WorkspaceError("selected_source_ids must contain non-empty strings", "invalid_request")
-
         from .native_summary import snapshot_records
 
         raw_records = snapshot_records(self.workspace.records(project_id))
@@ -748,6 +768,26 @@ class WorkspaceSyncHooks:
             curated_sources.append(curated)
             curated_by_id[sid] = curated
 
+        return project, curated_sources, curated_by_id, screenings
+
+    def _resolve_project_sources(
+        self,
+        project_id: str,
+        selected_source_ids: object,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, str]]:
+        if selected_source_ids is not None:
+            if not isinstance(selected_source_ids, list):
+                raise WorkspaceError("selected_source_ids must be a list of strings", "invalid_request")
+            if not selected_source_ids:
+                raise WorkspaceError("selected_source_ids cannot be empty when provided", "invalid_request")
+            if len(selected_source_ids) > _MAX_SELECTED_IDS:
+                raise WorkspaceError(f"selected_source_ids exceeds maximum of {_MAX_SELECTED_IDS}", "invalid_request")
+            for sid in selected_source_ids:
+                if not isinstance(sid, str) or not sid.strip():
+                    raise WorkspaceError("selected_source_ids must contain non-empty strings", "invalid_request")
+
+        project, curated_sources, curated_by_id, screenings = self._load_curated_sources(project_id)
+
         if selected_source_ids is not None:
             deduped: list[dict[str, Any]] = []
             seen_ids: set[str] = set()
@@ -764,7 +804,10 @@ class WorkspaceSyncHooks:
             return project, deduped, screenings
 
         active_sources = [
-            s for s in curated_sources if s["data"].get("archived") is not True
+            s
+            for s in curated_sources
+            if s["data"].get("archived") is not True
+            and screenings.get(s["id"]) != "exclude"
         ]
         return project, active_sources, screenings
 
@@ -1815,4 +1858,247 @@ class WorkspaceSyncHooks:
             "note_files": note_files,
             "note_count": len(sources),
             "obsidian_vault_name": self._resolve_vault_name(integrations),
+        }
+
+    def import_obsidian_notes(
+        self, project_id: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Import read-only Obsidian vault frontmatter notes into Workspace sources."""
+        self._require_enabled()
+        body = dict(payload or {})
+        extra = set(body) - {"collection_id", "note_ids", "dry_run"}
+        if extra:
+            raise WorkspaceError(
+                f"Unsupported fields: {', '.join(sorted(extra))}",
+                "invalid_request",
+            )
+
+        raw_dry_run = body.get("dry_run", False)
+        if type(raw_dry_run) is not bool:
+            raise WorkspaceError("dry_run must be a boolean", "invalid_request")
+        dry_run: bool = raw_dry_run
+
+        raw_collection = body.get("collection_id")
+        collection_id: str | None = None
+        if raw_collection is not None:
+            if not isinstance(raw_collection, str) or not raw_collection.strip():
+                raise WorkspaceError(
+                    "collection_id must be a non-empty string",
+                    "invalid_request",
+                )
+            collection_id = raw_collection.strip()
+
+        raw_note_ids = body.get("note_ids")
+        requested_note_ids: list[str] | None = None
+        if raw_note_ids is not None:
+            if (
+                not isinstance(raw_note_ids, list)
+                or not raw_note_ids
+                or any(not isinstance(nid, str) or not nid.strip() for nid in raw_note_ids)
+            ):
+                raise WorkspaceError(
+                    "note_ids must be a non-empty list of non-empty strings",
+                    "invalid_request",
+                )
+            if len(raw_note_ids) > _MAX_SELECTED_IDS:
+                raise WorkspaceError(
+                    f"note_ids exceeds maximum of {_MAX_SELECTED_IDS}",
+                    "invalid_request",
+                )
+            requested_note_ids = list(dict.fromkeys(nid.strip() for nid in raw_note_ids))
+
+        self._validate_project_id(project_id)
+
+        scope_path = getattr(self.obsidian_validation, "scope", None)
+        if scope_path is None:
+            raise WorkspaceError(
+                "Obsidian vault is not configured for this workspace",
+                "obsidian_not_configured",
+            )
+
+        from research_hub.utils.doi import normalize_doi
+        from .library_snapshot import read_vault_snapshot
+        from .service import call_workspace
+
+        snapshot = read_vault_snapshot(scope_path)
+        if snapshot.get("ok") is False:
+            raise WorkspaceError(
+                _clean_line(snapshot.get("error")) or "Obsidian vault snapshot is unavailable",
+                _clean_line(snapshot.get("code")) or "library_snapshot_unavailable",
+            )
+
+        raw_notes = snapshot.get("notes") or []
+        candidate_notes = [
+            note
+            for note in raw_notes
+            if isinstance(note, dict)
+            and isinstance(note.get("data"), dict)
+            and (collection_id is None or note["data"].get("collection_id") == collection_id)
+        ]
+
+        if requested_note_ids is not None:
+            notes_by_id = {
+                note["id"]: note
+                for note in candidate_notes
+                if isinstance(note.get("id"), str)
+            }
+            selected_notes: list[dict[str, Any]] = []
+            for nid in requested_note_ids:
+                if nid not in notes_by_id:
+                    raise WorkspaceError(
+                        "One or more requested note_ids do not exist in the selected Obsidian scope",
+                        "invalid_source",
+                    )
+                selected_notes.append(notes_by_id[nid])
+        else:
+            selected_notes = candidate_notes
+
+        _, existing_sources, _, _ = self._load_curated_sources(project_id)
+        seen_dois: set[str] = set()
+        seen_zkeys: set[str] = set()
+        seen_paths: set[str] = set()
+        seen_title_years: set[tuple[str, str]] = set()
+
+        for existing in existing_sources:
+            edata = existing.get("data") if isinstance(existing.get("data"), dict) else {}
+            existing_doi = normalize_doi(_clean_bare_doi(edata.get("doi")))
+            if existing_doi:
+                seen_dois.add(existing_doi)
+            existing_zkey = _clean_line(edata.get("zotero_key") or edata.get("zotero-key"))
+            if existing_zkey:
+                seen_zkeys.add(existing_zkey.casefold())
+            existing_path = _clean_line(edata.get("origin_note_path") or edata.get("note_path"))
+            if existing_path:
+                seen_paths.add(existing_path)
+            existing_title = _clean_line(edata.get("title")).casefold()
+            existing_year = _clean_line(edata.get("year"))
+            if existing_title:
+                seen_title_years.add((existing_title, existing_year))
+
+        batch_id = f"obsidian-import:{uuid.uuid4().hex[:12]}"
+        batch_items: list[dict[str, Any]] = []
+        preview_items: list[dict[str, Any]] = []
+        skipped_existing = 0
+
+        for note in selected_notes:
+            ndata = note["data"]
+            note_id = _clean_line(note.get("id"))
+            note_path = _clean_line(ndata.get("note_path"))
+            title = _clean_line(ndata.get("title")) or (Path(note_path).stem if note_path else note_id)
+            doi = _clean_bare_doi(ndata.get("doi"))
+            norm_doi = normalize_doi(doi) if doi else ""
+            zotero_key = _clean_line(ndata.get("zotero_key"))
+            norm_zkey = zotero_key.casefold() if zotero_key else ""
+            year = _clean_line(ndata.get("year"))
+            title_year = (title.casefold(), year) if title else None
+
+            is_duplicate = bool(
+                (norm_doi and norm_doi in seen_dois)
+                or (norm_zkey and norm_zkey in seen_zkeys)
+                or (note_path and note_path in seen_paths)
+                or (title_year is not None and title_year in seen_title_years)
+            )
+            if is_duplicate:
+                skipped_existing += 1
+                preview_items.append({
+                    "note_id": note_id,
+                    "note_path": note_path,
+                    "title": title,
+                    "doi": doi,
+                    "zotero_key": zotero_key,
+                    "action": "skip_existing",
+                })
+                continue
+
+            if norm_doi:
+                seen_dois.add(norm_doi)
+            if norm_zkey:
+                seen_zkeys.add(norm_zkey)
+            if note_path:
+                seen_paths.add(note_path)
+            if title_year is not None:
+                seen_title_years.add(title_year)
+
+            locator = (
+                _safe_http_url(ndata.get("locator"))
+                or (f"https://doi.org/{norm_doi}" if norm_doi else f"obsidian:{note_path or note_id}")
+            )
+            abstract = str(ndata.get("abstract") or "").strip()[:12000]
+            authors = _collect_authors(ndata.get("authors"))
+            category = _clean_line(ndata.get("category"))
+            tags = _collect_tags(ndata)
+
+            source_item: dict[str, Any] = {
+                "batch_id": batch_id,
+                "id": note_id,
+                "upstream_id": note_id,
+                "title": title,
+                "locator": locator,
+                "doi": doi,
+                "year": year,
+                "authors": authors,
+                "abstract": abstract,
+                "category": category,
+                "tags": tags,
+                "zotero_key": zotero_key,
+                "origin_note_path": note_path,
+                "reading_scope": "note-metadata",
+                "reading_level": "note-metadata",
+                "identity_status": "unverified",
+                "human_acceptance": "pending",
+            }
+            batch_items.append(source_item)
+            preview_items.append({
+                "note_id": note_id,
+                "note_path": note_path,
+                "title": title,
+                "doi": doi,
+                "zotero_key": zotero_key,
+                "action": "import",
+            })
+
+        if dry_run:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "would_import": len(batch_items),
+                "skipped_existing": skipped_existing,
+                "items": preview_items,
+            }
+
+        created_ids: list[str] = []
+        imported_count = 0
+        if batch_items:
+            with self._export_lock(f"obsidian-import:{project_id}", f".obsidian-import-{project_id}"):
+                batch_res = call_workspace(
+                    self.workspace.root,
+                    "project",
+                    "record-batch",
+                    {
+                        "project_id": project_id,
+                        "kind": "source",
+                        "data": batch_items,
+                    },
+                )
+            if not batch_res.get("ok"):
+                raise WorkspaceError(
+                    _clean_line(batch_res.get("error")) or "Obsidian note import failed",
+                    _clean_line(batch_res.get("code")) or "invalid_request",
+                )
+            batch_info = batch_res.get("batch") or {}
+            created_records = batch_info.get("records") or []
+            created_ids = [
+                _clean_line(rec.get("id"))
+                for rec in created_records
+                if isinstance(rec, dict) and _clean_line(rec.get("id"))
+            ]
+            counts = batch_info.get("counts") or {}
+            imported_count = int(counts.get("created", len(created_ids)))
+
+        return {
+            "ok": True,
+            "dry_run": False,
+            "imported_count": imported_count,
+            "skipped_existing": skipped_existing,
+            "created_ids": created_ids,
         }

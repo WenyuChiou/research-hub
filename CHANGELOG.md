@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-27
+
+### Added
+- **Stage 1 Literature Track Selection (`research-hub`):** Added explicit three-track discovery guidance (`classic-bedrock`, `frontier-recent`, `balanced-dual`), upfront track and category prompting when unspecified, first-class DOI-less/book/archival support, and equal peer framing for Obsidian Vault Markdown and Hub SQLite Workspace (`research-hub open`).
+- **Theoretical / Conceptual / Formal / Historical Summary Track (`paper-summarize`):** Added the 5-part non-empirical reading track (`Core Thesis & Propositions`, `Definitions, Concepts & Premises`, `Derivation, Argumentation & Mechanism`, `Scope Conditions, Assumptions & Conclusions`, `Counterexamples, Tensions & Legacy`) alongside the Empirical 7-section contract, with deterministic slot mapping for optional `native-source-summary-v1` handoffs.
+
+### Fixed
+- **Claims Schema Whitespace Guard (`paper-memory-builder`):** Added `"pattern": "\\S"` to `text`, `evidence_artifacts.items`, and `gap_reason` in `claims.schema.json` so whitespace-only strings are rejected.
+
+### Changed
+- Bumped package version to `1.3.1` and plugin version to `0.5.37` with synchronized `skills_data/` installer mirrors.
+
 ## [1.3.0] - 2026-11-27
 
 Visual Research Workstation (`research-hub open`), Live 3-Way Integration Hub (`Zotero` · `Obsidian` · `NotebookLM`), and Human-Confirmed AI Assistant Console.
