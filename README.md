@@ -139,7 +139,7 @@ Pair the [research-hub skill](skills/research-hub/) and [AI Research Skills](htt
 
 - **1. Discover & read on your AI host:** Ask your host to search, trace citations, and read accessible text directly, reporting exact reading limits (search snippets never count as full-text reading).
 - **2. Curate locally & sync on demand:** Save records via `project record` or the visual Reading Desk, preview **Zotero** deduplication via `--dry-run` / Sync Hub, and generate **Obsidian** Markdown notes + `.base` database views.
-- **3. Summarize, audit briefs & draft with human review:** Author hash-bound seven-section full-text summaries (`paper-summarize`), bundle verified sources for **NotebookLM** (`notebooklm-brief-verifier`), and run bounded manuscript tasks where every proposal waits for your review.
+- **3. Summarize, audit briefs & draft with human review:** Author native seven-section full-text summaries with `paper-summarize` (readable prose in your host by default, or optionally hash-bound to saved workspace sources via `native-summary-context` / `native-summary-import` at `231f9fbd+`), bundle verified sources for **NotebookLM** (`notebooklm-brief-verifier`), and run bounded manuscript tasks where every proposal waits for your review.
 
 ![Concept diagram: a researcher prepares a task, uses a portable AI handoff or a connected Codex prose worker, checks the proposal, and explicitly accepts or requests changes.](docs/images/workspace-writing.en.png)
 

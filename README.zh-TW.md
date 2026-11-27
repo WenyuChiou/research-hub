@@ -140,7 +140,7 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 - **1. 由 AI 主機原生找與讀：** 請主機直接搜尋、追引文並閱讀可取得的原文段落，如實回報閱讀範圍限制（搜尋摘要片段絕不等於全文閱讀）。
 - **2. 本機整理與按需三端同步：** 透過 `project record` 或視覺化閱讀工作台管理分類與標籤，經 `--dry-run` 或同步中樞預覽 **Zotero** 去重狀態，並產出 **Obsidian** Markdown 筆記與 `.base` 資料庫檢視。
-- **3. 七段摘要、簡報查核與受控寫作：** 使用 `paper-summarize` 建立綁定雜湊的七段全文摘要、打包已驗證來源送入 **NotebookLM**（搭配 `notebooklm-brief-verifier` 反向查核），並在寫作任務中維持每筆提案先審後收。
+- **3. 七段摘要、簡報查核與受控寫作：** 使用 `paper-summarize` 產出原生七段全文摘要（預設直接在主機回傳可讀文字；於 `231f9fbd+` 亦可選用 `native-summary-context`／`native-summary-import` 將摘要綁定工作區來源雜湊），打包已驗證來源送入 **NotebookLM**（搭配 `notebooklm-brief-verifier` 反向查核），並在寫作任務中維持每筆提案先審後收。
 
 ![概念圖：研究者準備任務，透過可攜式 AI 交接或已連接的 Codex 文字工作者取得提案，再檢查並明確接受或要求修改。](docs/images/workspace-writing.zh-TW.png)
 
