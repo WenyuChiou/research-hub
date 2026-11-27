@@ -239,6 +239,7 @@ def test_corroboration_label_returns_conflict_never_falls_through(
 
 def test_corroboration_label_returns_corroborated_when_records_agree() -> None:
     paper = _paper(
+        title="LLM Agents for Flood Forecasting",
         backends=["openalex", "crossref"],
         source_records=[
             {
@@ -567,3 +568,323 @@ def test_vault_same_work_overwrites_existing_note_without_suffix(
     notes = sorted(p.name for p in folder.glob("*.md"))
     assert notes == ["doe2025-same-work.md"]
     assert "Updated summary" in existing_note.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 5. v1.3.2 astra gate blocker regressions (§§1-3)
+# ---------------------------------------------------------------------------
+
+
+def test_corroboration_blocks_empty_dict_titleless_record_and_3_record_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert auth._records_agree([{"source": "openalex", "title": "Paper T"}, {}]) is False
+    assert auth._records_agree([{"source": "openalex", "title": "Paper T"}, {"source": "crossref"}]) is False
+
+    # Empty backend_records must not mask source_records conflict.
+    paper_empty_br = _paper(
+        backend_records=[],
+        source_records=[
+            {"source": "openalex", "title": "Machine Learning Applications for Short-term Flood Forecasting", "year": 2025, "authors": ["Doe, Jane"]},
+            {"source": "crossref", "title": "Unrelated Quantum Spin Paper", "year": 2018, "authors": ["Smith, Bob"]},
+        ],
+    )
+    assert _corroboration_label(paper_empty_br) == "conflict"
+
+    # 2 agreeing records must NOT mask a 3rd contradicting record.
+    paper_3way = _paper(
+        backends=["openalex", "crossref", "semantic-scholar"],
+        source_records=[
+            {"source": "openalex", "title": "Machine Learning Applications for Short-term Flood Forecasting", "year": 2025, "authors": ["Doe, Jane"]},
+            {"source": "crossref", "title": "Machine Learning Applications for Short-term Flood Forecasting", "year": 2025, "authors": ["Jane Doe"]},
+            {"source": "semantic-scholar", "title": "Completely Contradictory Botany Monograph", "year": 2010, "authors": ["Brown, Eve"]},
+        ],
+    )
+    assert _corroboration_label(paper_3way) == "conflict"
+
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+    accepted, quarantined = verify_authenticity([paper_3way], cfg, cluster_slug="agents")
+    assert accepted == []
+    assert quarantined[0]["reason"] == "corroboration_conflict"
+
+    # Titleless crossref dict cannot corroborate single-source paper.
+    titleless = _paper(source="openalex", source_records=[{"source": "crossref"}])
+    assert _corroboration_label(titleless) == "single-source"
+
+    # Candidate paper metadata contradicting agreeing source_records must return conflict.
+    paper_vs_records = _paper(
+        title="Completely Different Candidate Paper Title",
+        backends=["openalex", "crossref"],
+        source_records=[
+            {"source": "openalex", "title": "LLM Agents for Flood Forecasting", "year": 2025, "authors": ["Doe, Jane"]},
+            {"source": "crossref", "title": "LLM Agents for Flood Forecasting", "year": 2025, "authors": ["Jane Doe"]},
+        ],
+    )
+    assert _corroboration_label(paper_vs_records) == "conflict"
+
+
+def test_classic_book_isbn_and_historical_year_pass_l0_and_l3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cfg(tmp_path)
+    seen_urls: list[str] = []
+
+    def fake_head(url, *args, **kwargs):
+        seen_urls.append(url)
+        return _Resp(200)
+
+    monkeypatch.setattr(auth.requests, "head", fake_head)
+    book = _paper(
+        title="An Inquiry into the Nature and Causes of the Wealth of Nations",
+        doi="",
+        isbn="978-0-14-044913-6",
+        doc_type="book",
+        year=1776,
+        authors=[{"creatorType": "author", "firstName": "Adam", "lastName": "Smith"}],
+        citation_count=50,
+    )
+    accepted, quarantined = verify_authenticity([book], cfg, cluster_slug="economics")
+    assert quarantined == []
+    assert len(accepted) == 1
+    assert seen_urls == ["https://openlibrary.org/isbn/9780140449136.json"]
+    assert accepted[0]["provenance"]["resolved_via"] == "openlibrary.org"
+
+
+def test_discover_apply_variations_and_merge_preserve_backends_and_urls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from research_hub.discover import QueryVariation, _merge_search_dict_candidates, apply_variations
+    from research_hub.search._rank import _merge_record
+    from research_hub.search.base import SearchResult
+
+    cfg = _cfg(tmp_path)
+
+    def fake_search(query, **kwargs):
+        return [
+            SearchResult(
+                title="Shared Hydrology Paper",
+                doi="10.1000/hydro",
+                authors=["Jane Doe"],
+                year=2024,
+                source="openalex",
+                confidence=0.5,
+                found_in=["openalex"],
+            )
+        ]
+
+    monkeypatch.setattr("research_hub.search.search_papers", fake_search)
+    out = apply_variations(cfg, "hydro", [QueryVariation("flood modeling"), QueryVariation("runoff forecast")])
+    assert len(out) == 1
+    assert out[0]["found_in"] == ["openalex"]
+    assert out[0]["_discover_meta"]["matched_variations"] == ["flood modeling", "runoff forecast"]
+    assert auth._backend_names({"source": "openalex", "found_in": ["flood modeling", "runoff forecast"]}) == ["openalex"]
+
+    merged_sr = _merge_record(
+        SearchResult(title="T", doi="10.1/x", source="openalex", found_in=["openalex"], url=""),
+        SearchResult(title="T", doi="10.1/x", source="crossref", found_in=["crossref"], url="https://example.org/x"),
+    )
+    assert merged_sr.url == "https://example.org/x"
+    assert merged_sr.found_in == ["openalex", "crossref"]
+
+    merged_dicts = _merge_search_dict_candidates([
+        {
+            "title": "T",
+            "doi": "10.1/x",
+            "source": "openalex",
+            "found_in": ["openalex"],
+            "source_records": [{"source": "openalex", "title": "T"}],
+            "backend_records": [{"source": "openalex", "title": "T"}],
+        },
+        {
+            "title": "T",
+            "doi": "10.1/x",
+            "source": "crossref",
+            "url": "https://example.org/x",
+            "source_records": [{"source": "crossref", "title": "T"}],
+            "backend_records": [{"source": "crossref", "title": "T"}],
+        },
+    ])
+    assert len(merged_dicts) == 1
+    assert merged_dicts[0]["url"] == "https://example.org/x"
+    assert merged_dicts[0]["found_in"] == ["openalex", "crossref"]
+    assert merged_dicts[0]["backends"] == ["openalex", "crossref"]
+    assert len(merged_dicts[0]["source_records"]) == 2
+    assert len(merged_dicts[0]["backend_records"]) == 2
+
+
+def test_to_papers_input_splits_semicolon_authors_and_preserves_pdf_url_and_backend_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "research_hub.search.abstract_recovery.recover_abstract",
+        lambda *_a, **_kw: SimpleNamespace(text="", source=""),
+    )
+    [entry] = _to_papers_input(
+        [
+            {
+                "title": "Classic Monograph",
+                "doi": "",
+                "authors": "Smith, Jane; Doe, John",
+                "year": 1890,
+                "abstract": "Observed.",
+                "pdf_url": "https://example.org/classic.pdf",
+                "backend_records": [{"source": "openalex", "title": "Classic Monograph"}],
+            }
+        ],
+        "classics",
+    )
+    assert entry["authors"] == [
+        {"creatorType": "author", "firstName": "Jane", "lastName": "Smith"},
+        {"creatorType": "author", "firstName": "John", "lastName": "Doe"},
+    ]
+    assert entry["pdf_url"] == "https://example.org/classic.pdf"
+    assert entry["backend_records"] == [{"source": "openalex", "title": "Classic Monograph"}]
+
+
+def test_fit_check_string_index_and_duplicate_title_disambiguation(tmp_path: Path) -> None:
+    from research_hub.discover import CANDIDATES_FILENAME, DiscoverState, STATE_FILENAME, discover_continue, stash_dir
+
+    candidates = [
+        {"title": "Collected Philosophical Works", "doi": "", "year": 1750, "authors": ["Hume, David"]},
+        {"title": "Collected Philosophical Works", "doi": "", "year": 2021, "authors": ["Other, Author"]},
+    ]
+    report = apply_scores(
+        "philosophy",
+        candidates,
+        [
+            {"index": " 1 ", "title": "Collected Philosophical Works", "score": 5, "reason": "classic"},
+            {"index": "2", "title": "Collected Philosophical Works", "score": 1, "reason": "off topic"},
+            {"index": "0", "score": 5, "reason": "invalid zero"},
+            {"index": 1.0, "score": 5, "reason": "invalid float"},
+            {"index": "²", "score": 5, "reason": "invalid unicode digit"},
+        ],
+        threshold=3,
+    )
+    assert len(report.accepted) == 1
+    assert report.accepted[0].index == 1
+    assert report.accepted[0].score == 5
+    assert len(report.rejected) == 1
+    assert report.rejected[0].index == 2
+    assert report.rejected[0].score == 1
+
+    cfg = _cfg(tmp_path)
+    dest = stash_dir(cfg, "philosophy")
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / STATE_FILENAME).write_text(
+        DiscoverState(cluster_slug="philosophy", stage="scored_pending", query="works", candidate_count=2).to_json(),
+        encoding="utf-8",
+    )
+    (dest / CANDIDATES_FILENAME).write_text(json.dumps(candidates), encoding="utf-8")
+    _state, out_path = discover_continue(
+        cfg,
+        "philosophy",
+        [
+            {"index": "1", "title": "Collected Philosophical Works", "score": 5, "reason": "classic"},
+            {"index": "2", "title": "Collected Philosophical Works", "score": 1, "reason": "off topic"},
+        ],
+        threshold=3,
+    )
+    papers_out = json.loads(out_path.read_text(encoding="utf-8"))
+    assert len(papers_out) == 1
+    assert papers_out[0]["year"] == 1750
+
+
+def test_in_batch_and_vault_note_identity_enforce_metadata_even_without_doi(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from research_hub.dedup import DedupHit
+
+    # DOI-less papers sharing a title must still check year, authors, volume, edition.
+    assert _in_batch_title_match_ok(
+        {"title": "Atlas of Hydrological Systems", "doi": "", "year": 1950, "authors": ["Mercator, Gerardus"]},
+        {"title": "Atlas of Hydrological Systems", "doi": "", "year": 2020, "authors": ["Smith, Bob"]},
+    ) is False
+    assert _in_batch_title_match_ok(
+        {"title": "Atlas of Hydrological Systems", "doi": "", "year": 2020, "authors": ["Smith, Bob"], "volume": "1"},
+        {"title": "Atlas of Hydrological Systems", "doi": "", "year": 2020, "authors": ["Smith, Bob"], "volume": "2"},
+    ) is False
+    assert _in_batch_title_match_ok(
+        {"title": "Atlas of Hydrological Systems", "doi": "", "year": 2020, "authors": ["Smith, Bob"], "edition": "1st"},
+        {"title": "Atlas of Hydrological Systems", "doi": "", "year": 2020, "authors": ["Smith, Bob"], "edition": "2nd"},
+    ) is False
+
+    # DedupIndex.lookup must not match conflicting non-empty real DOIs on title fallback.
+    idx = DedupIndex()
+    idx.add(DedupHit(source="obsidian", doi="10.1000/one", title="Atlas of Hydrological Systems"))
+    assert idx.lookup(doi="10.1000/two", title="Atlas of Hydrological Systems") == []
+
+    # Vault note with conflicting zotero-key / year / authors must NOT be overwritten or skipped.
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(query="atlas", name="Atlas", slug="atlas")
+    monkeypatch.setenv("RESEARCH_HUB_NO_ZOTERO", "1")
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr("research_hub.pipeline.update_cluster_links", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    folder = cfg.raw / "atlas"
+    folder.mkdir(parents=True, exist_ok=True)
+    existing_note = folder / "smith2020-atlas-hydrological-systems.md"
+    existing_note.write_text(
+        "---\n"
+        'title: "Atlas of Hydrological Systems"\n'
+        'doi: ""\n'
+        'year: 1950\n'
+        'authors: "Mercator, Gerardus"\n'
+        'zotero-key: "ZKEY_A"\n'
+        "---\nOriginal classic note\n",
+        encoding="utf-8",
+    )
+    assert pipeline._is_same_work_note(
+        existing_note,
+        {
+            "title": "Atlas of Hydrological Systems",
+            "doi": "",
+            "year": 2020,
+            "authors": [{"creatorType": "author", "firstName": "Bob", "lastName": "Smith"}],
+            "zotero_key": "ZKEY_B",
+        },
+    ) is False
+
+    dedup = DedupIndex()
+    dedup.add(
+        DedupHit(
+            source="obsidian",
+            doi="",
+            title="Atlas of Hydrological Systems",
+            zotero_key="ZKEY_A",
+            obsidian_path=str(existing_note),
+        )
+    )
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: dedup)
+
+    incoming_paper = _paper(
+        title="Atlas of Hydrological Systems",
+        doi="",
+        arxiv_id="2001.12345",
+        year=2020,
+        authors=[{"creatorType": "author", "firstName": "Bob", "lastName": "Smith"}],
+        slug="smith2020-atlas-hydrological-systems",
+        sub_category="atlas",
+        summary="2020 paper summary",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps({"papers": [incoming_paper]}),
+        encoding="utf-8",
+    )
+    rc = run_pipeline(dry_run=False, cluster_slug="atlas", verify=False)
+    assert rc == 0
+    notes = sorted(p.name for p in folder.glob("*.md"))
+    assert notes == [
+        "smith2020-atlas-hydrological-systems-2.md",
+        "smith2020-atlas-hydrological-systems.md",
+    ]
+    assert "Original classic note" in existing_note.read_text(encoding="utf-8")

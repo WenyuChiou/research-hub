@@ -3,7 +3,7 @@
 
 Usage:
 
-    python scripts/check_claims_schema.py <path-to-claims.yml> [<more-paths>...]
+    python scripts/check_claims_schema.py [--evidence-root PATH] <path-to-claims.yml> [<more-paths>...]
 
 If no paths are given, prints a usage message and exits with code 2.
 The actual schema / validator behavior is exercised by the test suite
@@ -31,6 +31,7 @@ test dependencies).
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -70,7 +71,68 @@ def _format_path(absolute_path) -> str:
     return ".".join(parts) if parts else "<root>"
 
 
-def validate_file(path: Path, validator: Draft202012Validator) -> list[str]:
+def _check_evidence_artifacts(
+    path: Path,
+    data: object,
+    evidence_root: Path,
+) -> list[str]:
+    """Verify non-rejected claims' evidence_artifacts resolve inside
+    ``evidence_root`` and exist on disk."""
+    if not isinstance(data, dict):
+        return []
+    claims = data.get("claims")
+    if not isinstance(claims, list):
+        return []
+
+    root_resolved = evidence_root.resolve()
+    errors: list[str] = []
+    for idx, claim in enumerate(claims):
+        if not isinstance(claim, dict):
+            continue
+        if claim.get("status") == "rejected":
+            continue
+        artifacts = claim.get("evidence_artifacts")
+        if not isinstance(artifacts, list):
+            continue
+        for art_idx, artifact in enumerate(artifacts):
+            if not isinstance(artifact, str) or not artifact.strip():
+                continue
+            loc = f"claims[{idx}].evidence_artifacts[{art_idx}]"
+            art_path = Path(artifact)
+            if art_path.is_absolute() or art_path.anchor:
+                errors.append(
+                    f"{path}: {loc}: artifact path {artifact!r} must be relative to --evidence-root ({evidence_root})"
+                )
+                continue
+            try:
+                resolved = (root_resolved / art_path).resolve()
+            except OSError as exc:
+                errors.append(
+                    f"{path}: {loc}: artifact path {artifact!r} cannot be resolved under --evidence-root ({evidence_root}): {exc}"
+                )
+                continue
+            if not resolved.is_relative_to(root_resolved):
+                errors.append(
+                    f"{path}: {loc}: artifact path {artifact!r} escapes --evidence-root ({evidence_root})"
+                )
+                continue
+            if resolved == root_resolved:
+                errors.append(
+                    f"{path}: {loc}: artifact path {artifact!r} must name a path inside --evidence-root, not the root directory itself"
+                )
+                continue
+            if not resolved.exists():
+                errors.append(
+                    f"{path}: {loc}: artifact {artifact!r} does not exist under --evidence-root ({evidence_root})"
+                )
+    return errors
+
+
+def validate_file(
+    path: Path,
+    validator: Draft202012Validator,
+    evidence_root: Path | None = None,
+) -> list[str]:
     """Return a list of human-readable error strings; empty list = clean."""
     if not path.exists():
         return [f"{path}: file not found"]
@@ -84,28 +146,66 @@ def validate_file(path: Path, validator: Draft202012Validator) -> list[str]:
     errors = sorted(
         validator.iter_errors(data), key=lambda e: list(e.absolute_path)
     )
-    return [f"{path}: {_format_path(err.absolute_path)}: {err.message}" for err in errors]
+    out = [f"{path}: {_format_path(err.absolute_path)}: {err.message}" for err in errors]
+    if evidence_root is not None:
+        out.extend(_check_evidence_artifacts(path, data, evidence_root))
+    return out
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="check_claims_schema.py",
+        usage="%(prog)s [--evidence-root PATH] <path-to-claims.yml> [<more-paths>...]",
+        description="Validate .paper/claims.yml files against the anti-leakage schema.",
+    )
+    parser.add_argument(
+        "--evidence-root",
+        type=Path,
+        default=None,
+        help="Optional root directory; when set, verify non-empty evidence_artifacts on non-rejected claims resolve safely inside PATH and exist on disk.",
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Path(s) to claims.yml files to validate.",
+    )
+    return parser
 
 
 def main(argv: Iterable[str]) -> int:
-    args = list(argv)
+    raw_args = list(argv)
     if not SCHEMA_PATH.exists():
         print(f"error: schema not found at {SCHEMA_PATH}", file=sys.stderr)
         return 2
-    schema = _load_schema()
-    validator = Draft202012Validator(schema)
 
-    if not args:
+    parser = _build_parser()
+    try:
+        parsed = parser.parse_args(raw_args)
+    except SystemExit as exc:
+        return int(exc.code) if exc.code is not None else 2
+
+    if not parsed.paths:
         print(
             "usage: python scripts/check_claims_schema.py "
-            "<path-to-claims.yml> [<more-paths>...]",
+            "[--evidence-root PATH] <path-to-claims.yml> [<more-paths>...]",
             file=sys.stderr,
         )
         return 2
 
+    evidence_root: Path | None = parsed.evidence_root
+    if evidence_root is not None and (not evidence_root.exists() or not evidence_root.is_dir()):
+        print(
+            f"error: --evidence-root is not an existing directory: {evidence_root}",
+            file=sys.stderr,
+        )
+        return 2
+
+    schema = _load_schema()
+    validator = Draft202012Validator(schema)
+
     all_errors: list[str] = []
-    for arg in args:
-        all_errors.extend(validate_file(Path(arg), validator))
+    for arg in parsed.paths:
+        all_errors.extend(validate_file(Path(arg), validator, evidence_root=evidence_root))
 
     if all_errors:
         print(
@@ -117,7 +217,7 @@ def main(argv: Iterable[str]) -> int:
             print(f"  - {err}", file=sys.stderr)
         return 1
 
-    n_files = len(args)
+    n_files = len(parsed.paths)
     print(
         f"claims schema check OK ({n_files} file{'s' if n_files != 1 else ''})"
     )

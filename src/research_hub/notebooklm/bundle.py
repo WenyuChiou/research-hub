@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 from collections import Counter
@@ -119,11 +120,103 @@ def _extract_abstract(md_path: Path, meta: dict[str, str]) -> str:
     return (prefix + "Abstract\n" + abstract)[:8000]
 
 
+_EXPLICIT_DOI_RE = re.compile(r"10\.\d{4,9}[/_-][^\s]+", re.IGNORECASE)
+
+
+def _is_within_pdfs_root(candidate: Path, pdfs_root: Path) -> bool:
+    try:
+        return candidate.resolve().is_relative_to(pdfs_root)
+    except OSError:
+        return False
+
+
+def _has_conflicting_doi(stem: str, normalized_doi: str) -> bool:
+    if not normalized_doi:
+        return False
+    for match in _EXPLICIT_DOI_RE.finditer(stem):
+        raw = re.sub(r"^(10\.\d{4,9})[/_-]", r"\1/", match.group(0))
+        if _normalize_doi(raw) != normalized_doi:
+            return True
+    return False
+
+
 def _matches_token_boundary(text: str, token: str) -> bool:
     if not token:
         return False
-    pattern = re.compile(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", re.IGNORECASE)
+    pattern = re.compile(
+        rf"(?<![a-z0-9.]){re.escape(token)}(?![a-z0-9]|\.[a-z0-9])",
+        re.IGNORECASE,
+    )
     return pattern.search(text) is not None
+
+
+def _match_pdf_for_note_with_source(
+    pdfs_dir: Path,
+    note_path: Path | None,
+    doi: str,
+    *,
+    pdf_index: list[Path] | None = None,
+) -> tuple[Path | None, str]:
+    """Match a PDF for a note and return (path, source_tag)."""
+    normalized = _normalize_doi(doi) if doi else ""
+    if not pdfs_dir.exists() or (not normalized and note_path is None):
+        return None, ""
+
+    pdfs_root = pdfs_dir.resolve()
+    if normalized:
+        exact = pdfs_dir / (re.sub(r"[^a-z0-9._-]", "_", normalized) + ".pdf")
+        if exact.exists() and _is_within_pdfs_root(exact, pdfs_root):
+            return exact, "local-doi"
+
+    raw_candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
+    safe_candidates = [
+        candidate
+        for candidate in raw_candidates
+        if _is_within_pdfs_root(candidate, pdfs_root)
+        and not _has_conflicting_doi(candidate.stem, normalized)
+    ]
+
+    if normalized:
+        doi_underscore = re.sub(r"[^a-z0-9._-]", "_", normalized)
+        doi_hyphen = re.sub(r"[^a-z0-9._-]", "-", normalized)
+        doi_slash_hyphen = normalized.replace("/", "-")
+        variants = list(dict.fromkeys(v for v in (doi_underscore, doi_hyphen, doi_slash_hyphen) if v))
+        variant_lowers = {v.lower() for v in variants}
+        stem_matches = [c for c in safe_candidates if c.stem.lower() in variant_lowers]
+        if len(stem_matches) == 1:
+            return stem_matches[0], "local-doi"
+        if len(stem_matches) >= 2:
+            return None, ""
+        boundary_matches = [
+            c for c in safe_candidates if any(_matches_token_boundary(c.stem, v) for v in variants)
+        ]
+        if len(boundary_matches) == 1:
+            return boundary_matches[0], "local-doi"
+        if len(boundary_matches) >= 2:
+            return None, ""
+
+    if note_path is not None and note_path.stem:
+        stem_lower = note_path.stem.lower()
+        note_stem_matches = [c for c in safe_candidates if c.stem.lower() == stem_lower]
+        if len(note_stem_matches) == 1:
+            return note_stem_matches[0], "local-slug"
+        if len(note_stem_matches) >= 2:
+            return None, ""
+
+    if normalized and "/" in normalized:
+        tail = normalized.rsplit("/", 1)[-1]
+        if len(tail) >= 4 and (not tail.isdigit() or len(tail) >= 6):
+            tail_matches = [
+                candidate
+                for candidate in safe_candidates
+                if _matches_token_boundary(candidate.stem, tail)
+            ]
+            if len(tail_matches) == 1:
+                return tail_matches[0], "local-doi"
+            if len(tail_matches) >= 2:
+                return None, ""
+
+    return None, ""
 
 
 def _match_pdf_for_note(
@@ -134,50 +227,10 @@ def _match_pdf_for_note(
     pdf_index: list[Path] | None = None,
 ) -> Path | None:
     """Match a PDF for a note using strict DOI/stem token boundaries."""
-    normalized = _normalize_doi(doi) if doi else ""
-    if not pdfs_dir.exists() or (not normalized and note_path is None):
-        return None
-
-    if normalized:
-        exact = pdfs_dir / (re.sub(r"[^a-z0-9._-]", "_", normalized) + ".pdf")
-        if exact.exists():
-            return exact
-
-    candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
-
-    if normalized:
-        doi_underscore = re.sub(r"[^a-z0-9._-]", "_", normalized)
-        doi_hyphen = re.sub(r"[^a-z0-9._-]", "-", normalized)
-        doi_slash_hyphen = normalized.replace("/", "-")
-        variants = list(dict.fromkeys(v for v in (doi_underscore, doi_hyphen, doi_slash_hyphen) if v))
-        variant_lowers = {v.lower() for v in variants}
-        for candidate in candidates:
-            if candidate.stem.lower() in variant_lowers:
-                return candidate
-        for candidate in candidates:
-            if any(_matches_token_boundary(candidate.stem, variant) for variant in variants):
-                return candidate
-
-    if note_path is not None and note_path.stem:
-        stem_lower = note_path.stem.lower()
-        for candidate in candidates:
-            if candidate.stem.lower() == stem_lower:
-                return candidate
-
-    if normalized and "/" in normalized:
-        tail = normalized.rsplit("/", 1)[-1]
-        if len(tail) >= 4:
-            tail_matches = [
-                candidate
-                for candidate in candidates
-                if _matches_token_boundary(candidate.stem, tail)
-            ]
-            if len(tail_matches) == 1:
-                return tail_matches[0]
-            if len(tail_matches) >= 2:
-                return None
-
-    return None
+    matched, _ = _match_pdf_for_note_with_source(
+        pdfs_dir, note_path, doi, pdf_index=pdf_index
+    )
+    return matched
 
 
 def _find_pdf_for_doi(
@@ -197,6 +250,10 @@ def _find_pdf_for_doi(
     and a 500× speedup at 500.
     """
     return _match_pdf_for_note(pdfs_dir, note_path, doi, pdf_index=pdf_index)
+
+
+_DEFAULT_MATCH_PDF_FOR_NOTE = _match_pdf_for_note
+_DEFAULT_FIND_PDF_FOR_DOI = _find_pdf_for_doi
 
 
 def _extract_first_author_surname(authors_str: str) -> str:
@@ -235,15 +292,71 @@ def _find_pdf_by_author_year(
     surname = _extract_first_author_surname(authors)
     if not surname or len(surname) < 2:
         return None
+    pdfs_root = pdfs_dir.resolve()
     escaped = re.escape(surname.lower())
     pattern = re.compile(rf"^{escaped}(?:[_\-\s\d]|$)", re.IGNORECASE)
     year_str = str(year).strip() if year else ""
     candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
-    for candidate in candidates:
-        if pattern.match(candidate.stem):
-            if not year_str or year_str in candidate.stem:
-                return candidate
+    matches = [
+        candidate
+        for candidate in candidates
+        if _is_within_pdfs_root(candidate, pdfs_root)
+        and pattern.match(candidate.stem)
+        and (not year_str or year_str in candidate.stem)
+    ]
+    if len(matches) == 1:
+        return matches[0]
     return None
+
+
+def _resolve_local_pdf(
+    pdfs_dir: Path,
+    note_path: Path,
+    meta: dict[str, str],
+    doi: str,
+    pdf_index: list[Path],
+) -> tuple[Path | None, str]:
+    pdf: Path | None = None
+    pdf_source = ""
+    if _find_pdf_for_doi is _DEFAULT_FIND_PDF_FOR_DOI and _match_pdf_for_note is _DEFAULT_MATCH_PDF_FOR_NOTE:
+        pdf, pdf_source = _match_pdf_for_note_with_source(
+            pdfs_dir, note_path, doi, pdf_index=pdf_index
+        )
+    else:
+        pdf = _find_pdf_for_doi(pdfs_dir, doi, note_path=note_path, pdf_index=pdf_index)
+        if pdf is not None:
+            pdf_source = "local-doi" if doi else "local-slug"
+    if pdf is None:
+        pdf = _find_pdf_by_author_year(
+            pdfs_dir, meta.get("authors", ""), meta.get("year", ""),
+            pdf_index=pdf_index,
+        )
+        if pdf is not None:
+            normalized_doi = _normalize_doi(doi) if doi else ""
+            if normalized_doi and _has_conflicting_doi(pdf.stem, normalized_doi):
+                pdf = None
+            else:
+                pdf_source = "local-slug"
+    if pdf is not None and pdfs_dir.exists():
+        if not _is_within_pdfs_root(pdf, pdfs_dir.resolve()):
+            return None, ""
+    return pdf, pdf_source
+
+
+def _copy_file_no_clobber(src: Path, dst: Path) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(dst, flags, 0o644)
+    try:
+        with src.open("rb") as in_handle, os.fdopen(fd, "wb") as out_handle:
+            fd = -1
+            shutil.copyfileobj(in_handle, out_handle)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+    try:
+        shutil.copystat(src, dst)
+    except OSError:
+        pass
 
 
 def _pick_url(meta: dict[str, str]) -> str:
@@ -272,9 +385,19 @@ def bundle_cluster(
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     bundles_root = out_root or (cfg.research_hub_dir / "bundles")
-    bundle_dir = bundles_root / f"{cluster.slug}-{timestamp}"
+    bundles_root.mkdir(parents=True, exist_ok=True)
+    base_dir_name = f"{cluster.slug}-{timestamp}"
+    bundle_dir = bundles_root / base_dir_name
+    dir_suffix = 2
+    while True:
+        try:
+            bundle_dir.mkdir(parents=False, exist_ok=False)
+            break
+        except FileExistsError:
+            bundle_dir = bundles_root / f"{base_dir_name}-{dir_suffix}"
+            dir_suffix += 1
     bundle_pdfs = bundle_dir / "pdfs"
-    bundle_pdfs.mkdir(parents=True, exist_ok=True)
+    bundle_pdfs.mkdir(parents=False, exist_ok=False)
 
     report = BundleReport(
         cluster_slug=cluster.slug,
@@ -299,16 +422,11 @@ def bundle_cluster(
             action="skip",
         )
 
-        pdf = _find_pdf_for_doi(pdfs_dir, entry.doi, note_path=note_path, pdf_index=pdf_index)
-        if pdf is None:
-            pdf = _find_pdf_by_author_year(
-                pdfs_dir, meta.get("authors", ""), meta.get("year", ""),
-                pdf_index=pdf_index,
-            )
-            if pdf is not None:
-                entry.pdf_source = "local-slug"
-        elif pdf is not None:
-            entry.pdf_source = "local-doi" if entry.doi else "local-slug"
+        pdf, resolved_source = _resolve_local_pdf(
+            pdfs_dir, note_path, meta, entry.doi, pdf_index
+        )
+        if pdf is not None:
+            entry.pdf_source = resolved_source
 
         fetch_result = None
         if pdf is None and download_pdfs:
@@ -353,37 +471,45 @@ def bundle_cluster(
             # page but no local PDF was found in the initial scan.  If a PDF
             # is already present (pdf is not None) it is handled below.
             if quality_result.quality == "likely_error_page" and pdf is None:
-                pdf_retry = _find_pdf_for_doi(
-                    pdfs_dir, entry.doi, note_path=note_path, pdf_index=pdf_index
+                pdf_retry, retry_source = _resolve_local_pdf(
+                    pdfs_dir, note_path, meta, entry.doi, pdf_index
                 )
-                if pdf_retry is None and meta.get("authors"):
-                    pdf_retry = _find_pdf_by_author_year(
-                        pdfs_dir,
-                        meta.get("authors", ""),
-                        meta.get("year", ""),
-                        pdf_index=pdf_index,
-                    )
                 if pdf_retry is not None:
                     pdf = pdf_retry
-                    entry.pdf_source = entry.pdf_source or ("local-doi" if entry.doi else "local-slug")
+                    entry.pdf_source = entry.pdf_source or retry_source
 
         if pdf is not None:
             src_resolved = pdf.resolve()
             dest_name = pdf.name
-            if dest_name in copied_pdfs and copied_pdfs[dest_name] != src_resolved:
+            dest_key = dest_name.casefold()
+            destination = bundle_pdfs / dest_name
+            if (dest_key in copied_pdfs and copied_pdfs[dest_key] != src_resolved) or (
+                dest_key not in copied_pdfs and destination.exists()
+            ):
                 candidate_name = f"{note_path.stem}_{pdf.name}"
-                if candidate_name in copied_pdfs and copied_pdfs[candidate_name] != src_resolved:
+                candidate_key = candidate_name.casefold()
+                candidate_dest = bundle_pdfs / candidate_name
+                if (candidate_key in copied_pdfs and copied_pdfs[candidate_key] != src_resolved) or (
+                    candidate_key not in copied_pdfs and candidate_dest.exists()
+                ):
                     counter = 2
                     while True:
                         numbered_name = f"{note_path.stem}_{pdf.stem}-{counter}{pdf.suffix}"
-                        if numbered_name not in copied_pdfs or copied_pdfs[numbered_name] == src_resolved:
+                        numbered_key = numbered_name.casefold()
+                        numbered_dest = bundle_pdfs / numbered_name
+                        if (
+                            numbered_key not in copied_pdfs
+                            or copied_pdfs[numbered_key] == src_resolved
+                        ) and (numbered_key in copied_pdfs or not numbered_dest.exists()):
                             candidate_name = numbered_name
                             break
                         counter += 1
                 dest_name = candidate_name
-            copied_pdfs[dest_name] = src_resolved
-            destination = bundle_pdfs / dest_name
-            shutil.copy2(pdf, destination)
+                dest_key = dest_name.casefold()
+                destination = bundle_pdfs / dest_name
+            if dest_key not in copied_pdfs:
+                _copy_file_no_clobber(pdf, destination)
+                copied_pdfs[dest_key] = src_resolved
             entry.action = "pdf"
             entry.pdf_path = str(destination)
             report.entries.append(entry)

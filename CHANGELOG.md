@@ -12,6 +12,15 @@
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-27
+
+### Fixed
+- **Study-Type Summary Routing Consistency (`paper-summarize`):** Reconciled `SKILL.md` and `references/fulltext-summary.md` so seven-section empirical summaries and five-part theoretical/conceptual/formal/historical summaries are routed conditionally rather than framed as unconditional seven-section prose, clarifying that the seven sections apply to empirical studies and serve as the deterministic slot target for optional Hub SQLite `native-source-summary-v1` handoffs.
+- **Evidence Artifact Placeholder & Disk Validation (`paper-memory-builder`):** Added a JSON Schema `not.pattern` guard on `evidence_artifacts.items` in `claims.schema.json` rejecting placeholder tokens (`TODO`, `TBD`, `FIXME`, `N/A`, `NONE`, `NULL`, `PLACEHOLDER`, `MISSING*`, `[TODO...]`, `<...>`), and added optional `--evidence-root PATH` verification in `scripts/check_claims_schema.py` for non-rejected claims.
+
+### Changed
+- Bumped package version to `1.3.2` and plugin version to `0.5.38` with synchronized `skills_data/` installer mirrors.
+
 ## [1.3.1] - 2026-11-27
 
 ### Added

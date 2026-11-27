@@ -30,15 +30,19 @@ class FitCheckResult:
     score: int
     reason: str
     kept: bool
+    index: int | None = None
 
     def to_dict(self) -> dict:
-        return {
+        payload = {
             "doi": self.doi,
             "title": self.title,
             "score": self.score,
             "reason": self.reason,
             "kept": self.kept,
         }
+        if self.index is not None:
+            payload["index"] = self.index
+        return payload
 
 
 @dataclass
@@ -245,6 +249,21 @@ def _norm_arxiv(value: str | None) -> str:
     return text
 
 
+def _parse_score_index(raw_idx: object, by_index: dict[int, int]) -> int | None:
+    if isinstance(raw_idx, bool):
+        return None
+    parsed: int | None = None
+    if isinstance(raw_idx, int):
+        parsed = raw_idx
+    elif isinstance(raw_idx, str):
+        stripped = raw_idx.strip()
+        if stripped.isascii() and stripped.isdigit():
+            parsed = int(stripped)
+    if parsed is not None and parsed in by_index:
+        return by_index[parsed]
+    return None
+
+
 def apply_scores(
     cluster_slug: str,
     candidates: list[dict],
@@ -266,6 +285,7 @@ def apply_scores(
     by_arxiv: dict[str, int] = {}
     by_title: dict[str, int] = {}
     by_index: dict[int, int] = {}
+    title_counts: dict[str, int] = {}
     for idx, paper in enumerate(candidates):
         cand_doi = normalize_doi(str(paper.get("doi") or ""))
         if cand_doi and cand_doi not in by_doi:
@@ -276,8 +296,10 @@ def apply_scores(
         if cand_arxiv and cand_arxiv not in by_arxiv:
             by_arxiv[cand_arxiv] = idx
         cand_ntitle = _norm_title(paper.get("title"))
-        if len(cand_ntitle) >= 8 and cand_ntitle not in by_title:
-            by_title[cand_ntitle] = idx
+        if len(cand_ntitle) >= 8:
+            title_counts[cand_ntitle] = title_counts.get(cand_ntitle, 0) + 1
+            if cand_ntitle not in by_title:
+                by_title[cand_ntitle] = idx
         by_index[idx + 1] = idx
 
     matched_entries: dict[int, dict] = {}
@@ -288,32 +310,49 @@ def apply_scores(
             entry_arxiv = _norm_arxiv(entry.get("doi"))
         entry_ntitle = _norm_title(entry.get("title"))
 
+        valid_index_target: int | None = None
+        cand_idx = _parse_score_index(entry.get("index"), by_index)
+        if cand_idx is not None:
+            cand = candidates[cand_idx]
+            cand_doi = normalize_doi(str(cand.get("doi") or ""))
+            cand_arxiv = _norm_arxiv(cand.get("arxiv_id") or "")
+            if not cand_arxiv and cand_doi.startswith("10.48550/arxiv."):
+                cand_arxiv = _norm_arxiv(cand_doi)
+            cand_ntitle = _norm_title(cand.get("title"))
+            doi_conflicts = bool(entry_doi and cand_doi and entry_doi != cand_doi)
+            arxiv_conflicts = bool(entry_arxiv and cand_arxiv and entry_arxiv != cand_arxiv)
+            title_conflicts = bool(
+                len(entry_ntitle) >= 8
+                and len(cand_ntitle) >= 8
+                and entry_ntitle != cand_ntitle
+            )
+            if not doi_conflicts and not arxiv_conflicts and not title_conflicts:
+                valid_index_target = cand_idx
+
+        duplicate_title = bool(
+            (len(entry_ntitle) >= 8 and title_counts.get(entry_ntitle, 0) >= 2)
+            or (
+                valid_index_target is not None
+                and len(_norm_title(candidates[valid_index_target].get("title"))) >= 8
+                and title_counts.get(
+                    _norm_title(candidates[valid_index_target].get("title")), 0
+                )
+                >= 2
+            )
+        )
+        lacks_ids = not entry_doi and not entry_arxiv
+
         target_idx: int | None = None
         if entry_doi and entry_doi in by_doi:
             target_idx = by_doi[entry_doi]
         elif entry_arxiv and entry_arxiv in by_arxiv:
             target_idx = by_arxiv[entry_arxiv]
+        elif valid_index_target is not None and (duplicate_title or lacks_ids):
+            target_idx = valid_index_target
         elif len(entry_ntitle) >= 8 and entry_ntitle in by_title:
             target_idx = by_title[entry_ntitle]
-        else:
-            raw_idx = entry.get("index")
-            if (
-                isinstance(raw_idx, int)
-                and not isinstance(raw_idx, bool)
-                and raw_idx in by_index
-            ):
-                cand_idx = by_index[raw_idx]
-                cand = candidates[cand_idx]
-                cand_doi = normalize_doi(str(cand.get("doi") or ""))
-                cand_ntitle = _norm_title(cand.get("title"))
-                doi_conflicts = bool(entry_doi and cand_doi and entry_doi != cand_doi)
-                title_conflicts = bool(
-                    len(entry_ntitle) >= 8
-                    and len(cand_ntitle) >= 8
-                    and entry_ntitle != cand_ntitle
-                )
-                if not doi_conflicts and not title_conflicts:
-                    target_idx = cand_idx
+        elif valid_index_target is not None:
+            target_idx = valid_index_target
 
         if target_idx is not None:
             matched_entries[target_idx] = entry
@@ -333,6 +372,7 @@ def apply_scores(
                 score=0,
                 reason="no score provided",
                 kept=False,
+                index=idx + 1,
             )
         else:
             score = int(entry.get("score", 0))
@@ -342,6 +382,7 @@ def apply_scores(
                 score=score,
                 reason=str(entry.get("reason", "")),
                 kept=score >= threshold,
+                index=idx + 1,
             )
         if result.kept:
             report.accepted.append(result)

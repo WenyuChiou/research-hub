@@ -43,9 +43,13 @@ Route per-paper reading according to the nature of the work rather than forcing 
 
 ## Seven questions, with source support
 
-Use these sections in readable prose; the names in parentheses are stable
-semantic labels for an optional compatible handoff, not required user-authored
-JSON. Keep them visible even when an answer is unknown.
+These seven sections apply to empirical studies (a seven-section empirical
+summary) and serve as the deterministic slot target when mapping a five-part
+theoretical/conceptual/formal/historical summary into the optional Hub SQLite
+`native-source-summary-v1` envelope. For non-empirical works, present the five
+parts above in readable prose unless targeting that Hub envelope. The names in
+parentheses are stable semantic labels for an optional compatible handoff, not
+required user-authored JSON. Keep them visible even when an answer is unknown.
 
 1. **Why? (`why`)** The authors' motivation, problem and prior-work gap.
    Relevance to the user's project is a different judgment, not a substitute.
@@ -115,7 +119,9 @@ unknown; a warm single-paper pass is not a cold multi-paper performance test.
 
 The useful result is the readable per-paper summary, not a demand for the user
 to repair a schema. If a destination supports structured notes, preserve the
-seven sections, source/version/reading footer, evidence links and three statuses.
+study-type sections (the seven empirical sections, or the five non-empirical
+parts mapped onto the seven slots only when targeting `native-source-summary-v1`),
+source/version/reading footer, evidence links and three statuses.
 If it does not, return or save the authorized readable artifact and disclose
 the pending integration; do not silently drop inference/unknown or claim sync.
 The current `paper-abstract-draft` path cannot receive a full-text summary merely

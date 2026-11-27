@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import PurePosixPath
 
-from .core import WorkspaceError, digest, encoded, now
+from .core import WorkspaceError, digest, encoded, now, resolve_reading_scope
 
 SCHEMA = 'native-source-summary-v1'
 SECTIONS = ('why', 'objective', 'methods', 'findings', 'conclusions', 'key_points', 'limitations')
@@ -134,8 +134,7 @@ def _record(db, project, source):
 
 
 def _scope(record):
-    value = record['data'].get('reading_scope', 'unknown')
-    return _string(value, 2000)
+    return _string(resolve_reading_scope(record['data']), 2000)
 
 
 def _base(record):

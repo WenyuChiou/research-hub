@@ -711,14 +711,56 @@ def _parse_paper_label(note_path: Path, *, slug: str) -> PaperLabel:
     )
 
 
+_SAFE_BARE_YAML_ITEM_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+_YAML_RESERVED_WORDS = frozenset({"true", "false", "yes", "no", "on", "off", "null", "y", "n"})
+
+
+def _render_list_item(item: object) -> str:
+    """Render a scalar YAML list item safely without type or comment corruption."""
+    if (
+        isinstance(item, str)
+        and _SAFE_BARE_YAML_ITEM_RE.fullmatch(item)
+        and item.casefold() not in _YAML_RESERVED_WORDS
+    ):
+        return item
+    return json.dumps(item, ensure_ascii=False)
+
+
+def _dedupe_list_items(value: list[object]) -> list[object]:
+    """Dedupe list values order-preservingly while distinguishing distinct scalar types."""
+    seen: set[str] = set()
+    deduped: list[object] = []
+    for item in value:
+        try:
+            sig = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        except TypeError:
+            sig = f"{type(item).__name__}:{item}"
+        if sig in seen:
+            continue
+        seen.add(sig)
+        deduped.append(item)
+    return deduped
+
+
+def _values_and_types_match(actual: object, expected: object) -> bool:
+    """Compare reloaded YAML values and types strictly (e.g. int 1 != bool True)."""
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _values_and_types_match(a, e) for a, e in zip(actual, expected)
+        )
+    if isinstance(expected, dict):
+        return set(actual.keys()) == set(expected.keys()) and all(
+            _values_and_types_match(actual[k], expected[k]) for k in expected
+        )
+    return actual == expected
+
+
 def _render_patch_field(key: str, value: object, newline: str) -> str:
     if isinstance(value, list):
         can_use_simple_list = all(
-            isinstance(item, (str, int, float, bool))
-            and "\n" not in str(item)
-            and "\r" not in str(item)
-            and not str(item).startswith(("-", "[", "{", "*", "&", "!", "|", ">", "%", "@", "`", "'", '"', "#"))
-            and str(item).strip() != ""
+            item is None or isinstance(item, (str, int, float, bool))
             for item in value
         )
         if not value or can_use_simple_list:
@@ -749,9 +791,19 @@ def _patch_yaml_frontmatter_field(frontmatter_lf: str, key: str, value: object) 
     if not frontmatter_lf.strip():
         if value is None:
             return frontmatter_lf
-        return _render_patch_field(key, value, "\n")
+        rendered = _render_patch_field(key, value, "\n")
+        if not frontmatter_lf:
+            return rendered
+        sep = "" if frontmatter_lf.endswith("\n") else "\n"
+        return frontmatter_lf + sep + rendered
 
     document = yaml.compose(frontmatter_lf, Loader=yaml.SafeLoader)
+    if document is None:
+        if value is None:
+            return frontmatter_lf
+        rendered = _render_patch_field(key, value, "\n")
+        sep = "" if frontmatter_lf.endswith("\n") else "\n"
+        return frontmatter_lf + sep + rendered
     if not isinstance(document, yaml.MappingNode):
         raise ValueError("Paper note frontmatter must be a mapping")
 
@@ -763,7 +815,8 @@ def _patch_yaml_frontmatter_field(frontmatter_lf: str, key: str, value: object) 
         if value is None:
             return frontmatter_lf
         rendered = _render_patch_field(key, value, "\n")
-        return frontmatter_lf.rstrip("\n") + "\n" + rendered
+        sep = "" if frontmatter_lf.endswith("\n") else "\n"
+        return frontmatter_lf + sep + rendered
 
     k_node, v_node = matches[0]
     start, end = k_node.start_mark.index, v_node.end_mark.index
@@ -845,9 +898,18 @@ def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
     try:
         if frontmatter_lf.strip():
             initial = yaml.compose(frontmatter_lf, Loader=yaml.SafeLoader)
-            if not isinstance(initial, yaml.MappingNode):
+            if initial is not None and not isinstance(initial, yaml.MappingNode):
                 raise yaml.YAMLError("frontmatter is not a mapping")
     except yaml.YAMLError:
+        leading_comments: list[str] = []
+        for line in frontmatter.splitlines():
+            stripped = line.lstrip()
+            if not stripped:
+                continue
+            if stripped.startswith("#"):
+                leading_comments.append(line)
+            else:
+                break
         parsed = _parse_frontmatter_legacy(frontmatter)
         ordered_keys = _frontmatter_key_order(frontmatter)
         for key, value in updates.items():
@@ -858,9 +920,15 @@ def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
                 if key not in ordered_keys:
                     ordered_keys.append(key)
         rendered = _render_frontmatter(parsed, ordered_keys, newline)
-        _atomic_write_preserving_newlines(
-            note_path, f"{opening}{rendered}{newline}---{newline}{body}"
+        if leading_comments:
+            comment_block = newline.join(leading_comments)
+            rendered = f"{comment_block}{newline}{rendered}" if rendered else comment_block
+        content = (
+            f"{opening}---{newline}{body}"
+            if rendered == ""
+            else f"{opening}{rendered}{newline}---{newline}{body}"
         )
+        _atomic_write_preserving_newlines(note_path, content)
         return
 
     patched_lf = frontmatter_lf
@@ -868,14 +936,37 @@ def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
         patched_lf = _patch_yaml_frontmatter_field(patched_lf, key, value)
 
     if patched_lf.strip():
-        verified = yaml.safe_load(patched_lf)
+        verified = yaml.load(patched_lf, Loader=_NoTimestampSafeLoader)
+        if verified is None:
+            verified = {}
         if not isinstance(verified, dict):
             raise ValueError("Patched frontmatter must remain a YAML mapping")
+    else:
+        verified = {}
+
+    for key, expected in updates.items():
+        if expected is None:
+            if key in verified:
+                raise ValueError(f"Failed to delete frontmatter field '{key}'")
+            continue
+        if key not in verified:
+            raise ValueError(f"Missing updated frontmatter field '{key}'")
+        expected_checked = (
+            _dedupe_list_items(expected)
+            if isinstance(expected, list)
+            and all(item is None or isinstance(item, (str, int, float, bool)) for item in expected)
+            else expected
+        )
+        if not _values_and_types_match(verified[key], expected_checked):
+            raise ValueError(f"Patched frontmatter field '{key}' failed round-trip verification")
 
     patched = patched_lf.replace("\n", newline) if newline != "\n" else patched_lf
-    _atomic_write_preserving_newlines(
-        note_path, f"{opening}{patched}{newline}---{newline}{body}"
+    content = (
+        f"{opening}---{newline}{body}"
+        if patched == ""
+        else f"{opening}{patched}{newline}---{newline}{body}"
     )
+    _atomic_write_preserving_newlines(note_path, content)
 
 
 def _split_frontmatter(text: str) -> tuple[str, str, str, str] | None:
@@ -886,13 +977,32 @@ def _split_frontmatter(text: str) -> tuple[str, str, str, str] | None:
     else:
         return None
     opening = f"---{newline}"
-    close = f"{newline}---{newline}"
-    end = text.find(close, len(opening))
-    if end == -1:
-        return None
-    frontmatter = text[len(opening):end]
-    body = text[end + len(close):]
-    return opening, frontmatter, body, newline
+    pos = len(opening)
+    text_len = len(text)
+    while pos < text_len:
+        nl_idx = text.find("\n", pos)
+        if nl_idx == -1:
+            line = text[pos:]
+            after_line = text_len
+        else:
+            line_end = nl_idx - 1 if nl_idx > pos and text[nl_idx - 1] == "\r" else nl_idx
+            line = text[pos:line_end]
+            after_line = nl_idx + 1
+        if line == "---":
+            if pos == len(opening):
+                frontmatter = ""
+            elif text[pos - len(newline):pos] == newline:
+                frontmatter = text[len(opening):pos - len(newline)]
+            elif text[pos - 1:pos] == "\n":
+                frontmatter = text[len(opening):pos - 1]
+            else:
+                frontmatter = text[len(opening):pos]
+            body = text[after_line:]
+            return opening, frontmatter, body, newline
+        if nl_idx == -1:
+            break
+        pos = after_line
+    return None
 
 
 def _extract_frontmatter(text: str) -> str | None:
@@ -934,23 +1044,16 @@ def _render_field(key: str, value: object) -> list[str]:
         # disk. Upstream enrich-existing / paper-relabel flows can accumulate
         # duplicates in cluster_queries / tags / collections / aliases when
         # they re-run on an already-tagged note; we want the rendered
-        # frontmatter to stay clean regardless. Stringify per-item so
-        # heterogeneous lists (mostly strings, occasional dict) still dedupe
-        # by stringified identity.
-        seen: set[str] = set()
-        deduped: list[object] = []
-        for item in value:
-            sig = str(item)
-            if sig in seen:
-                continue
-            seen.add(sig)
-            deduped.append(item)
-        return [f"{key}:"] + [f"  - {item}" for item in deduped]
+        # frontmatter to stay clean regardless.
+        deduped = _dedupe_list_items(value)
+        return [f"{key}:"] + [f"  - {_render_list_item(item)}" for item in deduped]
     if value is None:
         return [f"{key}: "]
     if isinstance(value, bool):
         return [f"{key}: {'true' if value else 'false'}"]
-    return [f'{key}: "{_escape_scalar(str(value))}"']
+    if isinstance(value, (int, float)):
+        return [f"{key}: {value}"]
+    return [f"{key}: {json.dumps(str(value), ensure_ascii=False)}"]
 
 
 def _escape_scalar(value: str) -> str:

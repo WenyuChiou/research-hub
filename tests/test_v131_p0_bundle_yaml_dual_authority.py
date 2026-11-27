@@ -276,14 +276,30 @@ def test_bundle_cluster_disambiguates_colliding_pdf_basenames(
 
 
 def test_reading_scope_prefers_reading_scope_and_fails_closed_on_disagreement():
+    from research_hub.workspace.core import resolve_reading_scope
+    from research_hub.workspace.native_summary import _scope
+
     assert _reading_scope({"reading_scope": "abstract", "reading_level": "full-text"}) == "abstract"
     assert _reading_scope({"reading_scope": "full-text", "reading_level": "abstract-only"}) == "abstract-only"
     assert _reading_scope({"reading_scope": "note-metadata", "reading_level": "selected-sections"}) == "note-metadata"
     assert _reading_scope({"reading_scope": "not-read", "reading_level": "abstract-snippet"}) == "not-read"
     assert _reading_scope({"reading_scope": "selected-sections", "reading_level": "excerpt"}) == "selected-sections"
-    assert _reading_scope({"reading_scope": "unknown", "reading_level": "abstract"}) == "abstract"
-    assert _reading_scope({"reading_scope": "full-text", "reading_level": "unknown"}) == "full-text"
+    assert _reading_scope({"reading_scope": "selected-sections", "reading_level": "metadata-only"}) == "metadata-only"
+    assert _reading_scope({"reading_scope": "full-text", "reading_level": "custom-unrecognized"}) == "custom-unrecognized"
+    # Absent (None / "") falls back to the other field
+    assert _reading_scope({"reading_scope": None, "reading_level": "abstract"}) == "abstract"
+    assert _reading_scope({"reading_scope": "", "reading_level": "abstract"}) == "abstract"
+    assert _reading_scope({"reading_scope": "full-text", "reading_level": None}) == "full-text"
+    assert _reading_scope({"reading_scope": "full-text", "reading_level": ""}) == "full-text"
+    # Explicit "unknown" ranks 0 and fails closed over wider claims
+    assert _reading_scope({"reading_scope": "unknown", "reading_level": "abstract"}) == "unknown"
+    assert _reading_scope({"reading_scope": "full-text", "reading_level": "unknown"}) == "unknown"
     assert _reading_scope({}) == "unknown"
+
+    # native_summary._scope shares canonical resolve_reading_scope
+    sample = {"reading_scope": "full-text", "reading_level": "abstract-only"}
+    assert _scope({"data": sample}) == resolve_reading_scope(sample) == "abstract-only"
+    assert _scope({"data": {"reading_scope": "full-text", "reading_level": "unknown"}}) == "unknown"
 
 
 def test_notebooklm_bundle_excludes_screened_out_and_keeps_disagreed_out_of_fulltext(tmp_path: Path):
@@ -480,7 +496,9 @@ def test_obsidian_import_bridge_dry_run_dedup_apply_and_errors(tmp_path: Path):
         assert len(sources) == 3
         imported_n2 = next(r for r in sources if r["data"].get("origin_note_path") == "raw/alpha/n2.md")
         assert imported_n2["data"]["upstream_id"] == note_ids_by_path["raw/alpha/n2.md"]
-        assert imported_n2["data"]["batch_id"].startswith("obsidian-import:")
+        assert imported_n2["data"]["batch_id"].startswith("obsidian-vault:")
+        assert dry_res["truncated"] is False
+        assert apply_res["truncated"] is False
         assert imported_n2["data"]["reading_scope"] == "note-metadata"
         assert imported_n2["data"]["reading_level"] == "note-metadata"
         assert imported_n2["data"]["identity_status"] == "unverified"
@@ -547,6 +565,316 @@ def test_obsidian_import_dedups_by_zotero_key_and_title_year(tmp_path: Path):
     res = hooks.import_obsidian_notes("proj-dedup", {"dry_run": True})
     assert res["would_import"] == 1
     assert res["skipped_existing"] == 2
+    assert res["truncated"] is False
     imported = [i for i in res["items"] if i["action"] == "import"]
     assert len(imported) == 1
     assert imported[0]["note_path"] == "raw/beta/n3.md"
+
+
+# ---------------------------------------------------------------------------
+# 5. Astra gate §4-§6 regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_yaml_list_quoting_verification_empty_block_comments_and_literal_plus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from research_hub.paper import _NoTimestampSafeLoader, _split_frontmatter
+    import research_hub.paper as paper_mod
+
+    # Safe list quoting preserves strings with colons, YAML booleans, hashes, and ints
+    note = tmp_path / "list_types.md"
+    note.write_text("---\ntitle: \"Test\"\n---\nBody\n", encoding="utf-8")
+    mixed_labels = ["A: B", "yes", "x # y", "true", "null", "seed", 42]
+    _rewrite_paper_frontmatter(note, {"labels": mixed_labels})
+    raw_fm = _split_frontmatter(note.read_text(encoding="utf-8"))[1]
+    reloaded = yaml.load(raw_fm, Loader=_NoTimestampSafeLoader)
+    assert reloaded["labels"] == mixed_labels
+    assert [type(x) for x in reloaded["labels"]] == [type(x) for x in mixed_labels]
+
+    # Round-trip verification aborts without writing when rendered YAML corrupts types
+    before_bytes = note.read_bytes()
+    monkeypatch.setattr(paper_mod, "_render_patch_field", lambda k, v, nl: f"{k}:{nl}  - yes")
+    with pytest.raises(ValueError):
+        _rewrite_paper_frontmatter(note, {"labels": ["yes"]})
+    assert note.read_bytes() == before_bytes
+    monkeypatch.undo()
+
+    # Preserve |+ trailing blank lines when appending a new key
+    note_plus = tmp_path / "literal_plus.md"
+    note_plus.write_text("---\nabstract: |+\n  Line 1\n\n\n---\nBody\n", encoding="utf-8")
+    before_abs = yaml.safe_load(_split_frontmatter(note_plus.read_text(encoding="utf-8"))[1])["abstract"]
+    _rewrite_paper_frontmatter(note_plus, {"labels": ["seed"]})
+    after_fm = _split_frontmatter(note_plus.read_text(encoding="utf-8"))[1]
+    assert yaml.safe_load(after_fm)["abstract"] == before_abs
+
+    # Adjacent ---\n---\nBody stops at first --- without scanning into Markdown horizontal rules
+    note_empty = tmp_path / "empty_fm.md"
+    note_empty.write_text("---\n---\nBody\n---\nLater rule\n", encoding="utf-8")
+    _rewrite_paper_frontmatter(note_empty, {"labels": ["seed"]})
+    updated_empty = note_empty.read_text(encoding="utf-8")
+    assert updated_empty == "---\nlabels:\n  - seed\n---\nBody\n---\nLater rule\n"
+
+    # Comment-only frontmatter preserves comment non-destructively
+    note_comment = tmp_path / "comment_only.md"
+    note_comment.write_text("---\n# curator note\n---\nBody\n", encoding="utf-8")
+    _rewrite_paper_frontmatter(note_comment, {"labels": ["seed"]})
+    updated_comment = note_comment.read_text(encoding="utf-8")
+    assert "# curator note\n" in updated_comment
+    assert "labels:\n  - seed\n" in updated_comment
+
+    # Broken YAML fallback preserves leading # comments
+    note_broken = tmp_path / "broken_yaml.md"
+    note_broken.write_text("---\n# leading curator note\ntitle: Unquoted: Colon\n---\nBody\n", encoding="utf-8")
+    _rewrite_paper_frontmatter(note_broken, {"labels": ["seed"]})
+    updated_broken = note_broken.read_text(encoding="utf-8")
+    assert "# leading curator note\n" in updated_broken
+    assert "  - seed" in updated_broken
+
+
+def test_bundle_pdf_rejects_conflicting_doi_dot_suffix_escapes_and_records_source(tmp_path: Path):
+    import research_hub.notebooklm.bundle as bundle_mod
+
+    root = tmp_path / "vault"
+    pdfs = root / "pdfs"
+    raw = root / "raw" / "alpha"
+    pdfs.mkdir(parents=True)
+    raw.mkdir(parents=True)
+    (root / ".research_hub").mkdir()
+
+    # Conflicting DOI, .2 extension suffix, and short numeric tail must all be rejected
+    (pdfs / "10.9999_1234.pdf").write_bytes(b"%PDF-wrong-prefix")
+    (pdfs / "10.1234_1234.2.pdf").write_bytes(b"%PDF-dot-two")
+    (pdfs / "unrelated_1234.pdf").write_bytes(b"%PDF-short-num")
+    assert _find_pdf_for_doi(pdfs, "10.1234/1234") is None
+
+    # Symlink escape outside pdfs_dir must be skipped
+    outside_pdf = tmp_path / "outside.pdf"
+    outside_pdf.write_bytes(b"%PDF-outside")
+    escape_link = pdfs / "10.1234_escape.pdf"
+    try:
+        escape_link.symlink_to(outside_pdf)
+    except OSError:
+        pass
+    else:
+        assert _find_pdf_for_doi(pdfs, "10.1234/escape") is None
+
+    # Ambiguous stem or author_year returns None
+    (pdfs / "a").mkdir()
+    (pdfs / "b").mkdir()
+    (pdfs / "a" / "shared_stem.pdf").write_bytes(b"%PDF-1")
+    (pdfs / "b" / "shared_stem.pdf").write_bytes(b"%PDF-2")
+    assert _match_pdf_for_note(pdfs, raw / "shared_stem.md", "") is None
+
+    # pdf_source distinguishes local-doi vs local-slug (stem and author/year)
+    (raw / "doi_note.md").write_text("---\ntitle: D\ndoi: 10.1000/abc\ntopic_cluster: alpha\n---\n", encoding="utf-8")
+    (pdfs / "10.1000_abc.pdf").write_bytes(b"%PDF-doi")
+    (raw / "stem_note.md").write_text("---\ntitle: S\ndoi: 10.1000/unmatched\ntopic_cluster: alpha\n---\n", encoding="utf-8")
+    (pdfs / "stem_note.pdf").write_bytes(b"%PDF-stem")
+    (raw / "author_note.md").write_text(
+        "---\ntitle: A\nauthors: \"Ben-Zion, Y.\"\nyear: 2025\ntopic_cluster: alpha\n---\n",
+        encoding="utf-8",
+    )
+    (pdfs / "Ben-Zion_2025.pdf").write_bytes(b"%PDF-auth")
+
+    cfg = SimpleNamespace(root=root, raw=root / "raw", research_hub_dir=root / ".research_hub")
+    cluster = Cluster(slug="alpha", name="Alpha", obsidian_subfolder="alpha")
+    r1 = bundle_mod.bundle_cluster(cluster, cfg)
+    r2 = bundle_mod.bundle_cluster(cluster, cfg)
+    assert r1.bundle_dir != r2.bundle_dir
+    assert r1.bundle_dir.exists() and r2.bundle_dir.exists()
+
+    by_title = {e.title: e for e in r1.entries}
+    assert by_title["D"].pdf_source == "local-doi"
+    assert by_title["S"].pdf_source == "local-slug"
+    assert by_title["A"].pdf_source == "local-slug"
+
+
+def test_bundle_cluster_case_insensitive_pdf_collision_no_clobber(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import research_hub.notebooklm.bundle as bundle_mod
+
+    root = tmp_path / "vault"
+    raw = root / "raw" / "alpha"
+    pdfs = root / "pdfs"
+    (pdfs / "d1").mkdir(parents=True)
+    (pdfs / "d2").mkdir(parents=True)
+    raw.mkdir(parents=True)
+    (root / ".research_hub").mkdir()
+
+    pdf_upper = pdfs / "d1" / "Paper.pdf"
+    pdf_lower = pdfs / "d2" / "paper.pdf"
+    pdf_upper.write_bytes(b"UPPER")
+    pdf_lower.write_bytes(b"LOWER")
+
+    (raw / "n1.md").write_text("---\ntitle: N1\ndoi: 10.1/1\ntopic_cluster: alpha\n---\n", encoding="utf-8")
+    (raw / "n2.md").write_text("---\ntitle: N2\ndoi: 10.1/2\ntopic_cluster: alpha\n---\n", encoding="utf-8")
+    doi_map = {"10.1/1": pdf_upper, "10.1/2": pdf_lower}
+    monkeypatch.setattr(bundle_mod, "_find_pdf_for_doi", lambda pdir, doi, **kw: doi_map.get(doi))
+
+    cfg = SimpleNamespace(root=root, raw=root / "raw", research_hub_dir=root / ".research_hub")
+    cluster = Cluster(slug="alpha", name="Alpha", obsidian_subfolder="alpha")
+    report = bundle_mod.bundle_cluster(cluster, cfg)
+    names = [Path(e.pdf_path).name for e in report.entries]
+    assert names == ["Paper.pdf", "n2_paper.pdf"]
+    assert [Path(e.pdf_path).read_bytes() for e in report.entries] == [b"UPPER", b"LOWER"]
+
+
+def test_screening_inline_and_selected_source_ids_exclusion(tmp_path: Path):
+    from research_hub.workspace.integrations import LocalIntegrationsManager
+    from research_hub.workspace.sync_hooks import WorkspaceSyncHooks
+
+    ws = Workspace(tmp_path / "ws")
+    ws.create_project(id="proj-scr", title="Screening", archetype="review")
+    s_keep = ws.add_record(
+        "proj-scr", kind="source", data={"title": "Keep", "locator": "https://example.org/k"}
+    )
+    s_inline_ex = ws.add_record(
+        "proj-scr",
+        kind="source",
+        data={"title": "Inline Ex", "locator": "https://example.org/ie", "screening": "exclude"},
+    )
+    s_rec_ex = ws.add_record(
+        "proj-scr", kind="source", data={"title": "Rec Ex", "locator": "https://example.org/re"}
+    )
+    ws.add_record(
+        "proj-scr",
+        kind="screening",
+        data={"source_id": s_rec_ex["id"], "decision": "exclude", "rationale": "Rejected"},
+    )
+
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    hooks = WorkspaceSyncHooks(ws, LocalIntegrationsManager(cfg_path))
+
+    res = hooks.bundle_notebooklm("proj-scr", {})
+    assert res["source_count"] == 1
+    manifest = json.loads((ws.root / res["manifest_file"]).read_text(encoding="utf-8"))
+    assert [m["source_id"] for m in manifest["sources"]] == [s_keep["id"]]
+
+    for bad_id in (s_inline_ex["id"], s_rec_ex["id"]):
+        with pytest.raises(WorkspaceError) as exc_info:
+            hooks.bundle_notebooklm("proj-scr", {"selected_source_ids": [bad_id]})
+        assert exc_info.value.code == "invalid_source"
+
+
+def test_library_snapshot_filters_without_opening_unrelated_and_parses_classic_authors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import research_hub.workspace.library_snapshot as ls_mod
+
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    (vault / ".research_hub").mkdir()
+    (vault / ".research_hub" / "clusters.yaml").write_text(
+        "schema_version: '1.0'\nclusters:\n"
+        "  alpha:\n    name: Alpha\n    status: active\n    obsidian_subfolder: alpha\n"
+        "  beta:\n    name: Beta\n    status: active\n    obsidian_subfolder: beta\n",
+        encoding="utf-8",
+    )
+    (vault / "raw" / "alpha").mkdir(parents=True)
+    (vault / "raw" / "beta").mkdir(parents=True)
+    (vault / "raw" / "alpha" / "classic.md").write_text(
+        '---\ntitle: "Wealth of Nations"\nyear: 1776\nauthors: "Smith, Adam; Doe, Jane"\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault / "raw" / "alpha" / "other.md").write_text('---\ntitle: "Other"\n---\nBody\n', encoding="utf-8")
+    (vault / "raw" / "beta" / "secret.md").write_text('---\ntitle: "Secret"\n---\nBody\n', encoding="utf-8")
+
+    opened_paths: list[str] = []
+    orig_extract = ls_mod._extract_frontmatter_incremental
+
+    def spy_extract(path: Path):
+        opened_paths.append(path.name)
+        return orig_extract(path)
+
+    monkeypatch.setattr(ls_mod, "_extract_frontmatter_incremental", spy_extract)
+
+    full = ls_mod.read_vault_snapshot(vault)
+    classic_id = next(n["id"] for n in full["notes"] if n["data"]["note_path"] == "raw/alpha/classic.md")
+
+    opened_paths.clear()
+    scoped = ls_mod.read_vault_snapshot(vault, collection_id="alpha", note_ids=[classic_id])
+    assert opened_paths == ["classic.md"]
+    assert len(scoped["notes"]) == 1
+    ndata = scoped["notes"][0]["data"]
+    assert ndata["year"] == "1776"
+    assert ndata["authors"] == ["Smith, Adam", "Doe, Jane"]
+
+
+def test_obsidian_import_conflict_aware_title_year_and_concurrency_lock(tmp_path: Path):
+    from research_hub.workspace.integrations import LocalIntegrationsManager
+    from research_hub.workspace.obsidian_validation import ObsidianValidation
+    from research_hub.workspace.sync_hooks import WorkspaceSyncHooks
+
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    (vault / ".research_hub").mkdir()
+    (vault / ".research_hub" / "clusters.yaml").write_text(
+        "schema_version: '1.0'\nclusters:\n  alpha:\n    name: Alpha\n    status: active\n    obsidian_subfolder: alpha\n",
+        encoding="utf-8",
+    )
+    (vault / "raw" / "alpha").mkdir(parents=True)
+    (vault / "raw" / "alpha" / "atlas_b.md").write_text(
+        '---\ntitle: "Atlas"\nyear: "2020"\ndoi: "10.1000/b"\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault / "raw" / "alpha" / "atlas_z2.md").write_text(
+        '---\ntitle: "Atlas II"\nyear: "2020"\nzotero_key: "Z2"\n---\nBody\n',
+        encoding="utf-8",
+    )
+
+    ws = Workspace(tmp_path / "ws")
+    ws.create_project(id="proj-c", title="Conflict Test", archetype="review")
+    ws.add_record(
+        "proj-c",
+        kind="source",
+        data={"title": "Atlas", "locator": "https://doi.org/10.1000/a", "doi": "10.1000/a", "year": "2020"},
+    )
+    ws.add_record(
+        "proj-c",
+        kind="source",
+        data={"title": "Atlas II", "locator": "https://example.org/z1", "year": "2020", "zotero_key": "Z1"},
+    )
+
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    hooks = WorkspaceSyncHooks(
+        ws,
+        LocalIntegrationsManager(cfg_path),
+        obsidian_validation=ObsidianValidation(vault),
+    )
+
+    res1 = hooks.import_obsidian_notes("proj-c", {"dry_run": False})
+    assert res1["imported_count"] == 2
+    assert res1["skipped_existing"] == 0
+
+    # Concurrent / overlapping imports serialize under _export_lock without duplicate rows
+    results: list[dict] = []
+    errors: list[Exception] = []
+    barrier = threading.Barrier(2)
+
+    ws2 = Workspace(tmp_path / "ws2")
+    ws2.create_project(id="proj-par", title="Parallel", archetype="review")
+    hooks2 = WorkspaceSyncHooks(
+        ws2,
+        LocalIntegrationsManager(cfg_path),
+        obsidian_validation=ObsidianValidation(vault),
+    )
+
+    def worker():
+        try:
+            barrier.wait(timeout=5)
+            results.append(hooks2.import_obsidian_notes("proj-par", {"dry_run": False}))
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert not errors
+    assert sum(r["imported_count"] for r in results) == 2
+    assert len([r for r in ws2.records("proj-par") if r["kind"] == "source"]) == 2

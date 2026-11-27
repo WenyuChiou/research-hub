@@ -405,3 +405,168 @@ def test_editorial_removal_documentation_stays_consistent(schema, checker):
     assert "rejected" in schema["description"]
     assert "rejected" in schema["$defs"]["claim"]["allOf"][0]["$comment"]
     assert schema["$defs"]["claim"]["properties"]["status"]["enum"] == ["draft", "supported", "rejected", "gap"]
+
+
+# ---------------------------------------------------------------------------
+# Placeholder evidence-artifact rejection & --evidence-root checks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "bogus",
+    [
+        "TODO",
+        "todo",
+        " TBD ",
+        "FIXME",
+        "N/A",
+        "n/a",
+        "na",
+        "NONE",
+        "null",
+        "placeholder",
+        "missing-figure.pdf",
+        "MISSING: fig2",
+        "MISSING",
+        "[TODO]",
+        "[todo: insert path]",
+        "<path>",
+        "<figure-file>",
+    ],
+)
+@pytest.mark.parametrize("status", ["draft", "supported", "gap"])
+def test_bogus_placeholder_evidence_artifact_fails_schema(validator, status, bogus):
+    claim = {
+        "id": "C1",
+        "text": "Claim backed by a placeholder token.",
+        "evidence_artifacts": [bogus],
+        "status": status,
+    }
+    if status == "gap":
+        claim["gap_reason"] = "Pending real run."
+    assert _has_errors(validator, {"claims": [claim]})
+
+
+@pytest.mark.parametrize(
+    "valid_path",
+    [
+        "outputs/E2/calibration.csv",
+        "outputs/not-verified.csv",
+        "figures/none_vs_treated.png",
+        "logs/todo_ablation_run.json",
+    ],
+)
+def test_legitimate_artifact_paths_pass_schema(validator, valid_path):
+    data = {
+        "claims": [
+            {
+                "id": "C1",
+                "text": "Claim backed by a real relative path.",
+                "evidence_artifacts": [valid_path],
+                "status": "supported",
+            }
+        ]
+    }
+    assert not _has_errors(validator, data)
+
+
+def test_evidence_root_passes_when_artifacts_exist_and_ignores_rejected(checker, tmp_path):
+    ev_root = tmp_path / "workspace"
+    (ev_root / "outputs" / "E2").mkdir(parents=True)
+    (ev_root / "outputs" / "E2" / "cal.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+    claims_path = tmp_path / "claims.yml"
+    claims_path.write_text(
+        yaml.safe_dump(
+            {
+                "claims": [
+                    {
+                        "id": "C1",
+                        "text": "Supported claim with existing artifact.",
+                        "evidence_artifacts": ["outputs/E2/cal.csv"],
+                        "status": "supported",
+                    },
+                    {
+                        "id": "C2",
+                        "text": "Gap claim with empty evidence.",
+                        "evidence_artifacts": [],
+                        "status": "gap",
+                        "gap_reason": "Awaiting next experiment.",
+                    },
+                    {
+                        "id": "C3",
+                        "text": "Rejected claim whose old artifact is gone.",
+                        "evidence_artifacts": ["outputs/deleted/old.csv"],
+                        "status": "rejected",
+                    },
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert checker.main([str(claims_path)]) == 0
+    assert checker.main(["--evidence-root", str(ev_root), str(claims_path)]) == 0
+
+
+def test_evidence_root_rejects_missing_and_escaping_artifacts(checker, tmp_path, capsys):
+    ev_root = tmp_path / "workspace"
+    ev_root.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("do not read", encoding="utf-8")
+
+    claims_path = tmp_path / "claims.yml"
+    claims_path.write_text(
+        yaml.safe_dump(
+            {
+                "claims": [
+                    {
+                        "id": "C1",
+                        "text": "Missing artifact.",
+                        "evidence_artifacts": ["outputs/missing.csv"],
+                        "status": "draft",
+                    },
+                    {
+                        "id": "C2",
+                        "text": "Traversal artifact.",
+                        "evidence_artifacts": ["../secret.txt"],
+                        "status": "supported",
+                    },
+                    {
+                        "id": "C3",
+                        "text": "Anchored artifact.",
+                        "evidence_artifacts": ["/etc/passwd"],
+                        "status": "draft",
+                    },
+                    {
+                        "id": "C4",
+                        "text": "Root directory itself.",
+                        "evidence_artifacts": ["."],
+                        "status": "draft",
+                    },
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    # Without --evidence-root, schema validation still passes (backward-compatible).
+    assert checker.main([str(claims_path)]) == 0
+
+    # With --evidence-root, all four fail with clear pointers.
+    assert checker.main(["--evidence-root", str(ev_root), str(claims_path)]) == 1
+    err = capsys.readouterr().err
+    assert "claims[0].evidence_artifacts[0]" in err
+    assert "claims[1].evidence_artifacts[0]" in err
+    assert "claims[2].evidence_artifacts[0]" in err
+    assert "claims[3].evidence_artifacts[0]" in err
+
+
+def test_evidence_root_nonexistent_directory_exits_2(checker, tmp_path, capsys):
+    claims_path = tmp_path / "claims.yml"
+    claims_path.write_text("claims: []\n", encoding="utf-8")
+    rc = checker.main(["--evidence-root", str(tmp_path / "no-such-dir"), str(claims_path)])
+    assert rc == 2
+    assert "--evidence-root" in capsys.readouterr().err

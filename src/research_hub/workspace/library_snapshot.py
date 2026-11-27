@@ -201,28 +201,11 @@ def _extract_frontmatter_incremental(path: Path) -> tuple[dict | None, str, os.s
         os.close(fd)
 
 
-def _clean_terms(value: object, *, limit: int = 100) -> list[str]:
-    if isinstance(value, str):
-        raw_items = [part.strip() for part in re.split(r"[,;|\n]+", value) if part.strip()]
-    elif isinstance(value, list):
-        raw_items = []
-        for item in value:
-            if isinstance(item, (str, int, float)) and str(item).strip():
-                raw_items.append(str(item).strip())
-            elif isinstance(item, dict):
-                name = str(item.get("name") or "").strip()
-                if not name:
-                    last = str(item.get("lastName") or item.get("family") or "").strip()
-                    first = str(item.get("firstName") or item.get("given") or "").strip()
-                    name = f"{last}, {first}".strip(", ") if (last or first) else ""
-                if name:
-                    raw_items.append(name)
-    else:
-        return []
+def _normalize_term_items(raw_items: list[str], *, limit: int, strip_hash: bool) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for item in raw_items:
-        trimmed = item.lstrip("#").strip()[:200]
+        trimmed = (item.lstrip("#") if strip_hash else item).strip()[:200]
         if not trimmed or trimmed.casefold() in seen:
             continue
         seen.add(trimmed.casefold())
@@ -230,6 +213,43 @@ def _clean_terms(value: object, *, limit: int = 100) -> list[str]:
         if len(result) >= limit:
             break
     return result
+
+
+def _extract_raw_term_items(value: object, *, split_pattern: str) -> list[str]:
+    if isinstance(value, str):
+        return [part.strip() for part in re.split(split_pattern, value) if part.strip()]
+    if not isinstance(value, list):
+        return []
+    raw_items: list[str] = []
+    for item in value:
+        if isinstance(item, (str, int, float)) and not isinstance(item, bool) and str(item).strip():
+            raw_items.append(str(item).strip())
+        elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            if not name:
+                last = str(item.get("lastName") or item.get("family") or "").strip()
+                first = str(item.get("firstName") or item.get("given") or "").strip()
+                name = f"{last}, {first}".strip(", ") if (last or first) else ""
+            if name:
+                raw_items.append(name)
+    return raw_items
+
+
+def _clean_terms(value: object, *, limit: int = 100) -> list[str]:
+    return _normalize_term_items(
+        _extract_raw_term_items(value, split_pattern=r"[,;|\n]+"),
+        limit=limit,
+        strip_hash=True,
+    )
+
+
+def _clean_authors(value: object, *, limit: int = 100) -> list[str]:
+    """Parse author names respecting ';', '|', '\\n' separators while preserving 'Last, First'."""
+    return _normalize_term_items(
+        _extract_raw_term_items(value, split_pattern=r"[;|\n]+"),
+        limit=limit,
+        strip_hash=False,
+    )
 
 
 def _clean_str(value: object, *, limit: int = 12000) -> str:
@@ -242,7 +262,11 @@ def _clean_str(value: object, *, limit: int = 12000) -> str:
     return ""
 
 
-def read_vault_snapshot(vault_root: str | Path | None) -> dict:
+def read_vault_snapshot(
+    vault_root: str | Path | None,
+    collection_id: str | None = None,
+    note_ids: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> dict:
     """Build a strictly read-only YAML frontmatter projection directly from an authorized vault."""
     unavailable = {
         "ok": False,
@@ -252,6 +276,7 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
     }
     if vault_root is None:
         return unavailable
+    selected_note_ids = set(note_ids) if note_ids is not None else None
     try:
         root = _lexical(vault_root)
         info = _metadata(root)
@@ -302,9 +327,14 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
 
         collections: list[dict] = []
         notes: list[dict] = []
-        truncated = len(active_slugs) > MAX_VAULT_CLUSTERS
+        if collection_id is not None:
+            target_slugs = [slug for slug in active_slugs if slug == collection_id]
+            truncated = False
+        else:
+            truncated = len(active_slugs) > MAX_VAULT_CLUSTERS
+            target_slugs = active_slugs[:MAX_VAULT_CLUSTERS]
 
-        for slug in active_slugs[:MAX_VAULT_CLUSTERS]:
+        for slug in target_slugs:
             if len(notes) >= MAX_VAULT_NOTES:
                 truncated = True
                 break
@@ -345,6 +375,9 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
                     if rel_posix in seen_rel_paths:
                         continue
                     seen_rel_paths.add(rel_posix)
+                    note_id = f"obsidian:{hashlib.sha256(rel_posix.encode('utf-8')).hexdigest()[:24]}"
+                    if selected_note_ids is not None and note_id not in selected_note_ids:
+                        continue
                     if len(notes) >= MAX_VAULT_NOTES:
                         truncated = True
                         break
@@ -354,7 +387,6 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
                     except (OSError, ValueError, yaml.YAMLError, RecursionError):
                         continue
 
-                    note_id = f"obsidian:{hashlib.sha256(rel_posix.encode('utf-8')).hexdigest()[:24]}"
                     data: dict = {
                         "origin": "obsidian",
                         "read_only": True,
@@ -375,7 +407,7 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
                         title = _clean_str(fm.get("title"), limit=1000) or note_file.stem
                         data["title"] = title
                         raw_year = _clean_str(fm.get("year"), limit=32)
-                        year_match = re.search(r"(19|20)\d{2}", raw_year)
+                        year_match = re.search(r"(?<!\d)(1\d{3}|20\d{2}|2100)(?!\d)", raw_year)
                         if year_match:
                             data["year"] = year_match.group(0)
                         category = _clean_str(fm.get("category") or fm.get("topic_cluster"), limit=200)
@@ -398,7 +430,7 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
                         )
                         if reading_status:
                             data["saved_reading_status"] = reading_status
-                        authors = _clean_terms(fm.get("authors"))
+                        authors = _clean_authors(fm.get("authors"))
                         if authors:
                             data["authors"] = authors
                         labels = _clean_terms(fm.get("labels"))

@@ -18,6 +18,11 @@ from research_hub.utils.doi import normalize_doi  # re-export
 logger = logging.getLogger(__name__)
 
 
+def _normalized_real_doi(doi: object) -> str:
+    ndoi = normalize_doi(str(doi or ""))
+    return ndoi if (ndoi.startswith("10.") and "/" in ndoi) else ""
+
+
 def normalize_title(title: str | None) -> str:
     """Lowercase, strip accents and punctuation, collapse whitespace."""
     if not title:
@@ -110,9 +115,18 @@ class DedupIndex:
         if normalized_doi and normalized_doi in self.doi_to_hits:
             matches.extend(self.doi_to_hits[normalized_doi])
         if not matches:
+            incoming_real_doi = _normalized_real_doi(doi)
             normalized_title = normalize_title(title)
             if normalized_title and normalized_title in self.title_to_hits:
-                matches.extend(self.title_to_hits[normalized_title])
+                for hit in self.title_to_hits[normalized_title]:
+                    hit_real_doi = _normalized_real_doi(hit.doi)
+                    if (
+                        incoming_real_doi
+                        and hit_real_doi
+                        and incoming_real_doi != hit_real_doi
+                    ):
+                        continue
+                    matches.append(hit)
         return matches
 
     def check(self, paper: dict) -> tuple[bool, list[DedupHit]]:
