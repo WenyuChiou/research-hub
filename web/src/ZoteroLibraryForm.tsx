@@ -190,6 +190,20 @@ export function ZoteroLibraryForm({
       <p id={id + "-help"} className="small">
         {t(enabled ? "zoteroLocalCredentialsHelp" : "zoteroDraftHelp")}
       </p>
+      {enabled && capability?.zotero_credential_source && capability.zotero_credential_source !== "none" && (
+        <p className="small muted">
+          <span className="badge neutral">
+            {t(
+              capability.zotero_credential_source === "config"
+                ? "zoteroSourceConfig"
+                : capability.zotero_credential_source === "env"
+                  ? "zoteroSourceEnv"
+                  : "zoteroSourceLegacy",
+            )}
+          </span>
+          {capability.zotero_env_overridden ? ` · ${t("zoteroEnvOverriddenNote")}` : ""}
+        </p>
+      )}
       <div className="integration-form-fields">
         <label htmlFor={id + "-library"}>
           {t("zoteroLibraryId")}

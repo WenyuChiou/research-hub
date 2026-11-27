@@ -108,8 +108,8 @@ class ObsidianValidation:
         # Resolve only the trusted startup paths, after rejecting scope aliases.
         vault_identity = self.scope.resolve()
         workspace_identity = Path(workspace_root).expanduser().resolve()
-        if workspace_identity.is_relative_to(vault_identity):
-            raise ValueError("Workspace storage must be outside the read-only Obsidian vault")
+        if workspace_identity.is_relative_to(vault_identity) or vault_identity.is_relative_to(workspace_identity):
+            raise ValueError("Workspace storage must be outside the read-only Obsidian vault (cannot overlap)")
 
     def capability(self) -> dict:
         result = {"status": "available" if self.scope else "unavailable", "read_only": True,

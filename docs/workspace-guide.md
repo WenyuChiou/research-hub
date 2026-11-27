@@ -54,9 +54,12 @@ Open **`⚙ Settings → Connections & Sync`** from the sidebar (or press `Ctrl+
 
 | Integration | How to connect | Post-connection Sync Hook |
 |---|---|---|
-| **Zotero** | Enter `ZOTERO_LIBRARY_ID` (`user` or `group`) + encrypted `ZOTERO_API_KEY` into `config.json`, then click **Test Zotero connection** | Run **Preview Sync (Dry-run)** for DOI/title dedup, then **Confirm Write to Zotero** |
-| **Obsidian** | Pass `--obsidian-vault /path/to/vault` at launch and click **Validate read-only** in Settings (use `--library-snapshot` to browse metadata snapshots in Literature) | Generate `.md` literature notes + `.base` table views inside `.research/exports/` and open notes with `obsidian://` |
-| **NotebookLM** | Click **Check NotebookLM session**, import `state.json`, or run `research-hub notebooklm login --auto-detect` | Package evidence-bounded **NotebookLM source bundles** (`manifest.json` + Markdown per full-text/abstract tier) |
+| **Zotero** | Enter `ZOTERO_LIBRARY_ID` (`user` or `group`) + encrypted `ZOTERO_API_KEY` into `config.json` (UI settings always take precedence over ambient `ZOTERO_*` env vars), then click **Test Zotero connection** | Run **Preview Sync (Dry-run)** → **Confirm Write to Zotero**, creating/reusing `[Research Hub] <Project>` collection with a direct web URL |
+| **Obsidian** | Pass `--obsidian-vault /path/to/vault` at launch or save Vault path directly in Settings (automatically enables both read-only validation and read-only YAML frontmatter browsing in Literature; `--library-snapshot` stays optional for frozen JSON files) | Generate `.md` literature notes + `.base` table views inside `.research/exports/` and open notes with `obsidian://` |
+| **NotebookLM** | Click **Check NotebookLM session**, import `state.json`, or run `research-hub notebooklm login --auto-detect` | Build evidence-bounded **NotebookLM source packs** and trigger **`☁ Upload to NotebookLM`** (returns notebook URL & `upload_receipt.json`) |
+| **AI Assistant (`Ctrl+J`)** | Click **`✦ AI Assistant`** in the header or press `Ctrl+J` (`⌘J`) / `Ctrl+K` (supports built-in Fast Commander + `Claude`, `Codex`, or `Gemini` CLIs) | Ask in English or Traditional Chinese to remove/restore papers, batch-add `#` tags, screen items, or trigger sync hooks — always gated by **`✓ Confirm & Apply`** |
+
+CLI pipelines (`run` / `ingest`) also accept `--no-zotero` to skip Zotero writes cleanly; when `persona` is configured as `"analyst"` or `"internal"` with no Zotero collection set, `--no-zotero` is applied automatically.
 
 ## Browse a selected Obsidian metadata snapshot
 

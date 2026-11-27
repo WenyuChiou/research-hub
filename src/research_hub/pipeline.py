@@ -794,15 +794,15 @@ def _render_obsidian_note(
                     authors_strs.append(a["name"])
     item_data = {
         "key": pp.get("zotero_key", ""),
-        "title": pp["title"],
+        "title": pp.get("title", "Untitled"),
         "authors": authors_strs,
-        "year": pp["year"],
-        "journal": pp["journal"],
+        "year": pp.get("year", ""),
+        "journal": pp.get("journal") or pp.get("venue") or "",
         "volume": pp.get("volume", ""),
         "issue": pp.get("issue", ""),
         "pages": pp.get("pages", ""),
-        "doi": pp["doi"],
-        "abstract": pp["abstract"],
+        "doi": pp.get("doi", ""),
+        "abstract": pp.get("abstract", ""),
         "tags": pp.get("tags", []),
         "provenance": pp.get("provenance"),
         "source_records": pp.get("source_records"),
@@ -841,10 +841,10 @@ def _render_obsidian_note(
     from research_hub.markdown_conventions import summary_section_to_callout
 
     content += "\n" + summary_section_to_callout(
-        summary=pp["summary"],
-        key_findings=pp["key_findings"],
-        methodology=pp["methodology"],
-        relevance=pp["relevance"],
+        summary=pp.get("summary", ""),
+        key_findings=pp.get("key_findings", ""),
+        methodology=pp.get("methodology", ""),
+        relevance=pp.get("relevance", ""),
     )
     from research_hub.paper_summarize import mark_summary_content_done
 
@@ -891,11 +891,16 @@ def run_pipeline(
     with_pdfs: bool = False,
     allow_archived_cluster: bool = False,
     papers_json: str | Path | None = None,
+    no_zotero: bool = False,
 ) -> int:
     del no_fit_check_auto_labels
     cfg = get_config()
     kb = str(cfg.root)
-    no_zotero = os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in ("1", "true", "yes")
+    no_zotero = (
+        bool(no_zotero)
+        or bool(getattr(cfg, "no_zotero", False))
+        or os.environ.get("RESEARCH_HUB_NO_ZOTERO", "").lower() in ("1", "true", "yes")
+    )
     clusters = ClusterRegistry(cfg.clusters_file)
     cluster_obj = clusters.get(cluster_slug) if cluster_slug else None
     if cluster_slug is not None and cluster_obj is None:
@@ -916,13 +921,16 @@ def run_pipeline(
         else cfg.zotero_default_collection
     )
     if collection_key is None and not dry_run and not no_zotero:
-        raise RuntimeError(
-            "Set cluster.zotero_collection_key for this cluster, zotero.default_collection "
-            "in config.json, or "
-            "RESEARCH_HUB_DEFAULT_COLLECTION env var. "
-            "Or set RESEARCH_HUB_NO_ZOTERO=1 to skip Zotero entirely "
-            "(data analyst mode: Obsidian + NotebookLM only)."
-        )
+        if getattr(cfg, "persona", "") in {"analyst", "internal"}:
+            no_zotero = True
+        else:
+            raise RuntimeError(
+                "Set cluster.zotero_collection_key for this cluster, zotero.default_collection "
+                "in config.json, or "
+                "RESEARCH_HUB_DEFAULT_COLLECTION env var. "
+                "Or pass --no-zotero / set RESEARCH_HUB_NO_ZOTERO=1 to skip Zotero entirely "
+                "(data analyst mode: Obsidian + NotebookLM only)."
+            )
 
     explicit_input = papers_json is not None
     papers_json = Path(papers_json) if explicit_input else cfg.root / "papers_input.json"

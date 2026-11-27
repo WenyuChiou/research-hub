@@ -1,3 +1,4 @@
+import { AgentChatDrawer } from "./AgentChatDrawer";
 import { CommandPalette, useCommandPaletteShortcut } from "./CommandPalette";
 import { discoveryRoute } from "./Discovery";
 import { ComposerSessions } from "./composerSession";
@@ -171,7 +172,18 @@ export default function App() {
     setResolvedTheme(resolved);
   }, []);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   useCommandPaletteShortcut(() => setPaletteOpen((open) => !open));
+  useEffect(() => {
+    const onAgentShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "j") {
+        event.preventDefault();
+        setAgentOpen((open) => (selectedRef.current ? !open : false));
+      }
+    };
+    window.addEventListener("keydown", onAgentShortcut);
+    return () => window.removeEventListener("keydown", onAgentShortcut);
+  }, []);
   const externalPaperNonceRef = useRef(0);
   const [externalPaperRequest, setExternalPaperRequest] = useState<{
     projectId: string;
@@ -855,6 +867,7 @@ export default function App() {
               onThemeModeChange={handleThemeModeChange}
               locale={locale}
               onLocaleChange={setLocale}
+              onWorkspaceRefresh={refresh}
               syncSlot={
                 activeDetail ? (
                   <SyncHooksPanel
@@ -925,19 +938,33 @@ export default function App() {
             <span aria-hidden="true">/</span>
             <strong>{activeDetail?.project.title || t("projects")}</strong>
           </div>
-          <button
-            type="button"
-            className={`button text-button icon-btn${refreshSpinning ? " is-spinning" : ""}`}
-            onClick={refresh}
-            aria-label={t("refresh")}
-            data-tooltip={t("refresh")}
-            data-tooltip-pos="bottom-end"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-              <path d="M21 3v6h-6" />
-            </svg>
-          </button>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem" }}>
+            {activeDetail && (
+              <button
+                type="button"
+                className="button secondary small agent-btn-launch"
+                onClick={() => setAgentOpen(true)}
+                aria-label={t("agentOpenBtn")}
+              >
+                <span aria-hidden="true">✦</span>
+                <span>{t("agentOpenBtn")}</span>
+                <span className="agent-kbd" aria-hidden="true">⌘J</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className={`button text-button icon-btn${refreshSpinning ? " is-spinning" : ""}`}
+              onClick={refresh}
+              aria-label={t("refresh")}
+              data-tooltip={t("refresh")}
+              data-tooltip-pos="bottom-end"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <path d="M21 3v6h-6" />
+              </svg>
+            </button>
+          </div>
         </header>
         <div className={`content-wrap workspace-${page}`}>
           <div className="page-heading">
@@ -1235,11 +1262,24 @@ export default function App() {
           window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
           setSetupOpenRequest((value) => value + 1);
         }}
+        onOpenAgent={() => {
+          if (!projectId) return;
+          window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
+          setAgentOpen(true);
+        }}
         onToggleTheme={() =>
           handleThemeModeChange(resolvedTheme === "dark" ? "light" : "dark")
         }
         resolvedTheme={resolvedTheme}
         locale={locale}
+      />
+      <AgentChatDrawer
+        open={agentOpen && Boolean(projectId)}
+        onClose={() => setAgentOpen(false)}
+        projectId={projectId}
+        projectTitle={activeDetail?.project.title}
+        locale={locale}
+        onApplied={(msg) => onSaved(msg)}
       />
     </div>
   );

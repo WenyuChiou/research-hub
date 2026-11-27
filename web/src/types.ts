@@ -85,6 +85,8 @@ export interface LocalIntegrationsCapability {
   zotero_api_key_encrypted?: boolean;
   zotero_library_id?: string;
   zotero_library_type?: "user" | "group";
+  zotero_credential_source?: "config" | "env" | "legacy_config" | "none";
+  zotero_env_overridden?: boolean;
   unpaywall_email_present?: boolean;
   s2_api_key_present?: boolean;
   s2_api_key_encrypted?: boolean;
@@ -104,6 +106,7 @@ export interface Workspace {
       scope: string;
       authorized_vault?: string;
     };
+    obsidian_snapshot_available?: boolean;
     local_integrations?: LocalIntegrationsCapability;
     text_intake?: Capability & {
       version: number;

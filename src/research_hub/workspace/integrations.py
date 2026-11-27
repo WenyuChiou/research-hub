@@ -43,6 +43,8 @@ _ALLOWED_CREDENTIAL_FIELDS = frozenset({
     "unpaywall_email",
     "s2_api_key",
     "clear_s2_api_key",
+    "obsidian_vault_path",
+    "clear_obsidian_vault",
 })
 _ALLOWED_LOGIN_FIELDS = frozenset({"mode", "browser", "state_path"})
 _ALLOWED_BROWSERS = frozenset({"", "chrome", "edge", "firefox", "chromium"})
@@ -122,7 +124,7 @@ class LocalIntegrationsManager:
         if not path.exists():
             return path, {}
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
             raise WorkspaceError(f"Could not read configuration file: {type(exc).__name__}", "config_unreadable") from exc
         if not isinstance(data, dict):
@@ -141,11 +143,16 @@ class LocalIntegrationsManager:
         return root / ".research_hub"
 
     def default_vault_root(self) -> Path | None:
-        """Return configured existing KB root if enabled cleanly, without failing startup."""
+        """Return configured existing vault/KB root if enabled cleanly, without failing startup."""
         if not self.enabled:
             return None
         try:
             _, data = self._read_config_dict()
+            raw_ui_vault = data.get("obsidian_vault_path")
+            if isinstance(raw_ui_vault, str) and raw_ui_vault.strip():
+                candidate = Path(raw_ui_vault).expanduser()
+                if candidate.is_dir():
+                    return candidate
             kb = data.get("knowledge_base")
             raw_root = kb.get("root") if isinstance(kb, dict) else None
             if isinstance(raw_root, str) and raw_root.strip():
@@ -175,54 +182,88 @@ class LocalIntegrationsManager:
     def _resolve_zotero_effective(
         self, data: dict[str, Any], config_dir: Path | None
     ) -> dict[str, Any]:
-        """Resolve Zotero credentials with the exact precedence of zotero.client._load_credentials."""
+        """Resolve Zotero credentials with explicit config precedence over ambient env."""
         zot = data.get("zotero") if isinstance(data.get("zotero"), dict) else {}
-        raw_zot_key = str(zot.get("api_key") or data.get("zotero_api_key") or "").strip()
+        raw_flat_key = str(data.get("zotero_api_key") or "").strip()
+        raw_nested_key = str(zot.get("api_key") or "").strip()
+        raw_zot_key = raw_flat_key or raw_nested_key
 
-        api_key = str(os.environ.get("ZOTERO_API_KEY") or "").strip()
-        lib_id = str(os.environ.get("ZOTERO_LIBRARY_ID") or "").strip()
-        lib_type = str(os.environ.get("ZOTERO_LIBRARY_TYPE") or "user").strip() or "user"
+        cfg_key = ""
+        if raw_flat_key:
+            cfg_key = (self._decrypt_field(raw_flat_key, config_dir) if config_dir else raw_flat_key) or ""
+        if not cfg_key and raw_nested_key:
+            cfg_key = (self._decrypt_field(raw_nested_key, config_dir) if config_dir else raw_nested_key) or ""
+        cfg_id = str(data.get("zotero_library_id") or zot.get("library_id") or "").strip()
+        cfg_type = str(data.get("zotero_library_type") or zot.get("library_type") or "").strip()
 
-        if not api_key or not lib_id:
+        env_key = str(os.environ.get("ZOTERO_API_KEY") or "").strip()
+        env_id = str(os.environ.get("ZOTERO_LIBRARY_ID") or "").strip()
+        env_type = str(os.environ.get("ZOTERO_LIBRARY_TYPE") or "").strip()
+
+        file_key = ""
+        file_id = ""
+        file_type = ""
+        try:
+            from research_hub.zotero.client import _read_env_file
+
+            env_file = _read_env_file()
+            file_key = str(env_file.get("ZOTERO_API_KEY") or "").strip()
+            file_id = str(env_file.get("ZOTERO_LIBRARY_ID") or "").strip()
+            file_type = str(env_file.get("ZOTERO_LIBRARY_TYPE") or "").strip()
+        except Exception:
+            pass
+
+        legacy_key = ""
+        legacy_id = ""
+        legacy_type = ""
+        if self._explicit_mode and (not (cfg_key or env_key or file_key) or not (cfg_id or env_id or file_id)):
+            legacy_cfg = Path.home() / ".claude" / "skills" / "zotero-skills" / "config.json"
             try:
-                from research_hub.zotero.client import _read_env_file
-
-                env_file = _read_env_file()
-                if not api_key:
-                    api_key = str(env_file.get("ZOTERO_API_KEY") or "").strip()
-                if not lib_id:
-                    lib_id = str(env_file.get("ZOTERO_LIBRARY_ID") or "").strip()
-                lib_type = str(env_file.get("ZOTERO_LIBRARY_TYPE") or lib_type).strip() or lib_type
-            except Exception:
+                if legacy_cfg.is_file():
+                    legacy_data = json.loads(legacy_cfg.read_text(encoding="utf-8"))
+                    if isinstance(legacy_data, dict):
+                        legacy_key = str(legacy_data.get("api_key") or "").strip()
+                        legacy_id = str(legacy_data.get("library_id") or "").strip()
+                        legacy_type = str(legacy_data.get("library_type") or "").strip()
+            except (OSError, json.JSONDecodeError):
                 pass
 
-        if not api_key or not lib_id:
-            if not api_key:
-                raw_flat = str(data.get("zotero_api_key") or "").strip()
-                api_key = (self._decrypt_field(raw_flat, config_dir) if config_dir else raw_flat) or ""
-            if not lib_id:
-                lib_id = str(data.get("zotero_library_id") or "").strip()
-            flat_type = str(data.get("zotero_library_type") or "").strip()
-            if flat_type:
-                lib_type = flat_type
-
-            if not api_key:
-                raw_nested = str(zot.get("api_key") or "").strip()
-                api_key = (self._decrypt_field(raw_nested, config_dir) if config_dir else raw_nested) or ""
-            if not lib_id:
-                lib_id = str(zot.get("library_id") or "").strip()
-            nested_type = str(zot.get("library_type") or "").strip()
-            if nested_type:
-                lib_type = nested_type
+        api_key = cfg_key or env_key or file_key or legacy_key
+        lib_id = cfg_id or env_id or file_id or legacy_id
+        lib_type = cfg_type or env_type or file_type or legacy_type or "user"
 
         if lib_type not in {"user", "group"}:
             lib_type = "user"
+
+        env_overridden = bool(
+            (cfg_id and env_id and env_id != cfg_id)
+            or (cfg_key and env_key and env_key != cfg_key)
+        )
+        if cfg_key and cfg_id:
+            source = "config"
+        elif cfg_key or cfg_id:
+            if (cfg_key and api_key == cfg_key) and (not lib_id or lib_id == cfg_id):
+                source = "config"
+            elif (cfg_id and lib_id == cfg_id) and (not api_key or (not env_key and not file_key and api_key == legacy_key)):
+                source = "config"
+            elif env_key or file_key or env_id or file_id:
+                source = "env"
+            else:
+                source = "config"
+        elif env_key or env_id or file_key or file_id:
+            source = "env"
+        elif legacy_key or legacy_id:
+            source = "legacy_config"
+        else:
+            source = "none"
 
         return {
             "api_key": api_key,
             "library_id": lib_id,
             "library_type": lib_type,
             "raw_config_key": raw_zot_key,
+            "source": source,
+            "env_overridden": env_overridden,
         }
 
     def capability(self) -> dict[str, Any]:
@@ -264,6 +305,8 @@ class LocalIntegrationsManager:
             "zotero_api_key_encrypted": bool(raw_zot_key and is_encrypted(raw_zot_key)),
             "zotero_library_id": effective_lib_id,
             "zotero_library_type": resolved_zot["library_type"],
+            "zotero_credential_source": resolved_zot["source"],
+            "zotero_env_overridden": resolved_zot["env_overridden"],
             "unpaywall_email_present": bool(unpaywall_raw) or env_unpaywall,
             "s2_api_key_present": bool(raw_s2_key) or env_s2_key,
             "s2_api_key_encrypted": bool(raw_s2_key and is_encrypted(raw_s2_key)),
@@ -409,6 +452,37 @@ class LocalIntegrationsManager:
             else:
                 data.pop("search", None)
 
+            obsidian_touched = False
+            if payload.get("clear_obsidian_vault") is True:
+                if "obsidian_vault_path" in data:
+                    data.pop("obsidian_vault_path", None)
+                    obsidian_touched = True
+            elif "obsidian_vault_path" in payload:
+                raw_vault = payload["obsidian_vault_path"]
+                if not isinstance(raw_vault, str):
+                    raise WorkspaceError("Obsidian vault path must be a string", "invalid_request")
+                trimmed_vault = raw_vault.strip()
+                if not trimmed_vault:
+                    if "obsidian_vault_path" in data:
+                        data.pop("obsidian_vault_path", None)
+                        obsidian_touched = True
+                else:
+                    import stat as _stat
+                    from .obsidian_validation import _lexical as _obs_lexical, _metadata as _obs_metadata
+
+                    try:
+                        lex_vault = _obs_lexical(trimmed_vault)
+                        vstat = _obs_metadata(lex_vault)
+                    except (ValueError, OSError) as exc:
+                        raise WorkspaceError(
+                            "Obsidian vault path must be an existing non-linked absolute directory",
+                            "invalid_request",
+                        ) from exc
+                    if not _stat.S_ISDIR(vstat.st_mode):
+                        raise WorkspaceError("Selected Obsidian vault directory does not exist", "invalid_request")
+                    data["obsidian_vault_path"] = str(lex_vault.resolve())
+                    obsidian_touched = True
+
             atomic_json(path, data)
             chmod_sensitive(path, mode=0o600)
             invalidate_config_cache()
@@ -418,6 +492,7 @@ class LocalIntegrationsManager:
                 "ok": True,
                 "saved": True,
                 "zotero_touched": zotero_touched,
+                "obsidian_touched": obsidian_touched,
                 "credentials": self.capability(),
             }
 

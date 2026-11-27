@@ -295,24 +295,35 @@ def test_zotero_and_notebooklm_probes_and_login_modes(tmp_path: Path, monkeypatc
     assert mixed_res["zotero_touched"] is True
     mgr.save_credentials({"zotero_library_id": "12345", "zotero_library_type": "user"})
 
-    # Environment ZOTERO_* takes precedence over config.json (matches zotero.client._load_credentials)
+    # Explicit UI config.json takes precedence over ambient ZOTERO_* env vars
     monkeypatch.setenv("ZOTERO_LIBRARY_ID", "99999")
     monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "group")
-    monkeypatch.setenv("ZOTERO_API_KEY", "env-key-wins")
+    monkeypatch.setenv("ZOTERO_API_KEY", "env-key-loses")
 
-    class _EnvZot:
+    class _CfgZot:
         def __init__(self, lib_id, lib_type, api_key):
-            assert lib_id == "99999"
-            assert lib_type == "group"
-            assert api_key == "env-key-wins"
+            assert lib_id == "12345"
+            assert lib_type == "user"
+            assert api_key == "zot-secret-test"
 
         def top(self, limit=1):
             return []
 
-    monkeypatch.setattr(pyzot_mod, "Zotero", _EnvZot)
-    assert mgr.capability()["zotero_library_id"] == "99999"
-    assert mgr.capability()["zotero_library_type"] == "group"
+    monkeypatch.setattr(pyzot_mod, "Zotero", _CfgZot)
+    cap = mgr.capability()
+    assert cap["zotero_library_id"] == "12345"
+    assert cap["zotero_library_type"] == "user"
+    assert cap["zotero_credential_source"] == "config"
+    assert cap["zotero_env_overridden"] is True
     assert mgr.check_zotero()["probe"]["status"] == "connected_web"
+
+    # When config.json has no Zotero creds, ambient ZOTERO_* env vars act as fallback
+    empty_cfg = tmp_path / "env_only" / "config.json"
+    empty_cfg.parent.mkdir(parents=True)
+    empty_cfg.write_text(json.dumps({"knowledge_base": {"root": str(kb_root)}}), encoding="utf-8")
+    env_mgr = LocalIntegrationsManager(empty_cfg)
+    assert env_mgr.capability()["zotero_library_id"] == "99999"
+    assert env_mgr.capability()["zotero_credential_source"] == "env"
     monkeypatch.delenv("ZOTERO_LIBRARY_ID", raising=False)
     monkeypatch.delenv("ZOTERO_LIBRARY_TYPE", raising=False)
     monkeypatch.delenv("ZOTERO_API_KEY", raising=False)
@@ -446,3 +457,69 @@ def test_base_dependencies_include_cryptography_for_ui_secret_storage():
     from research_hub.security import secret_box
 
     assert secret_box._HAS_CRYPTO is True
+
+
+def test_explicit_ui_zotero_overrides_ambient_env_and_saves_obsidian_vault(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("ZOTERO_LIBRARY_ID", "999999")
+    monkeypatch.setenv("ZOTERO_API_KEY", "env-key-should-lose")
+    monkeypatch.setenv("ZOTERO_LIBRARY_TYPE", "group")
+
+    ws = Workspace(tmp_path / "ws")
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    cfg_path = tmp_path / "cfg" / "config.json"
+    cfg_path.parent.mkdir(parents=True)
+    cfg_path.write_text("{}", encoding="utf-8")
+
+    server = WorkspaceServer(ws.root, port=0, integrations_config=cfg_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        csrf = _fetch_csrf(base)
+
+        # Save explicit UI credentials -> overrides env vars
+        code, res = _post_json(
+            f"{base}/api/v1/integrations/credentials",
+            {
+                "zotero_library_id": "123456",
+                "zotero_library_type": "user",
+                "zotero_api_key": "ui-explicit-secret",
+                "obsidian_vault_path": str(vault),
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code == 200 and res["ok"] is True
+        creds = res["credentials"]
+        assert creds["zotero_library_id"] == "123456"
+        assert creds["zotero_library_type"] == "user"
+        assert creds["zotero_credential_source"] == "config"
+        assert creds["zotero_env_overridden"] is True
+        assert creds["obsidian_vault_configured"] is True
+        assert res["obsidian_snapshot_available"] is True
+        assert server.obsidian_validation.scope == vault.resolve()
+
+        # Overlapping workspace inside vault is rejected cleanly
+        nested_ws = Workspace(vault / "nested-ws")
+        nested_server = WorkspaceServer(nested_ws.root, port=0, integrations_config=cfg_path)
+        nested_thread = threading.Thread(target=nested_server.serve_forever, daemon=True)
+        nested_thread.start()
+        try:
+            nested_base = f"http://127.0.0.1:{nested_server.server_port}"
+            nested_csrf = _fetch_csrf(nested_base)
+            bad_code, bad_body = _post_json(
+                f"{nested_base}/api/v1/integrations/credentials",
+                {"obsidian_vault_path": str(vault)},
+                csrf=nested_csrf,
+                origin=nested_base,
+            )
+            assert bad_code == 400 and bad_body["code"] == "invalid_request"
+        finally:
+            nested_server.shutdown()
+            nested_server.server_close()
+            nested_thread.join(timeout=5)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

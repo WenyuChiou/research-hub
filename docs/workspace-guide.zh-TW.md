@@ -54,9 +54,12 @@ research-hub serve --workspace --root ./workspace-demo
 
 | 整合軟體 | 連接設定方式 | 連接後一鍵同步動作 |
 |---|---|---|
-| **Zotero** | 填入 `ZOTERO_LIBRARY_ID`（個人或群組）並將 `ZOTERO_API_KEY` 加密寫入本機 `config.json`，再點擊 **測試 Zotero 連線** | 先執行 **預覽同步（Dry-run）** 檢查 DOI／標題去重，確認後 **確認寫入 Zotero** |
-| **Obsidian** | 啟動時帶入 `--obsidian-vault /vault/路徑` 並在設定中心點擊 **純唯讀驗證**（帶入 `--library-snapshot` 則可於「文獻」瀏覽唯讀中繼資料快照） | 於 `.research/exports/` 產生 `.md` 文獻筆記與 `.base` 資料庫檢視，並支援 `obsidian://` 開啟 |
-| **NotebookLM** | 點擊 **檢查 NotebookLM 登入狀態**、匯入 `state.json`，或執行 `research-hub notebooklm login --auto-detect` | 封裝標明「全文／僅摘要」界線的 **NotebookLM 來源包**（`manifest.json` ＋ 分層 `.md`） |
+| **Zotero** | 填入 `ZOTERO_LIBRARY_ID`（個人或群組）並將 `ZOTERO_API_KEY` 加密寫入本機 `config.json`（UI 設定優先覆蓋系統 `ZOTERO_*` 環境變數），再點擊 **測試 Zotero 連線** | 先執行 **預覽同步（Dry-run）**檢查 DOI／標題去重，確認後 **確認寫入 Zotero**（自動建立或重用 `[Research Hub] <專案>` Collection 並顯示直達網址） |
+| **Obsidian** | 啟動時帶入 `--obsidian-vault /vault/路徑` 或直接在設定中心儲存 Vault 路徑（單一設定即可同時做純唯讀驗證與「文獻」頁僅讀 YAML frontmatter 瀏覽；`--library-snapshot` 保留為選用靜態 JSON 模式） | 於 `.research/exports/` 產生 `.md` 文獻筆記與 `.base` 資料庫檢視，並支援 `obsidian://` 開啟 |
+| **NotebookLM** | 點擊 **檢查 NotebookLM 登入狀態**、匯入 `state.json`，或執行 `research-hub notebooklm login --auto-detect` | 封裝標明「全文／僅摘要」界線的 **NotebookLM 來源包**，並可一鍵觸發 **`☁ 上傳至 NotebookLM`**（產生筆記本網址與 `upload_receipt.json`） |
+| **AI 助理主控台（`Ctrl+J`）** | 點擊頂部列 **`✦ AI 助理`** 或按 `Ctrl+J`（`⌘J`）／`Ctrl+K`（支援內建快速指令引擎與本機 `Claude`／`Codex`／`Gemini` CLI） | 使用中文或英文指令刪除／移出／復原文獻、批次加 `#` 標籤、更改分類／篩選或同步三端；採嚴格兩段式先提案後點 **`✓ 確認執行`** |
+
+CLI 管線指令（`run`／`ingest`）亦支援 `--no-zotero` 參數跳過 Zotero 寫入；當設定檔 `persona` 為 `"analyst"` 或 `"internal"` 且未設定 Zotero Collection 時會自動啟用 `--no-zotero`。
 
 ## 瀏覽已選 Obsidian 中繼資料快照
 

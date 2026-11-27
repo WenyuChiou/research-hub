@@ -777,3 +777,232 @@ def test_zotero_failed_writes_lookup_errors_and_concurrent_exports(tmp_path: Pat
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_zotero_sync_creates_project_collection_and_notebooklm_upload_writes_receipt(tmp_path: Path, monkeypatch):
+    ws, _ = _seed_workspace(tmp_path / "ws")
+    kb_root = tmp_path / "kb"
+    nlm_dir = kb_root / ".research_hub" / "nlm_sessions"
+    nlm_dir.mkdir(parents=True)
+    state_file = nlm_dir / "state.json"
+    state_file.write_text('{"cookies":[{"name":"SID","value":"x","domain":".google.com"}]}', encoding="utf-8")
+
+    cfg_path = tmp_path / "cfg" / "config.json"
+    cfg_path.parent.mkdir(parents=True)
+    cfg_path.write_text(json.dumps({"knowledge_base": {"root": str(kb_root)}}), encoding="utf-8")
+
+    server = WorkspaceServer(ws.root, port=0, integrations_config=cfg_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        csrf = _fetch_csrf(base)
+
+        _post_json(
+            f"{base}/api/v1/integrations/credentials",
+            {"zotero_library_id": "14772686", "zotero_library_type": "user", "zotero_api_key": "zot-real-mock-secret"},
+            csrf=csrf,
+            origin=base,
+        )
+
+        import research_hub.workspace.sync_hooks as sync_hooks_mod
+
+        created_items: list[dict] = []
+
+        class _CollectionZotero:
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                pass
+
+            def items(self, q: str = "", limit: int = 5):
+                return []
+
+            def collections(self):
+                return []
+
+            def create_collections(self, cols: list[dict]):
+                assert cols[0]["name"] == "[Research Hub] Agentic Hydrology Review"
+                return {"successful": {"0": {"key": "COL999", "data": {"key": "COL999"}}}}
+
+            def create_items(self, items_list: list[dict]):
+                created_items.extend(items_list)
+                return {"successful": {str(i): {"key": f"ITM{i}"} for i in range(len(items_list))}, "failed": {}}
+
+        monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _CollectionZotero)
+        _, dry = _post_json(f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync", {"dry_run": True}, csrf=csrf, origin=base)
+        code_live, live = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "expected_library": dry["destination_library"],
+                "expected_revisions": dry["source_revisions"],
+                "expected_plan_digest": dry["plan_digest"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert code_live == 200 and live["ok"] is True
+        assert live["collection_key"] == "COL999"
+        assert live["collection_name"] == "[Research Hub] Agentic Hydrology Review"
+        assert live["library_url"] == "https://www.zotero.org/users/14772686/collections/COL999/items"
+        assert all(item.get("collections") == ["COL999"] for item in created_items)
+
+        # NotebookLM cloud upload endpoint deduplicates existing titles and writes upload_receipt.json
+        import research_hub.notebooklm.auth as nlm_auth_mod
+        import research_hub.notebooklm.client as nlm_client_mod
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(nlm_auth_mod, "ensure_session_health", lambda sf: {"ok": True})
+        uploaded_titles: list[str] = []
+
+        class _FakeNlmClient:
+            def __init__(self, sf, headless=True, timeout_sec=120):
+                assert sf == state_file
+
+            def find_or_create_notebook(self, title: str):
+                return SimpleNamespace(notebook_id="nb-real-01", name=title, url="https://notebooklm.google.com/notebook/nb-real-01")
+
+            def list_sources(self, notebook_id: str):
+                return [SimpleNamespace(title="Abstract-Only LLM Benchmark Survey")]
+
+            def upload_source(self, notebook_id: str, *, text: str = "", title: str = "", **kw):
+                uploaded_titles.append(title)
+                return SimpleNamespace(ok=True, source_id="src-up-1", error="")
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(nlm_client_mod, "NotebookLMClient", _FakeNlmClient)
+        up_code, up_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/notebooklm/upload",
+            {},
+            csrf=csrf,
+            origin=base,
+        )
+        assert up_code == 200 and up_res["ok"] is True
+        assert up_res["notebook_id"] == "nb-real-01"
+        assert up_res["uploaded_count"] == 1
+        assert up_res["skipped_duplicates"] == 1
+        assert len(uploaded_titles) == 1
+        receipt_path = ws.root / up_res["receipt_file"]
+        assert receipt_path.is_file()
+
+        # Expired health dict returns clean 400 nlm_auth_expired (never drops HTTP connection)
+        monkeypatch.setattr(nlm_auth_mod, "ensure_session_health", lambda sf: {"ok": False, "refreshed": False})
+        exp_code, exp_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/notebooklm/upload",
+            {},
+            csrf=csrf,
+            origin=base,
+        )
+        assert exp_code == 400 and exp_res["ok"] is False and exp_res["code"] == "nlm_auth_expired"
+
+        # NotebookLMClient auth failure during constructor is caught cleanly -> 400 nlm_auth_expired
+        monkeypatch.setattr(nlm_auth_mod, "ensure_session_health", lambda sf: {"ok": True})
+
+        class _AuthFailClient:
+            def __init__(self, *a, **kw):
+                raise nlm_client_mod.NotebookLMError("failed to load NLM session: Authentication expired")
+
+        monkeypatch.setattr(nlm_client_mod, "NotebookLMClient", _AuthFailClient)
+        ctor_code, ctor_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/notebooklm/upload",
+            {},
+            csrf=csrf,
+            origin=base,
+        )
+        assert ctor_code == 400 and ctor_res["ok"] is False and ctor_res["code"] == "nlm_auth_expired"
+
+        # Existing duplicate Zotero items (both mixed and all-duplicate sync) are attached to the project collection
+        updated_items: list[dict] = []
+        existing_remote_cols: list[str] = []
+
+        class _DupCollectionZotero:
+            def __init__(self, lib_id: str, lib_type: str, api_key: str):
+                pass
+
+            def items(self, q: str = "", limit: int = 5):
+                return [
+                    {
+                        "key": "EXIST_S1",
+                        "version": 4,
+                        "data": {
+                            "key": "EXIST_S1",
+                            "title": "Water ABM Multi-Agent Calibration",
+                            "DOI": "10.1029/2025WR000001",
+                            "collections": list(existing_remote_cols),
+                        },
+                    },
+                    {
+                        "key": "EXIST_S2",
+                        "version": 7,
+                        "data": {
+                            "key": "EXIST_S2",
+                            "title": "Abstract-Only LLM Benchmark Survey",
+                            "DOI": "10.48550/arXiv.2409.12345",
+                            "collections": list(existing_remote_cols),
+                        },
+                    },
+                ]
+
+            def collections(self):
+                return [{"key": "COL999", "data": {"key": "COL999", "name": "[Research Hub] Agentic Hydrology Review"}}]
+
+            def create_collections(self, cols: list[dict]):
+                raise AssertionError("Should reuse existing COL999")
+
+            def create_items(self, items_list: list[dict]):
+                raise AssertionError("All-duplicate sync must not call create_items")
+
+            def update_item(self, item: dict):
+                updated_items.append(item)
+                existing_remote_cols[:] = list(item.get("data", {}).get("collections") or [])
+                return True
+
+        monkeypatch.setattr(sync_hooks_mod, "_get_zotero_client", _DupCollectionZotero)
+        _, dry_dup = _post_json(f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync", {"dry_run": True}, csrf=csrf, origin=base)
+        assert dry_dup["would_create"] == 0
+        assert dry_dup["would_attach"] == 2
+        assert dry_dup["duplicates"] == 2
+        assert [i["action"] for i in dry_dup["items"]] == ["attach_to_collection", "attach_to_collection"]
+
+        dup_code, dup_res = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "expected_library": dry_dup["destination_library"],
+                "expected_revisions": dry_dup["source_revisions"],
+                "expected_plan_digest": dry_dup["plan_digest"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert dup_code == 200 and dup_res["ok"] is True
+        assert dup_res["created_count"] == 0
+        assert dup_res["skipped_duplicates"] == 2
+        assert dup_res["collection_key"] == "COL999"
+        assert dup_res["collection_added_count"] == 2
+        assert set(dup_res["collection_added_keys"]) == {"EXIST_S1", "EXIST_S2"}
+        assert all("COL999" in u["data"]["collections"] for u in updated_items)
+
+        # Fresh preview once COL999 is already present switches actions to skip_duplicate and performs 0 writes
+        updated_items.clear()
+        _, dry_dup2 = _post_json(f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync", {"dry_run": True}, csrf=csrf, origin=base)
+        assert dry_dup2["would_create"] == 0
+        assert dry_dup2["would_attach"] == 0
+        assert [i["action"] for i in dry_dup2["items"]] == ["skip_duplicate", "skip_duplicate"]
+        dup_code2, dup_res2 = _post_json(
+            f"{base}/api/v1/projects/proj-alpha/integrations/zotero/sync",
+            {
+                "dry_run": False,
+                "expected_library": dry_dup2["destination_library"],
+                "expected_revisions": dry_dup2["source_revisions"],
+                "expected_plan_digest": dry_dup2["plan_digest"],
+            },
+            csrf=csrf,
+            origin=base,
+        )
+        assert dup_code2 == 200 and dup_res2["collection_added_count"] == 0 and updated_items == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

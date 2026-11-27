@@ -6,6 +6,7 @@ import "./library.css";
 import "./settings.css";
 import "./syncHooks.css";
 import "./visuals.css";
+import "./agentChat.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

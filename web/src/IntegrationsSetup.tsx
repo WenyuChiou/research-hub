@@ -186,6 +186,7 @@ export function IntegrationsSetup({
   locale,
   onLocaleChange,
   initialCategory = "connections",
+  onWorkspaceRefresh,
 }: {
   workspace: Workspace | null;
   t: Translate;
@@ -199,6 +200,7 @@ export function IntegrationsSetup({
   locale?: Locale;
   onLocaleChange?: (locale: Locale) => void;
   initialCategory?: SettingsCategory;
+  onWorkspaceRefresh?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [activeCategory, setActiveCategory] =
@@ -914,12 +916,14 @@ export function IntegrationsSetup({
                                   capability={
                                     workspace?.capabilities?.obsidian_validation
                                   }
+                                  canSaveVault={localCap?.status === "available"}
                                   onValidated={(obsidian) =>
                                     onLiveStateChange?.((prev) => ({
                                       ...prev,
                                       obsidian,
                                     }))
                                   }
+                                  onVaultSaved={() => onWorkspaceRefresh?.()}
                                   t={t}
                                 />
                                 <div className="integration-inline-row">

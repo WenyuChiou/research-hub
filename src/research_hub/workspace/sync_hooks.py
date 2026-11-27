@@ -11,6 +11,7 @@ Security invariants:
 from __future__ import annotations
 
 import contextlib
+import copy
 from datetime import datetime, timezone
 import json
 import os
@@ -19,7 +20,7 @@ import re
 import tempfile
 import threading
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from research_hub.locks import file_lock
 from .core import Workspace, WorkspaceError, atomic_json, digest, safe_path
@@ -258,16 +259,16 @@ def _get_zotero_client(library_id: str, library_type: str, api_key: str):
     return zotero.Zotero(library_id, library_type, api_key)
 
 
-def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
-    """Lookup existing Zotero item by DOI or title, raising WorkspaceError on API failure."""
+def _find_zotero_duplicate_item(zot: Any, title: str, doi: str = "") -> dict[str, Any] | None:
+    """Lookup existing Zotero item by DOI or title, returning it or raising WorkspaceError on API failure."""
     from research_hub.utils.doi import normalize_doi
 
     norm_doi = normalize_doi(doi) if doi else ""
     norm_title = (title or "").casefold()
 
-    def _matches(items: object) -> bool:
+    def _find_match(items: object) -> dict[str, Any] | None:
         if not isinstance(items, list):
-            return False
+            return None
         for entry in items:
             if not isinstance(entry, dict):
                 continue
@@ -277,26 +278,32 @@ def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
             entry_doi = normalize_doi(str(edata.get("DOI") or ""))
             if norm_doi and entry_doi:
                 if norm_doi == entry_doi:
-                    return True
+                    return entry
                 continue
             if norm_title and str(edata.get("title") or "").casefold() == norm_title:
-                return True
-        return False
+                return entry
+        return None
 
     query = doi or (title or "")[:50]
     try:
         existing = zot.items(q=query, limit=5)
-        if _matches(existing):
-            return True
+        hit = _find_match(existing)
+        if hit is not None:
+            return hit
         if not existing and doi and title:
             fallback = zot.items(q=title[:50], limit=5)
-            return _matches(fallback)
+            return _find_match(fallback)
     except Exception as exc:
         raise WorkspaceError(
             "Zotero duplicate lookup failed; verify API credentials, connection, or rate limits before syncing",
             "zotero_lookup_failed",
         ) from exc
-    return False
+    return None
+
+
+def _check_zotero_duplicate_strict(zot: Any, title: str, doi: str = "") -> bool:
+    """Lookup existing Zotero item by DOI or title, raising WorkspaceError on API failure."""
+    return _find_zotero_duplicate_item(zot, title, doi) is not None
 
 
 def _sanitize_zotero_failure(err_val: object, secret: str) -> str:
@@ -877,14 +884,10 @@ class WorkspaceSyncHooks:
                 }
         return resolved_map
 
-    def bundle_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _bundle_notebooklm_locked(
+        self, project_id: str, selected_source_ids: Any
+    ) -> dict[str, Any]:
         integrations = self._require_enabled()
-        body = dict(payload or {})
-        extra = set(body) - {"selected_source_ids"}
-        if extra:
-            raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
-
-        self._validate_project_id(project_id)
         export_rel = f".research/exports/notebooklm-{project_id}"
         pack_rel = f"{export_rel}/00-notebooklm-source-pack.md"
         manifest_rel = f"{export_rel}/manifest.json"
@@ -892,104 +895,321 @@ class WorkspaceSyncHooks:
         used_names: set[str] = set()
         source_files: list[str] = []
         manifest_sources: list[dict[str, Any]] = []
-        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
-            project, sources, screenings = self._resolve_project_sources(
-                project_id, body.get("selected_source_ids")
+        prepared_entries: list[dict[str, Any]] = []
+        project, sources, screenings = self._resolve_project_sources(
+            project_id, selected_source_ids
+        )
+        artifact_refs = self._resolve_source_artifacts(project_id, sources)
+        full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
+        abstract_only_count = len(sources) - full_text_count
+        generated_at = _utc_now()
+        manifest: dict[str, Any] = {
+            "project_id": project_id,
+            "project_title": project["title"],
+            "source_count": len(sources),
+            "full_text_count": full_text_count,
+            "abstract_only_count": abstract_only_count,
+            "generated_at": generated_at,
+        }
+
+        export_dir = safe_path(self.workspace.root, export_rel)
+        sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
+        pack_path = safe_path(self.workspace.root, pack_rel)
+        manifest_path = safe_path(self.workspace.root, manifest_rel)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        self._clean_stale_files(sources_dir, (".md",))
+
+        for index, rec in enumerate(sources, start=1):
+            slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"source-{index}")
+            stem = f"{index:02d}-{slug}"
+            candidate_name = f"{stem}.md"
+            collision = 2
+            while candidate_name in used_names:
+                candidate_name = f"{stem}-{collision}.md"
+                collision += 1
+            used_names.add(candidate_name)
+
+            file_rel = f"{export_rel}/sources/{candidate_name}"
+            file_path = safe_path(self.workspace.root, file_rel)
+            decision = screenings.get(rec["id"], "unscreened")
+            art_ref = artifact_refs.get(rec["id"])
+            rendered = _render_nlm_individual_source(
+                rec,
+                index=index,
+                project_id=project_id,
+                project_title=project["title"],
+                screening=decision,
+                artifact_ref=art_ref,
             )
-            artifact_refs = self._resolve_source_artifacts(project_id, sources)
-            full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
-            abstract_only_count = len(sources) - full_text_count
-            generated_at = _utc_now()
-            manifest = {
-                "project_id": project_id,
-                "project_title": project["title"],
-                "source_count": len(sources),
-                "full_text_count": full_text_count,
-                "abstract_only_count": abstract_only_count,
-                "generated_at": generated_at,
-            }
-
-            export_dir = safe_path(self.workspace.root, export_rel)
-            sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
-            pack_path = safe_path(self.workspace.root, pack_rel)
-            manifest_path = safe_path(self.workspace.root, manifest_rel)
-            export_dir.mkdir(parents=True, exist_ok=True)
-            sources_dir.mkdir(parents=True, exist_ok=True)
-            self._clean_stale_files(sources_dir, (".md",))
-
-            for index, rec in enumerate(sources, start=1):
-                slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"source-{index}")
-                stem = f"{index:02d}-{slug}"
-                candidate_name = f"{stem}.md"
-                collision = 2
-                while candidate_name in used_names:
-                    candidate_name = f"{stem}-{collision}.md"
-                    collision += 1
-                used_names.add(candidate_name)
-
-                file_rel = f"{export_rel}/sources/{candidate_name}"
-                file_path = safe_path(self.workspace.root, file_rel)
-                decision = screenings.get(rec["id"], "unscreened")
-                art_ref = artifact_refs.get(rec["id"])
-                _atomic_text(
-                    file_path,
-                    _render_nlm_individual_source(
-                        rec,
-                        index=index,
-                        project_id=project_id,
-                        project_title=project["title"],
-                        screening=decision,
-                        artifact_ref=art_ref,
-                    ),
-                )
-                source_files.append(file_rel)
-                manifest_sources.append({
-                    "index": index,
-                    "source_id": _clean_line(rec.get("id")),
-                    "title": _clean_line(rec["data"].get("title")) or f"Source {index}",
-                    "doi": _clean_bare_doi(rec["data"].get("doi")),
-                    "locator": _safe_http_url(
-                        rec["data"].get("locator"), rec["data"].get("locator_kind")
-                    ),
-                    "artifact_status": (art_ref or {}).get("artifact_status", ""),
-                    "artifact_id": (art_ref or {}).get("artifact_id", ""),
-                    "artifact_path": (art_ref or {}).get("artifact_path", ""),
-                    "artifact_sha256": (art_ref or {}).get("artifact_sha256", ""),
-                    "reading_scope": _reading_scope(rec["data"]),
-                    "screening": decision,
-                    "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
-                    "publication_version": _clean_line(rec["data"].get("publication_version")),
-                    "recorded_at": _clean_line(rec["data"].get("recorded_at")),
-                    "revision_sha256": _source_revision_sha256(rec, decision, art_ref),
-                    "source_file": file_rel,
-                })
-
-            _atomic_text(
-                pack_path,
-                _render_nlm_pack_markdown(
-                    sources,
-                    project_id=project_id,
-                    project_title=project["title"],
-                    screenings=screenings,
-                    artifact_refs=artifact_refs,
+            _atomic_text(file_path, rendered)
+            source_files.append(file_rel)
+            rev_sha = _source_revision_sha256(rec, decision, art_ref)
+            title_val = _clean_line(rec["data"].get("title")) or f"Source {index}"
+            doi_val = _clean_bare_doi(rec["data"].get("doi"))
+            manifest_sources.append({
+                "index": index,
+                "source_id": _clean_line(rec.get("id")),
+                "title": title_val,
+                "doi": doi_val,
+                "locator": _safe_http_url(
+                    rec["data"].get("locator"), rec["data"].get("locator_kind")
                 ),
-            )
-            manifest["sources"] = manifest_sources
-            atomic_json(manifest_path, manifest)
+                "artifact_status": (art_ref or {}).get("artifact_status", ""),
+                "artifact_id": (art_ref or {}).get("artifact_id", ""),
+                "artifact_path": (art_ref or {}).get("artifact_path", ""),
+                "artifact_sha256": (art_ref or {}).get("artifact_sha256", ""),
+                "reading_scope": _reading_scope(rec["data"]),
+                "screening": decision,
+                "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
+                "publication_version": _clean_line(rec["data"].get("publication_version")),
+                "recorded_at": _clean_line(rec["data"].get("recorded_at")),
+                "revision_sha256": rev_sha,
+                "source_file": file_rel,
+            })
+            prepared_entries.append({
+                "index": index,
+                "source_id": _clean_line(rec.get("id")),
+                "title": title_val,
+                "doi": doi_val,
+                "revision_sha256": rev_sha,
+                "content": rendered,
+            })
+
+        _atomic_text(
+            pack_path,
+            _render_nlm_pack_markdown(
+                sources,
+                project_id=project_id,
+                project_title=project["title"],
+                screenings=screenings,
+                artifact_refs=artifact_refs,
+            ),
+        )
+        manifest["sources"] = manifest_sources
+        atomic_json(manifest_path, manifest)
 
         nlm_status = self._safe_nlm_status(integrations)
         return {
-            "ok": True,
-            "export_dir": export_rel,
-            "pack_file": pack_rel,
-            "manifest_file": manifest_rel,
-            "source_files": source_files,
-            "source_count": len(sources),
-            "full_text_count": full_text_count,
-            "abstract_or_metadata_count": abstract_only_count,
-            "nlm_status": nlm_status,
-            "notebook_url": "https://notebooklm.google.com/",
+            "project_title": project["title"],
+            "prepared_entries": prepared_entries,
+            "result": {
+                "ok": True,
+                "export_dir": export_rel,
+                "pack_file": pack_rel,
+                "manifest_file": manifest_rel,
+                "source_files": source_files,
+                "source_count": len(sources),
+                "full_text_count": full_text_count,
+                "abstract_or_metadata_count": abstract_only_count,
+                "nlm_status": nlm_status,
+                "notebook_url": "https://notebooklm.google.com/",
+            },
         }
+
+    def bundle_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._require_enabled()
+        body = dict(payload or {})
+        extra = set(body) - {"selected_source_ids"}
+        if extra:
+            raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
+
+        self._validate_project_id(project_id)
+        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            return self._bundle_notebooklm_locked(project_id, body.get("selected_source_ids"))["result"]
+
+    def upload_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Bundle project sources atomically under lock and upload to a NotebookLM notebook."""
+        integrations = self._require_enabled()
+        body = dict(payload or {})
+        extra = set(body) - {"selected_source_ids", "notebook_title"}
+        if extra:
+            raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
+
+        self._validate_project_id(project_id)
+        export_rel = f".research/exports/notebooklm-{project_id}"
+        receipt_rel = f"{export_rel}/upload_receipt.json"
+        receipt_path = safe_path(self.workspace.root, receipt_rel)
+
+        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            bundled = self._bundle_notebooklm_locked(project_id, body.get("selected_source_ids"))
+            prepared_entries: list[dict[str, Any]] = bundled["prepared_entries"]
+            custom_title = _clean_line(body.get("notebook_title"))
+            notebook_title = custom_title or f"[Research Hub] {_clean_line(bundled['project_title']) or project_id}"
+            prior_receipt: dict[str, Any] = {}
+            if receipt_path.is_file():
+                try:
+                    loaded = json.loads(receipt_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        prior_receipt = loaded
+                except (OSError, json.JSONDecodeError):
+                    prior_receipt = {}
+
+        try:
+            _, data = integrations._read_config_dict()
+            state_file = integrations._nlm_state_file(data)
+        except Exception as exc:
+            raise WorkspaceError(f"Could not resolve NotebookLM state file: {type(exc).__name__}", "nlm_auth_missing") from exc
+
+        if not state_file.is_file() or state_file.stat().st_size == 0:
+            raise WorkspaceError(
+                "NotebookLM session not found. Click 'Sign in to NotebookLM' in Setup first.",
+                "nlm_auth_missing",
+            )
+
+        from research_hub.notebooklm.auth import ensure_session_health
+        from research_hub.notebooklm.client import NotebookLMClient, NotebookLMError
+
+        try:
+            health = ensure_session_health(state_file)
+        except Exception as exc:
+            raise WorkspaceError(
+                f"NotebookLM session expired or invalid ({type(exc).__name__}). Sign in again in Setup.",
+                "nlm_auth_expired",
+            ) from exc
+        if isinstance(health, dict) and not health.get("ok", False):
+            raise WorkspaceError(
+                "NotebookLM Google session has expired. Open Setup -> Connections & Sync to sign in again before uploading.",
+                "nlm_auth_expired",
+            )
+
+        uploaded_sources: list[dict[str, Any]] = []
+        failed_sources: list[dict[str, Any]] = []
+        skipped_duplicates = 0
+
+        client: NotebookLMClient | None = None
+        try:
+            client = NotebookLMClient(state_file, headless=True, timeout_sec=120)
+            handle = client.find_or_create_notebook(notebook_title)
+            existing_titles: set[str] = set()
+            existing_ids: set[str] = set()
+            try:
+                for src in client.list_sources(handle.notebook_id):
+                    t = _clean_line(getattr(src, "title", "") or (src.get("title") if isinstance(src, dict) else ""))
+                    if t:
+                        existing_titles.add(t.casefold())
+                    sid_remote = _clean_line(getattr(src, "id", "") or getattr(src, "source_id", "") or (src.get("id") if isinstance(src, dict) else ""))
+                    if sid_remote:
+                        existing_ids.add(sid_remote)
+            except Exception:
+                existing_titles = set()
+                existing_ids = set()
+
+            # Key prior uploaded revisions by source_id when matching the same notebook_id
+            prior_revisions: dict[str, tuple[str, str]] = {}
+            if prior_receipt.get("notebook_id") == handle.notebook_id:
+                for prev in (prior_receipt.get("uploaded_sources") or []):
+                    if isinstance(prev, dict) and isinstance(prev.get("source_id"), str):
+                        prior_revisions[prev["source_id"]] = (
+                            str(prev.get("revision_sha256") or ""),
+                            str(prev.get("nlm_source_id") or ""),
+                        )
+
+            seen_batch_titles: set[str] = set()
+            for entry in prepared_entries:
+                sid = str(entry.get("source_id") or "")
+                rev_sha = str(entry.get("revision_sha256") or "")
+                base_title = _clean_line(entry.get("title")) or f"Source {entry['index']}"
+                upload_title = base_title
+                if upload_title.casefold() in seen_batch_titles:
+                    upload_title = f"{base_title} ({entry['index']})"
+                seen_batch_titles.add(upload_title.casefold())
+
+                prev_rev, prev_nlm_id = prior_revisions.get(sid, ("", ""))
+                still_present = (
+                    (bool(prev_nlm_id) and prev_nlm_id in existing_ids)
+                    or (upload_title.casefold() in existing_titles)
+                )
+                if sid and sid in prior_revisions:
+                    if prev_rev and prev_rev == rev_sha and still_present:
+                        skipped_duplicates += 1
+                        continue
+                elif upload_title.casefold() in existing_titles:
+                    skipped_duplicates += 1
+                    continue
+
+                res = client.upload_source(handle.notebook_id, text=entry["content"], title=upload_title)
+                if getattr(res, "ok", False):
+                    existing_titles.add(upload_title.casefold())
+                    uploaded_sources.append({
+                        "source_id": sid,
+                        "revision_sha256": rev_sha,
+                        "title": upload_title,
+                        "nlm_source_id": getattr(res, "source_id", "") or "",
+                        "doi": entry.get("doi", ""),
+                    })
+                else:
+                    failed_sources.append({
+                        "source_id": sid,
+                        "title": upload_title,
+                        "error": _clean_line(getattr(res, "error", "")) or "NotebookLM upload failed",
+                    })
+        except WorkspaceError:
+            raise
+        except NotebookLMError as exc:
+            low = str(exc).lower()
+            if "expired" in low or "auth" in low or "sign-in" in low or "login" in low:
+                raise WorkspaceError(
+                    "NotebookLM Google session has expired or is invalid. Open Setup -> Connections & Sync to sign in again.",
+                    "nlm_auth_expired",
+                ) from exc
+            raise WorkspaceError("NotebookLM upload failed; verify notebook access and session status.", "nlm_upload_failed") from exc
+        except Exception as exc:
+            raise WorkspaceError(f"NotebookLM upload failed: {type(exc).__name__}", "nlm_upload_failed") from exc
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+
+        uploaded_count = len(uploaded_sources)
+        failed_count = len(failed_sources)
+        status = (
+            "uploaded"
+            if failed_count == 0
+            else ("partial_failure" if uploaded_count > 0 else "failed")
+        )
+        raw_nb_url = _clean_line(getattr(handle, "url", ""))
+        safe_nb_url = (
+            raw_nb_url
+            if raw_nb_url.lower().startswith(("https://", "http://"))
+            else f"https://notebooklm.google.com/notebook/{quote(handle.notebook_id, safe='-_')}"
+            if getattr(handle, "notebook_id", "")
+            else "https://notebooklm.google.com/"
+        )
+        uploaded_ids_now = {s["source_id"] for s in uploaded_sources}
+        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            latest_prior: dict[str, Any] = {}
+            if receipt_path.is_file():
+                try:
+                    loaded_latest = json.loads(receipt_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded_latest, dict):
+                        latest_prior = loaded_latest
+                except (OSError, json.JSONDecodeError):
+                    latest_prior = {}
+            retained_sources = list(uploaded_sources)
+            if latest_prior.get("notebook_id") == handle.notebook_id:
+                for prev in (latest_prior.get("uploaded_sources") or []):
+                    if isinstance(prev, dict) and prev.get("source_id") not in uploaded_ids_now:
+                        retained_sources.append(prev)
+            receipt = {
+                "ok": True,
+                "status": status,
+                "project_id": project_id,
+                "notebook_id": handle.notebook_id,
+                "notebook_name": handle.name,
+                "notebook_url": safe_nb_url,
+                "uploaded_count": uploaded_count,
+                "skipped_duplicates": skipped_duplicates,
+                "failed_count": failed_count,
+                "uploaded_sources": retained_sources,
+                "failed_sources": failed_sources,
+                "uploaded_at": _utc_now(),
+                "receipt_file": receipt_rel,
+            }
+            atomic_json(receipt_path, receipt)
+        return receipt
 
     def sync_zotero(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         integrations = self._require_enabled()
@@ -1052,10 +1272,11 @@ class WorkspaceSyncHooks:
             return a_key, l_id, l_type, dest
 
         selected_ids_arg = body.get("selected_source_ids")
-        _, sources, _ = self._resolve_project_sources(
+        project, sources, _ = self._resolve_project_sources(
             project_id, selected_ids_arg
         )
         source_revisions = {s["id"]: _zotero_source_fingerprint(s) for s in sources}
+        collection_name = f"[Research Hub] {_clean_line(project.get('title')) or project_id}"
 
         api_key, library_id, library_type, destination_library = _read_zotero_target()
 
@@ -1134,8 +1355,36 @@ class WorkspaceSyncHooks:
                     "zotero_unavailable",
                 ) from exc
 
+            collection_attachment_supported = bool(
+                hasattr(zot, "collections")
+                and hasattr(zot, "create_collections")
+                and hasattr(zot, "update_item")
+            )
+            existing_collection_key: str | None = None
+            collections_checked = False
+            if collection_attachment_supported:
+                try:
+                    existing_cols = zot.collections() or []
+                    collections_checked = True
+                    for col in existing_cols:
+                        if not isinstance(col, dict):
+                            continue
+                        col_data = col.get("data") if isinstance(col.get("data"), dict) else col
+                        if _clean_line(col_data.get("name")) == collection_name:
+                            found_key = col.get("key") or col_data.get("key")
+                            if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
+                                existing_collection_key = found_key.strip()
+                                break
+                except Exception as exc:
+                    raise WorkspaceError(
+                        "Could not inspect Zotero collections before syncing",
+                        "zotero_lookup_failed",
+                    ) from exc
+
             items_plan: list[dict[str, Any]] = []
             records_to_create: list[dict[str, Any]] = []
+            pending_collection_attachments: list[tuple[dict[str, Any], dict[str, Any], str]] = []
+            seen_remote_attach_keys: set[str] = set()
             seen_dois: set[str] = set()
             seen_doiless_titles: set[str] = set()
             seen_all_titles: set[str] = set()
@@ -1155,14 +1404,27 @@ class WorkspaceSyncHooks:
                     )
                 else:
                     in_batch_dup = bool(norm_title and norm_title in seen_all_titles)
-                remote_dup = False if in_batch_dup else _check_zotero_duplicate_strict(zot, title, doi)
-                if in_batch_dup or remote_dup:
+                remote_match = None if in_batch_dup else _find_zotero_duplicate_item(zot, title, doi)
+                if in_batch_dup or remote_match is not None:
                     duplicates += 1
+                    needs_attach = False
+                    if remote_match is not None and collection_attachment_supported:
+                        rem_data = remote_match.get("data") if isinstance(remote_match.get("data"), dict) else {}
+                        rem_key = str(remote_match.get("key") or rem_data.get("key") or "").strip()
+                        rem_cols = rem_data.get("collections") if isinstance(rem_data.get("collections"), list) else []
+                        if (
+                            rem_key
+                            and rem_key not in seen_remote_attach_keys
+                            and (existing_collection_key is None or existing_collection_key not in rem_cols)
+                        ):
+                            seen_remote_attach_keys.add(rem_key)
+                            pending_collection_attachments.append((src, remote_match, rem_key))
+                            needs_attach = True
                     items_plan.append({
                         "id": src["id"],
                         "title": title,
                         "doi": doi,
-                        "action": "skip_duplicate",
+                        "action": "attach_to_collection" if needs_attach else "skip_duplicate",
                     })
                 else:
                     if norm_doi:
@@ -1200,8 +1462,10 @@ class WorkspaceSyncHooks:
                     "dry_run": True,
                     "candidate_count": len(sources),
                     "would_create": len(records_to_create),
+                    "would_attach": len(pending_collection_attachments),
                     "duplicates": duplicates,
                     "destination_library": destination_library,
+                    "collection_name": collection_name,
                     "source_revisions": source_revisions,
                     "plan_digest": plan_digest,
                     "items": items_plan,
@@ -1212,6 +1476,52 @@ class WorkspaceSyncHooks:
                     "Zotero sync plan changed since the dry-run preview; run Preview again before writing",
                     "stale_preview",
                 )
+
+            collection_key: str | None = existing_collection_key
+            if (
+                collection_key is None
+                and (records_to_create or pending_collection_attachments)
+                and hasattr(zot, "collections")
+                and hasattr(zot, "create_collections")
+            ):
+                try:
+                    if not collections_checked:
+                        existing_cols = zot.collections() or []
+                        for col in existing_cols:
+                            if not isinstance(col, dict):
+                                continue
+                            col_data = col.get("data") if isinstance(col.get("data"), dict) else col
+                            if _clean_line(col_data.get("name")) == collection_name:
+                                found_key = col.get("key") or col_data.get("key")
+                                if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
+                                    collection_key = found_key.strip()
+                                    break
+                    if collection_key is None:
+                        col_resp = zot.create_collections([{"name": collection_name}])
+                        if isinstance(col_resp, dict):
+                            col_succ = col_resp.get("successful") or col_resp.get("success") or {}
+                            if isinstance(col_succ, dict):
+                                first = next(iter(col_succ.values()), None)
+                                if isinstance(first, dict):
+                                    found_key = first.get("key") or (
+                                        first.get("data", {}).get("key")
+                                        if isinstance(first.get("data"), dict)
+                                        else None
+                                    )
+                                    if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
+                                        collection_key = found_key.strip()
+                                elif isinstance(first, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", first.strip()):
+                                    collection_key = first.strip()
+                except Exception as exc:
+                    raise WorkspaceError(
+                        "Could not resolve or create target Zotero collection",
+                        "zotero_sync_failed",
+                    ) from exc
+                if collection_key is None:
+                    raise WorkspaceError(
+                        "Could not confirm creation of target Zotero collection",
+                        "zotero_sync_failed",
+                    )
 
             zotero_payloads: list[dict[str, Any]] = []
             template_base: dict[str, Any] = {}
@@ -1262,6 +1572,8 @@ class WorkspaceSyncHooks:
                     "extra": f"Research Hub project: {project_id}; Reading scope: {scope}",
                     "tags": [{"tag": tag} for tag in deduped_tags],
                 })
+                if collection_key:
+                    entry["collections"] = [collection_key]
                 zotero_payloads.append(entry)
 
             confirmed_created = 0
@@ -1345,6 +1657,33 @@ class WorkspaceSyncHooks:
                         "zotero_sync_failed",
                     ) from exc
 
+            collection_added_keys: list[str] = []
+            if collection_key and pending_collection_attachments and hasattr(zot, "update_item"):
+                for src, rem, rem_key in pending_collection_attachments:
+                    rem_data = rem.get("data") if isinstance(rem.get("data"), dict) else {}
+                    existing_cols = rem_data.get("collections")
+                    if isinstance(existing_cols, list) and collection_key in existing_cols:
+                        continue
+                    updated = copy.deepcopy(rem)
+                    if not isinstance(updated.get("data"), dict):
+                        updated["data"] = {}
+                    updated_cols = list(updated["data"].get("collections") or [])
+                    updated_cols.append(collection_key)
+                    updated["data"]["collections"] = updated_cols
+                    try:
+                        upd_ok = zot.update_item(updated)
+                        if upd_ok is False:
+                            raise WorkspaceError("Zotero collection attachment rejected", "zotero_sync_failed")
+                        collection_added_keys.append(rem_key)
+                    except Exception as exc:
+                        failed_source_ids.add(src["id"])
+                        failed_items.append({
+                            "id": src["id"],
+                            "title": _clean_line(src["data"].get("title")) or "Untitled source",
+                            "doi": _clean_bare_doi(src["data"].get("doi")),
+                            "reason": _sanitize_zotero_failure(str(exc), api_key),
+                        })
+
             if failed_source_ids:
                 for plan_entry in items_plan:
                     if plan_entry["id"] in failed_source_ids:
@@ -1354,7 +1693,14 @@ class WorkspaceSyncHooks:
             sync_status = (
                 "synced"
                 if failed_count == 0
-                else ("partial_failure" if confirmed_created > 0 else "failed")
+                else ("partial_failure" if (confirmed_created > 0 or len(collection_added_keys) > 0) else "failed")
+            )
+
+            prefix = "groups" if library_type == "group" else "users"
+            library_url = (
+                f"https://www.zotero.org/{prefix}/{library_id}/collections/{collection_key}/items"
+                if collection_key
+                else f"https://www.zotero.org/{prefix}/{library_id}/items"
             )
 
             return {
@@ -1365,6 +1711,11 @@ class WorkspaceSyncHooks:
                 "failed_count": failed_count,
                 "skipped_duplicates": duplicates,
                 "created_keys": created_keys,
+                "collection_key": collection_key,
+                "collection_name": collection_name,
+                "collection_added_count": len(collection_added_keys),
+                "collection_added_keys": collection_added_keys,
+                "library_url": library_url,
                 "failed_items": failed_items,
                 "items": items_plan,
             }

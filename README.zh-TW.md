@@ -164,10 +164,10 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 
 | 整合項目 | 於「⚙ 設定」或 CLI 完成連接 | 連接後的一鍵同步與匯出 |
 |---|---|---|
-| **Zotero** | 於 **`⚙ 設定 → 連線與同步`** 加密儲存 `ZOTERO_API_KEY` 與設定 `ZOTERO_LIBRARY_ID`（或使用 `.env`）並測試 Web／本機 API 燈號 | **去重預覽（Dry-run）**（比對 DOI／標題）→ **確認寫入 Zotero**，或一鍵匯出 `.ris` |
-| **Obsidian（＋ Bases）** | 啟動時帶入 `--obsidian-vault` 後於設定中心點擊 **純唯讀驗證**（或帶入 `--library-snapshot` 於「文獻」瀏覽唯讀快照） | 在 `.research/exports/` 產生結構化 `.md` 文獻筆記與 `.base` 資料庫檢視，並以 `obsidian://` 開啟 |
-| **NotebookLM** | 匯入既有 `state.json` 或執行 `notebooklm login --auto-detect`，點擊 **檢查 NotebookLM 登入狀態** | 一鍵封裝標明「全文／僅摘要」界線的 **NotebookLM 來源包**（含 `manifest.json` 與個別 `.md`） |
-| **AI 主機與書目軟體** | 透過 [MCP／REST](docs/ai-integrations.md)（`[mcp]` 擴充）連接或載入[可攜式技能](docs/setup.md) | 單篇一鍵複製 **APA 7th**／**BibTeX**，或整批匯出 `.bib`、`.ris`、`CSL-JSON` 與 `.base` |
+| **Zotero** | 於 **`⚙ 設定 → 連線與同步`** 加密儲存 `ZOTERO_API_KEY` 與 `ZOTERO_LIBRARY_ID`（UI 設定優先覆蓋系統 `ZOTERO_*` 環境變數）並測試連線燈號 | **去重預覽（Dry-run）**→ **確認寫入 Zotero**（自動建立 `[Research Hub] <專案名稱>` Collection 並提供直達連結），或匯出 `.ris` |
+| **Obsidian（＋ Bases）** | 啟動帶入 `--obsidian-vault` 或直接在 **`⚙ 設定`** 儲存 Vault 路徑（單一設定即可同時做純唯讀驗證與文獻 Vault 瀏覽；`--library-snapshot` 為選用） | 在 `.research/exports/` 產生結構化 `.md` 文獻筆記與 `.base` 資料庫檢視，並以 `obsidian://` 開啟 |
+| **NotebookLM** | 匯入既有 `state.json` 或執行 `notebooklm login --auto-detect`，點擊 **檢查 NotebookLM 登入狀態** | 封裝 **NotebookLM 來源包** 並一鍵觸發 **`☁ 上傳至 NotebookLM`**（輸出雲端筆記本連結與 `upload_receipt.json`） |
+| **AI 助理與書目軟體** | 開啟右上角 **`✦ AI 助理`**（`Ctrl+J`／`⌘J`，支援本機快速指令＋`Claude`／`Codex`／`Gemini`）或掛載 [MCP／REST](docs/ai-integrations.md) | 透過「對話提案 → 人工確認」增刪／復原文獻與加 `#` 標籤，或複製 **APA 7th**／**BibTeX** 引文 |
 
 執行 `./.venv/bin/python -m research_hub doctor`（macOS／Linux）或 `.\.venv\Scripts\python.exe -m research_hub doctor`（Windows PowerShell）可逐項檢查已設定的目的地。另見[本機檔案匯入](docs/import-folder.zh-TW.md)、[EZproxy](docs/ezproxy.md)與[實際連線檢查表](docs/live-smoke.md)。
 
