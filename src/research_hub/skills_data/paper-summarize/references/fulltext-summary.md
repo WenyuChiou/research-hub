@@ -20,6 +20,27 @@ when the claim depends on it. A fixed first-two-pages window is not full-paper
 review. State the pages/sections inspected and what remains unread. Do not call
 partial body reading exhaustive full-paper review or abstract reading full text.
 
+## Study-Type Summary Track
+
+Route per-paper reading according to the nature of the work rather than forcing every source into an empirical lab-report mold:
+
+- **Empirical Track (7-section contract)**: Experiments, observational studies, and quantitative, qualitative, or mixed empirical papers follow the seven-question contract below (`why`, `objective`, `methods`, `findings`, `conclusions`, `key_points`, `limitations`).
+- **Theoretical / Conceptual / Formal / Historical Track**: Books, pure theory, formal proofs, conceptual frameworks, and historical scholarship use a five-part structure:
+  1. **Core Thesis & Propositions** — central thesis, proposition, or theorem and the intellectual problem or debate it addresses.
+  2. **Definitions, Concepts & Premises** — formal definitions, axioms, conceptual constructs, archival/textual corpus, and foundational premises.
+  3. **Derivation, Argumentation & Mechanism** — proof strategy, logical derivation, theoretical mechanism, conceptual synthesis, or historical argument.
+  4. **Scope Conditions, Assumptions & Conclusions** — boundary conditions, maintained assumptions, theoretical implications, and conclusions.
+  5. **Counterexamples, Tensions & Legacy** — counterexamples, internal tensions, scholarly debates, limitations, and lasting legacy.
+
+  Never fabricate sample sizes, empirical denominators, or experimental/statistical checklists for non-empirical works. If the user opts into the optional Hub `native-source-summary-v1` SQLite handoff, apply this deterministic slot mapping onto the seven storage fields (keeping `supported`, `analyst_inference`, and `unknown` intact):
+  - `why` <- intellectual motivation and problem context from **(1) Core Thesis & Propositions**
+  - `objective` <- central thesis/propositions and foundational definitions/premises from **(1) Core Thesis & Propositions** and **(2) Definitions, Concepts & Premises**
+  - `methods` <- analytical/proof apparatus, axioms/corpus, and derivation or argumentation strategy from **(2) Definitions, Concepts & Premises** and **(3) Derivation, Argumentation & Mechanism** (explicitly marked non-empirical; no invented sample sizes)
+  - `findings` <- proved propositions, derived mechanisms, or textual/conceptual results from **(3) Derivation, Argumentation & Mechanism**
+  - `conclusions` <- scope-conditioned theoretical conclusions and implications from **(4) Scope Conditions, Assumptions & Conclusions**
+  - `key_points` <- compact takeaway synthesis and legacy across **(1)–(5)**, keeping author claims separate from `analyst_inference`
+  - `limitations` <- maintained assumptions, boundary conditions, counterexamples, and tensions from **(4) Scope Conditions, Assumptions & Conclusions** and **(5) Counterexamples, Tensions & Legacy**
+
 ## Seven questions, with source support
 
 Use these sections in readable prose; the names in parentheses are stable

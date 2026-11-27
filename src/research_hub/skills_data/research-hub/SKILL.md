@@ -27,6 +27,16 @@ Do **not** invent or simulate `research-hub` output if the CLI is missing. Missi
 
 Read `references/research-protocol.md` before substantive discovery and `references/source-claim-audit.md` before source-supported synthesis. Preserve the user's exact scope; map material needs to actual search paths; distinguish core/closest/classic/contrary roles; and report unresolved evidence and bounded completion. Neither a successful search nor a valid ingest certifies coverage, novelty or scientific sufficiency. Use optional source-audit sidecars only when local binding checks help; strict ResearchEvidencePacket v1 stays unchanged. For an optional portable Stage1 observation handoff and local byte-check/save, read `references/native-discovery-export.md`; native research stays useful without Hub persistence, and no Stage2 or external write is implied.
 
+## Stage 1 Literature Track Selection (Ask Upfront When Unspecified)
+
+Select the Stage 1 discovery track so classic scholarship and fast-moving preprints do not crowd out or distort each other:
+
+- **Track A — Classic & Bedrock (`classic-bedrock`)**: foundational theories, seminal books/monographs/chapters, and field-defining reviews; multi-hop backward citation chasing; **zero recency penalty** across decades; first-class support for DOI-less, ISBN, and archival works.
+- **Track B — Frontier & Recent (`frontier-recent`)**: recent empirical and methodological work, preprints, and active benchmarks; forward citation chasing plus contrary/replication paths.
+- **Track C — Dual-Track Canon + Frontier (`balanced-dual`)**: separate protected sub-quotas for Track A foundational bedrock and Track B recent frontier so high-velocity papers never crowd out classics.
+
+If the researcher has **not** already specified the track or target document categories (empirical studies, theoretical/formal works, books/monographs, reviews), concisely **ask upfront which track (A / B / C) and literature categories to include** before launching broad discovery, explaining that this choice alters search paths, time windows, and book/DOI-less handling. Keep existing preferences intact: do not repeat already-supplied preferences when the user already specified a track, period, or document category.
+
 ## Agent preflight protocol
 
 For AI hosts such as Claude Code, Codex, Gemini CLI, Cursor, OpenClaw, Hermes, or generic API clients, use this sequence unless the user gives a narrower command:
@@ -44,6 +54,8 @@ For AI hosts such as Claude Code, Codex, Gemini CLI, Cursor, OpenClaw, Hermes, o
    Prepare `papers` JSON only for a selected Hub ingest or an explicit request for that structured handoff, using the shape in `docs/papers_input_schema.md` with optional `provenance` and `source_records`. The separate `research-discovery-observations/1.0` export remains optional. Do not pass a `ResearchEvidencePacket` directly as papers input; it is a separate evidence-validation contract. This path needs neither a second agent nor a dedicated deep-search API. The agent prepares structured handoffs; the researcher should not have to author JSON to use either route.
 
 3. Before any real ingest or metadata save, choose the requested destination:
+
+   **Obsidian Vault Markdown** and **Hub SQLite Workspace (`research-hub open`)** are both first-class peers that work separately or together.
 
    **Native-only research**: deliver the requested readable research result; this needs no Hub installation, JSON, integration account or destination write. Do not turn search or summarization into a Hub setup prerequisite.
 

@@ -16,7 +16,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from .dedup import normalize_title
 from .search.base import is_web_search_excerpt
+from .utils.doi import normalize_doi
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +232,19 @@ def emit_prompt(
     return "\n".join(lines)
 
 
+def _norm_title(title: str | None) -> str:
+    return normalize_title(title)
+
+
+def _norm_arxiv(value: str | None) -> str:
+    text = str(value or "").strip().lower()
+    if text.startswith("arxiv:"):
+        text = text.split(":", 1)[1].strip()
+    elif text.startswith("10.48550/arxiv."):
+        text = text.split("10.48550/arxiv.", 1)[1].strip()
+    return text
+
+
 def apply_scores(
     cluster_slug: str,
     candidates: list[dict],
@@ -247,15 +262,61 @@ def apply_scores(
         threshold = compute_auto_threshold(values)
         logger.info("auto threshold computed: %d", threshold)
 
-    by_doi: dict[str, dict] = {}
-    by_title: dict[str, dict] = {}
+    by_doi: dict[str, int] = {}
+    by_arxiv: dict[str, int] = {}
+    by_title: dict[str, int] = {}
+    by_index: dict[int, int] = {}
+    for idx, paper in enumerate(candidates):
+        cand_doi = normalize_doi(str(paper.get("doi") or ""))
+        if cand_doi and cand_doi not in by_doi:
+            by_doi[cand_doi] = idx
+        cand_arxiv = _norm_arxiv(paper.get("arxiv_id") or "")
+        if not cand_arxiv and cand_doi.startswith("10.48550/arxiv."):
+            cand_arxiv = _norm_arxiv(cand_doi)
+        if cand_arxiv and cand_arxiv not in by_arxiv:
+            by_arxiv[cand_arxiv] = idx
+        cand_ntitle = _norm_title(paper.get("title"))
+        if len(cand_ntitle) >= 8 and cand_ntitle not in by_title:
+            by_title[cand_ntitle] = idx
+        by_index[idx + 1] = idx
+
+    matched_entries: dict[int, dict] = {}
     for entry in scores:
-        doi = (entry.get("doi") or "").strip().lower()
-        if doi:
-            by_doi[doi] = entry
-        title = (entry.get("title") or "").strip().lower()
-        if title:
-            by_title[title] = entry
+        entry_doi = normalize_doi(str(entry.get("doi") or ""))
+        entry_arxiv = _norm_arxiv(entry.get("arxiv_id") or "")
+        if not entry_arxiv and entry.get("doi"):
+            entry_arxiv = _norm_arxiv(entry.get("doi"))
+        entry_ntitle = _norm_title(entry.get("title"))
+
+        target_idx: int | None = None
+        if entry_doi and entry_doi in by_doi:
+            target_idx = by_doi[entry_doi]
+        elif entry_arxiv and entry_arxiv in by_arxiv:
+            target_idx = by_arxiv[entry_arxiv]
+        elif len(entry_ntitle) >= 8 and entry_ntitle in by_title:
+            target_idx = by_title[entry_ntitle]
+        else:
+            raw_idx = entry.get("index")
+            if (
+                isinstance(raw_idx, int)
+                and not isinstance(raw_idx, bool)
+                and raw_idx in by_index
+            ):
+                cand_idx = by_index[raw_idx]
+                cand = candidates[cand_idx]
+                cand_doi = normalize_doi(str(cand.get("doi") or ""))
+                cand_ntitle = _norm_title(cand.get("title"))
+                doi_conflicts = bool(entry_doi and cand_doi and entry_doi != cand_doi)
+                title_conflicts = bool(
+                    len(entry_ntitle) >= 8
+                    and len(cand_ntitle) >= 8
+                    and entry_ntitle != cand_ntitle
+                )
+                if not doi_conflicts and not title_conflicts:
+                    target_idx = cand_idx
+
+        if target_idx is not None:
+            matched_entries[target_idx] = entry
 
     report = FitCheckReport(
         cluster_slug=cluster_slug,
@@ -263,10 +324,8 @@ def apply_scores(
         candidates_in=len(candidates),
     )
 
-    for paper in candidates:
-        doi = (paper.get("doi") or "").strip().lower()
-        title_lower = (paper.get("title") or "").strip().lower()
-        entry = by_doi.get(doi) or by_title.get(title_lower)
+    for idx, paper in enumerate(candidates):
+        entry = matched_entries.get(idx)
         if entry is None:
             result = FitCheckResult(
                 doi=paper.get("doi", ""),

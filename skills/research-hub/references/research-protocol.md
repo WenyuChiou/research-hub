@@ -107,6 +107,16 @@ A useful compact plan is:
 | N1 / explain mechanism | no regional restriction | terms and synonyms | topical search | mechanism evidence | planned; no result yet |
 | N2 / feasible measurement | target data available | instrument and validation terms | methods comparator | transfer rationale required | planned; no result yet |
 
+## Stage 1 Literature Track Selection (Ask Upfront When Unspecified)
+
+Select the Stage 1 discovery track deliberately rather than defaulting every query to a single recency-biased stream:
+
+- **Track A — Classic & Bedrock (`classic-bedrock`)**: foundational theories, seminal books/monographs/chapters, and field-defining reviews; prioritize multi-hop backward citation chasing; apply **zero recency penalty** across decades; provide first-class support for DOI-less, ISBN, and archival works.
+- **Track B — Frontier & Recent (`frontier-recent`)**: recent empirical and methodological work, preprints, and active benchmarks; prioritize forward citation chasing plus contrary and replication paths.
+- **Track C — Dual-Track Canon + Frontier (`balanced-dual`)**: maintain separate protected sub-quotas for Track A foundational bedrock and Track B recent frontier so high-velocity recent papers never crowd out classics.
+
+Before launching broad discovery, if the researcher has **not** already specified the track or target document categories (empirical studies, theoretical/formal works, books/monographs, reviews), concisely **ask upfront which track (A / B / C) and literature categories to include**, explaining that the choice alters search paths (backward vs. forward chasing), time windows (zero recency penalty vs. frontier window), and book/DOI-less handling. Do not repeat already-supplied preferences: preserve any explicit track, time horizon, or document-category constraint the user already provided without asking again.
+
 ## Select literature by contribution
 
 Distinguish roles rather than equating fame, age, citation count, or recency:

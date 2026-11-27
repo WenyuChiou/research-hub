@@ -1121,6 +1121,25 @@ def _to_papers_input(
             entry["arxiv_id"] = arxiv_id
         if backend_source:
             entry["source"] = backend_source
+        citation_count = candidate.get("citation_count")
+        if citation_count is not None and citation_count != "":
+            entry["citation_count"] = citation_count
+        for extra_field in (
+            "found_in",
+            "backends",
+            "doc_type",
+            "item_type",
+            "publication_types",
+            "url",
+            "pmid",
+            "openalex_id",
+            "isbn",
+            "provenance",
+            "source_records",
+        ):
+            extra_value = candidate.get(extra_field)
+            if extra_value not in (None, "", [], {}):
+                entry[extra_field] = extra_value
         ingest_year = candidate.get("year") or 0
         metadata_year = candidate.get("metadata_year")
         if metadata_year and ingest_year and metadata_year != ingest_year:
