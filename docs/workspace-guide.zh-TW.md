@@ -4,9 +4,9 @@
 
 工作區將研究問題連結至文獻、證據、檔案與稿件提案。你決定 AI 可以提出什麼建議，並在接受之前檢視結果。
 
-## 預覽版狀態
+## 工作台目前狀態
 
-本指南說明已透過 [PR #135](https://github.com/WenyuChiou/research-hub/pull/135) 合併至原始碼的六頁工作區。以下固定 Hub 原始碼基線 `6381dfa7d474dd27cd4adb33f0f59ea8ec395150`；原始碼版本、已發布 wheel 與實機載入能力是三項不同證據，不能互相代替。請確認安裝後的指令說明，並參考[能力與設定基線](capability-baseline.md)。
+本指南涵蓋升級版六頁視覺化研究工作台（`research-hub open --demo`），包含淺色／深色／跟隨系統主題、四分頁分類設定中心與同步中樞、支援結構化 `#` 標籤的文獻增刪修、**閱讀／總表／矩陣**三視圖、一鍵引文匯出（`.bib`、`.ris`、`CSL-JSON`、`APA 7th`）、**證據風險與研究盲點雷達**，以及 `Ctrl+K`（`⌘K`）命令面板。原始碼修訂版、已發布 wheel 與實機主機能力仍是三項獨立證據；請確認安裝後的指令說明，並參考[能力與設定基線](capability-baseline.md)。
 
 選用的寫作介接器已透過 [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17) 合併。請使用介接器 `main` 上固定不變的 commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`。它需要明確設定，不會成為 research-hub 的永久安裝相依項目；介接器可取得不代表安裝或實機主機已就緒。
 
@@ -17,6 +17,23 @@
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
+python -m pip install -e .
+python -m research_hub open --demo
+```
+
+`open --demo` 會建立 `~/research-hub-workspace`（絕不覆蓋既有工作區資料）並自動開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)。可加 `--root ./workspace-demo` 指定目錄、埠號衝突時加 `--port 8766`，按 `Ctrl+C` 停止伺服器。
+
+| 示範專案 | 檔案與用途 |
+|---|---|
+| `summation-demo` | `summation.py`、`analysis.json` 與 `manuscript.md`：可檢查輸入與結果的小型數值加總範例。 |
+| `review-demo` | `references.json` 與 `manuscript.md`：包含篩選與證據紀錄的文獻回顧教學資料。 |
+
+<details>
+<summary>手動兩步驟啟動與歷史 PR #135 基線版本</summary>
+
+若要在空白目錄手動分步啟動、或重現歷史 PR #135 基線 commit：
+
+```sh
 git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
 git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
 python -m pip install -e '.[mcp]'
@@ -25,16 +42,21 @@ research-hub project demo --root ./workspace-demo --json
 research-hub serve --workspace --root ./workspace-demo
 ```
 
-`workspace-demo` 必須是新建或空白目錄。示範會拒絕非空目錄；請另選位置，不要刪除自己的工作。開啟 [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/)，結束後以 Ctrl+C 停止伺服器。
+`workspace-demo` 必須是新建或空白目錄。測試資料標明為教學素材。建立示範不會執行 AI 模型、驗證科學發現、完成服務認證或接受稿件。
 
-| 示範專案 | 檔案與用途 |
-|---|---|
-| `summation-demo` | `summation.py`、`analysis.json` 與 `manuscript.md`：可檢查輸入與結果的小型數值加總範例。 |
-| `review-demo` | `references.json` 與 `manuscript.md`：包含篩選與證據紀錄的文獻回顧教學資料。 |
-
-各專案檔案位於 `workspace-demo` 中同名的子目錄。測試資料標明為教學素材。建立示範不會執行 AI 模型、驗證科學發現、完成服務認證或接受稿件。
+</details>
 
 ![使用本機示範紀錄的實際工作區介面。](images/workspace-ui.zh-TW.png)
+
+## 連接 Zotero、Obsidian 與 NotebookLM
+
+從左側欄開啟 **`⚙ 設定 → 連線與同步`**（或按 `Ctrl+K`／`⌘K` 搜尋設定），即可設定憑證、檢查即時狀態燈，並觸發連接後的同步流程：
+
+| 整合軟體 | 連接設定方式 | 連接後一鍵同步動作 |
+|---|---|---|
+| **Zotero** | 輸入 `ZOTERO_API_KEY` 與 `ZOTERO_LIBRARY_ID`（個人或群組），加密寫入本機 `config.json` 後點擊 **測試 Zotero 連線** | 先執行 **預覽同步（Dry-run）** 檢查 DOI／標題去重，確認後 **確認寫入 Zotero** |
+| **Obsidian** | 啟動時帶入 `--obsidian-vault /vault/路徑`（或 `--library-snapshot`），並在設定中心點擊 **純唯讀驗證** | 於 `.research/exports/` 產生 `.md` 文獻筆記與 `.base` 資料庫檢視，並支援 `obsidian://` 開啟 |
+| **NotebookLM** | 點擊 **檢查 NotebookLM 登入狀態**、匯入 `state.json`，或執行 `research-hub notebooklm login --auto-detect` | 封裝標明「全文／僅摘要」界線的 **NotebookLM 來源包**（`manifest.json` ＋ 分層 `.md`） |
 
 ## 瀏覽已選 Obsidian 中繼資料快照
 
@@ -74,11 +96,11 @@ Workspace 來源，不需此選項。驗收涵蓋乾淨 build 後可讀取選定
 
 | 頁面 | 從這裡開始 | 仍需由你負責 |
 |---|---|---|
-| 專案 | 設定目標，選擇 `empirical` 或 `review`。 | 決定研究問題與範圍。 |
-| 文獻 | 搜尋 Crossref 中繼資料；記錄來源與篩選理由。 | 閱讀來源，確認身分與相關性。 |
-| 證據 | 記錄主張，連結已登錄的來源。 | 確認每個來源是否支持該項具體主張。 |
-| 設計與結果 | 記錄問題、方法、結果與限制；登錄分析檔。 | 在文字工作者之外，執行並驗證實際研究。 |
-| 稿件 | 登錄檔案、綁定寫作狀態、準備提案並執行稽核。 | 處理科學問題並編輯原始文件。 |
+| 研究總覽 | 追蹤四階段進度條、年份與覆蓋率圖表，並檢視**證據風險與研究盲點雷達**。 | 決定研究問題、範圍與主張穩健度標準。 |
+| 文獻 | 點擊 `+ 新增文獻`、整理 `#domain:*`／`#method:*`／`#risk:*` 標籤、切換 **閱讀／總表／矩陣**，並複製 APA／BibTeX／RIS。 | 閱讀來源原文，確認身分、版本與相關性。 |
+| 證據 | 記錄主張、勾選支撐來源，並一鍵跳回閱讀區補齊僅摘要主張的證據盲點。 | 確認每個來源是否確實支持該項具體主張。 |
+| 設計與結果 | 記錄問題、方法、結果與限制；登錄分析檔案。 | 在文字工作者之外，執行並驗證實際研究。 |
+| 稿件 | 登錄 Word、LaTeX 或 Markdown 檔案、綁定寫作狀態、準備提案並執行稽核。 | 處理科學問題並編輯原始文件。 |
 | 審查與交付 | 檢視任務、決定是否接受提案，準備交付檔案。 | 針對確切版本作出接受與交付決定。 |
 
 ![研究生命週期概念圖，包含輸入變動後重新檢視的路徑。](images/workspace-lifecycle.zh-TW.png)

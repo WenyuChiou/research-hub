@@ -38,7 +38,8 @@ See [NotebookLM architecture](notebooklm.md).
 
 | You have | Recommended command |
 |---|---|
-| No accounts yet | [Published dashboard sample](../README.md#published-dashboard) (Linux-tested) |
+| Local visual workstation (no accounts) | `python -m research_hub open --demo` ([60-second quickstart](../README.md#workspace-preview)) |
+| Published dashboard sample (PyPI 1.2.0) | [Published dashboard sample](../README.md#published-dashboard) (Linux-tested) |
 | Zotero + Obsidian | `research-hub setup --skip-login` |
 | Zotero + Obsidian + NotebookLM | `research-hub setup` |
 | Local files, any persona | `research-hub init --persona researcher` (or `analyst`, `humanities`, `internal`); defer optional connections |
@@ -204,6 +205,8 @@ the relevant directories from `skills/` manually or inline the relevant
 `research-hub install --platform` targets yet.
 
 ## 4. Required Credentials
+
+When using the visual workstation (`research-hub open`), open **`⚙ Settings → Connections & Sync`** to save encrypted `ZOTERO_API_KEY`, `ZOTERO_LIBRARY_ID`, Unpaywall email, and Semantic Scholar API keys directly into local `config.json` (plus check Zotero/NotebookLM live status LEDs) without editing dotfiles manually. Base installation includes `cryptography` for encrypted local credential storage.
 
 Zotero-backed workflows need:
 

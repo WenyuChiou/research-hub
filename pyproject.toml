@@ -23,6 +23,7 @@ classifiers = [
 # Caps are next-major for stable libs, tight for 0.x (any minor can
 # break). Reproducible installs: pip install -e . -c constraints.txt.
 dependencies = [
+    "cryptography>=42.0.0,<47.0.0",
     "networkx>=3.0,<4.0",
     "notebooklm-py==0.8.6",
     "httpx>=0.28.1,<1.0",
@@ -40,7 +41,7 @@ Repository = "https://github.com/WenyuChiou/research-hub"
 Issues = "https://github.com/WenyuChiou/research-hub/issues"
 
 [project.optional-dependencies]
-secrets = ["cryptography>=42"]
+secrets = ["cryptography>=42.0.0,<47.0.0"]
 import = [
     "pdfplumber>=0.11.10",
     "python-docx>=1.1",
