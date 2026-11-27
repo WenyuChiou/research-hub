@@ -41,6 +41,7 @@ const COPY = {
     applying: "套用中…",
     cancelPlan: "✕ 取消提案",
     appliedDone: (n: number) => `✓ 已成功套用 ${n} 項變更並重新同步工作區。`,
+    appliedPartial: (failed: number) => `⚠ 整合執行部分失敗（共 ${failed} 筆項目未能完成，請檢查上方錯誤或明細）。`,
     close: "關閉",
     unavailableSuffix: "（未安裝）",
     sendHint: "Enter 傳送 · Shift+Enter 換行",
@@ -63,6 +64,7 @@ const COPY = {
     applying: "Applying…",
     cancelPlan: "✕ Dismiss",
     appliedDone: (n: number) => `✓ Applied ${n} action(s) and refreshed workspace.`,
+    appliedPartial: (failed: number) => `⚠ Integration finished with ${failed} failed item(s). Check source diagnostics before retrying.`,
     close: "Close",
     unavailableSuffix: " (not installed)",
     sendHint: "Enter to send · Shift+Enter for newline",
@@ -230,7 +232,11 @@ export function AgentChatDrawer({
     setApplying(true);
     setError(null);
     try {
-      const res = await api<{ ok: true; applied_count: number }>(
+      const res = await api<{
+        ok: true;
+        applied_count: number;
+        results?: { type: string; ok: boolean; detail?: { status?: string; failed_count?: number } }[];
+      }>(
         `/projects/${segment(reqProject)}/integrations/agent/apply`,
         {
           proposed_actions: pendingPlan.actions,
@@ -238,7 +244,14 @@ export function AgentChatDrawer({
         },
       );
       if (epochRef.current !== reqEpoch || projectIdRef.current !== reqProject) return;
-      const msg = c.appliedDone(res.applied_count);
+      const failedTotal = (res.results ?? []).reduce((sum, item) => {
+        const st = item.detail?.status;
+        if (st === "failed" || st === "partial_failure") {
+          return sum + Math.max(1, Number(item.detail?.failed_count ?? 1));
+        }
+        return sum;
+      }, 0);
+      const msg = failedTotal > 0 ? c.appliedPartial(failedTotal) : c.appliedDone(res.applied_count);
       setMessages((prev) => [
         ...prev,
         { id: `sys-${Date.now()}`, role: "assistant", text: msg },

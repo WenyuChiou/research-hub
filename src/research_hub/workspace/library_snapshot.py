@@ -79,9 +79,12 @@ def projection(value):
                 raise ValueError("Invalid note size")
             clean["note_size_bytes"] = data["note_size_bytes"]
         clean_notes.append({"id": note["id"], "kind": "library-note", "data": clean})
-    return {"schema_version": 1, "read_only": True, "body_read": False,
-            "captured_at": value["captured_at"], "vault_label": value["vault_label"],
-            "collections": clean_collections, "notes": clean_notes}
+    clean = {"schema_version": 1, "read_only": True, "body_read": False,
+             "captured_at": value["captured_at"], "vault_label": value["vault_label"],
+             "collections": clean_collections, "notes": clean_notes}
+    if value.get("truncated") is True:
+        clean["truncated"] = True
+    return clean
 
 
 class LibrarySnapshot:
@@ -299,8 +302,12 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
 
         collections: list[dict] = []
         notes: list[dict] = []
+        truncated = len(active_slugs) > MAX_VAULT_CLUSTERS
 
         for slug in active_slugs[:MAX_VAULT_CLUSTERS]:
+            if len(notes) >= MAX_VAULT_NOTES:
+                truncated = True
+                break
             subfolder = cluster_subfolders.get(slug, slug).replace("\\", "/").strip("/")
             sub_parts = [p for p in subfolder.split("/") if p]
             if not sub_parts or any(p in {".", ".."} or ":" in p or "\\" in p for p in sub_parts):
@@ -332,14 +339,15 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
             seen_rel_paths: set[str] = set()
             for scan_dir, rel_prefix in scan_dirs:
                 for note_file in sorted(scan_dir.iterdir(), key=lambda p: p.name):
-                    if len(notes) >= MAX_VAULT_NOTES:
-                        break
                     if note_file.suffix.lower() != ".md" or not note_file.is_file():
                         continue
                     rel_posix = f"{rel_prefix}/{note_file.name}"
                     if rel_posix in seen_rel_paths:
                         continue
                     seen_rel_paths.add(rel_posix)
+                    if len(notes) >= MAX_VAULT_NOTES:
+                        truncated = True
+                        break
                     try:
                         note_lex = _lexical(note_file)
                         fm, fm_sha, opened = _extract_frontmatter_incremental(note_lex)
@@ -412,7 +420,7 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
             })
 
         captured_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        return projection({
+        result_payload: dict = {
             "schema_version": 1,
             "read_only": True,
             "body_read": False,
@@ -420,6 +428,9 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
             "vault_label": root.name or "vault",
             "collections": collections,
             "notes": notes,
-        })
+        }
+        if truncated:
+            result_payload["truncated"] = True
+        return projection(result_payload)
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, yaml.YAMLError):
         return unavailable

@@ -96,8 +96,10 @@ def _match_sources(message: str, catalog: list[dict[str, Any]], *, include_archi
     # Direct longest title-word overlap (>= 4 chars substring or >= 2 meaningful tokens)
     stop_tokens = {
         "幫我", "請", "刪除", "移除", "復原", "還原", "文獻", "論文", "這篇", "那篇",
-        "加上", "標籤", "分類", "納入", "排除", "同步", "上傳", "delete", "remove",
-        "restore", "paper", "source", "this", "that", "from", "with", "the", "and",
+        "加上", "標籤", "分類", "納入", "排除", "同步", "上傳", "產生", "匯出", "寫入",
+        "正式", "筆記", "雲端", "限定", "delete", "remove", "restore", "paper", "source",
+        "this", "that", "from", "with", "the", "and", "only", "upload", "bundle", "sync",
+        "pack", "notebooklm", "zotero", "obsidian", "nlm",
     }
     scored: list[tuple[int, dict[str, Any]]] = []
     msg_tokens = {
@@ -215,27 +217,66 @@ class WorkspaceAgentBridge:
         msg_l = msg.casefold()
         actions: list[dict[str, Any]] = []
 
-        # 1. Explicit sync hooks
+        # 1. Explicit sync hooks (honoring optional single/multi-paper scoping)
+        explicitly_scoped = bool(
+            re.search(r"[\"“「『]|(?:只|僅|限定|\bonly\b)", msg, re.IGNORECASE)
+        )
         if any(k in msg_l for k in ("上傳 notebooklm", "上傳至 notebooklm", "upload notebooklm", "upload to notebooklm")):
-            actions.append({"type": "upload_notebooklm", "summary": "產生並上傳專案文獻包至 NotebookLM 雲端筆記本"})
-            return "已規劃將目前入選文獻打包並上傳至 NotebookLM 雲端筆記本，請確認執行。", actions, True
+            scoped = _match_sources(msg, catalog, include_archived=False)
+            if explicitly_scoped and not scoped:
+                return "找不到符合指定條件的文獻，無法建立 scoped 上傳提案；請確認文獻標題或 DOI。", [], True
+            act: dict[str, Any] = {"type": "upload_notebooklm", "summary": "產生並上傳專案文獻包至 NotebookLM 雲端筆記本"}
+            if scoped:
+                act["selected_source_ids"] = [s["id"] for s in scoped]
+                act["summary"] = f"產生並上傳已選 {len(scoped)} 篇文獻至 NotebookLM 雲端筆記本"
+            actions.append(act)
+            return (
+                f"已規劃將指定的 {len(scoped)} 篇文獻打包並上傳至 NotebookLM，請確認執行。"
+                if scoped
+                else "已規劃將目前入選文獻打包並上傳至 NotebookLM 雲端筆記本，請確認執行。"
+            ), actions, True
         if any(k in msg_l for k in ("notebooklm", "nlm")) and any(k in msg_l for k in ("匯出", "產生", "打包", "bundle", "pack")):
-            actions.append({"type": "bundle_notebooklm", "summary": "更新 NotebookLM Markdown 匯出包"})
+            scoped = _match_sources(msg, catalog, include_archived=False)
+            if explicitly_scoped and not scoped:
+                return "找不到符合指定條件的文獻，無法建立 scoped 匯出提案。", [], True
+            act = {"type": "bundle_notebooklm", "summary": "更新 NotebookLM Markdown 匯出包"}
+            if scoped:
+                act["selected_source_ids"] = [s["id"] for s in scoped]
+                act["summary"] = f"更新已選 {len(scoped)} 篇的 NotebookLM Markdown 匯出包"
+            actions.append(act)
             return "已規劃重新產生 NotebookLM 來源包，請確認執行。", actions, True
         if "zotero" in msg_l and any(k in msg_l for k in ("寫入", "同步", "push", "sync")):
             dry_run = "寫入" not in msg_l and "confirm" not in msg_l and "正式" not in msg_l
-            actions.append({
+            scoped = _match_sources(msg, catalog, include_archived=False)
+            if explicitly_scoped and not scoped:
+                return "找不到符合指定條件的文獻，無法建立 scoped Zotero 同步提案。", [], True
+            act = {
                 "type": "sync_zotero",
                 "dry_run": dry_run,
                 "summary": "Zotero Dry-run 預覽比對" if dry_run else "正式同步專案文獻與 Collection 至 Zotero 雲端書目庫",
-            })
+            }
+            if scoped:
+                act["selected_source_ids"] = [s["id"] for s in scoped]
+                act["summary"] = (
+                    f"Zotero Dry-run 預覽（已選 {len(scoped)} 篇）"
+                    if dry_run
+                    else f"正式同步已選 {len(scoped)} 篇與 Collection 至 Zotero"
+                )
+            actions.append(act)
             return (
                 "已規劃 Zotero 同步作業（含建立 `[Research Hub]` Collection），請確認執行。"
                 if not dry_run
                 else "已規劃 Zotero Dry-run 預覽檢查，請確認執行。"
             ), actions, True
         if "obsidian" in msg_l and any(k in msg_l for k in ("產生", "匯出", "打包", "pack")):
-            actions.append({"type": "pack_obsidian", "summary": "產生 Obsidian 筆記與 .base 索引檢視"})
+            scoped = _match_sources(msg, catalog, include_archived=False)
+            if explicitly_scoped and not scoped:
+                return "找不到符合指定條件的文獻，無法建立 scoped Obsidian 匯出提案。", [], True
+            act = {"type": "pack_obsidian", "summary": "產生 Obsidian 筆記與 .base 索引檢視"}
+            if scoped:
+                act["selected_source_ids"] = [s["id"] for s in scoped]
+                act["summary"] = f"產生已選 {len(scoped)} 篇的 Obsidian 筆記與 .base 索引檢視"
+            actions.append(act)
             return "已規劃產生 Obsidian 筆記與 `.base` 資料庫檢視，請確認執行。", actions, True
 
         # 2. Add source
@@ -403,7 +444,7 @@ class WorkspaceAgentBridge:
         # Read-only isolated execution: run CLI inside a blank temp directory without auto-approve flags.
         cmd_map = {
             "claude": [executable, "-p"],
-            "codex": [executable, "exec", "--sandbox", "read-only", "-"],
+            "codex": [executable, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "-"],
             "gemini": [executable, "-p", ""],
         }
         cmd = cmd_map[cli_name]
@@ -418,6 +459,8 @@ class WorkspaceAgentBridge:
                 cwd=tmpdir,
                 check=False,
             )
+        if proc.returncode != 0:
+            raise RuntimeError(f"CLI exited with code {proc.returncode}")
         raw = proc.stdout or ""
         parsed = _extract_first_json(raw)
         if isinstance(parsed, dict) and isinstance(parsed.get("reply"), str):
@@ -472,6 +515,17 @@ class WorkspaceAgentBridge:
                     continue
                 item["title"] = title
                 item["locator"] = locator
+            if atype in {"bundle_notebooklm", "upload_notebooklm", "sync_zotero", "pack_obsidian"}:
+                raw_sel = entry.get("selected_source_ids")
+                if isinstance(raw_sel, list):
+                    valid_ids = [
+                        _clean_text(s, limit=128)
+                        for s in raw_sel
+                        if isinstance(s, str) and _clean_text(s, limit=128) in catalog_map
+                    ]
+                    if not valid_ids:
+                        continue
+                    item["selected_source_ids"] = valid_ids
             if atype == "sync_zotero":
                 item["dry_run"] = bool(entry.get("dry_run", True))
                 if not item["dry_run"]:
@@ -497,7 +551,10 @@ class WorkspaceAgentBridge:
             entry = dict(action)
             if entry.get("type") == "sync_zotero" and entry.get("dry_run") is False:
                 try:
-                    preview = self.sync_hooks.sync_zotero(project_id, {"dry_run": True})
+                    preview_req: dict[str, Any] = {"dry_run": True}
+                    if entry.get("selected_source_ids"):
+                        preview_req["selected_source_ids"] = entry["selected_source_ids"]
+                    preview = self.sync_hooks.sync_zotero(project_id, preview_req)
                     if isinstance(preview.get("destination_library"), str) and preview["destination_library"]:
                         entry["expected_library"] = preview["destination_library"]
                     if isinstance(preview.get("plan_digest"), str) and preview["plan_digest"]:
@@ -688,11 +745,19 @@ class WorkspaceAgentBridge:
                 if self.sync_hooks is None:
                     raise WorkspaceError("Sync hooks are unavailable in this server mode", "integrations_unavailable")
                 if atype == "bundle_notebooklm":
-                    hook_res = self.sync_hooks.bundle_notebooklm(project_id, {})
+                    hook_payload: dict[str, Any] = {}
+                    if action.get("selected_source_ids"):
+                        hook_payload["selected_source_ids"] = action["selected_source_ids"]
+                    hook_res = self.sync_hooks.bundle_notebooklm(project_id, hook_payload)
                 elif atype == "upload_notebooklm":
-                    hook_res = self.sync_hooks.upload_notebooklm(project_id, {})
+                    hook_payload = {}
+                    if action.get("selected_source_ids"):
+                        hook_payload["selected_source_ids"] = action["selected_source_ids"]
+                    hook_res = self.sync_hooks.upload_notebooklm(project_id, hook_payload)
                 elif atype == "sync_zotero":
                     zot_payload: dict[str, Any] = {"dry_run": bool(action.get("dry_run", True))}
+                    if action.get("selected_source_ids"):
+                        zot_payload["selected_source_ids"] = action["selected_source_ids"]
                     if not zot_payload["dry_run"]:
                         if action.get("expected_library"):
                             zot_payload["expected_library"] = action["expected_library"]
@@ -702,7 +767,10 @@ class WorkspaceAgentBridge:
                             zot_payload["expected_plan_digest"] = action["expected_plan_digest"]
                     hook_res = self.sync_hooks.sync_zotero(project_id, zot_payload)
                 else:
-                    hook_res = self.sync_hooks.pack_obsidian(project_id, {})
+                    hook_payload = {}
+                    if action.get("selected_source_ids"):
+                        hook_payload["selected_source_ids"] = action["selected_source_ids"]
+                    hook_res = self.sync_hooks.pack_obsidian(project_id, hook_payload)
                 results.append({"type": atype, "ok": True, "detail": hook_res})
 
         return {"ok": True, "applied_count": len(results), "results": results}

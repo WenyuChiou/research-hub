@@ -17,6 +17,7 @@ export interface LibrarySnapshot {
   vault_label: string;
   read_only: true;
   body_read: false;
+  truncated?: boolean;
   collections: {id: string; name: string; note_count: number}[];
   notes: ResearchRecord[];
 }
@@ -117,6 +118,11 @@ export function LibraryCollection(props: {
             </p>
           )}
         </details>
+        {snapshot?.truncated && (
+          <p role="status" className="small muted">
+            Snapshot truncated at 1,000 notes limit; filter or organize collections to narrow scope.
+          </p>
+        )}
         {failed && <p role="alert">{snapshot ? t("libraryRetained") : t("libraryUnavailable")}</p>}
       </div>
       <div className="library-connection-actions">

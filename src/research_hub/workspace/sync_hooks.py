@@ -1171,29 +1171,36 @@ class WorkspaceSyncHooks:
             if getattr(handle, "notebook_id", "")
             else "https://notebooklm.google.com/"
         )
-        # Merge previously synced unchanged sources so subsequent uploads preserve revision memory
-        retained_sources = list(uploaded_sources)
         uploaded_ids_now = {s["source_id"] for s in uploaded_sources}
-        if prior_receipt.get("notebook_id") == handle.notebook_id:
-            for prev in (prior_receipt.get("uploaded_sources") or []):
-                if isinstance(prev, dict) and prev.get("source_id") not in uploaded_ids_now:
-                    retained_sources.append(prev)
-        receipt = {
-            "ok": True,
-            "status": status,
-            "project_id": project_id,
-            "notebook_id": handle.notebook_id,
-            "notebook_name": handle.name,
-            "notebook_url": safe_nb_url,
-            "uploaded_count": uploaded_count,
-            "skipped_duplicates": skipped_duplicates,
-            "failed_count": failed_count,
-            "uploaded_sources": retained_sources,
-            "failed_sources": failed_sources,
-            "uploaded_at": _utc_now(),
-            "receipt_file": receipt_rel,
-        }
         with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            latest_prior: dict[str, Any] = {}
+            if receipt_path.is_file():
+                try:
+                    loaded_latest = json.loads(receipt_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded_latest, dict):
+                        latest_prior = loaded_latest
+                except (OSError, json.JSONDecodeError):
+                    latest_prior = {}
+            retained_sources = list(uploaded_sources)
+            if latest_prior.get("notebook_id") == handle.notebook_id:
+                for prev in (latest_prior.get("uploaded_sources") or []):
+                    if isinstance(prev, dict) and prev.get("source_id") not in uploaded_ids_now:
+                        retained_sources.append(prev)
+            receipt = {
+                "ok": True,
+                "status": status,
+                "project_id": project_id,
+                "notebook_id": handle.notebook_id,
+                "notebook_name": handle.name,
+                "notebook_url": safe_nb_url,
+                "uploaded_count": uploaded_count,
+                "skipped_duplicates": skipped_duplicates,
+                "failed_count": failed_count,
+                "uploaded_sources": retained_sources,
+                "failed_sources": failed_sources,
+                "uploaded_at": _utc_now(),
+                "receipt_file": receipt_rel,
+            }
             atomic_json(receipt_path, receipt)
         return receipt
 
