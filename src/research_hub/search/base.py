@@ -44,6 +44,7 @@ class SearchResult:
     volume: str = ""
     issue: str = ""
     pages: str = ""
+    source_records: list[dict] = field(default_factory=list)
 
     def __init__(
         self,
@@ -68,6 +69,7 @@ class SearchResult:
         volume: str = "",
         issue: str = "",
         pages: str = "",
+        source_records: list[dict] | None = None,
     ) -> None:
         self.title = title
         self.doi = doi
@@ -90,6 +92,9 @@ class SearchResult:
         self.volume = volume
         self.issue = issue
         self.pages = pages
+        self.source_records = [
+            dict(rec) for rec in (source_records or []) if isinstance(rec, dict)
+        ]
 
     @classmethod
     def from_s2_json(cls, item: dict) -> "SearchResult":

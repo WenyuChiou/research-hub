@@ -820,6 +820,10 @@ def _norm_locator(value: object) -> str:
 
 def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
     """Return True iff two in-batch title-matched papers represent the same work."""
+    z1 = str(existing.get("zotero_key") or existing.get("zotero-key") or "").strip()
+    z2 = str(incoming.get("zotero_key") or incoming.get("zotero-key") or "").strip()
+    if z1 and z2 and z1 != z2:
+        return False
     y1 = _parse_year_int(existing.get("year"))
     y2 = _parse_year_int(incoming.get("year"))
     if y1 is not None and y2 is not None and abs(y1 - y2) > 2:
@@ -885,6 +889,21 @@ def _read_note_identity(note_path: Path) -> dict[str, Any]:
     }
 
 
+def _titles_compatible_for_note(existing_title_norm: str, incoming_title_norm: str) -> bool:
+    if not existing_title_norm or not incoming_title_norm:
+        return True
+    if existing_title_norm == incoming_title_norm:
+        return True
+    try:
+        from rapidfuzz import fuzz
+
+        return fuzz.token_set_ratio(existing_title_norm, incoming_title_norm) >= 85
+    except ImportError:
+        from difflib import SequenceMatcher
+
+        return SequenceMatcher(None, existing_title_norm, incoming_title_norm).ratio() >= 0.85
+
+
 def _is_same_work_note(note_path: Path, pp: dict) -> bool:
     """Return True if *note_path* on disk represents the same work as *pp*."""
     existing = _read_note_identity(note_path)
@@ -892,23 +911,24 @@ def _is_same_work_note(note_path: Path, pp: dict) -> bool:
     existing_zkey = str(existing["zotero_key"] or "")
     existing_title_norm = str(existing["title_norm"] or "")
     incoming_doi = normalize_doi(str(pp.get("doi") or ""))
-    incoming_zkey = str(pp.get("zotero_key") or "").strip()
+    incoming_zkey = str(pp.get("zotero_key") or pp.get("zotero-key") or "").strip()
     incoming_title_norm = normalize_title(str(pp.get("title") or ""))
 
+    if incoming_doi and existing_doi and incoming_doi != existing_doi:
+        return False
+    if incoming_zkey and existing_zkey and incoming_zkey != existing_zkey:
+        return False
+    if not _in_batch_title_match_ok(existing, pp):
+        return False
+
     if incoming_doi and existing_doi and incoming_doi == existing_doi:
-        return True
-    conflicting_doi = bool(incoming_doi and existing_doi and incoming_doi != existing_doi)
-    if incoming_zkey and existing_zkey:
-        if incoming_zkey == existing_zkey:
-            return True
-        if not (incoming_doi and existing_doi and incoming_doi == existing_doi):
-            return False
+        return _titles_compatible_for_note(existing_title_norm, incoming_title_norm)
+    if incoming_zkey and existing_zkey and incoming_zkey == existing_zkey:
+        return _titles_compatible_for_note(existing_title_norm, incoming_title_norm)
     if (
-        not conflicting_doi
-        and incoming_title_norm
+        incoming_title_norm
         and existing_title_norm
         and incoming_title_norm == existing_title_norm
-        and _in_batch_title_match_ok(existing, pp)
     ):
         return True
     return False
@@ -922,13 +942,13 @@ def _obsidian_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
         return False
     incoming_doi = _normalized_real_doi(pp.get("doi", ""))
     hit_doi = _normalized_real_doi(hit.doi)
+    incoming_zkey = str(pp.get("zotero_key") or pp.get("zotero-key") or "").strip()
+    hit_zkey = str(hit.zotero_key or "").strip()
+    if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
+        return False
     if incoming_doi and hit_doi:
         if incoming_doi == hit_doi:
             return True
-        return False
-    incoming_zkey = str(pp.get("zotero_key") or "").strip()
-    hit_zkey = str(hit.zotero_key or "").strip()
-    if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
         return False
     return _is_same_work_note(note_path, pp)
 
@@ -1011,6 +1031,7 @@ def _render_obsidian_note(
         "volume": pp.get("volume", ""),
         "issue": pp.get("issue", ""),
         "pages": pp.get("pages", ""),
+        "edition": str(pp.get("edition") or ""),
         "doi": pp.get("doi", ""),
         "abstract": pp.get("abstract", ""),
         "tags": pp.get("tags", []),

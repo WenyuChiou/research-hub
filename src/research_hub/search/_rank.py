@@ -32,7 +32,11 @@ def _merge_record(base: SearchResult, incoming: SearchResult) -> SearchResult:
     for backend_name in incoming.found_in:
         if backend_name not in found_in:
             found_in.append(backend_name)
-    fill: dict[str, object] = {"found_in": found_in}
+    source_records: list[dict] = []
+    for rec in [*(base.source_records or []), *(incoming.source_records or [])]:
+        if isinstance(rec, dict) and rec not in source_records:
+            source_records.append(dict(rec))
+    fill: dict[str, object] = {"found_in": found_in, "source_records": source_records}
     base_is_excerpt = is_web_search_excerpt(base.source, base.abstract_source)
     incoming_is_excerpt = is_web_search_excerpt(incoming.source, incoming.abstract_source)
     if base.abstract and base_is_excerpt:
@@ -71,11 +75,25 @@ def merge_results(per_backend: dict[str, list[SearchResult]]) -> list[SearchResu
             keys = _identity_keys(result)
             if not keys:
                 continue
+            incoming_source = result.source or backend_name
+            source_records = [
+                dict(rec) for rec in (result.source_records or []) if isinstance(rec, dict)
+            ]
+            if str(result.title or "").strip() and str(incoming_source or "").strip():
+                own_record = {
+                    "source": str(incoming_source).strip(),
+                    "title": result.title,
+                    "year": result.year,
+                    "authors": list(result.authors or []),
+                }
+                if own_record not in source_records:
+                    source_records.append(own_record)
             incoming = replace(
                 result,
-                source=result.source or backend_name,
+                source=incoming_source,
                 found_in=[backend_name] if backend_name else [],
                 confidence=0.5,
+                source_records=source_records,
             )
             owners = list(dict.fromkeys(alias_owner[key] for key in keys if key in alias_owner))
             if not owners:

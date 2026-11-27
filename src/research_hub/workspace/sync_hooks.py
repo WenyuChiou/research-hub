@@ -203,6 +203,10 @@ def _reading_scope(data: dict[str, Any]) -> str:
     return resolve_reading_scope(data)
 
 
+def _is_full_text_scope(scope: str) -> bool:
+    return scope.casefold() in {"full-text", "fulltext"}
+
+
 def _saved_summary(data: dict[str, Any]) -> str:
     for field in ("summary", "abstract"):
         val = data.get(field)
@@ -487,7 +491,7 @@ def _render_nlm_individual_source(
     working = _working_summary_text(data)
     relevance = str(data.get("relevance") or "").strip()
 
-    is_full = scope == "full-text"
+    is_full = _is_full_text_scope(scope)
     boundary = (
         "Full-text declared in Research Hub."
         if is_full
@@ -541,8 +545,8 @@ def _render_nlm_pack_markdown(
     screenings: dict[str, str] | None = None,
     artifact_refs: dict[str, dict[str, str]] | None = None,
 ) -> str:
-    full_text = [s for s in sources if _reading_scope(s["data"]) == "full-text"]
-    abstract_or_meta = [s for s in sources if _reading_scope(s["data"]) != "full-text"]
+    full_text = [s for s in sources if _is_full_text_scope(_reading_scope(s["data"]))]
+    abstract_or_meta = [s for s in sources if not _is_full_text_scope(_reading_scope(s["data"]))]
     screening_map = screenings or {}
     art_map = artifact_refs or {}
 
@@ -918,7 +922,7 @@ class WorkspaceSyncHooks:
             project_id, selected_source_ids
         )
         artifact_refs = self._resolve_source_artifacts(project_id, sources)
-        full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
+        full_text_count = sum(1 for s in sources if _is_full_text_scope(_reading_scope(s["data"])))
         abstract_only_count = len(sources) - full_text_count
         generated_at = _utc_now()
         manifest: dict[str, Any] = {
@@ -1907,6 +1911,18 @@ class WorkspaceSyncHooks:
             )
         truncated = bool(snapshot.get("truncated"))
 
+        if collection_id is not None:
+            known_collections = {
+                c["id"]
+                for c in (snapshot.get("collections") or [])
+                if isinstance(c, dict) and isinstance(c.get("id"), str)
+            }
+            if collection_id not in known_collections:
+                raise WorkspaceError(
+                    "Requested collection_id does not exist in the configured Obsidian vault",
+                    "invalid_source",
+                )
+
         raw_notes = snapshot.get("notes") or []
         candidate_notes = [
             note
@@ -1925,6 +1941,11 @@ class WorkspaceSyncHooks:
             selected_notes: list[dict[str, Any]] = []
             for nid in requested_note_ids:
                 if nid not in notes_by_id:
+                    if truncated:
+                        raise WorkspaceError(
+                            "One or more requested note_ids could not be resolved because the Obsidian vault snapshot was truncated",
+                            "snapshot_truncated",
+                        )
                     raise WorkspaceError(
                         "One or more requested note_ids do not exist in the selected Obsidian scope",
                         "invalid_source",
@@ -1939,7 +1960,7 @@ class WorkspaceSyncHooks:
             _, existing_sources, _, _ = self._load_curated_sources(project_id)
             seen_dois: set[str] = set()
             seen_zkeys: set[str] = set()
-            seen_paths: set[str] = set()
+            seen_path_records: dict[str, list[tuple[str, str, str]]] = {}
             seen_title_year_records: dict[tuple[str, str], list[tuple[str, str]]] = {}
 
             for existing in existing_sources:
@@ -1952,9 +1973,16 @@ class WorkspaceSyncHooks:
                 if norm_existing_zkey:
                     seen_zkeys.add(norm_existing_zkey)
                 existing_path = _clean_line(edata.get("origin_note_path") or edata.get("note_path"))
-                if existing_path:
-                    seen_paths.add(existing_path)
+                existing_vault_id = _clean_line(edata.get("origin_vault_id"))
+                if not existing_vault_id:
+                    raw_batch = _clean_line(edata.get("batch_id"))
+                    if raw_batch.startswith("obsidian-vault:"):
+                        existing_vault_id = raw_batch
                 existing_title = _clean_line(edata.get("title")).casefold()
+                if existing_path:
+                    seen_path_records.setdefault(existing_path, []).append(
+                        (existing_vault_id, existing_doi, existing_title)
+                    )
                 existing_year = _clean_line(edata.get("year"))
                 if existing_title:
                     seen_title_year_records.setdefault((existing_title, existing_year), []).append(
@@ -1975,7 +2003,8 @@ class WorkspaceSyncHooks:
                 zotero_key = _clean_line(ndata.get("zotero_key"))
                 norm_zkey = zotero_key.casefold() if zotero_key else ""
                 year = _clean_line(ndata.get("year"))
-                title_year = (title.casefold(), year) if title else None
+                norm_title = title.casefold() if title else ""
+                title_year = (norm_title, year) if title else None
 
                 title_year_match = False
                 if title_year is not None and title_year in seen_title_year_records:
@@ -1986,10 +2015,22 @@ class WorkspaceSyncHooks:
                             title_year_match = True
                             break
 
+                path_match = False
+                if note_path and note_path in seen_path_records:
+                    for ex_vault_id, ex_doi, ex_title in seen_path_records[note_path]:
+                        if ex_vault_id and ex_vault_id == batch_id:
+                            path_match = True
+                            break
+                        doi_conflict = bool(norm_doi and ex_doi and norm_doi != ex_doi)
+                        title_conflict = bool(norm_title and ex_title and norm_title != ex_title)
+                        if not doi_conflict and not title_conflict:
+                            path_match = True
+                            break
+
                 is_duplicate = bool(
                     (norm_doi and norm_doi in seen_dois)
                     or (norm_zkey and norm_zkey in seen_zkeys)
-                    or (note_path and note_path in seen_paths)
+                    or path_match
                     or title_year_match
                 )
                 if is_duplicate:
@@ -2009,7 +2050,9 @@ class WorkspaceSyncHooks:
                 if norm_zkey:
                     seen_zkeys.add(norm_zkey)
                 if note_path:
-                    seen_paths.add(note_path)
+                    seen_path_records.setdefault(note_path, []).append(
+                        (batch_id, norm_doi, norm_title)
+                    )
                 if title_year is not None:
                     seen_title_year_records.setdefault(title_year, []).append((norm_doi, norm_zkey))
 
@@ -2024,6 +2067,7 @@ class WorkspaceSyncHooks:
 
                 source_item: dict[str, Any] = {
                     "batch_id": batch_id,
+                    "origin_vault_id": batch_id,
                     "id": note_id,
                     "upstream_id": note_id,
                     "title": title,

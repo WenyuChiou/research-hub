@@ -196,12 +196,43 @@ def test_crossref_different_paper_does_not_satisfy_l2(
     assert accepted == []
     assert len(quarantined) == 1
     assert quarantined[0]["layer"] == "L2"
-    assert quarantined[0]["reason"] == "uncorroborated"
+    assert quarantined[0]["reason"] == "corroboration_conflict"
     assert "crossref" not in [str(name).casefold() for name in paper.get("backends", [])]
     assert not any(record.get("source") == "crossref" for record in paper.get("source_records", []))
     entry = _cache_payload(cfg)["results"]["doi:10.1007/s11269-025-04093-x"]
     assert entry["verified"] is True
     assert entry["record"]["title"] == "A Different Article About Bridge Inspection"
+
+
+def test_crossref_conflict_quarantines_even_with_high_citations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+    _crossref_get(
+        monkeypatch,
+        _Resp(
+            payload={
+                "message": _work(
+                    title="A Different Article About Bridge Inspection",
+                    year=2020,
+                    family="Smith",
+                    given="Alex",
+                )
+            }
+        ),
+    )
+
+    paper = _paper(citation_count=50)
+    accepted, quarantined = verify_authenticity([paper], cfg, cluster_slug="agents")
+
+    assert accepted == []
+    assert len(quarantined) == 1
+    assert quarantined[0]["layer"] == "L2"
+    assert quarantined[0]["reason"] == "corroboration_conflict"
+    assert "crossref" not in [str(name).casefold() for name in paper.get("backends", [])]
+    assert not any(record.get("source") == "crossref" for record in paper.get("source_records", []))
 
 
 def test_already_two_backend_paper_does_not_fetch_crossref(
@@ -376,7 +407,7 @@ def test_recordless_verified_true_cache_refetches_and_blocks_mismatch(
     assert fetched == [True]
     assert accepted == []
     assert len(quarantined) == 1
-    assert quarantined[0]["reason"] == "uncorroborated"
+    assert quarantined[0]["reason"] == "corroboration_conflict"
     assert "crossref" not in [str(b).casefold() for b in paper.get("backends", [])]
 
 
@@ -398,7 +429,7 @@ def test_mismatch_does_not_poison_valid_subsequent_candidate_on_same_doi(
     accepted1, quarantined1 = verify_authenticity([wrong_candidate], cfg, cluster_slug="agents")
     assert accepted1 == []
     assert len(quarantined1) == 1
-    assert quarantined1[0]["reason"] == "uncorroborated"
+    assert quarantined1[0]["reason"] == "corroboration_conflict"
 
     # Next candidate with the true paper metadata must succeed from cache without re-fetching.
     monkeypatch.setattr(

@@ -126,6 +126,16 @@ _SCOPE_RANK: dict[str, int] = {
 }
 
 
+_RANK_CANONICAL: dict[int, str] = {
+    0: "unknown",
+    1: "metadata-only",
+    2: "abstract-snippet",
+    3: "abstract-only",
+    4: "selected-sections",
+    5: "full-text",
+}
+
+
 def _clean_scope_value(value: object) -> str:
     if not isinstance(value, str):
         return ""
@@ -141,16 +151,22 @@ def resolve_reading_scope(data: Mapping[str, object]) -> str:
     if not scope and not level:
         return "unknown"
     if scope and not level:
-        return scope
+        return "full-text" if scope.casefold() == "fulltext" else scope
     if level and not scope:
-        return level
+        return "full-text" if level.casefold() == "fulltext" else level
     if scope == level:
-        return scope
-    scope_rank = _SCOPE_RANK.get(scope.casefold(), 1)
-    level_rank = _SCOPE_RANK.get(level.casefold(), 1)
+        return "full-text" if scope.casefold() == "fulltext" else scope
+    scope_key = scope.casefold()
+    level_key = level.casefold()
+    scope_rank = _SCOPE_RANK.get(scope_key, 1)
+    level_rank = _SCOPE_RANK.get(level_key, 1)
     if level_rank < scope_rank:
-        return level
-    return scope
+        return "full-text" if level_key == "fulltext" else level
+    if scope_rank < level_rank:
+        return "full-text" if scope_key == "fulltext" else scope
+    if scope_key in _SCOPE_RANK and level_key in _SCOPE_RANK:
+        return _RANK_CANONICAL[scope_rank]
+    return min(scope, level, key=lambda item: item.casefold())
 
 
 def _clean_text_field(value: object, *, name: str, limit: int) -> str:

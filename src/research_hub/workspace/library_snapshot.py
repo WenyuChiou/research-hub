@@ -176,6 +176,9 @@ def _extract_frontmatter_incremental(path: Path) -> tuple[dict | None, str, os.s
                     prefix_checked = True
                 elif len(buf) < limit:
                     continue
+            if text_norm.startswith("---\n---\n") or (len(buf) >= limit and text_norm == "---\n---"):
+                end_idx = 4
+                break
             found = text_norm.find("\n---\n", 4)
             if found != -1:
                 end_idx = found
@@ -185,7 +188,9 @@ def _extract_frontmatter_incremental(path: Path) -> tuple[dict | None, str, os.s
                 break
         else:
             text_norm = buf.decode("utf-8", errors="replace").replace("\r\n", "\n")
-            if text_norm.startswith("---\n") and text_norm.endswith("\n---"):
+            if text_norm == "---\n---":
+                end_idx = 4
+            elif text_norm.startswith("---\n") and text_norm.endswith("\n---"):
                 end_idx = len(text_norm) - 4
 
         if end_idx == -1:
@@ -194,6 +199,8 @@ def _extract_frontmatter_incremental(path: Path) -> tuple[dict | None, str, os.s
         fm_bytes = fm_text.encode("utf-8")
         digest_hex = hashlib.sha256(fm_bytes).hexdigest()
         loaded = yaml.load(fm_bytes, Loader=_UniqueLoader)
+        if loaded is None:
+            return {}, digest_hex, opened
         if not isinstance(loaded, dict):
             return None, digest_hex, opened
         return loaded, digest_hex, opened
@@ -335,7 +342,7 @@ def read_vault_snapshot(
             target_slugs = active_slugs[:MAX_VAULT_CLUSTERS]
 
         for slug in target_slugs:
-            if len(notes) >= MAX_VAULT_NOTES:
+            if selected_note_ids is None and len(notes) >= MAX_VAULT_NOTES:
                 truncated = True
                 break
             subfolder = cluster_subfolders.get(slug, slug).replace("\\", "/").strip("/")
@@ -378,7 +385,7 @@ def read_vault_snapshot(
                     note_id = f"obsidian:{hashlib.sha256(rel_posix.encode('utf-8')).hexdigest()[:24]}"
                     if selected_note_ids is not None and note_id not in selected_note_ids:
                         continue
-                    if len(notes) >= MAX_VAULT_NOTES:
+                    if selected_note_ids is None and len(notes) >= MAX_VAULT_NOTES:
                         truncated = True
                         break
                     try:

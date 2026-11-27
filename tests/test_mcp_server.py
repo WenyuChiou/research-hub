@@ -489,6 +489,7 @@ def test_mcp_enrich_candidates_resolves_doi(monkeypatch):
             "volume": "",
             "issue": "",
             "pages": "",
+            "source_records": [],
         }
     ]
 
