@@ -24,7 +24,8 @@ pip install "research-hub-pipeline[mcp]"
 
 Use `[import]` for local PDF/DOCX/Markdown/TXT ingest, `[playwright]`
 to install SDK Playwright plus EZProxy Patchright support, `[browser-auth]` for optional
-browser-cookie import, `[secrets]` for encrypted local credentials, and `[mcp]`
+browser-cookie import, `[secrets]` as a compatibility alias (base installs already bundle
+`cryptography` for encrypted API-key storage), and `[mcp]`
 for the FastMCP server. The base install does not declare FastMCP; install
 `[mcp]` explicitly when using MCP. NotebookLM operations use the base
 `notebooklm-py` dependency, not a supported consumer REST API. Browser binaries
@@ -38,7 +39,8 @@ See [NotebookLM architecture](notebooklm.md).
 
 | You have | Recommended command |
 |---|---|
-| No accounts yet | [Published dashboard sample](../README.md#published-dashboard) (Linux-tested) |
+| Local visual workstation (no accounts) | `python -m research_hub open --demo` ([60-second quickstart](../README.md#workspace-preview)) |
+| Published dashboard sample (PyPI 1.2.0) | [Published dashboard sample](../README.md#published-dashboard) (Linux-tested) |
 | Zotero + Obsidian | `research-hub setup --skip-login` |
 | Zotero + Obsidian + NotebookLM | `research-hub setup` |
 | Local files, any persona | `research-hub init --persona researcher` (or `analyst`, `humanities`, `internal`); defer optional connections |
@@ -204,6 +206,8 @@ the relevant directories from `skills/` manually or inline the relevant
 `research-hub install --platform` targets yet.
 
 ## 4. Required Credentials
+
+When using the visual workstation (`research-hub open`), open **`⚙ Settings → Connections & Sync`** to save your `ZOTERO_LIBRARY_ID`, Unpaywall email, and encrypted `ZOTERO_API_KEY` / Semantic Scholar API keys directly into local `config.json` (plus check Zotero/NotebookLM live status LEDs) without editing dotfiles manually. Base installation includes `cryptography` for encrypted API key storage in `config.json`.
 
 Zotero-backed workflows need:
 

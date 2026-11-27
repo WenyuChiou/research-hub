@@ -23,6 +23,7 @@ classifiers = [
 # Caps are next-major for stable libs, tight for 0.x (any minor can
 # break). Reproducible installs: pip install -e . -c constraints.txt.
 dependencies = [
+    "cryptography>=42",
     "networkx>=3.0,<4.0",
     "notebooklm-py==0.8.6",
     "httpx>=0.28.1,<1.0",

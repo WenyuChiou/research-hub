@@ -426,3 +426,23 @@ def test_http_native_summary_markdown_endpoint(tmp_path: Path, monkeypatch):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_base_dependencies_include_cryptography_for_ui_secret_storage():
+    """Plain ``pip install -e .`` installs must bundle ``cryptography`` for UI secret storage."""
+    repo_root = Path(__file__).resolve().parents[1]
+    pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    deps_match = re.search(r"(?s)^dependencies\s*=\s*\[(.*?)\]", pyproject_text, re.MULTILINE)
+    assert deps_match, "Missing [project].dependencies block in pyproject.toml"
+    assert re.search(r'"cryptography>=42', deps_match.group(1)), (
+        "Base dependencies must include cryptography>=42 so UI credential saves work without [secrets]"
+    )
+
+    constraints_text = (repo_root / "constraints.txt").read_text(encoding="utf-8")
+    assert re.search(r"^cryptography>=42", constraints_text, re.MULTILINE), (
+        "constraints.txt must declare cryptography alongside base pyproject.toml dependencies"
+    )
+
+    from research_hub.security import secret_box
+
+    assert secret_box._HAS_CRYPTO is True

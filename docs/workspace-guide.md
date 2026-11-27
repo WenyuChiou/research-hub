@@ -4,9 +4,9 @@
 
 The workspace connects a research question to literature, evidence, files, and manuscript proposals. You choose what an AI may propose and review the result before accepting it.
 
-## Preview status
+## Workstation status
 
-This guide describes the six-page workspace merged through [PR #135](https://github.com/WenyuChiou/research-hub/pull/135). Commands below pin source baseline `6381dfa7d474dd27cd4adb33f0f59ea8ec395150`. Source version text, a published wheel, and native-host capability are separate evidence: verify the installed command help and use the [capability and setup baseline](capability-baseline.md).
+This guide covers the upgraded six-page visual workstation (`research-hub open --demo`), including Light/Dark/System themes, the 4-tab categorized Settings Center & Sync Hub, Literature CRUD with scoped `#` labels, **Reader / Master table / Matrix** views, Quick Cite exports (`.bib`, `.ris`, `CSL-JSON`, `APA 7th`), the **Evidence Blind-Spot Radar**, and the `Ctrl+K` (`⌘K`) Command Palette. Source revision, published wheel builds, and native AI-host capabilities remain separate evidence; verify your installed CLI help and see [capability and setup baseline](capability-baseline.md).
 
 The optional writing adapter was merged in [academic-writing-skills PR #17](https://github.com/WenyuChiou/academic-writing-skills/pull/17). Use the immutable producer `main` commit `bc15e29e976cd6ade3484aeaa4f1230444697f8a`. It is configured explicitly, not installed as a permanent research-hub dependency; producer availability does not establish installation or native-host readiness.
 
@@ -17,6 +17,23 @@ Use Python 3.10+ and Git. Run these commands from the parent directory where you
 ```sh
 git clone -c core.autocrlf=false https://github.com/WenyuChiou/research-hub.git
 cd research-hub
+python -m pip install -e .
+python -m research_hub open --demo
+```
+
+`open --demo` initializes `~/research-hub-workspace` (without overwriting saved work) and opens [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/) automatically. Pass `--root ./workspace-demo` for an isolated directory or `--port 8766` if port `8765` is busy; press `Ctrl+C` to stop the server.
+
+| Demo project | Files and purpose |
+|---|---|
+| `summation-demo` | `summation.py`, `analysis.json`, and `manuscript.md`: a small numerical summation example with inspectable inputs and results. |
+| `review-demo` | `references.json` and `manuscript.md`: a literature-review teaching fixture with screening and evidence records. |
+
+<details>
+<summary>Manual two-step startup &amp; historical PR #135 pin</summary>
+
+For isolated blank-directory rehearsal without auto-opening a browser, or to reproduce the historical PR #135 baseline commit:
+
+```sh
 git fetch origin 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
 git checkout --detach 6381dfa7d474dd27cd4adb33f0f59ea8ec395150
 python -m pip install -e '.[mcp]'
@@ -25,16 +42,21 @@ research-hub project demo --root ./workspace-demo --json
 research-hub serve --workspace --root ./workspace-demo
 ```
 
-`workspace-demo` must be new or empty. The demo refuses an occupied directory; select another location instead of deleting your work. Open [http://127.0.0.1:8765/app/](http://127.0.0.1:8765/app/) and stop the server with Ctrl+C when finished.
+`workspace-demo` must be new or empty. Fixtures are labeled teaching material. Creating them does not run an AI model, verify a scientific finding, authenticate a provider, or accept a manuscript.
 
-| Demo project | Files and purpose |
-|---|---|
-| `summation-demo` | `summation.py`, `analysis.json`, and `manuscript.md`: a small numerical summation example with inspectable inputs and results. |
-| `review-demo` | `references.json` and `manuscript.md`: a literature-review teaching fixture with screening and evidence records. |
-
-Each project's files are under its matching directory inside `workspace-demo`. Fixtures are labeled teaching material. Creating them does not run an AI model, verify a scientific finding, authenticate a provider, or accept a manuscript.
+</details>
 
 ![Actual workspace UI using local demonstration records.](images/workspace-ui.en.png)
+
+## Connect Zotero, Obsidian, and NotebookLM
+
+Open **`⚙ Settings → Connections & Sync`** from the sidebar (or press `Ctrl+K` / `⌘K` and choose Settings) to configure credentials, verify live status LEDs, and run connected sync hooks:
+
+| Integration | How to connect | Post-connection Sync Hook |
+|---|---|---|
+| **Zotero** | Enter `ZOTERO_LIBRARY_ID` (`user` or `group`) + encrypted `ZOTERO_API_KEY` into `config.json`, then click **Test Zotero connection** | Run **Preview Sync (Dry-run)** for DOI/title dedup, then **Confirm Write to Zotero** |
+| **Obsidian** | Pass `--obsidian-vault /path/to/vault` at launch and click **Validate read-only** in Settings (use `--library-snapshot` to browse metadata snapshots in Literature) | Generate `.md` literature notes + `.base` table views inside `.research/exports/` and open notes with `obsidian://` |
+| **NotebookLM** | Click **Check NotebookLM session**, import `state.json`, or run `research-hub notebooklm login --auto-detect` | Package evidence-bounded **NotebookLM source bundles** (`manifest.json` + Markdown per full-text/abstract tier) |
 
 ## Browse a selected Obsidian metadata snapshot
 
@@ -80,11 +102,11 @@ test success is separate from real-vault or human acceptance.
 
 | Page | Start here | What remains your responsibility |
 |---|---|---|
-| Project | Set a goal and choose `empirical` or `review`. | Decide the research question and scope. |
-| Literature | Search Crossref metadata; record sources and screening reasons. | Read the source and verify its identity and relevance. |
-| Evidence | Record claims and links to registered sources. | Check whether each source supports the exact claim. |
-| Design & results | Record question, method, result, and limitation; register analysis files. | Execute and validate the actual research outside the prose worker. |
-| Manuscript | Register files, bind writing state, prepare proposals, and run audits. | Resolve scientific issues and edit the original document. |
+| Overview | Follow the 4-stage stepper, inspect year/coverage charts, and review the **Evidence Blind-Spot Radar**. | Decide the research question, scope, and claim robustness criteria. |
+| Literature | Add papers (`+ Add source`), curate `#domain:*` / `#method:*` / `#risk:*` labels, switch **Reader / Master table / Matrix**, and copy APA/BibTeX/RIS. | Read the primary source and verify identity, version, and relevance. |
+| Evidence | Record claims, toggle supporting sources, and jump back to the Reading Desk to close blind spots. | Verify whether each source actually supports the exact claim. |
+| Design & results | Record methods, measured outputs, and limitations; register analysis files. | Execute and validate the actual research outside the prose worker. |
+| Manuscript | Register Word, LaTeX, or Markdown files, bind writing state, prepare proposals, and run audits. | Resolve scientific issues and edit the original document. |
 | Review & delivery | Inspect tasks, decide on proposals, and prepare accepted files for handoff. | Make acceptance and delivery decisions for the exact revision. |
 
 ![Concept diagram of the research lifecycle and return paths after changed inputs.](images/workspace-lifecycle.en.png)

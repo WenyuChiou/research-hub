@@ -161,10 +161,12 @@ Pair the [research-hub skill](skills/research-hub/) and [AI Research Skills](htt
 
 <a id="connect-your-ai-host"></a>
 
-- **Zotero:** Preview duplicates (`Dry-run`) and sync verified items or export `.ris` (`ZOTERO_API_KEY` + `ZOTERO_LIBRARY_ID`).
-- **Obsidian:** Generate structured literature notes and `.base` views or browse startup-selected read-only vault metadata (`obsidian://` deep-link ready).
-- **NotebookLM:** Build local source-bounded `.md` packs in one click, or connect an authenticated browser session for automated briefings ([setup](docs/notebooklm.md) · [troubleshooting](docs/notebooklm-troubleshooting.md)).
-- **AI hosts & reference managers:** Connect via [MCP/REST](docs/ai-integrations.md) (install `[mcp]` extra), load portable skills ([setup guide](docs/setup.md)), or export instant Overleaf `.bib`, EndNote `.ris`, Quarto `CSL-JSON`, and `APA 7th` citations.
+| Integration | Setup in `⚙ Settings` or CLI | Connected UI Sync Hook |
+|---|---|---|
+| **Zotero** | Save `ZOTERO_LIBRARY_ID` + encrypted `ZOTERO_API_KEY` in **`⚙ Settings → Connections & Sync`** (or `.env`) and test Web / Local API status | **Dry-run dedup preview** (`DOI` + title match) → confirmed **Confirm Write to Zotero** or instant `.ris` export |
+| **Obsidian (+ Bases)** | Launch with `--obsidian-vault` and click **Validate read-only** in Settings (or pass `--library-snapshot` to browse snapshots in Literature) | Generate bounded `.md` literature notes + `.base` views under `.research/exports/` and open via `obsidian://` |
+| **NotebookLM** | Import an existing `state.json` or sign in via `notebooklm login --auto-detect`, then run **Check NotebookLM session** | Build evidence-bounded **NotebookLM source packs** (`manifest.json` + Markdown per full-text/abstract tier) |
+| **AI hosts & citations** | Attach [MCP/REST](docs/ai-integrations.md) (`[mcp]` extra) or install [portable skills](docs/setup.md) | Copy **APA 7th** / **BibTeX** citations per source or batch-export `.bib`, `.ris`, `CSL-JSON`, and `.base` |
 
 Run `./.venv/bin/python -m research_hub doctor` (macOS/Linux) or `.\.venv\Scripts\python.exe -m research_hub doctor` (Windows PowerShell) to inspect configured destinations individually. See [local file import](docs/import-folder.md), [EZproxy](docs/ezproxy.md), and the [live smoke checklist](docs/live-smoke.md).
 

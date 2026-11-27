@@ -2,6 +2,16 @@
 
 This page preserves the bounded rehearsal and installation context referenced by the README. It is evidence for the dated runs described below, not a statement that every current installation or scientific workflow has been accepted.
 
+## Cold-start fresh-venv install & three-integration E2E (2026-11-26)
+
+Source branch `docs/workstation-onboarding-and-cold-e2e` (on top of `dda5a4e`, adding base `cryptography>=42` so clean `pip install -e .` installs support encrypted local API-key saving out of the box, plus aligning `README.md`, `README.zh-TW.md`, `docs/setup.md`, and `docs/workspace-guide*.md` with the v2 workstation):
+
+- **Isolated fresh-venv installation & CLI onboarding (Windows 11, Python 3.14):** Installed into a brand-new virtual environment via plain `pip install -e .` (no optional extras); `pip check` exited `0` with `cryptography` active. Verified `research-hub init --vault ... --persona analyst --non-interactive --no-browser`, `research-hub clusters new`, `research-hub import-folder`, `scripts/library_snapshot.py` (`2` Markdown notes indexed read-only, `body_read: false`, `vault_written: false`), and `research-hub doctor --json`. Observed CLI limitation during the rehearsal: `research-hub ingest` still requires `RESEARCH_HUB_NO_ZOTERO=1` (or a cluster collection key) when `persona` is `analyst`.
+- **Cold-start empty workspace & loopback three-integration browser E2E (`1440×900`, `0` console errors, `0` page errors, `0` HTTP ≥ 400 on the clean verification pass):**
+  - Started from an empty workspace (`載入示範專案` -> inspected `review-demo` Goldberg limits), created blank-ID project `llm-agent-evaluation-simulation`, added 4 papers via `+ 新增文獻` (2 full-text, 2 abstract-only), curated categories and scoped `#` labels, tested Include/Exclude triage, `移出清單`/`復原文獻`, tag + year filtering, `閱讀`/`總表`/`矩陣` views, Quick Cite (`.bib`, `.ris`, `APA`), Evidence Blind-Spot Radar updates (`22%` -> `66%` robustness), Light/Dark themes, `Ctrl+K` Command Palette, and read-only Obsidian snapshot loading.
+  - Verified all three connections & Sync Hub actions interactively in `⚙ 設定 → 連線與同步`: **Zotero** (`connected_local_and_web`, `rh:enc:v1:` Fernet-encrypted API key saved to `config.json`, `Dry-run` `3` new / `1` duplicate skipped -> confirmed write `3` items created -> idempotent `Dry-run` `0` new / `4` duplicates), **NotebookLM** (`authenticated` via imported storage state + `4`-source `.md`/`manifest.json` bundle), and **Obsidian** (`valid` read-only vault check + `4` `.md` notes and `.base` export confined to `.research/exports/`).
+- **Bounded scope:** Zotero API reads/writes and NotebookLM session health probes were executed against an isolated local loopback HTTP harness and test state file rather than live third-party Zotero or Google accounts; no external cloud accounts were mutated.
+
 ## Workstation Light/Dark showcase & sync-hub captures (2026-11-26)
 
 Source revision `b2ca1ad` (merging PR #309 on top of `45c5fcc`, adding HD brand emblems and status LEDs, Light/Dark/System themes, the 4-tab Settings Center, Connected Software Sync & Export Hub, 4-stage pipeline stepper, year/coverage analytics, Evidence Blind-Spot Radar, Literature × Theme/Evidence Synthesis Matrix, and `Ctrl+K` / `⌘K` Command Palette):
