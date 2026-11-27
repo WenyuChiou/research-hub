@@ -143,7 +143,7 @@ See [setup](docs/setup.md) and the [dashboard tour](docs/dashboard-walkthrough.m
 <details>
 <summary>Environment variables & optional extras (`research-hub doctor`)</summary>
 
-Run `research-hub doctor` to inspect destination health. Optional extras: `[playwright,secrets]` (Researcher/Humanities) or `[import,secrets]` (Analyst/Internal KM).
+Run `research-hub doctor` to inspect destination health. Optional extras: Researcher / Humanities (`[playwright,secrets]`), Analyst / Internal KM (`[import,secrets]`).
 
 <!-- env-vars-table-start -->
 

@@ -143,7 +143,7 @@ RESEARCH_HUB_ROOT="$HOME/research-hub-preview" ./.dashboard-venv/bin/research-hu
 <details>
 <summary>環境變數與選用套件擴充（`research-hub doctor`）</summary>
 
-執行 `research-hub doctor` 可逐項健檢已設定連線。人物角色選用擴充：`[playwright,secrets]`（Researcher／Humanities）或 `[import,secrets]`（Analyst／Internal KM）。
+執行 `research-hub doctor` 可逐項健檢已設定連線。人物角色選用擴充：Researcher／Humanities（`[playwright,secrets]`）、Analyst／Internal KM（`[import,secrets]`）。
 
 <!-- env-vars-table-start -->
 
