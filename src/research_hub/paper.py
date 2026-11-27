@@ -546,7 +546,12 @@ def ensure_label_tags_in_body(path: Path, labels: list[str]) -> bool:
         new_body = f"{body_without_block}{newline}{newline}{block}{newline}"
     else:
         new_body = f"{block}{newline}"
-    updated = f"{opening}{frontmatter}{newline}---{newline}{new_body}"
+    frontmatter_out = (
+        frontmatter
+        if not frontmatter or frontmatter.endswith(("\n", "\r\n"))
+        else f"{frontmatter}{newline}"
+    )
+    updated = f"{opening}{frontmatter_out}---{newline}{new_body}"
     if updated == text:
         return False
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -787,23 +792,23 @@ def _render_patch_field(key: str, value: object, newline: str) -> str:
     return f"{key}: {json.dumps(str(value), ensure_ascii=False)}"
 
 
+def _append_patch_field(frontmatter_lf: str, key: str, value: object) -> str:
+    if value is None:
+        return frontmatter_lf
+    rendered = _render_patch_field(key, value, "\n")
+    if not frontmatter_lf:
+        return f"{rendered}\n"
+    sep = "" if frontmatter_lf.endswith("\n") else "\n"
+    return f"{frontmatter_lf}{sep}{rendered}\n"
+
+
 def _patch_yaml_frontmatter_field(frontmatter_lf: str, key: str, value: object) -> str:
     if not frontmatter_lf.strip():
-        if value is None:
-            return frontmatter_lf
-        rendered = _render_patch_field(key, value, "\n")
-        if not frontmatter_lf:
-            return rendered
-        sep = "" if frontmatter_lf.endswith("\n") else "\n"
-        return frontmatter_lf + sep + rendered
+        return _append_patch_field(frontmatter_lf, key, value)
 
     document = yaml.compose(frontmatter_lf, Loader=yaml.SafeLoader)
     if document is None:
-        if value is None:
-            return frontmatter_lf
-        rendered = _render_patch_field(key, value, "\n")
-        sep = "" if frontmatter_lf.endswith("\n") else "\n"
-        return frontmatter_lf + sep + rendered
+        return _append_patch_field(frontmatter_lf, key, value)
     if not isinstance(document, yaml.MappingNode):
         raise ValueError("Paper note frontmatter must be a mapping")
 
@@ -812,11 +817,7 @@ def _patch_yaml_frontmatter_field(frontmatter_lf: str, key: str, value: object) 
         raise ValueError(f"Paper note has duplicate '{key}' fields")
 
     if not matches:
-        if value is None:
-            return frontmatter_lf
-        rendered = _render_patch_field(key, value, "\n")
-        sep = "" if frontmatter_lf.endswith("\n") else "\n"
-        return frontmatter_lf + sep + rendered
+        return _append_patch_field(frontmatter_lf, key, value)
 
     k_node, v_node = matches[0]
     start, end = k_node.start_mark.index, v_node.end_mark.index
@@ -899,37 +900,9 @@ def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
         if frontmatter_lf.strip():
             initial = yaml.compose(frontmatter_lf, Loader=yaml.SafeLoader)
             if initial is not None and not isinstance(initial, yaml.MappingNode):
-                raise yaml.YAMLError("frontmatter is not a mapping")
-    except yaml.YAMLError:
-        leading_comments: list[str] = []
-        for line in frontmatter.splitlines():
-            stripped = line.lstrip()
-            if not stripped:
-                continue
-            if stripped.startswith("#"):
-                leading_comments.append(line)
-            else:
-                break
-        parsed = _parse_frontmatter_legacy(frontmatter)
-        ordered_keys = _frontmatter_key_order(frontmatter)
-        for key, value in updates.items():
-            if value is None:
-                parsed.pop(key, None)
-            else:
-                parsed[key] = value
-                if key not in ordered_keys:
-                    ordered_keys.append(key)
-        rendered = _render_frontmatter(parsed, ordered_keys, newline)
-        if leading_comments:
-            comment_block = newline.join(leading_comments)
-            rendered = f"{comment_block}{newline}{rendered}" if rendered else comment_block
-        content = (
-            f"{opening}---{newline}{body}"
-            if rendered == ""
-            else f"{opening}{rendered}{newline}---{newline}{body}"
-        )
-        _atomic_write_preserving_newlines(note_path, content)
-        return
+                raise ValueError("Paper note frontmatter must be a valid YAML mapping")
+    except yaml.YAMLError as exc:
+        raise ValueError("Paper note frontmatter must be a valid YAML mapping") from exc
 
     patched_lf = frontmatter_lf
     for key, value in updates.items():
@@ -961,11 +934,9 @@ def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
             raise ValueError(f"Patched frontmatter field '{key}' failed round-trip verification")
 
     patched = patched_lf.replace("\n", newline) if newline != "\n" else patched_lf
-    content = (
-        f"{opening}---{newline}{body}"
-        if patched == ""
-        else f"{opening}{patched}{newline}---{newline}{body}"
-    )
+    if patched and not patched.endswith(newline):
+        patched += newline
+    content = f"{opening}{patched}---{newline}{body}"
     _atomic_write_preserving_newlines(note_path, content)
 
 
@@ -989,14 +960,7 @@ def _split_frontmatter(text: str) -> tuple[str, str, str, str] | None:
             line = text[pos:line_end]
             after_line = nl_idx + 1
         if line == "---":
-            if pos == len(opening):
-                frontmatter = ""
-            elif text[pos - len(newline):pos] == newline:
-                frontmatter = text[len(opening):pos - len(newline)]
-            elif text[pos - 1:pos] == "\n":
-                frontmatter = text[len(opening):pos - 1]
-            else:
-                frontmatter = text[len(opening):pos]
+            frontmatter = text[len(opening):pos]
             body = text[after_line:]
             return opening, frontmatter, body, newline
         if nl_idx == -1:

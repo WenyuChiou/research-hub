@@ -166,7 +166,7 @@ def test_crossref_poisoned_cache_rejects_conflicting_second_paper(
     assert accepted2 == []
     assert len(quarantined2) == 1
     assert quarantined2[0]["layer"] == "L2"
-    assert quarantined2[0]["reason"] == "uncorroborated"
+    assert quarantined2[0]["reason"] == "corroboration_conflict"
     assert "crossref" not in [str(b).casefold() for b in paper2.get("backends", [])]
 
 
@@ -888,3 +888,309 @@ def test_in_batch_and_vault_note_identity_enforce_metadata_even_without_doi(
         "smith2020-atlas-hydrological-systems.md",
     ]
     assert "Original classic note" in existing_note.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 6. v1.3.3 astra 07b closeout regressions (§§1-3)
+# ---------------------------------------------------------------------------
+
+
+def test_pair_agrees_rejects_correction_and_volume_markers_and_year_bound_is_2100() -> None:
+    article = {
+        "source": "openalex",
+        "title": "Flood Forecasting with Neural Networks",
+        "year": 2024,
+        "authors": ["Doe, Jane"],
+    }
+    correction = {
+        "source": "crossref",
+        "title": "Correction: Flood Forecasting with Neural Networks",
+        "year": 2025,
+        "authors": ["Doe, Jane"],
+    }
+    assert auth._pair_agrees(article, correction) is False
+    assert (
+        _corroboration_label(
+            _paper(
+                title=article["title"],
+                year=2024,
+                backends=["openalex", "crossref"],
+                source_records=[article, correction],
+            )
+        )
+        == "conflict"
+    )
+    assert (
+        auth._pair_agrees(
+            {"source": "openalex", "title": "History of Science Vol. I", "year": 2020, "authors": ["Doe"]},
+            {"source": "crossref", "title": "History of Science Vol. II", "year": 2020, "authors": ["Doe"]},
+        )
+        is False
+    )
+    assert auth._metadata_integrity_reason(_paper(year=2100)) == ""
+    assert auth._metadata_integrity_reason(_paper(year=2101)) == "year out of range"
+    assert auth._metadata_integrity_reason(_paper(year=999)) == "year out of range"
+
+
+def test_merge_results_retains_conflicting_source_records_for_corroboration() -> None:
+    from research_hub.search._rank import merge_results
+    from research_hub.search.base import SearchResult
+
+    r1 = SearchResult(
+        title="Early Hydrological Monograph",
+        doi="10.1000/shared-doi",
+        year=1990,
+        authors=["Alice Smith"],
+        abstract="Observed abstract.",
+        source="openalex",
+    )
+    r2 = SearchResult(
+        title="Modern Deep Learning Study",
+        doi="10.1000/shared-doi",
+        year=2020,
+        authors=["Bob Jones"],
+        abstract="Other observed abstract.",
+        source="crossref",
+    )
+    merged = merge_results({"openalex": [r1], "crossref": [r2]})
+    assert len(merged) == 1
+    assert len(merged[0].source_records) == 2
+    candidate = _to_papers_input(
+        [
+            {
+                "title": merged[0].title,
+                "doi": merged[0].doi,
+                "year": merged[0].year,
+                "authors": merged[0].authors,
+                "abstract": merged[0].abstract,
+                "found_in": merged[0].found_in,
+                "source_records": merged[0].source_records,
+            }
+        ],
+        "agents",
+    )[0]
+    assert _corroboration_label(candidate) == "conflict"
+
+
+def test_discover_merge_and_to_papers_input_handle_dict_authors_and_extra_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from research_hub.discover import _merge_search_dict_candidates
+
+    monkeypatch.setattr(
+        "research_hub.search.abstract_recovery.recover_abstract",
+        lambda *_a, **_kw: SimpleNamespace(text="", source=""),
+    )
+    merged = _merge_search_dict_candidates(
+        [
+            {
+                "title": "Structured Authors Study",
+                "doi": "10.1000/struct-1",
+                "authors": [{"creatorType": "author", "firstName": "Jane", "lastName": "Smith"}],
+                "year": 2024,
+                "abstract": "Real abstract.",
+                "edition": "2nd",
+                "fit_index": 3,
+                "corroborating_records": [{"source": "openalex", "title": "Structured Authors Study"}],
+                "_discover_meta": {"matched_variations": ["q1"], "source_tags": ["openalex"], "is_seed": False},
+            },
+            {
+                "title": "Structured Authors Study",
+                "doi": "10.1000/struct-1",
+                "source": "crossref",
+                "corroborating_records": [{"source": "crossref", "title": "Structured Authors Study"}],
+                "_discover_meta": {"matched_variations": ["q2"], "source_tags": ["crossref"], "is_seed": False},
+            },
+        ]
+    )
+    assert len(merged) == 1
+    assert len(merged[0]["corroborating_records"]) == 2
+    assert merged[0]["edition"] == "2nd"
+    assert merged[0]["fit_index"] == 3
+
+    [entry] = _to_papers_input(merged, "agents")
+    assert entry["authors"] == [{"creatorType": "author", "firstName": "Jane", "lastName": "Smith"}]
+    assert entry["slug"].startswith("smith2024-")
+    assert entry["edition"] == "2nd"
+    assert entry["fit_index"] == 3
+    assert len(entry["corroborating_records"]) == 2
+    assert entry["_discover_meta"]["matched_variations"] == ["q1", "q2"]
+
+    [named_entry] = _to_papers_input(
+        [{"title": "Named Author Study", "doi": "", "authors": [{"name": "John Doe"}], "year": 2023, "abstract": "Obs."}],
+        "agents",
+    )
+    assert named_entry["authors"] == [{"creatorType": "author", "firstName": "John", "lastName": "Doe"}]
+
+
+def test_fit_check_duplicate_title_and_conflicting_doi_do_not_misroute_into_l4(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from research_hub.discover import CANDIDATES_FILENAME, DiscoverState, STATE_FILENAME, discover_continue, stash_dir
+
+    # Conflicting DOI or unindexed duplicate title must NOT fall back to by_title.
+    cands = [
+        {"title": "Collected Philosophical Works", "doi": "10.1000/real-doi"},
+        {"title": "Collected Philosophical Works", "doi": ""},
+    ]
+    report = apply_scores(
+        "philosophy",
+        cands,
+        [
+            {"doi": "10.1000/other-doi", "title": "Collected Philosophical Works", "score": 5, "reason": "wrong doi"},
+            {"title": "Collected Philosophical Works", "score": 5, "reason": "ambiguous no index"},
+        ],
+        threshold=3,
+    )
+    assert report.accepted == []
+
+    # End-to-end: accepted 1750 book vs rejected 2021 book sharing identical title.
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+    monkeypatch.setattr(
+        "research_hub.search.abstract_recovery.recover_abstract",
+        lambda *_a, **_kw: SimpleNamespace(text="", source=""),
+    )
+    dup_cands = [
+        {
+            "title": "Collected Philosophical Works",
+            "doi": "",
+            "isbn": "978-0-14-044913-6",
+            "year": 1750,
+            "authors": ["Hume, David"],
+            "abstract": "Classic treatise.",
+            "source": "openalex",
+            "citation_count": 50,
+        },
+        {
+            "title": "Collected Philosophical Works",
+            "doi": "",
+            "isbn": "978-0-14-044914-3",
+            "year": 2021,
+            "authors": ["Other, Author"],
+            "abstract": "Unrelated volume.",
+            "source": "openalex",
+            "citation_count": 50,
+        },
+    ]
+    dest = stash_dir(cfg, "philosophy")
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / STATE_FILENAME).write_text(
+        DiscoverState(cluster_slug="philosophy", stage="scored_pending", query="works", candidate_count=2).to_json(),
+        encoding="utf-8",
+    )
+    (dest / CANDIDATES_FILENAME).write_text(json.dumps(dup_cands), encoding="utf-8")
+    _state, out_path = discover_continue(
+        cfg,
+        "philosophy",
+        [
+            {"index": 1, "title": "Collected Philosophical Works", "score": 5, "reason": "classic"},
+            {"index": 2, "title": "Collected Philosophical Works", "score": 1, "reason": "off topic"},
+        ],
+        threshold=3,
+    )
+    papers_out = json.loads(out_path.read_text(encoding="utf-8"))
+    assert len(papers_out) == 1
+    assert papers_out[0]["fit_index"] == 1
+    accepted, quarantined = verify_authenticity(papers_out, cfg, cluster_slug="philosophy", do_fit_check=True)
+    assert quarantined == []
+    assert len(accepted) == 1
+    assert accepted[0]["year"] == 1750
+    assert accepted[0]["provenance"]["fit_score"] == 5
+
+
+def test_note_identity_rejects_key_doi_title_conflicts_and_roundtrips_edition(
+    tmp_path: Path,
+) -> None:
+    assert _in_batch_title_match_ok(
+        {"title": "Shared Title Study", "zotero_key": "ZKEY1"},
+        {"title": "Shared Title Study", "zotero_key": "ZKEY2"},
+    ) is False
+
+    note_path = tmp_path / "note.md"
+    rendered = pipeline._render_obsidian_note(
+        {
+            "title": "Principles of Economics",
+            "doi": "10.1000/econ-ed1",
+            "zotero_key": "ZKEY_A",
+            "authors": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+            "year": 1890,
+            "edition": "1st",
+            "abstract": "Classic text.",
+        },
+        "Economics",
+        "econ",
+        "economics",
+    )
+    note_path.write_text(rendered, encoding="utf-8")
+    ident = pipeline._read_note_identity(note_path)
+    assert ident["edition"] == "1st"
+
+    # Equal Zotero keys with conflicting DOIs -> False.
+    assert pipeline._is_same_work_note(
+        note_path,
+        {
+            "title": "Principles of Economics",
+            "doi": "10.1000/different-doi",
+            "zotero_key": "ZKEY_A",
+            "authors": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+            "year": 1890,
+        },
+    ) is False
+    # Equal DOIs with conflicting Zotero keys -> False.
+    assert pipeline._is_same_work_note(
+        note_path,
+        {
+            "title": "Principles of Economics",
+            "doi": "10.1000/econ-ed1",
+            "zotero_key": "ZKEY_B",
+            "authors": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+            "year": 1890,
+        },
+    ) is False
+    # Equal DOIs with conflicting authors or edition -> False.
+    assert pipeline._is_same_work_note(
+        note_path,
+        {
+            "title": "Principles of Economics",
+            "doi": "10.1000/econ-ed1",
+            "zotero_key": "ZKEY_A",
+            "authors": [{"creatorType": "author", "firstName": "Other", "lastName": "Person"}],
+            "year": 1890,
+        },
+    ) is False
+    assert pipeline._is_same_work_note(
+        note_path,
+        {
+            "title": "Principles of Economics",
+            "doi": "10.1000/econ-ed1",
+            "zotero_key": "ZKEY_A",
+            "authors": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+            "year": 1890,
+            "edition": "2nd",
+        },
+    ) is False
+    # Equal DOIs with completely different title -> False.
+    assert pipeline._is_same_work_note(
+        note_path,
+        {
+            "title": "Unrelated Quantum Chemistry Paper",
+            "doi": "10.1000/econ-ed1",
+            "zotero_key": "ZKEY_A",
+            "authors": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+            "year": 1890,
+        },
+    ) is False
+    # Compatible metadata -> True.
+    assert pipeline._is_same_work_note(
+        note_path,
+        {
+            "title": "Principles of Economics",
+            "doi": "10.1000/econ-ed1",
+            "zotero_key": "ZKEY_A",
+            "authors": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+            "year": 1890,
+            "edition": "1st",
+        },
+    ) is True

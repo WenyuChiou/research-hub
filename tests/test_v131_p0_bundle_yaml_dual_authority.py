@@ -600,13 +600,26 @@ def test_yaml_list_quoting_verification_empty_block_comments_and_literal_plus(
     assert note.read_bytes() == before_bytes
     monkeypatch.undo()
 
-    # Preserve |+ trailing blank lines when appending a new key
-    note_plus = tmp_path / "literal_plus.md"
-    note_plus.write_text("---\nabstract: |+\n  Line 1\n\n\n---\nBody\n", encoding="utf-8")
-    before_abs = yaml.safe_load(_split_frontmatter(note_plus.read_text(encoding="utf-8"))[1])["abstract"]
-    _rewrite_paper_frontmatter(note_plus, {"labels": ["seed"]})
-    after_fm = _split_frontmatter(note_plus.read_text(encoding="utf-8"))[1]
-    assert yaml.safe_load(after_fm)["abstract"] == before_abs
+    # Preserve |+ trailing blank lines when appending a new key under both LF and CRLF
+    for nl in ("\n", "\r\n"):
+        note_plus = tmp_path / f"literal_plus_{'crlf' if nl == '\r\n' else 'lf'}.md"
+        note_plus.write_bytes(
+            f"---{nl}notes: |+{nl}  Line 1{nl}{nl}{nl}---{nl}Body{nl}".encode("utf-8")
+        )
+        raw_before = note_plus.read_bytes().decode("utf-8")
+        full_fm_before = raw_before.split(f"---{nl}", 1)[1].split(f"---{nl}", 1)[0]
+        assert yaml.safe_load(full_fm_before)["notes"] == "Line 1\n\n\n"
+        _rewrite_paper_frontmatter(note_plus, {"labels": ["seed"]})
+        raw_after_bytes = note_plus.read_bytes()
+        if nl == "\n":
+            assert b"\r\n" not in raw_after_bytes
+        else:
+            assert b"\r\n" in raw_after_bytes
+        raw_after = raw_after_bytes.decode("utf-8")
+        full_fm_after = raw_after.split(f"---{nl}", 1)[1].split(f"---{nl}", 1)[0]
+        reloaded_plus = yaml.safe_load(full_fm_after)
+        assert reloaded_plus["notes"] == "Line 1\n\n\n"
+        assert reloaded_plus["labels"] == ["seed"]
 
     # Adjacent ---\n---\nBody stops at first --- without scanning into Markdown horizontal rules
     note_empty = tmp_path / "empty_fm.md"
@@ -623,13 +636,22 @@ def test_yaml_list_quoting_verification_empty_block_comments_and_literal_plus(
     assert "# curator note\n" in updated_comment
     assert "labels:\n  - seed\n" in updated_comment
 
-    # Broken YAML fallback preserves leading # comments
+    # Non-mapping YAML sequence and malformed YAML with interior comments/nested blocks fail closed without touching disk
+    note_seq = tmp_path / "sequence_fm.md"
+    note_seq.write_bytes(b"---\n- curator-a\n- curator-b\n---\nBody\n")
+    seq_before = note_seq.read_bytes()
+    with pytest.raises(ValueError, match="valid YAML mapping"):
+        _rewrite_paper_frontmatter(note_seq, {"labels": ["seed"]})
+    assert note_seq.read_bytes() == seq_before
+
     note_broken = tmp_path / "broken_yaml.md"
-    note_broken.write_text("---\n# leading curator note\ntitle: Unquoted: Colon\n---\nBody\n", encoding="utf-8")
-    _rewrite_paper_frontmatter(note_broken, {"labels": ["seed"]})
-    updated_broken = note_broken.read_text(encoding="utf-8")
-    assert "# leading curator note\n" in updated_broken
-    assert "  - seed" in updated_broken
+    note_broken.write_bytes(
+        b"---\n# leading curator note\nprovenance:\n  fit_score: 5\n# interior comment\ntitle: Unquoted: Colon\n---\nBody\n"
+    )
+    broken_before = note_broken.read_bytes()
+    with pytest.raises(ValueError, match="valid YAML mapping"):
+        _rewrite_paper_frontmatter(note_broken, {"labels": ["seed"]})
+    assert note_broken.read_bytes() == broken_before
 
 
 def test_bundle_pdf_rejects_conflicting_doi_dot_suffix_escapes_and_records_source(tmp_path: Path):
@@ -878,3 +900,159 @@ def test_obsidian_import_conflict_aware_title_year_and_concurrency_lock(tmp_path
     assert not errors
     assert sum(r["imported_count"] for r in results) == 2
     assert len([r for r in ws2.records("proj-par") if r["kind"] == "source"]) == 2
+
+
+def test_v133_bundle_multi_slash_doi_root_tie_and_download_containment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import research_hub.notebooklm.bundle as bundle_mod
+
+    root = tmp_path / "vault"
+    pdfs = root / "pdfs"
+    raw = root / "raw" / "alpha"
+    (pdfs / "subcollection").mkdir(parents=True)
+    (pdfs / "nested").mkdir(parents=True)
+    raw.mkdir(parents=True)
+    (root / ".research_hub").mkdir()
+
+    # Multi-slash DOI 10.1234/series/chapter matches subcollection/10.1234_series_chapter.pdf
+    multi_slash_pdf = pdfs / "subcollection" / "10.1234_series_chapter.pdf"
+    multi_slash_pdf.write_bytes(b"%PDF-multi-slash")
+    assert _match_pdf_for_note(pdfs, raw / "other_name.md", "10.1234/series/chapter") == multi_slash_pdf
+
+    # Root canonical filename + nested canonical filename must tie-break to None
+    (pdfs / "10.1234_tie.pdf").write_bytes(b"%PDF-root")
+    (pdfs / "nested" / "10.1234_tie.pdf").write_bytes(b"%PDF-nested")
+    assert _match_pdf_for_note(pdfs, raw / "tie_note.md", "10.1234/tie") is None
+
+    # download_pdfs=True rejects an out-of-root path returned by fetch_paper_pdf
+    outside_pdf = tmp_path / "outside_secret.pdf"
+    outside_pdf.write_bytes(b"%PDF-secret")
+    (raw / "dl_escape.md").write_text(
+        '---\ntitle: "Escape"\ndoi: "10.1234/dl-escape"\nurl: "https://example.org/esc"\ntopic_cluster: alpha\n---\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "research_hub.notebooklm.pdf_fetcher.fetch_paper_pdf",
+        lambda *a, **k: SimpleNamespace(ok=True, path=outside_pdf, source="local-doi", error=""),
+    )
+    cfg = SimpleNamespace(root=root, raw=root / "raw", research_hub_dir=root / ".research_hub")
+    cluster = Cluster(slug="alpha", name="Alpha", obsidian_subfolder="alpha")
+    report = bundle_mod.bundle_cluster(cluster, cfg, download_pdfs=True)
+    assert report.pdf_count == 0
+    assert report.entries[0].action == "url"
+
+
+def test_v133_snapshot_empty_frontmatter_scope_tie_and_import_edge_cases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from research_hub.workspace import library_snapshot as ls_mod
+    from research_hub.workspace.core import resolve_reading_scope
+    from research_hub.workspace.integrations import LocalIntegrationsManager
+    from research_hub.workspace.obsidian_validation import ObsidianValidation
+    from research_hub.workspace.sync_hooks import WorkspaceSyncHooks
+
+    # 1. Empty frontmatter block must not scan body prose
+    empty_note = tmp_path / "empty_body_trap.md"
+    empty_note.write_text("---\n---\ntitle: Heading in the body\nyear: 1776\n---\nAfter\n", encoding="utf-8")
+    loaded, _, _ = ls_mod._extract_frontmatter_incremental(empty_note)
+    assert loaded == {}
+
+    # 2. Swapping fulltext / full-text between reading_scope and reading_level never flips classification
+    assert resolve_reading_scope({"reading_scope": "fulltext", "reading_level": "full-text"}) == "full-text"
+    assert resolve_reading_scope({"reading_scope": "full-text", "reading_level": "fulltext"}) == "full-text"
+    assert resolve_reading_scope({"reading_scope": "excerpt", "reading_level": "selected-sections"}) == "selected-sections"
+    assert resolve_reading_scope({"reading_scope": "selected-sections", "reading_level": "excerpt"}) == "selected-sections"
+
+    ws_scope = Workspace(tmp_path / "ws_scope")
+    ws_scope.create_project(id="proj-alias", title="Alias Symmetry", archetype="review")
+    ws_scope.add_record(
+        "proj-alias",
+        kind="source",
+        data={
+            "title": "Alias Paper",
+            "locator": "https://example.org/alias",
+            "reading_scope": "fulltext",
+            "reading_level": "full-text",
+        },
+    )
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    hooks_scope = WorkspaceSyncHooks(ws_scope, LocalIntegrationsManager(cfg_path))
+    pack_res = hooks_scope.bundle_notebooklm("proj-alias", {})
+    assert pack_res["full_text_count"] == 1
+    assert pack_res["abstract_or_metadata_count"] == 0
+
+    # 3. Vault A and Vault B with identical relative raw/alpha/n1.md path but different DOI/title both import
+    vault_a = tmp_path / "vault_a"
+    vault_b = tmp_path / "vault_b"
+    for v, title, doi in (
+        (vault_a, "Vault A Paper", "10.1000/vault-a"),
+        (vault_b, "Vault B Paper", "10.1000/vault-b"),
+    ):
+        (v / ".obsidian").mkdir(parents=True)
+        (v / ".research_hub").mkdir()
+        (v / ".research_hub" / "clusters.yaml").write_text(
+            "schema_version: '1.0'\nclusters:\n  alpha:\n    name: Alpha\n    status: active\n    obsidian_subfolder: alpha\n",
+            encoding="utf-8",
+        )
+        (v / "raw" / "alpha").mkdir(parents=True)
+        (v / "raw" / "alpha" / "n1.md").write_text(
+            f'---\ntitle: "{title}"\ndoi: "{doi}"\nyear: 2024\n---\nBody\n',
+            encoding="utf-8",
+        )
+    (vault_a / "raw" / "alpha" / "n2.md").write_text(
+        '---\ntitle: "Vault A Second"\ndoi: "10.1000/vault-a2"\nyear: 2024\n---\nBody\n',
+        encoding="utf-8",
+    )
+
+    ws_multi = Workspace(tmp_path / "ws_multi")
+    ws_multi.create_project(id="proj-mv", title="Multi Vault", archetype="review")
+    hooks_a = WorkspaceSyncHooks(
+        ws_multi, LocalIntegrationsManager(cfg_path), obsidian_validation=ObsidianValidation(vault_a)
+    )
+    hooks_b = WorkspaceSyncHooks(
+        ws_multi, LocalIntegrationsManager(cfg_path), obsidian_validation=ObsidianValidation(vault_b)
+    )
+    res_a = hooks_a.import_obsidian_notes("proj-mv", {"dry_run": False})
+    assert res_a["imported_count"] == 2
+    res_b = hooks_b.import_obsidian_notes("proj-mv", {"dry_run": False})
+    assert res_b["imported_count"] == 1
+    assert res_b["skipped_existing"] == 0
+    sources_mv = [r for r in ws_multi.records("proj-mv") if r["kind"] == "source"]
+    assert len({r["data"]["origin_vault_id"] for r in sources_mv}) == 2
+
+    # 4. Nonexistent collection_id fails with invalid_source
+    with pytest.raises(WorkspaceError) as exc_col:
+        hooks_a.import_obsidian_notes("proj-mv", {"collection_id": "nonexistent", "dry_run": True})
+    assert exc_col.value.code == "invalid_source"
+
+    # 5. Missing note_id on a truncated snapshot raises snapshot_truncated
+    monkeypatch.setattr(
+        ls_mod,
+        "read_vault_snapshot",
+        lambda *a, **k: {
+            "schema_version": 1,
+            "read_only": True,
+            "body_read": False,
+            "captured_at": "2026-11-27T00:00:00Z",
+            "vault_label": "v",
+            "collections": [{"id": "alpha", "name": "Alpha", "note_count": 0}],
+            "notes": [],
+            "truncated": True,
+        },
+    )
+    with pytest.raises(WorkspaceError) as exc_trunc:
+        hooks_a.import_obsidian_notes(
+            "proj-mv", {"note_ids": ["obsidian:000000000000000000000000"], "dry_run": True}
+        )
+    assert exc_trunc.value.code == "snapshot_truncated"
+    monkeypatch.undo()
+
+    # 6. Explicit note_ids bypasses MAX_VAULT_NOTES early stop in read_vault_snapshot
+    monkeypatch.setattr(ls_mod, "MAX_VAULT_NOTES", 1)
+    full_a = ls_mod.read_vault_snapshot(vault_a)
+    assert full_a.get("truncated") is True and len(full_a["notes"]) == 1
+    n2_id = f"obsidian:{__import__('hashlib').sha256(b'raw/alpha/n2.md').hexdigest()[:24]}"
+    explicit_snap = ls_mod.read_vault_snapshot(vault_a, collection_id="alpha", note_ids=[n2_id])
+    assert [n["id"] for n in explicit_snap["notes"]] == [n2_id]

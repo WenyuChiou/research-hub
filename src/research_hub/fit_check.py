@@ -342,6 +342,14 @@ def apply_scores(
         )
         lacks_ids = not entry_doi and not entry_arxiv
 
+        title_target = by_title.get(entry_ntitle) if len(entry_ntitle) >= 8 else None
+        title_doi_conflict = bool(
+            title_target is not None
+            and entry_doi
+            and normalize_doi(str(candidates[title_target].get("doi") or ""))
+            and entry_doi != normalize_doi(str(candidates[title_target].get("doi") or ""))
+        )
+
         target_idx: int | None = None
         if entry_doi and entry_doi in by_doi:
             target_idx = by_doi[entry_doi]
@@ -349,8 +357,8 @@ def apply_scores(
             target_idx = by_arxiv[entry_arxiv]
         elif valid_index_target is not None and (duplicate_title or lacks_ids):
             target_idx = valid_index_target
-        elif len(entry_ntitle) >= 8 and entry_ntitle in by_title:
-            target_idx = by_title[entry_ntitle]
+        elif title_target is not None and not duplicate_title and not title_doi_conflict:
+            target_idx = title_target
         elif valid_index_target is not None:
             target_idx = valid_index_target
 

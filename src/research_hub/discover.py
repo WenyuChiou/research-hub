@@ -604,7 +604,13 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
         meta = _ensure_discover_meta(candidate)
         if key not in merged:
             entry = dict(candidate)
-            for list_field in ("found_in", "backends", "source_records", "backend_records"):
+            for list_field in (
+                "found_in",
+                "backends",
+                "source_records",
+                "backend_records",
+                "corroborating_records",
+            ):
                 if isinstance(entry.get(list_field), list):
                     entry[list_field] = copy.deepcopy(entry[list_field])
             entry["_discover_meta"] = {
@@ -640,6 +646,10 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
             base["venue"] = candidate.get("venue")
         if not base.get("doc_type") and candidate.get("doc_type"):
             base["doc_type"] = candidate.get("doc_type")
+        if not base.get("edition") and candidate.get("edition"):
+            base["edition"] = candidate.get("edition")
+        if base.get("fit_index") is None and candidate.get("fit_index") is not None:
+            base["fit_index"] = candidate.get("fit_index")
         if int(base.get("citation_count", 0) or 0) < int(candidate.get("citation_count", 0) or 0):
             base["citation_count"] = int(candidate.get("citation_count", 0) or 0)
         base["confidence"] = max(
@@ -652,7 +662,7 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
         if backend_union:
             base["found_in"] = list(backend_union)
             base["backends"] = list(backend_union)
-        for rec_field in ("source_records", "backend_records"):
+        for rec_field in ("source_records", "backend_records", "corroborating_records"):
             base_recs = base.get(rec_field)
             inc_recs = candidate.get(rec_field)
             if isinstance(base_recs, list) or isinstance(inc_recs, list):
@@ -964,30 +974,35 @@ def discover_continue(
     if not report.accepted:
         accepted_candidates = []
     elif all(getattr(item, "index", None) is not None for item in report.accepted):
-        accepted_indices = {
-            item.index - 1
+        accepted_by_idx = {
+            item.index - 1: item
             for item in report.accepted
             if 1 <= item.index <= len(candidates)
         }
-        accepted_candidates = [
-            candidate
-            for idx, candidate in enumerate(candidates)
-            if idx in accepted_indices
-        ]
+        accepted_candidates = []
+        for idx, candidate in enumerate(candidates):
+            item = accepted_by_idx.get(idx)
+            if item is not None:
+                cand_copy = dict(candidate)
+                cand_copy["fit_index"] = getattr(item, "index", None)
+                accepted_candidates.append(cand_copy)
     else:
-        accepted_keys = {
-            ((item.doi or "").strip().lower(), (item.title or "").strip().lower())
+        accepted_by_key = {
+            ((item.doi or "").strip().lower(), (item.title or "").strip().lower()): item
             for item in report.accepted
         }
-        accepted_candidates = [
-            candidate
-            for candidate in candidates
-            if (
+        accepted_candidates = []
+        for idx, candidate in enumerate(candidates):
+            key = (
                 (candidate.get("doi") or "").strip().lower(),
                 (candidate.get("title") or "").strip().lower(),
             )
-            in accepted_keys
-        ]
+            item = accepted_by_key.get(key)
+            if item is not None:
+                cand_copy = dict(candidate)
+                fit_idx = getattr(item, "index", None)
+                cand_copy["fit_index"] = fit_idx if fit_idx is not None else idx + 1
+                accepted_candidates.append(cand_copy)
     pdfs_dir = getattr(cfg, "root", None)
     pdfs_dir = (Path(pdfs_dir) / "pdfs") if pdfs_dir is not None else None
     papers_input = _to_papers_input(
@@ -1030,46 +1045,84 @@ def discover_clean(cfg, cluster_slug: str) -> bool:
     return True
 
 
-def _split_author_names(authors: list[str] | str | None) -> list[str]:
+def _author_entry_to_name(author: object) -> str:
+    if isinstance(author, dict):
+        last = str(author.get("lastName") or "").strip()
+        first = str(author.get("firstName") or "").strip()
+        if last and first:
+            return f"{last}, {first}"
+        if last:
+            return last
+        if first:
+            return first
+        return str(author.get("name") or "").strip()
+    return str(author or "").strip()
+
+
+def _split_author_names(authors: list[str | dict] | dict | str | None) -> list[str]:
     if isinstance(authors, str):
         sep = ";" if ";" in authors else ","
         return [author.strip() for author in authors.split(sep) if author.strip()]
-    return [str(author).strip() for author in (authors or []) if str(author or "").strip()]
+    if isinstance(authors, dict):
+        name = _author_entry_to_name(authors)
+        return [name] if name else []
+    names: list[str] = []
+    for author in (authors or []):
+        name = _author_entry_to_name(author)
+        if name:
+            names.append(name)
+    return names
 
 
-def _authors_to_creators(authors: list[str] | str) -> list[dict]:
-    """Convert a name list or semicolon/comma-separated string into Zotero creator dicts."""
-    names = _split_author_names(authors)
+def _name_to_creator(name: str, *, creator_type: str = "author") -> dict:
+    if "," in name:
+        last, first = name.split(",", 1)
+        return {
+            "creatorType": creator_type,
+            "firstName": first.strip(),
+            "lastName": last.strip() or "Unknown",
+        }
+    parts = name.split()
+    if len(parts) >= 2:
+        return {
+            "creatorType": creator_type,
+            "firstName": " ".join(parts[:-1]),
+            "lastName": parts[-1],
+        }
+    return {
+        "creatorType": creator_type,
+        "firstName": "",
+        "lastName": name or "Unknown",
+    }
 
+
+def _authors_to_creators(authors: list[str | dict] | dict | str | None) -> list[dict]:
+    """Convert a name list, creator dict list, or semicolon/comma-separated string into Zotero creator dicts."""
+    if isinstance(authors, str):
+        return [_name_to_creator(name) for name in _split_author_names(authors)]
+    items = [authors] if isinstance(authors, dict) else list(authors or [])
     creators: list[dict] = []
-    for name in names:
-        if "," in name:
-            last, first = name.split(",", 1)
-            creators.append(
-                {
-                    "creatorType": "author",
-                    "firstName": first.strip(),
-                    "lastName": last.strip() or "Unknown",
-                }
-            )
+    for item in items:
+        if isinstance(item, dict):
+            creator_type = str(item.get("creatorType") or "author").strip() or "author"
+            last = str(item.get("lastName") or "").strip()
+            first = str(item.get("firstName") or "").strip()
+            if last or first:
+                creators.append(
+                    {
+                        "creatorType": creator_type,
+                        "firstName": first,
+                        "lastName": last or "Unknown",
+                    }
+                )
+                continue
+            name = str(item.get("name") or "").strip()
+            if name:
+                creators.append(_name_to_creator(name, creator_type=creator_type))
             continue
-        parts = name.split()
-        if len(parts) >= 2:
-            creators.append(
-                {
-                    "creatorType": "author",
-                    "firstName": " ".join(parts[:-1]),
-                    "lastName": parts[-1],
-                }
-            )
-        else:
-            creators.append(
-                {
-                    "creatorType": "author",
-                    "firstName": "",
-                    "lastName": name or "Unknown",
-                }
-            )
+        name = str(item or "").strip()
+        if name:
+            creators.append(_name_to_creator(name))
     return creators
 
 
@@ -1106,11 +1159,9 @@ def _to_papers_input(
         title = candidate.get("title") or ""
         if names:
             first_name = names[0]
-            first_author = (
-                first_name.split(",", 1)[0].split()[-1]
-                if "," in first_name
-                else first_name.split()[-1]
-            ).lower()
+            head = first_name.split(",", 1)[0].strip() if "," in first_name else first_name.strip()
+            head_parts = head.split()
+            first_author = (head_parts[-1] if head_parts else "unknown").lower()
         else:
             first_author = "unknown"
         # v0.84.0: use canonical make_paper_slug (matches safe_filename) instead
@@ -1193,7 +1244,7 @@ def _to_papers_input(
         entry = {
             "title": title,
             "doi": doi,
-            "authors": _authors_to_creators(names),
+            "authors": _authors_to_creators(authors_raw),
             "year": candidate.get("year") or 0,
             "metadata_year": candidate.get("metadata_year"),
             "abstract": abstract_final or "(no abstract)",
@@ -1232,9 +1283,13 @@ def _to_papers_input(
             "pmid",
             "openalex_id",
             "isbn",
+            "edition",
             "provenance",
             "source_records",
             "backend_records",
+            "corroborating_records",
+            "_discover_meta",
+            "fit_index",
         ):
             extra_value = candidate.get(extra_field)
             if extra_value not in (None, "", [], {}):

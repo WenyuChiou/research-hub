@@ -12,6 +12,16 @@
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-27
+
+### Fixed
+- **YAML Frontmatter Fidelity (`paper.py`):** Preserved trailing newlines inside `_split_frontmatter` and `_patch_yaml_frontmatter_field` so `|+` literal block scalars retain every meaningful trailing blank line under both LF and CRLF when appending unrelated fields, and removed the destructive legacy fallback rewrite so non-mapping or malformed YAML frontmatter raises `ValueError` without modifying the note on disk.
+- **NotebookLM PDF Identity & Containment (`notebooklm/bundle.py`):** Enforced `_is_within_pdfs_root` before copying PDFs (including `download_pdfs=True` fallback cache hits), removed the early root-file return so root canonical filenames participate in tie detection, and normalized multi-segment flattened DOIs in `_has_conflicting_doi` so `10.1234/series/chapter` matches `subcollection/10.1234_series_chapter.pdf`.
+- **Snapshot Scanner, Scope Tie-Breaking, and Obsidian Import (`library_snapshot.py`, `workspace/core.py`, `workspace/sync_hooks.py`):** Handled adjacent empty `---\n---\n` delimiters in `_extract_frontmatter_incremental` without parsing body prose, normalized equal-rank reading-scope aliases (`fulltext` / `full-text`) deterministically across `resolve_reading_scope` and `sync_hooks.py`, validated `collection_id` and `snapshot_truncated` on `import_obsidian_notes`, scanned explicit `note_ids` past `MAX_VAULT_NOTES`, and added `origin_vault_id` to path deduplication for multi-vault imports.
+
+### Changed
+- Bumped package version to `1.3.3` and plugin version to `0.5.39`.
+
 ## [1.3.2] - 2026-11-27
 
 ### Fixed

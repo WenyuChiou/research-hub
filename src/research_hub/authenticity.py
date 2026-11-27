@@ -409,12 +409,15 @@ def verify_authenticity(
             # L2 augment (PR-A, 2026-05): direct CrossRef-by-DOI metadata verify
             # for single-source papers with a DOI. Strictly augmentative: adds a
             # verified backend; never bypasses the L2 gate that follows.
+            crossref_status = "none"
             if _corroboration_label(paper) == "single-source":
-                _crossref_verify_corroboration(paper, crossref_cache, crossref_cache_path)
+                crossref_status = _crossref_verify_corroboration_status(
+                    paper, crossref_cache, crossref_cache_path
+                )
 
             # L2b: uncorroborated single-source gate — enforces already-computed signal
             corro = _corroboration_label(paper)
-            if corro == "conflict":
+            if crossref_status == "conflict" or corro == "conflict":
                 quarantined.append(
                     quarantine_paper(
                         cfg,
@@ -422,7 +425,11 @@ def verify_authenticity(
                         cluster_slug=cluster_slug,
                         layer="L2",
                         reason="corroboration_conflict",
-                        details={"corroboration": corro},
+                        details={
+                            "corroboration": (
+                                "conflict" if crossref_status == "conflict" else corro
+                            )
+                        },
                     )
                 )
                 continue
@@ -910,8 +917,7 @@ def _metadata_integrity_reason(paper: dict) -> str:
         year = int(str(paper.get("year", "")).strip())
     except (TypeError, ValueError):
         return "invalid year"
-    current_year = datetime.now(timezone.utc).year
-    if year < 1000 or year > current_year + 1:
+    if year < 1000 or year > 2100:
         return "year out of range"
 
     venues = [
@@ -935,29 +941,27 @@ def _paper_metadata_record(paper: dict, *, source: str = "candidate") -> dict[st
     }
 
 
-def _crossref_verify_corroboration(
+def _crossref_verify_corroboration_status(
     paper: dict,
     cache: "CrossrefVerifyCache",
     cache_path: Path,
-) -> bool:
-    """Augment ``paper`` in-place with a verified CrossRef record.
+) -> Literal["corroborated", "conflict", "none"]:
+    """Augment ``paper`` in-place with a verified CrossRef record or report conflict.
 
     Runs only when the existing corroboration is single-source and the paper
-    has a DOI not already CrossRef-corroborated. Returns True iff CrossRef
-    confirmed and the paper was augmented; False otherwise.
-
-    Strictly augmentative: only appends to ``paper['source_records']`` and
-    ``paper['backends']``; never removes or downgrades anything. CrossRef
-    errors fail quiet so the existing L2 gate continues unchanged.
+    has a DOI not already CrossRef-corroborated. Returns ``"corroborated"`` if
+    CrossRef confirmed and the paper was augmented, ``"conflict"`` if CrossRef
+    returned a substantive contradicting record (without mutating ``paper``),
+    or ``"none"`` otherwise.
     """
     doi = normalize_doi(str(paper.get("doi", "") or ""))
     if not doi:
-        return False
+        return "none"
     if _corroboration_label(paper) != "single-source":
-        return False
+        return "none"
     backend_names = _backend_names(paper)
     if any(name.casefold() == "crossref" for name in backend_names):
-        return False
+        return "none"
 
     key = f"doi:{doi}"
     existing_backend = next(
@@ -974,15 +978,15 @@ def _crossref_verify_corroboration(
             and bool(str(cached_record.get("title") or "").strip())
         )
         if cached.get("verified") is False and not isinstance(cached_record, dict):
-            return False
+            return "none"
         if has_valid_record:
             crossref_record = {"source": "crossref", **cached_record}
             if not _records_agree([paper_record, crossref_record]):
-                return False
+                return "conflict"
             _append_crossref_corroboration(paper, crossref_record)
-            return True
+            return "corroborated"
         if cached.get("verified") is False:
-            return False
+            return "none"
         # verified=True without a valid record (missing or empty title):
         # treat as a cache miss and fall through to live Crossref fetch.
 
@@ -990,7 +994,7 @@ def _crossref_verify_corroboration(
         result, crossref_status, response_missing = _crossref_get_paper_with_status(doi)
     except Exception as exc:
         logger.debug("CrossRef DOI metadata verification failed for %s: %s", doi, exc)
-        return False
+        return "none"
 
     if result is None:
         # 200-with-empty-body is a transient CrossRef API anomaly (the
@@ -1003,10 +1007,10 @@ def _crossref_verify_corroboration(
             and crossref_status >= 400
             and crossref_status != 404
         ):
-            return False
+            return "none"
         cache.put(key, verified=False)
         cache.save(cache_path)
-        return False
+        return "none"
 
     cr_meta = {
         "title": str(result.title or ""),
@@ -1014,15 +1018,33 @@ def _crossref_verify_corroboration(
         "authors": _authors_as_list(result.authors),
     }
     if not cr_meta["title"].strip():
-        return False
+        return "none"
     cache.put(key, verified=True, record=cr_meta)
     cache.save(cache_path)
     crossref_record = {"source": "crossref", **cr_meta}
     if not _records_agree([paper_record, crossref_record]):
-        return False
+        return "conflict"
 
     _append_crossref_corroboration(paper, crossref_record)
-    return True
+    return "corroborated"
+
+
+def _crossref_verify_corroboration(
+    paper: dict,
+    cache: "CrossrefVerifyCache",
+    cache_path: Path,
+) -> bool:
+    """Augment ``paper`` in-place with a verified CrossRef record.
+
+    Runs only when the existing corroboration is single-source and the paper
+    has a DOI not already CrossRef-corroborated. Returns True iff CrossRef
+    confirmed and the paper was augmented; False otherwise.
+
+    Strictly augmentative: only appends to ``paper['source_records']`` and
+    ``paper['backends']``; never removes or downgrades anything. CrossRef
+    errors fail quiet so the existing L2 gate continues unchanged.
+    """
+    return _crossref_verify_corroboration_status(paper, cache, cache_path) == "corroborated"
 
 
 def _crossref_get_paper_with_status(doi: str) -> tuple[Any, int | None, bool]:
@@ -1085,10 +1107,35 @@ def _is_substantive_record(record: dict) -> bool:
     return bool(source and title)
 
 
+_TITLE_MARKER_RE = re.compile(
+    r"\b("
+    r"vol(?:ume)?\.?\s*(?:[ivxlcdm]+|\d+)"
+    r"|part\.?\s*(?:[ivxlcdm]+|\d+|[a-z])"
+    r"|pt\.?\s*(?:[ivxlcdm]+|\d+|[a-z])"
+    r"|book\.?\s*(?:[ivxlcdm]+|\d+)"
+    r"|erratum|corrigendum|retraction|retracted|comment|reply|rejoinder|addendum|correction"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _title_markers(title: object) -> set[str]:
+    text = str(title or "")
+    markers: set[str] = set()
+    for match in _TITLE_MARKER_RE.finditer(text):
+        token = re.sub(r"\s+", " ", match.group(1).lower().replace(".", "")).strip()
+        token = re.sub(r"^volume\b", "vol", token)
+        token = re.sub(r"^pt\b", "part", token)
+        markers.add(token)
+    return markers
+
+
 def _pair_agrees(left: dict, right: dict) -> bool:
     left_title = str(left.get("title", "") or "").strip()
     right_title = str(right.get("title", "") or "").strip()
     if not left_title or not right_title:
+        return False
+    if _title_markers(left_title) != _title_markers(right_title):
         return False
     if fuzz.token_set_ratio(left_title, right_title) < 85:
         return False
@@ -1215,15 +1262,30 @@ def _load_fit_scores(cfg, cluster_slug: str | None) -> dict[str, dict]:
             entry = dict(item)
             entry.setdefault("kept", kept_default)
             for key in _fit_match_keys(entry):
+                if key in scores and scores[key].get("kept") and not entry.get("kept"):
+                    continue
                 scores[key] = entry
     return scores
+
+
+def _fit_entry_matches_paper(paper: dict, entry: dict) -> bool:
+    p_doi = normalize_doi(str(paper.get("doi", "") or ""))
+    e_doi = normalize_doi(str(entry.get("doi", "") or ""))
+    if p_doi and e_doi and p_doi != e_doi:
+        return False
+    p_title = normalize_title(str(paper.get("title", "") or ""))
+    e_title = normalize_title(str(entry.get("title", "") or ""))
+    if p_title and e_title and p_title != e_title:
+        return False
+    return True
 
 
 def _fit_status_for_paper(paper: dict, fit_scores: dict[str, dict], threshold: int) -> dict:
     score_entry = None
     for key in _fit_match_keys(paper):
-        score_entry = fit_scores.get(key)
-        if score_entry:
+        candidate = fit_scores.get(key)
+        if candidate and (not key.startswith("index:") or _fit_entry_matches_paper(paper, candidate)):
+            score_entry = candidate
             break
     if score_entry is None:
         return {"kept": False, "reason": "relevance_unjudged", "score": None}
@@ -1238,6 +1300,15 @@ def _fit_status_for_paper(paper: dict, fit_scores: dict[str, dict], threshold: i
 
 def _fit_match_keys(paper: dict) -> list[str]:
     keys: list[str] = []
+    raw_index = paper.get("fit_index")
+    if raw_index in (None, ""):
+        raw_index = paper.get("index")
+    if isinstance(raw_index, int) and not isinstance(raw_index, bool) and raw_index >= 1:
+        keys.append(f"index:{raw_index}")
+    elif isinstance(raw_index, str) and raw_index.strip().isascii() and raw_index.strip().isdigit():
+        idx_val = int(raw_index.strip())
+        if idx_val >= 1:
+            keys.append(f"index:{idx_val}")
     doi = normalize_doi(str(paper.get("doi", "") or ""))
     title = normalize_title(str(paper.get("title", "") or ""))
     if doi:

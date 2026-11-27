@@ -210,6 +210,7 @@ def make_raw_md(
     volume = item_data.get('volume', '')
     issue = item_data.get('issue', '')
     pages = item_data.get('pages', '')
+    edition = str(item_data.get('edition') or '').strip()
     doi = item_data['doi']
     abstract = item_data['abstract'] or ""
     tags = item_data['tags']
@@ -339,6 +340,7 @@ def make_raw_md(
             "source_records: " + json.dumps(item_data["source_records"], ensure_ascii=False) + "\n"
         )
 
+    edition_line = f'edition: "{_yaml_scalar(str(edition))}"\n' if edition else ""
     citation_line = journal
     if volume: citation_line += f", {volume}"
     if issue: citation_line += f"({issue})"
@@ -354,7 +356,7 @@ journal: "{journal}"
 volume: "{volume}"
 issue: "{issue}"
 pages: "{pages}"
-{doi_line}
+{edition_line}{doi_line}
 zotero-key: {key}
 collections: {collections_yaml}
 tags: {tags_yaml}

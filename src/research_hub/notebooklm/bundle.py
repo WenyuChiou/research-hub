@@ -133,9 +133,29 @@ def _is_within_pdfs_root(candidate: Path, pdfs_root: Path) -> bool:
 def _has_conflicting_doi(stem: str, normalized_doi: str) -> bool:
     if not normalized_doi:
         return False
+    doi_underscore = re.sub(r"[^a-z0-9._-]", "_", normalized_doi)
+    doi_underscore_collapsed = re.sub(r"[^a-z0-9._-]+", "_", normalized_doi)
+    doi_hyphen = re.sub(r"[^a-z0-9._-]", "-", normalized_doi)
+    doi_hyphen_collapsed = re.sub(r"[^a-z0-9._-]+", "-", normalized_doi)
+    doi_slash_hyphen = normalized_doi.replace("/", "-")
+    expected_forms = {
+        normalized_doi,
+        doi_underscore,
+        doi_underscore_collapsed,
+        doi_hyphen,
+        doi_hyphen_collapsed,
+        doi_slash_hyphen,
+    }
     for match in _EXPLICIT_DOI_RE.finditer(stem):
         raw = re.sub(r"^(10\.\d{4,9})[/_-]", r"\1/", match.group(0))
-        if _normalize_doi(raw) != normalized_doi:
+        cand_norm = _normalize_doi(raw)
+        cand_underscore = re.sub(r"[^a-z0-9._-]+", "_", cand_norm)
+        cand_hyphen = re.sub(r"[^a-z0-9._-]+", "-", cand_norm)
+        if (
+            cand_norm not in expected_forms
+            and cand_underscore not in expected_forms
+            and cand_hyphen not in expected_forms
+        ):
             return True
     return False
 
@@ -163,10 +183,6 @@ def _match_pdf_for_note_with_source(
         return None, ""
 
     pdfs_root = pdfs_dir.resolve()
-    if normalized:
-        exact = pdfs_dir / (re.sub(r"[^a-z0-9._-]", "_", normalized) + ".pdf")
-        if exact.exists() and _is_within_pdfs_root(exact, pdfs_root):
-            return exact, "local-doi"
 
     raw_candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
     safe_candidates = [
@@ -434,8 +450,14 @@ def bundle_cluster(
 
             fetch_result = fetch_paper_pdf(entry.doi, note_path.stem, pdfs_dir, cfg=cfg)
             if fetch_result.ok:
-                pdf = fetch_result.path
-                entry.pdf_source = fetch_result.source
+                if (
+                    (pdfs_dir.exists() or fetch_result.source in {"local-doi", "local-slug"})
+                    and not _is_within_pdfs_root(fetch_result.path, pdfs_dir.resolve())
+                ):
+                    logger.warning("Refusing out-of-root fetched PDF path for %s: %s", note_path.name, fetch_result.path)
+                else:
+                    pdf = fetch_result.path
+                    entry.pdf_source = fetch_result.source
             else:
                 logger.info("pdf_fetch failed for %s: %s", entry.doi or note_path.stem, fetch_result.error)
 
@@ -477,6 +499,13 @@ def bundle_cluster(
                 if pdf_retry is not None:
                     pdf = pdf_retry
                     entry.pdf_source = entry.pdf_source or retry_source
+
+        if pdf is not None and (
+            pdfs_dir.exists() or entry.pdf_source in {"local-doi", "local-slug"}
+        ) and not _is_within_pdfs_root(pdf, pdfs_dir.resolve()):
+            logger.warning("Refusing out-of-root PDF path for %s: %s", note_path.name, pdf)
+            pdf = None
+            entry.pdf_source = ""
 
         if pdf is not None:
             src_resolved = pdf.resolve()
