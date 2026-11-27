@@ -34,6 +34,7 @@ export interface NotebookLmUploadResponse {
   uploaded_count: number;
   skipped_duplicates: number;
   failed_count: number;
+  failed_sources?: { source_id: string; title: string; error: string }[];
   receipt_file?: string;
 }
 
@@ -114,6 +115,10 @@ const LABELS = {
       skipped > 0
         ? `✓ 已上傳 ${uploaded} 篇至 NotebookLM（略過 ${skipped} 篇重複）`
         : `✓ 已上傳 ${uploaded} 篇至 NotebookLM`,
+    nlmPartialReceipt: (uploaded: number, failed: number) =>
+      `⚠ 已上傳 ${uploaded} 篇至 NotebookLM，另有 ${failed} 篇上傳失敗`,
+    nlmFailedReceipt: (failed: number) =>
+      `✕ NotebookLM 上傳失敗（${failed} 篇未能上傳）`,
     nlmReceipt: (total: number, full: number, rest: number) =>
       `✓ ${total} 篇已封裝 · 全文 ${full} / 摘要 ${rest}`,
     nlmOpenBtn: "開啟 NotebookLM ↗",
@@ -175,6 +180,10 @@ const LABELS = {
       skipped > 0
         ? `✓ Uploaded ${uploaded} to NotebookLM (${skipped} skipped)`
         : `✓ Uploaded ${uploaded} to NotebookLM`,
+    nlmPartialReceipt: (uploaded: number, failed: number) =>
+      `⚠ Uploaded ${uploaded} to NotebookLM (${failed} failed)`,
+    nlmFailedReceipt: (failed: number) =>
+      `✕ NotebookLM upload failed (${failed} source(s) failed)`,
     nlmReceipt: (total: number, full: number, rest: number) =>
       `✓ ${total} packed · Full-text ${full} / Abstract ${rest}`,
     nlmOpenBtn: "Open NotebookLM ↗",
@@ -219,6 +228,19 @@ const LABELS = {
     localDisabledHint: "Local integration routes disabled in this mode; direct exports remain ready",
   },
 } as const;
+
+function safeExternalHref(raw: string | undefined | null, fallback = ""): string {
+  if (!raw || typeof raw !== "string") return fallback;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.toString();
+    }
+  } catch {
+    /* Reject invalid/non-http(s) hrefs. */
+  }
+  return fallback;
+}
 
 function rawScopeOf(record: ResearchRecord): string {
   const rl = record.data.reading_level;
@@ -363,7 +385,8 @@ export function SyncHooksPanel({
   const selectionEpochRef = useRef(0);
 
   const [nlmBusy, setNlmBusy] = useState(false);
-  const [nlmUploadBusy, setNlmUploadBusy] = useState(false);
+  const [nlmUploadCount, setNlmUploadCount] = useState(0);
+  const nlmUploadBusy = nlmUploadCount > 0;
   const [nlmResult, setNlmResult] = useState<NotebookLmBundleResponse | null>(null);
   const [nlmUploadResult, setNlmUploadResult] = useState<NotebookLmUploadResponse | null>(null);
   const [nlmError, setNlmError] = useState<string | null>(null);
@@ -390,6 +413,7 @@ export function SyncHooksPanel({
     selectionEpochRef.current += 1;
     setNlmBusy(false);
     setNlmResult(null);
+    setNlmUploadResult(null);
     setNlmError(null);
     // Keep zotWriteCount intact across scope switches so an in-flight Zotero write cannot overlap!
     setZotPreviewBusy(false);
@@ -513,7 +537,7 @@ export function SyncHooksPanel({
     const reqSig = selectionSignature;
     const reqEpoch = selectionEpochRef.current;
     const reqIds = payloadSourceIds ? [...payloadSourceIds] : undefined;
-    setNlmUploadBusy(true);
+    setNlmUploadCount((count) => count + 1);
     setNlmError(null);
     setNlmUploadResult(null);
     try {
@@ -529,9 +553,7 @@ export function SyncHooksPanel({
       if (selectionEpochRef.current !== reqEpoch || selectionSigRef.current !== reqSig) return;
       setNlmError(formatErrorText(err));
     } finally {
-      if (selectionEpochRef.current === reqEpoch && selectionSigRef.current === reqSig) {
-        setNlmUploadBusy(false);
-      }
+      setNlmUploadCount((count) => Math.max(0, count - 1));
     }
   }
 
@@ -753,7 +775,7 @@ export function SyncHooksPanel({
             )}
             <a
               className="button secondary small sync-ext-link"
-              href={nlmUploadResult?.notebook_url || nlmResult?.notebook_url || "https://notebooklm.google.com/"}
+              href={safeExternalHref(nlmUploadResult?.notebook_url || nlmResult?.notebook_url, "https://notebooklm.google.com/")}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -762,15 +784,39 @@ export function SyncHooksPanel({
           </div>
 
           {nlmUploadResult && (
-            <div className={`sync-receipt ${nlmUploadResult.status === "failed" ? "is-error" : "is-ok"}`} role="status">
+            <div
+              className={`sync-receipt ${
+                nlmUploadResult.status === "failed"
+                  ? "is-error"
+                  : nlmUploadResult.status === "partial_failure"
+                    ? "is-warn"
+                    : "is-ok"
+              }`}
+              role={nlmUploadResult.status === "failed" ? "alert" : "status"}
+            >
               <span className="sync-receipt-text">
-                {copy.nlmUploadReceipt(
-                  nlmUploadResult.uploaded_count,
-                  nlmUploadResult.skipped_duplicates,
-                )}
+                {nlmUploadResult.status === "failed"
+                  ? copy.nlmFailedReceipt(nlmUploadResult.failed_count || 1)
+                  : nlmUploadResult.status === "partial_failure"
+                    ? copy.nlmPartialReceipt(
+                        nlmUploadResult.uploaded_count,
+                        nlmUploadResult.failed_count,
+                      )
+                    : copy.nlmUploadReceipt(
+                        nlmUploadResult.uploaded_count,
+                        nlmUploadResult.skipped_duplicates,
+                      )}
               </span>
               {nlmUploadResult.notebook_name && (
                 <code className="sync-path-chip">{nlmUploadResult.notebook_name}</code>
+              )}
+              {nlmUploadResult.failed_sources && nlmUploadResult.failed_sources.length > 0 && (
+                <small className="sync-diff-note">
+                  {nlmUploadResult.failed_sources
+                    .slice(0, 2)
+                    .map((s) => `${s.title}: ${s.error}`)
+                    .join(" · ")}
+                </small>
               )}
             </div>
           )}
@@ -874,10 +920,10 @@ export function SyncHooksPanel({
               {zotSynced.collection_name && (
                 <code className="sync-path-chip">{zotSynced.collection_name}</code>
               )}
-              {zotSynced.library_url && (
+              {safeExternalHref(zotSynced.library_url) && (
                 <a
                   className="sync-ext-link small"
-                  href={zotSynced.library_url}
+                  href={safeExternalHref(zotSynced.library_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

@@ -802,7 +802,7 @@ def _render_obsidian_note(
         "issue": pp.get("issue", ""),
         "pages": pp.get("pages", ""),
         "doi": pp.get("doi", ""),
-        "abstract": pp.get("abstract") or pp.get("summary") or "",
+        "abstract": pp.get("abstract", ""),
         "tags": pp.get("tags", []),
         "provenance": pp.get("provenance"),
         "source_records": pp.get("source_records"),
@@ -841,7 +841,7 @@ def _render_obsidian_note(
     from research_hub.markdown_conventions import summary_section_to_callout
 
     content += "\n" + summary_section_to_callout(
-        summary=pp.get("summary") or pp.get("abstract") or "",
+        summary=pp.get("summary", ""),
         key_findings=pp.get("key_findings", ""),
         methodology=pp.get("methodology", ""),
         relevance=pp.get("relevance", ""),

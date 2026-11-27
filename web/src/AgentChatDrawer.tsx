@@ -43,6 +43,7 @@ const COPY = {
     appliedDone: (n: number) => `✓ 已成功套用 ${n} 項變更並重新同步工作區。`,
     close: "關閉",
     unavailableSuffix: "（未安裝）",
+    sendHint: "Enter 傳送 · Shift+Enter 換行",
     chips: [
       "列出目前文獻狀態",
       "產生 NLM 匯入包",
@@ -64,6 +65,7 @@ const COPY = {
     appliedDone: (n: number) => `✓ Applied ${n} action(s) and refreshed workspace.`,
     close: "Close",
     unavailableSuffix: " (not installed)",
+    sendHint: "Enter to send · Shift+Enter for newline",
     chips: [
       "List current paper inventory",
       "Bundle NotebookLM pack",
@@ -108,6 +110,18 @@ export function AgentChatDrawer({
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const epochRef = useRef(0);
+
+  useEffect(() => {
+    epochRef.current += 1;
+    setMessages([]);
+    setPendingPlan(null);
+    setError(null);
+    setBusy(false);
+    setApplying(false);
+  }, [projectId]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -158,6 +172,8 @@ export function AgentChatDrawer({
   async function sendText(rawText: string) {
     const trimmed = rawText.trim();
     if (!trimmed || !projectId || busy || applying) return;
+    const reqProject = projectId;
+    const reqEpoch = epochRef.current;
     setError(null);
     setBusy(true);
     setPendingPlan(null);
@@ -176,10 +192,11 @@ export function AgentChatDrawer({
         reply: string;
         proposed_actions: AgentProposedAction[];
         plan_digest: string;
-      }>(`/projects/${segment(projectId)}/integrations/agent/chat`, {
+      }>(`/projects/${segment(reqProject)}/integrations/agent/chat`, {
         message: trimmed,
         engine,
       });
+      if (epochRef.current !== reqEpoch || projectIdRef.current !== reqProject) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -196,25 +213,31 @@ export function AgentChatDrawer({
         });
       }
     } catch (err) {
+      if (epochRef.current !== reqEpoch || projectIdRef.current !== reqProject) return;
       void recoverCsrfIfForbidden(err);
       setError(err instanceof ApiError ? err.message : String(err));
     } finally {
-      setBusy(false);
+      if (epochRef.current === reqEpoch && projectIdRef.current === reqProject) {
+        setBusy(false);
+      }
     }
   }
 
   async function confirmPlan() {
     if (!pendingPlan || !projectId || applying) return;
+    const reqProject = projectId;
+    const reqEpoch = epochRef.current;
     setApplying(true);
     setError(null);
     try {
       const res = await api<{ ok: true; applied_count: number }>(
-        `/projects/${segment(projectId)}/integrations/agent/apply`,
+        `/projects/${segment(reqProject)}/integrations/agent/apply`,
         {
           proposed_actions: pendingPlan.actions,
           expected_plan_digest: pendingPlan.planDigest,
         },
       );
+      if (epochRef.current !== reqEpoch || projectIdRef.current !== reqProject) return;
       const msg = c.appliedDone(res.applied_count);
       setMessages((prev) => [
         ...prev,
@@ -223,10 +246,13 @@ export function AgentChatDrawer({
       setPendingPlan(null);
       await onApplied(msg);
     } catch (err) {
+      if (epochRef.current !== reqEpoch || projectIdRef.current !== reqProject) return;
       void recoverCsrfIfForbidden(err);
       setError(err instanceof ApiError ? err.message : String(err));
     } finally {
-      setApplying(false);
+      if (epochRef.current === reqEpoch && projectIdRef.current === reqProject) {
+        setApplying(false);
+      }
     }
   }
 
@@ -323,7 +349,7 @@ export function AgentChatDrawer({
             </div>
             <ol className="agent-plan-list">
               {pendingPlan.actions.map((act, idx) => (
-                <li key={`${act.type}-${act.source_id ?? idx}`}>
+                <li key={idx}>
                   <code>{act.type}</code> — {act.summary}
                 </li>
               ))}
@@ -357,14 +383,14 @@ export function AgentChatDrawer({
             placeholder={c.placeholder}
             disabled={busy || applying}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 void sendText(input);
               }
             }}
           />
           <div className="agent-composer-footer">
-            <span className="small muted">Enter 傳送 · Shift+Enter 換行</span>
+            <span className="small muted">{c.sendHint}</span>
             <button
               type="submit"
               className="button primary small"

@@ -143,24 +143,59 @@ def _safe_open_read_bounded(path: Path, *, max_bytes: int) -> tuple[bytes, os.st
         os.close(fd)
 
 
-def _extract_frontmatter_only(head_bytes: bytes) -> tuple[dict | None, str]:
-    text = head_bytes.decode("utf-8", errors="replace")
-    normalized = text.replace("\r\n", "\n")
-    if not normalized.startswith("---\n"):
-        return None, ""
-    end_idx = normalized.find("\n---\n", 4)
-    if end_idx == -1:
-        if normalized.endswith("\n---"):
-            end_idx = len(normalized) - 4
+def _extract_frontmatter_incremental(path: Path) -> tuple[dict | None, str, os.stat_result]:
+    """Read only up to the closing YAML frontmatter delimiter without scanning note body."""
+    before = _metadata(path)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise ValueError("Unsafe note file")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink)
+        if not stat.S_ISREG(opened.st_mode) or identity(before) != identity(opened):
+            raise ValueError("File changed during open")
+
+        buf = bytearray()
+        end_idx = -1
+        prefix_checked = False
+        limit = min(MAX_FRONTMATTER_BYTES, opened.st_size)
+        while len(buf) < limit:
+            chunk = os.read(fd, min(512, limit - len(buf)))
+            if not chunk:
+                break
+            buf.extend(chunk)
+            text_norm = buf.decode("utf-8", errors="replace").replace("\r\n", "\n")
+            if not prefix_checked:
+                if len(text_norm) >= 4:
+                    if not text_norm.startswith("---\n"):
+                        return None, "", opened
+                    prefix_checked = True
+                elif len(buf) < limit:
+                    continue
+            found = text_norm.find("\n---\n", 4)
+            if found != -1:
+                end_idx = found
+                break
+            if len(buf) >= limit and text_norm.endswith("\n---"):
+                end_idx = len(text_norm) - 4
+                break
         else:
-            return None, ""
-    fm_text = normalized[4:end_idx]
-    fm_bytes = fm_text.encode("utf-8")
-    digest_hex = hashlib.sha256(fm_bytes).hexdigest()
-    loaded = yaml.load(fm_bytes, Loader=_UniqueLoader)
-    if not isinstance(loaded, dict):
-        return None, digest_hex
-    return loaded, digest_hex
+            text_norm = buf.decode("utf-8", errors="replace").replace("\r\n", "\n")
+            if text_norm.startswith("---\n") and text_norm.endswith("\n---"):
+                end_idx = len(text_norm) - 4
+
+        if end_idx == -1:
+            return None, "", opened
+        fm_text = text_norm[4:end_idx]
+        fm_bytes = fm_text.encode("utf-8")
+        digest_hex = hashlib.sha256(fm_bytes).hexdigest()
+        loaded = yaml.load(fm_bytes, Loader=_UniqueLoader)
+        if not isinstance(loaded, dict):
+            return None, digest_hex, opened
+        return loaded, digest_hex, opened
+    finally:
+        os.close(fd)
 
 
 def _clean_terms(value: object, *, limit: int = 100) -> list[str]:
@@ -224,22 +259,32 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
         cluster_subfolders: dict[str, str] = {}
         active_slugs: list[str] = []
         reg_path = _lexical(root / ".research_hub" / "clusters.yaml")
-        if reg_path.exists():
+        registry_present = reg_path.exists()
+        if registry_present:
             raw_reg, _ = _safe_open_read_bounded(reg_path, max_bytes=2 * 1024 * 1024)
             reg_doc = yaml.load(raw_reg, Loader=_UniqueLoader)
-            if isinstance(reg_doc, dict) and isinstance(reg_doc.get("clusters"), dict):
-                for slug, entry in reg_doc["clusters"].items():
-                    if not isinstance(slug, str) or not isinstance(entry, dict):
-                        continue
-                    if entry.get("status", "active") != "active":
-                        continue
-                    cluster_names[slug] = _clean_str(entry.get("name"), limit=200) or slug
-                    sub = _clean_str(entry.get("obsidian_subfolder"), limit=200) or slug
-                    cluster_subfolders[slug] = sub
-                    active_slugs.append(slug)
+            raw_clusters = reg_doc.get("clusters") if isinstance(reg_doc, dict) else None
+            entries_iter: list[tuple[str, dict]] = []
+            if isinstance(raw_clusters, dict):
+                entries_iter = [
+                    (slug, entry)
+                    for slug, entry in raw_clusters.items()
+                    if isinstance(slug, str) and isinstance(entry, dict)
+                ]
+            elif isinstance(raw_clusters, list):
+                for entry in raw_clusters:
+                    if isinstance(entry, dict) and isinstance(entry.get("slug"), str):
+                        entries_iter.append((entry["slug"], entry))
+            for slug, entry in entries_iter:
+                if entry.get("status", "active") != "active":
+                    continue
+                cluster_names[slug] = _clean_str(entry.get("name"), limit=200) or slug
+                sub = _clean_str(entry.get("obsidian_subfolder"), limit=200).strip("/") or slug
+                cluster_subfolders[slug] = sub
+                active_slugs.append(slug)
 
         raw_dir = _lexical(root / "raw")
-        if not active_slugs and raw_dir.exists() and stat.S_ISDIR(_metadata(raw_dir).st_mode):
+        if not registry_present and raw_dir.exists() and stat.S_ISDIR(_metadata(raw_dir).st_mode):
             for child in sorted(raw_dir.iterdir(), key=lambda p: p.name):
                 if child.name.startswith((".", "_")) or not child.is_dir():
                     continue
@@ -256,26 +301,30 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
         notes: list[dict] = []
 
         for slug in active_slugs[:MAX_VAULT_CLUSTERS]:
-            subfolder = cluster_subfolders.get(slug, slug)
-            if any(part in {".", ".."} or "/" in part or "\\" in part or ":" in part for part in (slug, subfolder)):
+            subfolder = cluster_subfolders.get(slug, slug).replace("\\", "/").strip("/")
+            sub_parts = [p for p in subfolder.split("/") if p]
+            if not sub_parts or any(p in {".", ".."} or ":" in p or "\\" in p for p in sub_parts):
                 continue
-            cluster_dir = root / "raw" / subfolder
+            cluster_dir = root.joinpath("raw", *sub_parts)
             if not cluster_dir.exists():
                 continue
             try:
                 cluster_dir_lex = _lexical(cluster_dir)
+                if not cluster_dir_lex.resolve().is_relative_to(raw_dir.resolve()):
+                    continue
                 if not stat.S_ISDIR(_metadata(cluster_dir_lex).st_mode):
                     continue
             except (OSError, ValueError):
                 continue
 
-            scan_dirs: list[tuple[Path, str]] = [(cluster_dir_lex, f"raw/{subfolder}")]
+            rel_sub = "/".join(sub_parts)
+            scan_dirs: list[tuple[Path, str]] = [(cluster_dir_lex, f"raw/{rel_sub}")]
             notes_sub = cluster_dir_lex / "notes"
             if notes_sub.exists():
                 try:
                     notes_sub_lex = _lexical(notes_sub)
                     if stat.S_ISDIR(_metadata(notes_sub_lex).st_mode):
-                        scan_dirs.append((notes_sub_lex, f"raw/{subfolder}/notes"))
+                        scan_dirs.append((notes_sub_lex, f"raw/{rel_sub}/notes"))
                 except (OSError, ValueError):
                     pass
 
@@ -293,8 +342,7 @@ def read_vault_snapshot(vault_root: str | Path | None) -> dict:
                     seen_rel_paths.add(rel_posix)
                     try:
                         note_lex = _lexical(note_file)
-                        head_bytes, opened = _safe_open_read_bounded(note_lex, max_bytes=MAX_FRONTMATTER_BYTES)
-                        fm, fm_sha = _extract_frontmatter_only(head_bytes)
+                        fm, fm_sha, opened = _extract_frontmatter_incremental(note_lex)
                     except (OSError, ValueError, yaml.YAMLError, RecursionError):
                         continue
 

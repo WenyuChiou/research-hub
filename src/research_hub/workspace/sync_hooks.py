@@ -19,7 +19,7 @@ import re
 import tempfile
 import threading
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from research_hub.locks import file_lock
 from .core import Workspace, WorkspaceError, atomic_json, digest, safe_path
@@ -877,14 +877,10 @@ class WorkspaceSyncHooks:
                 }
         return resolved_map
 
-    def bundle_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _bundle_notebooklm_locked(
+        self, project_id: str, selected_source_ids: Any
+    ) -> dict[str, Any]:
         integrations = self._require_enabled()
-        body = dict(payload or {})
-        extra = set(body) - {"selected_source_ids"}
-        if extra:
-            raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
-
-        self._validate_project_id(project_id)
         export_rel = f".research/exports/notebooklm-{project_id}"
         pack_rel = f"{export_rel}/00-notebooklm-source-pack.md"
         manifest_rel = f"{export_rel}/manifest.json"
@@ -892,107 +888,131 @@ class WorkspaceSyncHooks:
         used_names: set[str] = set()
         source_files: list[str] = []
         manifest_sources: list[dict[str, Any]] = []
-        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
-            project, sources, screenings = self._resolve_project_sources(
-                project_id, body.get("selected_source_ids")
+        prepared_entries: list[dict[str, Any]] = []
+        project, sources, screenings = self._resolve_project_sources(
+            project_id, selected_source_ids
+        )
+        artifact_refs = self._resolve_source_artifacts(project_id, sources)
+        full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
+        abstract_only_count = len(sources) - full_text_count
+        generated_at = _utc_now()
+        manifest: dict[str, Any] = {
+            "project_id": project_id,
+            "project_title": project["title"],
+            "source_count": len(sources),
+            "full_text_count": full_text_count,
+            "abstract_only_count": abstract_only_count,
+            "generated_at": generated_at,
+        }
+
+        export_dir = safe_path(self.workspace.root, export_rel)
+        sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
+        pack_path = safe_path(self.workspace.root, pack_rel)
+        manifest_path = safe_path(self.workspace.root, manifest_rel)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        self._clean_stale_files(sources_dir, (".md",))
+
+        for index, rec in enumerate(sources, start=1):
+            slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"source-{index}")
+            stem = f"{index:02d}-{slug}"
+            candidate_name = f"{stem}.md"
+            collision = 2
+            while candidate_name in used_names:
+                candidate_name = f"{stem}-{collision}.md"
+                collision += 1
+            used_names.add(candidate_name)
+
+            file_rel = f"{export_rel}/sources/{candidate_name}"
+            file_path = safe_path(self.workspace.root, file_rel)
+            decision = screenings.get(rec["id"], "unscreened")
+            art_ref = artifact_refs.get(rec["id"])
+            rendered = _render_nlm_individual_source(
+                rec,
+                index=index,
+                project_id=project_id,
+                project_title=project["title"],
+                screening=decision,
+                artifact_ref=art_ref,
             )
-            artifact_refs = self._resolve_source_artifacts(project_id, sources)
-            full_text_count = sum(1 for s in sources if _reading_scope(s["data"]) == "full-text")
-            abstract_only_count = len(sources) - full_text_count
-            generated_at = _utc_now()
-            manifest = {
-                "project_id": project_id,
-                "project_title": project["title"],
-                "source_count": len(sources),
-                "full_text_count": full_text_count,
-                "abstract_only_count": abstract_only_count,
-                "generated_at": generated_at,
-            }
-
-            export_dir = safe_path(self.workspace.root, export_rel)
-            sources_dir = safe_path(self.workspace.root, f"{export_rel}/sources")
-            pack_path = safe_path(self.workspace.root, pack_rel)
-            manifest_path = safe_path(self.workspace.root, manifest_rel)
-            export_dir.mkdir(parents=True, exist_ok=True)
-            sources_dir.mkdir(parents=True, exist_ok=True)
-            self._clean_stale_files(sources_dir, (".md",))
-
-            for index, rec in enumerate(sources, start=1):
-                slug = _slugify(_clean_line(rec["data"].get("title")), fallback=f"source-{index}")
-                stem = f"{index:02d}-{slug}"
-                candidate_name = f"{stem}.md"
-                collision = 2
-                while candidate_name in used_names:
-                    candidate_name = f"{stem}-{collision}.md"
-                    collision += 1
-                used_names.add(candidate_name)
-
-                file_rel = f"{export_rel}/sources/{candidate_name}"
-                file_path = safe_path(self.workspace.root, file_rel)
-                decision = screenings.get(rec["id"], "unscreened")
-                art_ref = artifact_refs.get(rec["id"])
-                _atomic_text(
-                    file_path,
-                    _render_nlm_individual_source(
-                        rec,
-                        index=index,
-                        project_id=project_id,
-                        project_title=project["title"],
-                        screening=decision,
-                        artifact_ref=art_ref,
-                    ),
-                )
-                source_files.append(file_rel)
-                manifest_sources.append({
-                    "index": index,
-                    "source_id": _clean_line(rec.get("id")),
-                    "title": _clean_line(rec["data"].get("title")) or f"Source {index}",
-                    "doi": _clean_bare_doi(rec["data"].get("doi")),
-                    "locator": _safe_http_url(
-                        rec["data"].get("locator"), rec["data"].get("locator_kind")
-                    ),
-                    "artifact_status": (art_ref or {}).get("artifact_status", ""),
-                    "artifact_id": (art_ref or {}).get("artifact_id", ""),
-                    "artifact_path": (art_ref or {}).get("artifact_path", ""),
-                    "artifact_sha256": (art_ref or {}).get("artifact_sha256", ""),
-                    "reading_scope": _reading_scope(rec["data"]),
-                    "screening": decision,
-                    "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
-                    "publication_version": _clean_line(rec["data"].get("publication_version")),
-                    "recorded_at": _clean_line(rec["data"].get("recorded_at")),
-                    "revision_sha256": _source_revision_sha256(rec, decision, art_ref),
-                    "source_file": file_rel,
-                })
-
-            _atomic_text(
-                pack_path,
-                _render_nlm_pack_markdown(
-                    sources,
-                    project_id=project_id,
-                    project_title=project["title"],
-                    screenings=screenings,
-                    artifact_refs=artifact_refs,
+            _atomic_text(file_path, rendered)
+            source_files.append(file_rel)
+            rev_sha = _source_revision_sha256(rec, decision, art_ref)
+            title_val = _clean_line(rec["data"].get("title")) or f"Source {index}"
+            doi_val = _clean_bare_doi(rec["data"].get("doi"))
+            manifest_sources.append({
+                "index": index,
+                "source_id": _clean_line(rec.get("id")),
+                "title": title_val,
+                "doi": doi_val,
+                "locator": _safe_http_url(
+                    rec["data"].get("locator"), rec["data"].get("locator_kind")
                 ),
-            )
-            manifest["sources"] = manifest_sources
-            atomic_json(manifest_path, manifest)
+                "artifact_status": (art_ref or {}).get("artifact_status", ""),
+                "artifact_id": (art_ref or {}).get("artifact_id", ""),
+                "artifact_path": (art_ref or {}).get("artifact_path", ""),
+                "artifact_sha256": (art_ref or {}).get("artifact_sha256", ""),
+                "reading_scope": _reading_scope(rec["data"]),
+                "screening": decision,
+                "identity_status": _clean_line(rec["data"].get("identity_status")) or "unverified",
+                "publication_version": _clean_line(rec["data"].get("publication_version")),
+                "recorded_at": _clean_line(rec["data"].get("recorded_at")),
+                "revision_sha256": rev_sha,
+                "source_file": file_rel,
+            })
+            prepared_entries.append({
+                "index": index,
+                "source_id": _clean_line(rec.get("id")),
+                "title": title_val,
+                "doi": doi_val,
+                "revision_sha256": rev_sha,
+                "content": rendered,
+            })
+
+        _atomic_text(
+            pack_path,
+            _render_nlm_pack_markdown(
+                sources,
+                project_id=project_id,
+                project_title=project["title"],
+                screenings=screenings,
+                artifact_refs=artifact_refs,
+            ),
+        )
+        manifest["sources"] = manifest_sources
+        atomic_json(manifest_path, manifest)
 
         nlm_status = self._safe_nlm_status(integrations)
         return {
-            "ok": True,
-            "export_dir": export_rel,
-            "pack_file": pack_rel,
-            "manifest_file": manifest_rel,
-            "source_files": source_files,
-            "source_count": len(sources),
-            "full_text_count": full_text_count,
-            "abstract_or_metadata_count": abstract_only_count,
-            "nlm_status": nlm_status,
-            "notebook_url": "https://notebooklm.google.com/",
+            "project_title": project["title"],
+            "prepared_entries": prepared_entries,
+            "result": {
+                "ok": True,
+                "export_dir": export_rel,
+                "pack_file": pack_rel,
+                "manifest_file": manifest_rel,
+                "source_files": source_files,
+                "source_count": len(sources),
+                "full_text_count": full_text_count,
+                "abstract_or_metadata_count": abstract_only_count,
+                "nlm_status": nlm_status,
+                "notebook_url": "https://notebooklm.google.com/",
+            },
         }
 
+    def bundle_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._require_enabled()
+        body = dict(payload or {})
+        extra = set(body) - {"selected_source_ids"}
+        if extra:
+            raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
+
+        self._validate_project_id(project_id)
+        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            return self._bundle_notebooklm_locked(project_id, body.get("selected_source_ids"))["result"]
+
     def upload_notebooklm(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Bundle project sources and upload them to a real NotebookLM cloud notebook."""
+        """Bundle project sources atomically under lock and upload to a NotebookLM notebook."""
         integrations = self._require_enabled()
         body = dict(payload or {})
         extra = set(body) - {"selected_source_ids", "notebook_title"}
@@ -1000,15 +1020,23 @@ class WorkspaceSyncHooks:
             raise WorkspaceError(f"Unsupported fields: {', '.join(sorted(extra))}", "invalid_request")
 
         self._validate_project_id(project_id)
-        bundle_payload = (
-            {"selected_source_ids": body["selected_source_ids"]}
-            if "selected_source_ids" in body
-            else None
-        )
-        bundle = self.bundle_notebooklm(project_id, bundle_payload)
-        project = self.workspace.project(project_id)
-        custom_title = _clean_line(body.get("notebook_title"))
-        notebook_title = custom_title or f"[Research Hub] {_clean_line(project.get('title')) or project_id}"
+        export_rel = f".research/exports/notebooklm-{project_id}"
+        receipt_rel = f"{export_rel}/upload_receipt.json"
+        receipt_path = safe_path(self.workspace.root, receipt_rel)
+
+        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            bundled = self._bundle_notebooklm_locked(project_id, body.get("selected_source_ids"))
+            prepared_entries: list[dict[str, Any]] = bundled["prepared_entries"]
+            custom_title = _clean_line(body.get("notebook_title"))
+            notebook_title = custom_title or f"[Research Hub] {_clean_line(bundled['project_title']) or project_id}"
+            prior_receipt: dict[str, Any] = {}
+            if receipt_path.is_file():
+                try:
+                    loaded = json.loads(receipt_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        prior_receipt = loaded
+                except (OSError, json.JSONDecodeError):
+                    prior_receipt = {}
 
         try:
             _, data = integrations._read_config_dict()
@@ -1038,13 +1066,6 @@ class WorkspaceSyncHooks:
                 "nlm_auth_expired",
             )
 
-        export_rel = f".research/exports/notebooklm-{project_id}"
-        manifest_path = safe_path(self.workspace.root, bundle["manifest_file"])
-        receipt_rel = f"{export_rel}/upload_receipt.json"
-        receipt_path = safe_path(self.workspace.root, receipt_rel)
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        entries = list(manifest.get("sources") or [])
-
         uploaded_sources: list[dict[str, Any]] = []
         failed_sources: list[dict[str, Any]] = []
         skipped_duplicates = 0
@@ -1054,46 +1075,78 @@ class WorkspaceSyncHooks:
             client = NotebookLMClient(state_file, headless=True, timeout_sec=120)
             handle = client.find_or_create_notebook(notebook_title)
             existing_titles: set[str] = set()
+            existing_ids: set[str] = set()
             try:
                 for src in client.list_sources(handle.notebook_id):
                     t = _clean_line(getattr(src, "title", "") or (src.get("title") if isinstance(src, dict) else ""))
                     if t:
                         existing_titles.add(t.casefold())
+                    sid_remote = _clean_line(getattr(src, "id", "") or getattr(src, "source_id", "") or (src.get("id") if isinstance(src, dict) else ""))
+                    if sid_remote:
+                        existing_ids.add(sid_remote)
             except Exception:
                 existing_titles = set()
+                existing_ids = set()
 
-            for entry in entries:
-                src_rel = str(entry.get("source_file") or "").strip()
-                if not src_rel:
-                    continue
-                src_path = safe_path(self.workspace.root, src_rel, exists=True)
-                src_title = _clean_line(entry.get("title")) or Path(src_rel).stem
-                if src_title.casefold() in existing_titles:
+            # Key prior uploaded revisions by source_id when matching the same notebook_id
+            prior_revisions: dict[str, tuple[str, str]] = {}
+            if prior_receipt.get("notebook_id") == handle.notebook_id:
+                for prev in (prior_receipt.get("uploaded_sources") or []):
+                    if isinstance(prev, dict) and isinstance(prev.get("source_id"), str):
+                        prior_revisions[prev["source_id"]] = (
+                            str(prev.get("revision_sha256") or ""),
+                            str(prev.get("nlm_source_id") or ""),
+                        )
+
+            seen_batch_titles: set[str] = set()
+            for entry in prepared_entries:
+                sid = str(entry.get("source_id") or "")
+                rev_sha = str(entry.get("revision_sha256") or "")
+                base_title = _clean_line(entry.get("title")) or f"Source {entry['index']}"
+                upload_title = base_title
+                if upload_title.casefold() in seen_batch_titles:
+                    upload_title = f"{base_title} ({entry['index']})"
+                seen_batch_titles.add(upload_title.casefold())
+
+                prev_rev, prev_nlm_id = prior_revisions.get(sid, ("", ""))
+                still_present = (
+                    (bool(prev_nlm_id) and prev_nlm_id in existing_ids)
+                    or (upload_title.casefold() in existing_titles)
+                )
+                if sid and sid in prior_revisions:
+                    if prev_rev and prev_rev == rev_sha and still_present:
+                        skipped_duplicates += 1
+                        continue
+                elif upload_title.casefold() in existing_titles:
                     skipped_duplicates += 1
                     continue
-                content = src_path.read_text(encoding="utf-8")
-                res = client.upload_source(handle.notebook_id, text=content, title=src_title)
+
+                res = client.upload_source(handle.notebook_id, text=entry["content"], title=upload_title)
                 if getattr(res, "ok", False):
-                    existing_titles.add(src_title.casefold())
+                    existing_titles.add(upload_title.casefold())
                     uploaded_sources.append({
-                        "source_id": entry.get("source_id", ""),
-                        "title": src_title,
+                        "source_id": sid,
+                        "revision_sha256": rev_sha,
+                        "title": upload_title,
                         "nlm_source_id": getattr(res, "source_id", "") or "",
                         "doi": entry.get("doi", ""),
                     })
                 else:
                     failed_sources.append({
-                        "source_id": entry.get("source_id", ""),
-                        "title": src_title,
+                        "source_id": sid,
+                        "title": upload_title,
                         "error": _clean_line(getattr(res, "error", "")) or "NotebookLM upload failed",
                     })
         except WorkspaceError:
             raise
         except NotebookLMError as exc:
-            msg = str(exc)
-            low = msg.lower()
-            code = "nlm_auth_expired" if ("expired" in low or "auth" in low) else "nlm_upload_failed"
-            raise WorkspaceError(f"NotebookLM upload failed: {msg}", code) from exc
+            low = str(exc).lower()
+            if "expired" in low or "auth" in low or "sign-in" in low or "login" in low:
+                raise WorkspaceError(
+                    "NotebookLM Google session has expired or is invalid. Open Setup -> Connections & Sync to sign in again.",
+                    "nlm_auth_expired",
+                ) from exc
+            raise WorkspaceError("NotebookLM upload failed; verify notebook access and session status.", "nlm_upload_failed") from exc
         except Exception as exc:
             raise WorkspaceError(f"NotebookLM upload failed: {type(exc).__name__}", "nlm_upload_failed") from exc
         finally:
@@ -1110,22 +1163,38 @@ class WorkspaceSyncHooks:
             if failed_count == 0
             else ("partial_failure" if uploaded_count > 0 else "failed")
         )
+        raw_nb_url = _clean_line(getattr(handle, "url", ""))
+        safe_nb_url = (
+            raw_nb_url
+            if raw_nb_url.lower().startswith(("https://", "http://"))
+            else f"https://notebooklm.google.com/notebook/{quote(handle.notebook_id, safe='-_')}"
+            if getattr(handle, "notebook_id", "")
+            else "https://notebooklm.google.com/"
+        )
+        # Merge previously synced unchanged sources so subsequent uploads preserve revision memory
+        retained_sources = list(uploaded_sources)
+        uploaded_ids_now = {s["source_id"] for s in uploaded_sources}
+        if prior_receipt.get("notebook_id") == handle.notebook_id:
+            for prev in (prior_receipt.get("uploaded_sources") or []):
+                if isinstance(prev, dict) and prev.get("source_id") not in uploaded_ids_now:
+                    retained_sources.append(prev)
         receipt = {
             "ok": True,
             "status": status,
             "project_id": project_id,
             "notebook_id": handle.notebook_id,
             "notebook_name": handle.name,
-            "notebook_url": handle.url,
+            "notebook_url": safe_nb_url,
             "uploaded_count": uploaded_count,
             "skipped_duplicates": skipped_duplicates,
             "failed_count": failed_count,
-            "uploaded_sources": uploaded_sources,
+            "uploaded_sources": retained_sources,
             "failed_sources": failed_sources,
             "uploaded_at": _utc_now(),
             "receipt_file": receipt_rel,
         }
-        atomic_json(receipt_path, receipt)
+        with self._export_lock(f"notebooklm:{project_id}", f".notebooklm-{project_id}"):
+            atomic_json(receipt_path, receipt)
         return receipt
 
     def sync_zotero(self, project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1346,6 +1415,12 @@ class WorkspaceSyncHooks:
                     "items": items_plan,
                 }
 
+            if expected_plan_digest is not None and plan_digest != expected_plan_digest:
+                raise WorkspaceError(
+                    "Zotero sync plan changed since the dry-run preview; run Preview again before writing",
+                    "stale_preview",
+                )
+
             collection_key: str | None = None
             if records_to_create and hasattr(zot, "collections") and hasattr(zot, "create_collections"):
                 try:
@@ -1356,7 +1431,7 @@ class WorkspaceSyncHooks:
                         col_data = col.get("data") if isinstance(col.get("data"), dict) else col
                         if _clean_line(col_data.get("name")) == collection_name:
                             found_key = col.get("key") or col_data.get("key")
-                            if isinstance(found_key, str) and found_key.strip():
+                            if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
                                 collection_key = found_key.strip()
                                 break
                     if collection_key is None:
@@ -1371,18 +1446,20 @@ class WorkspaceSyncHooks:
                                         if isinstance(first.get("data"), dict)
                                         else None
                                     )
-                                    if isinstance(found_key, str) and found_key.strip():
+                                    if isinstance(found_key, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", found_key.strip()):
                                         collection_key = found_key.strip()
-                                elif isinstance(first, str) and first.strip():
+                                elif isinstance(first, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", first.strip()):
                                     collection_key = first.strip()
-                except Exception:
-                    collection_key = None
-
-            if expected_plan_digest is not None and plan_digest != expected_plan_digest:
-                raise WorkspaceError(
-                    "Zotero sync plan changed since the dry-run preview; run Preview again before writing",
-                    "stale_preview",
-                )
+                except Exception as exc:
+                    raise WorkspaceError(
+                        "Could not resolve or create target Zotero collection",
+                        "zotero_sync_failed",
+                    ) from exc
+                if collection_key is None:
+                    raise WorkspaceError(
+                        "Could not confirm creation of target Zotero collection",
+                        "zotero_sync_failed",
+                    )
 
             zotero_payloads: list[dict[str, Any]] = []
             template_base: dict[str, Any] = {}

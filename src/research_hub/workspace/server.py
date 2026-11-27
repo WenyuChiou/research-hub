@@ -104,10 +104,13 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/v1/workspace":
                 result = self.server.service.capabilities(human=bool(self.server.human))
-                result["capabilities"]["obsidian_validation"] = self.server.obsidian_validation.capability()
+                obs_val = getattr(self.server, "obsidian_validation", None)
+                lib_snap = getattr(self.server, "library_snapshot", None)
+                if obs_val is not None:
+                    result["capabilities"]["obsidian_validation"] = obs_val.capability()
                 result["capabilities"]["obsidian_snapshot_available"] = bool(
-                    self.server.library_snapshot.path is not None
-                    or self.server.obsidian_validation.scope is not None
+                    (lib_snap is not None and getattr(lib_snap, "path", None) is not None)
+                    or (obs_val is not None and getattr(obs_val, "scope", None) is not None)
                 )
                 integrations = getattr(self.server, "integrations", None)
                 if integrations is not None and integrations.enabled:

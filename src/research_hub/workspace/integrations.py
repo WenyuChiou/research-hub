@@ -143,11 +143,16 @@ class LocalIntegrationsManager:
         return root / ".research_hub"
 
     def default_vault_root(self) -> Path | None:
-        """Return configured existing KB root if enabled cleanly, without failing startup."""
+        """Return configured existing vault/KB root if enabled cleanly, without failing startup."""
         if not self.enabled:
             return None
         try:
             _, data = self._read_config_dict()
+            raw_ui_vault = data.get("obsidian_vault_path")
+            if isinstance(raw_ui_vault, str) and raw_ui_vault.strip():
+                candidate = Path(raw_ui_vault).expanduser()
+                if candidate.is_dir():
+                    return candidate
             kb = data.get("knowledge_base")
             raw_root = kb.get("root") if isinstance(kb, dict) else None
             if isinstance(raw_root, str) and raw_root.strip():
@@ -448,16 +453,9 @@ class LocalIntegrationsManager:
                 data.pop("search", None)
 
             obsidian_touched = False
-            kb_cfg = data.get("knowledge_base")
-            if kb_cfg is None:
-                kb_cfg = {}
-            if not isinstance(kb_cfg, dict):
-                raise WorkspaceError("Invalid knowledge_base section in configuration", "invalid_config")
-            kb_cfg = dict(kb_cfg)
-
             if payload.get("clear_obsidian_vault") is True:
-                if "root" in kb_cfg:
-                    kb_cfg.pop("root", None)
+                if "obsidian_vault_path" in data:
+                    data.pop("obsidian_vault_path", None)
                     obsidian_touched = True
             elif "obsidian_vault_path" in payload:
                 raw_vault = payload["obsidian_vault_path"]
@@ -465,25 +463,25 @@ class LocalIntegrationsManager:
                     raise WorkspaceError("Obsidian vault path must be a string", "invalid_request")
                 trimmed_vault = raw_vault.strip()
                 if not trimmed_vault:
-                    if "root" in kb_cfg:
-                        kb_cfg.pop("root", None)
+                    if "obsidian_vault_path" in data:
+                        data.pop("obsidian_vault_path", None)
                         obsidian_touched = True
                 else:
-                    candidate_vault = Path(trimmed_vault).expanduser()
-                    if candidate_vault.is_symlink() or (
-                        candidate_vault.exists()
-                        and getattr(candidate_vault.lstat(), "st_file_attributes", 0) & 0x400
-                    ):
-                        raise WorkspaceError("Obsidian vault path cannot be a linked directory", "invalid_request")
-                    if not candidate_vault.exists() or not candidate_vault.is_dir():
-                        raise WorkspaceError("Selected Obsidian vault directory does not exist", "invalid_request")
-                    kb_cfg["root"] = str(candidate_vault.resolve())
-                    obsidian_touched = True
+                    import stat as _stat
+                    from .obsidian_validation import _lexical as _obs_lexical, _metadata as _obs_metadata
 
-            if kb_cfg:
-                data["knowledge_base"] = kb_cfg
-            else:
-                data.pop("knowledge_base", None)
+                    try:
+                        lex_vault = _obs_lexical(trimmed_vault)
+                        vstat = _obs_metadata(lex_vault)
+                    except (ValueError, OSError) as exc:
+                        raise WorkspaceError(
+                            "Obsidian vault path must be an existing non-linked absolute directory",
+                            "invalid_request",
+                        ) from exc
+                    if not _stat.S_ISDIR(vstat.st_mode):
+                        raise WorkspaceError("Selected Obsidian vault directory does not exist", "invalid_request")
+                    data["obsidian_vault_path"] = str(lex_vault.resolve())
+                    obsidian_touched = True
 
             atomic_json(path, data)
             chmod_sensitive(path, mode=0o600)

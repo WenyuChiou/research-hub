@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
+import tempfile
 from typing import Any
 
 from .core import Workspace, WorkspaceError, digest
@@ -179,15 +181,29 @@ class WorkspaceAgentBridge:
         catalog: list[dict[str, Any]] = []
         for rec in sources:
             sid = rec["id"]
-            base = dict(rec.get("data") or {})
-            base.update(curations.get(sid, {}))
+            raw_data = dict(rec.get("data") or {})
+            overlay = curations.get(sid, {})
+            base = {**raw_data, **overlay}
+            if "tags" in overlay:
+                effective_tags = [str(t) for t in (overlay.get("tags") or []) if isinstance(t, str)]
+            else:
+                merged_raw: list[str] = []
+                seen_raw: set[str] = set()
+                for t in list(raw_data.get("tags") or []) + list(raw_data.get("labels") or []):
+                    if not isinstance(t, str):
+                        continue
+                    cleaned = _normalize_tag(t)
+                    if cleaned and cleaned.casefold() not in seen_raw:
+                        seen_raw.add(cleaned.casefold())
+                        merged_raw.append(cleaned)
+                effective_tags = merged_raw
             catalog.append({
                 "id": sid,
                 "title": str(base.get("title") or "Untitled source"),
                 "doi": str(base.get("doi") or ""),
                 "year": str(base.get("year") or ""),
                 "category": str(base.get("category") or ""),
-                "tags": [str(t) for t in (base.get("tags") or []) if isinstance(t, str)],
+                "tags": effective_tags,
                 "archived": bool(base.get("archived", False)),
                 "screening": screenings.get(sid, "unscreened"),
             })
@@ -347,7 +363,11 @@ class WorkspaceAgentBridge:
     def _plan_via_cli(
         self, cli_name: str, project_id: str, message: str, catalog: list[dict[str, Any]]
     ) -> tuple[str, list[dict[str, Any]]]:
-        from research_hub.llm_cli import _extract_first_json, invoke_llm_cli
+        from research_hub.llm_cli import _extract_first_json
+
+        executable = shutil.which(cli_name)
+        if not executable:
+            raise WorkspaceError(f"Requested CLI engine '{cli_name}' is not installed on PATH", "cli_unavailable")
 
         compact_catalog = [
             {
@@ -380,7 +400,25 @@ class WorkspaceAgentBridge:
             f"Current project sources:\n{json.dumps(compact_catalog, ensure_ascii=False)}\n\n"
             f"User request:\n{message}\n"
         )
-        raw = invoke_llm_cli(cli_name, prompt, timeout_sec=60.0)
+        # Read-only isolated execution: run CLI inside a blank temp directory without auto-approve flags.
+        cmd_map = {
+            "claude": [executable, "-p"],
+            "codex": [executable, "exec", "--sandbox", "read-only", "-"],
+            "gemini": [executable, "-p", ""],
+        }
+        cmd = cmd_map[cli_name]
+        with tempfile.TemporaryDirectory(prefix="rh-agent-ro-") as tmpdir:
+            proc = subprocess.run(
+                cmd,
+                input=prompt,
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                timeout=60.0,
+                cwd=tmpdir,
+                check=False,
+            )
+        raw = proc.stdout or ""
         parsed = _extract_first_json(raw)
         if isinstance(parsed, dict) and isinstance(parsed.get("reply"), str):
             validated = self._sanitize_proposed_actions(parsed.get("actions"), catalog)
@@ -408,7 +446,10 @@ class WorkspaceAgentBridge:
                 item["source_id"] = sid
                 item["title"] = catalog_map[sid]["title"]
             if atype in {"add_tags", "remove_tags"}:
-                tags = [_normalize_tag(t) for t in (entry.get("tags") or [])]
+                raw_tags = entry.get("tags")
+                if not isinstance(raw_tags, list):
+                    continue
+                tags = [_normalize_tag(t) for t in raw_tags if isinstance(t, str)]
                 tags = [t for t in tags if t]
                 if not tags:
                     continue
@@ -427,15 +468,46 @@ class WorkspaceAgentBridge:
             if atype == "add_source":
                 title = _clean_text(entry.get("title"), limit=500)
                 locator = _clean_text(entry.get("locator"), limit=1000)
-                if not title or not locator:
+                if not title or not locator.lower().startswith(("http://", "https://")):
                     continue
                 item["title"] = title
                 item["locator"] = locator
             if atype == "sync_zotero":
                 item["dry_run"] = bool(entry.get("dry_run", True))
+                if not item["dry_run"]:
+                    if isinstance(entry.get("expected_library"), str) and entry["expected_library"].strip():
+                        item["expected_library"] = entry["expected_library"].strip()
+                    if isinstance(entry.get("expected_plan_digest"), str) and entry["expected_plan_digest"].strip():
+                        item["expected_plan_digest"] = entry["expected_plan_digest"].strip()
+                    if isinstance(entry.get("expected_revisions"), dict):
+                        item["expected_revisions"] = {
+                            str(k): str(v) for k, v in entry["expected_revisions"].items()
+                            if isinstance(k, str) and isinstance(v, str)
+                        }
             item["summary"] = _clean_text(entry.get("summary"), limit=300) or atype
             clean.append(item)
         return clean
+
+    def _bind_preview_targets(self, project_id: str, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Bind live sync_zotero proposals to read-only dry-run digests before user confirmation."""
+        if self.sync_hooks is None:
+            return actions
+        bound: list[dict[str, Any]] = []
+        for action in actions:
+            entry = dict(action)
+            if entry.get("type") == "sync_zotero" and entry.get("dry_run") is False:
+                try:
+                    preview = self.sync_hooks.sync_zotero(project_id, {"dry_run": True})
+                    if isinstance(preview.get("destination_library"), str) and preview["destination_library"]:
+                        entry["expected_library"] = preview["destination_library"]
+                    if isinstance(preview.get("plan_digest"), str) and preview["plan_digest"]:
+                        entry["expected_plan_digest"] = preview["plan_digest"]
+                    if isinstance(preview.get("source_revisions"), dict):
+                        entry["expected_revisions"] = preview["source_revisions"]
+                except Exception:
+                    pass
+            bound.append(entry)
+        return bound
 
     def chat(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Strictly read-only chat turn: analyzes project catalog and proposes actions."""
@@ -460,7 +532,9 @@ class WorkspaceAgentBridge:
         if engine in {"fast", "auto"}:
             reply, actions, matched = self._plan_fast(project_id, message, catalog)
             if matched:
-                actions = self._sanitize_proposed_actions(actions, catalog)
+                actions = self._bind_preview_targets(
+                    project_id, self._sanitize_proposed_actions(actions, catalog)
+                )
                 plan_digest = digest({"project_id": project_id, "actions": actions})
                 return {
                     "ok": True,
@@ -497,7 +571,9 @@ class WorkspaceAgentBridge:
                 "- 「上傳至 NotebookLM」或「寫入同步 Zotero」"
             )
 
-        actions = self._sanitize_proposed_actions(actions, catalog)
+        actions = self._bind_preview_targets(
+            project_id, self._sanitize_proposed_actions(actions, catalog)
+        )
         plan_digest = digest({"project_id": project_id, "actions": actions})
         return {
             "ok": True,
@@ -529,6 +605,26 @@ class WorkspaceAgentBridge:
             raise WorkspaceError("Action plan expired or modified; re-submit the chat command.", "stale_preview")
 
         catalog_map = {s["id"]: s for s in catalog}
+
+        # Pre-validate the entire batch before mutating any workspace record
+        sim_tags = {sid: list(info.get("tags") or []) for sid, info in catalog_map.items()}
+        for action in sanitized:
+            atype = action["type"]
+            if atype in {"add_tags", "remove_tags"}:
+                sid = action["source_id"]
+                existing = sim_tags.get(sid, [])
+                if atype == "add_tags":
+                    seen = {t.casefold() for t in existing}
+                    merged = existing + [t for t in action["tags"] if t.casefold() not in seen]
+                else:
+                    drop = {t.casefold() for t in action["tags"]}
+                    merged = [t for t in existing if t.casefold() not in drop]
+                if len(merged) > 30:
+                    raise WorkspaceError("tags supports at most 30 entries", "invalid_request")
+                sim_tags[sid] = merged
+            elif atype in {"bundle_notebooklm", "upload_notebooklm", "sync_zotero", "pack_obsidian"} and self.sync_hooks is None:
+                raise WorkspaceError("Sync hooks are unavailable in this server mode", "integrations_unavailable")
+
         results: list[dict[str, Any]] = []
 
         for action in sanitized:
@@ -561,6 +657,7 @@ class WorkspaceAgentBridge:
                     kind="source_curation",
                     data={"source_id": sid, "tags": merged},
                 )
+                catalog_map[sid]["tags"] = merged
                 results.append({"type": atype, "source_id": sid, "tags": merged, "record_id": rec["id"], "ok": True})
             elif atype == "set_category":
                 rec = self.workspace.add_record(
@@ -595,7 +692,15 @@ class WorkspaceAgentBridge:
                 elif atype == "upload_notebooklm":
                     hook_res = self.sync_hooks.upload_notebooklm(project_id, {})
                 elif atype == "sync_zotero":
-                    hook_res = self.sync_hooks.sync_zotero(project_id, {"dry_run": bool(action.get("dry_run", True))})
+                    zot_payload: dict[str, Any] = {"dry_run": bool(action.get("dry_run", True))}
+                    if not zot_payload["dry_run"]:
+                        if action.get("expected_library"):
+                            zot_payload["expected_library"] = action["expected_library"]
+                        if action.get("expected_revisions"):
+                            zot_payload["expected_revisions"] = action["expected_revisions"]
+                        if action.get("expected_plan_digest"):
+                            zot_payload["expected_plan_digest"] = action["expected_plan_digest"]
+                    hook_res = self.sync_hooks.sync_zotero(project_id, zot_payload)
                 else:
                     hook_res = self.sync_hooks.pack_obsidian(project_id, {})
                 results.append({"type": atype, "ok": True, "detail": hook_res})

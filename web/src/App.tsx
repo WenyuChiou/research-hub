@@ -178,7 +178,7 @@ export default function App() {
     const onAgentShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "j") {
         event.preventDefault();
-        setAgentOpen((open) => !open);
+        setAgentOpen((open) => (selectedRef.current ? !open : false));
       }
     };
     window.addEventListener("keydown", onAgentShortcut);
@@ -1263,6 +1263,7 @@ export default function App() {
           setSetupOpenRequest((value) => value + 1);
         }}
         onOpenAgent={() => {
+          if (!projectId) return;
           window.dispatchEvent(new CustomEvent("research-hub:dismiss-overlays"));
           setAgentOpen(true);
         }}
@@ -1273,7 +1274,7 @@ export default function App() {
         locale={locale}
       />
       <AgentChatDrawer
-        open={agentOpen}
+        open={agentOpen && Boolean(projectId)}
         onClose={() => setAgentOpen(false)}
         projectId={projectId}
         projectTitle={activeDetail?.project.title}

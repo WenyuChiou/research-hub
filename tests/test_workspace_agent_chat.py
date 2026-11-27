@@ -173,6 +173,18 @@ def test_agent_console_status_chat_read_only_and_confirm_apply(tmp_path: Path):
         )
         assert inv_code == 200 and inv_chat["requires_confirmation"] is False
         assert "2 篇作用中文獻" in inv_chat["reply"]
+
+        # 6. Non-list tags payload in apply() returns 409 stale_preview (never HTTP 500 TypeError)
+        bad_tags_code, bad_tags_body = _http_call(
+            server,
+            "POST",
+            "/api/v1/projects/agent-proj/integrations/agent/apply",
+            {
+                "proposed_actions": [{"type": "add_tags", "source_id": ids["s1"], "tags": 123, "summary": "bad"}],
+                "expected_plan_digest": "a" * 64,
+            },
+        )
+        assert bad_tags_code == 409 and bad_tags_body["code"] == "stale_preview"
     finally:
         server.shutdown()
         server.server_close()

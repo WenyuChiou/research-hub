@@ -186,3 +186,40 @@ def test_unified_obsidian_vault_serves_read_only_frontmatter_snapshot_without_js
     finally:
         server.shutdown();server.server_close();thread.join(timeout=3)
         assert not thread.is_alive()
+
+
+def test_vault_snapshot_incremental_stops_at_delimiter_and_handles_nested_and_archived(tmp_path):
+    from research_hub.workspace.library_snapshot import read_vault_snapshot
+
+    vault=tmp_path/"vault_nested"
+    (vault/".obsidian").mkdir(parents=True)
+    (vault/".research_hub").mkdir(parents=True)
+    (vault/".research_hub"/"clusters.yaml").write_text(
+        'schema_version: "1.0"\nclusters:\n'
+        '  nested-active:\n    name: "Nested Active"\n    obsidian_subfolder: "LLM-Agents/SubTopic"\n    status: active\n'
+        '  old-archived:\n    name: "Old Archived"\n    status: archived\n',
+        encoding="utf-8",
+    )
+    active_dir=vault/"raw"/"LLM-Agents"/"SubTopic"
+    active_dir.mkdir(parents=True)
+    big_body="SECRET_BODY_TAIL "*2000
+    (active_dir/"paper.md").write_text(
+        '---\ntitle: "Nested Active Paper"\nyear: 2025\n---\n\n'+big_body,
+        encoding="utf-8",
+    )
+    arch_dir=vault/"raw"/"old-archived"
+    arch_dir.mkdir(parents=True)
+    (arch_dir/"stale.md").write_text('---\ntitle: "Should Stay Archived"\n---\nBody\n',encoding="utf-8")
+
+    snap=read_vault_snapshot(vault)
+    assert snap["read_only"] is True and snap["body_read"] is False
+    assert [c["id"] for c in snap["collections"]]==["nested-active"]
+    assert [n["data"]["title"] for n in snap["notes"]]==["Nested Active Paper"]
+
+    # Vault whose clusters are all archived must NOT fall back to scanning raw folders
+    (vault/".research_hub"/"clusters.yaml").write_text(
+        'schema_version: "1.0"\nclusters:\n  old-archived:\n    name: "Old Archived"\n    status: archived\n',
+        encoding="utf-8",
+    )
+    empty_snap=read_vault_snapshot(vault)
+    assert empty_snap["collections"]==[] and empty_snap["notes"]==[]
