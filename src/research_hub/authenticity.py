@@ -823,7 +823,24 @@ def _identifier_key_url_source(paper: dict) -> tuple[str, str, str] | None:
             key_value = value
             url = f"https://openalex.org/{value}"
         return f"openalex:{key_value}", url, "openalex.org"
+    isbn = _clean_isbn(_first_nonempty(paper, ("isbn", "ISBN")))
+    if isbn:
+        return f"isbn:{isbn}", f"https://openlibrary.org/isbn/{isbn}.json", "openlibrary.org"
     return None
+
+
+def _clean_isbn(value: Any) -> str:
+    if isinstance(value, list):
+        value = next((item for item in value if str(item or "").strip()), "")
+    text = str(value or "").strip()
+    if text.lower().startswith("isbn:"):
+        text = text.split(":", 1)[1].strip()
+    cleaned = re.sub(r"[^0-9Xx]", "", text).upper()
+    if len(cleaned) == 10 and cleaned[:9].isdigit() and (cleaned[9].isdigit() or cleaned[9] == "X"):
+        return cleaned
+    if len(cleaned) == 13 and cleaned.isdigit():
+        return cleaned
+    return ""
 
 
 def _has_identifier(paper: dict) -> bool:
@@ -894,7 +911,7 @@ def _metadata_integrity_reason(paper: dict) -> str:
     except (TypeError, ValueError):
         return "invalid year"
     current_year = datetime.now(timezone.utc).year
-    if year < 1900 or year > current_year + 1:
+    if year < 1000 or year > current_year + 1:
         return "year out of range"
 
     venues = [
@@ -951,20 +968,23 @@ def _crossref_verify_corroboration(
 
     cached = cache.get_entry(key)
     if cached is not None:
-        if not bool(cached.get("verified")):
-            return False
         cached_record = cached.get("record")
-        if isinstance(cached_record, dict):
+        has_valid_record = (
+            isinstance(cached_record, dict)
+            and bool(str(cached_record.get("title") or "").strip())
+        )
+        if cached.get("verified") is False and not isinstance(cached_record, dict):
+            return False
+        if has_valid_record:
             crossref_record = {"source": "crossref", **cached_record}
             if not _records_agree([paper_record, crossref_record]):
                 return False
             _append_crossref_corroboration(paper, crossref_record)
             return True
-        # Legacy v1.0 cache entry with verified=True and record=None:
-        # preserve pre-seeded cache tests that expect no HTTP call without
-        # forging metadata from the candidate paper itself.
-        _append_crossref_corroboration(paper, {"source": "crossref"})
-        return True
+        if cached.get("verified") is False:
+            return False
+        # verified=True without a valid record (missing or empty title):
+        # treat as a cache miss and fall through to live Crossref fetch.
 
     try:
         result, crossref_status, response_missing = _crossref_get_paper_with_status(doi)
@@ -976,7 +996,7 @@ def _crossref_verify_corroboration(
         # 200-with-empty-body is a transient CrossRef API anomaly (the
         # response was OK but `message` was empty/missing) -- treat as
         # transient, do NOT cache. Per the F7-style spec: only definitive
-        # outcomes (200+match, 200+mismatch, 404) are cached; every other
+        # outcomes (200+record, 404) are cached; every other
         # status/state retries on next run.
         if response_missing or crossref_status == 200 or (
             crossref_status is not None
@@ -993,15 +1013,15 @@ def _crossref_verify_corroboration(
         "year": result.year,
         "authors": _authors_as_list(result.authors),
     }
+    if not cr_meta["title"].strip():
+        return False
+    cache.put(key, verified=True, record=cr_meta)
+    cache.save(cache_path)
     crossref_record = {"source": "crossref", **cr_meta}
     if not _records_agree([paper_record, crossref_record]):
-        cache.put(key, verified=False, record=cr_meta)
-        cache.save(cache_path)
         return False
 
     _append_crossref_corroboration(paper, crossref_record)
-    cache.put(key, verified=True, record=cr_meta)
-    cache.save(cache_path)
     return True
 
 
@@ -1057,14 +1077,49 @@ def _authors_as_list(value: Any) -> list[Any]:
     return [value]
 
 
+def _is_substantive_record(record: dict) -> bool:
+    if not isinstance(record, dict):
+        return False
+    source = str(record.get("source") or record.get("backend") or "").strip()
+    title = str(record.get("title") or "").strip()
+    return bool(source and title)
+
+
+def _pair_agrees(left: dict, right: dict) -> bool:
+    left_title = str(left.get("title", "") or "").strip()
+    right_title = str(right.get("title", "") or "").strip()
+    if not left_title or not right_title:
+        return False
+    if fuzz.token_set_ratio(left_title, right_title) < 85:
+        return False
+    left_year = _int_or_none(left.get("year"))
+    right_year = _int_or_none(right.get("year"))
+    if left_year is not None and right_year is not None and abs(left_year - right_year) > 1:
+        return False
+    left_surnames = set(_author_surnames(left))
+    right_surnames = set(_author_surnames(right))
+    if left_surnames and right_surnames and not left_surnames.intersection(right_surnames):
+        return False
+    return True
+
+
 def _corroboration_label(paper: dict) -> str:
-    records = [
-        record
-        for record in _backend_records(paper)
-        if str(record.get("source") or record.get("backend") or "").strip()
-    ]
-    if len(records) >= 2:
-        return "corroborated" if _records_agree(records) else "conflict"
+    raw_records = _backend_records(paper)
+    substantive = [record for record in raw_records if _is_substantive_record(record)]
+    all_records = list(substantive)
+    paper_title = str(paper.get("title", "") or "").strip()
+    if paper_title:
+        paper_source = (
+            str(paper.get("source") or paper.get("backend") or "candidate").strip()
+            or "candidate"
+        )
+        all_records.append(_paper_metadata_record(paper, source=paper_source))
+    for i in range(len(all_records)):
+        for j in range(i + 1, len(all_records)):
+            if not _pair_agrees(all_records[i], all_records[j]):
+                return "conflict"
+    if len(substantive) >= 2 and _records_agree(substantive):
+        return "corroborated"
     backends = _backend_names(paper)
     if len(backends) >= 2 or any(name.casefold() == "crossref" for name in backends):
         return "corroborated"
@@ -1084,51 +1139,49 @@ def _backend_names(paper: dict) -> list[str]:
         elif isinstance(value, list):
             names.extend(str(item).strip() for item in value if str(item).strip())
     for record in _backend_records(paper):
+        if not _is_substantive_record(record):
+            continue
         value = record.get("source") or record.get("backend")
         if value:
             names.append(str(value).strip())
     deduped: list[str] = []
     seen: set[str] = set()
     for name in names:
-        token = name.casefold()
+        cleaned = name.strip()
+        if not cleaned or any(ch.isspace() for ch in cleaned):
+            continue
+        token = cleaned.casefold()
         if token in seen:
             continue
         seen.add(token)
-        deduped.append(name)
+        deduped.append(cleaned)
     return deduped
 
 
 def _backend_records(paper: dict) -> list[dict]:
+    records: list[dict] = []
     for key in ("backend_records", "source_records", "corroborating_records"):
         value = paper.get(key)
         if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-    return []
+            records.extend(item for item in value if isinstance(item, dict))
+    return records
 
 
 def _records_agree(records: list[dict]) -> bool:
-    if len(records) < 2:
+    substantive = [record for record in records if _is_substantive_record(record)]
+    if len(substantive) < 2:
         return False
-    first = records[0]
-    first_title = str(first.get("title", "") or "")
-    first_year = _int_or_none(first.get("year"))
-    first_surnames = set(_author_surnames(first))
-    agreeing_sources: set[str] = set()
-    for record in records:
-        source = str(record.get("source") or record.get("backend") or "").strip()
-        if not source:
-            continue
-        title = str(record.get("title", "") or "")
-        if first_title and title and fuzz.token_set_ratio(first_title, title) < 85:
-            continue
-        year = _int_or_none(record.get("year"))
-        if first_year is not None and year is not None and abs(first_year - year) > 1:
-            continue
-        surnames = set(_author_surnames(record))
-        if first_surnames and surnames and not first_surnames.intersection(surnames):
-            continue
-        agreeing_sources.add(source.casefold())
-    return len(agreeing_sources) >= 2
+    sources = {
+        str(record.get("source") or record.get("backend") or "").strip().casefold()
+        for record in substantive
+    }
+    if len(sources) < 2:
+        return False
+    for i in range(len(substantive)):
+        for j in range(i + 1, len(substantive)):
+            if not _pair_agrees(substantive[i], substantive[j]):
+                return False
+    return True
 
 
 def _load_fit_scores(cfg, cluster_slug: str | None) -> dict[str, dict]:

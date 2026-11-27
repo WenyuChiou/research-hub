@@ -104,17 +104,25 @@ def _cache_payload(cfg: SimpleNamespace) -> dict:
     return json.loads((cfg.research_hub_dir / CROSSREF_VERIFY_CACHE).read_text(encoding="utf-8"))
 
 
-def _write_verify_cache(cfg: SimpleNamespace, doi: str, verified: bool) -> None:
+def _write_verify_cache(
+    cfg: SimpleNamespace,
+    doi: str,
+    verified: bool,
+    record: dict | None = None,
+) -> None:
     path = cfg.research_hub_dir / CROSSREF_VERIFY_CACHE
+    entry: dict = {
+        "verified": verified,
+        "checked_at": "2026-05-20T00:00:00Z",
+    }
+    if record is not None:
+        entry["record"] = dict(record)
     path.write_text(
         json.dumps(
             {
                 "schema_version": "1.0",
                 "results": {
-                    f"doi:{auth.normalize_doi(doi)}": {
-                        "verified": verified,
-                        "checked_at": "2026-05-20T00:00:00Z",
-                    }
+                    f"doi:{auth.normalize_doi(doi)}": entry,
                 },
             }
         ),
@@ -159,6 +167,7 @@ def test_crossref_404_keeps_single_source_quarantined_and_caches_false(
     assert quarantined[0]["reason"] == "uncorroborated"
     entry = _cache_payload(cfg)["results"]["doi:10.1007/s11269-025-04093-x"]
     assert entry["verified"] is False
+    assert "record" not in entry
 
 
 def test_crossref_different_paper_does_not_satisfy_l2(
@@ -191,7 +200,8 @@ def test_crossref_different_paper_does_not_satisfy_l2(
     assert "crossref" not in [str(name).casefold() for name in paper.get("backends", [])]
     assert not any(record.get("source") == "crossref" for record in paper.get("source_records", []))
     entry = _cache_payload(cfg)["results"]["doi:10.1007/s11269-025-04093-x"]
-    assert entry["verified"] is False
+    assert entry["verified"] is True
+    assert entry["record"]["title"] == "A Different Article About Bridge Inspection"
 
 
 def test_already_two_backend_paper_does_not_fetch_crossref(
@@ -309,13 +319,22 @@ def test_verified_true_cache_hit_augments_without_fetch(
     cfg = _cfg(tmp_path)
     _ok_head(monkeypatch)
     doi = "10.1007/s11269-025-04093-x"
-    _write_verify_cache(cfg, doi, verified=True)
+    paper = _paper(doi=doi)
+    _write_verify_cache(
+        cfg,
+        doi,
+        verified=True,
+        record={
+            "title": paper["title"],
+            "year": paper["year"],
+            "authors": paper["authors"],
+        },
+    )
 
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("verified cache hit should not fetch CrossRef")
 
     monkeypatch.setattr(auth.CrossrefBackend, "get_paper", fail_if_called)
-    paper = _paper(doi=doi)
 
     accepted, quarantined = verify_authenticity([paper], cfg, cluster_slug="agents")
 
@@ -323,6 +342,75 @@ def test_verified_true_cache_hit_augments_without_fetch(
     assert len(accepted) == 1
     assert "crossref" in paper["backends"]
     assert any(record.get("source") == "crossref" for record in paper["source_records"])
+
+
+def test_recordless_verified_true_cache_refetches_and_blocks_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+    doi = "10.1007/s11269-025-04093-x"
+    _write_verify_cache(cfg, doi, verified=True, record=None)
+
+    fetched = []
+
+    def fake_get(*_args, **_kwargs):
+        fetched.append(True)
+        return _Resp(
+            payload={
+                "message": _work(
+                    title="Completely Unrelated Journal Article",
+                    year=2019,
+                    family="Smith",
+                    given="Alice",
+                )
+            }
+        )
+
+    monkeypatch.setattr("research_hub.search.crossref.requests.get", fake_get)
+    paper = _paper(doi=doi)
+
+    accepted, quarantined = verify_authenticity([paper], cfg, cluster_slug="agents")
+
+    assert fetched == [True]
+    assert accepted == []
+    assert len(quarantined) == 1
+    assert quarantined[0]["reason"] == "uncorroborated"
+    assert "crossref" not in [str(b).casefold() for b in paper.get("backends", [])]
+
+
+def test_mismatch_does_not_poison_valid_subsequent_candidate_on_same_doi(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+    doi = "10.1007/s11269-025-04093-x"
+    _crossref_get(monkeypatch, _Resp(payload={"message": _work(doi=doi)}))
+
+    wrong_candidate = _paper(
+        title="Fabricated Mismatch Paper",
+        doi=doi,
+        year=2015,
+        authors=[{"creatorType": "author", "firstName": "Bob", "lastName": "Jones"}],
+    )
+    accepted1, quarantined1 = verify_authenticity([wrong_candidate], cfg, cluster_slug="agents")
+    assert accepted1 == []
+    assert len(quarantined1) == 1
+    assert quarantined1[0]["reason"] == "uncorroborated"
+
+    # Next candidate with the true paper metadata must succeed from cache without re-fetching.
+    monkeypatch.setattr(
+        auth.CrossrefBackend,
+        "get_paper",
+        lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError("should corroborate from cached record")),
+    )
+    valid_candidate = _paper(doi=doi)
+    accepted2, quarantined2 = verify_authenticity([valid_candidate], cfg, cluster_slug="agents")
+    assert quarantined2 == []
+    assert len(accepted2) == 1
+    assert accepted2[0]["provenance"]["corroboration"] == "corroborated"
 
 
 def test_verified_false_cache_hit_does_not_augment_or_fetch(

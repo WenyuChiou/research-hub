@@ -779,7 +779,9 @@ def _author_surname_set(paper: dict) -> set[str]:
 
     surnames: set[str] = set()
     authors = paper.get("authors") or []
-    if not isinstance(authors, list):
+    if isinstance(authors, str):
+        authors = [part.strip() for part in authors.split(";")] if ";" in authors else [authors]
+    elif not isinstance(authors, list):
         authors = [authors]
     for author in authors:
         raw = ""
@@ -812,73 +814,135 @@ def _normalized_real_doi(doi: object) -> str:
     return ndoi if (ndoi.startswith("10.") and "/" in ndoi) else ""
 
 
+def _norm_locator(value: object) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
 def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
     """Return True iff two in-batch title-matched papers represent the same work."""
-    existing_doi = _normalized_real_doi(existing.get("doi", ""))
-    incoming_doi = _normalized_real_doi(incoming.get("doi", ""))
-    if existing_doi and incoming_doi and existing_doi != incoming_doi:
-        y1 = _parse_year_int(existing.get("year"))
-        y2 = _parse_year_int(incoming.get("year"))
-        if y1 is not None and y2 is not None and abs(y1 - y2) > 2:
-            return False
-        a1 = _author_surname_set(existing)
-        a2 = _author_surname_set(incoming)
-        if a1 and a2 and not (a1 & a2):
-            return False
-        if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
-            return False
-        return True
+    y1 = _parse_year_int(existing.get("year"))
+    y2 = _parse_year_int(incoming.get("year"))
+    if y1 is not None and y2 is not None and abs(y1 - y2) > 2:
+        return False
+    a1 = _author_surname_set(existing)
+    a2 = _author_surname_set(incoming)
+    if a1 and a2 and not (a1 & a2):
+        return False
     if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
         return False
+    for field in ("volume", "edition"):
+        v1 = _norm_locator(existing.get(field))
+        v2 = _norm_locator(incoming.get(field))
+        if v1 and v2 and v1 != v2:
+            return False
     return True
 
 
-def _read_note_identity(note_path: Path) -> tuple[str, str, str]:
-    """Read (normalized_doi, zotero_key, normalized_title) from an existing note."""
+def _read_note_identity(note_path: Path) -> dict[str, Any]:
+    """Read identity fields from an existing note's YAML frontmatter."""
     import yaml
+    from research_hub.paper import _NoTimestampSafeLoader
 
+    empty: dict[str, Any] = {
+        "doi": "",
+        "zotero_key": "",
+        "title": "",
+        "title_norm": "",
+        "year": None,
+        "authors": [],
+        "volume": "",
+        "edition": "",
+    }
     try:
         text = note_path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return "", "", ""
+        return empty
     if not text.startswith("---"):
-        return "", "", ""
+        return empty
     end = text.find("\n---", 3)
     if end < 0:
-        return "", "", ""
+        return empty
     frontmatter = text[3:end]
     try:
-        fm = yaml.safe_load(frontmatter)
+        fm = yaml.load(frontmatter, Loader=_NoTimestampSafeLoader)
     except Exception:
         fm = None
     if not isinstance(fm, dict):
-        return "", "", ""
-    doi = normalize_doi(str(fm.get("doi") or ""))
-    zkey = str(fm.get("zotero-key") or fm.get("zotero_key") or "").strip()
-    title_norm = normalize_title(str(fm.get("title") or ""))
-    return doi, zkey, title_norm
+        return empty
+    title = str(fm.get("title") or "")
+    authors = fm.get("authors")
+    if authors is None:
+        authors = fm.get("author")
+    return {
+        "doi": normalize_doi(str(fm.get("doi") or "")),
+        "zotero_key": str(fm.get("zotero-key") or fm.get("zotero_key") or "").strip(),
+        "title": title,
+        "title_norm": normalize_title(title),
+        "year": fm.get("year"),
+        "authors": authors if authors is not None else [],
+        "volume": str(fm.get("volume") or "").strip(),
+        "edition": str(fm.get("edition") or "").strip(),
+    }
 
 
 def _is_same_work_note(note_path: Path, pp: dict) -> bool:
     """Return True if *note_path* on disk represents the same work as *pp*."""
-    existing_doi, existing_zkey, existing_title_norm = _read_note_identity(note_path)
+    existing = _read_note_identity(note_path)
+    existing_doi = str(existing["doi"] or "")
+    existing_zkey = str(existing["zotero_key"] or "")
+    existing_title_norm = str(existing["title_norm"] or "")
     incoming_doi = normalize_doi(str(pp.get("doi") or ""))
     incoming_zkey = str(pp.get("zotero_key") or "").strip()
     incoming_title_norm = normalize_title(str(pp.get("title") or ""))
 
     if incoming_doi and existing_doi and incoming_doi == existing_doi:
         return True
-    if incoming_zkey and existing_zkey and incoming_zkey == existing_zkey:
-        return True
     conflicting_doi = bool(incoming_doi and existing_doi and incoming_doi != existing_doi)
+    if incoming_zkey and existing_zkey:
+        if incoming_zkey == existing_zkey:
+            return True
+        if not (incoming_doi and existing_doi and incoming_doi == existing_doi):
+            return False
     if (
         not conflicting_doi
         and incoming_title_norm
         and existing_title_norm
         and incoming_title_norm == existing_title_norm
+        and _in_batch_title_match_ok(existing, pp)
     ):
         return True
     return False
+
+
+def _obsidian_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
+    if not hit.obsidian_path:
+        return False
+    note_path = Path(hit.obsidian_path)
+    if not note_path.exists():
+        return False
+    incoming_doi = _normalized_real_doi(pp.get("doi", ""))
+    hit_doi = _normalized_real_doi(hit.doi)
+    if incoming_doi and hit_doi:
+        if incoming_doi == hit_doi:
+            return True
+        return False
+    incoming_zkey = str(pp.get("zotero_key") or "").strip()
+    hit_zkey = str(hit.zotero_key or "").strip()
+    if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
+        return False
+    return _is_same_work_note(note_path, pp)
+
+
+def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
+    incoming_doi = _normalized_real_doi(pp.get("doi", ""))
+    hit_doi = _normalized_real_doi(hit.doi)
+    if incoming_doi and hit_doi and incoming_doi != hit_doi:
+        return False
+    incoming_zkey = str(pp.get("zotero_key") or "").strip()
+    hit_zkey = str(hit.zotero_key or "").strip()
+    if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
+        return False
+    return True
 
 
 def _resolve_vault_note_path(folder: Path, pp: dict) -> Path:
@@ -1393,8 +1457,22 @@ def run_pipeline(
             try:
                 is_duplicate, dedup_hits = dedup.check({"doi": pp["doi"], "title": pp["title"]})
                 if is_duplicate:
-                    obsidian_hit = next((hit for hit in dedup_hits if hit.source == "obsidian"), None)
-                    zotero_hit = next((hit for hit in dedup_hits if hit.source == "zotero"), None)
+                    obsidian_hit = next(
+                        (
+                            hit
+                            for hit in dedup_hits
+                            if hit.source == "obsidian" and _obsidian_hit_matches_paper(hit, pp)
+                        ),
+                        None,
+                    )
+                    zotero_hit = next(
+                        (
+                            hit
+                            for hit in dedup_hits
+                            if hit.source == "zotero" and _zotero_hit_matches_paper(hit, pp)
+                        ),
+                        None,
+                    )
                     # Only treat an obsidian_hit as a true duplicate (skip)
                     # when the note file ACTUALLY EXISTS. A stale dedup-index
                     # entry pointing at a deleted note must NOT cause a skip;

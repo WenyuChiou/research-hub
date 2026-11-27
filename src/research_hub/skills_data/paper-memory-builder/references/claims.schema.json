@@ -35,8 +35,15 @@
         },
         "evidence_artifacts": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1, "pattern": "\\S"},
-          "description": "Paths to figures, data files, logs, or outputs that back the claim. May be absent or empty only when status is 'gap' or 'rejected'. Pointers alone do not verify scientific support."
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "not": {
+              "pattern": "^\\s*(?:[Tt][Oo][Dd][Oo]|[Tt][Bb][Dd]|[Ff][Ii][Xx][Mm][Ee]|[Nn]/?[Aa]|[Nn][Oo][Nn][Ee]|[Nn][Uu][Ll][Ll]|[Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr]|[Mm][Ii][Ss][Ss][Ii][Nn][Gg](?:[-_ :].*)?|\\[[Tt][Oo][Dd][Oo].*\\]|<[^>]+>)\\s*$"
+            }
+          },
+          "description": "Paths to figures, data files, logs, or outputs that back the claim. May be absent or empty only when status is 'gap' or 'rejected'. Placeholder tokens (TODO, TBD, FIXME, N/A, NONE, NULL, PLACEHOLDER, MISSING*, [TODO...], <...>) are rejected. Pointers alone do not verify scientific support."
         },
         "figure_or_table": {
           "type": "array",

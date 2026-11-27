@@ -47,6 +47,8 @@ def _merge_record(base: SearchResult, incoming: SearchResult) -> SearchResult:
         fill["doi"] = incoming.doi
     if not base.arxiv_id and incoming.arxiv_id:
         fill["arxiv_id"] = incoming.arxiv_id
+    if not base.url and incoming.url:
+        fill["url"] = incoming.url
     if not base.pdf_url and incoming.pdf_url:
         fill["pdf_url"] = incoming.pdf_url
     if base.citation_count == 0 and incoming.citation_count > 0:
@@ -72,7 +74,7 @@ def merge_results(per_backend: dict[str, list[SearchResult]]) -> list[SearchResu
             incoming = replace(
                 result,
                 source=result.source or backend_name,
-                found_in=[backend_name],
+                found_in=[backend_name] if backend_name else [],
                 confidence=0.5,
             )
             owners = list(dict.fromkeys(alias_owner[key] for key in keys if key in alias_owner))

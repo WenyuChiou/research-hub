@@ -7,6 +7,7 @@ here rather than copied into competing state machines.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -104,6 +105,52 @@ RECORD_FIELDS = {
     "review": ("comment", "severity"),
 }
 SOURCE_CURATION_FIELDS = frozenset({"source_id", "category", "year", "authors", "venue", "relevance", "summary", "tags", "doi", "archived"})
+
+_SCOPE_RANK: dict[str, int] = {
+    "unknown": 0,
+    "not-read": 0,
+    "unread": 0,
+    "note-metadata": 1,
+    "metadata-only": 1,
+    "metadata": 1,
+    "title-only": 1,
+    "abstract-snippet": 2,
+    "snippet": 2,
+    "abstract-only": 3,
+    "abstract": 3,
+    "selected-sections": 4,
+    "partial-body": 4,
+    "excerpt": 4,
+    "full-text": 5,
+    "fulltext": 5,
+}
+
+
+def _clean_scope_value(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[\r\n\x85\u2028\u2029]+", " ", value).strip()
+
+
+def resolve_reading_scope(data: Mapping[str, object]) -> str:
+    """Resolve canonical reading_scope, failing closed to the narrower level on disagreement."""
+    if not isinstance(data, Mapping):
+        return "unknown"
+    scope = _clean_scope_value(data.get("reading_scope"))
+    level = _clean_scope_value(data.get("reading_level"))
+    if not scope and not level:
+        return "unknown"
+    if scope and not level:
+        return scope
+    if level and not scope:
+        return level
+    if scope == level:
+        return scope
+    scope_rank = _SCOPE_RANK.get(scope.casefold(), 1)
+    level_rank = _SCOPE_RANK.get(level.casefold(), 1)
+    if level_rank < scope_rank:
+        return level
+    return scope
 
 
 def _clean_text_field(value: object, *, name: str, limit: int) -> str:

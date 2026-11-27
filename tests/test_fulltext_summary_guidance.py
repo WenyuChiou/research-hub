@@ -106,7 +106,7 @@ def test_installation_copies_the_full_native_contract(tmp_path, monkeypatch):
 
 def test_plugin_cache_version_changes_but_frozen_abstract_profile_does_not():
     plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-    assert plugin["version"] == "0.5.37"
+    assert plugin["version"] == "0.5.38"
     frozen = MIRROR / "_profiles/abstract-draft-instructions-v1/paper-summarize/SKILL.md"
     assert "abstract" in frozen.read_text(encoding="utf-8").lower()
     assert "## Native per-paper body summary" not in frozen.read_text(encoding="utf-8")
@@ -121,6 +121,8 @@ def test_study_type_summary_track_guidance_present(tree):
         "Empirical Track (7-section contract)",
         "Theoretical / Conceptual / Formal / Historical Track",
         "native-source-summary-v1",
+        "seven-section empirical summary",
+        "five-part theoretical/conceptual/formal/historical summary",
     ))
     _require(guide, (
         "## Study-Type Summary Track",
@@ -132,4 +134,7 @@ def test_study_type_summary_track_guidance_present(tree):
         "Scope Conditions, Assumptions & Conclusions",
         "Counterexamples, Tensions & Legacy",
         "native-source-summary-v1",
+        "seven-section empirical",
+        "five-part",
+        "slot target",
     ))

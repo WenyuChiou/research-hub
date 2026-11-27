@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import copy
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -24,7 +25,7 @@ from urllib.parse import quote, urlsplit
 import uuid
 
 from research_hub.locks import file_lock
-from .core import Workspace, WorkspaceError, atomic_json, digest, safe_path
+from .core import Workspace, WorkspaceError, atomic_json, digest, resolve_reading_scope, safe_path
 from .integrations import LocalIntegrationsManager
 
 _PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -198,43 +199,8 @@ def _collect_tags(data: dict[str, Any]) -> list[str]:
     return out
 
 
-_SCOPE_RANK: dict[str, int] = {
-    "not-read": 0,
-    "note-metadata": 1,
-    "metadata": 1,
-    "abstract-snippet": 2,
-    "abstract-only": 3,
-    "abstract": 3,
-    "selected-sections": 4,
-    "excerpt": 4,
-    "full-text": 5,
-}
-
-
 def _reading_scope(data: dict[str, Any]) -> str:
-    scope = _clean_line(data.get("reading_scope"))
-    level = _clean_line(data.get("reading_level"))
-    scope_known = bool(scope and scope.casefold() != "unknown")
-    level_known = bool(level and level.casefold() != "unknown")
-    if scope_known and level_known:
-        if scope == level:
-            return scope
-        scope_rank = _SCOPE_RANK.get(scope.casefold())
-        level_rank = _SCOPE_RANK.get(level.casefold())
-        if scope_rank is not None and level_rank is not None:
-            if level_rank < scope_rank:
-                return level
-            return scope
-        if scope_rank == _SCOPE_RANK["full-text"]:
-            return level
-        if level_rank == _SCOPE_RANK["full-text"]:
-            return scope
-        return scope
-    if scope_known:
-        return scope
-    if level_known:
-        return level
-    return "unknown"
+    return resolve_reading_scope(data)
 
 
 def _saved_summary(data: dict[str, Any]) -> str:
@@ -767,6 +733,10 @@ class WorkspaceSyncHooks:
                 curated = {**src, "data": dict(src["data"])}
             curated_sources.append(curated)
             curated_by_id[sid] = curated
+            if sid not in screenings:
+                inline_screening = curated["data"].get("screening")
+                if isinstance(inline_screening, str) and inline_screening in {"include", "exclude"}:
+                    screenings[sid] = inline_screening
 
         return project, curated_sources, curated_by_id, screenings
 
@@ -796,6 +766,11 @@ class WorkspaceSyncHooks:
                 if sid not in curated_by_id:
                     raise WorkspaceError(
                         "One or more selected_source_ids do not belong to this project",
+                        "invalid_source",
+                    )
+                if screenings.get(sid) == "exclude":
+                    raise WorkspaceError(
+                        "One or more selected_source_ids have been excluded by screening",
                         "invalid_source",
                     )
                 if sid not in seen_ids:
@@ -1920,12 +1895,17 @@ class WorkspaceSyncHooks:
         from .library_snapshot import read_vault_snapshot
         from .service import call_workspace
 
-        snapshot = read_vault_snapshot(scope_path)
+        snapshot = read_vault_snapshot(
+            scope_path,
+            collection_id=collection_id,
+            note_ids=requested_note_ids,
+        )
         if snapshot.get("ok") is False:
             raise WorkspaceError(
                 _clean_line(snapshot.get("error")) or "Obsidian vault snapshot is unavailable",
                 _clean_line(snapshot.get("code")) or "library_snapshot_unavailable",
             )
+        truncated = bool(snapshot.get("truncated"))
 
         raw_notes = snapshot.get("notes") or []
         candidate_notes = [
@@ -1953,123 +1933,137 @@ class WorkspaceSyncHooks:
         else:
             selected_notes = candidate_notes
 
-        _, existing_sources, _, _ = self._load_curated_sources(project_id)
-        seen_dois: set[str] = set()
-        seen_zkeys: set[str] = set()
-        seen_paths: set[str] = set()
-        seen_title_years: set[tuple[str, str]] = set()
+        batch_id = f"obsidian-vault:{hashlib.sha256(str(scope_path).encode('utf-8')).hexdigest()[:16]}"
 
-        for existing in existing_sources:
-            edata = existing.get("data") if isinstance(existing.get("data"), dict) else {}
-            existing_doi = normalize_doi(_clean_bare_doi(edata.get("doi")))
-            if existing_doi:
-                seen_dois.add(existing_doi)
-            existing_zkey = _clean_line(edata.get("zotero_key") or edata.get("zotero-key"))
-            if existing_zkey:
-                seen_zkeys.add(existing_zkey.casefold())
-            existing_path = _clean_line(edata.get("origin_note_path") or edata.get("note_path"))
-            if existing_path:
-                seen_paths.add(existing_path)
-            existing_title = _clean_line(edata.get("title")).casefold()
-            existing_year = _clean_line(edata.get("year"))
-            if existing_title:
-                seen_title_years.add((existing_title, existing_year))
+        with self._export_lock(f"obsidian-import:{project_id}", f".obsidian-import-{project_id}"):
+            _, existing_sources, _, _ = self._load_curated_sources(project_id)
+            seen_dois: set[str] = set()
+            seen_zkeys: set[str] = set()
+            seen_paths: set[str] = set()
+            seen_title_year_records: dict[tuple[str, str], list[tuple[str, str]]] = {}
 
-        batch_id = f"obsidian-import:{uuid.uuid4().hex[:12]}"
-        batch_items: list[dict[str, Any]] = []
-        preview_items: list[dict[str, Any]] = []
-        skipped_existing = 0
+            for existing in existing_sources:
+                edata = existing.get("data") if isinstance(existing.get("data"), dict) else {}
+                existing_doi = normalize_doi(_clean_bare_doi(edata.get("doi")))
+                if existing_doi:
+                    seen_dois.add(existing_doi)
+                existing_zkey = _clean_line(edata.get("zotero_key") or edata.get("zotero-key"))
+                norm_existing_zkey = existing_zkey.casefold() if existing_zkey else ""
+                if norm_existing_zkey:
+                    seen_zkeys.add(norm_existing_zkey)
+                existing_path = _clean_line(edata.get("origin_note_path") or edata.get("note_path"))
+                if existing_path:
+                    seen_paths.add(existing_path)
+                existing_title = _clean_line(edata.get("title")).casefold()
+                existing_year = _clean_line(edata.get("year"))
+                if existing_title:
+                    seen_title_year_records.setdefault((existing_title, existing_year), []).append(
+                        (existing_doi, norm_existing_zkey)
+                    )
 
-        for note in selected_notes:
-            ndata = note["data"]
-            note_id = _clean_line(note.get("id"))
-            note_path = _clean_line(ndata.get("note_path"))
-            title = _clean_line(ndata.get("title")) or (Path(note_path).stem if note_path else note_id)
-            doi = _clean_bare_doi(ndata.get("doi"))
-            norm_doi = normalize_doi(doi) if doi else ""
-            zotero_key = _clean_line(ndata.get("zotero_key"))
-            norm_zkey = zotero_key.casefold() if zotero_key else ""
-            year = _clean_line(ndata.get("year"))
-            title_year = (title.casefold(), year) if title else None
+            batch_items: list[dict[str, Any]] = []
+            preview_items: list[dict[str, Any]] = []
+            skipped_existing = 0
 
-            is_duplicate = bool(
-                (norm_doi and norm_doi in seen_dois)
-                or (norm_zkey and norm_zkey in seen_zkeys)
-                or (note_path and note_path in seen_paths)
-                or (title_year is not None and title_year in seen_title_years)
-            )
-            if is_duplicate:
-                skipped_existing += 1
+            for note in selected_notes:
+                ndata = note["data"]
+                note_id = _clean_line(note.get("id"))
+                note_path = _clean_line(ndata.get("note_path"))
+                title = _clean_line(ndata.get("title")) or (Path(note_path).stem if note_path else note_id)
+                doi = _clean_bare_doi(ndata.get("doi"))
+                norm_doi = normalize_doi(doi) if doi else ""
+                zotero_key = _clean_line(ndata.get("zotero_key"))
+                norm_zkey = zotero_key.casefold() if zotero_key else ""
+                year = _clean_line(ndata.get("year"))
+                title_year = (title.casefold(), year) if title else None
+
+                title_year_match = False
+                if title_year is not None and title_year in seen_title_year_records:
+                    for ex_doi, ex_zkey in seen_title_year_records[title_year]:
+                        doi_conflict = bool(norm_doi and ex_doi and norm_doi != ex_doi)
+                        zkey_conflict = bool(norm_zkey and ex_zkey and norm_zkey != ex_zkey)
+                        if not doi_conflict and not zkey_conflict:
+                            title_year_match = True
+                            break
+
+                is_duplicate = bool(
+                    (norm_doi and norm_doi in seen_dois)
+                    or (norm_zkey and norm_zkey in seen_zkeys)
+                    or (note_path and note_path in seen_paths)
+                    or title_year_match
+                )
+                if is_duplicate:
+                    skipped_existing += 1
+                    preview_items.append({
+                        "note_id": note_id,
+                        "note_path": note_path,
+                        "title": title,
+                        "doi": doi,
+                        "zotero_key": zotero_key,
+                        "action": "skip_existing",
+                    })
+                    continue
+
+                if norm_doi:
+                    seen_dois.add(norm_doi)
+                if norm_zkey:
+                    seen_zkeys.add(norm_zkey)
+                if note_path:
+                    seen_paths.add(note_path)
+                if title_year is not None:
+                    seen_title_year_records.setdefault(title_year, []).append((norm_doi, norm_zkey))
+
+                locator = (
+                    _safe_http_url(ndata.get("locator"))
+                    or (f"https://doi.org/{norm_doi}" if norm_doi else f"obsidian:{note_path or note_id}")
+                )
+                abstract = str(ndata.get("abstract") or "").strip()[:12000]
+                authors = _collect_authors(ndata.get("authors"))
+                category = _clean_line(ndata.get("category"))
+                tags = _collect_tags(ndata)
+
+                source_item: dict[str, Any] = {
+                    "batch_id": batch_id,
+                    "id": note_id,
+                    "upstream_id": note_id,
+                    "title": title,
+                    "locator": locator,
+                    "doi": doi,
+                    "year": year,
+                    "authors": authors,
+                    "abstract": abstract,
+                    "category": category,
+                    "tags": tags,
+                    "zotero_key": zotero_key,
+                    "origin_note_path": note_path,
+                    "reading_scope": "note-metadata",
+                    "reading_level": "note-metadata",
+                    "identity_status": "unverified",
+                    "human_acceptance": "pending",
+                }
+                batch_items.append(source_item)
                 preview_items.append({
                     "note_id": note_id,
                     "note_path": note_path,
                     "title": title,
                     "doi": doi,
                     "zotero_key": zotero_key,
-                    "action": "skip_existing",
+                    "action": "import",
                 })
-                continue
 
-            if norm_doi:
-                seen_dois.add(norm_doi)
-            if norm_zkey:
-                seen_zkeys.add(norm_zkey)
-            if note_path:
-                seen_paths.add(note_path)
-            if title_year is not None:
-                seen_title_years.add(title_year)
+            if dry_run:
+                return {
+                    "ok": True,
+                    "dry_run": True,
+                    "would_import": len(batch_items),
+                    "skipped_existing": skipped_existing,
+                    "truncated": truncated,
+                    "items": preview_items,
+                }
 
-            locator = (
-                _safe_http_url(ndata.get("locator"))
-                or (f"https://doi.org/{norm_doi}" if norm_doi else f"obsidian:{note_path or note_id}")
-            )
-            abstract = str(ndata.get("abstract") or "").strip()[:12000]
-            authors = _collect_authors(ndata.get("authors"))
-            category = _clean_line(ndata.get("category"))
-            tags = _collect_tags(ndata)
-
-            source_item: dict[str, Any] = {
-                "batch_id": batch_id,
-                "id": note_id,
-                "upstream_id": note_id,
-                "title": title,
-                "locator": locator,
-                "doi": doi,
-                "year": year,
-                "authors": authors,
-                "abstract": abstract,
-                "category": category,
-                "tags": tags,
-                "zotero_key": zotero_key,
-                "origin_note_path": note_path,
-                "reading_scope": "note-metadata",
-                "reading_level": "note-metadata",
-                "identity_status": "unverified",
-                "human_acceptance": "pending",
-            }
-            batch_items.append(source_item)
-            preview_items.append({
-                "note_id": note_id,
-                "note_path": note_path,
-                "title": title,
-                "doi": doi,
-                "zotero_key": zotero_key,
-                "action": "import",
-            })
-
-        if dry_run:
-            return {
-                "ok": True,
-                "dry_run": True,
-                "would_import": len(batch_items),
-                "skipped_existing": skipped_existing,
-                "items": preview_items,
-            }
-
-        created_ids: list[str] = []
-        imported_count = 0
-        if batch_items:
-            with self._export_lock(f"obsidian-import:{project_id}", f".obsidian-import-{project_id}"):
+            created_ids: list[str] = []
+            imported_count = 0
+            if batch_items:
                 batch_res = call_workspace(
                     self.workspace.root,
                     "project",
@@ -2080,25 +2074,26 @@ class WorkspaceSyncHooks:
                         "data": batch_items,
                     },
                 )
-            if not batch_res.get("ok"):
-                raise WorkspaceError(
-                    _clean_line(batch_res.get("error")) or "Obsidian note import failed",
-                    _clean_line(batch_res.get("code")) or "invalid_request",
-                )
-            batch_info = batch_res.get("batch") or {}
-            created_records = batch_info.get("records") or []
-            created_ids = [
-                _clean_line(rec.get("id"))
-                for rec in created_records
-                if isinstance(rec, dict) and _clean_line(rec.get("id"))
-            ]
-            counts = batch_info.get("counts") or {}
-            imported_count = int(counts.get("created", len(created_ids)))
+                if not batch_res.get("ok"):
+                    raise WorkspaceError(
+                        _clean_line(batch_res.get("error")) or "Obsidian note import failed",
+                        _clean_line(batch_res.get("code")) or "invalid_request",
+                    )
+                batch_info = batch_res.get("batch") or {}
+                created_records = batch_info.get("records") or []
+                created_ids = [
+                    _clean_line(rec.get("id"))
+                    for rec in created_records
+                    if isinstance(rec, dict) and _clean_line(rec.get("id"))
+                ]
+                counts = batch_info.get("counts") or {}
+                imported_count = int(counts.get("created", len(created_ids)))
 
         return {
             "ok": True,
             "dry_run": False,
             "imported_count": imported_count,
             "skipped_existing": skipped_existing,
+            "truncated": truncated,
             "created_ids": created_ids,
         }

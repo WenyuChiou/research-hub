@@ -246,10 +246,11 @@ def apply_variations(
 ) -> list[dict]:
     """Run search for each variation, merge by DOI, add _discover_meta."""
     from research_hub.search import search_papers
-    from research_hub.search._rank import merge_results
+    from research_hub.search._rank import _identity_keys, merge_results
 
     normalized_variations = _coerce_variations(variations)
-    per_variation = {}
+    per_backend_buckets: dict[str, list] = {}
+    matched_variations_by_key: dict[str, list[str]] = {}
     base_confidence_by_key: dict[str, float] = {}
     per_backend_limit = max(
         limit * per_backend_factor,
@@ -269,23 +270,47 @@ def apply_variations(
             rank_by=rank_by,
             per_backend_limit=per_backend_limit,
         )
-        per_variation[variation.query] = results
         for result in results:
-            key = result.dedup_key
-            if key not in base_confidence_by_key:
-                base_confidence_by_key[key] = float(result.confidence)
+            keys = _identity_keys(result) or ([result.dedup_key] if result.dedup_key else [])
+            for key in keys:
+                _append_unique(matched_variations_by_key.setdefault(key, []), variation.query)
+                if key not in base_confidence_by_key:
+                    base_confidence_by_key[key] = float(result.confidence)
+                else:
+                    base_confidence_by_key[key] = max(
+                        base_confidence_by_key[key], float(result.confidence)
+                    )
+            actual_backends = [
+                backend.strip()
+                for backend in (result.found_in or [])
+                if isinstance(backend, str) and backend.strip()
+            ]
+            if not actual_backends and isinstance(result.source, str) and result.source.strip():
+                actual_backends = [result.source.strip()]
+            if actual_backends:
+                for backend_name in actual_backends:
+                    per_backend_buckets.setdefault(backend_name, []).append(result)
             else:
-                base_confidence_by_key[key] = max(base_confidence_by_key[key], float(result.confidence))
+                per_backend_buckets.setdefault("", []).append(result)
 
-    merged = merge_results(per_variation)
+    merged = merge_results(per_backend_buckets)
     out: list[dict] = []
     for result in merged:
-        matched = list(result.found_in)
+        keys = _identity_keys(result) or ([result.dedup_key] if result.dedup_key else [])
+        matched: list[str] = []
+        base_conf = float(result.confidence)
+        if keys:
+            base_conf = max(
+                (base_confidence_by_key.get(k, float(result.confidence)) for k in keys),
+                default=float(result.confidence),
+            )
+            for key in keys:
+                for q in matched_variations_by_key.get(key, ()):
+                    _append_unique(matched, q)
         entry = _search_result_to_candidate(result)
         entry["confidence"] = min(
             1.0,
-            base_confidence_by_key.get(result.dedup_key, float(result.confidence))
-            + 0.1 * max(0, len(matched) - 1),
+            base_conf + 0.1 * max(0, len(matched) - 1),
         )
         entry["_discover_meta"] = {
             "matched_variations": matched,
@@ -527,8 +552,28 @@ def _ensure_discover_meta(candidate: dict) -> dict:
     return meta
 
 
+def _collect_candidate_backends(row: dict) -> list[str]:
+    tokens: list[str] = []
+    for key in ("found_in", "backends"):
+        val = row.get(key)
+        if isinstance(val, str):
+            val = [val]
+        if isinstance(val, list):
+            for item in val:
+                s = str(item or "").strip()
+                if s and not any(ch.isspace() for ch in s):
+                    _append_unique(tokens, s)
+    src = row.get("source")
+    if isinstance(src, str):
+        s = src.strip()
+        if s and not any(ch.isspace() for ch in s):
+            _append_unique(tokens, s)
+    return tokens
+
+
 def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
     """Deduplicate candidate dicts by DOI/arXiv/title."""
+    import copy
     from research_hub.search.base import SearchResult, is_web_search_excerpt
 
     merged: dict[str, dict] = {}
@@ -559,6 +604,9 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
         meta = _ensure_discover_meta(candidate)
         if key not in merged:
             entry = dict(candidate)
+            for list_field in ("found_in", "backends", "source_records", "backend_records"):
+                if isinstance(entry.get(list_field), list):
+                    entry[list_field] = copy.deepcopy(entry[list_field])
             entry["_discover_meta"] = {
                 "matched_variations": list(meta["matched_variations"]),
                 "source_tags": list(meta["source_tags"]),
@@ -584,6 +632,8 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
             base["doi"] = candidate.get("doi")
         if not base.get("arxiv_id") and candidate.get("arxiv_id"):
             base["arxiv_id"] = candidate.get("arxiv_id")
+        if not base.get("url") and candidate.get("url"):
+            base["url"] = candidate.get("url")
         if not base.get("pdf_url") and candidate.get("pdf_url"):
             base["pdf_url"] = candidate.get("pdf_url")
         if not base.get("venue") and candidate.get("venue"):
@@ -596,6 +646,21 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
             float(base.get("confidence", 0.5) or 0.5),
             float(candidate.get("confidence", 0.5) or 0.5),
         )
+        backend_union: list[str] = []
+        for token in _collect_candidate_backends(base) + _collect_candidate_backends(candidate):
+            _append_unique(backend_union, token)
+        if backend_union:
+            base["found_in"] = list(backend_union)
+            base["backends"] = list(backend_union)
+        for rec_field in ("source_records", "backend_records"):
+            base_recs = base.get(rec_field)
+            inc_recs = candidate.get(rec_field)
+            if isinstance(base_recs, list) or isinstance(inc_recs, list):
+                combined_recs = copy.deepcopy(base_recs) if isinstance(base_recs, list) else []
+                for rec in (inc_recs if isinstance(inc_recs, list) else ()):
+                    if rec not in combined_recs:
+                        combined_recs.append(copy.deepcopy(rec))
+                base[rec_field] = combined_recs
         merged_meta = _ensure_discover_meta(base)
         for variation in meta["matched_variations"]:
             _append_unique(merged_meta["matched_variations"], variation)
@@ -896,19 +961,33 @@ def discover_continue(
         cfg=cfg,
     )
 
-    accepted_keys = {
-        ((item.doi or "").strip().lower(), (item.title or "").strip().lower())
-        for item in report.accepted
-    }
-    accepted_candidates = [
-        candidate
-        for candidate in candidates
-        if (
-            (candidate.get("doi") or "").strip().lower(),
-            (candidate.get("title") or "").strip().lower(),
-        )
-        in accepted_keys
-    ]
+    if not report.accepted:
+        accepted_candidates = []
+    elif all(getattr(item, "index", None) is not None for item in report.accepted):
+        accepted_indices = {
+            item.index - 1
+            for item in report.accepted
+            if 1 <= item.index <= len(candidates)
+        }
+        accepted_candidates = [
+            candidate
+            for idx, candidate in enumerate(candidates)
+            if idx in accepted_indices
+        ]
+    else:
+        accepted_keys = {
+            ((item.doi or "").strip().lower(), (item.title or "").strip().lower())
+            for item in report.accepted
+        }
+        accepted_candidates = [
+            candidate
+            for candidate in candidates
+            if (
+                (candidate.get("doi") or "").strip().lower(),
+                (candidate.get("title") or "").strip().lower(),
+            )
+            in accepted_keys
+        ]
     pdfs_dir = getattr(cfg, "root", None)
     pdfs_dir = (Path(pdfs_dir) / "pdfs") if pdfs_dir is not None else None
     papers_input = _to_papers_input(
@@ -951,15 +1030,29 @@ def discover_clean(cfg, cluster_slug: str) -> bool:
     return True
 
 
-def _authors_to_creators(authors: list[str] | str) -> list[dict]:
-    """Convert a name list or comma-separated string into Zotero creator dicts."""
+def _split_author_names(authors: list[str] | str | None) -> list[str]:
     if isinstance(authors, str):
-        names = [author.strip() for author in authors.split(",") if author.strip()]
-    else:
-        names = [author for author in (authors or []) if author]
+        sep = ";" if ";" in authors else ","
+        return [author.strip() for author in authors.split(sep) if author.strip()]
+    return [str(author).strip() for author in (authors or []) if str(author or "").strip()]
+
+
+def _authors_to_creators(authors: list[str] | str) -> list[dict]:
+    """Convert a name list or semicolon/comma-separated string into Zotero creator dicts."""
+    names = _split_author_names(authors)
 
     creators: list[dict] = []
     for name in names:
+        if "," in name:
+            last, first = name.split(",", 1)
+            creators.append(
+                {
+                    "creatorType": "author",
+                    "firstName": first.strip(),
+                    "lastName": last.strip() or "Unknown",
+                }
+            )
+            continue
         parts = name.split()
         if len(parts) >= 2:
             creators.append(
@@ -1009,13 +1102,17 @@ def _to_papers_input(
     papers: list[dict] = []
     for candidate in candidates:
         authors_raw = candidate.get("authors") or []
-        names = (
-            [author.strip() for author in authors_raw.split(",") if author.strip()]
-            if isinstance(authors_raw, str)
-            else [author for author in authors_raw if author]
-        )
+        names = _split_author_names(authors_raw)
         title = candidate.get("title") or ""
-        first_author = names[0].split()[-1].lower() if names else "unknown"
+        if names:
+            first_name = names[0]
+            first_author = (
+                first_name.split(",", 1)[0].split()[-1]
+                if "," in first_name
+                else first_name.split()[-1]
+            ).lower()
+        else:
+            first_author = "unknown"
         # v0.84.0: use canonical make_paper_slug (matches safe_filename) instead
         # of divergent slugify(title)[:60] format that caused broken wikilinks.
         from research_hub.zotero.fetch import make_paper_slug
@@ -1131,11 +1228,13 @@ def _to_papers_input(
             "item_type",
             "publication_types",
             "url",
+            "pdf_url",
             "pmid",
             "openalex_id",
             "isbn",
             "provenance",
             "source_records",
+            "backend_records",
         ):
             extra_value = candidate.get(extra_field)
             if extra_value not in (None, "", [], {}):
