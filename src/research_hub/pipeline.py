@@ -837,6 +837,73 @@ def _norm_locator(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def _norm_author_words(text: str) -> tuple[str, ...]:
+    folded = _fold_latin_diacritics(text)
+    return tuple(
+        token
+        for part in re.split(r"[\W_]+", folded.casefold())
+        if (token := part.strip())
+    )
+
+
+def _author_word_records(paper: dict) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    records: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    authors = paper.get("authors") or []
+    if isinstance(authors, str):
+        authors = [part.strip() for part in authors.split(";")] if ";" in authors else [authors]
+    elif not isinstance(authors, list):
+        authors = [authors]
+    for author in authors:
+        if isinstance(author, dict):
+            last = str(author.get("lastName") or author.get("family") or "").strip()
+            first = str(author.get("firstName") or author.get("given") or "").strip()
+            if last:
+                sw = _norm_author_words(last)
+                fw = _norm_author_words(f"{first} {last}".strip()) if first else sw
+                if sw:
+                    records.append((sw, fw))
+                continue
+            name = str(author.get("name") or author.get("literal") or "").strip()
+        elif isinstance(author, str):
+            name = author.strip()
+        else:
+            continue
+        if not name:
+            continue
+        if "," in name:
+            last_part, first_part = name.split(",", 1)
+            sw = _norm_author_words(last_part)
+            fw = _norm_author_words(f"{first_part} {last_part}".strip()) if first_part.strip() else sw
+            if sw:
+                records.append((sw, fw))
+        else:
+            segmented = _extract_segmented_surname(name)
+            if segmented:
+                sw = _norm_author_words(segmented)
+                fw = _norm_author_words(name)
+                if sw:
+                    records.append((sw, fw))
+    return records
+
+
+def _authors_compatible(existing: dict, incoming: dict) -> bool:
+    a1 = _author_surname_set(existing)
+    a2 = _author_surname_set(incoming)
+    if not a1 or not a2:
+        return True
+    if a1 & a2:
+        return True
+    rec1 = _author_word_records(existing)
+    rec2 = _author_word_records(incoming)
+    for sw1, fw1 in rec1:
+        for sw2, fw2 in rec2:
+            if len(sw1) >= 2 and len(fw2) >= len(sw1) and fw2[-len(sw1):] == sw1:
+                return True
+            if len(sw2) >= 2 and len(fw1) >= len(sw2) and fw1[-len(sw2):] == sw2:
+                return True
+    return False
+
+
 def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
     """Return True iff two in-batch title-matched papers represent the same work."""
     z1 = str(existing.get("zotero_key") or existing.get("zotero-key") or "").strip()
@@ -847,9 +914,7 @@ def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
     y2 = _parse_year_int(incoming.get("year"))
     if y1 is not None and y2 is not None and abs(y1 - y2) > 2:
         return False
-    a1 = _author_surname_set(existing)
-    a2 = _author_surname_set(incoming)
-    if a1 and a2 and not (a1 & a2):
+    if not _authors_compatible(existing, incoming):
         return False
     if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
         return False
@@ -1016,12 +1081,30 @@ def _zotero_item_matches_paper(data: dict, pp: dict) -> bool:
     return _zotero_hit_matches_paper(hit, pp)
 
 
+def _zotero_item_has_identity_fields(item: dict) -> bool:
+    ident = _extract_zotero_item_identity(item)
+    return bool(
+        ident["doi"]
+        or ident["title"]
+        or ident["year"] is not None
+        or ident["authors"]
+        or ident["volume"]
+        or ident["edition"]
+    )
+
+
 def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> str:
-    if not _zotero_hit_matches_paper(hit, pp):
+    incoming_doi = _normalized_real_doi(pp.get("doi", ""))
+    hit_doi = _normalized_real_doi(hit.doi)
+    if incoming_doi and hit_doi and incoming_doi != hit_doi:
         return "mismatch"
-    if not no_zotero and zot is not None and hit.zotero_key and callable(getattr(zot, "item", None)):
+    incoming_zkey = str(pp.get("zotero_key") or pp.get("zotero-key") or "").strip()
+    hit_zkey = str(hit.zotero_key or "").strip()
+    if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
+        return "mismatch"
+    if not no_zotero and zot is not None and hit_zkey and callable(getattr(zot, "item", None)):
         try:
-            item = zot.item(hit.zotero_key)
+            item = zot.item(hit_zkey)
         except Exception as exc:
             if getattr(exc, "status_code", None) == 404:
                 return "mismatch"
@@ -1031,9 +1114,9 @@ def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool)
             return "unknown"
         if not isinstance(item, dict) or not item:
             return "unknown"
-        if not _zotero_item_matches_paper(item, pp):
-            return "mismatch"
-    return "verified"
+        if _zotero_item_has_identity_fields(item):
+            return "verified" if _zotero_item_matches_paper(item, pp) else "mismatch"
+    return "verified" if _zotero_hit_matches_paper(hit, pp) else "mismatch"
 
 
 def _zotero_index_hit_verified(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> bool:

@@ -407,6 +407,80 @@ def test_v135_zotero_hit_and_item_match_enforce_edition_year_and_cjk_surnames() 
         )
         is True
     )
+    assert (
+        pipeline._zotero_item_matches_paper(
+            {
+                "key": "ZK_COMPOUND",
+                "DOI": "10.1234/waals",
+                "title": "On the Continuity of Gaseous and Liquid States",
+                "date": "1873",
+                "creators": [{"lastName": "van der Waals", "firstName": "Johannes Diderik"}],
+            },
+            {
+                "doi": "10.1234/waals",
+                "title": "On the Continuity of Gaseous and Liquid States",
+                "year": 1873,
+                "authors": ["Johannes Diderik van der Waals"],
+            },
+        )
+        is True
+    )
+    assert (
+        pipeline._zotero_item_matches_paper(
+            {
+                "key": "ZK_COMPOUND_DIFF",
+                "DOI": "10.1234/waals",
+                "title": "On the Continuity of Gaseous and Liquid States",
+                "date": "1873",
+                "creators": [{"lastName": "van der Waals", "firstName": "Johannes Diderik"}],
+            },
+            {
+                "doi": "10.1234/waals",
+                "title": "On the Continuity of Gaseous and Liquid States",
+                "year": 1873,
+                "authors": ["Bob Waals"],
+            },
+        )
+        is False
+    )
+
+    # Stale cached DedupHit (e.g. cached edition='1st') must check live zot.item()
+    # when available, reusing the key if Zotero was corrected to '2nd'.
+    stale_ed1_hit = DedupHit(
+        source="zotero",
+        doi="10.1234/waals",
+        title="On the Continuity of Gaseous and Liquid States",
+        zotero_key="ZK_CORRECTED",
+        year=1873,
+        edition="1st",
+    )
+
+    class _CorrectedLiveZot:
+        def item(self, key: str) -> dict:
+            return {
+                "key": key,
+                "data": {
+                    "DOI": "10.1234/waals",
+                    "title": "On the Continuity of Gaseous and Liquid States",
+                    "date": "1873",
+                    "edition": "2nd",
+                },
+            }
+
+    assert (
+        pipeline._zotero_index_hit_status(
+            stale_ed1_hit,
+            {
+                "doi": "10.1234/waals",
+                "title": "On the Continuity of Gaseous and Liquid States",
+                "year": 1873,
+                "edition": "2nd",
+            },
+            _CorrectedLiveZot(),
+            False,
+        )
+        == "verified"
+    )
 
 
 def test_v135_zotero_index_hit_verified_fails_closed_and_skips_when_obsidian_matches(
