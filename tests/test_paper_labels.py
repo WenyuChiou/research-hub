@@ -251,7 +251,7 @@ def test_apply_fit_check_to_labels_tags_deprecated(tmp_path):
     from research_hub.paper import apply_fit_check_to_labels, read_labels
 
     cfg = _cfg(tmp_path)
-    _write_note(cfg, "agents", "paper", _base_frontmatter("paper") + 'doi: "10.1/a"')
+    _write_note(cfg, "agents", "paper", _base_frontmatter("paper").replace("10.1/test", "10.1/a"))
     target = cfg.hub / "agents"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".fit_check_rejected.json").write_text(
@@ -272,7 +272,12 @@ def test_apply_fit_check_to_labels_skips_already_deprecated(tmp_path):
     from research_hub.paper import apply_fit_check_to_labels
 
     cfg = _cfg(tmp_path)
-    _write_note(cfg, "agents", "paper", _base_frontmatter("paper") + 'doi: "10.1/a"\nlabels: [deprecated]')
+    _write_note(
+        cfg,
+        "agents",
+        "paper",
+        _base_frontmatter("paper").replace("10.1/test", "10.1/a") + "labels: [deprecated]",
+    )
     target = cfg.hub / "agents"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".fit_check_rejected.json").write_text(

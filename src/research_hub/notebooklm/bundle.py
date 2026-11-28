@@ -170,17 +170,17 @@ def _matches_token_boundary(text: str, token: str) -> bool:
     return pattern.search(text) is not None
 
 
-def _match_pdf_for_note_with_source(
+def _match_pdf_for_note_with_tie(
     pdfs_dir: Path,
     note_path: Path | None,
     doi: str,
     *,
     pdf_index: list[Path] | None = None,
-) -> tuple[Path | None, str]:
-    """Match a PDF for a note and return (path, source_tag)."""
+) -> tuple[Path | None, str, bool]:
+    """Match a PDF for a note and return (path, source_tag, had_ambiguous_tie)."""
     normalized = _normalize_doi(doi) if doi else ""
     if not pdfs_dir.exists() or (not normalized and note_path is None):
-        return None, ""
+        return None, "", False
 
     pdfs_root = pdfs_dir.resolve()
 
@@ -200,24 +200,24 @@ def _match_pdf_for_note_with_source(
         variant_lowers = {v.lower() for v in variants}
         stem_matches = [c for c in safe_candidates if c.stem.lower() in variant_lowers]
         if len(stem_matches) == 1:
-            return stem_matches[0], "local-doi"
+            return stem_matches[0], "local-doi", False
         if len(stem_matches) >= 2:
-            return None, ""
+            return None, "", True
         boundary_matches = [
             c for c in safe_candidates if any(_matches_token_boundary(c.stem, v) for v in variants)
         ]
         if len(boundary_matches) == 1:
-            return boundary_matches[0], "local-doi"
+            return boundary_matches[0], "local-doi", False
         if len(boundary_matches) >= 2:
-            return None, ""
+            return None, "", True
 
     if note_path is not None and note_path.stem:
         stem_lower = note_path.stem.lower()
         note_stem_matches = [c for c in safe_candidates if c.stem.lower() == stem_lower]
         if len(note_stem_matches) == 1:
-            return note_stem_matches[0], "local-slug"
+            return note_stem_matches[0], "local-slug", False
         if len(note_stem_matches) >= 2:
-            return None, ""
+            return None, "", True
 
     if normalized and "/" in normalized:
         tail = normalized.rsplit("/", 1)[-1]
@@ -228,11 +228,25 @@ def _match_pdf_for_note_with_source(
                 if _matches_token_boundary(candidate.stem, tail)
             ]
             if len(tail_matches) == 1:
-                return tail_matches[0], "local-doi"
+                return tail_matches[0], "local-doi", False
             if len(tail_matches) >= 2:
-                return None, ""
+                return None, "", True
 
-    return None, ""
+    return None, "", False
+
+
+def _match_pdf_for_note_with_source(
+    pdfs_dir: Path,
+    note_path: Path | None,
+    doi: str,
+    *,
+    pdf_index: list[Path] | None = None,
+) -> tuple[Path | None, str]:
+    """Match a PDF for a note and return (path, source_tag)."""
+    matched, source, _ = _match_pdf_for_note_with_tie(
+        pdfs_dir, note_path, doi, pdf_index=pdf_index
+    )
+    return matched, source
 
 
 def _match_pdf_for_note(
@@ -287,6 +301,38 @@ def _extract_first_author_surname(authors_str: str) -> str:
     return parts[-1] if parts else ""
 
 
+def _find_pdf_by_author_year_with_tie(
+    pdfs_dir: Path,
+    authors: str,
+    year: str,
+    *,
+    pdf_index: list[Path] | None = None,
+) -> tuple[Path | None, bool]:
+    """Match a PDF by Author_Year naming convention and report ambiguous ties."""
+    if not pdfs_dir.exists():
+        return None, False
+    surname = _extract_first_author_surname(authors)
+    if not surname or len(surname) < 2:
+        return None, False
+    pdfs_root = pdfs_dir.resolve()
+    escaped = re.escape(surname.lower())
+    pattern = re.compile(rf"^{escaped}(?:[_\-\s\d]|$)", re.IGNORECASE)
+    year_str = str(year).strip() if year else ""
+    candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
+    matches = [
+        candidate
+        for candidate in candidates
+        if _is_within_pdfs_root(candidate, pdfs_root)
+        and pattern.match(candidate.stem)
+        and (not year_str or year_str in candidate.stem)
+    ]
+    if len(matches) == 1:
+        return matches[0], False
+    if len(matches) >= 2:
+        return None, True
+    return None, False
+
+
 def _find_pdf_by_author_year(
     pdfs_dir: Path,
     authors: str,
@@ -303,26 +349,10 @@ def _find_pdf_by_author_year(
 
     v0.88.11: same memoize pattern as `_find_pdf_for_doi`.
     """
-    if not pdfs_dir.exists():
-        return None
-    surname = _extract_first_author_surname(authors)
-    if not surname or len(surname) < 2:
-        return None
-    pdfs_root = pdfs_dir.resolve()
-    escaped = re.escape(surname.lower())
-    pattern = re.compile(rf"^{escaped}(?:[_\-\s\d]|$)", re.IGNORECASE)
-    year_str = str(year).strip() if year else ""
-    candidates = pdf_index if pdf_index is not None else sorted(pdfs_dir.rglob("*.pdf"))
-    matches = [
-        candidate
-        for candidate in candidates
-        if _is_within_pdfs_root(candidate, pdfs_root)
-        and pattern.match(candidate.stem)
-        and (not year_str or year_str in candidate.stem)
-    ]
-    if len(matches) == 1:
-        return matches[0]
-    return None
+    matched, _ = _find_pdf_by_author_year_with_tie(
+        pdfs_dir, authors, year, pdf_index=pdf_index
+    )
+    return matched
 
 
 def _resolve_local_pdf(
@@ -331,32 +361,34 @@ def _resolve_local_pdf(
     meta: dict[str, str],
     doi: str,
     pdf_index: list[Path],
-) -> tuple[Path | None, str]:
+) -> tuple[Path | None, str, bool]:
     pdf: Path | None = None
     pdf_source = ""
+    had_ambiguous_tie = False
     if _find_pdf_for_doi is _DEFAULT_FIND_PDF_FOR_DOI and _match_pdf_for_note is _DEFAULT_MATCH_PDF_FOR_NOTE:
-        pdf, pdf_source = _match_pdf_for_note_with_source(
+        pdf, pdf_source, had_ambiguous_tie = _match_pdf_for_note_with_tie(
             pdfs_dir, note_path, doi, pdf_index=pdf_index
         )
     else:
         pdf = _find_pdf_for_doi(pdfs_dir, doi, note_path=note_path, pdf_index=pdf_index)
         if pdf is not None:
             pdf_source = "local-doi" if doi else "local-slug"
-    if pdf is None:
-        pdf = _find_pdf_by_author_year(
+    if pdf is None and not had_ambiguous_tie:
+        pdf, ay_tie = _find_pdf_by_author_year_with_tie(
             pdfs_dir, meta.get("authors", ""), meta.get("year", ""),
             pdf_index=pdf_index,
         )
+        if ay_tie:
+            had_ambiguous_tie = True
         if pdf is not None:
             normalized_doi = _normalize_doi(doi) if doi else ""
             if normalized_doi and _has_conflicting_doi(pdf.stem, normalized_doi):
                 pdf = None
             else:
                 pdf_source = "local-slug"
-    if pdf is not None and pdfs_dir.exists():
-        if not _is_within_pdfs_root(pdf, pdfs_dir.resolve()):
-            return None, ""
-    return pdf, pdf_source
+    if pdf is not None and not _is_within_pdfs_root(pdf, pdfs_dir.resolve()):
+        return None, "", had_ambiguous_tie
+    return pdf, pdf_source, had_ambiguous_tie
 
 
 def _copy_file_no_clobber(src: Path, dst: Path) -> None:
@@ -438,7 +470,7 @@ def bundle_cluster(
             action="skip",
         )
 
-        pdf, resolved_source = _resolve_local_pdf(
+        pdf, resolved_source, had_ambiguous_tie = _resolve_local_pdf(
             pdfs_dir, note_path, meta, entry.doi, pdf_index
         )
         if pdf is not None:
@@ -451,9 +483,15 @@ def bundle_cluster(
             fetch_result = fetch_paper_pdf(entry.doi, note_path.stem, pdfs_dir, cfg=cfg)
             if fetch_result.ok:
                 if (
-                    (pdfs_dir.exists() or fetch_result.source in {"local-doi", "local-slug"})
-                    and not _is_within_pdfs_root(fetch_result.path, pdfs_dir.resolve())
+                    had_ambiguous_tie
+                    and fetch_result.source in {"local-doi", "local-slug"}
                 ):
+                    logger.warning(
+                        "Refusing local-cache PDF after ambiguous tie for %s: %s",
+                        note_path.name,
+                        fetch_result.path,
+                    )
+                elif not _is_within_pdfs_root(fetch_result.path, pdfs_dir.resolve()):
                     logger.warning("Refusing out-of-root fetched PDF path for %s: %s", note_path.name, fetch_result.path)
                 else:
                     pdf = fetch_result.path
@@ -493,16 +531,14 @@ def bundle_cluster(
             # page but no local PDF was found in the initial scan.  If a PDF
             # is already present (pdf is not None) it is handled below.
             if quality_result.quality == "likely_error_page" and pdf is None:
-                pdf_retry, retry_source = _resolve_local_pdf(
+                pdf_retry, retry_source, _ = _resolve_local_pdf(
                     pdfs_dir, note_path, meta, entry.doi, pdf_index
                 )
                 if pdf_retry is not None:
                     pdf = pdf_retry
                     entry.pdf_source = entry.pdf_source or retry_source
 
-        if pdf is not None and (
-            pdfs_dir.exists() or entry.pdf_source in {"local-doi", "local-slug"}
-        ) and not _is_within_pdfs_root(pdf, pdfs_dir.resolve()):
+        if pdf is not None and not _is_within_pdfs_root(pdf, pdfs_dir.resolve()):
             logger.warning("Refusing out-of-root PDF path for %s: %s", note_path.name, pdf)
             pdf = None
             entry.pdf_source = ""

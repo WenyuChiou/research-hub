@@ -74,9 +74,9 @@ def test_cli_input_bom_inbatch_and_incremental_replay(handoff_env, tmp_path, cap
     second["doi"] = "10.1000/native-preprint"
     second["source_records"] = [{"source_id": "S2", "url": "https://example.test/preprint", "locator": "<section>"}]
     # This alias was seen on the collapsed candidate, so it must not create
-    # another item when its title has changed.
+    # another item when its title has a compatible subtitle/preprint variation.
     third = copy.deepcopy(second)
-    third["title"] = "Alternate Title For The Same Native Evidence"
+    third["title"] = "Synthetic Native Research Evidence: Preprint"
     third["source_records"] = [{"source_id": "S3", "url": "https://example.test/mirror"}]
     path.write_text(json.dumps({"papers": [first, second, third]}), encoding="utf-8-sig")
     args = ["ingest", "--input", str(path), "--cluster", "native-review", "--query", 'native, "evidence"', "--no-verify", "--json"]
@@ -397,7 +397,7 @@ def test_duplicate_replay_preserves_primary_cluster_links(
         path = cfg.raw / cluster / f"{slug}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            f'---\ntitle: "Synthetic Evidence {slug}"\n'
+            f'---\ntitle: "{paper["title"] if slug == "paper-p" else f"Synthetic Evidence {slug}"}"\n'
             f'topic_cluster: "{cluster}"\n'
             'tags: [evidence]\nstatus: cited\nverified: true\n'
             f'doi: "{paper["doi"] if slug == "paper-p" else "10.1000/" + slug}"\n'

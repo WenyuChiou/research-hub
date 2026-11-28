@@ -21,6 +21,7 @@ import re
 import tempfile
 import threading
 from typing import Any
+import unicodedata
 from urllib.parse import quote, urlsplit
 import uuid
 
@@ -127,6 +128,22 @@ def _collect_authors(value: object) -> list[str]:
                 if joined:
                     out.append(joined)
     return out
+
+
+def _author_surnames(value: object) -> set[str]:
+    surnames: set[str] = set()
+    items = _collect_authors(value)
+    if not items and isinstance(value, list):
+        for entry in value:
+            if isinstance(entry, dict) and entry.get("lastName"):
+                items.append(str(entry["lastName"]))
+    for author in items:
+        raw = author.split(",", 1)[0] if "," in author else (author.split()[-1] if author.split() else "")
+        cleaned = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
+        token = re.sub(r"[^a-z0-9]+", "", cleaned.lower())
+        if token:
+            surnames.add(token)
+    return surnames
 
 
 def _zotero_creators(value: object) -> list[dict[str, str]]:
@@ -1895,6 +1912,7 @@ class WorkspaceSyncHooks:
                 "obsidian_not_configured",
             )
 
+        from research_hub.dedup import normalize_title
         from research_hub.utils.doi import normalize_doi
         from .library_snapshot import read_vault_snapshot
         from .service import call_workspace
@@ -1956,38 +1974,55 @@ class WorkspaceSyncHooks:
 
         batch_id = f"obsidian-vault:{hashlib.sha256(str(scope_path).encode('utf-8')).hexdigest()[:16]}"
 
+        def _norm_title_token(value: object) -> str:
+            cleaned = _clean_line(value)
+            if not cleaned:
+                return ""
+            folded = "".join(
+                ch
+                for ch in unicodedata.normalize("NFKD", cleaned)
+                if unicodedata.category(ch) != "Mn"
+            )
+            token = re.sub(r"[\W_]+", " ", folded.casefold()).strip()
+            return token or cleaned.casefold()
+
         with self._export_lock(f"obsidian-import:{project_id}", f".obsidian-import-{project_id}"):
             _, existing_sources, _, _ = self._load_curated_sources(project_id)
-            seen_dois: set[str] = set()
-            seen_zkeys: set[str] = set()
-            seen_path_records: dict[str, list[tuple[str, str, str]]] = {}
-            seen_title_year_records: dict[tuple[str, str], list[tuple[str, str]]] = {}
+            seen_dois: dict[str, list[dict[str, Any]]] = {}
+            seen_zkeys: dict[str, list[dict[str, Any]]] = {}
+            seen_path_records: dict[str, list[dict[str, Any]]] = {}
+            seen_title_year_records: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
             for existing in existing_sources:
                 edata = existing.get("data") if isinstance(existing.get("data"), dict) else {}
                 existing_doi = normalize_doi(_clean_bare_doi(edata.get("doi")))
-                if existing_doi:
-                    seen_dois.add(existing_doi)
                 existing_zkey = _clean_line(edata.get("zotero_key") or edata.get("zotero-key"))
                 norm_existing_zkey = existing_zkey.casefold() if existing_zkey else ""
-                if norm_existing_zkey:
-                    seen_zkeys.add(norm_existing_zkey)
                 existing_path = _clean_line(edata.get("origin_note_path") or edata.get("note_path"))
                 existing_vault_id = _clean_line(edata.get("origin_vault_id"))
                 if not existing_vault_id:
                     raw_batch = _clean_line(edata.get("batch_id"))
                     if raw_batch.startswith("obsidian-vault:"):
                         existing_vault_id = raw_batch
-                existing_title = _clean_line(edata.get("title")).casefold()
-                if existing_path:
-                    seen_path_records.setdefault(existing_path, []).append(
-                        (existing_vault_id, existing_doi, existing_title)
-                    )
+                existing_title = _norm_title_token(edata.get("title"))
                 existing_year = _clean_line(edata.get("year"))
-                if existing_title:
-                    seen_title_year_records.setdefault((existing_title, existing_year), []).append(
-                        (existing_doi, norm_existing_zkey)
-                    )
+                existing_authors = _author_surnames(edata.get("authors"))
+                rec = {
+                    "vault_id": existing_vault_id,
+                    "doi": existing_doi,
+                    "zkey": norm_existing_zkey,
+                    "title": existing_title,
+                    "year": existing_year,
+                    "authors": existing_authors,
+                }
+                if existing_doi:
+                    seen_dois.setdefault(existing_doi, []).append(rec)
+                if norm_existing_zkey:
+                    seen_zkeys.setdefault(norm_existing_zkey, []).append(rec)
+                if existing_path:
+                    seen_path_records.setdefault(existing_path, []).append(rec)
+                if existing_title and existing_year:
+                    seen_title_year_records.setdefault((existing_title, existing_year), []).append(rec)
 
             batch_items: list[dict[str, Any]] = []
             preview_items: list[dict[str, Any]] = []
@@ -2003,33 +2038,84 @@ class WorkspaceSyncHooks:
                 zotero_key = _clean_line(ndata.get("zotero_key"))
                 norm_zkey = zotero_key.casefold() if zotero_key else ""
                 year = _clean_line(ndata.get("year"))
-                norm_title = title.casefold() if title else ""
-                title_year = (norm_title, year) if title else None
+                norm_title = _norm_title_token(title)
+                authors = _collect_authors(ndata.get("authors"))
+                inc_authors = _author_surnames(authors)
+                title_year = (norm_title, year) if (norm_title and year) else None
+
+                doi_match = False
+                if norm_doi and norm_doi in seen_dois:
+                    for ex in seen_dois[norm_doi]:
+                        title_conflict = bool(norm_title and ex["title"] and norm_title != ex["title"])
+                        zkey_conflict = bool(norm_zkey and ex["zkey"] and norm_zkey != ex["zkey"])
+                        if not title_conflict and not zkey_conflict:
+                            doi_match = True
+                            break
+
+                zkey_match = False
+                if norm_zkey and norm_zkey in seen_zkeys:
+                    for ex in seen_zkeys[norm_zkey]:
+                        doi_conflict = bool(norm_doi and ex["doi"] and norm_doi != ex["doi"])
+                        title_conflict = bool(norm_title and ex["title"] and norm_title != ex["title"])
+                        year_conflict = bool(year and ex["year"] and year != ex["year"])
+                        author_conflict = bool(
+                            inc_authors and ex["authors"] and not (inc_authors & ex["authors"])
+                        )
+                        if ex["vault_id"] and ex["vault_id"] == batch_id:
+                            if not doi_conflict and not title_conflict:
+                                zkey_match = True
+                                break
+                        elif (
+                            not doi_conflict
+                            and not title_conflict
+                            and not year_conflict
+                            and not author_conflict
+                        ):
+                            zkey_match = True
+                            break
 
                 title_year_match = False
                 if title_year is not None and title_year in seen_title_year_records:
-                    for ex_doi, ex_zkey in seen_title_year_records[title_year]:
-                        doi_conflict = bool(norm_doi and ex_doi and norm_doi != ex_doi)
-                        zkey_conflict = bool(norm_zkey and ex_zkey and norm_zkey != ex_zkey)
-                        if not doi_conflict and not zkey_conflict:
+                    for ex in seen_title_year_records[title_year]:
+                        doi_conflict = bool(norm_doi and ex["doi"] and norm_doi != ex["doi"])
+                        zkey_conflict = bool(norm_zkey and ex["zkey"] and norm_zkey != ex["zkey"])
+                        author_conflict = bool(
+                            inc_authors and ex["authors"] and not (inc_authors & ex["authors"])
+                        )
+                        if not doi_conflict and not zkey_conflict and not author_conflict:
                             title_year_match = True
                             break
 
                 path_match = False
                 if note_path and note_path in seen_path_records:
-                    for ex_vault_id, ex_doi, ex_title in seen_path_records[note_path]:
-                        if ex_vault_id and ex_vault_id == batch_id:
-                            path_match = True
-                            break
-                        doi_conflict = bool(norm_doi and ex_doi and norm_doi != ex_doi)
-                        title_conflict = bool(norm_title and ex_title and norm_title != ex_title)
-                        if not doi_conflict and not title_conflict:
+                    for ex in seen_path_records[note_path]:
+                        ex_vault_id = ex["vault_id"]
+                        if ex_vault_id and ex_vault_id != batch_id:
+                            continue
+                        doi_conflict = bool(norm_doi and ex["doi"] and norm_doi != ex["doi"])
+                        zkey_conflict = bool(norm_zkey and ex["zkey"] and norm_zkey != ex["zkey"])
+                        title_conflict = bool(norm_title and ex["title"] and norm_title != ex["title"])
+                        year_conflict = bool(year and ex["year"] and year != ex["year"])
+                        author_conflict = bool(
+                            inc_authors and ex["authors"] and not (inc_authors & ex["authors"])
+                        )
+                        if ex_vault_id == batch_id:
+                            if not doi_conflict and not zkey_conflict and not title_conflict:
+                                path_match = True
+                                break
+                        elif (
+                            not doi_conflict
+                            and not zkey_conflict
+                            and not title_conflict
+                            and not year_conflict
+                            and not author_conflict
+                        ):
                             path_match = True
                             break
 
                 is_duplicate = bool(
-                    (norm_doi and norm_doi in seen_dois)
-                    or (norm_zkey and norm_zkey in seen_zkeys)
+                    doi_match
+                    or zkey_match
                     or path_match
                     or title_year_match
                 )
@@ -2045,23 +2131,28 @@ class WorkspaceSyncHooks:
                     })
                     continue
 
+                inc_rec = {
+                    "vault_id": batch_id,
+                    "doi": norm_doi,
+                    "zkey": norm_zkey,
+                    "title": norm_title,
+                    "year": year,
+                    "authors": inc_authors,
+                }
                 if norm_doi:
-                    seen_dois.add(norm_doi)
+                    seen_dois.setdefault(norm_doi, []).append(inc_rec)
                 if norm_zkey:
-                    seen_zkeys.add(norm_zkey)
+                    seen_zkeys.setdefault(norm_zkey, []).append(inc_rec)
                 if note_path:
-                    seen_path_records.setdefault(note_path, []).append(
-                        (batch_id, norm_doi, norm_title)
-                    )
+                    seen_path_records.setdefault(note_path, []).append(inc_rec)
                 if title_year is not None:
-                    seen_title_year_records.setdefault(title_year, []).append((norm_doi, norm_zkey))
+                    seen_title_year_records.setdefault(title_year, []).append(inc_rec)
 
                 locator = (
                     _safe_http_url(ndata.get("locator"))
                     or (f"https://doi.org/{norm_doi}" if norm_doi else f"obsidian:{note_path or note_id}")
                 )
                 abstract = str(ndata.get("abstract") or "").strip()[:12000]
-                authors = _collect_authors(ndata.get("authors"))
                 category = _clean_line(ndata.get("category"))
                 tags = _collect_tags(ndata)
 

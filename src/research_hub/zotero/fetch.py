@@ -36,7 +36,12 @@ def safe_filename(author, year, title):
 
 
 def _yaml_scalar(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', "'")
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
 
 def get_all_items(base, collection_key):
@@ -117,6 +122,10 @@ def extract_item_data(item):
         'authors': authors,
         'year': year,
         'journal': journal,
+        'volume': data.get('volume', ''),
+        'issue': data.get('issue', ''),
+        'pages': data.get('pages', ''),
+        'edition': data.get('edition', ''),
         'doi': doi,
         'url': url_str,
         'abstract': abstract,
@@ -353,9 +362,9 @@ display_title: "{display_title_val}"
 authors: "{author_str}"
 year: {year if year else 'null'}
 journal: "{journal}"
-volume: "{volume}"
-issue: "{issue}"
-pages: "{pages}"
+volume: "{_yaml_scalar(str(volume))}"
+issue: "{_yaml_scalar(str(issue))}"
+pages: "{_yaml_scalar(str(pages))}"
 {edition_line}{doi_line}
 zotero-key: {key}
 collections: {collections_yaml}

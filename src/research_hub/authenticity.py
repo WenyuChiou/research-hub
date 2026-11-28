@@ -1262,13 +1262,48 @@ def _load_fit_scores(cfg, cluster_slug: str | None) -> dict[str, dict]:
             entry = dict(item)
             entry.setdefault("kept", kept_default)
             for key in _fit_match_keys(entry):
+                if key.startswith("title:"):
+                    existing = scores.get(key)
+                    if existing is not None:
+                        if existing.get("_ambiguous"):
+                            continue
+                        ex_doi = normalize_doi(str(existing.get("doi", "") or ""))
+                        en_doi = normalize_doi(str(entry.get("doi", "") or ""))
+                        ex_idx = _fit_entry_index(existing)
+                        en_idx = _fit_entry_index(entry)
+                        if (
+                            ex_doi != en_doi
+                            or ex_idx != en_idx
+                            or bool(existing.get("kept")) != bool(entry.get("kept"))
+                        ):
+                            scores[key] = {"_ambiguous": True}
+                            continue
                 if key in scores and scores[key].get("kept") and not entry.get("kept"):
                     continue
                 scores[key] = entry
     return scores
 
 
+def _fit_entry_index(paper: dict) -> int | None:
+    raw_index = paper.get("fit_index")
+    if raw_index in (None, ""):
+        raw_index = paper.get("index")
+    if isinstance(raw_index, int) and not isinstance(raw_index, bool) and raw_index >= 1:
+        return raw_index
+    if isinstance(raw_index, str) and raw_index.strip().isascii() and raw_index.strip().isdigit():
+        idx_val = int(raw_index.strip())
+        if idx_val >= 1:
+            return idx_val
+    return None
+
+
 def _fit_entry_matches_paper(paper: dict, entry: dict) -> bool:
+    if not entry or entry.get("_ambiguous"):
+        return False
+    p_idx = _fit_entry_index(paper)
+    e_idx = _fit_entry_index(entry)
+    if p_idx is not None and e_idx is not None and p_idx != e_idx:
+        return False
     p_doi = normalize_doi(str(paper.get("doi", "") or ""))
     e_doi = normalize_doi(str(entry.get("doi", "") or ""))
     if p_doi and e_doi and p_doi != e_doi:
@@ -1284,7 +1319,7 @@ def _fit_status_for_paper(paper: dict, fit_scores: dict[str, dict], threshold: i
     score_entry = None
     for key in _fit_match_keys(paper):
         candidate = fit_scores.get(key)
-        if candidate and (not key.startswith("index:") or _fit_entry_matches_paper(paper, candidate)):
+        if candidate and _fit_entry_matches_paper(paper, candidate):
             score_entry = candidate
             break
     if score_entry is None:
@@ -1300,15 +1335,9 @@ def _fit_status_for_paper(paper: dict, fit_scores: dict[str, dict], threshold: i
 
 def _fit_match_keys(paper: dict) -> list[str]:
     keys: list[str] = []
-    raw_index = paper.get("fit_index")
-    if raw_index in (None, ""):
-        raw_index = paper.get("index")
-    if isinstance(raw_index, int) and not isinstance(raw_index, bool) and raw_index >= 1:
-        keys.append(f"index:{raw_index}")
-    elif isinstance(raw_index, str) and raw_index.strip().isascii() and raw_index.strip().isdigit():
-        idx_val = int(raw_index.strip())
-        if idx_val >= 1:
-            keys.append(f"index:{idx_val}")
+    idx_val = _fit_entry_index(paper)
+    if idx_val is not None:
+        keys.append(f"index:{idx_val}")
     doi = normalize_doi(str(paper.get("doi", "") or ""))
     title = normalize_title(str(paper.get("title", "") or ""))
     if doi:
