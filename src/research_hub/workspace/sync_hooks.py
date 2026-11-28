@@ -155,25 +155,42 @@ _CJK_SCRIPT_RE = re.compile(
 )
 
 
+def _extract_segmented_surname(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if "," in cleaned:
+        return cleaned.split(",", 1)[0].strip()
+    parts = cleaned.split()
+    if len(parts) > 1:
+        return parts[-1]
+    if len(cleaned) >= 2 and _CJK_SCRIPT_RE.search(cleaned):
+        return ""
+    return cleaned
+
+
 def _author_surnames(value: object) -> set[str]:
     surnames: set[str] = set()
-    items = _collect_authors(value)
-    if not items and isinstance(value, list):
-        for entry in value:
-            if isinstance(entry, dict) and entry.get("lastName"):
-                items.append(str(entry["lastName"]))
-    for author in items:
-        cleaned = author.strip()
-        if "," in cleaned:
-            raw = cleaned.split(",", 1)[0]
-        else:
-            parts = cleaned.split()
-            if len(parts) > 1:
-                raw = parts[-1]
-            elif len(cleaned) >= 2 and _CJK_SCRIPT_RE.search(cleaned):
-                raw = ""
+    entries: list[object]
+    if isinstance(value, str):
+        cleaned = _clean_line(value)
+        entries = [cleaned] if cleaned else []
+    elif isinstance(value, list):
+        entries = value
+    else:
+        entries = []
+    for entry in entries:
+        raw = ""
+        if isinstance(entry, str):
+            raw = _extract_segmented_surname(_clean_line(entry))
+        elif isinstance(entry, dict):
+            explicit = _clean_line(entry.get("family") or entry.get("lastName"))
+            if explicit:
+                raw = explicit
             else:
-                raw = cleaned
+                direct = _clean_line(entry.get("name") or entry.get("literal"))
+                if direct:
+                    raw = _extract_segmented_surname(direct)
         folded = _fold_latin_diacritics(raw)
         token = re.sub(r"[\W_]+", "", folded.casefold())
         if token:

@@ -805,9 +805,9 @@ def _author_surname_set(paper: dict) -> set[str]:
     for author in authors:
         raw = ""
         if isinstance(author, dict):
-            raw = str(author.get("lastName") or "")
-            if not raw and author.get("name"):
-                raw = _extract_segmented_surname(str(author.get("name") or ""))
+            raw = str(author.get("lastName") or author.get("family") or "").strip()
+            if not raw and (author.get("name") or author.get("literal")):
+                raw = _extract_segmented_surname(str(author.get("name") or author.get("literal") or ""))
         elif isinstance(author, str):
             raw = _extract_segmented_surname(author)
         folded = _fold_latin_diacritics(raw)
@@ -1016,19 +1016,28 @@ def _zotero_item_matches_paper(data: dict, pp: dict) -> bool:
     return _zotero_hit_matches_paper(hit, pp)
 
 
-def _zotero_index_hit_verified(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> bool:
+def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> str:
     if not _zotero_hit_matches_paper(hit, pp):
-        return False
+        return "mismatch"
     if not no_zotero and zot is not None and hit.zotero_key and callable(getattr(zot, "item", None)):
         try:
             item = zot.item(hit.zotero_key)
-        except Exception:
-            return False
+        except Exception as exc:
+            if getattr(exc, "status_code", None) == 404:
+                return "mismatch"
+            msg = str(exc).lower()
+            if "404" in msg or "not found" in msg:
+                return "mismatch"
+            return "unknown"
         if not isinstance(item, dict) or not item:
-            return False
+            return "unknown"
         if not _zotero_item_matches_paper(item, pp):
-            return False
-    return True
+            return "mismatch"
+    return "verified"
+
+
+def _zotero_index_hit_verified(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> bool:
+    return _zotero_index_hit_status(hit, pp, zot, no_zotero) == "verified"
 
 
 def _resolve_vault_note_path(folder: Path, pp: dict) -> Path:
@@ -1610,15 +1619,43 @@ def run_pipeline(
                             }
                         )
                         continue
-                    zotero_hit = next(
-                        (
-                            hit
-                            for hit in dedup_hits
-                            if hit.source == "zotero"
-                            and _zotero_index_hit_verified(hit, pp, zot, no_zotero)
-                        ),
-                        None,
-                    )
+                    zotero_hit = None
+                    unknown_zotero_hit = None
+                    for hit in dedup_hits:
+                        if hit.source != "zotero":
+                            continue
+                        hit_status = _zotero_index_hit_status(hit, pp, zot, no_zotero)
+                        if hit_status == "verified":
+                            zotero_hit = hit
+                            break
+                        if hit_status == "unknown" and unknown_zotero_hit is None:
+                            unknown_zotero_hit = hit
+                    if zotero_hit is None and unknown_zotero_hit is not None:
+                        p(
+                            f"  DEFERRED Zotero reuse verification failed for key={unknown_zotero_hit.zotero_key}"
+                        )
+                        zr.append(
+                            {
+                                "title": pp["title"],
+                                "status": "DEFERRED_VERIFICATION",
+                                "key": "",
+                            }
+                        )
+                        manifest.append(
+                            new_entry(
+                                cluster=cluster_slug or "",
+                                query=query_text,
+                                action="error",
+                                doi=pp["doi"],
+                                title=pp["title"],
+                                zotero_key=unknown_zotero_hit.zotero_key or "",
+                                batch_label=resolved_batch_label,
+                            )
+                        )
+                        errors.append(
+                            f"{pp['title']}: deferred because cached Zotero item {unknown_zotero_hit.zotero_key} could not be verified"
+                        )
+                        continue
                     if zotero_hit and no_zotero:
                         # no_zotero mode: zot is None, so the Zotero-item
                         # reuse ops below would fail. Still ingest the

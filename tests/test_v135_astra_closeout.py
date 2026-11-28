@@ -421,16 +421,88 @@ def test_v135_zotero_index_hit_verified_fails_closed_and_skips_when_obsidian_mat
     )
     paper = {"doi": "10.1234/legacy", "title": "Legacy Paper", "year": 2024}
 
-    class _ErrorZot:
+    class _Error404Zot:
         def item(self, _key: str) -> dict:
             raise RuntimeError("404 not found")
+
+    class _TransientErrorZot:
+        def __init__(self) -> None:
+            self.created: list[dict] = []
+
+        def item(self, _key: str) -> dict:
+            raise TimeoutError("temporary network failure")
+
+        def items(self, *args, **kwargs):
+            return []
+
+        def collection_items(self, *args, **kwargs):
+            return []
+
+        def item_template(self, item_type: str) -> dict:
+            return {"itemType": item_type}
+
+        def create_items(self, items: list[dict]) -> dict:
+            self.created.extend(items)
+            return {"successful": {str(i): {"key": f"ZDUP{i}"} for i in range(len(items))}}
 
     class _EmptyZot:
         def item(self, _key: str) -> dict:
             return {}
 
-    assert pipeline._zotero_index_hit_verified(hit, paper, _ErrorZot(), False) is False
+    assert pipeline._zotero_index_hit_status(hit, paper, _Error404Zot(), False) == "mismatch"
+    assert pipeline._zotero_index_hit_status(hit, paper, _TransientErrorZot(), False) == "unknown"
+    assert pipeline._zotero_index_hit_status(hit, paper, _EmptyZot(), False) == "unknown"
+    assert pipeline._zotero_index_hit_verified(hit, paper, _Error404Zot(), False) is False
+    assert pipeline._zotero_index_hit_verified(hit, paper, _TransientErrorZot(), False) is False
     assert pipeline._zotero_index_hit_verified(hit, paper, _EmptyZot(), False) is False
+
+    # Transient zot.item failure must defer the paper rather than falling through
+    # to check_duplicate / create_items and creating a duplicate Zotero item.
+    cfg_defer = _cfg(tmp_path / "defer")
+    ClusterRegistry(cfg_defer.clusters_file).create(
+        query="defer", name="Defer", slug="defer", zotero_collection_key="COLL_DEFER"
+    )
+    (cfg_defer.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Deferred Verification Paper",
+                        "slug": "smith2024-deferred-verification",
+                        "doi": "10.1234/defer",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "abstract": "Abs",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    transient_zot = _TransientErrorZot()
+    defer_dedup = DedupIndex()
+    defer_dedup.add(
+        DedupHit(
+            source="zotero",
+            doi="10.1234/defer",
+            title="Deferred Verification Paper",
+            zotero_key="ZK_OTHER_COLL",
+        )
+    )
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg_defer)
+    monkeypatch.setattr(pipeline, "get_client", lambda: transient_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: defer_dedup)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+    assert pipeline.run_pipeline(cluster_slug="defer", query="defer", verify=False) == 0
+    assert transient_zot.created == []
+    assert not (cfg_defer.raw / "defer" / "smith2024-deferred-verification.md").exists()
+    defer_out = json.loads((cfg_defer.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    assert defer_out["zotero_results"][0]["status"] == "DEFERRED_VERIFICATION"
 
     cfg = _cfg(tmp_path)
     ClusterRegistry(cfg.clusters_file).create(
@@ -639,17 +711,13 @@ def test_v135_yaml_merge_source_duplicate_keys_rejected_while_outer_override_all
     )
     assert allowed == {"custom": {"title": "Second"}}
 
-    reused_alias = yaml.load(
-        "base: &b {<<: {a: 1}, a: 2}\nother: {<<: *b}\n",
-        Loader=_UniqueMappingSafeLoader,
-    )
-    assert reused_alias == {"base": {"a": 2}, "other": {"a": 2}}
+    reused_alias_yaml = "base: &b {<<: {a: 1}, a: 2}\nother: {<<: *b}\n"
+    reused_alias = yaml.load(reused_alias_yaml, Loader=_UniqueMappingSafeLoader)
+    assert reused_alias == yaml.load(reused_alias_yaml, Loader=yaml.SafeLoader)
 
-    reused_seq_alias = yaml.load(
-        "- &b {<<: {a: 1}, a: 2}\n- {<<: *b}\n",
-        Loader=_UniqueMappingSafeLoader,
-    )
-    assert reused_seq_alias == [{"a": 2}, {"a": 2}]
+    reused_seq_yaml = "- &b {<<: {a: 1}, a: 2}\n- {<<: *b}\n"
+    reused_seq_alias = yaml.load(reused_seq_yaml, Loader=_UniqueMappingSafeLoader)
+    assert reused_seq_alias == yaml.load(reused_seq_yaml, Loader=yaml.SafeLoader)
 
     cfg = _cfg(tmp_path)
     bad_note = cfg.raw / "alpha" / "merge_dup_source.md"
@@ -670,6 +738,14 @@ def test_v135_yaml_merge_source_duplicate_keys_rejected_while_outer_override_all
     )
     state = set_labels(cfg, good_note.stem, add=["seed"])
     assert state.labels == ["seed"]
+
+    alias_note = cfg.raw / "alpha" / "merge_alias_reuse.md"
+    alias_note.write_text(
+        "---\ntitle: \"Alias Reuse\"\nbase: &b {<<: {a: 1}, a: 2}\nother: {<<: *b}\n---\nBody\n",
+        encoding="utf-8",
+    )
+    alias_state = set_labels(cfg, alias_note.stem, add=["seed"])
+    assert alias_state.labels == ["seed"]
 
 
 def test_v135_set_labels_preread_rejects_legacy_fallback_traps_before_write(
@@ -708,6 +784,9 @@ def test_v135_kana_dakuten_and_cjk_surname_preservation_in_cross_vault_import(
     assert _author_surnames(["王, 小明"]) == {"王"}
     assert _author_surnames(["陳, 大文"]) == {"陳"}
     assert _author_surnames(["王, 小明"]) != _author_surnames(["陳, 大文"])
+    assert _author_surnames([{"family": "山田"}]) == {"山田"}
+    assert _author_surnames([{"lastName": "山田"}]) == {"山田"}
+    assert _author_surnames(["王小明"]) == set()
 
     vault = tmp_path / "vault_jp_cjk"
     (vault / ".obsidian").mkdir(parents=True)

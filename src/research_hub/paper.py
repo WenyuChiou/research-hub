@@ -760,19 +760,7 @@ def _construct_unique_mapping(
     deep: bool = False,
 ) -> dict[str, object]:
     _validate_mapping_node_unique_keys(loader, node, deep=deep)
-    loader.flatten_mapping(node)
-    mapping: dict[str, object] = {}
-    for key_node, value_node in node.value:
-        key = loader.construct_object(key_node, deep=deep)
-        if not isinstance(key, str):
-            raise yaml.constructor.ConstructorError(
-                "while constructing a mapping",
-                node.start_mark,
-                f"found non-string key {key!r}",
-                key_node.start_mark,
-            )
-        mapping[key] = loader.construct_object(value_node, deep=deep)
-    return mapping
+    return yaml.SafeLoader.construct_mapping(loader, node, deep=deep)
 
 
 _UniqueMappingSafeLoader.add_constructor(
