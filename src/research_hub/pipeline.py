@@ -1054,7 +1054,21 @@ def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
     hit_title = str(hit.title or "").strip()
     pp_title = str(pp.get("title") or "").strip()
     if hit_title and pp_title:
-        if not _titles_compatible_for_note(normalize_title(hit_title), normalize_title(pp_title)):
+        from research_hub.dedup import normalize_title_unicode
+
+        same_id = bool(
+            (incoming_doi and hit_doi and incoming_doi == hit_doi)
+            or (incoming_zkey and hit_zkey and incoming_zkey == hit_zkey)
+        )
+        hit_norm_u = normalize_title_unicode(hit_title)
+        pp_norm_u = normalize_title_unicode(pp_title)
+        if same_id:
+            if not _titles_compatible_for_note(hit_norm_u, pp_norm_u):
+                return False
+        elif hit_norm_u and pp_norm_u:
+            if hit_norm_u != pp_norm_u:
+                return False
+        elif not _titles_compatible_for_note(normalize_title(hit_title), normalize_title(pp_title)):
             return False
     hit_paper = {
         "zotero_key": hit_zkey,
@@ -1077,6 +1091,12 @@ def _zotero_item_matches_paper(
     if not isinstance(data, dict):
         return False
     ident = _extract_zotero_item_identity(data)
+    doi = ident["doi"]
+    if not doi and cached_hit is not None:
+        doi = getattr(cached_hit, "doi", "") or ""
+    zotero_key = ident["zotero_key"]
+    if not zotero_key and cached_hit is not None:
+        zotero_key = getattr(cached_hit, "zotero_key", None)
     year = ident["year"]
     if year is None and cached_hit is not None:
         year = getattr(cached_hit, "year", None)
@@ -1091,9 +1111,9 @@ def _zotero_item_matches_paper(
         edition = getattr(cached_hit, "edition", "") or ""
     hit = DedupHit(
         source="zotero",
-        doi=ident["doi"],
+        doi=doi,
         title=ident["title"],
-        zotero_key=ident["zotero_key"],
+        zotero_key=zotero_key,
         year=year,
         authors=authors,
         volume=volume,
@@ -1108,6 +1128,18 @@ def _zotero_live_item_sufficient_for_paper(item: dict, hit: DedupHit, pp: dict) 
     if str(pp.get("title") or "").strip() and not ident["title"]:
         return False
     if not (ident["title"] or _normalized_real_doi(ident["doi"])):
+        return False
+    if (
+        _normalized_real_doi(pp.get("doi", ""))
+        and not _normalized_real_doi(getattr(hit, "doi", ""))
+        and not _normalized_real_doi(ident["doi"])
+    ):
+        return False
+    if (
+        str(pp.get("zotero_key") or pp.get("zotero-key") or "").strip()
+        and not str(getattr(hit, "zotero_key", "") or "").strip()
+        and not str(ident.get("zotero_key") or "").strip()
+    ):
         return False
     if (
         _norm_locator(pp.get("edition"))
@@ -1147,21 +1179,38 @@ def _zotero_identity_populated(ident: dict[str, Any]) -> bool:
     )
 
 
-def _zotero_search_row_matches_paper(data: dict, pp: dict, zot: Any) -> bool:
+def _zotero_search_row_matches_paper(
+    data: dict,
+    pp: dict,
+    zot: Any,
+    *,
+    mismatched_keys: set[str] | None = None,
+    cached_hits_by_key: dict[str, DedupHit] | None = None,
+) -> bool:
     """Verify whether a Zotero search result row matches *pp*, fetching detail if truncated."""
     ident = _extract_zotero_item_identity(data)
-    if _zotero_identity_populated(ident) and not _zotero_item_matches_paper(data, pp):
-        return False
-
-    empty_hit = DedupHit(source="zotero")
-    if _zotero_live_item_sufficient_for_paper(data, empty_hit, pp):
-        return True
-
     item_key = str(
         (data.get("key") if isinstance(data, dict) else "")
         or ident.get("zotero_key")
         or ""
     ).strip()
+    if item_key and mismatched_keys is not None and item_key in mismatched_keys:
+        return False
+
+    row_cached_hit = (cached_hits_by_key or {}).get(item_key) if item_key else None
+    effective_hit = row_cached_hit if row_cached_hit is not None else DedupHit(source="zotero")
+
+    if (
+        _zotero_identity_populated(ident)
+        and not _zotero_item_matches_paper(data, pp, cached_hit=row_cached_hit)
+    ):
+        if item_key and mismatched_keys is not None:
+            mismatched_keys.add(item_key)
+        return False
+
+    if _zotero_live_item_sufficient_for_paper(data, effective_hit, pp):
+        return True
+
     if not item_key or zot is None or not callable(getattr(zot, "item", None)):
         raise RuntimeError(
             f"incomplete Zotero search result for key={item_key or 'missing'} could not be verified"
@@ -1192,21 +1241,33 @@ def _zotero_search_row_matches_paper(data: dict, pp: dict, zot: Any) -> bool:
         ident["title"] or (isinstance(data, dict) and str(data.get("DOI") or "").strip())
     )
     if not row_has_primary and (detail_ident["title"] or str(detail_data.get("DOI") or "").strip()):
+        from research_hub.dedup import normalize_title_unicode
+
         norm_pp_title = str(pp.get("title") or "").strip().lower()
+        norm_pp_title_u = normalize_title_unicode(str(pp.get("title") or ""))
         norm_pp_doi = normalize_doi(str(pp.get("doi") or ""))
+        detail_title_raw = str(detail_ident["title"] or "").strip()
         detail_title_hit = bool(
-            norm_pp_title and str(detail_ident["title"] or "").strip().lower() == norm_pp_title
+            (norm_pp_title and detail_title_raw.lower() == norm_pp_title)
+            or (norm_pp_title_u and detail_title_raw and normalize_title_unicode(detail_title_raw) == norm_pp_title_u)
         )
         detail_doi_hit = bool(
             norm_pp_doi and normalize_doi(str(detail_data.get("DOI") or "")) == norm_pp_doi
         )
         if not (detail_title_hit or detail_doi_hit):
+            if item_key and mismatched_keys is not None:
+                mismatched_keys.add(item_key)
             return False
 
-    if _zotero_identity_populated(detail_ident) and not _zotero_item_matches_paper(detail, pp):
+    if (
+        _zotero_identity_populated(detail_ident)
+        and not _zotero_item_matches_paper(detail, pp, cached_hit=row_cached_hit)
+    ):
+        if item_key and mismatched_keys is not None:
+            mismatched_keys.add(item_key)
         return False
 
-    if not _zotero_live_item_sufficient_for_paper(detail, empty_hit, pp):
+    if not _zotero_live_item_sufficient_for_paper(detail, effective_hit, pp):
         raise RuntimeError(
             f"incomplete Zotero search result for key={item_key} could not be verified"
         )
@@ -1743,6 +1804,18 @@ def run_pipeline(
             )
         papers = deduped_papers
 
+        cached_zotero_hits_by_key: dict[str, DedupHit] = {}
+        for mapping in (
+            getattr(dedup, "doi_to_hits", None) or {},
+            getattr(dedup, "title_to_hits", None) or {},
+        ):
+            for hits in mapping.values():
+                for hit in hits:
+                    if getattr(hit, "source", "") == "zotero":
+                        zkey = str(getattr(hit, "zotero_key", "") or "").strip()
+                        if zkey:
+                            cached_zotero_hits_by_key.setdefault(zkey, hit)
+
         for i, pp in enumerate(papers):
             p(f"\n--- Paper {i+1}: {pp['title'][:60]}...")
             query_text = _query_for_paper(pp, query)
@@ -1761,6 +1834,7 @@ def run_pipeline(
                         fit_warnings += 1
                         p("  WARN fit-check term overlap is zero")
             existing_note_path = None
+            mismatched_zotero_keys: set[str] = set()
             try:
                 is_duplicate, dedup_hits = dedup.check({"doi": pp["doi"], "title": pp["title"]})
                 if is_duplicate:
@@ -1829,7 +1903,9 @@ def run_pipeline(
                         if hit_status == "verified":
                             zotero_hit = hit
                             break
-                        if hit_status == "unknown" and unknown_zotero_hit is None:
+                        if hit_status == "mismatch" and hit.zotero_key:
+                            mismatched_zotero_keys.add(str(hit.zotero_key).strip())
+                        elif hit_status == "unknown" and unknown_zotero_hit is None:
                             unknown_zotero_hit = hit
                     if zotero_hit is None and unknown_zotero_hit is not None:
                         p(
@@ -1958,8 +2034,12 @@ def run_pipeline(
                                 pp["doi"],
                                 collection_key=cluster_coll,
                                 allow_library_duplicates=allow_library_duplicates,
-                                item_matches_fn=lambda data, _pp=pp: _zotero_search_row_matches_paper(
-                                    data, _pp, zot
+                                item_matches_fn=lambda data, _pp=pp, _mk=mismatched_zotero_keys: _zotero_search_row_matches_paper(
+                                    data,
+                                    _pp,
+                                    zot,
+                                    mismatched_keys=_mk,
+                                    cached_hits_by_key=cached_zotero_hits_by_key,
                                 ),
                                 raise_on_error=True,
                             )
