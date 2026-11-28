@@ -12,6 +12,15 @@
 
 ## [Unreleased]
 
+## [1.3.7] - 2026-11-27
+
+### Fixed
+- **Zotero HTTP 404 vs 503 vs Transport Error Classification (`dedup.py`, `pipeline.py`):** Introduced canonical `is_zotero_not_found_error` shared by `_is_404_error` and `_is_zotero_item_404`, classifying `pyzotero` `ResourceNotFoundError` and `Code: <code>` first, explicit HTTP status attributes (`response.status_code`, `status_code`, `status`, and `code` for `urllib.error.HTTPError` or non-`OSError`) before `OSError`/transport/DNS/timeout checks, and stripping URLs/API paths (e.g. `/groups/404/...`) before message fallback so HTTP 503 or transport errors never masquerade as 404 mismatches.
+- **Strict Live Zotero Schema Completeness (`pipeline.py`):** Replaced `_zotero_item_has_identity_fields` with `_zotero_live_item_sufficient_for_paper`, requiring primary bibliographic identity (`title` when incoming `pp["title"]` is non-empty, plus `title` or real `DOI`) and verifying Zotero schema fields (`edition`, `volume`, `date`/`year`, `creators`/`authors`) when present on incoming `pp` and omitted on legacy `DedupHit` records so partial/stubbed live Zotero payloads fail closed to `"unknown"` (`DEFERRED_VERIFICATION`).
+
+### Changed
+- Bumped package version to `1.3.7` and plugin version to `0.5.43`.
+
 ## [1.3.6] - 2026-11-27
 
 ### Fixed

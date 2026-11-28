@@ -89,7 +89,15 @@ def test_dedup_branch_adds_note_when_item_has_no_children(tmp_path, monkeypatch)
 
     class FakeZotero:
         def item(self, key):
-            return {"data": {"title": "Paper One", "DOI": "10.1000/example", "tags": []}}
+            return {
+                "data": {
+                    "title": "Paper One",
+                    "DOI": "10.1000/example",
+                    "date": "2026",
+                    "creators": [{"creatorType": "author", "lastName": "Doe", "firstName": "Jane"}],
+                    "tags": [],
+                }
+            }
 
         def update_item(self, data):
             return data
@@ -128,7 +136,15 @@ def test_dedup_branch_skips_note_when_item_already_has_note(tmp_path, monkeypatc
 
     class FakeZotero:
         def item(self, key):
-            return {"data": {"title": "Paper One", "DOI": "10.1000/example", "tags": []}}
+            return {
+                "data": {
+                    "title": "Paper One",
+                    "DOI": "10.1000/example",
+                    "date": "2026",
+                    "creators": [{"creatorType": "author", "lastName": "Doe", "firstName": "Jane"}],
+                    "tags": [],
+                }
+            }
 
         def update_item(self, data):
             return data

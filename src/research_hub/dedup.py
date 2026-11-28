@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import unicodedata
+import urllib.error
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -410,16 +411,77 @@ def _remove_zotero_keys(index: DedupIndex, stale_keys: set[str]) -> None:
                 del mapping[key]
 
 
-def _is_404_error(exc: Exception) -> bool:
-    for attr in ("status", "status_code", "code"):
-        value = getattr(exc, attr, None)
-        if value == 404 or str(value) == "404":
+_ZOTERO_TRANSPORT_ERROR_MARKERS = (
+    "gaierror",
+    "connecterror",
+    "connectionerror",
+    "dnserror",
+    "timeout",
+    "timed out",
+    "host not found",
+    "name or service not known",
+    "nodename nor servname",
+    "getaddrinfo",
+)
+
+
+def is_zotero_not_found_error(exc: Exception) -> bool:
+    """Return True iff *exc* represents a definitive HTTP 404 Not Found from Zotero."""
+    if "pyzotero" in type(exc).__module__.lower():
+        if type(exc).__name__ == "ResourceNotFoundError":
             return True
-    response = getattr(exc, "response", None)
-    response_code = getattr(response, "status_code", None)
-    if response_code == 404 or str(response_code) == "404":
-        return True
-    return "404" in str(exc)
+        code_match = re.search(r"(?im)^\s*code:\s*(\d{3})\b", str(exc))
+        if code_match:
+            return int(code_match.group(1)) == 404
+
+    candidates = [
+        getattr(getattr(exc, "response", None), "status_code", None),
+        getattr(exc, "status_code", None),
+        getattr(exc, "status", None),
+    ]
+    if isinstance(exc, urllib.error.HTTPError) or not isinstance(exc, OSError):
+        candidates.append(getattr(exc, "code", None))
+    for val in candidates:
+        if isinstance(val, bool) or val is None:
+            continue
+        num: int | None = None
+        if isinstance(val, int):
+            num = val
+        elif isinstance(val, str):
+            stripped = val.strip()
+            if stripped.isascii() and stripped.isdigit():
+                num = int(stripped)
+        if num is not None and 100 <= num <= 599:
+            return num == 404
+
+    if (
+        isinstance(exc, OSError)
+        or isinstance(getattr(exc, "__cause__", None), OSError)
+        or isinstance(getattr(exc, "__context__", None), OSError)
+    ):
+        return False
+    exc_name = type(exc).__name__.lower()
+    msg = str(exc)
+    msg_lower = msg.lower()
+    if any(marker in exc_name or marker in msg_lower for marker in _ZOTERO_TRANSPORT_ERROR_MARKERS):
+        return False
+
+    msg_clean = re.sub(r"https?://\S+|/(?:users|groups)/\d+(?:/\S*)?", " ", msg)
+    if re.search(
+        r"(?i)(?:\bcode\s*[:=]\s*|\bstatus(?:\s+code)?\s*[:=]?\s*|\bhttp(?:/\d(?:\.\d)?)?\s+)(?!404\b)[1-5]\d{2}\b",
+        msg_clean,
+    ):
+        return False
+    return bool(
+        re.search(
+            r"(?i)(?:^\s*404\b|\b(?:http(?:/\d(?:\.\d)?)?|status(?:\s+code)?|code|error)\s*[:=]?\s*404\b|\b404\s+(?:item\s+)?not\s+found\b)",
+            msg_clean,
+        )
+    )
+
+
+def _is_404_error(exc: Exception) -> bool:
+    return is_zotero_not_found_error(exc)
 
 
 def build_from_zotero(zot, library_id: str) -> list[DedupHit]:
