@@ -1188,6 +1188,21 @@ def _zotero_search_row_matches_paper(data: dict, pp: dict, zot: Any) -> bool:
         return False
 
     detail_ident = _extract_zotero_item_identity(detail)
+    row_has_primary = bool(
+        ident["title"] or (isinstance(data, dict) and str(data.get("DOI") or "").strip())
+    )
+    if not row_has_primary and (detail_ident["title"] or str(detail_data.get("DOI") or "").strip()):
+        norm_pp_title = str(pp.get("title") or "").strip().lower()
+        norm_pp_doi = normalize_doi(str(pp.get("doi") or ""))
+        detail_title_hit = bool(
+            norm_pp_title and str(detail_ident["title"] or "").strip().lower() == norm_pp_title
+        )
+        detail_doi_hit = bool(
+            norm_pp_doi and normalize_doi(str(detail_data.get("DOI") or "")) == norm_pp_doi
+        )
+        if not (detail_title_hit or detail_doi_hit):
+            return False
+
     if _zotero_identity_populated(detail_ident) and not _zotero_item_matches_paper(detail, pp):
         return False
 

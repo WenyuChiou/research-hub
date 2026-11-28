@@ -1962,8 +1962,28 @@ def test_v138_real_pyzotero_truncated_search_row_defers_or_skips_duplicate(
             1,
             0,
         ),
+        (
+            {
+                "key": "KEYONLY1",
+                "data": {
+                    "title": "Water Resources",
+                    "date": "2024",
+                    "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                },
+            },
+            "CREATED",
+            1,
+            1,
+            0,
+        ),
     ],
-    ids=["key-only-match-skips", "key-only-conflict-creates", "key-only-empty-detail-defers", "key-only-note-creates"],
+    ids=[
+        "key-only-match-skips",
+        "key-only-conflict-creates",
+        "key-only-empty-detail-defers",
+        "key-only-note-creates",
+        "key-only-distinct-subset-title-creates",
+    ],
 )
 def test_v138_key_only_search_row_triggers_detail_verification(
     tmp_path: Path,
