@@ -145,7 +145,8 @@ def test_bundle_records_pdf_source_in_entry(tmp_path):
     cfg.research_hub_dir.mkdir(parents=True)
     _note(cfg.raw / "alpha" / "missing.md", doi="10.1/missing", topic_cluster="alpha")
     cluster = Cluster(slug="alpha", name="Alpha Cluster", obsidian_subfolder="alpha")
-    downloaded = tmp_path / "downloaded.pdf"
+    (tmp_path / "pdfs").mkdir(parents=True, exist_ok=True)
+    downloaded = tmp_path / "pdfs" / "downloaded.pdf"
     downloaded.write_bytes(b"pdf")
 
     class Result:

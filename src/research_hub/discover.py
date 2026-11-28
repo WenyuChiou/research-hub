@@ -571,6 +571,33 @@ def _collect_candidate_backends(row: dict) -> list[str]:
     return tokens
 
 
+def _has_prebuilt_records(row: dict) -> bool:
+    return any(
+        isinstance(row.get(field), list) and bool(row.get(field))
+        for field in ("source_records", "backend_records", "corroborating_records")
+    )
+
+
+def _synthesize_candidate_record(row: dict) -> dict | None:
+    import copy
+
+    title = str(row.get("title") or "")
+    if not title.strip():
+        return None
+    backend_name = str(row.get("source") or "").strip()
+    if not backend_name:
+        backends = _collect_candidate_backends(row)
+        backend_name = backends[0] if backends else ""
+    if not backend_name:
+        return None
+    return {
+        "source": backend_name,
+        "title": title,
+        "year": row.get("year"),
+        "authors": copy.deepcopy(list(row.get("authors") or [])),
+    }
+
+
 def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
     """Deduplicate candidate dicts by DOI/arXiv/title."""
     import copy
@@ -623,6 +650,8 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
             continue
 
         base = merged[key]
+        base_own_rec = None if _has_prebuilt_records(base) else _synthesize_candidate_record(base)
+        cand_own_rec = None if _has_prebuilt_records(candidate) else _synthesize_candidate_record(candidate)
         base_is_excerpt = is_web_search_excerpt(base.get("source"), base.get("abstract_source"))
         incoming_is_excerpt = is_web_search_excerpt(candidate.get("source"), candidate.get("abstract_source"))
         if candidate.get("abstract") and (
@@ -665,9 +694,20 @@ def _merge_search_dict_candidates(candidates: list[dict]) -> list[dict]:
         for rec_field in ("source_records", "backend_records", "corroborating_records"):
             base_recs = base.get(rec_field)
             inc_recs = candidate.get(rec_field)
-            if isinstance(base_recs, list) or isinstance(inc_recs, list):
+            extra_recs = (
+                [r for r in (base_own_rec, cand_own_rec) if r is not None]
+                if rec_field == "source_records"
+                else []
+            )
+            if isinstance(base_recs, list) or isinstance(inc_recs, list) or extra_recs:
                 combined_recs = copy.deepcopy(base_recs) if isinstance(base_recs, list) else []
+                for rec in ([base_own_rec] if base_own_rec and rec_field == "source_records" else []):
+                    if rec not in combined_recs:
+                        combined_recs.append(copy.deepcopy(rec))
                 for rec in (inc_recs if isinstance(inc_recs, list) else ()):
+                    if rec not in combined_recs:
+                        combined_recs.append(copy.deepcopy(rec))
+                for rec in ([cand_own_rec] if cand_own_rec and rec_field == "source_records" else []):
                     if rec not in combined_recs:
                         combined_recs.append(copy.deepcopy(rec))
                 base[rec_field] = combined_recs

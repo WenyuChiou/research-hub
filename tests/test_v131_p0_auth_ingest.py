@@ -1194,3 +1194,253 @@ def test_note_identity_rejects_key_doi_title_conflicts_and_roundtrips_edition(
             "edition": "1st",
         },
     ) is True
+
+
+# ---------------------------------------------------------------------------
+# 7. v1.3.4 astra 07c closeout regressions (§§2-3)
+# ---------------------------------------------------------------------------
+
+
+def test_v134_l4_unscored_and_ambiguous_title_never_inherit_other_work_score(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cfg(tmp_path)
+    _ok_head(monkeypatch)
+    cluster_dir = cfg.hub / "agents"
+    cluster_dir.mkdir(parents=True, exist_ok=True)
+    (cluster_dir / ".fit_check_accepted.json").write_text(
+        json.dumps(
+            {
+                "cluster_slug": "agents",
+                "threshold": 3,
+                "accepted": [
+                    {
+                        "index": 1,
+                        "doi": "10.1234/scored",
+                        "title": "Shared Monograph Title",
+                        "score": 5,
+                        "reason": "relevant",
+                        "kept": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fit_scores = auth._load_fit_scores(cfg, "agents")
+    for idx in (None, 1, 99):
+        candidate = _paper(title="Shared Monograph Title", doi="10.1234/unscored")
+        if idx is not None:
+            candidate["fit_index"] = idx
+        status = auth._fit_status_for_paper(candidate, fit_scores, 3)
+        assert status == {"kept": False, "reason": "relevance_unjudged", "score": None}
+
+    # Two items sharing a normalized title (different DOI / index) mark title:<ntitle> ambiguous.
+    (cluster_dir / ".fit_check_rejected.json").write_text(
+        json.dumps(
+            {
+                "cluster_slug": "agents",
+                "threshold": 3,
+                "rejected": [
+                    {
+                        "index": 2,
+                        "doi": "",
+                        "title": "Shared Monograph Title",
+                        "score": 1,
+                        "reason": "off topic",
+                        "kept": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ambiguous_scores = auth._load_fit_scores(cfg, "agents")
+    unindexed = _paper(title="Shared Monograph Title", doi="")
+    assert auth._fit_status_for_paper(unindexed, ambiguous_scores, 3) == {
+        "kept": False,
+        "reason": "relevance_unjudged",
+        "score": None,
+    }
+    exact_doi = _paper(title="Shared Monograph Title", doi="10.1234/scored")
+    assert auth._fit_status_for_paper(exact_doi, ambiguous_scores, 3) == {
+        "kept": True,
+        "reason": "",
+        "score": 5,
+    }
+    exact_idx = _paper(title="Shared Monograph Title", doi="", fit_index=2)
+    assert auth._fit_status_for_paper(exact_idx, ambiguous_scores, 3) == {
+        "kept": False,
+        "reason": "low_relevance",
+        "score": 1,
+    }
+
+
+def test_v134_merge_search_dict_candidates_synthesizes_records_without_prebuilt_arrays() -> None:
+    from research_hub.discover import _merge_search_dict_candidates
+
+    merged = _merge_search_dict_candidates(
+        [
+            {
+                "title": "Early Hydrological Treatise",
+                "doi": "10.1234/conflict-dict",
+                "year": 1990,
+                "authors": ["Smith, Alice"],
+                "source": "openalex",
+            },
+            {
+                "title": "Modern Neural Network Paper",
+                "doi": "10.1234/conflict-dict",
+                "year": 2020,
+                "authors": ["Jones, Bob"],
+                "source": "crossref",
+            },
+        ]
+    )
+    assert len(merged) == 1
+    assert len(merged[0]["source_records"]) == 2
+    assert _corroboration_label(merged[0]) == "conflict"
+
+
+def test_v134_in_batch_doi_dedup_obsidian_and_zotero_hit_guards_and_zotero_roundtrip(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from research_hub.dedup import DedupHit
+    from research_hub.zotero.fetch import _yaml_scalar, extract_item_data, make_raw_md
+
+    # 1. In-batch dedup must NOT collapse same-DOI candidates with differing zotero_key/edition/year.
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(query="econ", name="Econ", slug="econ")
+    monkeypatch.setenv("RESEARCH_HUB_NO_ZOTERO", "1")
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: DedupIndex())
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr("research_hub.pipeline.update_cluster_links", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    p1 = _paper(
+        title="Principles of Economics",
+        doi="10.1234/shared",
+        zotero_key="ZKEY1",
+        edition="1st",
+        slug="doe2025-principles-1",
+        sub_category="econ",
+    )
+    p2 = _paper(
+        title="Principles of Economics",
+        doi="10.1234/shared",
+        zotero_key="ZKEY2",
+        edition="2nd",
+        slug="doe2025-principles-2",
+        sub_category="econ",
+    )
+    (cfg.root / "papers_input.json").write_text(json.dumps({"papers": [p1, p2]}), encoding="utf-8")
+    assert run_pipeline(dry_run=False, cluster_slug="econ", verify=False) == 0
+    assert sorted(p.name for p in (cfg.raw / "econ").glob("*.md")) == [
+        "doe2025-principles-1.md",
+        "doe2025-principles-2.md",
+    ]
+    manifest_actions = [
+        json.loads(line)["action"]
+        for line in (cfg.research_hub_dir / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert "dup-in-batch" not in manifest_actions
+
+    # 2. _obsidian_hit_matches_paper must still run _is_same_work_note even when DOI matches.
+    note_path = tmp_path / "disk_note.md"
+    note_path.write_text(
+        make_raw_md(
+            {
+                "key": "ZKEY1",
+                "title": "Principles of Economics",
+                "authors": ["Marshall, Alfred"],
+                "year": "1890",
+                "journal": "Macmillan",
+                "volume": "1",
+                "edition": "1st",
+                "doi": "10.1234/shared",
+                "abstract": "Classic text.",
+                "tags": [],
+            },
+            ["Econ"],
+            [],
+            topic_cluster="econ",
+        ),
+        encoding="utf-8",
+    )
+    hit_same_doi = DedupHit(
+        source="obsidian",
+        doi="10.1234/shared",
+        title="Principles of Economics",
+        zotero_key="ZKEY1",
+        obsidian_path=str(note_path),
+    )
+    assert (
+        pipeline._obsidian_hit_matches_paper(
+            hit_same_doi,
+            {
+                "title": "Principles of Economics",
+                "doi": "10.1234/shared",
+                "zotero_key": "ZKEY1",
+                "edition": "2nd",
+                "authors": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+                "year": 1890,
+            },
+        )
+        is False
+    )
+    assert (
+        pipeline._obsidian_hit_matches_paper(
+            hit_same_doi,
+            {
+                "title": "Completely Different Title",
+                "doi": "10.1234/shared",
+                "zotero_key": "ZKEY1",
+                "authors": [{"creatorType": "author", "firstName": "Other", "lastName": "Author"}],
+                "year": 2020,
+            },
+        )
+        is False
+    )
+
+    # 3. _zotero_hit_matches_paper rejects incompatible title or volume markers.
+    z_hit = DedupHit(source="zotero", doi="10.1234/shared", title="History of Science Vol. I", zotero_key="ZK1")
+    assert pipeline._zotero_hit_matches_paper(z_hit, {"doi": "10.1234/shared", "title": "History of Science Vol. II"}) is False
+    assert pipeline._zotero_hit_matches_paper(z_hit, {"doi": "10.1234/shared", "title": "Completely Unrelated"}) is False
+
+    # 4. _yaml_scalar & extract_item_data -> make_raw_md -> _read_note_identity round-trip edition & volume.
+    assert _yaml_scalar('2nd "Revised"') == '2nd \\"Revised\\"'
+    extracted = extract_item_data(
+        {
+            "key": "ZBOOK1",
+            "data": {
+                "itemType": "book",
+                "title": "Principles of Economics",
+                "creators": [{"creatorType": "author", "firstName": "Alfred", "lastName": "Marshall"}],
+                "date": "1890",
+                "publisher": "Macmillan",
+                "volume": "2",
+                "issue": "1",
+                "pages": "1-500",
+                "edition": '2nd "Revised"',
+                "DOI": "",
+                "abstractNote": "Classic.",
+                "tags": [],
+            },
+        }
+    )
+    assert extracted is not None
+    assert extracted["volume"] == "2"
+    assert extracted["edition"] == '2nd "Revised"'
+    roundtrip_path = tmp_path / "zotero_roundtrip.md"
+    roundtrip_path.write_text(make_raw_md(extracted, ["Econ"], []), encoding="utf-8")
+    ident = pipeline._read_note_identity(roundtrip_path)
+    assert ident["volume"] == "2"
+    assert ident["edition"] == '2nd "Revised"'

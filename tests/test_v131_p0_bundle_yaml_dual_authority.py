@@ -425,7 +425,7 @@ def test_obsidian_import_bridge_dry_run_dedup_apply_and_errors(tmp_path: Path):
         "proj-bridge",
         kind="source",
         data={
-            "title": "Pre-existing Agentic Flood",
+            "title": "Agentic Flood Simulation",
             "locator": "https://doi.org/10.1029/2025WR000001",
             "doi": "https://doi.org/10.1029/2025wr000001",
         },
@@ -536,7 +536,7 @@ def test_obsidian_import_dedups_by_zotero_key_and_title_year(tmp_path: Path):
         "proj-dedup",
         kind="source",
         data={
-            "title": "Different Title Same Zotero",
+            "title": "Agentic Flood Simulation",
             "locator": "https://example.org/zot",
             "zotero_key": "zotkey01",
         },
@@ -1057,3 +1057,165 @@ def test_v133_snapshot_empty_frontmatter_scope_tie_and_import_edge_cases(
     n2_id = f"obsidian:{__import__('hashlib').sha256(b'raw/alpha/n2.md').hexdigest()[:24]}"
     explicit_snap = ls_mod.read_vault_snapshot(vault_a, collection_id="alpha", note_ids=[n2_id])
     assert [n["id"] for n in explicit_snap["notes"]] == [n2_id]
+
+
+# ---------------------------------------------------------------------------
+# 6. v1.3.4 astra 07c closeout regressions (§§4-6)
+# ---------------------------------------------------------------------------
+
+
+def test_v134_yaml_rejects_duplicate_keys_nested_dups_and_invalid_tags_without_writes(
+    tmp_path: Path,
+):
+    from research_hub.paper import set_labels
+
+    cfg = SimpleNamespace(
+        root=tmp_path,
+        raw=tmp_path / "raw",
+        hub=tmp_path / "hub",
+        research_hub_dir=tmp_path / ".research_hub",
+    )
+    cluster_dir = cfg.raw / "alpha"
+    cluster_dir.mkdir(parents=True)
+
+    traps = [
+        ("dup_top.md", b'---\ntitle: "A"\ntitle: "B"\n---\nBody\n'),
+        ("dup_nested.md", b"---\ntitle: \"A\"\nprovenance:\n  fit_score: 5\n  fit_score: 1\n---\nBody\n"),
+        ("bad_tag.md", b'---\ntitle: "A"\nyear: !!int nope\n---\nBody\n'),
+        ("unclosed_flow.md", b'---\ntitle: "A"\nlabels: [seed, core\n---\nBody\n'),
+        ("non_str_key.md", b'---\ntitle: "A"\n1: bad\n---\nBody\n'),
+    ]
+    for name, raw_bytes in traps:
+        note = cluster_dir / name
+        note.write_bytes(raw_bytes)
+        with pytest.raises(ValueError, match="valid YAML mapping"):
+            _rewrite_paper_frontmatter(note, {"labels": ["seed"]})
+        assert note.read_bytes() == raw_bytes
+        with pytest.raises(ValueError, match="valid YAML mapping"):
+            set_labels(cfg, note.stem, add=["seed"])
+        assert note.read_bytes() == raw_bytes
+
+
+def test_v134_bundle_refuses_cache_after_ambiguous_tie_and_unconditional_out_of_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import research_hub.notebooklm.bundle as bundle_mod
+
+    # 1. Ambiguous tie rejection must NOT be overridden by download_pdfs=True local cache hit.
+    root1 = tmp_path / "vault_tie"
+    pdfs1 = root1 / "pdfs"
+    raw1 = root1 / "raw" / "alpha"
+    (pdfs1 / "nested").mkdir(parents=True)
+    raw1.mkdir(parents=True)
+    (root1 / ".research_hub").mkdir()
+    (pdfs1 / "10.1234_tie.pdf").write_bytes(b"%PDF-root")
+    (pdfs1 / "nested" / "10.1234_tie.pdf").write_bytes(b"%PDF-nested")
+    (raw1 / "tie_note.md").write_text(
+        '---\ntitle: "Tie Note"\ndoi: "10.1234/tie"\nurl: "https://example.org/tie"\ntopic_cluster: alpha\n---\n',
+        encoding="utf-8",
+    )
+    cfg1 = SimpleNamespace(root=root1, raw=root1 / "raw", research_hub_dir=root1 / ".research_hub")
+    cluster = Cluster(slug="alpha", name="Alpha", obsidian_subfolder="alpha")
+    report_tie = bundle_mod.bundle_cluster(cluster, cfg1, download_pdfs=True)
+    assert report_tie.pdf_count == 0
+    assert report_tie.entries[0].action == "url"
+
+    # 2. Out-of-root unpaywall path refused even when pdfs_dir does NOT exist yet on disk.
+    root2 = tmp_path / "vault_no_pdfs"
+    raw2 = root2 / "raw" / "alpha"
+    raw2.mkdir(parents=True)
+    (root2 / ".research_hub").mkdir()
+    outside_pdf = tmp_path / "outside_unpaywall.pdf"
+    outside_pdf.write_bytes(b"%PDF-escape")
+    (raw2 / "esc.md").write_text(
+        '---\ntitle: "Escape Unpaywall"\ndoi: "10.1234/esc"\nurl: "https://example.org/esc"\ntopic_cluster: alpha\n---\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "research_hub.notebooklm.pdf_fetcher.fetch_paper_pdf",
+        lambda *a, **k: SimpleNamespace(ok=True, path=outside_pdf, source="unpaywall", error=""),
+    )
+    cfg2 = SimpleNamespace(root=root2, raw=root2 / "raw", research_hub_dir=root2 / ".research_hub")
+    assert not (root2 / "pdfs").exists()
+    report_esc = bundle_mod.bundle_cluster(cluster, cfg2, download_pdfs=True)
+    assert report_esc.pdf_count == 0
+    assert report_esc.entries[0].action == "url"
+
+
+def test_v134_cross_vault_obsidian_import_respects_vault_id_zkey_doi_and_year_authors(
+    tmp_path: Path,
+):
+    from research_hub.workspace.integrations import LocalIntegrationsManager
+    from research_hub.workspace.obsidian_validation import ObsidianValidation
+    from research_hub.workspace.sync_hooks import WorkspaceSyncHooks
+
+    vault_a = tmp_path / "vault_a"
+    vault_b = tmp_path / "vault_b"
+    for v in (vault_a, vault_b):
+        (v / ".obsidian").mkdir(parents=True)
+        (v / ".research_hub").mkdir()
+        (v / ".research_hub" / "clusters.yaml").write_text(
+            "schema_version: '1.0'\nclusters:\n  alpha:\n    name: Alpha\n    status: active\n    obsidian_subfolder: alpha\n",
+            encoding="utf-8",
+        )
+        (v / "raw" / "alpha").mkdir(parents=True)
+
+    # Same relative paths, shared zotero_key with different title/DOI, and DOI-less same-title books (1776 vs 2020, disjoint authors).
+    (vault_a / "raw" / "alpha" / "shared_zk.md").write_text(
+        '---\ntitle: "Vault A Work"\ndoi: "10.1234/vault-a"\nzotero_key: "ZK_SHARED"\nyear: "2020"\nauthors: ["Smith, Alice"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault_b / "raw" / "alpha" / "shared_zk.md").write_text(
+        '---\ntitle: "Vault B Different Work"\ndoi: "10.1234/vault-b"\nzotero_key: "ZK_SHARED"\nyear: "2021"\nauthors: ["Jones, Bob"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault_a / "raw" / "alpha" / "classic.md").write_text(
+        '---\ntitle: "Collected Essays"\nyear: "1776"\nauthors: ["Smith, Adam"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault_b / "raw" / "alpha" / "classic.md").write_text(
+        '---\ntitle: "Collected Essays"\nyear: "2020"\nauthors: ["Jones, Bob"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault_a / "raw" / "alpha" / "same_year.md").write_text(
+        '---\ntitle: "Annual Review"\nyear: "2022"\nauthors: ["Alpha, Ann"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault_b / "raw" / "alpha" / "same_year.md").write_text(
+        '---\ntitle: "Annual Review"\nyear: "2022"\nauthors: ["Beta, Bob"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    # Same DOI with conflicting title must NOT collapse.
+    (vault_a / "raw" / "alpha" / "doi_conflict.md").write_text(
+        '---\ntitle: "Original Study"\ndoi: "10.1234/shared-doi"\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault_b / "raw" / "alpha" / "doi_conflict.md").write_text(
+        '---\ntitle: "Completely Different Study"\ndoi: "10.1234/shared-doi"\n---\nBody\n',
+        encoding="utf-8",
+    )
+
+    ws = Workspace(tmp_path / "ws")
+    ws.create_project(id="proj-xvault", title="Cross Vault", archetype="review")
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+
+    hooks_a = WorkspaceSyncHooks(
+        ws, LocalIntegrationsManager(cfg_path), obsidian_validation=ObsidianValidation(vault_a)
+    )
+    hooks_b = WorkspaceSyncHooks(
+        ws, LocalIntegrationsManager(cfg_path), obsidian_validation=ObsidianValidation(vault_b)
+    )
+
+    res_a = hooks_a.import_obsidian_notes("proj-xvault", {"dry_run": False})
+    assert res_a["imported_count"] == 4
+    assert res_a["skipped_existing"] == 0
+
+    res_b = hooks_b.import_obsidian_notes("proj-xvault", {"dry_run": False})
+    assert res_b["imported_count"] == 4
+    assert res_b["skipped_existing"] == 0
+
+    # Re-importing Vault B deduplicates cleanly.
+    res_b2 = hooks_b.import_obsidian_notes("proj-xvault", {"dry_run": True})
+    assert res_b2["would_import"] == 0
+    assert res_b2["skipped_existing"] == 4

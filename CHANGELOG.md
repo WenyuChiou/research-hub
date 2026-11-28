@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-27
+
+### Fixed
+- **L4 Fit-Score Identity & Dict-Merge Corroboration (`authenticity.py`, `discover.py`):** Enforced `_fit_entry_matches_paper` on every fit-score lookup key (`index:`, `doi:`, `title:`), rejected index/DOI/title mismatches and ambiguous duplicate `title:` entries in `_load_fit_scores` so unscored or unindexed works get `relevance_unjudged` instead of inheriting another paper's score, and synthesized per-candidate `source_records` during `_merge_search_dict_candidates` even when raw dicts lack prebuilt record arrays.
+- **In-Batch DOI Dedup, Note Identity & Zotero Edition/Volume Round-Trip (`pipeline.py`, `zotero/fetch.py`):** Changed `seen_dois` to a list-valued conflict-aware index requiring `_in_batch_title_match_ok` and `_titles_compatible_for_note`, removed the early `incoming_doi == hit_doi` bypass in `_obsidian_hit_matches_paper` so disk identity checks always run, added title/marker conflict checks in `_zotero_hit_matches_paper`, fixed `_yaml_scalar` double-quote/newline escaping, and extracted `volume`, `issue`, `pages`, and `edition` in `extract_item_data` for round-tripping through `make_raw_md`.
+- **Strict Whole-Document YAML Frontmatter Validation (`paper.py`):** Added `_UniqueMappingSafeLoader` to reject duplicate or non-string mapping keys at any nesting level as well as invalid YAML tags (`!!int nope`) and malformed structures before modification and before atomic write in `_rewrite_paper_frontmatter` and `set_labels`.
+- **NotebookLM Ambiguous Tie Refusal & Unconditional PDF Containment (`notebooklm/bundle.py`):** Tracked `had_ambiguous_tie` across `_match_pdf_for_note_with_tie`, `_find_pdf_by_author_year_with_tie`, and `_resolve_local_pdf` so `download_pdfs=True` refuses local-cache hits after an ambiguous local tie, and enforced `_is_within_pdfs_root` unconditionally on fetched/retried paths even when `pdfs_dir` does not yet exist.
+- **Cross-Vault Obsidian Import Identity (`workspace/sync_hooks.py`):** Made `seen_dois`, `seen_zkeys`, `seen_path_records`, and `seen_title_year_records` conflict-aware across `origin_vault_id`, title, DOI, non-empty year, and overlapping author surnames so distinct works across vaults are never falsely skipped.
+
+### Changed
+- Bumped package version to `1.3.4` and plugin version to `0.5.40`.
+
 ## [1.3.3] - 2026-11-27
 
 ### Fixed

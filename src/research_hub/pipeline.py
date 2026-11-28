@@ -845,7 +845,7 @@ def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
 def _read_note_identity(note_path: Path) -> dict[str, Any]:
     """Read identity fields from an existing note's YAML frontmatter."""
     import yaml
-    from research_hub.paper import _NoTimestampSafeLoader
+    from research_hub.paper import _NoTimestampSafeLoader, _parse_frontmatter_legacy
 
     empty: dict[str, Any] = {
         "doi": "",
@@ -872,7 +872,9 @@ def _read_note_identity(note_path: Path) -> dict[str, Any]:
     except Exception:
         fm = None
     if not isinstance(fm, dict):
-        return empty
+        fm = _parse_frontmatter_legacy(frontmatter)
+        if not fm:
+            return empty
     title = str(fm.get("title") or "")
     authors = fm.get("authors")
     if authors is None:
@@ -946,9 +948,7 @@ def _obsidian_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
     hit_zkey = str(hit.zotero_key or "").strip()
     if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
         return False
-    if incoming_doi and hit_doi:
-        if incoming_doi == hit_doi:
-            return True
+    if incoming_doi and hit_doi and incoming_doi != hit_doi:
         return False
     return _is_same_work_note(note_path, pp)
 
@@ -958,10 +958,17 @@ def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
     hit_doi = _normalized_real_doi(hit.doi)
     if incoming_doi and hit_doi and incoming_doi != hit_doi:
         return False
-    incoming_zkey = str(pp.get("zotero_key") or "").strip()
+    incoming_zkey = str(pp.get("zotero_key") or pp.get("zotero-key") or "").strip()
     hit_zkey = str(hit.zotero_key or "").strip()
     if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
         return False
+    hit_title = str(hit.title or "").strip()
+    pp_title = str(pp.get("title") or "").strip()
+    if hit_title and pp_title:
+        if not _titles_compatible_for_note(normalize_title(hit_title), normalize_title(pp_title)):
+            return False
+        if _title_markers(hit_title) != _title_markers(pp_title):
+            return False
     return True
 
 
@@ -1409,7 +1416,7 @@ def run_pipeline(
         # loop, so in-batch siblings stay invisible during Zotero creation.
         # Collapse them here, keeping the first occurrence.
         deduped_papers: list[dict] = []
-        seen_dois: dict[str, dict] = {}
+        seen_dois: dict[str, list[dict]] = {}
         seen_titles: dict[str, list[dict]] = {}
         for pp in papers:
             doi_key = _normalized_real_doi(pp.get("doi", ""))
@@ -1417,7 +1424,17 @@ def run_pipeline(
             # Mirror DedupIndex.add(): only title-match on titles long enough
             # to be distinctive (>15 normalized chars) to avoid false merges.
             title_key = ntitle if len(ntitle) > 15 else ""
-            existing = seen_dois.get(doi_key) if doi_key else None
+            existing = None
+            if doi_key:
+                for candidate in seen_dois.get(doi_key, ()):
+                    if (
+                        _in_batch_title_match_ok(candidate, pp)
+                        and _titles_compatible_for_note(
+                            normalize_title(candidate.get("title")), ntitle
+                        )
+                    ):
+                        existing = candidate
+                        break
             if existing is None and title_key:
                 for candidate in seen_titles.get(title_key, ()):
                     if _in_batch_title_match_ok(candidate, pp):
@@ -1425,8 +1442,8 @@ def run_pipeline(
                         break
             if existing is not None:
                 merge_paper_evidence(existing, pp)
-                if doi_key:
-                    seen_dois[doi_key] = existing
+                if doi_key and existing not in seen_dois.setdefault(doi_key, []):
+                    seen_dois[doi_key].append(existing)
                 if title_key and existing not in seen_titles.setdefault(title_key, []):
                     seen_titles[title_key].append(existing)
                 p(
@@ -1446,7 +1463,7 @@ def run_pipeline(
                 continue
             deduped_papers.append(pp)
             if doi_key:
-                seen_dois[doi_key] = pp
+                seen_dois.setdefault(doi_key, []).append(pp)
             if title_key:
                 seen_titles.setdefault(title_key, []).append(pp)
         in_batch_collapsed = len(papers) - len(deduped_papers)
