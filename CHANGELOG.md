@@ -12,6 +12,15 @@
 
 ## [Unreleased]
 
+## [1.3.9] - 2026-11-28
+
+### Fixed
+- **Preserved Mismatch Keys & Cached Hit Context in Zotero Search Dedup (`pipeline.py`):** Built `cached_zotero_hits_by_key` before `run_pipeline`'s ingest loop, tracked `mismatched_zotero_keys` from `_zotero_index_hit_status`, and threaded both into `_zotero_search_row_matches_paper` (plus cached `doi`/`zotero_key` fallback in `_zotero_item_matches_paper`) so previously established Zotero mismatches short-circuit immediately without redundant detail fetches or false `DEFERRED_VERIFICATION` while `check_duplicate` continues evaluating remaining candidates.
+- **Required Real `DOI` Sufficiency & Normalized Search Title Matching (`pipeline.py`, `zotero/client.py`):** Required non-empty real `DOI` (and `zotero_key` when present on incoming papers) in `_zotero_live_item_sufficient_for_paper` when omitted by a search row and unconfirmed by a cached hit, forcing detail verification via `zot.item(key)` across collection, library, and title-prefix fallback searches, and normalized whitespace/punctuation on `check_duplicate` title hits when `item_matches_fn` is provided.
+
+### Changed
+- Bumped package version to `1.3.9` and plugin version to `0.5.45`.
+
 ## [1.3.8] - 2026-11-28
 
 ### Fixed

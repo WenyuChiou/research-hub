@@ -268,10 +268,12 @@ def check_duplicate(
     """Check if an item already exists in Zotero by DOI or title."""
     if allow_library_duplicates:
         return False
+    from research_hub.dedup import normalize_title
     from research_hub.utils.doi import normalize_doi
 
     norm_doi = normalize_doi(doi) if doi else ""
-    norm_title = (title or "").lower()
+    norm_title = (title or "").strip().lower()
+    norm_title_loose = normalize_title(title or "") if item_matches_fn is not None else ""
 
     def _matches(items: list[dict]) -> bool:
         for entry in items or []:
@@ -284,6 +286,13 @@ def check_duplicate(
             row_doi = normalize_doi(str(data.get("DOI") or ""))
             row_item_type = str(data.get("itemType") or "").strip().lower()
             title_hit = bool(norm_title and row_title.lower() == norm_title)
+            if (
+                not title_hit
+                and item_matches_fn is not None
+                and norm_title_loose
+                and row_title
+            ):
+                title_hit = normalize_title(row_title) == norm_title_loose
             doi_hit = bool(norm_doi and row_doi == norm_doi)
             incomplete_with_key = bool(
                 item_matches_fn is not None
