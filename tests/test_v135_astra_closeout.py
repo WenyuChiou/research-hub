@@ -1428,3 +1428,74 @@ def test_v137_http_error_status_classification_requests_and_urllib() -> None:
     finally:
         url_404.close()
         url_503.close()
+
+
+@pytest.mark.parametrize(
+    ("hit_kwargs", "live_data", "incoming_overrides"),
+    [
+        (
+            {"edition": "1st", "year": 2024, "authors": ["Smith"]},
+            {
+                "DOI": "10.1234/treatise",
+                "title": "Treatise on Water Resources",
+                "date": "2024",
+                "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+            },
+            {"edition": "2nd"},
+        ),
+        (
+            {"volume": "1", "year": 2024, "authors": ["Smith"]},
+            {
+                "DOI": "10.1234/treatise",
+                "title": "Treatise on Water Resources",
+                "date": "2024",
+                "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+            },
+            {"volume": "2"},
+        ),
+        (
+            {"year": 1890, "authors": ["Smith"]},
+            {
+                "DOI": "10.1234/treatise",
+                "title": "Treatise on Water Resources",
+                "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+            },
+            {"year": 2024},
+        ),
+        (
+            {"year": 2024, "authors": ["Smith"]},
+            {
+                "DOI": "10.1234/treatise",
+                "title": "Treatise on Water Resources",
+                "date": "2024",
+            },
+            {"authors": ["Jones, Bob"]},
+        ),
+    ],
+    ids=["cached-edition-waiver", "cached-volume-waiver", "cached-year-waiver", "cached-authors-waiver"],
+)
+def test_v137_cached_hit_waiver_still_compares_omitted_live_fields(
+    hit_kwargs: dict,
+    live_data: dict,
+    incoming_overrides: dict,
+) -> None:
+    hit = DedupHit(
+        source="zotero",
+        doi="10.1234/treatise",
+        title="Treatise on Water Resources",
+        zotero_key="ZOLD",
+        **hit_kwargs,
+    )
+    paper = {
+        "doi": "10.1234/treatise",
+        "title": "Treatise on Water Resources",
+        "year": 2024,
+        "authors": ["Smith, Alice"],
+        **incoming_overrides,
+    }
+
+    class _StubZot:
+        def item(self, _key: str) -> dict:
+            return {"key": "ZOLD", "data": live_data}
+
+    assert pipeline._zotero_index_hit_status(hit, paper, _StubZot(), False) == "mismatch"

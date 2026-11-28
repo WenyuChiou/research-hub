@@ -1067,19 +1067,36 @@ def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
     return True
 
 
-def _zotero_item_matches_paper(data: dict, pp: dict) -> bool:
+def _zotero_item_matches_paper(
+    data: dict,
+    pp: dict,
+    cached_hit: DedupHit | None = None,
+) -> bool:
     if not isinstance(data, dict):
         return False
+    raw_data = data["data"] if isinstance(data.get("data"), dict) else data
     ident = _extract_zotero_item_identity(data)
+    year = ident["year"]
+    if year is None and "date" not in raw_data and "year" not in raw_data and cached_hit is not None:
+        year = getattr(cached_hit, "year", None)
+    authors = ident["authors"]
+    if not authors and "creators" not in raw_data and "authors" not in raw_data and cached_hit is not None:
+        authors = getattr(cached_hit, "authors", []) or []
+    volume = ident["volume"]
+    if not volume and "volume" not in raw_data and cached_hit is not None:
+        volume = getattr(cached_hit, "volume", "") or ""
+    edition = ident["edition"]
+    if not edition and "edition" not in raw_data and cached_hit is not None:
+        edition = getattr(cached_hit, "edition", "") or ""
     hit = DedupHit(
         source="zotero",
         doi=ident["doi"],
         title=ident["title"],
         zotero_key=ident["zotero_key"],
-        year=ident["year"],
-        authors=ident["authors"],
-        volume=ident["volume"],
-        edition=ident["edition"],
+        year=year,
+        authors=authors,
+        volume=volume,
+        edition=edition,
     )
     return _zotero_hit_matches_paper(hit, pp)
 
@@ -1141,7 +1158,7 @@ def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool)
             return "mismatch" if _is_zotero_item_404(exc) else "unknown"
         if not isinstance(item, dict) or not item or not _zotero_live_item_sufficient_for_paper(item, hit, pp):
             return "unknown"
-        return "verified" if _zotero_item_matches_paper(item, pp) else "mismatch"
+        return "verified" if _zotero_item_matches_paper(item, pp, cached_hit=hit) else "mismatch"
     return "verified" if _zotero_hit_matches_paper(hit, pp) else "mismatch"
 
 
