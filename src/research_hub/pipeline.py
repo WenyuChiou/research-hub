@@ -1054,7 +1054,21 @@ def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
     hit_title = str(hit.title or "").strip()
     pp_title = str(pp.get("title") or "").strip()
     if hit_title and pp_title:
-        if not _titles_compatible_for_note(normalize_title(hit_title), normalize_title(pp_title)):
+        from research_hub.dedup import normalize_title_unicode
+
+        same_id = bool(
+            (incoming_doi and hit_doi and incoming_doi == hit_doi)
+            or (incoming_zkey and hit_zkey and incoming_zkey == hit_zkey)
+        )
+        hit_norm_u = normalize_title_unicode(hit_title)
+        pp_norm_u = normalize_title_unicode(pp_title)
+        if same_id:
+            if not _titles_compatible_for_note(hit_norm_u, pp_norm_u):
+                return False
+        elif hit_norm_u and pp_norm_u:
+            if hit_norm_u != pp_norm_u:
+                return False
+        elif not _titles_compatible_for_note(normalize_title(hit_title), normalize_title(pp_title)):
             return False
     hit_paper = {
         "zotero_key": hit_zkey,
@@ -1227,10 +1241,15 @@ def _zotero_search_row_matches_paper(
         ident["title"] or (isinstance(data, dict) and str(data.get("DOI") or "").strip())
     )
     if not row_has_primary and (detail_ident["title"] or str(detail_data.get("DOI") or "").strip()):
+        from research_hub.dedup import normalize_title_unicode
+
         norm_pp_title = str(pp.get("title") or "").strip().lower()
+        norm_pp_title_u = normalize_title_unicode(str(pp.get("title") or ""))
         norm_pp_doi = normalize_doi(str(pp.get("doi") or ""))
+        detail_title_raw = str(detail_ident["title"] or "").strip()
         detail_title_hit = bool(
-            norm_pp_title and str(detail_ident["title"] or "").strip().lower() == norm_pp_title
+            (norm_pp_title and detail_title_raw.lower() == norm_pp_title)
+            or (norm_pp_title_u and detail_title_raw and normalize_title_unicode(detail_title_raw) == norm_pp_title_u)
         )
         detail_doi_hit = bool(
             norm_pp_doi and normalize_doi(str(detail_data.get("DOI") or "")) == norm_pp_doi

@@ -33,6 +33,20 @@ def normalize_title(title: str | None) -> str:
     return re.sub(r"\s+", " ", normalized)
 
 
+def normalize_title_unicode(title: str | None) -> str:
+    """Casefold, fold Latin diacritics, preserve non-Latin letters, collapse punctuation/spaces."""
+    if not title:
+        return ""
+    from research_hub.workspace.sync_hooks import _fold_latin_diacritics
+
+    folded = _fold_latin_diacritics(title).casefold()
+    chars = [
+        ch if unicodedata.category(ch)[0] in ("L", "N", "M") else " "
+        for ch in folded
+    ]
+    return " ".join("".join(chars).split())
+
+
 @dataclass
 class DedupHit:
     """A single deduplication hit from Zotero or Obsidian."""

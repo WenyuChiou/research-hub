@@ -2735,3 +2735,151 @@ def test_v139_cached_doi_conflict_preserved_when_live_search_row_omits_doi(
     assert len(created_notes) == 1
     assert [row["status"] for row in output["zotero_results"]] == ["CREATED"]
     assert error_logs == []
+
+
+def test_v139_check_duplicate_preserves_non_latin_titles() -> None:
+    from research_hub.zotero.client import check_duplicate
+
+    class _Zot:
+        def __init__(self, row_title: str) -> None:
+            self._row_title = row_title
+
+        def items(self, *, q: str, limit: int = 5) -> list[dict]:
+            return [
+                {
+                    "key": "ZCJK1",
+                    "data": {
+                        "title": self._row_title,
+                        "date": "2024",
+                        "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                    },
+                }
+            ]
+
+    for existing_title, incoming_title in (
+        ("Deep Learning Survey for Water Governance: 醫療應用", "Deep Learning Survey for Water Governance: 金融應用"),
+        ("AI 在水資源管理的應用", "AI 在醫療診斷的應用"),
+    ):
+        pp = {
+            "title": incoming_title,
+            "doi": "",
+            "year": 2024,
+            "authors": ["Smith, Alice"],
+        }
+        zot = _Zot(existing_title)
+        assert (
+            check_duplicate(
+                zot,
+                pp["title"],
+                "",
+                item_matches_fn=lambda data, _pp=pp, _zot=zot: pipeline._zotero_search_row_matches_paper(
+                    data, _pp, _zot
+                ),
+            )
+            is False
+        )
+        assert (
+            pipeline._zotero_hit_matches_paper(
+                DedupHit(
+                    source="zotero",
+                    title=existing_title,
+                    zotero_key="ZCJK1",
+                    year=2024,
+                    authors=["Smith, Alice"],
+                ),
+                pp,
+            )
+            is False
+        )
+
+    same_pp = {
+        "title": "  AI 在水資源管理的應用  ",
+        "doi": "",
+        "year": 2024,
+        "authors": ["Smith, Alice"],
+    }
+    same_zot = _Zot("AI: 在水資源管理的應用！")
+    assert (
+        check_duplicate(
+            same_zot,
+            same_pp["title"],
+            "",
+            item_matches_fn=lambda data: pipeline._zotero_search_row_matches_paper(
+                data, same_pp, same_zot
+            ),
+        )
+        is True
+    )
+
+
+def test_v139_pipeline_does_not_skip_different_non_latin_subtitle_papers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paper = {
+        "title": "Deep Learning Survey for Water Governance: 金融應用",
+        "slug": "smith2024-dl-finance",
+        "doi": "",
+        "authors": ["Smith, Alice"],
+        "year": 2024,
+        "abstract": "Finance application.",
+        "summary": "Summary.",
+        "key_findings": ["Finding 1"],
+        "methodology": "Method.",
+        "relevance": "Relevant.",
+    }
+    created_items: list[dict] = []
+    created_notes: list[dict] = []
+
+    def _transport_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/groups/404/items":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "key": "ZCJK_MED",
+                        "data": {
+                            "title": "Deep Learning Survey for Water Governance: 醫療應用",
+                            "date": "2024",
+                            "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                        },
+                    }
+                ],
+            )
+        if request.method == "GET" and request.url.path == "/items/new":
+            item_type = request.url.params.get("itemType", "journalArticle")
+            return httpx.Response(
+                200,
+                json={"itemType": item_type, "tags": [], "collections": [], "creators": []},
+            )
+        if request.method == "POST" and request.url.path == "/groups/404/items":
+            payload = json.loads(request.content.decode("utf-8"))
+            for entry in payload:
+                if entry.get("itemType") == "note":
+                    created_notes.append(entry)
+                else:
+                    created_items.append(entry)
+            return httpx.Response(
+                200,
+                json={
+                    "successful": {str(i): {"key": f"ZNEW{i}"} for i in range(len(payload))},
+                    "unchanged": {},
+                    "failed": {},
+                },
+            )
+        raise AssertionError(f"Unexpected pyzotero HTTP call: {request.method} {request.url}")
+
+    rc, output, error_logs = _run_v139_pipeline_with_transport(
+        tmp_path,
+        monkeypatch,
+        scope="library",
+        paper=paper,
+        dedup=DedupIndex(),
+        transport_handler=_transport_handler,
+    )
+    assert rc == 0
+    assert len(created_items) == 1
+    assert len(created_notes) == 1
+    assert [row["status"] for row in output["zotero_results"]] == ["CREATED"]
+    assert error_logs == []
+    assert len(list((tmp_path / "vault" / "raw").rglob("*.md"))) == 1
