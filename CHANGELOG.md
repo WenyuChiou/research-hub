@@ -12,6 +12,15 @@
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-11-27
+
+### Fixed
+- **Fail-Closed Zotero Reuse & Duplicate Verification (`pipeline.py`, `zotero/client.py`):** Added `_is_zotero_item_404` so DNS/socket/transport errors (`OSError`, `gaierror`, `Host not found`) never masquerade as 404 mismatches, made `_zotero_index_hit_status` fail closed (`"unknown"` / `DEFERRED_VERIFICATION`) when live `zot.item` returns empty or identity-less `data`, and added `raise_on_error=True` on `pipeline.py`'s `check_duplicate` call so live Zotero query failures defer cleanly without creating duplicate Zotero items or Obsidian notes.
+- **Structured CJK Surname Preservation Across Snapshot & Import (`workspace/library_snapshot.py`, `workspace/sync_hooks.py`):** Extracted explicit `lastName`/`family` surnames into `author_surnames` in `read_vault_snapshot` (with `author` fallback), accepted both `family`/`given` and `lastName`/`firstName` in `_collect_authors` and `_zotero_creators`, and compared/persisted normalized `author_surnames` via `_author_surnames_from_record` in `import_obsidian_notes`.
+
+### Changed
+- Bumped package version to `1.3.6` and plugin version to `0.5.42`.
+
 ## [1.3.5] - 2026-11-27
 
 ### Fixed
