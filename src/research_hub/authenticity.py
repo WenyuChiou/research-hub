@@ -1271,10 +1271,14 @@ def _load_fit_scores(cfg, cluster_slug: str | None) -> dict[str, dict]:
                         en_doi = normalize_doi(str(entry.get("doi", "") or ""))
                         ex_idx = _fit_entry_index(existing)
                         en_idx = _fit_entry_index(entry)
+                        ex_year = str(existing.get("year") or "").strip()
+                        en_year = str(entry.get("year") or "").strip()
                         if (
                             ex_doi != en_doi
                             or ex_idx != en_idx
                             or bool(existing.get("kept")) != bool(entry.get("kept"))
+                            or existing.get("score") != entry.get("score")
+                            or (ex_year and en_year and ex_year != en_year)
                         ):
                             scores[key] = {"_ambiguous": True}
                             continue

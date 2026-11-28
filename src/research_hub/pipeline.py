@@ -19,10 +19,12 @@ from research_hub.config import get_config
 from research_hub.dedup import (
     DedupHit,
     DedupIndex,
+    _extract_zotero_item_identity,
     build_from_obsidian,
     build_from_zotero,
     normalize_title,
 )
+from research_hub.workspace.sync_hooks import _fold_latin_diacritics
 from research_hub.manifest import Manifest, new_entry
 from research_hub.ingest_provenance import (
     merge_note_evidence,
@@ -775,8 +777,6 @@ def _parse_year_int(value: object) -> int | None:
 
 
 def _author_surname_set(paper: dict) -> set[str]:
-    import unicodedata
-
     surnames: set[str] = set()
     authors = paper.get("authors") or []
     if isinstance(authors, str):
@@ -793,8 +793,8 @@ def _author_surname_set(paper: dict) -> set[str]:
         elif isinstance(author, str):
             text = author.strip()
             raw = text.split(",", 1)[0] if "," in text else (text.split()[-1] if text.split() else "")
-        cleaned = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
-        token = re.sub(r"[^a-z0-9]+", "", cleaned.lower())
+        folded = _fold_latin_diacritics(raw)
+        token = re.sub(r"[\W_]+", "", folded.casefold())
         if token:
             surnames.add(token)
     return surnames
@@ -969,21 +969,48 @@ def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
     if hit_title and pp_title:
         if not _titles_compatible_for_note(normalize_title(hit_title), normalize_title(pp_title)):
             return False
-        if _title_markers(hit_title) != _title_markers(pp_title):
-            return False
+    hit_paper = {
+        "zotero_key": hit_zkey,
+        "title": hit_title,
+        "year": getattr(hit, "year", None),
+        "authors": getattr(hit, "authors", []) or [],
+        "volume": getattr(hit, "volume", "") or "",
+        "edition": getattr(hit, "edition", "") or "",
+    }
+    if not _in_batch_title_match_ok(hit_paper, pp):
+        return False
     return True
 
 
 def _zotero_item_matches_paper(data: dict, pp: dict) -> bool:
     if not isinstance(data, dict):
         return False
+    ident = _extract_zotero_item_identity(data)
     hit = DedupHit(
         source="zotero",
-        doi=str(data.get("DOI") or ""),
-        title=str(data.get("title") or ""),
-        zotero_key=str(data.get("key") or "") or None,
+        doi=ident["doi"],
+        title=ident["title"],
+        zotero_key=ident["zotero_key"],
+        year=ident["year"],
+        authors=ident["authors"],
+        volume=ident["volume"],
+        edition=ident["edition"],
     )
     return _zotero_hit_matches_paper(hit, pp)
+
+
+def _zotero_index_hit_verified(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> bool:
+    if not _zotero_hit_matches_paper(hit, pp):
+        return False
+    if not no_zotero and zot is not None and hit.zotero_key and callable(getattr(zot, "item", None)):
+        try:
+            item = zot.item(hit.zotero_key)
+        except Exception:
+            item = None
+        if isinstance(item, dict) and item:
+            if not _zotero_item_matches_paper(item, pp):
+                return False
+    return True
 
 
 def _resolve_vault_note_path(folder: Path, pp: dict) -> Path:
@@ -1521,7 +1548,8 @@ def run_pipeline(
                         (
                             hit
                             for hit in dedup_hits
-                            if hit.source == "zotero" and _zotero_hit_matches_paper(hit, pp)
+                            if hit.source == "zotero"
+                            and _zotero_index_hit_verified(hit, pp, zot, no_zotero)
                         ),
                         None,
                     )

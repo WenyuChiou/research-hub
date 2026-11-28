@@ -41,6 +41,124 @@ class DedupHit:
     title: str = ""
     zotero_key: str | None = None
     obsidian_path: str | None = None
+    year: int | str | None = None
+    authors: list[str] = field(default_factory=list)
+    volume: str = ""
+    edition: str = ""
+
+
+_DEDUP_HIT_FIELDS = frozenset({
+    "source",
+    "doi",
+    "title",
+    "zotero_key",
+    "obsidian_path",
+    "year",
+    "authors",
+    "volume",
+    "edition",
+})
+
+
+def _hit_from_dict(raw: dict) -> DedupHit:
+    filtered = {k: v for k, v in raw.items() if k in _DEDUP_HIT_FIELDS}
+    if "authors" in filtered:
+        authors = filtered["authors"]
+        if authors is None:
+            filtered["authors"] = []
+        elif isinstance(authors, str):
+            filtered["authors"] = [authors] if authors.strip() else []
+        elif isinstance(authors, list):
+            filtered["authors"] = [str(a) for a in authors if a is not None]
+        else:
+            filtered["authors"] = []
+    if "volume" in filtered:
+        filtered["volume"] = "" if filtered["volume"] is None else str(filtered["volume"])
+    if "edition" in filtered:
+        filtered["edition"] = "" if filtered["edition"] is None else str(filtered["edition"])
+    return DedupHit(**filtered)
+
+
+def _extract_year_4digit(raw_value: object) -> int | None:
+    if raw_value in (None, ""):
+        return None
+    text = str(raw_value).strip()
+    for match in re.finditer(r"(?<!\d)(\d{4})(?!\d)", text):
+        year_val = int(match.group(1))
+        if 1000 <= year_val <= 2100:
+            return year_val
+    return None
+
+
+def _extract_zotero_item_identity(item_or_data: dict) -> dict:
+    """Extract normalized bibliographic identity from a Zotero item or data dict."""
+    if not isinstance(item_or_data, dict):
+        return {
+            "doi": "",
+            "title": "",
+            "zotero_key": None,
+            "year": None,
+            "authors": [],
+            "volume": "",
+            "edition": "",
+        }
+    data = item_or_data.get("data") if isinstance(item_or_data.get("data"), dict) else item_or_data
+    raw_zkey = (
+        item_or_data.get("key")
+        or data.get("key")
+        or data.get("zotero_key")
+        or data.get("zotero-key")
+    )
+    zotero_key = str(raw_zkey).strip() if raw_zkey else None
+    doi = str(data.get("DOI") or data.get("doi") or "").strip()
+    title = str(data.get("title") or "").strip()
+    raw_date = data.get("date") if data.get("date") not in (None, "") else data.get("year")
+    year = _extract_year_4digit(raw_date)
+    if year is None and data.get("year") not in (None, "") and raw_date is not data.get("year"):
+        year = _extract_year_4digit(data.get("year"))
+
+    authors: list[str] = []
+    creators = data.get("creators")
+    if isinstance(creators, list):
+        for creator in creators:
+            if isinstance(creator, dict):
+                last = str(creator.get("lastName") or "").strip()
+                first = str(creator.get("firstName") or "").strip()
+                if last:
+                    authors.append(f"{last}, {first}" if first else last)
+                elif creator.get("name"):
+                    name = str(creator.get("name") or "").strip()
+                    if name:
+                        authors.append(name)
+            elif isinstance(creator, str) and creator.strip():
+                authors.append(creator.strip())
+    if not authors:
+        raw_authors = data.get("authors")
+        if isinstance(raw_authors, list):
+            for author in raw_authors:
+                if isinstance(author, str) and author.strip():
+                    authors.append(author.strip())
+                elif isinstance(author, dict):
+                    last = str(author.get("lastName") or author.get("family") or "").strip()
+                    first = str(author.get("firstName") or author.get("given") or "").strip()
+                    if last:
+                        authors.append(f"{last}, {first}" if first else last)
+                    elif author.get("name"):
+                        name = str(author.get("name") or "").strip()
+                        if name:
+                            authors.append(name)
+        elif isinstance(raw_authors, str) and raw_authors.strip():
+            authors = [part.strip() for part in raw_authors.split(";") if part.strip()] if ";" in raw_authors else [raw_authors.strip()]
+
+    return {
+        "doi": doi,
+        "title": title,
+        "zotero_key": zotero_key or None,
+        "year": year,
+        "authors": authors,
+        "volume": str(data.get("volume") or "").strip(),
+        "edition": str(data.get("edition") or "").strip(),
+    }
 
 
 @dataclass
@@ -68,9 +186,9 @@ class DedupIndex:
         data = json.loads(path.read_text(encoding="utf-8"))
         index = cls()
         for doi, hits in data.get("doi_to_hits", {}).items():
-            index.doi_to_hits[doi] = [DedupHit(**hit) for hit in hits]
+            index.doi_to_hits[doi] = [_hit_from_dict(hit) for hit in hits]
         for title, hits in data.get("title_to_hits", {}).items():
-            index.title_to_hits[title] = [DedupHit(**hit) for hit in hits]
+            index.title_to_hits[title] = [_hit_from_dict(hit) for hit in hits]
         return index
 
     def save(self, path: Path) -> None:
@@ -223,11 +341,11 @@ class DedupIndex:
     def copy(self) -> "DedupIndex":
         copied = DedupIndex.empty()
         copied.doi_to_hits = {
-            key: [DedupHit(**hit.__dict__) for hit in hits]
+            key: [_hit_from_dict(hit.__dict__) for hit in hits]
             for key, hits in self.doi_to_hits.items()
         }
         copied.title_to_hits = {
-            key: [DedupHit(**hit.__dict__) for hit in hits]
+            key: [_hit_from_dict(hit.__dict__) for hit in hits]
             for key, hits in self.title_to_hits.items()
         }
         return copied
@@ -240,6 +358,9 @@ class DedupIndex:
             normalize_title(new_hit.title),
             new_hit.zotero_key,
             new_hit.obsidian_path,
+            str(new_hit.year or "").strip(),
+            str(new_hit.volume or "").strip().lower(),
+            str(new_hit.edition or "").strip().lower(),
         )
         for existing in hits:
             existing_marker = (
@@ -248,6 +369,9 @@ class DedupIndex:
                 normalize_title(existing.title),
                 existing.zotero_key,
                 existing.obsidian_path,
+                str(existing.year or "").strip(),
+                str(existing.volume or "").strip().lower(),
+                str(existing.edition or "").strip().lower(),
             )
             if existing_marker == marker:
                 return
@@ -311,12 +435,17 @@ def build_from_zotero(zot, library_id: str) -> list[DedupHit]:
             data = item.get("data", {})
             if data.get("itemType") in ("attachment", "note"):
                 continue
+            ident = _extract_zotero_item_identity(item)
             hits.append(
                 DedupHit(
                     source="zotero",
-                    doi=data.get("DOI", ""),
-                    title=data.get("title", ""),
-                    zotero_key=item.get("key"),
+                    doi=ident["doi"],
+                    title=ident["title"],
+                    zotero_key=ident["zotero_key"],
+                    year=ident["year"],
+                    authors=ident["authors"],
+                    volume=ident["volume"],
+                    edition=ident["edition"],
                 )
             )
         if len(batch) < 100:

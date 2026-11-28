@@ -130,6 +130,26 @@ def _collect_authors(value: object) -> list[str]:
     return out
 
 
+def _fold_latin_diacritics(text: str) -> str:
+    """Fold Latin combining diacritics while preserving Kana dakuten, CJK, and Hangul."""
+    out: list[str] = []
+    last_was_latin = False
+    for ch in unicodedata.normalize("NFKC", text):
+        if unicodedata.category(ch) == "Mn":
+            if not last_was_latin:
+                out.append(ch)
+            continue
+        if "LATIN" in unicodedata.name(ch, ""):
+            last_was_latin = True
+            for dch in unicodedata.normalize("NFKD", ch):
+                if unicodedata.category(dch) != "Mn":
+                    out.append(dch)
+        else:
+            last_was_latin = False
+            out.append(ch)
+    return "".join(out)
+
+
 def _author_surnames(value: object) -> set[str]:
     surnames: set[str] = set()
     items = _collect_authors(value)
@@ -139,8 +159,8 @@ def _author_surnames(value: object) -> set[str]:
                 items.append(str(entry["lastName"]))
     for author in items:
         raw = author.split(",", 1)[0] if "," in author else (author.split()[-1] if author.split() else "")
-        cleaned = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
-        token = re.sub(r"[^a-z0-9]+", "", cleaned.lower())
+        folded = _fold_latin_diacritics(raw)
+        token = re.sub(r"[\W_]+", "", folded.casefold())
         if token:
             surnames.add(token)
     return surnames
@@ -1978,11 +1998,7 @@ class WorkspaceSyncHooks:
             cleaned = _clean_line(value)
             if not cleaned:
                 return ""
-            folded = "".join(
-                ch
-                for ch in unicodedata.normalize("NFKD", cleaned)
-                if unicodedata.category(ch) != "Mn"
-            )
+            folded = _fold_latin_diacritics(cleaned)
             token = re.sub(r"[\W_]+", " ", folded.casefold()).strip()
             return token or cleaned.casefold()
 
