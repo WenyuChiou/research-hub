@@ -130,17 +130,69 @@ def _collect_authors(value: object) -> list[str]:
     return out
 
 
+def _fold_latin_diacritics(text: str) -> str:
+    """Fold Latin combining diacritics while preserving Kana dakuten, CJK, and Hangul."""
+    out: list[str] = []
+    last_was_latin = False
+    for ch in unicodedata.normalize("NFKC", text):
+        if unicodedata.category(ch) == "Mn":
+            if not last_was_latin:
+                out.append(ch)
+            continue
+        if "LATIN" in unicodedata.name(ch, ""):
+            last_was_latin = True
+            for dch in unicodedata.normalize("NFKD", ch):
+                if unicodedata.category(dch) != "Mn":
+                    out.append(dch)
+        else:
+            last_was_latin = False
+            out.append(ch)
+    return "".join(out)
+
+
+_CJK_SCRIPT_RE = re.compile(
+    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]"
+)
+
+
+def _extract_segmented_surname(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if "," in cleaned:
+        return cleaned.split(",", 1)[0].strip()
+    parts = cleaned.split()
+    if len(parts) > 1:
+        return parts[-1]
+    if len(cleaned) >= 2 and _CJK_SCRIPT_RE.search(cleaned):
+        return ""
+    return cleaned
+
+
 def _author_surnames(value: object) -> set[str]:
     surnames: set[str] = set()
-    items = _collect_authors(value)
-    if not items and isinstance(value, list):
-        for entry in value:
-            if isinstance(entry, dict) and entry.get("lastName"):
-                items.append(str(entry["lastName"]))
-    for author in items:
-        raw = author.split(",", 1)[0] if "," in author else (author.split()[-1] if author.split() else "")
-        cleaned = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
-        token = re.sub(r"[^a-z0-9]+", "", cleaned.lower())
+    entries: list[object]
+    if isinstance(value, str):
+        cleaned = _clean_line(value)
+        entries = [cleaned] if cleaned else []
+    elif isinstance(value, list):
+        entries = value
+    else:
+        entries = []
+    for entry in entries:
+        raw = ""
+        if isinstance(entry, str):
+            raw = _extract_segmented_surname(_clean_line(entry))
+        elif isinstance(entry, dict):
+            explicit = _clean_line(entry.get("family") or entry.get("lastName"))
+            if explicit:
+                raw = explicit
+            else:
+                direct = _clean_line(entry.get("name") or entry.get("literal"))
+                if direct:
+                    raw = _extract_segmented_surname(direct)
+        folded = _fold_latin_diacritics(raw)
+        token = re.sub(r"[\W_]+", "", folded.casefold())
         if token:
             surnames.add(token)
     return surnames
@@ -1978,11 +2030,7 @@ class WorkspaceSyncHooks:
             cleaned = _clean_line(value)
             if not cleaned:
                 return ""
-            folded = "".join(
-                ch
-                for ch in unicodedata.normalize("NFKD", cleaned)
-                if unicodedata.category(ch) != "Mn"
-            )
+            folded = _fold_latin_diacritics(cleaned)
             token = re.sub(r"[\W_]+", " ", folded.casefold()).strip()
             return token or cleaned.casefold()
 

@@ -12,6 +12,17 @@
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-11-27
+
+### Fixed
+- **Title-Only FitCheck Ambiguity Guard (`authenticity.py`):** Extended `_load_fit_scores` duplicate `title:` ambiguity detection to flag conflicting scores (`existing.get("score") != entry.get("score")`) and conflicting non-empty years (`ex_year != en_year`), returning `kept=False, reason="relevance_unjudged", score=None` regardless of row order.
+- **Zotero Edition-Only & Year-Only Identity Preservation (`dedup.py`, `pipeline.py`):** Added optional `year`, `authors`, `volume`, and `edition` fields to `DedupHit` with backward-compatible `DedupIndex.load`, preserved distinct editions/years sharing a DOI in `DedupIndex._append_unique`, introduced `_extract_zotero_item_identity` across `build_from_zotero` and `_zotero_item_matches_paper`, enforced `_in_batch_title_match_ok` in `_zotero_hit_matches_paper`, added live `zot.item` verification via `_zotero_index_hit_verified` for legacy hits, and preserved non-ASCII/CJK surnames in `_author_surname_set`.
+- **YAML Merge-Source Duplicate Keys & `set_labels` Pre-Read Validation (`paper.py`):** Added `_validate_mapping_node_unique_keys` before `flatten_mapping` in `_construct_unique_mapping` to reject duplicate or non-string keys inside `<<:` merge sources while keeping outer-key overrides valid, and added `_validate_note_frontmatter_for_write` in `set_labels` before `_parse_paper_label` so malformed/duplicate-key/non-mapping frontmatter fails closed with `ValueError`.
+- **Cross-Vault Kana Dakuten & CJK Surname Preservation (`workspace/sync_hooks.py`):** Added `_fold_latin_diacritics` using `NFKC` + Latin-only combining-mark stripping in `_norm_title_token` and `_author_surnames` so Japanese voiced/semi-voiced kana (`ガ`/`パ`) and CJK surnames stay distinct.
+
+### Changed
+- Bumped package version to `1.3.5` and plugin version to `0.5.41`.
+
 ## [1.3.4] - 2026-11-27
 
 ### Fixed

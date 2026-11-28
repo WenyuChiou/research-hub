@@ -19,10 +19,12 @@ from research_hub.config import get_config
 from research_hub.dedup import (
     DedupHit,
     DedupIndex,
+    _extract_zotero_item_identity,
     build_from_obsidian,
     build_from_zotero,
     normalize_title,
 )
+from research_hub.workspace.sync_hooks import _fold_latin_diacritics
 from research_hub.manifest import Manifest, new_entry
 from research_hub.ingest_provenance import (
     merge_note_evidence,
@@ -774,9 +776,26 @@ def _parse_year_int(value: object) -> int | None:
     return year if year > 0 else None
 
 
-def _author_surname_set(paper: dict) -> set[str]:
-    import unicodedata
+_CJK_SCRIPT_RE = re.compile(
+    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]"
+)
 
+
+def _extract_segmented_surname(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if "," in cleaned:
+        return cleaned.split(",", 1)[0].strip()
+    parts = cleaned.split()
+    if len(parts) > 1:
+        return parts[-1]
+    if len(cleaned) >= 2 and _CJK_SCRIPT_RE.search(cleaned):
+        return ""
+    return cleaned
+
+
+def _author_surname_set(paper: dict) -> set[str]:
     surnames: set[str] = set()
     authors = paper.get("authors") or []
     if isinstance(authors, str):
@@ -786,15 +805,13 @@ def _author_surname_set(paper: dict) -> set[str]:
     for author in authors:
         raw = ""
         if isinstance(author, dict):
-            raw = str(author.get("lastName") or "")
-            if not raw and author.get("name"):
-                name = str(author.get("name") or "").strip()
-                raw = name.split(",", 1)[0] if "," in name else (name.split()[-1] if name.split() else "")
+            raw = str(author.get("lastName") or author.get("family") or "").strip()
+            if not raw and (author.get("name") or author.get("literal")):
+                raw = _extract_segmented_surname(str(author.get("name") or author.get("literal") or ""))
         elif isinstance(author, str):
-            text = author.strip()
-            raw = text.split(",", 1)[0] if "," in text else (text.split()[-1] if text.split() else "")
-        cleaned = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
-        token = re.sub(r"[^a-z0-9]+", "", cleaned.lower())
+            raw = _extract_segmented_surname(author)
+        folded = _fold_latin_diacritics(raw)
+        token = re.sub(r"[\W_]+", "", folded.casefold())
         if token:
             surnames.add(token)
     return surnames
@@ -820,6 +837,73 @@ def _norm_locator(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
+def _norm_author_words(text: str) -> tuple[str, ...]:
+    folded = _fold_latin_diacritics(text)
+    return tuple(
+        token
+        for part in re.split(r"[\W_]+", folded.casefold())
+        if (token := part.strip())
+    )
+
+
+def _author_word_records(paper: dict) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    records: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    authors = paper.get("authors") or []
+    if isinstance(authors, str):
+        authors = [part.strip() for part in authors.split(";")] if ";" in authors else [authors]
+    elif not isinstance(authors, list):
+        authors = [authors]
+    for author in authors:
+        if isinstance(author, dict):
+            last = str(author.get("lastName") or author.get("family") or "").strip()
+            first = str(author.get("firstName") or author.get("given") or "").strip()
+            if last:
+                sw = _norm_author_words(last)
+                fw = _norm_author_words(f"{first} {last}".strip()) if first else sw
+                if sw:
+                    records.append((sw, fw))
+                continue
+            name = str(author.get("name") or author.get("literal") or "").strip()
+        elif isinstance(author, str):
+            name = author.strip()
+        else:
+            continue
+        if not name:
+            continue
+        if "," in name:
+            last_part, first_part = name.split(",", 1)
+            sw = _norm_author_words(last_part)
+            fw = _norm_author_words(f"{first_part} {last_part}".strip()) if first_part.strip() else sw
+            if sw:
+                records.append((sw, fw))
+        else:
+            segmented = _extract_segmented_surname(name)
+            if segmented:
+                sw = _norm_author_words(segmented)
+                fw = _norm_author_words(name)
+                if sw:
+                    records.append((sw, fw))
+    return records
+
+
+def _authors_compatible(existing: dict, incoming: dict) -> bool:
+    a1 = _author_surname_set(existing)
+    a2 = _author_surname_set(incoming)
+    if not a1 or not a2:
+        return True
+    if a1 & a2:
+        return True
+    rec1 = _author_word_records(existing)
+    rec2 = _author_word_records(incoming)
+    for sw1, fw1 in rec1:
+        for sw2, fw2 in rec2:
+            if len(sw1) >= 2 and len(fw2) >= len(sw1) and fw2[-len(sw1):] == sw1:
+                return True
+            if len(sw2) >= 2 and len(fw1) >= len(sw2) and fw1[-len(sw2):] == sw2:
+                return True
+    return False
+
+
 def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
     """Return True iff two in-batch title-matched papers represent the same work."""
     z1 = str(existing.get("zotero_key") or existing.get("zotero-key") or "").strip()
@@ -830,9 +914,7 @@ def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
     y2 = _parse_year_int(incoming.get("year"))
     if y1 is not None and y2 is not None and abs(y1 - y2) > 2:
         return False
-    a1 = _author_surname_set(existing)
-    a2 = _author_surname_set(incoming)
-    if a1 and a2 and not (a1 & a2):
+    if not _authors_compatible(existing, incoming):
         return False
     if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
         return False
@@ -969,21 +1051,76 @@ def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
     if hit_title and pp_title:
         if not _titles_compatible_for_note(normalize_title(hit_title), normalize_title(pp_title)):
             return False
-        if _title_markers(hit_title) != _title_markers(pp_title):
-            return False
+    hit_paper = {
+        "zotero_key": hit_zkey,
+        "title": hit_title,
+        "year": getattr(hit, "year", None),
+        "authors": getattr(hit, "authors", []) or [],
+        "volume": getattr(hit, "volume", "") or "",
+        "edition": getattr(hit, "edition", "") or "",
+    }
+    if not _in_batch_title_match_ok(hit_paper, pp):
+        return False
     return True
 
 
 def _zotero_item_matches_paper(data: dict, pp: dict) -> bool:
     if not isinstance(data, dict):
         return False
+    ident = _extract_zotero_item_identity(data)
     hit = DedupHit(
         source="zotero",
-        doi=str(data.get("DOI") or ""),
-        title=str(data.get("title") or ""),
-        zotero_key=str(data.get("key") or "") or None,
+        doi=ident["doi"],
+        title=ident["title"],
+        zotero_key=ident["zotero_key"],
+        year=ident["year"],
+        authors=ident["authors"],
+        volume=ident["volume"],
+        edition=ident["edition"],
     )
     return _zotero_hit_matches_paper(hit, pp)
+
+
+def _zotero_item_has_identity_fields(item: dict) -> bool:
+    ident = _extract_zotero_item_identity(item)
+    return bool(
+        ident["doi"]
+        or ident["title"]
+        or ident["year"] is not None
+        or ident["authors"]
+        or ident["volume"]
+        or ident["edition"]
+    )
+
+
+def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> str:
+    incoming_doi = _normalized_real_doi(pp.get("doi", ""))
+    hit_doi = _normalized_real_doi(hit.doi)
+    if incoming_doi and hit_doi and incoming_doi != hit_doi:
+        return "mismatch"
+    incoming_zkey = str(pp.get("zotero_key") or pp.get("zotero-key") or "").strip()
+    hit_zkey = str(hit.zotero_key or "").strip()
+    if incoming_zkey and hit_zkey and incoming_zkey != hit_zkey:
+        return "mismatch"
+    if not no_zotero and zot is not None and hit_zkey and callable(getattr(zot, "item", None)):
+        try:
+            item = zot.item(hit_zkey)
+        except Exception as exc:
+            if getattr(exc, "status_code", None) == 404:
+                return "mismatch"
+            msg = str(exc).lower()
+            if "404" in msg or "not found" in msg:
+                return "mismatch"
+            return "unknown"
+        if not isinstance(item, dict) or not item:
+            return "unknown"
+        if _zotero_item_has_identity_fields(item):
+            return "verified" if _zotero_item_matches_paper(item, pp) else "mismatch"
+    return "verified" if _zotero_hit_matches_paper(hit, pp) else "mismatch"
+
+
+def _zotero_index_hit_verified(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> bool:
+    return _zotero_index_hit_status(hit, pp, zot, no_zotero) == "verified"
 
 
 def _resolve_vault_note_path(folder: Path, pp: dict) -> Path:
@@ -1517,14 +1654,6 @@ def run_pipeline(
                         ),
                         None,
                     )
-                    zotero_hit = next(
-                        (
-                            hit
-                            for hit in dedup_hits
-                            if hit.source == "zotero" and _zotero_hit_matches_paper(hit, pp)
-                        ),
-                        None,
-                    )
                     # Only treat an obsidian_hit as a true duplicate (skip)
                     # when the note file ACTUALLY EXISTS. A stale dedup-index
                     # entry pointing at a deleted note must NOT cause a skip;
@@ -1571,6 +1700,43 @@ def run_pipeline(
                                 "status": "SKIPPED_DUPLICATE",
                                 "key": obsidian_hit.zotero_key or "",
                             }
+                        )
+                        continue
+                    zotero_hit = None
+                    unknown_zotero_hit = None
+                    for hit in dedup_hits:
+                        if hit.source != "zotero":
+                            continue
+                        hit_status = _zotero_index_hit_status(hit, pp, zot, no_zotero)
+                        if hit_status == "verified":
+                            zotero_hit = hit
+                            break
+                        if hit_status == "unknown" and unknown_zotero_hit is None:
+                            unknown_zotero_hit = hit
+                    if zotero_hit is None and unknown_zotero_hit is not None:
+                        p(
+                            f"  DEFERRED Zotero reuse verification failed for key={unknown_zotero_hit.zotero_key}"
+                        )
+                        zr.append(
+                            {
+                                "title": pp["title"],
+                                "status": "DEFERRED_VERIFICATION",
+                                "key": "",
+                            }
+                        )
+                        manifest.append(
+                            new_entry(
+                                cluster=cluster_slug or "",
+                                query=query_text,
+                                action="error",
+                                doi=pp["doi"],
+                                title=pp["title"],
+                                zotero_key=unknown_zotero_hit.zotero_key or "",
+                                batch_label=resolved_batch_label,
+                            )
+                        )
+                        errors.append(
+                            f"{pp['title']}: deferred because cached Zotero item {unknown_zotero_hit.zotero_key} could not be verified"
                         )
                         continue
                     if zotero_hit and no_zotero:

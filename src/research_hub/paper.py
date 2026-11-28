@@ -76,6 +76,7 @@ def set_labels(
     if note_path is None:
         raise FileNotFoundError(f"paper not found: {slug}")
 
+    _validate_note_frontmatter_for_write(note_path)
     current = _parse_paper_label(note_path, slug=slug)
     new_labels = list(current.labels)
     if labels is not None:
@@ -668,15 +669,57 @@ _NoTimestampSafeLoader.yaml_implicit_resolvers = {
 class _UniqueMappingSafeLoader(_NoTimestampSafeLoader):
     """Strict YAML SafeLoader rejecting duplicate or non-string keys at any level."""
 
+    def __init__(self, stream: object) -> None:
+        super().__init__(stream)
+        self._validated_unique_nodes: dict[int, yaml.Node] = {}
 
-def _construct_unique_mapping(
+
+def _validate_node_unique_mappings(
+    loader: _UniqueMappingSafeLoader,
+    node: yaml.Node,
+    *,
+    deep: bool = False,
+    _seen_nodes: dict[int, yaml.Node] | None = None,
+) -> None:
+    if _seen_nodes is None:
+        _seen_nodes = getattr(loader, "_validated_unique_nodes", None)
+        if _seen_nodes is None:
+            _seen_nodes = {}
+            setattr(loader, "_validated_unique_nodes", _seen_nodes)
+    if isinstance(node, yaml.MappingNode):
+        _validate_mapping_node_unique_keys(
+            loader, node, deep=deep, _seen_nodes=_seen_nodes
+        )
+    elif isinstance(node, yaml.SequenceNode):
+        node_id = id(node)
+        if node_id in _seen_nodes:
+            return
+        _seen_nodes[node_id] = node
+        for item in node.value:
+            _validate_node_unique_mappings(
+                loader, item, deep=deep, _seen_nodes=_seen_nodes
+            )
+
+
+def _validate_mapping_node_unique_keys(
     loader: _UniqueMappingSafeLoader,
     node: yaml.MappingNode,
     deep: bool = False,
-) -> dict[str, object]:
+    _seen_nodes: dict[int, yaml.Node] | None = None,
+) -> None:
+    if _seen_nodes is None:
+        _seen_nodes = getattr(loader, "_validated_unique_nodes", None)
+        if _seen_nodes is None:
+            _seen_nodes = {}
+            setattr(loader, "_validated_unique_nodes", _seen_nodes)
+    node_id = id(node)
+    if node_id in _seen_nodes:
+        return
+    _seen_nodes[node_id] = node
+
     explicit_keys: set[str] = set()
     seen_merge = False
-    for key_node, _ in node.value:
+    for key_node, value_node in node.value:
         if key_node.tag == "tag:yaml.org,2002:merge":
             if seen_merge:
                 raise yaml.constructor.ConstructorError(
@@ -686,6 +729,9 @@ def _construct_unique_mapping(
                     key_node.start_mark,
                 )
             seen_merge = True
+            _validate_node_unique_mappings(
+                loader, value_node, deep=deep, _seen_nodes=_seen_nodes
+            )
             continue
         key = loader.construct_object(key_node, deep=deep)
         if not isinstance(key, str):
@@ -703,20 +749,18 @@ def _construct_unique_mapping(
                 key_node.start_mark,
             )
         explicit_keys.add(key)
+        _validate_node_unique_mappings(
+            loader, value_node, deep=deep, _seen_nodes=_seen_nodes
+        )
 
-    loader.flatten_mapping(node)
-    mapping: dict[str, object] = {}
-    for key_node, value_node in node.value:
-        key = loader.construct_object(key_node, deep=deep)
-        if not isinstance(key, str):
-            raise yaml.constructor.ConstructorError(
-                "while constructing a mapping",
-                node.start_mark,
-                f"found non-string key {key!r}",
-                key_node.start_mark,
-            )
-        mapping[key] = loader.construct_object(value_node, deep=deep)
-    return mapping
+
+def _construct_unique_mapping(
+    loader: _UniqueMappingSafeLoader,
+    node: yaml.MappingNode,
+    deep: bool = False,
+) -> dict[str, object]:
+    _validate_mapping_node_unique_keys(loader, node, deep=deep)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep=deep)
 
 
 _UniqueMappingSafeLoader.add_constructor(
@@ -945,6 +989,27 @@ def _atomic_write_preserving_newlines(path: Path, content: str) -> None:
         raise
 
 
+def _validate_frontmatter_mapping_lf(frontmatter_lf: str) -> None:
+    if not frontmatter_lf.strip():
+        return
+    try:
+        initial = yaml.load(frontmatter_lf, Loader=_UniqueMappingSafeLoader)
+        if initial is not None and not isinstance(initial, dict):
+            raise ValueError("Paper note frontmatter must be a valid YAML mapping")
+    except (yaml.YAMLError, ValueError) as exc:
+        raise ValueError("Paper note frontmatter must be a valid YAML mapping") from exc
+
+
+def _validate_note_frontmatter_for_write(note_path: Path) -> None:
+    text = _read_text_preserve_newlines(note_path)
+    split = _split_frontmatter(text)
+    if split is None:
+        return
+    _opening, frontmatter, _body, newline = split
+    frontmatter_lf = frontmatter.replace("\r\n", "\n") if newline == "\r\n" else frontmatter
+    _validate_frontmatter_mapping_lf(frontmatter_lf)
+
+
 def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
     text = _read_text_preserve_newlines(note_path)
     split = _split_frontmatter(text)
@@ -956,13 +1021,7 @@ def _rewrite_paper_frontmatter(note_path: Path, updates: dict) -> None:
         return
 
     frontmatter_lf = frontmatter.replace("\r\n", "\n") if newline == "\r\n" else frontmatter
-    try:
-        if frontmatter_lf.strip():
-            initial = yaml.load(frontmatter_lf, Loader=_UniqueMappingSafeLoader)
-            if initial is not None and not isinstance(initial, dict):
-                raise ValueError("Paper note frontmatter must be a valid YAML mapping")
-    except (yaml.YAMLError, ValueError) as exc:
-        raise ValueError("Paper note frontmatter must be a valid YAML mapping") from exc
+    _validate_frontmatter_mapping_lf(frontmatter_lf)
 
     patched_lf = frontmatter_lf
     for key, value in updates.items():
