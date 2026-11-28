@@ -919,7 +919,9 @@ def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
         return False
     if not _authors_compatible(existing, incoming):
         return False
-    if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
+    t1 = str(existing.get("title") or "").strip()
+    t2 = str(incoming.get("title") or "").strip()
+    if t1 and t2 and _title_markers(t1) != _title_markers(t2):
         return False
     for field in ("volume", "edition"):
         v1 = _norm_locator(existing.get(field))
@@ -1176,6 +1178,14 @@ def _zotero_search_row_matches_paper(data: dict, pp: dict, zot: Any) -> bool:
         raise RuntimeError(
             f"incomplete Zotero search result for key={item_key} could not be verified"
         )
+
+    detail_data = detail.get("data") if isinstance(detail.get("data"), dict) else detail
+    if str(detail_data.get("itemType") or "").strip().lower() in (
+        "note",
+        "attachment",
+        "annotation",
+    ):
+        return False
 
     detail_ident = _extract_zotero_item_identity(detail)
     if _zotero_identity_populated(detail_ident) and not _zotero_item_matches_paper(detail, pp):

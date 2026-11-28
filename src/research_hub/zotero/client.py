@@ -276,11 +276,23 @@ def check_duplicate(
     def _matches(items: list[dict]) -> bool:
         for entry in items or []:
             data = entry.get("data", {})
-            if isinstance(data, dict) and not data.get("key") and entry.get("key"):
+            if not isinstance(data, dict):
+                data = {}
+            if not data.get("key") and entry.get("key"):
                 data = {**data, "key": entry["key"]}
-            title_hit = bool(norm_title and (data.get("title") or "").lower() == norm_title)
-            doi_hit = bool(norm_doi and normalize_doi(data.get("DOI", "") or "") == norm_doi)
-            if not (title_hit or doi_hit):
+            row_title = str(data.get("title") or "").strip()
+            row_doi = normalize_doi(str(data.get("DOI") or ""))
+            row_item_type = str(data.get("itemType") or "").strip().lower()
+            title_hit = bool(norm_title and row_title.lower() == norm_title)
+            doi_hit = bool(norm_doi and row_doi == norm_doi)
+            incomplete_with_key = bool(
+                item_matches_fn is not None
+                and str(data.get("key") or "").strip()
+                and not row_title
+                and not row_doi
+                and row_item_type not in ("note", "attachment", "annotation")
+            )
+            if not (title_hit or doi_hit or incomplete_with_key):
                 continue
             if item_matches_fn is not None and not item_matches_fn(data):
                 continue
