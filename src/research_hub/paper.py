@@ -669,16 +669,23 @@ _NoTimestampSafeLoader.yaml_implicit_resolvers = {
 class _UniqueMappingSafeLoader(_NoTimestampSafeLoader):
     """Strict YAML SafeLoader rejecting duplicate or non-string keys at any level."""
 
+    def __init__(self, stream: object) -> None:
+        super().__init__(stream)
+        self._validated_unique_nodes: dict[int, yaml.Node] = {}
+
 
 def _validate_node_unique_mappings(
     loader: _UniqueMappingSafeLoader,
     node: yaml.Node,
     *,
     deep: bool = False,
-    _seen_nodes: set[int] | None = None,
+    _seen_nodes: dict[int, yaml.Node] | None = None,
 ) -> None:
     if _seen_nodes is None:
-        _seen_nodes = set()
+        _seen_nodes = getattr(loader, "_validated_unique_nodes", None)
+        if _seen_nodes is None:
+            _seen_nodes = {}
+            setattr(loader, "_validated_unique_nodes", _seen_nodes)
     if isinstance(node, yaml.MappingNode):
         _validate_mapping_node_unique_keys(
             loader, node, deep=deep, _seen_nodes=_seen_nodes
@@ -687,7 +694,7 @@ def _validate_node_unique_mappings(
         node_id = id(node)
         if node_id in _seen_nodes:
             return
-        _seen_nodes.add(node_id)
+        _seen_nodes[node_id] = node
         for item in node.value:
             _validate_node_unique_mappings(
                 loader, item, deep=deep, _seen_nodes=_seen_nodes
@@ -698,14 +705,17 @@ def _validate_mapping_node_unique_keys(
     loader: _UniqueMappingSafeLoader,
     node: yaml.MappingNode,
     deep: bool = False,
-    _seen_nodes: set[int] | None = None,
+    _seen_nodes: dict[int, yaml.Node] | None = None,
 ) -> None:
     if _seen_nodes is None:
-        _seen_nodes = set()
+        _seen_nodes = getattr(loader, "_validated_unique_nodes", None)
+        if _seen_nodes is None:
+            _seen_nodes = {}
+            setattr(loader, "_validated_unique_nodes", _seen_nodes)
     node_id = id(node)
     if node_id in _seen_nodes:
         return
-    _seen_nodes.add(node_id)
+    _seen_nodes[node_id] = node
 
     explicit_keys: set[str] = set()
     seen_merge = False

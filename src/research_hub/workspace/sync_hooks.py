@@ -150,6 +150,11 @@ def _fold_latin_diacritics(text: str) -> str:
     return "".join(out)
 
 
+_CJK_SCRIPT_RE = re.compile(
+    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]"
+)
+
+
 def _author_surnames(value: object) -> set[str]:
     surnames: set[str] = set()
     items = _collect_authors(value)
@@ -158,7 +163,17 @@ def _author_surnames(value: object) -> set[str]:
             if isinstance(entry, dict) and entry.get("lastName"):
                 items.append(str(entry["lastName"]))
     for author in items:
-        raw = author.split(",", 1)[0] if "," in author else (author.split()[-1] if author.split() else "")
+        cleaned = author.strip()
+        if "," in cleaned:
+            raw = cleaned.split(",", 1)[0]
+        else:
+            parts = cleaned.split()
+            if len(parts) > 1:
+                raw = parts[-1]
+            elif len(cleaned) >= 2 and _CJK_SCRIPT_RE.search(cleaned):
+                raw = ""
+            else:
+                raw = cleaned
         folded = _fold_latin_diacritics(raw)
         token = re.sub(r"[\W_]+", "", folded.casefold())
         if token:

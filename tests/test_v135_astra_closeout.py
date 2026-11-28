@@ -125,6 +125,32 @@ def test_v135_fit_load_scores_duplicate_title_different_years_marks_ambiguous(
     }
 
 
+def test_v135_fit_load_scores_missing_year_row_does_not_hide_conflicting_years(
+    tmp_path: Path,
+) -> None:
+    cfg = _cfg(tmp_path)
+    cluster_dir = cfg.hub / "agents"
+    cluster_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"doi": "", "title": "Interleaved Hydrological Review", "score": 4, "kept": True, "year": 1998},
+        {"doi": "", "title": "Interleaved Hydrological Review", "score": 4, "kept": True},
+        {"doi": "", "title": "Interleaved Hydrological Review", "score": 4, "kept": True, "year": 2024},
+    ]
+    (cluster_dir / ".fit_check_accepted.json").write_text(
+        json.dumps({"cluster_slug": "agents", "threshold": 3, "accepted": rows}),
+        encoding="utf-8",
+    )
+
+    fit_scores = auth._load_fit_scores(cfg, "agents")
+    assert auth._fit_status_for_paper(
+        {"title": "Interleaved Hydrological Review", "doi": ""}, fit_scores, 3
+    ) == {
+        "kept": False,
+        "reason": "relevance_unjudged",
+        "score": None,
+    }
+
+
 def test_v135_fit_load_scores_identical_duplicate_rows_still_resolve(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
     cluster_dir = cfg.hub / "agents"
@@ -362,6 +388,118 @@ def test_v135_zotero_hit_and_item_match_enforce_edition_year_and_cjk_surnames() 
     assert pipeline._author_surname_set({"authors": ["王, 小明"]}) == {"王"}
     assert pipeline._author_surname_set({"authors": ["陳, 大文"]}) == {"陳"}
     assert pipeline._author_surname_set({"authors": ["Müller, Hans"]}) == {"muller"}
+    assert pipeline._author_surname_set({"authors": ["王小明"]}) == set()
+    assert (
+        pipeline._zotero_item_matches_paper(
+            {
+                "key": "ZK_CJK_UNSEG",
+                "DOI": "10.1234/cjk",
+                "title": "水利系統分析",
+                "date": "2024",
+                "creators": [{"lastName": "王", "firstName": "小明"}],
+            },
+            {
+                "doi": "10.1234/cjk",
+                "title": "水利系統分析",
+                "year": 2024,
+                "authors": ["王小明"],
+            },
+        )
+        is True
+    )
+
+
+def test_v135_zotero_index_hit_verified_fails_closed_and_skips_when_obsidian_matches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hit = DedupHit(
+        source="zotero",
+        doi="10.1234/legacy",
+        title="Legacy Paper",
+        zotero_key="ZK_GONE",
+    )
+    paper = {"doi": "10.1234/legacy", "title": "Legacy Paper", "year": 2024}
+
+    class _ErrorZot:
+        def item(self, _key: str) -> dict:
+            raise RuntimeError("404 not found")
+
+    class _EmptyZot:
+        def item(self, _key: str) -> dict:
+            return {}
+
+    assert pipeline._zotero_index_hit_verified(hit, paper, _ErrorZot(), False) is False
+    assert pipeline._zotero_index_hit_verified(hit, paper, _EmptyZot(), False) is False
+
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="obs", name="Obs", slug="obs", zotero_collection_key="COLL_OBS"
+    )
+    existing_note = cfg.raw / "obs" / "smith2024-existing.md"
+    existing_note.parent.mkdir(parents=True, exist_ok=True)
+    existing_note.write_text(
+        '---\ntitle: "Existing Obsidian Paper"\ndoi: "10.1234/obs"\nyear: 2024\nzotero-key: "ZK_OBS"\ncluster_queries: ["old"]\ntopic_cluster: "obs"\ntags: ["obs"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Existing Obsidian Paper",
+                        "slug": "smith2024-existing",
+                        "doi": "10.1234/obs",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "abstract": "Abs",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _CountingZot:
+        def __init__(self) -> None:
+            self.item_calls: list[str] = []
+
+        def item(self, key: str) -> dict:
+            self.item_calls.append(key)
+            return {"key": key, "data": {"title": "Existing Obsidian Paper", "DOI": "10.1234/obs", "date": "2024"}}
+
+    counting_zot = _CountingZot()
+    dedup = DedupIndex()
+    dedup.add(
+        DedupHit(
+            source="obsidian",
+            doi="10.1234/obs",
+            title="Existing Obsidian Paper",
+            zotero_key="ZK_OBS",
+            obsidian_path=str(existing_note),
+        )
+    )
+    dedup.add(
+        DedupHit(
+            source="zotero",
+            doi="10.1234/obs",
+            title="Existing Obsidian Paper",
+            zotero_key="ZK_OBS",
+        )
+    )
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: counting_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: dedup)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "update_cluster_links", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    assert pipeline.run_pipeline(cluster_slug="obs", query="obs", verify=False) == 0
+    assert counting_zot.item_calls == []
 
 
 def test_v135_run_pipeline_legacy_dedup_hit_verified_against_live_zot_item(
@@ -500,6 +638,18 @@ def test_v135_yaml_merge_source_duplicate_keys_rejected_while_outer_override_all
         Loader=_UniqueMappingSafeLoader,
     )
     assert allowed == {"custom": {"title": "Second"}}
+
+    reused_alias = yaml.load(
+        "base: &b {<<: {a: 1}, a: 2}\nother: {<<: *b}\n",
+        Loader=_UniqueMappingSafeLoader,
+    )
+    assert reused_alias == {"base": {"a": 2}, "other": {"a": 2}}
+
+    reused_seq_alias = yaml.load(
+        "- &b {<<: {a: 1}, a: 2}\n- {<<: *b}\n",
+        Loader=_UniqueMappingSafeLoader,
+    )
+    assert reused_seq_alias == [{"a": 2}, {"a": 2}]
 
     cfg = _cfg(tmp_path)
     bad_note = cfg.raw / "alpha" / "merge_dup_source.md"

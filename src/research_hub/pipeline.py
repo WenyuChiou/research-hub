@@ -776,6 +776,25 @@ def _parse_year_int(value: object) -> int | None:
     return year if year > 0 else None
 
 
+_CJK_SCRIPT_RE = re.compile(
+    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]"
+)
+
+
+def _extract_segmented_surname(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if "," in cleaned:
+        return cleaned.split(",", 1)[0].strip()
+    parts = cleaned.split()
+    if len(parts) > 1:
+        return parts[-1]
+    if len(cleaned) >= 2 and _CJK_SCRIPT_RE.search(cleaned):
+        return ""
+    return cleaned
+
+
 def _author_surname_set(paper: dict) -> set[str]:
     surnames: set[str] = set()
     authors = paper.get("authors") or []
@@ -788,11 +807,9 @@ def _author_surname_set(paper: dict) -> set[str]:
         if isinstance(author, dict):
             raw = str(author.get("lastName") or "")
             if not raw and author.get("name"):
-                name = str(author.get("name") or "").strip()
-                raw = name.split(",", 1)[0] if "," in name else (name.split()[-1] if name.split() else "")
+                raw = _extract_segmented_surname(str(author.get("name") or ""))
         elif isinstance(author, str):
-            text = author.strip()
-            raw = text.split(",", 1)[0] if "," in text else (text.split()[-1] if text.split() else "")
+            raw = _extract_segmented_surname(author)
         folded = _fold_latin_diacritics(raw)
         token = re.sub(r"[\W_]+", "", folded.casefold())
         if token:
@@ -1006,10 +1023,11 @@ def _zotero_index_hit_verified(hit: DedupHit, pp: dict, zot: Any, no_zotero: boo
         try:
             item = zot.item(hit.zotero_key)
         except Exception:
-            item = None
-        if isinstance(item, dict) and item:
-            if not _zotero_item_matches_paper(item, pp):
-                return False
+            return False
+        if not isinstance(item, dict) or not item:
+            return False
+        if not _zotero_item_matches_paper(item, pp):
+            return False
     return True
 
 
@@ -1544,15 +1562,6 @@ def run_pipeline(
                         ),
                         None,
                     )
-                    zotero_hit = next(
-                        (
-                            hit
-                            for hit in dedup_hits
-                            if hit.source == "zotero"
-                            and _zotero_index_hit_verified(hit, pp, zot, no_zotero)
-                        ),
-                        None,
-                    )
                     # Only treat an obsidian_hit as a true duplicate (skip)
                     # when the note file ACTUALLY EXISTS. A stale dedup-index
                     # entry pointing at a deleted note must NOT cause a skip;
@@ -1601,6 +1610,15 @@ def run_pipeline(
                             }
                         )
                         continue
+                    zotero_hit = next(
+                        (
+                            hit
+                            for hit in dedup_hits
+                            if hit.source == "zotero"
+                            and _zotero_index_hit_verified(hit, pp, zot, no_zotero)
+                        ),
+                        None,
+                    )
                     if zotero_hit and no_zotero:
                         # no_zotero mode: zot is None, so the Zotero-item
                         # reuse ops below would fail. Still ingest the
