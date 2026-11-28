@@ -276,6 +276,8 @@ def check_duplicate(
     def _matches(items: list[dict]) -> bool:
         for entry in items or []:
             data = entry.get("data", {})
+            if isinstance(data, dict) and not data.get("key") and entry.get("key"):
+                data = {**data, "key": entry["key"]}
             title_hit = bool(norm_title and (data.get("title") or "").lower() == norm_title)
             doi_hit = bool(norm_doi and normalize_doi(data.get("DOI", "") or "") == norm_doi)
             if not (title_hit or doi_hit):
