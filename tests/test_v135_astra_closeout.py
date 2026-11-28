@@ -908,7 +908,7 @@ def test_v135_kana_dakuten_and_cjk_surname_preservation_in_cross_vault_import(
 
 
 def test_v135_version_bumping_in_sync() -> None:
-    assert pkg_version == "1.3.7"
+    assert pkg_version == "1.3.8"
 
 
 # ---------------------------------------------------------------------------
@@ -1342,6 +1342,7 @@ def test_v137_real_pyzotero_mock_transport_503_defers_and_404_creates(
 
     real_zot = zotero.Zotero(library_id="404", library_type="group", api_key="test")
     real_zot.client = httpx.Client(transport=httpx.MockTransport(_transport_handler))
+    monkeypatch.setattr(real_zot, "check_items", lambda items: items)
 
     dedup = DedupIndex()
     dedup.add(
@@ -1499,3 +1500,685 @@ def test_v137_cached_hit_waiver_still_compares_omitted_live_fields(
             return {"key": "ZOLD", "data": live_data}
 
     assert pipeline._zotero_index_hit_status(hit, paper, _StubZot(), False) == "mismatch"
+
+
+# ---------------------------------------------------------------------------
+# v1.3.8 closeout regressions (07g §3 probes)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("live_overrides", "incoming_authors", "expected_status", "expected_items", "expected_notes"),
+    [
+        ({"edition": ""}, ["Smith, Alice"], "CREATED", 1, 1),
+        ({"edition": None}, ["Smith, Alice"], "CREATED", 1, 1),
+        ({"date": "", "edition": "2nd", "volume": "2"}, ["Smith, Alice"], "CREATED", 1, 1),
+        ({"creators": [], "date": "2024", "edition": "2nd", "volume": "2"}, ["Jones, Bob"], "CREATED", 1, 1),
+        ({"volume": "", "date": "2024", "edition": "2nd"}, ["Smith, Alice"], "CREATED", 1, 1),
+        (
+            {"edition": "", "date": "", "creators": [], "volume": ""},
+            ["Smith, Alice"],
+            "CREATED",
+            1,
+            1,
+        ),
+        (
+            {
+                "edition": "2nd",
+                "date": "2024",
+                "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                "volume": "2",
+            },
+            ["Smith, Alice"],
+            "REUSED",
+            0,
+            1,
+        ),
+    ],
+    ids=[
+        "live-edition-empty-preserves-cached-1st",
+        "live-edition-none-preserves-cached-1st",
+        "live-date-empty-preserves-cached-1890",
+        "live-creators-empty-preserves-cached-smith",
+        "live-volume-empty-preserves-cached-vol1",
+        "live-all-empty-preserves-cached-conflict",
+        "live-explicit-2nd-overrides-cached-1st",
+    ],
+)
+def test_v138_cached_zotero_conflict_preserved_when_live_fields_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_overrides: dict,
+    incoming_authors: list[str],
+    expected_status: str,
+    expected_items: int,
+    expected_notes: int,
+) -> None:
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="editions",
+        name="Editions",
+        slug="editions",
+        zotero_collection_key="COLL_ED",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Treatise on Water Resources",
+                        "slug": "smith2024-treatise-ed2",
+                        "doi": "10.1234/treatise",
+                        "authors": incoming_authors,
+                        "year": 2024,
+                        "volume": "2",
+                        "edition": "2nd",
+                        "abstract": "2nd edition.",
+                        "summary": "Summary.",
+                        "key_findings": ["Finding 1"],
+                        "methodology": "Method.",
+                        "relevance": "Relevant.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    live_data = {
+        "key": "ZOLD",
+        "version": 1,
+        "itemType": "book",
+        "DOI": "10.1234/treatise",
+        "title": "Treatise on Water Resources",
+        "date": "2024",
+        "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+        "volume": "2",
+        "edition": "2nd",
+        "tags": [],
+        "collections": [],
+    }
+    live_data.update(live_overrides)
+
+    created_items: list[dict] = []
+    created_notes: list[dict] = []
+
+    def _transport_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/groups/404/items/ZOLD":
+            return httpx.Response(200, json={"key": "ZOLD", "version": 1, "data": live_data})
+        if request.method in ("POST", "PUT", "PATCH") and request.url.path == "/groups/404/items/ZOLD":
+            return httpx.Response(204)
+        if request.method == "GET" and request.url.path == "/groups/404/items/ZOLD/children":
+            return httpx.Response(200, json=[])
+        if request.method == "GET" and request.url.path in (
+            "/groups/404/collections/COLL_ED/items",
+            "/groups/404/items",
+        ):
+            return httpx.Response(200, json=[])
+        if request.method == "GET" and request.url.path == "/items/new":
+            item_type = request.url.params.get("itemType", "journalArticle")
+            return httpx.Response(
+                200,
+                json={"itemType": item_type, "tags": [], "collections": [], "creators": []},
+            )
+        if request.method == "POST" and request.url.path == "/groups/404/items":
+            payload = json.loads(request.content.decode("utf-8"))
+            for entry in payload:
+                if entry.get("itemType") == "note":
+                    created_notes.append(entry)
+                else:
+                    created_items.append(entry)
+            return httpx.Response(
+                200,
+                json={
+                    "successful": {str(i): {"key": f"ZNEW{i}"} for i in range(len(payload))},
+                    "unchanged": {},
+                    "failed": {},
+                },
+            )
+        raise AssertionError(f"Unexpected pyzotero HTTP call: {request.method} {request.url}")
+
+    real_zot = zotero.Zotero(library_id="404", library_type="group", api_key="test")
+    real_zot.client = httpx.Client(transport=httpx.MockTransport(_transport_handler))
+    monkeypatch.setattr(real_zot, "check_items", lambda items: items)
+
+    dedup = DedupIndex()
+    dedup.add(
+        DedupHit(
+            source="zotero",
+            doi="10.1234/treatise",
+            title="Treatise on Water Resources",
+            zotero_key="ZOLD",
+            year=1890,
+            authors=["Smith, Alice"],
+            volume="1",
+            edition="1st",
+        )
+    )
+
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: real_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: dedup)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-28")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    rc = pipeline.run_pipeline(cluster_slug="editions", query="editions", verify=False)
+    assert rc == 0
+    assert len(created_items) == expected_items
+    assert len(created_notes) == expected_notes
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    assert [row["status"] for row in output["zotero_results"]] == [expected_status]
+    assert list(cfg.logs.glob("pipeline_errors_*.jsonl")) == []
+    assert len(list(cfg.raw.rglob("*.md"))) == 1
+
+
+@pytest.mark.parametrize("scope", ["collection", "library"], ids=["collection-scope", "library-scope"])
+def test_v138_real_pyzotero_truncated_search_row_conflicting_detail_creates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+) -> None:
+    cfg = _cfg(tmp_path)
+    coll_key = "COLL_ED" if scope == "collection" else ""
+    if scope == "library":
+        cfg.zotero_default_collection = "COLL_DEFAULT"
+    ClusterRegistry(cfg.clusters_file).create(
+        query="editions",
+        name="Editions",
+        slug="editions",
+        zotero_collection_key=coll_key,
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Treatise on Water Resources",
+                        "slug": "smith2024-treatise-ed2",
+                        "doi": "10.1234/treatise",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "edition": "2nd",
+                        "abstract": "2nd edition.",
+                        "summary": "Summary.",
+                        "key_findings": ["Finding 1"],
+                        "methodology": "Method.",
+                        "relevance": "Relevant.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    detail_calls: list[str] = []
+    created_items: list[dict] = []
+    created_notes: list[dict] = []
+    expected_search_path = "/groups/404/collections/COLL_ED/items" if scope == "collection" else "/groups/404/items"
+
+    def _transport_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == expected_search_path:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "key": "ABCDEFGH",
+                        "data": {
+                            "DOI": "10.1234/treatise",
+                            "title": "Treatise on Water Resources",
+                        },
+                    }
+                ],
+            )
+        if request.method == "GET" and request.url.path == "/groups/404/items/ABCDEFGH":
+            detail_calls.append(request.url.path)
+            return httpx.Response(
+                200,
+                json={
+                    "key": "ABCDEFGH",
+                    "data": {
+                        "DOI": "10.1234/treatise",
+                        "title": "Treatise on Water Resources",
+                        "date": "1890",
+                        "creators": [{"lastName": "王", "firstName": "小明"}],
+                        "edition": "1st",
+                    },
+                },
+            )
+        if request.method == "GET" and request.url.path == "/items/new":
+            item_type = request.url.params.get("itemType", "journalArticle")
+            return httpx.Response(
+                200,
+                json={"itemType": item_type, "tags": [], "collections": [], "creators": []},
+            )
+        if request.method == "POST" and request.url.path == "/groups/404/items":
+            payload = json.loads(request.content.decode("utf-8"))
+            for entry in payload:
+                if entry.get("itemType") == "note":
+                    created_notes.append(entry)
+                else:
+                    created_items.append(entry)
+            return httpx.Response(
+                200,
+                json={
+                    "successful": {str(i): {"key": f"ZNEW{i}"} for i in range(len(payload))},
+                    "unchanged": {},
+                    "failed": {},
+                },
+            )
+        raise AssertionError(f"Unexpected pyzotero HTTP call: {request.method} {request.url}")
+
+    real_zot = zotero.Zotero(library_id="404", library_type="group", api_key="test")
+    real_zot.client = httpx.Client(transport=httpx.MockTransport(_transport_handler))
+    monkeypatch.setattr(real_zot, "check_items", lambda items: items)
+
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: real_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: DedupIndex())
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-28")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    rc = pipeline.run_pipeline(cluster_slug="editions", query="editions", verify=False)
+    assert rc == 0
+    assert detail_calls == ["/groups/404/items/ABCDEFGH"]
+    assert len(created_items) == 1
+    assert len(created_notes) == 1
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    assert [row["status"] for row in output["zotero_results"]] == ["CREATED"]
+    assert list(cfg.logs.glob("pipeline_errors_*.jsonl")) == []
+    assert len(list(cfg.raw.rglob("*.md"))) == 1
+
+
+@pytest.mark.parametrize(
+    ("detail_mode", "expected_status", "expected_errors"),
+    [
+        ("incomplete-detail", "DEFERRED_VERIFICATION", 1),
+        ("http-503", "DEFERRED_VERIFICATION", 1),
+        ("complete-matching-2nd", "SKIPPED_DUPLICATE", 0),
+    ],
+    ids=["incomplete-detail-defers", "http-503-detail-defers", "complete-2nd-skips-duplicate"],
+)
+def test_v138_real_pyzotero_truncated_search_row_defers_or_skips_duplicate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    detail_mode: str,
+    expected_status: str,
+    expected_errors: int,
+) -> None:
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="editions",
+        name="Editions",
+        slug="editions",
+        zotero_collection_key="COLL_ED",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Treatise on Water Resources",
+                        "slug": "smith2024-treatise-ed2",
+                        "doi": "10.1234/treatise",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "edition": "2nd",
+                        "abstract": "2nd edition.",
+                        "summary": "Summary.",
+                        "key_findings": ["Finding 1"],
+                        "methodology": "Method.",
+                        "relevance": "Relevant.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    detail_calls: list[str] = []
+    created_items: list[dict] = []
+    created_notes: list[dict] = []
+
+    def _transport_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/groups/404/collections/COLL_ED/items":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "key": "ABCDEFGH",
+                        "data": {
+                            "DOI": "10.1234/treatise",
+                            "title": "Treatise on Water Resources",
+                        },
+                    }
+                ],
+            )
+        if request.method == "GET" and request.url.path == "/groups/404/items/ABCDEFGH":
+            detail_calls.append(request.url.path)
+            if detail_mode == "http-503":
+                return httpx.Response(503, text="Service Unavailable")
+            data = {
+                "DOI": "10.1234/treatise",
+                "title": "Treatise on Water Resources",
+                "date": "2024",
+                "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+            }
+            if detail_mode == "complete-matching-2nd":
+                data["edition"] = "2nd"
+            return httpx.Response(200, json={"key": "ABCDEFGH", "data": data})
+        raise AssertionError(f"Unexpected pyzotero HTTP call: {request.method} {request.url}")
+
+    real_zot = zotero.Zotero(library_id="404", library_type="group", api_key="test")
+    real_zot.client = httpx.Client(transport=httpx.MockTransport(_transport_handler))
+    monkeypatch.setattr(real_zot, "check_items", lambda items: items)
+
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: real_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: DedupIndex())
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-28")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    rc = pipeline.run_pipeline(cluster_slug="editions", query="editions", verify=False)
+    assert rc == 0
+    assert detail_calls == ["/groups/404/items/ABCDEFGH"]
+    assert created_items == []
+    assert created_notes == []
+    assert list(cfg.raw.rglob("*.md")) == []
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    assert [row["status"] for row in output["zotero_results"]] == [expected_status]
+    error_logs = list(cfg.logs.glob("pipeline_errors_*.jsonl"))
+    if expected_errors:
+        assert len(error_logs) == 1
+        lines = [ln for ln in error_logs[0].read_text(encoding="utf-8").splitlines() if ln.strip()]
+        assert len(lines) == expected_errors
+    else:
+        assert error_logs == []
+
+
+@pytest.mark.parametrize(
+    ("detail_payload", "expected_status", "expected_items", "expected_notes", "expected_errors"),
+    [
+        (
+            {
+                "key": "KEYONLY1",
+                "data": {
+                    "DOI": "10.1234/treatise",
+                    "title": "Treatise on Water Resources",
+                    "date": "2024",
+                    "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                    "edition": "2nd",
+                },
+            },
+            "SKIPPED_DUPLICATE",
+            0,
+            0,
+            0,
+        ),
+        (
+            {
+                "key": "KEYONLY1",
+                "data": {
+                    "DOI": "10.1234/treatise",
+                    "title": "Treatise on Water Resources",
+                    "date": "1890",
+                    "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                    "edition": "1st",
+                },
+            },
+            "CREATED",
+            1,
+            1,
+            0,
+        ),
+        (
+            {"key": "KEYONLY1", "data": {}},
+            "DEFERRED_VERIFICATION",
+            0,
+            0,
+            1,
+        ),
+        (
+            {"key": "KEYONLY1", "data": {"itemType": "note", "note": "<p>memo</p>"}},
+            "CREATED",
+            1,
+            1,
+            0,
+        ),
+        (
+            {
+                "key": "KEYONLY1",
+                "data": {
+                    "title": "Water Resources",
+                    "date": "2024",
+                    "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                },
+            },
+            "CREATED",
+            1,
+            1,
+            0,
+        ),
+    ],
+    ids=[
+        "key-only-match-skips",
+        "key-only-conflict-creates",
+        "key-only-empty-detail-defers",
+        "key-only-note-creates",
+        "key-only-distinct-subset-title-creates",
+    ],
+)
+def test_v138_key_only_search_row_triggers_detail_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    detail_payload: dict,
+    expected_status: str,
+    expected_items: int,
+    expected_notes: int,
+    expected_errors: int,
+) -> None:
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="editions",
+        name="Editions",
+        slug="editions",
+        zotero_collection_key="COLL_ED",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Treatise on Water Resources",
+                        "slug": "smith2024-treatise-ed2",
+                        "doi": "10.1234/treatise",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "edition": "2nd",
+                        "abstract": "2nd edition.",
+                        "summary": "Summary.",
+                        "key_findings": ["Finding 1"],
+                        "methodology": "Method.",
+                        "relevance": "Relevant.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    detail_calls: list[str] = []
+    created_items: list[dict] = []
+    created_notes: list[dict] = []
+
+    def _transport_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/groups/404/collections/COLL_ED/items":
+            return httpx.Response(200, json=[{"key": "KEYONLY1", "data": {}}])
+        if request.method == "GET" and request.url.path == "/groups/404/items/KEYONLY1":
+            detail_calls.append(request.url.path)
+            return httpx.Response(200, json=detail_payload)
+        if request.method == "GET" and request.url.path == "/items/new":
+            item_type = request.url.params.get("itemType", "journalArticle")
+            return httpx.Response(
+                200,
+                json={"itemType": item_type, "tags": [], "collections": [], "creators": []},
+            )
+        if request.method == "POST" and request.url.path == "/groups/404/items":
+            payload = json.loads(request.content.decode("utf-8"))
+            for entry in payload:
+                if entry.get("itemType") == "note":
+                    created_notes.append(entry)
+                else:
+                    created_items.append(entry)
+            return httpx.Response(
+                200,
+                json={
+                    "successful": {str(i): {"key": f"ZNEW{i}"} for i in range(len(payload))},
+                    "unchanged": {},
+                    "failed": {},
+                },
+            )
+        raise AssertionError(f"Unexpected pyzotero HTTP call: {request.method} {request.url}")
+
+    real_zot = zotero.Zotero(library_id="404", library_type="group", api_key="test")
+    real_zot.client = httpx.Client(transport=httpx.MockTransport(_transport_handler))
+    monkeypatch.setattr(real_zot, "check_items", lambda items: items)
+
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: real_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: DedupIndex())
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-28")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    rc = pipeline.run_pipeline(cluster_slug="editions", query="editions", verify=False)
+    assert rc == 0
+    assert detail_calls == ["/groups/404/items/KEYONLY1"]
+    assert len(created_items) == expected_items
+    assert len(created_notes) == expected_notes
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    assert [row["status"] for row in output["zotero_results"]] == [expected_status]
+    error_logs = list(cfg.logs.glob("pipeline_errors_*.jsonl"))
+    if expected_errors:
+        assert len(error_logs) == 1
+        lines = [ln for ln in error_logs[0].read_text(encoding="utf-8").splitlines() if ln.strip()]
+        assert len(lines) == expected_errors
+    else:
+        assert error_logs == []
+
+
+def test_v138_missing_title_in_detail_with_part_marker_defers_instead_of_creating(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="hydro",
+        name="Hydro",
+        slug="hydro",
+        zotero_collection_key="COLL_HY",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Hydrology, Part 2",
+                        "slug": "smith2024-hydro-part2",
+                        "doi": "10.1234/hydro-p2",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "abstract": "Part 2.",
+                        "summary": "Summary.",
+                        "key_findings": ["Finding 1"],
+                        "methodology": "Method.",
+                        "relevance": "Relevant.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    detail_calls: list[str] = []
+    created_items: list[dict] = []
+
+    def _transport_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/groups/404/collections/COLL_HY/items":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "key": "HYDROROW1",
+                        "data": {
+                            "DOI": "10.1234/hydro-p2",
+                            "title": "Hydrology, Part 2",
+                        },
+                    }
+                ],
+            )
+        if request.method == "GET" and request.url.path == "/groups/404/items/HYDROROW1":
+            detail_calls.append(request.url.path)
+            return httpx.Response(
+                200,
+                json={
+                    "key": "HYDROROW1",
+                    "data": {
+                        "DOI": "10.1234/hydro-p2",
+                        "date": "2024",
+                        "creators": [{"lastName": "Smith", "firstName": "Alice"}],
+                    },
+                },
+            )
+        if request.method == "POST":
+            created_items.append(json.loads(request.content.decode("utf-8")))
+            return httpx.Response(200, json={"successful": {}, "unchanged": {}, "failed": {}})
+        raise AssertionError(f"Unexpected pyzotero HTTP call: {request.method} {request.url}")
+
+    real_zot = zotero.Zotero(library_id="404", library_type="group", api_key="test")
+    real_zot.client = httpx.Client(transport=httpx.MockTransport(_transport_handler))
+    monkeypatch.setattr(real_zot, "check_items", lambda items: items)
+
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: real_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: DedupIndex())
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-28")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    rc = pipeline.run_pipeline(cluster_slug="hydro", query="hydro", verify=False)
+    assert rc == 0
+    assert detail_calls == ["/groups/404/items/HYDROROW1"]
+    assert created_items == []
+    assert list(cfg.raw.rglob("*.md")) == []
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    assert [row["status"] for row in output["zotero_results"]] == ["DEFERRED_VERIFICATION"]
+    error_logs = list(cfg.logs.glob("pipeline_errors_*.jsonl"))
+    assert len(error_logs) == 1

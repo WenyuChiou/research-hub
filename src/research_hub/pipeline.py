@@ -919,7 +919,9 @@ def _in_batch_title_match_ok(existing: dict, incoming: dict) -> bool:
         return False
     if not _authors_compatible(existing, incoming):
         return False
-    if _title_markers(existing.get("title")) != _title_markers(incoming.get("title")):
+    t1 = str(existing.get("title") or "").strip()
+    t2 = str(incoming.get("title") or "").strip()
+    if t1 and t2 and _title_markers(t1) != _title_markers(t2):
         return False
     for field in ("volume", "edition"):
         v1 = _norm_locator(existing.get(field))
@@ -1074,19 +1076,18 @@ def _zotero_item_matches_paper(
 ) -> bool:
     if not isinstance(data, dict):
         return False
-    raw_data = data["data"] if isinstance(data.get("data"), dict) else data
     ident = _extract_zotero_item_identity(data)
     year = ident["year"]
-    if year is None and "date" not in raw_data and "year" not in raw_data and cached_hit is not None:
+    if year is None and cached_hit is not None:
         year = getattr(cached_hit, "year", None)
     authors = ident["authors"]
-    if not authors and "creators" not in raw_data and "authors" not in raw_data and cached_hit is not None:
+    if not authors and cached_hit is not None:
         authors = getattr(cached_hit, "authors", []) or []
     volume = ident["volume"]
-    if not volume and "volume" not in raw_data and cached_hit is not None:
+    if not volume and cached_hit is not None:
         volume = getattr(cached_hit, "volume", "") or ""
     edition = ident["edition"]
-    if not edition and "edition" not in raw_data and cached_hit is not None:
+    if not edition and cached_hit is not None:
         edition = getattr(cached_hit, "edition", "") or ""
     hit = DedupHit(
         source="zotero",
@@ -1103,7 +1104,6 @@ def _zotero_item_matches_paper(
 
 def _zotero_live_item_sufficient_for_paper(item: dict, hit: DedupHit, pp: dict) -> bool:
     """Return True iff live Zotero *item* carries enough schema identity to verify *pp*."""
-    raw_data = item["data"] if isinstance(item.get("data"), dict) else item
     ident = _extract_zotero_item_identity(item)
     if str(pp.get("title") or "").strip() and not ident["title"]:
         return False
@@ -1112,29 +1112,104 @@ def _zotero_live_item_sufficient_for_paper(item: dict, hit: DedupHit, pp: dict) 
     if (
         _norm_locator(pp.get("edition"))
         and not _norm_locator(getattr(hit, "edition", ""))
-        and "edition" not in raw_data
+        and not _norm_locator(ident["edition"])
     ):
         return False
     if (
         _norm_locator(pp.get("volume"))
         and not _norm_locator(getattr(hit, "volume", ""))
-        and "volume" not in raw_data
+        and not _norm_locator(ident["volume"])
     ):
         return False
     if (
         _parse_year_int(pp.get("year")) is not None
         and _parse_year_int(getattr(hit, "year", None)) is None
-        and "date" not in raw_data
-        and "year" not in raw_data
+        and ident["year"] is None
     ):
         return False
     if (
         _author_surname_set(pp)
-        and not getattr(hit, "authors", None)
-        and "creators" not in raw_data
-        and "authors" not in raw_data
+        and not _author_surname_set({"authors": getattr(hit, "authors", []) or []})
+        and not _author_surname_set({"authors": ident["authors"]})
     ):
         return False
+    return True
+
+
+def _zotero_identity_populated(ident: dict[str, Any]) -> bool:
+    return bool(
+        ident["title"]
+        or _normalized_real_doi(ident["doi"])
+        or ident["year"] is not None
+        or ident["authors"]
+        or ident["volume"]
+        or ident["edition"]
+    )
+
+
+def _zotero_search_row_matches_paper(data: dict, pp: dict, zot: Any) -> bool:
+    """Verify whether a Zotero search result row matches *pp*, fetching detail if truncated."""
+    ident = _extract_zotero_item_identity(data)
+    if _zotero_identity_populated(ident) and not _zotero_item_matches_paper(data, pp):
+        return False
+
+    empty_hit = DedupHit(source="zotero")
+    if _zotero_live_item_sufficient_for_paper(data, empty_hit, pp):
+        return True
+
+    item_key = str(
+        (data.get("key") if isinstance(data, dict) else "")
+        or ident.get("zotero_key")
+        or ""
+    ).strip()
+    if not item_key or zot is None or not callable(getattr(zot, "item", None)):
+        raise RuntimeError(
+            f"incomplete Zotero search result for key={item_key or 'missing'} could not be verified"
+        )
+
+    try:
+        detail = zot.item(item_key)
+    except Exception as exc:
+        if _is_zotero_item_404(exc):
+            return False
+        raise
+
+    if not isinstance(detail, dict) or not detail:
+        raise RuntimeError(
+            f"incomplete Zotero search result for key={item_key} could not be verified"
+        )
+
+    detail_data = detail.get("data") if isinstance(detail.get("data"), dict) else detail
+    if str(detail_data.get("itemType") or "").strip().lower() in (
+        "note",
+        "attachment",
+        "annotation",
+    ):
+        return False
+
+    detail_ident = _extract_zotero_item_identity(detail)
+    row_has_primary = bool(
+        ident["title"] or (isinstance(data, dict) and str(data.get("DOI") or "").strip())
+    )
+    if not row_has_primary and (detail_ident["title"] or str(detail_data.get("DOI") or "").strip()):
+        norm_pp_title = str(pp.get("title") or "").strip().lower()
+        norm_pp_doi = normalize_doi(str(pp.get("doi") or ""))
+        detail_title_hit = bool(
+            norm_pp_title and str(detail_ident["title"] or "").strip().lower() == norm_pp_title
+        )
+        detail_doi_hit = bool(
+            norm_pp_doi and normalize_doi(str(detail_data.get("DOI") or "")) == norm_pp_doi
+        )
+        if not (detail_title_hit or detail_doi_hit):
+            return False
+
+    if _zotero_identity_populated(detail_ident) and not _zotero_item_matches_paper(detail, pp):
+        return False
+
+    if not _zotero_live_item_sufficient_for_paper(detail, empty_hit, pp):
+        raise RuntimeError(
+            f"incomplete Zotero search result for key={item_key} could not be verified"
+        )
     return True
 
 
@@ -1883,7 +1958,9 @@ def run_pipeline(
                                 pp["doi"],
                                 collection_key=cluster_coll,
                                 allow_library_duplicates=allow_library_duplicates,
-                                item_matches_fn=lambda data, _pp=pp: _zotero_item_matches_paper(data, _pp),
+                                item_matches_fn=lambda data, _pp=pp: _zotero_search_row_matches_paper(
+                                    data, _pp, zot
+                                ),
                                 raise_on_error=True,
                             )
                         except Exception as dup_exc:

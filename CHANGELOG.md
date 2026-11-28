@@ -12,6 +12,15 @@
 
 ## [Unreleased]
 
+## [1.3.8] - 2026-11-28
+
+### Fixed
+- **Cached Zotero Conflict Preservation on Empty Live Fields (`pipeline.py`):** Removed key-presence waivers (`"edition" not in raw_data`, `"date" not in raw_data`, `"creators" not in raw_data`, `"volume" not in raw_data`) in `_zotero_item_matches_paper` and `_zotero_live_item_sufficient_for_paper` so live Zotero items returning `""`, `None`, or `[]` fall back to cached `DedupHit` values (preserving mismatches as `CREATED` while allowing non-empty live corrections to override) and fail closed (`DEFERRED_VERIFICATION`) when both cached hit and live item lack a disambiguating field.
+- **Truncated Zotero Search Row Detail Verification (`zotero/client.py`, `pipeline.py`):** Preserved outer `entry["key"]` onto `data` in `check_duplicate::_matches` and added `_zotero_search_row_matches_paper` in `pipeline.py` so `check_duplicate` short-circuits explicit search-row conflicts, verifies truncated search rows via `zot.item(key)` (checking conflicts before sufficiency and treating 404 as non-duplicate), and fails closed to `DEFERRED_VERIFICATION` when detail verification fails or remains insufficient.
+
+### Changed
+- Bumped package version to `1.3.8` and plugin version to `0.5.44`.
+
 ## [1.3.7] - 2026-11-27
 
 ### Fixed
