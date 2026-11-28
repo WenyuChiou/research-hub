@@ -1,6 +1,6 @@
 [project]
 name = "research-hub-pipeline"
-version = "1.3.6"
+version = "1.3.7"
 description = "Local research workspace linking literature, research artifacts, writing proposals, and human review through CLI, MCP, REST, and UI."
 readme = "README.md"
 license = {text = "MIT"}

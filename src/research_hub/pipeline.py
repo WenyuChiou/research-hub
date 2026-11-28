@@ -22,6 +22,7 @@ from research_hub.dedup import (
     _extract_zotero_item_identity,
     build_from_obsidian,
     build_from_zotero,
+    is_zotero_not_found_error,
     normalize_title,
 )
 from research_hub.workspace.sync_hooks import _fold_latin_diacritics
@@ -1083,48 +1084,45 @@ def _zotero_item_matches_paper(data: dict, pp: dict) -> bool:
     return _zotero_hit_matches_paper(hit, pp)
 
 
-def _zotero_item_has_identity_fields(item: dict) -> bool:
+def _zotero_live_item_sufficient_for_paper(item: dict, hit: DedupHit, pp: dict) -> bool:
+    """Return True iff live Zotero *item* carries enough schema identity to verify *pp*."""
+    raw_data = item["data"] if isinstance(item.get("data"), dict) else item
     ident = _extract_zotero_item_identity(item)
-    return bool(
-        ident["doi"]
-        or ident["title"]
-        or ident["year"] is not None
-        or ident["authors"]
-        or ident["volume"]
-        or ident["edition"]
-    )
-
-
-_ZOTERO_TRANSPORT_ERROR_MARKERS = (
-    "gaierror",
-    "connecterror",
-    "connectionerror",
-    "dnserror",
-    "host not found",
-    "name or service not known",
-    "nodename nor servname",
-    "getaddrinfo",
-)
+    if str(pp.get("title") or "").strip() and not ident["title"]:
+        return False
+    if not (ident["title"] or _normalized_real_doi(ident["doi"])):
+        return False
+    if (
+        _norm_locator(pp.get("edition"))
+        and not _norm_locator(getattr(hit, "edition", ""))
+        and "edition" not in raw_data
+    ):
+        return False
+    if (
+        _norm_locator(pp.get("volume"))
+        and not _norm_locator(getattr(hit, "volume", ""))
+        and "volume" not in raw_data
+    ):
+        return False
+    if (
+        _parse_year_int(pp.get("year")) is not None
+        and _parse_year_int(getattr(hit, "year", None)) is None
+        and "date" not in raw_data
+        and "year" not in raw_data
+    ):
+        return False
+    if (
+        _author_surname_set(pp)
+        and not getattr(hit, "authors", None)
+        and "creators" not in raw_data
+        and "authors" not in raw_data
+    ):
+        return False
+    return True
 
 
 def _is_zotero_item_404(exc: Exception) -> bool:
-    if (
-        isinstance(exc, OSError)
-        or isinstance(getattr(exc, "__cause__", None), OSError)
-        or isinstance(getattr(exc, "__context__", None), OSError)
-    ):
-        return False
-    exc_name = type(exc).__name__.lower()
-    msg = str(exc).lower()
-    if any(marker in exc_name or marker in msg for marker in _ZOTERO_TRANSPORT_ERROR_MARKERS):
-        return False
-    if (
-        getattr(exc, "status", None) in (404, "404")
-        or getattr(exc, "status_code", None) in (404, "404")
-        or getattr(getattr(exc, "response", None), "status_code", None) in (404, "404")
-    ):
-        return True
-    return bool(re.search(r"\b404\b", msg))
+    return is_zotero_not_found_error(exc)
 
 
 def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> str:
@@ -1141,7 +1139,7 @@ def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool)
             item = zot.item(hit_zkey)
         except Exception as exc:
             return "mismatch" if _is_zotero_item_404(exc) else "unknown"
-        if not isinstance(item, dict) or not item or not _zotero_item_has_identity_fields(item):
+        if not isinstance(item, dict) or not item or not _zotero_live_item_sufficient_for_paper(item, hit, pp):
             return "unknown"
         return "verified" if _zotero_item_matches_paper(item, pp) else "mismatch"
     return "verified" if _zotero_hit_matches_paper(hit, pp) else "mismatch"

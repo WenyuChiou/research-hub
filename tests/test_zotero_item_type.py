@@ -261,6 +261,7 @@ def test_reused_zotero_hit_updates_collections_preserves_zr_and_string_authors(t
                     "DOI": "10.1000/reused",
                     "title": "Reused Paper Long Title",
                     "date": "2024",
+                    "creators": [{"lastName": "Smith", "firstName": "Alice"}],
                 })
             return {"data": data}
 

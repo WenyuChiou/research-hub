@@ -102,6 +102,8 @@ class _DedupZotero:
                             "itemType": "journalArticle",
                             "title": hit.title,
                             "DOI": hit.doi,
+                            "date": "2026",
+                            "creators": [{"creatorType": "author", "lastName": "Doe", "firstName": "Jane"}],
                             "tags": [],
                         }
 
@@ -120,7 +122,13 @@ class _DedupZotero:
         data = dict(
             self._items_by_key.get(
                 key,
-                {"key": key, "itemType": "journalArticle", "tags": []},
+                {
+                    "key": key,
+                    "itemType": "journalArticle",
+                    "date": "2026",
+                    "creators": [{"creatorType": "author", "lastName": "Doe", "firstName": "Jane"}],
+                    "tags": [],
+                },
             )
         )
         return {"data": data}
