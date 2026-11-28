@@ -263,6 +263,7 @@ def check_duplicate(
     collection_key: str | None = None,
     allow_library_duplicates: bool = False,
     item_matches_fn: Callable[[dict], bool] | None = None,
+    raise_on_error: bool = False,
 ) -> bool:
     """Check if an item already exists in Zotero by DOI or title."""
     if allow_library_duplicates:
@@ -298,6 +299,8 @@ def check_duplicate(
             fallback = zot.items(q=title[:50], limit=5)
             return _matches(fallback)
     except Exception:
+        if raise_on_error:
+            raise
         return False
     return False
 

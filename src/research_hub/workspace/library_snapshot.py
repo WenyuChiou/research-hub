@@ -69,7 +69,7 @@ def projection(value):
         path = clean.get("note_path", "")
         if not path or PurePosixPath(path).is_absolute() or any(part in {".", ".."} or ":" in part or "\\" in part for part in path.split("/")):
             raise ValueError("Invalid note reference")
-        for key in {"authors", "labels", "tags"} & data.keys():
+        for key in {"authors", "author_surnames", "labels", "tags"} & data.keys():
             items = data[key]
             if not isinstance(items, list) or len(items) > 100 or any(not isinstance(item, str) or len(item) > 200 for item in items):
                 raise ValueError("Invalid metadata terms")
@@ -259,6 +259,32 @@ def _clean_authors(value: object, *, limit: int = 100) -> list[str]:
     )
 
 
+def _extract_explicit_author_surnames(value: object, *, limit: int = 100) -> list[str]:
+    """Collect explicit surname fields from structured author dicts in frontmatter."""
+    if isinstance(value, dict):
+        items: list[object] = [value]
+    elif isinstance(value, list):
+        items = value
+    else:
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        surname = str(item.get("lastName") or item.get("family") or "").strip()[:200]
+        if not surname:
+            continue
+        key = surname.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(surname)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def _clean_str(value: object, *, limit: int = 12000) -> str:
     if value is None:
         return ""
@@ -437,9 +463,15 @@ def read_vault_snapshot(
                         )
                         if reading_status:
                             data["saved_reading_status"] = reading_status
-                        authors = _clean_authors(fm.get("authors"))
+                        raw_authors = fm.get("authors")
+                        if raw_authors is None:
+                            raw_authors = fm.get("author")
+                        authors = _clean_authors(raw_authors)
                         if authors:
                             data["authors"] = authors
+                        explicit_surnames = _extract_explicit_author_surnames(raw_authors)
+                        if explicit_surnames:
+                            data["author_surnames"] = explicit_surnames
                         labels = _clean_terms(fm.get("labels"))
                         if labels:
                             data["labels"] = labels

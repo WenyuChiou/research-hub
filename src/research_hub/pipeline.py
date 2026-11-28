@@ -42,6 +42,8 @@ from research_hub.zotero.client import add_summary_note as add_note
 from research_hub.zotero.client import check_duplicate, get_client
 from research_hub.zotero.fetch import make_raw_md
 
+_DEFAULT_CHECK_DUPLICATE = check_duplicate
+
 
 REQUIRED_FIELDS_CORE = ["title", "authors", "year"]
 REQUIRED_FIELDS_ZOTERO = ["abstract", "journal"]
@@ -1093,6 +1095,38 @@ def _zotero_item_has_identity_fields(item: dict) -> bool:
     )
 
 
+_ZOTERO_TRANSPORT_ERROR_MARKERS = (
+    "gaierror",
+    "connecterror",
+    "connectionerror",
+    "dnserror",
+    "host not found",
+    "name or service not known",
+    "nodename nor servname",
+    "getaddrinfo",
+)
+
+
+def _is_zotero_item_404(exc: Exception) -> bool:
+    if (
+        isinstance(exc, OSError)
+        or isinstance(getattr(exc, "__cause__", None), OSError)
+        or isinstance(getattr(exc, "__context__", None), OSError)
+    ):
+        return False
+    exc_name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    if any(marker in exc_name or marker in msg for marker in _ZOTERO_TRANSPORT_ERROR_MARKERS):
+        return False
+    if (
+        getattr(exc, "status", None) in (404, "404")
+        or getattr(exc, "status_code", None) in (404, "404")
+        or getattr(getattr(exc, "response", None), "status_code", None) in (404, "404")
+    ):
+        return True
+    return bool(re.search(r"\b404\b", msg))
+
+
 def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool) -> str:
     incoming_doi = _normalized_real_doi(pp.get("doi", ""))
     hit_doi = _normalized_real_doi(hit.doi)
@@ -1106,16 +1140,10 @@ def _zotero_index_hit_status(hit: DedupHit, pp: dict, zot: Any, no_zotero: bool)
         try:
             item = zot.item(hit_zkey)
         except Exception as exc:
-            if getattr(exc, "status_code", None) == 404:
-                return "mismatch"
-            msg = str(exc).lower()
-            if "404" in msg or "not found" in msg:
-                return "mismatch"
+            return "mismatch" if _is_zotero_item_404(exc) else "unknown"
+        if not isinstance(item, dict) or not item or not _zotero_item_has_identity_fields(item):
             return "unknown"
-        if not isinstance(item, dict) or not item:
-            return "unknown"
-        if _zotero_item_has_identity_fields(item):
-            return "verified" if _zotero_item_matches_paper(item, pp) else "mismatch"
+        return "verified" if _zotero_item_matches_paper(item, pp) else "mismatch"
     return "verified" if _zotero_hit_matches_paper(hit, pp) else "mismatch"
 
 
@@ -1828,15 +1856,60 @@ def run_pipeline(
                         continue
                 if no_zotero:
                     dup = False
-                else:
-                    dup = check_duplicate(
-                        zot,
-                        pp["title"],
-                        pp["doi"],
-                        collection_key=cluster_coll,
-                        allow_library_duplicates=allow_library_duplicates,
-                        item_matches_fn=lambda data, _pp=pp: _zotero_item_matches_paper(data, _pp),
+                elif check_duplicate is _DEFAULT_CHECK_DUPLICATE:
+                    has_query_api = callable(
+                        getattr(zot, "collection_items" if cluster_coll else "items", None)
                     )
+                    if has_query_api:
+                        try:
+                            dup = check_duplicate(
+                                zot,
+                                pp["title"],
+                                pp["doi"],
+                                collection_key=cluster_coll,
+                                allow_library_duplicates=allow_library_duplicates,
+                                item_matches_fn=lambda data, _pp=pp: _zotero_item_matches_paper(data, _pp),
+                                raise_on_error=True,
+                            )
+                        except Exception as dup_exc:
+                            p(f"  DEFERRED Zotero duplicate check failed: {dup_exc}")
+                            zr.append(
+                                {
+                                    "title": pp["title"],
+                                    "status": "DEFERRED_VERIFICATION",
+                                    "key": "",
+                                }
+                            )
+                            manifest.append(
+                                new_entry(
+                                    cluster=cluster_slug or "",
+                                    query=query_text,
+                                    action="error",
+                                    doi=pp["doi"],
+                                    title=pp["title"],
+                                    zotero_key="",
+                                    error=str(dup_exc),
+                                    batch_label=resolved_batch_label,
+                                )
+                            )
+                            errors.append(
+                                f"{pp['title']}: deferred because Zotero duplicate check failed: {dup_exc}"
+                            )
+                            continue
+                    else:
+                        dup = False
+                else:
+                    try:
+                        dup = check_duplicate(
+                            zot,
+                            pp["title"],
+                            pp["doi"],
+                            collection_key=cluster_coll,
+                            allow_library_duplicates=allow_library_duplicates,
+                            item_matches_fn=lambda data, _pp=pp: _zotero_item_matches_paper(data, _pp),
+                        )
+                    except TypeError:
+                        dup = check_duplicate(zot, pp["title"], pp["doi"])
             except Exception as exc:
                 if existing_note_path is not None:
                     from research_hub.errors import ResearchHubError

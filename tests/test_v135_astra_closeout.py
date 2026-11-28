@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,6 +28,7 @@ from research_hub.paper import (
 )
 from research_hub.workspace.core import Workspace
 from research_hub.workspace.integrations import LocalIntegrationsManager
+from research_hub.workspace.library_snapshot import read_vault_snapshot
 from research_hub.workspace.obsidian_validation import ObsidianValidation
 from research_hub.workspace.sync_hooks import (
     WorkspaceSyncHooks,
@@ -900,4 +902,244 @@ def test_v135_kana_dakuten_and_cjk_surname_preservation_in_cross_vault_import(
 
 
 def test_v135_version_bumping_in_sync() -> None:
-    assert pkg_version == "1.3.5"
+    assert pkg_version == "1.3.6"
+
+
+# ---------------------------------------------------------------------------
+# v1.3.6 closeout regressions (07e blockers: section 3 Path A/B & section 6)
+# ---------------------------------------------------------------------------
+
+
+def test_v136_run_pipeline_empty_live_zotero_data_defers_instead_of_reusing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="editions",
+        name="Editions",
+        slug="editions",
+        zotero_collection_key="COLL_ED",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Treatise on Water Resources",
+                        "slug": "smith2024-treatise-ed2",
+                        "doi": "10.1234/treatise",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "edition": "2nd",
+                        "abstract": "2nd edition.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _EmptyDataZot:
+        def __init__(self) -> None:
+            self.created: list[dict] = []
+
+        def item(self, key: str) -> dict:
+            return {"key": key, "data": {}}
+
+        def items(self, *args, **kwargs):
+            return []
+
+        def collection_items(self, *args, **kwargs):
+            return []
+
+        def item_template(self, item_type: str) -> dict:
+            return {"itemType": item_type}
+
+        def create_items(self, items: list[dict]) -> dict:
+            self.created.extend(items)
+            return {"successful": {str(i): {"key": f"ZNEW{i}"} for i in range(len(items))}}
+
+    fake_zot = _EmptyDataZot()
+    # Legacy DedupHit lacks edition (representing an existing 1st-ed Zotero item),
+    # while incoming pp is 2nd ed; empty live zot.item data must defer rather than reuse.
+    legacy_dedup_no_ed = DedupIndex()
+    legacy_dedup_no_ed.add(
+        DedupHit(
+            source="zotero",
+            doi="10.1234/treatise",
+            title="Treatise on Water Resources",
+            zotero_key="ZOLD",
+        )
+    )
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: fake_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: legacy_dedup_no_ed)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-27")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    rc = pipeline.run_pipeline(cluster_slug="editions", query="editions", verify=False)
+    assert rc == 0
+    assert fake_zot.created == []
+    assert list(cfg.raw.rglob("*.md")) == []
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    statuses = [row["status"] for row in output["zotero_results"]]
+    assert statuses == ["DEFERRED_VERIFICATION"]
+    assert "REUSED" not in statuses
+    assert "CREATED" not in statuses
+    assert output["obsidian_results"] == []
+    error_logs = list(cfg.logs.glob("pipeline_errors_*.jsonl"))
+    assert error_logs and "could not be verified" in error_logs[0].read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("with_legacy_hit", [True, False], ids=["legacy-index", "query-only"])
+def test_v136_run_pipeline_dns_gaierror_defers_without_creating_zotero_or_notes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    with_legacy_hit: bool,
+) -> None:
+    assert pipeline._is_zotero_item_404(socket.gaierror(11001, "Host not found")) is False
+    assert pipeline._is_zotero_item_404(RuntimeError("404 not found")) is True
+    assert pipeline._is_zotero_item_404(RuntimeError("Host not found")) is False
+
+    cfg = _cfg(tmp_path)
+    ClusterRegistry(cfg.clusters_file).create(
+        query="net",
+        name="Net",
+        slug="net",
+        zotero_collection_key="COLL_NET",
+    )
+    (cfg.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "Resilient Network Paper",
+                        "slug": "smith2024-resilient-network",
+                        "doi": "10.1234/resilient",
+                        "authors": ["Smith, Alice"],
+                        "year": 2024,
+                        "abstract": "Abstract.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _DnsFailZot:
+        def __init__(self) -> None:
+            self.created: list[dict] = []
+
+        def item(self, _key: str) -> dict:
+            raise socket.gaierror(11001, "Host not found")
+
+        def items(self, *args, **kwargs):
+            raise socket.gaierror(11001, "Host not found")
+
+        def collection_items(self, *args, **kwargs):
+            raise socket.gaierror(11001, "Host not found")
+
+        def item_template(self, item_type: str) -> dict:
+            return {"itemType": item_type}
+
+        def create_items(self, items: list[dict]) -> dict:
+            self.created.extend(items)
+            return {"successful": {str(i): {"key": f"ZDUP{i}"} for i in range(len(items))}}
+
+    fake_zot = _DnsFailZot()
+    dedup = DedupIndex()
+    if with_legacy_hit:
+        dedup.add(
+            DedupHit(
+                source="zotero",
+                doi="10.1234/resilient",
+                title="Resilient Network Paper",
+                zotero_key="ZOLD_NET",
+            )
+        )
+
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg)
+    monkeypatch.setattr(pipeline, "get_client", lambda: fake_zot)
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: dedup)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-27")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+    monkeypatch.setattr(
+        "research_hub.authenticity.verify_authenticity",
+        lambda papers, *_a, **_kw: (papers, []),
+    )
+
+    rc = pipeline.run_pipeline(cluster_slug="net", query="net", verify=False)
+    assert rc == 0
+    assert fake_zot.created == []
+    assert list(cfg.raw.rglob("*.md")) == []
+    output = json.loads((cfg.logs / "pipeline_output.json").read_text(encoding="utf-8"))
+    assert [row["status"] for row in output["zotero_results"]] == ["DEFERRED_VERIFICATION"]
+    assert output["obsidian_results"] == []
+    error_logs = list(cfg.logs.glob("pipeline_errors_*.jsonl"))
+    assert error_logs and "deferred" in error_logs[0].read_text(encoding="utf-8")
+
+
+def test_v136_structured_cjk_surnames_cross_vault_snapshot_and_import_e2e(
+    tmp_path: Path,
+) -> None:
+    def _make_vault(name: str, author_yaml: str) -> Path:
+        vault = tmp_path / name
+        (vault / ".obsidian").mkdir(parents=True)
+        (vault / ".research_hub").mkdir()
+        (vault / ".research_hub" / "clusters.yaml").write_text(
+            "schema_version: '1.0'\nclusters:\n  alpha:\n    name: Alpha\n    status: active\n    obsidian_subfolder: alpha\n",
+            encoding="utf-8",
+        )
+        (vault / "raw" / "alpha").mkdir(parents=True)
+        (vault / "raw" / "alpha" / "paper.md").write_text(
+            f'---\ntitle: "都市河川水文解析"\nyear: "2024"\nauthors:\n  - {author_yaml}\n---\nBody\n',
+            encoding="utf-8",
+        )
+        return vault
+
+    vault_a = _make_vault("vault_a", "{family: 山田}")
+    vault_b = _make_vault("vault_b", "{lastName: 佐藤}")
+
+    snap_a = read_vault_snapshot(vault_a)
+    snap_b = read_vault_snapshot(vault_b)
+    assert snap_a["notes"][0]["data"]["authors"] == ["山田"]
+    assert snap_a["notes"][0]["data"]["author_surnames"] == ["山田"]
+    assert snap_b["notes"][0]["data"]["authors"] == ["佐藤"]
+    assert snap_b["notes"][0]["data"]["author_surnames"] == ["佐藤"]
+
+    ws = Workspace(tmp_path / "ws_cjk_struct")
+    ws.create_project(id="proj-cjk-struct", title="CJK Structured", archetype="review")
+    cfg_path = tmp_path / "cfg_cjk_struct.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    mgr = LocalIntegrationsManager(cfg_path)
+
+    hooks_a = WorkspaceSyncHooks(ws, mgr, obsidian_validation=ObsidianValidation(vault_a))
+    res_a = hooks_a.import_obsidian_notes("proj-cjk-struct", {"dry_run": False})
+    assert res_a["imported_count"] == 1
+    assert res_a["skipped_existing"] == 0
+
+    hooks_b = WorkspaceSyncHooks(ws, mgr, obsidian_validation=ObsidianValidation(vault_b))
+    preview_b = hooks_b.import_obsidian_notes("proj-cjk-struct", {"dry_run": True})
+    assert preview_b["would_import"] == 1
+    assert preview_b["skipped_existing"] == 0
+    assert [item["action"] for item in preview_b["items"]] == ["import"]
+
+    res_b = hooks_b.import_obsidian_notes("proj-cjk-struct", {"dry_run": False})
+    assert res_b["imported_count"] == 1
+    assert res_b["skipped_existing"] == 0
+
+    _, rows, _, _ = hooks_b._load_curated_sources("proj-cjk-struct")
+    assert len(rows) == 2
+
+    replay_b = hooks_b.import_obsidian_notes("proj-cjk-struct", {"dry_run": False})
+    assert replay_b["imported_count"] == 0
+    assert replay_b["skipped_existing"] == 1

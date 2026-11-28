@@ -10,6 +10,7 @@ Security invariants:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import contextlib
 import copy
 from datetime import datetime, timezone
@@ -122,8 +123,8 @@ def _collect_authors(value: object) -> list[str]:
             if direct:
                 out.append(direct)
             else:
-                family = _clean_line(item.get("family"))
-                given = _clean_line(item.get("given"))
+                family = _clean_line(item.get("family") or item.get("lastName"))
+                given = _clean_line(item.get("given") or item.get("firstName"))
                 joined = ", ".join(part for part in (family, given) if part)
                 if joined:
                     out.append(joined)
@@ -198,6 +199,21 @@ def _author_surnames(value: object) -> set[str]:
     return surnames
 
 
+def _normalize_explicit_surname_token(raw: object) -> str:
+    folded = _fold_latin_diacritics(_clean_line(raw))
+    return re.sub(r"[\W_]+", "", folded.casefold())
+
+
+def _author_surnames_from_record(record_data: Mapping[str, Any]) -> set[str]:
+    surnames = _author_surnames(record_data.get("authors"))
+    for raw in record_data.get("author_surnames") or []:
+        if isinstance(raw, str):
+            token = _normalize_explicit_surname_token(raw)
+            if token:
+                surnames.add(token)
+    return surnames
+
+
 def _zotero_creators(value: object) -> list[dict[str, str]]:
     if isinstance(value, str):
         raw_items: list[object] = [value] if value.strip() else []
@@ -208,8 +224,8 @@ def _zotero_creators(value: object) -> list[dict[str, str]]:
     creators: list[dict[str, str]] = []
     for item in raw_items:
         if isinstance(item, dict):
-            family = _clean_line(item.get("family"))
-            given = _clean_line(item.get("given"))
+            family = _clean_line(item.get("family") or item.get("lastName"))
+            given = _clean_line(item.get("given") or item.get("firstName"))
             literal = _clean_line(item.get("literal") or item.get("name"))
             if family:
                 creators.append({
@@ -2054,7 +2070,7 @@ class WorkspaceSyncHooks:
                         existing_vault_id = raw_batch
                 existing_title = _norm_title_token(edata.get("title"))
                 existing_year = _clean_line(edata.get("year"))
-                existing_authors = _author_surnames(edata.get("authors"))
+                existing_authors = _author_surnames_from_record(edata)
                 rec = {
                     "vault_id": existing_vault_id,
                     "doi": existing_doi,
@@ -2088,7 +2104,7 @@ class WorkspaceSyncHooks:
                 year = _clean_line(ndata.get("year"))
                 norm_title = _norm_title_token(title)
                 authors = _collect_authors(ndata.get("authors"))
-                inc_authors = _author_surnames(authors)
+                inc_authors = _author_surnames_from_record(ndata)
                 title_year = (norm_title, year) if (norm_title and year) else None
 
                 doi_match = False
@@ -2224,6 +2240,8 @@ class WorkspaceSyncHooks:
                     "identity_status": "unverified",
                     "human_acceptance": "pending",
                 }
+                if inc_authors:
+                    source_item["author_surnames"] = sorted(inc_authors)
                 batch_items.append(source_item)
                 preview_items.append({
                     "note_id": note_id,

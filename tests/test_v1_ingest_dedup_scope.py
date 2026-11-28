@@ -86,9 +86,24 @@ class _DedupZotero:
     item is created, while still serving the reads the zotero_hit reuse
     branch performs (`item` / `children` / `update_item`)."""
 
-    def __init__(self) -> None:
+    def __init__(self, dedup: DedupIndex | None = None) -> None:
         self.created: list[list[dict]] = []
         self.updated: list[dict] = []
+        self._items_by_key: dict[str, dict] = {}
+        if dedup is not None:
+            for hits in (
+                list(dedup.doi_to_hits.values())
+                + list(dedup.title_to_hits.values())
+            ):
+                for hit in hits:
+                    if hit.source == "zotero" and hit.zotero_key:
+                        self._items_by_key[hit.zotero_key] = {
+                            "key": hit.zotero_key,
+                            "itemType": "journalArticle",
+                            "title": hit.title,
+                            "DOI": hit.doi,
+                            "tags": [],
+                        }
 
     def item_template(self, item_type: str) -> dict:
         return {"itemType": item_type}
@@ -102,7 +117,13 @@ class _DedupZotero:
         }
 
     def item(self, key: str) -> dict:
-        return {"data": {"key": key, "itemType": "journalArticle", "tags": []}}
+        data = dict(
+            self._items_by_key.get(
+                key,
+                {"key": key, "itemType": "journalArticle", "tags": []},
+            )
+        )
+        return {"data": data}
 
     def children(self, key: str) -> list:
         return []
@@ -113,7 +134,7 @@ class _DedupZotero:
 
 
 def _mock(monkeypatch: pytest.MonkeyPatch, cfg, dedup: DedupIndex) -> _DedupZotero:
-    z = _DedupZotero()
+    z = _DedupZotero(dedup)
     monkeypatch.setattr("research_hub.pipeline.get_config", lambda: cfg)
     monkeypatch.setattr(pipeline, "get_client", lambda: z)
     monkeypatch.setattr(

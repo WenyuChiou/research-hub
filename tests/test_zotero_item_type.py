@@ -255,7 +255,14 @@ def test_reused_zotero_hit_updates_collections_preserves_zr_and_string_authors(t
             return {"successful": {"0": {"key": "NEWKEY"}}}
 
         def item(self, key: str) -> dict:
-            return {"data": {"key": key, "itemType": "journalArticle", "tags": [], "collections": []}}
+            data = {"key": key, "itemType": "journalArticle", "tags": [], "collections": []}
+            if key == "OLDKEY":
+                data.update({
+                    "DOI": "10.1000/reused",
+                    "title": "Reused Paper Long Title",
+                    "date": "2024",
+                })
+            return {"data": data}
 
         def children(self, key: str) -> list:
             return [{"data": {"itemType": "note"}}]
