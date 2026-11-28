@@ -152,6 +152,7 @@ def _build_20_paper_inputs() -> list[dict]:
         p.update(
             {
                 "authors": spec["authors"],
+                "authors_str": "; ".join(spec["authors"]),
                 "year": spec["year"],
                 "journal": spec["venue"],
                 "tags": list(spec["tags"]),
@@ -847,6 +848,7 @@ def test_scenario_6_multi_topic_three_domain_e2e_crud_obsidian_bases_and_isolati
             item.update(
                 {
                     "authors": p_spec["authors"],
+                    "authors_str": "; ".join(p_spec["authors"]),
                     "year": p_spec["year"],
                     "journal": p_spec["venue"],
                     "tags": list(p_spec["tags"]),

@@ -22,6 +22,7 @@ import time
 import urllib.request
 import urllib.error
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 
 from research_hub.errors import MissingCredential
@@ -261,6 +262,7 @@ def check_duplicate(
     *,
     collection_key: str | None = None,
     allow_library_duplicates: bool = False,
+    item_matches_fn: Callable[[dict], bool] | None = None,
 ) -> bool:
     """Check if an item already exists in Zotero by DOI or title."""
     if allow_library_duplicates:
@@ -271,11 +273,16 @@ def check_duplicate(
     norm_title = (title or "").lower()
 
     def _matches(items: list[dict]) -> bool:
-        return any(
-            (norm_title and (e.get("data", {}).get("title") or "").lower() == norm_title)
-            or (norm_doi and normalize_doi(e.get("data", {}).get("DOI", "") or "") == norm_doi)
-            for e in (items or [])
-        )
+        for entry in items or []:
+            data = entry.get("data", {})
+            title_hit = bool(norm_title and (data.get("title") or "").lower() == norm_title)
+            doi_hit = bool(norm_doi and normalize_doi(data.get("DOI", "") or "") == norm_doi)
+            if not (title_hit or doi_hit):
+                continue
+            if item_matches_fn is not None and not item_matches_fn(data):
+                continue
+            return True
+        return False
 
     query = doi or (title or "")[:50]
     try:

@@ -1444,3 +1444,93 @@ def test_v134_in_batch_doi_dedup_obsidian_and_zotero_hit_guards_and_zotero_round
     ident = pipeline._read_note_identity(roundtrip_path)
     assert ident["volume"] == "2"
     assert ident["edition"] == '2nd "Revised"'
+
+    # 5. Canonicalize Volume/Vol and Pt/Part markers, and never let check_duplicate
+    # discard an incoming paper when a same-DOI Zotero item has an unrelated title.
+    assert pipeline._zotero_hit_matches_paper(
+        z_hit,
+        {"doi": "10.1234/shared", "title": "History of Science Volume I"},
+    ) is True
+    assert pipeline._zotero_hit_matches_paper(
+        DedupHit(source="zotero", doi="10.1234/shared", title="Physics Pt. A", zotero_key="ZK2"),
+        {"doi": "10.1234/shared", "title": "Physics Part A"},
+    ) is True
+
+    cfg2 = _cfg(tmp_path / "zot_fallback")
+    cluster_reg = ClusterRegistry(cfg2.clusters_file)
+    cluster_reg.create(
+        query="fallback test",
+        name="Fallback Test",
+        slug="fallback-test",
+        zotero_collection_key="COLL_FB",
+    )
+    (cfg2.root / "papers_input.json").write_text(
+        json.dumps(
+            {
+                "papers": [
+                    {
+                        "title": "New Unrelated Quantum Paper",
+                        "slug": "new-unrelated-quantum-paper",
+                        "doi": "10.1234/shared",
+                        "authors": ["Alice Smith"],
+                        "year": 2024,
+                        "abstract": "Quantum experiment.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _ZotConflictingDoi:
+        def __init__(self) -> None:
+            self.created: list[dict] = []
+
+        def items(self, *args, **kwargs):
+            return [
+                {
+                    "key": "Z_EXIST",
+                    "data": {
+                        "itemType": "journalArticle",
+                        "title": "Existing Completely Different Biology Paper",
+                        "DOI": "10.1234/shared",
+                        "tags": [],
+                        "collections": [],
+                    },
+                }
+            ]
+
+        def collection_items(self, *args, **kwargs):
+            return self.items(*args, **kwargs)
+
+        def item_template(self, item_type: str) -> dict:
+            return {"itemType": item_type}
+
+        def create_items(self, items: list[dict]) -> dict:
+            self.created.extend(items)
+            return {"successful": {str(i): {"key": f"ZNEW{i}"} for i in range(len(items))}}
+
+    fake_zot = _ZotConflictingDoi()
+    monkeypatch.delenv("RESEARCH_HUB_NO_ZOTERO", raising=False)
+    monkeypatch.setattr(pipeline, "get_config", lambda: cfg2)
+    monkeypatch.setattr(pipeline, "get_client", lambda: fake_zot)
+    monkeypatch.setattr(pipeline, "add_note", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(pipeline, "_next_batch_label", lambda *a, **k: "2026-11-27")
+    monkeypatch.setattr(pipeline, "_ensure_batch_subcollection", lambda *a, **k: "BATCH1")
+
+    dedup_idx = DedupIndex()
+    dedup_idx.add(
+        DedupHit(
+            source="zotero",
+            doi="10.1234/shared",
+            title="Existing Completely Different Biology Paper",
+            zotero_key="Z_EXIST",
+        )
+    )
+    monkeypatch.setattr(pipeline, "_load_or_build_dedup", lambda *a, **k: dedup_idx)
+
+    rc = pipeline.run_pipeline(cluster_slug="fallback-test", query="fallback test", verify=False)
+    assert rc == 0
+    assert len(fake_zot.created) == 1
+    assert (cfg2.raw / "fallback-test" / "new-unrelated-quantum-paper.md").is_file()

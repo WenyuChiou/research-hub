@@ -757,9 +757,9 @@ def _validate_paper_paths(cfg, paper: dict, cluster_slug: str | None, index: int
 _IN_BATCH_MARKER_RE = re.compile(
     r"\b("
     r"vol(?:ume)?\.?\s*(?:[ivxlcdm]+|\d+)"
-    r"|part\s*(?:[ivxlcdm]+|\d+|[a-z])"
+    r"|part\.?\s*(?:[ivxlcdm]+|\d+|[a-z])"
     r"|pt\.?\s*(?:[ivxlcdm]+|\d+|[a-z])"
-    r"|book\s*(?:[ivxlcdm]+|\d+)"
+    r"|book\.?\s*(?:[ivxlcdm]+|\d+)"
     r"|erratum|corrigendum|retraction|retracted|comment|reply|rejoinder|addendum|correction"
     r")\b",
     re.IGNORECASE,
@@ -804,7 +804,9 @@ def _title_markers(title: object) -> set[str]:
     text = str(title or "")
     markers: set[str] = set()
     for match in _IN_BATCH_MARKER_RE.finditer(text):
-        token = re.sub(r"\s+", " ", match.group(1).lower().replace(".", "")).strip()
+        token = re.sub(r"\s+", " ", match.group(1).lower().replace(".", " ")).strip()
+        token = re.sub(r"^volume\b", "vol", token)
+        token = re.sub(r"^pt\b", "part", token)
         markers.add(token)
     return markers
 
@@ -970,6 +972,18 @@ def _zotero_hit_matches_paper(hit: DedupHit, pp: dict) -> bool:
         if _title_markers(hit_title) != _title_markers(pp_title):
             return False
     return True
+
+
+def _zotero_item_matches_paper(data: dict, pp: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    hit = DedupHit(
+        source="zotero",
+        doi=str(data.get("DOI") or ""),
+        title=str(data.get("title") or ""),
+        zotero_key=str(data.get("key") or "") or None,
+    )
+    return _zotero_hit_matches_paper(hit, pp)
 
 
 def _resolve_vault_note_path(folder: Path, pp: dict) -> Path:
@@ -1655,6 +1669,7 @@ def run_pipeline(
                         pp["doi"],
                         collection_key=cluster_coll,
                         allow_library_duplicates=allow_library_duplicates,
+                        item_matches_fn=lambda data, _pp=pp: _zotero_item_matches_paper(data, _pp),
                     )
             except Exception as exc:
                 if existing_note_path is not None:

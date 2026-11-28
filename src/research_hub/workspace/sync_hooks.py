@@ -1978,7 +1978,13 @@ class WorkspaceSyncHooks:
             cleaned = _clean_line(value)
             if not cleaned:
                 return ""
-            return normalize_title(cleaned) or cleaned.casefold()
+            folded = "".join(
+                ch
+                for ch in unicodedata.normalize("NFKD", cleaned)
+                if unicodedata.category(ch) != "Mn"
+            )
+            token = re.sub(r"[\W_]+", " ", folded.casefold()).strip()
+            return token or cleaned.casefold()
 
         with self._export_lock(f"obsidian-import:{project_id}", f".obsidian-import-{project_id}"):
             _, existing_sources, _, _ = self._load_curated_sources(project_id)

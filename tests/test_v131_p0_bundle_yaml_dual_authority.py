@@ -1219,3 +1219,76 @@ def test_v134_cross_vault_obsidian_import_respects_vault_id_zkey_doi_and_year_au
     res_b2 = hooks_b.import_obsidian_notes("proj-xvault", {"dry_run": True})
     assert res_b2["would_import"] == 0
     assert res_b2["skipped_existing"] == 4
+
+
+def test_v134_yaml_merge_override_allowed_and_mixed_cjk_import_distinct(tmp_path: Path):
+    from research_hub.paper import _rewrite_paper_frontmatter, set_labels
+    from research_hub.workspace.integrations import LocalIntegrationsManager
+    from research_hub.workspace.obsidian_validation import ObsidianValidation
+    from research_hub.workspace.sync_hooks import WorkspaceSyncHooks
+
+    # 1. Valid YAML merge (<<: *defaults + explicit override) succeeds in _rewrite_paper_frontmatter & set_labels.
+    note_merge = tmp_path / "merge_override.md"
+    note_merge.write_text(
+        "---\n"
+        "title: \"Merged Defaults Note\"\n"
+        "defaults: &d\n"
+        "  status: unread\n"
+        "  priority: low\n"
+        "custom:\n"
+        "  <<: *d\n"
+        "  status: read\n"
+        "---\nBody\n",
+        encoding="utf-8",
+    )
+    _rewrite_paper_frontmatter(note_merge, {"labels": ["seed"]})
+    text_after = note_merge.read_text(encoding="utf-8")
+    assert "labels:\n  - seed\n" in text_after
+    assert "status: read\n" in text_after
+
+    # Explicit duplicate key alongside merge still fails closed without touching disk.
+    note_dup_merge = tmp_path / "merge_dup.md"
+    note_dup_merge.write_bytes(
+        b"---\n"
+        b"title: \"Dup Merge Note\"\n"
+        b"defaults: &d\n"
+        b"  status: unread\n"
+        b"custom:\n"
+        b"  <<: *d\n"
+        b"  status: read\n"
+        b"  status: archived\n"
+        b"---\nBody\n"
+    )
+    dup_before = note_dup_merge.read_bytes()
+    with pytest.raises(ValueError, match="valid YAML mapping"):
+        _rewrite_paper_frontmatter(note_dup_merge, {"labels": ["seed"]})
+    assert note_dup_merge.read_bytes() == dup_before
+
+    # 2. Mixed Latin/CJK DOI-less notes sharing author & year remain distinct during Obsidian import.
+    vault = tmp_path / "vault_cjk"
+    (vault / ".obsidian").mkdir(parents=True)
+    (vault / ".research_hub").mkdir()
+    (vault / ".research_hub" / "clusters.yaml").write_text(
+        "schema_version: '1.0'\nclusters:\n  alpha:\n    name: Alpha\n    status: active\n    obsidian_subfolder: alpha\n",
+        encoding="utf-8",
+    )
+    (vault / "raw" / "alpha").mkdir(parents=True)
+    (vault / "raw" / "alpha" / "flood.md").write_text(
+        '---\ntitle: "LLM 的洪水預測"\nyear: "2024"\nauthors: ["Chen, Alice"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+    (vault / "raw" / "alpha" / "quake.md").write_text(
+        '---\ntitle: "LLM 的地震預測"\nyear: "2024"\nauthors: ["Chen, Alice"]\n---\nBody\n',
+        encoding="utf-8",
+    )
+
+    ws = Workspace(tmp_path / "ws_cjk")
+    ws.create_project(id="proj-cjk", title="CJK Import", archetype="review")
+    cfg_path = tmp_path / "cfg_cjk.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    hooks = WorkspaceSyncHooks(
+        ws, LocalIntegrationsManager(cfg_path), obsidian_validation=ObsidianValidation(vault)
+    )
+    res_cjk = hooks.import_obsidian_notes("proj-cjk", {"dry_run": False})
+    assert res_cjk["imported_count"] == 2
+    assert res_cjk["skipped_existing"] == 0
